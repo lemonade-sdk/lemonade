@@ -1,6 +1,7 @@
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/backends/ryzenaiserver.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -32,6 +33,19 @@ const std::vector<std::string> AMD_DISCRETE_GPU_KEYWORDS = {
 const std::vector<std::string> NVIDIA_DISCRETE_GPU_KEYWORDS = {
     "geforce", "rtx", "gtx", "quadro", "tesla", "titan",
     "a100", "a40", "a30", "a10", "a6000", "a5000", "a4000", "a2000"
+};
+
+// ROCm architecture mapping - maps specific gfx architectures to their family
+const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
+    // RDNA4 family (gfx120X)
+    {"gfx1200", "gfx120X"},
+    {"gfx1201", "gfx120X"},
+
+    // RDNA3 family (gfx110X)
+    {"gfx1100", "gfx110X"},
+    {"gfx1101", "gfx110X"},
+    {"gfx1102", "gfx110X"},
+    {"gfx1103", "gfx110X"},
 };
 
 // ============================================================================
@@ -78,6 +92,8 @@ json SystemInfo::get_device_dict() {
         auto amd_igpu = get_amd_igpu_device();
         devices["amd_igpu"] = {
             {"name", amd_igpu.name},
+            {"vram_gb", amd_igpu.vram_gb},
+            {"virtual_mem_gb", amd_igpu.virtual_gb},
             {"available", amd_igpu.available}
         };
         if (!amd_igpu.error.empty()) {
@@ -102,6 +118,9 @@ json SystemInfo::get_device_dict() {
             };
             if (gpu.vram_gb > 0) {
                 gpu_json["vram_gb"] = gpu.vram_gb;
+            }
+            if (gpu.virtual_gb > 0) {
+                gpu_json["virtual_mem_gb"] = gpu.virtual_gb;
             }
             if (!gpu.driver_version.empty()) {
                 gpu_json["driver_version"] = gpu.driver_version;
@@ -271,14 +290,11 @@ json SystemInfo::detect_inference_engines(const std::string& device_type, const 
 
 std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
     // Try to find version.txt in the llamacpp directory for specific backend
-    // Location: {executable_dir}/{backend}/llama_server/version.txt
+    // Location: {cache_dir}/bin/llama/{backend}/version.txt
     
-    #ifdef _WIN32
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-    fs::path exe_dir = fs::path(exe_path).parent_path();
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    fs::path version_file = bin_dir / "llama" / backend / "version.txt";
     
-    fs::path version_file = exe_dir / backend / "llama_server" / "version.txt";
     if (fs::exists(version_file)) {
         std::ifstream file(version_file);
         if (file.is_open()) {
@@ -293,45 +309,29 @@ std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
             }
         }
     }
-    #else
-    // For Linux, check relative to current executable
-    std::string version_file = backend + "/llama_server/version.txt";
-    std::ifstream file(version_file);
-    if (file.is_open()) {
-        std::string version;
-        std::getline(file, version);
-        file.close();
-        // Trim whitespace
-        size_t start = version.find_first_not_of(" \t\n\r");
-        size_t end = version.find_last_not_of(" \t\n\r");
-        if (start != std::string::npos && end != std::string::npos) {
-            return version.substr(start, end - start + 1);
-        }
-    }
-    #endif
     
     return "unknown";
 }
 
 bool SystemInfo::is_llamacpp_installed(const std::string& backend) {
     // Check if llama-server executable exists for the given backend
+    // Location: {cache_dir}/bin/llama/{backend}/
     
-    #ifdef _WIN32
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-    fs::path exe_dir = fs::path(exe_path).parent_path();
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    fs::path install_dir = bin_dir / "llama" / backend;
     
-    fs::path llama_exe = exe_dir / backend / "llama_server" / "llama-server.exe";
+#ifdef _WIN32
+    fs::path llama_exe = install_dir / "llama-server.exe";
     return fs::exists(llama_exe);
-    #else
+#else
     // For Linux, check build/bin subdirectory first, then root
-    std::string build_bin_path = backend + "/llama_server/build/bin/llama-server";
+    fs::path build_bin_path = install_dir / "build" / "bin" / "llama-server";
     if (fs::exists(build_bin_path)) {
         return true;
     }
-    std::string root_path = backend + "/llama_server/llama-server";
+    fs::path root_path = install_dir / "llama-server";
     return fs::exists(root_path);
-    #endif
+#endif
 }
 
 bool SystemInfo::check_vulkan_support() {
@@ -381,7 +381,30 @@ bool SystemInfo::check_vulkan_support() {
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
-    
+
+    // linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
+    if (std::all_of(device_lower.begin(), device_lower.end(), ::isdigit)) {
+        if (device_lower.length() >= 4) {
+            std::string major = device_lower.substr(0, 2);
+
+            int minor_int = std::stoi(device_lower.substr(2, 2));
+            std::string minor = std::to_string(minor_int);
+
+            int revision_int = std::stoi(device_lower.substr(4, 2));
+            std::string revision = std::to_string(revision_int);
+
+            std::string arch = "gfx" + major + minor + revision;
+
+            // Apply architecture family mapping
+            auto it = ROCM_ARCH_MAPPING.find(arch);
+            if (it != ROCM_ARCH_MAPPING.end()) {
+                return it->second;
+            }
+
+            return arch;
+        }
+    }
+
     if (device_lower.find("radeon") == std::string::npos &&
         device_lower.find("amd") == std::string::npos) {
         return "";
@@ -464,55 +487,7 @@ std::string SystemInfo::get_flm_version() {
 }
 
 bool SystemInfo::is_ryzenai_serve_available() {
-    // Use the same logic as RyzenAIServer::get_ryzenai_serve_path()
-    
-    #ifdef _WIN32
-    std::string exe_name = "ryzenai-server.exe";
-    std::string check_cmd = "where ryzenai-server.exe >nul 2>&1";
-#else
-    std::string exe_name = "ryzenai-server";
-    std::string check_cmd = "which ryzenai-server >/dev/null 2>&1";
-#endif
-    
-    // Check if executable exists in PATH
-    if (system(check_cmd.c_str()) == 0) {
-        return true;
-    }
-    
-    // Check in common locations relative to lemonade executable
-    // This uses the same path resolution as RyzenAIServer
-    #ifdef _WIN32
-    // Get executable path
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-    fs::path exe_dir = fs::path(exe_path).parent_path();
-    
-    // Check relative path: from executable to ../../../ryzenai-server/build/bin/Release (source tree)
-    fs::path relative_path = exe_dir / ".." / ".." / ".." / "ryzenai-server" / "build" / "bin" / "Release" / exe_name;
-    if (fs::exists(relative_path)) {
-        return true;
-    }
-    
-    // Check installed location next to lemonade binary
-    fs::path install_path = exe_dir / "ryzenai-server" / exe_name;
-    if (fs::exists(install_path)) {
-        return true;
-    }
-    #else
-    // For Linux/macOS
-    fs::path relative_path = fs::path("../../../ryzenai-server/build/bin/Release") / exe_name;
-    if (fs::exists(relative_path)) {
-        return true;
-    }
-    
-    // Check installed location
-    fs::path install_path = fs::path("ryzenai-server") / exe_name;
-    if (fs::exists(install_path)) {
-        return true;
-    }
-    #endif
-    
-    return false;
+    return RyzenAIServer::is_available();
 }
 
 // ============================================================================
@@ -1302,92 +1277,75 @@ NPUInfo LinuxSystemInfo::get_npu_device() {
 
 std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_type) {
     std::vector<GPUInfo> gpus;
-    
-    // Execute lspci to find GPUs
-    FILE* pipe = popen("lspci 2>/dev/null | grep -iE 'vga|3d|display'", "r");
-    if (!pipe) {
+    std::string kfd_path = "/sys/class/kfd/kfd/topology/nodes";
+
+    if (!fs::exists(kfd_path)) {
         GPUInfo gpu;
         gpu.available = false;
-        gpu.error = "Failed to execute lspci command";
+        gpu.error = "No KFD nodes found (AMD GPU driver not loaded or no GPU present)";
         gpus.push_back(gpu);
         return gpus;
     }
-    
-    char buffer[512];
-    std::vector<std::string> lspci_lines;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        lspci_lines.push_back(buffer);
-    }
-    pclose(pipe);
-    
-    // Parse AMD GPUs
-    for (const auto& line : lspci_lines) {
-        if (line.find("AMD") != std::string::npos || line.find("ATI") != std::string::npos) {
-            // Extract device name
-            std::string name;
-            size_t pos = line.find(": ");
-            if (pos != std::string::npos) {
-                name = line.substr(pos + 2);
-                // Remove newline
-                if (!name.empty() && name.back() == '\n') {
-                    name.pop_back();
+
+    for (const auto& node_entry : fs::directory_iterator(kfd_path)) {
+        if (!node_entry.is_directory()) continue;
+
+        std::string node_path = node_entry.path().string();
+        std::string properties_file = node_path + "/properties";
+
+        if (!fs::exists(properties_file)) continue;
+
+        std::ifstream props(properties_file);
+        if (!props.is_open()) continue;
+
+        std::string line;
+        std::string drm_render_minor;
+        std::string gfx_target_version;
+
+        bool is_gpu = false;
+
+        while (std::getline(props, line)) {
+            if (line.find("gfx_target_version") == 0) {
+                gfx_target_version = line.substr(line.find(" ") + 1);
+                gfx_target_version.erase(gfx_target_version.find_last_not_of(" \t\n\r") + 1);
+                if (!gfx_target_version.empty() && std::stoi(gfx_target_version) != 0) {
+                    is_gpu = true;
                 }
-            } else {
-                name = line;
-            }
-            
-            // Classify as discrete or integrated using keywords
-            std::string name_lower = name;
-            std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
-            
-            bool is_discrete = false;
-            for (const auto& keyword : AMD_DISCRETE_GPU_KEYWORDS) {
-                if (name_lower.find(keyword) != std::string::npos) {
-                    is_discrete = true;
-                    break;
-                }
-            }
-            bool is_integrated = !is_discrete;
-            
-            // Filter based on requested type
-            if ((gpu_type == "integrated" && is_integrated) || 
-                (gpu_type == "discrete" && is_discrete)) {
-                
-                GPUInfo gpu;
-                gpu.name = name;
-                gpu.available = true;
-                
-                // Get VRAM for discrete GPUs
-                if (is_discrete) {
-                    // Extract PCI ID from lspci line (first field)
-                    std::string pci_id = line.substr(0, line.find(" "));
-                    
-                    double vram = get_amd_vram_rocm_smi();
-                    if (vram == 0.0) {
-                        vram = get_amd_vram_sysfs(pci_id);
-                    }
-                    
-                    if (vram > 0.0) {
-                        gpu.vram_gb = vram;
-                    }
-                }
-                
-                // Detect inference engines
-                std::string device_type = is_integrated ? "amd_igpu" : "amd_dgpu";
-                gpu.inference_engines = detect_inference_engines(device_type, name);
-                
-                gpus.push_back(gpu);
+            } else if (line.find("drm_render_minor") == 0) {
+                drm_render_minor = line.substr(line.find(" ") + 1);
+                drm_render_minor.erase(drm_render_minor.find_last_not_of(" \t\n\r") + 1);
             }
         }
+        props.close();
+
+        if (!is_gpu || drm_render_minor.empty() || drm_render_minor == "-1")
+            continue;
+
+        bool is_integrated = get_amd_is_igpu(drm_render_minor);
+        if ((gpu_type == "integrated" && !is_integrated) || (gpu_type == "discrete" && is_integrated)) continue;
+
+        GPUInfo gpu;
+        gpu.name = gfx_target_version;
+        gpu.available = true;
+
+        // Get VRAM and GTT for GPUs
+        gpu.vram_gb = get_amd_vram(drm_render_minor);
+        gpu.virtual_gb = get_amd_gtt(drm_render_minor);
+        
+        // Detect inference engines
+        std::string device_type = is_integrated ? "amd_igpu" : "amd_dgpu";
+        gpu.inference_engines = detect_inference_engines(device_type, gfx_target_version);
+        
+        gpus.push_back(gpu);
     }
-    
+
     if (gpus.empty()) {
         GPUInfo gpu;
         gpu.available = false;
-        gpu.error = "No AMD " + gpu_type + " GPU found";
+        gpu.error = "No AMD " + gpu_type + " GPU found in KFD nodes";
         gpus.push_back(gpu);
     }
-    
+
     return gpus;
 }
 
@@ -1453,81 +1411,58 @@ double LinuxSystemInfo::get_nvidia_vram() {
     return 0.0;
 }
 
-double LinuxSystemInfo::get_amd_vram_rocm_smi() {
-    FILE* pipe = popen("rocm-smi --showmeminfo vram --csv 2>/dev/null", "r");
-    if (!pipe) {
-        return 0.0;
-    }
-    
-    char buffer[256];
-    std::string output;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-    pclose(pipe);
-    
-    // Parse CSV output for VRAM
-    std::istringstream iss(output);
-    std::string line;
-    while (std::getline(iss, line)) {
-        if (line.find("Total VRAM") != std::string::npos || 
-            line.find("vram") != std::string::npos) {
-            // Extract numbers
-            std::regex num_regex(R"(\d+)");
-            std::smatch match;
-            if (std::regex_search(line, match, num_regex)) {
-                try {
-                    double vram_value = std::stod(match[0].str());
-                    // Assume MB if large value, GB if small
-                    if (vram_value > 100) {
-                        return std::round(vram_value / 1024.0 * 10.0) / 10.0;
-                    } else {
-                        return vram_value;
-                    }
-                } catch (...) {
-                    return 0.0;
-                }
-            }
-        }
-    }
-    
-    return 0.0;
-}
+double LinuxSystemInfo::get_ttm_gb() {
+    std::string ttm_path = "/sys/module/ttm/parameters/pages_limit";
+    std::ifstream sysfs_file(ttm_path);
 
-double LinuxSystemInfo::get_amd_vram_sysfs(const std::string& pci_id) {
-    // Try device-specific path first
-    std::string vram_path = "/sys/bus/pci/devices/" + pci_id + "/mem_info_vram_total";
-    std::ifstream file(vram_path);
-    
-    if (!file.is_open()) {
-        // Try wildcard path
-        FILE* pipe = popen("cat /sys/class/drm/card*/device/mem_info_vram_total 2>/dev/null | head -1", "r");
-        if (pipe) {
-            char buffer[128];
-            if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-                pclose(pipe);
-                try {
-                    uint64_t vram_bytes = std::stoull(buffer);
-                    return std::round(vram_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
-                } catch (...) {
-                    return 0.0;
-                }
-            }
-            pclose(pipe);
-        }
+    if (!sysfs_file.is_open()) {
         return 0.0;
     }
-    
-    std::string vram_str;
-    std::getline(file, vram_str);
-    file.close();
+
+    std::string page_limit_str;
+    std::getline(sysfs_file, page_limit_str);
+    sysfs_file.close();
     
     try {
-        uint64_t vram_bytes = std::stoull(vram_str);
-        return std::round(vram_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
+        uint64_t page_limit = std::stoull(page_limit_str);
+        return std::round(page_limit / ((1024.0 * 1024.0 * 1024.0) / 4096) * 10.0) / 10.0;
+    } catch (...) {
+        return 0.0;
+    }   
+}
+
+bool LinuxSystemInfo::get_amd_is_igpu(const std::string& drm_render_minor) {
+    std::string device_path = "/sys/class/drm/renderD" + drm_render_minor + "/device/";
+    std::string board_info_path = device_path + "board_info";
+    return !(fs::exists(board_info_path) && fs::is_regular_file(board_info_path));
+}
+
+double LinuxSystemInfo::parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname){
+    // Try device-specific path first
+    std::string sysfs_path = "/sys/class/drm/renderD" + drm_render_minor + "/device/" + fname;
+    
+    if (!fs::exists(sysfs_path))
+        return 0.0;
+
+    std::ifstream sysfs_file(sysfs_path);
+    std::string memory_str;
+    std::getline(sysfs_file, memory_str);
+    sysfs_file.close();
+
+    try {
+        uint64_t memory_bytes = std::stoull(memory_str);
+        return std::round(memory_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
     } catch (...) {
         return 0.0;
     }
+}
+
+double LinuxSystemInfo::get_amd_gtt(const std::string& drm_render_minor){
+    return parse_memory_sysfs(drm_render_minor, "mem_info_gtt_total");
+}
+
+double LinuxSystemInfo::get_amd_vram(const std::string& drm_render_minor) {
+    return parse_memory_sysfs(drm_render_minor, "mem_info_vram_total");
 }
 
 json LinuxSystemInfo::get_system_info_dict() {
@@ -1541,20 +1476,23 @@ std::string LinuxSystemInfo::get_os_version() {
     // Get detailed Linux version (similar to Python's platform.platform())
     std::string result = "Linux";
     
-    // Get kernel version using uname
-    FILE* pipe = popen("uname -r 2>/dev/null", "r");
-    if (pipe) {
-        char buffer[128];
-        if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            std::string kernel = buffer;
-            // Remove newline
-            if (!kernel.empty() && kernel.back() == '\n') {
-                kernel.pop_back();
-            }
-            result += "-" + kernel;
-        }
-        pclose(pipe);
-    }
+    // Get kernel version from /proc/version
+    std::string kernel = "unknown_kernel";
+
+    std::ifstream file("/proc/version");
+    if (file.is_open()){
+        std::string line;
+        std::getline(file, line);
+
+        const std::string tag = "version ";
+        size_t pos = line.find(tag);
+        if (pos != std::string::npos){
+            pos += tag.size();
+            size_t end = line.find(' ', pos);
+            kernel = line.substr(pos, end - pos);
+        } 
+    } 
+    result += "-" + kernel;
     
     // Try to get distribution info from /etc/os-release
     std::ifstream os_release("/etc/os-release");
@@ -1619,46 +1557,24 @@ std::string LinuxSystemInfo::get_processor_name() {
 }
 
 std::string LinuxSystemInfo::get_physical_memory() {
-    FILE* pipe = popen("free -m 2>/dev/null", "r");
-    if (!pipe) {
-        return "ERROR - Failed to execute free command";
-    }
-    
-    char buffer[256];
-    std::string output;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-    pclose(pipe);
-    
-    // Parse output - second line contains memory info
-    std::istringstream iss(output);
-    std::string line;
-    int line_count = 0;
-    while (std::getline(iss, line)) {
-        line_count++;
-        if (line_count == 2) {  // Second line has memory data
-            std::istringstream line_stream(line);
-            std::string token;
-            int token_count = 0;
-            while (line_stream >> token) {
-                token_count++;
-                if (token_count == 2) {  // Second token is total memory in MB
-                    try {
-                        int mem_mb = std::stoi(token);
-                        double mem_gb = std::round(mem_mb / 1024.0 * 100.0) / 100.0;
-                        std::ostringstream oss;
-                        oss << std::fixed << std::setprecision(2) << mem_gb << " GB";
-                        return oss.str();
-                    } catch (...) {
-                        return "ERROR - Failed to parse memory info";
-                    }
-                }
+    std::string token;
+    std::ifstream file("/proc/meminfo");
+
+    //Step through each token in the file 
+    while(file >> token) {
+        if(token == "MemTotal:") {
+            // Get the token after "MemTotal:"
+            if(double mem; file >> mem) {
+                std::ostringstream oss;
+                oss << std::fixed << std::setprecision(2) << std::round(mem / 1024.0 / 1024.0 * 100.0) / 100.0 << " GB";
+                return oss.str();
             }
+            break;
         }
+        // Skip the line if key/token isn't found.
+        file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
     }
-    
-    return "ERROR - Memory information not found";
+    return "ERROR - Physical memory not found";
 }
 
 #endif // __linux__
@@ -1825,14 +1741,14 @@ void SystemInfoCache::clear() {
 
 json SystemInfoCache::get_system_info_with_cache(bool verbose) {
     json system_info;
-    
+
     // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
     try {
         // Create cache instance and load cached data
         SystemInfoCache cache;
         bool cache_exists = fs::exists(cache.get_cache_file_path());
         json cached_data = cache.load_hardware_info();
-        
+
         // Create platform-specific system info instance
         auto sys_info = create_system_info();
         
@@ -1929,4 +1845,3 @@ json SystemInfoCache::get_system_info_with_cache(bool verbose) {
 
 
 } // namespace lemon
-

@@ -24,21 +24,33 @@ This directory contains the C++ implementation of the Lemonade Server, providing
 - WiX 5.x (only required for building the installer)
 
 **Linux (Ubuntu/Debian):**
+
+Note: CMake 3.28+ is required. Ubuntu 24.04+ and Debian Trixie (testing/13)+ include this.
+For older versions, you may need to install a newer CMake manually.
+
 ```bash
-sudo apt install build-essential cmake libcurl4-openssl-dev libssl-dev pkg-config
-# Note: Tray application is disabled on Linux (headless mode only)
-# This avoids LGPL dependencies and provides a cleaner server-only experience
+# Build dependencies
+sudo apt install build-essential g++ cmake git curl \
+  libcurl4-openssl-dev libssl-dev zlib1g-dev pkg-config
+
+# Optional: For running tests
+sudo apt install python3 python3-pip python3-venv
+
+# Verify CMake version (must be 3.28+)
+cmake --version
 ```
 
 **Linux (Fedora):**
 ```bash
-sudo dnf install @development-tools cmake libcurl-devel openssl-devel
+# Build dependencies
+sudo dnf install @development-tools gcc-c++ cmake git curl \
+  libcurl-devel openssl-devel zlib-devel pkgconf
+
+# Optional: For running tests
+sudo dnf install python3 python3-pip
 
 # If you then want to package the binaries into .rpm
 sudo dnf install rpm-build rpmdevtools
-
-# Note: Tray application is disabled on Linux (headless mode only)
-# This avoids LGPL dependencies and provides a cleaner server-only experience
 ```
 
 **macOS:**
@@ -79,22 +91,32 @@ cmake --build . --config Release -j
   - `build/lemonade-server` - Console CLI client
 - **Resources:** Automatically copied to `build/Release/resources/` (web UI files, model registry, backend version configuration)
 
+### Building the Electron Desktop App (Optional)
+
+The tray menu's "Open app" option and the `lemonade-server run` command can launch the Electron desktop app. To include it in your build:
+
+```powershell
+# Build the Electron app (requires Node.js 20+)
+cd src\app
+npm install
+npm run build:win
+
+# Rebuild C++ to copy Electron files to build output
+cd ..\cpp\build
+cmake --build . --config Release
+```
+
+The tray app looks for `Lemonade.exe` in the same directory as the executable (development) or in `../app/` (installed). If not found, the "Open app" option is hidden but everything else works.
+
 ### RyzenAI Server Dependency
 
-The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NPU model inference. This dependency can be fulfilled in two ways:
+The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NPU/Hybrid model inference. This is handled automatically:
 
-1. **Development builds:** Build `ryzenai-server` from source in the same repository:
-   ```bash
-   # Build ryzenai-server
-   cd src/ryzenai-server
-   mkdir build && cd build
-   cmake .. -G "Visual Studio 17 2022"
-   cmake --build . --config Release
-   
-   # The executable will be at: src/ryzenai-server/build/bin/Release/ryzenai-server.exe
-   ```
+- **Runtime download:** `lemonade-router` automatically downloads the `ryzenai-server` executable from [lemonade-sdk/ryzenai-server](https://github.com/lemonade-sdk/ryzenai-server) releases when needed
+- **Version management:** The version is configured in `resources/backend_versions.json` and auto-upgrades when changed
+- **Custom binary:** Set `LEMONADE_RYZENAI_SERVER_BIN` environment variable to use a custom build
 
-2. **Runtime download:** For end users, `lemonade-router` will automatically download the `ryzenai-server` executable from GitHub releases as needed when attempting to run NPU models.
+For development on `ryzenai-server` itself, see the [ryzenai-server repository](https://github.com/lemonade-sdk/ryzenai-server).
 
 ### Platform-Specific Notes
 
@@ -114,8 +136,8 @@ The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NP
 - Proper graceful shutdown - all child processes cleaned up correctly
 - File locations:
   - Installed binaries: `/usr/local/bin/`
-  - llama.cpp downloads: `~/.cache/huggingface/` (follows HF conventions)
-  - llama-server binaries: `/usr/local/share/lemonade-server/llama/` (from .deb) or next to binary (dev builds)
+  - Downloaded backends (llama-server, ryzenai-server): `~/.cache/lemonade/bin/`
+  - Model downloads: `~/.cache/huggingface/` (follows HF conventions)
 
 **macOS:**
 - Uses native system frameworks (Cocoa, Foundation)
@@ -148,8 +170,8 @@ cmake --build . --config Release --target wix_installer
 
 Creates `lemonade-server-minimal.msi` which:
 - MSI-based installer (Windows Installer technology)
-- Installs to `%LOCALAPPDATA%\lemonade_server\`
-- Adds `bin\` folder to user PATH using Windows Installer standard methods
+- **Per-user install (default):** Installs to `%LOCALAPPDATA%\lemonade_server\`, adds to user PATH, no UAC required
+- **All-users install (CLI only):** Installs to `%PROGRAMFILES%\Lemonade Server\`, adds to system PATH, requires elevation
 - Creates Start Menu shortcuts (launches `lemonade-tray.exe`)
 - Optionally creates desktop shortcut and startup entry
 - Uses Windows Installer Restart Manager to gracefully close running processes
@@ -157,28 +179,13 @@ Creates `lemonade-server-minimal.msi` which:
 - Proper upgrade handling between versions
 - Includes uninstaller
 
+**Available Installers:**
+- `lemonade-server-minimal.msi` - Server only (~3 MB)
+- `lemonade.msi` - Full installer with Electron desktop app (~105 MB)
+
 **Installation:**
 
-GUI installation:
-```powershell
-# Double-click lemonade-server-minimal.msi or run:
-msiexec /i lemonade-server-minimal.msi
-```
-
-Silent installation:
-```powershell
-# Install silently
-msiexec /i lemonade-server-minimal.msi /qn
-
-# Install to custom directory
-msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\Custom\Path"
-
-# Install without desktop shortcut
-msiexec /i lemonade-server-minimal.msi /qn ADDDESKTOPSHORTCUT=0
-
-# Install with startup entry
-msiexec /i lemonade-server-minimal.msi /qn ADDTOSTARTUP=1
-```
+For detailed installation instructions including silent install, custom directories, and all-users installation, see the [Server Integration Guide](../../docs/server/server_integration.md#windows-installation).
 
 ### Linux .deb Package (Debian/Ubuntu)
 
@@ -329,8 +336,12 @@ Same as .deb above
 src/cpp/
 ├── CMakeLists.txt              # Main build configuration
 ├── build_installer.ps1         # Installer build script
-├── resources/                  # Configuration and data files
-│   └── backend_versions.json   # llama.cpp version configuration (user-editable)
+├── resources/                  # Configuration and data files (self-contained)
+│   ├── backend_versions.json   # llama.cpp/whisper version configuration
+│   ├── server_models.json      # Model registry (available models)
+│   └── static/                 # Web UI assets
+│       ├── index.html          # Server landing page (with template variables)
+│       └── favicon.ico         # Site icon
 │
 ├── installer/                  # WiX MSI installer (Windows)
 │   ├── Product.wxs.in          # WiX installer definition template
@@ -647,8 +658,9 @@ See the `.github/workflows/` directory for CI/CD test configurations.
 ### Key Resources
 
 - **API Specification:** `docs/server/server_spec.md`
-- **Model Registry:** `src/lemonade_server/server_models.json`
-- **Web UI Files:** `src/lemonade/tools/server/static/`
+- **Model Registry:** `src/cpp/resources/server_models.json`
+- **Web UI Files:** `src/cpp/resources/static/`
+- **Backend Versions:** `src/cpp/resources/backend_versions.json`
 - **Python Reference:** `src/lemonade_server/` and `src/lemonade/tools/server/`
 
 ### Adding New Features

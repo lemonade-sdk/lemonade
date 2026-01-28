@@ -4,7 +4,7 @@
   <a href="https://discord.gg/5xXzkMu8Zk">
     <img src="https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="https://github.com/lemonade-sdk/lemonade/tree/main/test" title="Check out our tests">
-    <img src="https://github.com/lemonade-sdk/lemonade/actions/workflows/test_lemonade.yml/badge.svg" alt="Lemonade tests" /></a>
+    <img src="https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml/badge.svg" alt="Lemonade Server Build" /></a>
   <a href="docs/README.md#installation" title="Check out our instructions">
     <img src="https://img.shields.io/badge/Windows-11-0078D6?logo=windows&logoColor=white" alt="Windows 11" /></a>
   <a href="https://lemonade-server.ai/install_options.html#ubuntu" title="Ubuntu 24.04 & 25.04 Supported">
@@ -46,7 +46,8 @@ Apps like [n8n](https://n8n.io/integrations/lemonade-model/), [VS Code Copilot](
 1. **Install**: [Windows](https://lemonade-server.ai/install_options.html#windows) · [Linux](https://lemonade-server.ai/install_options.html#linux) · [Docker](https://lemonade-server.ai/install_options.html#docker) · [Source](https://lemonade-server.ai/install_options.html)
 2. **Get Models**: Browse and download with the [Model Manager](#model-library)
 3. **Chat**: Try models with the built-in chat interface
-4. **Connect**: Use Lemonade with your favorite apps:
+4. **Mobile**: Take your lemonade to go: [iOS](https://apps.apple.com/us/app/lemonade-mobile/id6757372210) · Android (soon) · [Source](https://github.com/lemonade-sdk/lemonade-mobile)
+5. **Connect**: Use Lemonade with your favorite apps:
 
 <p align="center">
   <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" width="60" /></a>&nbsp;&nbsp;<a href="https://n8n.io/integrations/lemonade-model/" title="n8n"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/n8n.png" alt="n8n" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/amd/gaia" title="Gaia"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/gaia.png" alt="Gaia" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/infinity-arcade" title="Infinity Arcade"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/infinity_arcade.png" alt="Infinity Arcade" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/continue.png" alt="Continue" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.visualstudio.com/items?itemName=lemonade-sdk.lemonade-sdk" title="GitHub Copilot"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/github_copilot.png" alt="GitHub Copilot" width="60" /></a>&nbsp;&nbsp;<a href="https://openhands.dev/" title="OpenHands"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/openhands.png" alt="OpenHands" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.dify.ai/plugins/langgenius/lemonade" title="Dify"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/dify.png" alt="Dify" width="60" /></a>&nbsp;&nbsp;<a href="https://deeptutor.knowhiz.us/" title="Deep Tutor"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/deep_tutor.png" alt="Deep Tutor" width="60" /></a>&nbsp;&nbsp;<a href="https://www.iterate.ai/" title="Iterate.ai"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/iterate_ai.png" alt="Iterate.ai" width="60" /></a>
@@ -88,6 +89,22 @@ Use `lemonade-server pull` or the built-in **Model Manager** to download models.
 **[Browse all built-in models →](https://lemonade-server.ai/docs/server/server_models/)**
 
 <br clear="right"/>
+
+## Image Generation
+
+Lemonade supports image generation using Stable Diffusion models via [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp).
+
+```bash
+# Pull an image generation model
+lemonade-server pull SD-Turbo
+
+# Start the server
+lemonade-server serve
+```
+
+Available models: **SD-Turbo** (fast, 4-step), **SDXL-Turbo**, **SD-1.5**, **SDXL-Base-1.0**
+
+> See `examples/api_image_generation.py` for complete examples.
 
 ## Supported Configurations
 
@@ -136,9 +153,11 @@ Lemonade supports the following configurations, while also making it easy to swi
 
 | Under Development                                 | Under Consideration                            | Recently Completed                       |
 |---------------------------------------------------|------------------------------------------------|------------------------------------------|
-| Image Generation      | vLLM support                                   | General speech-to-text support (whisper.cpp)                 |
-| Text to speech    |      | ROCm support for Ryzen AI 360-375 (Strix) APUs  |
-| macOS     |                                | Lemonade desktop app                     |
+| macOS    | vLLM support                                   | Image generation (stable-diffusion.cpp)                 |
+| Apps marketplace    | Text to speech     | General speech-to-text support (whisper.cpp)  |
+| lemonade-eval CLI     | MLX support                       | ROCm support for Ryzen AI 360-375 (Strix) APUs                     |
+|      | ryzenai-server dedicated repo                               | Lemonade desktop app                     |
+|      | Enhanced custom model support                               |                      |
 
 ## Integrate Lemonade Server with Your Application
 
@@ -175,13 +194,6 @@ print(completion.choices[0].message.content)
 ```
 
 For more detailed integration instructions, see the [Integration Guide](./docs/server/server_integration.md).
-
-## Beyond an LLM Server
-
-The [Lemonade Python SDK](./docs/README.md) is also available, which includes the following components:
-
-- 🐍 **[Lemonade Python API](./docs/lemonade_api.md)**: High-level Python API to directly integrate Lemonade LLMs into Python applications.
-- 🖥️ **[Lemonade CLI](./docs/dev_cli/README.md)**: The `lemonade` CLI lets you mix-and-match LLMs (ONNX, GGUF, SafeTensors) with prompting templates, accuracy testing, performance benchmarking, and memory profiling to characterize your models on your hardware.
 
 ## FAQ
 

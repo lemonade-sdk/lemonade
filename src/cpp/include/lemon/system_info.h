@@ -25,11 +25,22 @@ struct CPUInfo : DeviceInfo {
 struct GPUInfo : DeviceInfo {
     std::string driver_version;
     double vram_gb = 0.0;
+    double virtual_gb = 0.0;
 };
 
 struct NPUInfo : DeviceInfo {
     std::string driver_version;
     std::string power_mode;
+};
+
+//Enums
+
+enum class MemoryAllocBehavior
+{ // Example: VRAM=1, GTT=2, Both=3, Largest
+    Hardware = 1,
+    Virtual = 2,
+    Unified = 3,
+    Largest = 4,
 };
 
 // Base class for system information
@@ -116,13 +127,18 @@ public:
     // Linux-specific methods
     std::string get_processor_name();
     std::string get_physical_memory();
+    double get_ttm_gb();
 
 private:
     std::vector<GPUInfo> detect_amd_gpus(const std::string& gpu_type);
     std::string get_nvidia_driver_version();
     double get_nvidia_vram();
-    double get_amd_vram_rocm_smi();
-    double get_amd_vram_sysfs(const std::string& pci_id);
+    double get_amd_vram(const std::string& drm_render_minor);
+    double get_amd_gtt(const std::string& drm_render_minor);
+    bool get_amd_is_igpu(const std::string& drm_render_minor);
+
+private:
+    double parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname);
 };
 
 // macOS implementation (basic stub for now)
@@ -175,4 +191,3 @@ private:
 };
 
 } // namespace lemon
-

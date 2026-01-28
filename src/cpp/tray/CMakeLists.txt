@@ -67,6 +67,8 @@ set(COMMON_SOURCES
     main.cpp
     tray_app.cpp
     server_manager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server/cli_parser.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server/recipe_options.cpp
     platform/tray_factory.cpp
 )
 
@@ -83,15 +85,35 @@ add_executable(lemonade-server
     ${PLATFORM_SOURCES}
 )
 
+target_link_libraries(lemonade-server PRIVATE
+    nlohmann_json::nlohmann_json
+    ${PLATFORM_LIBS}
+)
+
+# Link httplib based on what's available (set by parent CMakeLists.txt)
+if(USE_SYSTEM_HTTPLIB)
+    target_link_libraries(lemonade-server PRIVATE cpp-httplib)
+else()
+    target_link_libraries(lemonade-server PRIVATE httplib::httplib)
+endif()
+
+# Link CLI11 based on what's available
+if(USE_SYSTEM_CLI11)
+    target_include_directories(lemonade-server PRIVATE ${CLI11_INCLUDE_DIRS})
+else()
+    target_link_libraries(lemonade-server PRIVATE CLI11::CLI11)
+endif()
+
+# Add include directories for header-only system packages
 target_include_directories(lemonade-server PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-target_link_libraries(lemonade-server PRIVATE
-    nlohmann_json::nlohmann_json
-    httplib::httplib
-    ${PLATFORM_LIBS}
-)
+if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
+    target_include_directories(lemonade-server PRIVATE ${HTTPLIB_INCLUDE_DIRS})
+endif()
+
+target_compile_definitions(lemonade-server PRIVATE LEMONADE_TRAY)
 
 # Set output directory to build root for all platforms
 # Windows uses Debug/Release subdirectories (multi-config generator)

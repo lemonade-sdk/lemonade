@@ -18,6 +18,7 @@ public:
     std::string get_recipe() const { return recipe_; };
 
     static void add_cli_options(CLI::App& app, json& storage);
+    static std::vector<std::string> to_cli_options(const json& raw_options);
 private:
     json options_ = json::object();
     std::string recipe_ = "";

@@ -15,6 +15,8 @@ public:
     // Installation and availability
     static bool is_available();
     static std::string get_ryzenai_server_path();
+    static std::string find_external_ryzenai_server();
+    static std::string find_executable_in_install_dir(const std::string& install_dir);
     
     // WrappedServer interface
     void install(const std::string& backend = "") override;
@@ -49,7 +51,7 @@ private:
     bool is_loaded_;
     
     // Helper to download and install ryzenai-server
-    static void download_and_install();
+    static void download_and_install(const std::string& version);
     
     // Helper to determine best execution mode based on model
     std::string determine_execution_mode(const std::string& model_path,

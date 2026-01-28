@@ -1,0 +1,90 @@
+name: 'Install Lemonade Server (.deb)'
+description: 'Downloads and extracts Lemonade Server .deb package, then verifies installation'
+inputs:
+  version:
+    description: 'Version string for the .deb package (e.g., 0.5.0)'
+    required: true
+  artifact-name:
+    description: 'Name of the artifact to download'
+    required: false
+    default: 'lemonade-server-deb'
+  extract-path:
+    description: 'Path where the .deb should be extracted'
+    required: false
+    default: './deb-extract'
+  download-artifact:
+    description: 'Whether to download the artifact (set to false if already downloaded)'
+    required: false
+    default: 'true'
+
+outputs:
+  bin-path:
+    description: 'Path to the extracted binaries directory'
+    value: ${{ steps.extract.outputs.bin-path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Download .deb package
+      if: ${{ inputs.download-artifact == 'true' }}
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: .
+
+    - name: Extract .deb package
+      id: extract
+      shell: bash
+      run: |
+        set -e
+
+        VERSION="${{ inputs.version }}"
+        EXTRACT_PATH="${{ inputs.extract-path }}"
+        DEB_FILE="lemonade-server-minimal_${VERSION}_amd64.deb"
+
+        echo "Extracting .deb package: $DEB_FILE"
+
+        if [ ! -f "$DEB_FILE" ]; then
+            echo "ERROR: .deb file not found: $DEB_FILE"
+            ls -la *.deb 2>/dev/null || echo "No .deb files found in current directory"
+            exit 1
+        fi
+
+        # Extract the .deb package
+        mkdir -p "$EXTRACT_PATH"
+        dpkg-deb -x "$DEB_FILE" "$EXTRACT_PATH"
+
+        # Copy resources to user's local share (path_utils.cpp checks here)
+        mkdir -p ~/.local/share/lemonade-server
+        cp -r "$EXTRACT_PATH/usr/local/share/lemonade-server/"* ~/.local/share/lemonade-server/
+
+        # Make llama directory writable for backend downloads
+        mkdir -p "$EXTRACT_PATH/usr/local/share/lemonade-server/llama"
+        chmod 777 "$EXTRACT_PATH/usr/local/share/lemonade-server/llama"
+
+        # Make binaries executable
+        chmod +x "$EXTRACT_PATH/usr/local/bin/lemonade-server"
+        chmod +x "$EXTRACT_PATH/usr/local/bin/lemonade-router"
+
+        # Add binaries to PATH for subsequent steps
+        BIN_PATH="$(pwd)/$EXTRACT_PATH/usr/local/bin"
+        echo "$BIN_PATH" >> $GITHUB_PATH
+        echo "bin-path=$BIN_PATH" >> $GITHUB_OUTPUT
+
+        echo "Package extracted successfully to: $EXTRACT_PATH"
+        echo "Binaries available at: $BIN_PATH"
+
+    - name: Verify binaries work
+      shell: bash
+      run: |
+        set -e
+
+        EXTRACT_PATH="${{ inputs.extract-path }}"
+
+        echo "Verifying binaries..."
+
+        # Test version commands
+        "$EXTRACT_PATH/usr/local/bin/lemonade-router" --version
+        "$EXTRACT_PATH/usr/local/bin/lemonade-server" --version
+
+        echo "Binaries verified successfully!"

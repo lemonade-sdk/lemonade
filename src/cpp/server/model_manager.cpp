@@ -670,11 +670,21 @@ void ModelManager::build_cache() {
                 info.labels.push_back(label.get<std::string>());
             }
         }
-        
+
+        // Parse image_defaults if present (for sd-cpp models)
+        if (value.contains("image_defaults") && value["image_defaults"].is_object()) {
+            const auto& img_defaults = value["image_defaults"];
+            info.image_defaults.has_defaults = true;
+            info.image_defaults.steps = JsonUtils::get_or_default<int>(img_defaults, "steps", 20);
+            info.image_defaults.cfg_scale = JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
+            info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
+            info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
+        }
+
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
-        
+
         info.resolved_path = resolve_model_path(info);
         all_models[key] = info;
     }
@@ -695,11 +705,21 @@ void ModelManager::build_cache() {
                 info.labels.push_back(label.get<std::string>());
             }
         }
-        
+
+        // Parse image_defaults if present (for sd-cpp models)
+        if (value.contains("image_defaults") && value["image_defaults"].is_object()) {
+            const auto& img_defaults = value["image_defaults"];
+            info.image_defaults.has_defaults = true;
+            info.image_defaults.steps = JsonUtils::get_or_default<int>(img_defaults, "steps", 20);
+            info.image_defaults.cfg_scale = JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
+            info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
+            info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
+        }
+
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
-        
+
         info.resolved_path = resolve_model_path(info);
         all_models[info.model_name] = info;
     }
@@ -720,14 +740,26 @@ void ModelManager::build_cache() {
 
     // Populate recipe options
     for (auto& [name, info] : all_models) {
+        // Start with image_defaults as base options for sd-cpp models
+        json base_options = json::object();
+        if (info.image_defaults.has_defaults) {
+            base_options["steps"] = info.image_defaults.steps;
+            base_options["cfg_scale"] = info.image_defaults.cfg_scale;
+            base_options["width"] = info.image_defaults.width;
+            base_options["height"] = info.image_defaults.height;
+        }
+
+        // User-saved recipe options override image_defaults
         if (JsonUtils::has_key(recipe_options_, name)) {
             std::cout << "[ModelManager] Found recipe options for model: " << name << std::endl;
-
-            auto options = recipe_options_[name];
-            info.recipe_options = RecipeOptions(info.recipe, options);
-        } else {
-            info.recipe_options = RecipeOptions(info.recipe, json::object());
+            auto saved_options = recipe_options_[name];
+            // Merge saved options over base options
+            for (auto& [key, value] : saved_options.items()) {
+                base_options[key] = value;
+            }
         }
+
+        info.recipe_options = RecipeOptions(info.recipe, base_options);
     }
     
     // Step 2: Filter by backend availability
@@ -1055,16 +1087,69 @@ static double parse_physical_memory_gb(const std::string& memory_str) {
     return 0.0;
 }
 
+
+
+double get_max_memory_of_device(json device, MemoryAllocBehavior mem_alloc_behavior) {
+    // Get the maximum POSSIBLE accessible memory of the device in question,
+    // taking into account the respective memory allocation behavior.
+
+    double virtual_mem_gb = 0.0;
+    double vram_gb = 0.0;
+
+    if (device.contains("vram_gb")) {
+        vram_gb = device["vram_gb"].get<double>();
+    }
+    if (device.contains("dynamic_mem_gb"))
+    {
+        virtual_mem_gb = device["dynamic_mem_gb"].get<double>();
+    }
+
+    switch (mem_alloc_behavior)
+    {
+    case MemoryAllocBehavior::Hardware:
+        return vram_gb;
+
+    case MemoryAllocBehavior::Virtual:
+        return virtual_mem_gb;
+
+    case MemoryAllocBehavior::Largest:
+        return vram_gb > virtual_mem_gb ? vram_gb : virtual_mem_gb;
+
+    case MemoryAllocBehavior::Unified:
+        return virtual_mem_gb + vram_gb;
+
+    default:
+        return vram_gb;
+    }
+}
+
+bool parse_TF_env_var(const char* env_var_name) {
+    const char* env = std::getenv(env_var_name);
+    return env && (std::string(env) == "1" ||
+                   std::string(env) == "true" ||
+                   std::string(env) == "TRUE" ||
+                   std::string(env) == "yes");
+}
+
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     const std::map<std::string, ModelInfo>& models) {
     
     // Check if model filtering is disabled via environment variable
-    const char* disable_filtering = std::getenv("LEMONADE_DISABLE_MODEL_FILTERING");
-    if (disable_filtering && (std::string(disable_filtering) == "1" || 
-                              std::string(disable_filtering) == "true" || 
-                              std::string(disable_filtering) == "yes")) {
+    bool disable_filtering = parse_TF_env_var("LEMONADE_DISABLE_MODEL_FILTERING");
+
+    // Check if dGPUs should use GTT
+    bool enable_dgpu_gtt = parse_TF_env_var("LEMONADE_ENABLE_DGPU_GTT");
+
+    if (disable_filtering) {
         filtered_out_models_.clear();
         return models;
+    }
+
+    if (enable_dgpu_gtt)
+    {
+      std::cout << "[ModelManager]: LEMONADE_ENABLE_DGPU_GTT has been set to true." << std::endl
+                << "     Models are being filtered assuming GTT memory." << std::endl
+                << "     Using GTT on a dGPU will have a significant performance impact." << std::endl;
     }
     
     std::map<std::string, ModelInfo> filtered;
@@ -1087,14 +1172,37 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     bool npu_available = is_npu_available(hardware);
     bool flm_available = is_flm_available(hardware);
     bool oga_available = is_oga_available(hardware);
-    
+
+    // Get largest VRAM object for memory-based filtering
+    double largest_mem_pool_gb = 0.0;
+    double curr_mem_pool_gb = 0.0;
+
+    for (const auto& [dev_type, devices] : hardware.items()) {
+        // Because we have mixed types this just makes every device_type an array.
+        nlohmann::json dev_list = devices.is_array() ? devices : nlohmann::json{devices};
+
+        // Expand this later to accommodate mixed pools
+        MemoryAllocBehavior dev_mem_alloc_behavior = MemoryAllocBehavior::Hardware;
+        if (dev_type == "amd_igpu")
+            dev_mem_alloc_behavior = MemoryAllocBehavior::Largest;
+        if (enable_dgpu_gtt)
+            dev_mem_alloc_behavior = MemoryAllocBehavior::Unified;
+
+        for (const auto& dev : dev_list) {
+            curr_mem_pool_gb = get_max_memory_of_device(dev, dev_mem_alloc_behavior);
+            largest_mem_pool_gb = largest_mem_pool_gb < curr_mem_pool_gb ? curr_mem_pool_gb : largest_mem_pool_gb;
+        }
+    }
+
     // Get system RAM for memory-based filtering
     double system_ram_gb = 0.0;
     if (system_info.contains("Physical Memory") && system_info["Physical Memory"].is_string()) {
         system_ram_gb = parse_physical_memory_gb(system_info["Physical Memory"].get<std::string>());
     }
-    double max_model_size_gb = system_ram_gb * 0.8;  // 80% of system RAM
-    
+
+    // Use the largest of the two values
+    double max_model_size_gb = largest_mem_pool_gb > (system_ram_gb * 0.8) ? largest_mem_pool_gb : (system_ram_gb * 0.8);
+
     // Get processor and OS for user-friendly error messages
     std::string processor = "Unknown";
     std::string os_version = "Unknown";
@@ -1115,6 +1223,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         if (system_ram_gb > 0.0) {
             std::cout << "  - System RAM: " << std::fixed << std::setprecision(1) << system_ram_gb 
                       << " GB (max model size: " << max_model_size_gb << " GB)" << std::endl;
+        }
+        if (largest_mem_pool_gb > 0.0) {
+            std::cout << "  - Largest memory pool: " << std::fixed << std::setprecision(1) << largest_mem_pool_gb << std::endl;
         }
         debug_printed = true;
     }
@@ -1211,20 +1322,21 @@ void ModelManager::register_user_model(const std::string& model_name,
                                       bool vision,
                                       bool embedding,
                                       bool reranking,
+                                      bool image,
                                       const std::string& mmproj,
                                       const std::string& source) {
-    
+
     // Remove "user." prefix if present
     std::string clean_name = model_name;
     if (clean_name.substr(0, 5) == "user.") {
         clean_name = clean_name.substr(5);
     }
-    
+
     json model_entry;
     model_entry["checkpoint"] = checkpoint;
     model_entry["recipe"] = recipe;
     model_entry["suggested"] = true;  // Always set suggested=true for user models
-    
+
     // Always start with "custom" label (matching Python implementation)
     std::vector<std::string> labels = {"custom"};
     if (reasoning) {
@@ -1238,6 +1350,9 @@ void ModelManager::register_user_model(const std::string& model_name,
     }
     if (reranking) {
         labels.push_back("reranking");
+    }
+    if (image) {
+        labels.push_back("image");
     }
     model_entry["labels"] = labels;
     
@@ -1355,10 +1470,11 @@ void ModelManager::download_model(const std::string& model_name,
                                  bool vision,
                                  bool embedding,
                                  bool reranking,
+                                 bool image,
                                  const std::string& mmproj,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback) {
-    
+
     std::string actual_checkpoint = checkpoint;
     std::string actual_recipe = recipe;
     std::string actual_mmproj = mmproj;
@@ -1470,8 +1586,8 @@ void ModelManager::download_model(const std::string& model_name,
     // Use FLM pull for FLM models, otherwise download from HuggingFace
     if (actual_recipe == "flm") {
         download_from_flm(actual_checkpoint, do_not_upgrade, progress_callback);
-    } else if (actual_recipe == "llamacpp" || actual_recipe == "whispercpp") {
-        // For llamacpp (GGUF) and whispercpp (.bin) models, use variant-aware download
+    } else if (actual_recipe == "llamacpp" || actual_recipe == "whispercpp" || actual_recipe == "sd-cpp") {
+        // For llamacpp (GGUF), whispercpp (.bin), and sd-cpp (.safetensors) models, use variant-aware download
         download_from_huggingface(repo_id, variant, actual_mmproj, progress_callback);
     } else {
         // For non-GGUF models (oga-*, etc.), download all files (no variant filtering)
@@ -1480,8 +1596,8 @@ void ModelManager::download_model(const std::string& model_name,
     
     // Register user models to user_models.json
     if (model_name.substr(0, 5) == "user.") {
-        register_user_model(model_name, actual_checkpoint, actual_recipe, 
-                          reasoning, vision, embedding, reranking, actual_mmproj);
+        register_user_model(model_name, actual_checkpoint, actual_recipe,
+                          reasoning, vision, embedding, reranking, image, actual_mmproj);
     }
     
     // Update cache after successful download
@@ -1589,20 +1705,34 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
         std::cout << "[ModelManager] Repository contains " << repo_files.size() << " files" << std::endl;
         
         std::vector<std::string> files_to_download;
-        
+
         // Check if this is a GGUF model (variant provided) or non-GGUF (variant empty)
         if (!variant.empty() || !mmproj.empty()) {
-            // GGUF model: Use identify_gguf_models to determine which files to download
-            GGUFFiles gguf_files = identify_gguf_models(repo_id, variant, mmproj, repo_files);
-            
-            // Combine core files and sharded files into one list
-            for (const auto& [key, filename] : gguf_files.core_files) {
-                files_to_download.push_back(filename);
+            // Check if variant is a safetensors file (for sd-cpp models)
+            bool is_safetensors = variant.size() > 12 &&
+                variant.substr(variant.size() - 12) == ".safetensors";
+
+            if (is_safetensors) {
+                // For safetensors files, just download the specified file directly
+                if (std::find(repo_files.begin(), repo_files.end(), variant) != repo_files.end()) {
+                    files_to_download.push_back(variant);
+                    std::cout << "[ModelManager] Found safetensors file: " << variant << std::endl;
+                } else {
+                    throw std::runtime_error("Safetensors file not found in repository: " + variant);
+                }
+            } else {
+                // GGUF model: Use identify_gguf_models to determine which files to download
+                GGUFFiles gguf_files = identify_gguf_models(repo_id, variant, mmproj, repo_files);
+
+                // Combine core files and sharded files into one list
+                for (const auto& [key, filename] : gguf_files.core_files) {
+                    files_to_download.push_back(filename);
+                }
+                for (const auto& filename : gguf_files.sharded_files) {
+                    files_to_download.push_back(filename);
+                }
             }
-            for (const auto& filename : gguf_files.sharded_files) {
-                files_to_download.push_back(filename);
-            }
-            
+
             // Also download essential config files if they exist
             std::vector<std::string> config_files = {
                 "config.json",
