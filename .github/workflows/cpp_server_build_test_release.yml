@@ -617,6 +617,11 @@ jobs:
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
     steps:
+      - name: Checkout for release notes action
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+
       - name: Download Lemonade Server Installer (Windows)
         uses: actions/download-artifact@v4
         with:
@@ -642,11 +647,6 @@ jobs:
           ls -lh lemonade.msi
           ls -lh lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb
           ls -lh lemonade_${LEMONADE_VERSION}_amd64.deb
-
-      - name: Checkout for release notes action
-        uses: actions/checkout@v4
-        with:
-          sparse-checkout: .github
 
       - name: Generate release notes
         id: release-notes
