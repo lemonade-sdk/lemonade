@@ -262,7 +262,7 @@ configure_file(
 # Generate manifest files from templates (Windows only)
 if(WIN32)
     configure_file(
-        ${CMAKE_CURRENT_SOURCE_DIR}/server/lemonade.manifest.in
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/lemonade.manifest.in
         ${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest
         @ONLY
     )
@@ -279,11 +279,7 @@ if(WIN32)
     )
 
     set(WIX_PRODUCT_WXS "${CMAKE_CURRENT_BINARY_DIR}/installer/Product.wxs")
-<<<<<<< HEAD:src/cpp/CMakeLists.txt
-    set(WIX_FRAGMENT_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/installer/generate_electron_fragment.py")
-=======
     set(WIX_FRAGMENT_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/installer/generate_electron_fragment.py")
->>>>>>> f43d51cd (Move CMakeLists.txt to the top level instead):CMakeLists.txt
 
     # Find WiX Toolset 5.0+ (unified 'wix' command) and Python for fragment generation
     find_program(WIX_EXECUTABLE wix)
@@ -302,6 +298,8 @@ if(WIN32)
         file(TO_NATIVE_PATH "${WIX_PRODUCT_WXS}" WIX_PRODUCT_WXS_NATIVE)
         file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lemonade-server-minimal.msi" WIX_MINIMAL_OUTPUT_NATIVE)
         file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lemonade.msi" WIX_FULL_OUTPUT_NATIVE)
+        file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp" WIX_CPP_SOURCE_DIR_NATIVE)
+        file(TO_NATIVE_PATH "${CMAKE_BINARY_DIR}" WIX_BUILD_DIR_NATIVE)
         file(TO_NATIVE_PATH "${ELECTRON_APP_UNPACKED_DIR}" WIX_ELECTRON_SOURCE_NATIVE)
         set(WIX_ELECTRON_FRAGMENT "${CMAKE_CURRENT_BINARY_DIR}/installer/ElectronAppFragment.wxs")
         file(TO_NATIVE_PATH "${WIX_ELECTRON_FRAGMENT}" WIX_ELECTRON_FRAGMENT_NATIVE)
@@ -313,6 +311,8 @@ if(WIN32)
                 -arch x64
                 -ext WixToolset.UI.wixext
                 -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
+                -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
                 -d IncludeElectron=0
                 -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
                 "${WIX_PRODUCT_WXS_NATIVE}"
@@ -337,6 +337,8 @@ if(WIN32)
                     -arch x64
                     -ext WixToolset.UI.wixext
                     -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                    -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
+                    -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
                     -d IncludeElectron=1
                     -d ElectronSourceDir="${WIX_ELECTRON_SOURCE_NATIVE}"
                     -out "${WIX_FULL_OUTPUT_NATIVE}"

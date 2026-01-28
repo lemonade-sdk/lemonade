@@ -129,21 +129,21 @@ jobs:
           set -e
 
           echo "Building lemonade-router and lemonade-server on ${{ matrix.distro }}..."
-          
+
           # Create build directory
           if [ -d "build" ]; then
               echo "Removing existing build directory..."
               rm -rf build
           fi
-          
+
           # Configure and build with preset
           echo "Configuring CMake with preset..."
           cmake --preset default
-          
-          # Build using all available cores
+
+          # Build
           echo "Building binaries..."
-          cmake --build --preset default -j$(nproc)
-          
+          cmake --build --preset default
+
           # Verify binaries exist
           if [ ! -f "build/lemonade-router" ]; then
               echo "ERROR: lemonade-router not found!"
@@ -151,7 +151,7 @@ jobs:
               ls -lh build/
               exit 1
           fi
-          
+
           if [ ! -f "build/lemonade-server" ]; then
               echo "ERROR: lemonade-server not found!"
               echo "Build directory contents:"
@@ -161,18 +161,18 @@ jobs:
 
           echo "Binaries found successfully"
           ls -lh build/lemonade-router build/lemonade-server
-          
+
           echo "Verifying binary executability..."
           ./build/lemonade-router --version
           ./build/lemonade-server --version
-          
+
           echo "${{ matrix.distro }} build successful!"
 
       - name: Verify system library linking
         run: |
           echo "Checking library dependencies..."
           cd build
-          
+
           echo "=== lemonade-router dependencies ==="
           ldd lemonade-router
 
@@ -203,7 +203,7 @@ jobs:
           set -e
 
           . .venv/bin/activate
-          SERVER_BINARY="$(pwd)/src/cpp/build/lemonade-server"
+          SERVER_BINARY="$(pwd)/build/lemonade-server"
 
           echo "Running CLI tests..."
           python test/server_cli.py --server-binary "$SERVER_BINARY"
@@ -218,7 +218,7 @@ jobs:
           set -e
 
           . .venv/bin/activate
-          SERVER_BINARY="$(pwd)/src/cpp/build/lemonade-server"
+          SERVER_BINARY="$(pwd)/build/lemonade-server"
 
           echo "Running endpoint tests..."
           python test/server_endpoints.py --server-binary "$SERVER_BINARY"

@@ -15,6 +15,14 @@
       }
     },
     {
+      "name": "windows",
+      "displayName": "Windows (Visual Studio)",
+      "description": "Build with Visual Studio generator on Windows",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build"
+    },
+    {
       "name": "debug",
       "displayName": "Debug (Ninja)",
       "description": "Build with Ninja generator in Debug mode",
@@ -40,6 +48,10 @@
     {
       "name": "default",
       "configurePreset": "default"
+    },
+    {
+      "name": "windows",
+      "configurePreset": "windows"
     },
     {
       "name": "debug",

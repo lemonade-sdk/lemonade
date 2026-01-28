@@ -62,18 +62,11 @@ xcode-select --install
 ### Build Steps
 
 ```bash
-# Navigate to the C++ source directory
-cd src/cpp
-
-# Create and enter build directory
-mkdir build
-cd build
-
 # Configure with CMake
-cmake ..
+cmake --preset default
 
 # Build with all cores
-cmake --build . --config Release -j
+cmake --build --preset default
 
 # On Windows, executables will be in: build/Release/
 # On Linux/macOS, executables will be in: build/
@@ -195,7 +188,7 @@ For detailed installation instructions including silent install, custom director
 **Building:**
 
 ```bash
-cd src/cpp/build
+cd build
 cpack
 ```
 
@@ -246,7 +239,7 @@ Very similar to the Debian instructions above with minor changes
 **Building:**
 
 ```bash
-cd src/cpp/build
+cd build
 cpack -G RPM
 ```
 
@@ -629,15 +622,15 @@ The C++ implementation is tested using the existing Python test suite.
 **Running tests:**
 ```bash
 # Test lemonade-router (server) directly
-./src/cpp/build/Release/lemonade-router.exe --port 8000 --log-level debug
+./build/Release/lemonade-router.exe --port 8000 --log-level debug
 
 # Test lemonade-server (client) commands
-./src/cpp/build/Release/lemonade-server.exe list
-./src/cpp/build/Release/lemonade-server.exe status
+./build/Release/lemonade-server.exe list
+./build/Release/lemonade-server.exe status
 
 # Run Python integration tests
-python test/server_llamacpp.py vulkan --server-binary ./src/cpp/build/Release/lemonade-server.exe
-python test/server_flm.py --server-binary ./src/cpp/build/Release/lemonade-server.exe
+python test/server_llamacpp.py vulkan --server-binary ./build/Release/lemonade-server.exe
+python test/server_flm.py --server-binary ./build/Release/lemonade-server.exe
 ```
 
 See the `.github/workflows/` directory for CI/CD test configurations.
