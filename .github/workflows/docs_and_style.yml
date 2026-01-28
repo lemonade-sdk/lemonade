@@ -31,5 +31,3 @@ jobs:
           set -euo pipefail
           find . -type f -name "*.md" -not -path "./node_modules/*" \
             -exec markdown-link-check -c .github/workflows/mlc_config.json {} \;
-
-

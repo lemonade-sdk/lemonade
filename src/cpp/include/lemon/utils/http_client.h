@@ -50,30 +50,30 @@ public:
     // Simple GET request
     static HttpResponse get(const std::string& url,
                            const std::map<std::string, std::string>& headers = {});
-    
+
     // Simple POST request
     static HttpResponse post(const std::string& url,
                             const std::string& body,
                             const std::map<std::string, std::string>& headers = {},
                             long timeout_seconds = 300);
-    
+
     // Streaming POST request (calls callback for each chunk as it arrives)
     static HttpResponse post_stream(const std::string& url,
                                    const std::string& body,
                                    StreamCallback stream_callback,
                                    const std::map<std::string, std::string>& headers = {},
                                    long timeout_seconds = 300);
-    
+
     // Download file to disk with automatic retry and resume support
     static DownloadResult download_file(const std::string& url,
                                         const std::string& output_path,
                                         ProgressCallback callback = nullptr,
                                         const std::map<std::string, std::string>& headers = {},
                                         const DownloadOptions& options = DownloadOptions());
-    
+
     // Check if URL is reachable
     static bool is_reachable(const std::string& url, int timeout_seconds = 5);
-    
+
 private:
     // Single download attempt, may resume from offset
     static DownloadResult download_attempt(const std::string& url,
@@ -92,31 +92,31 @@ inline ProgressCallback create_throttled_progress_callback(size_t resume_offset 
         std::chrono::steady_clock::now());
     auto printed_final = std::make_shared<bool>(false);
     auto offset = std::make_shared<size_t>(resume_offset);
-    
+
     return [last_print_time, printed_final, offset](size_t current, size_t total) -> bool {
         size_t adjusted_current = current + *offset;
         size_t adjusted_total = total + *offset;
-        
+
         if (adjusted_total > 0) {
             auto now = std::chrono::steady_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                 now - *last_print_time);
-            
+
             bool is_complete = (adjusted_current >= adjusted_total);
-            
+
             if (is_complete && *printed_final) {
                 return true;  // Continue (already printed final)
             }
-            
+
             if (elapsed.count() >= 1000 || (is_complete && !*printed_final)) {
                 int percent = is_complete ? 100 : static_cast<int>((adjusted_current * 100) / adjusted_total);
                 double mb_current = adjusted_current / (1024.0 * 1024.0);
                 double mb_total = adjusted_total / (1024.0 * 1024.0);
-                std::cout << "  Progress: " << percent << "% (" 
-                         << std::fixed << std::setprecision(1) 
+                std::cout << "  Progress: " << percent << "% ("
+                         << std::fixed << std::setprecision(1)
                          << mb_current << "/" << mb_total << " MB)" << std::endl;
                 *last_print_time = now;
-                
+
                 if (is_complete) {
                     *printed_final = true;
                 }

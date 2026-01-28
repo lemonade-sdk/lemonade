@@ -47,7 +47,7 @@ RUN apt-get update && apt-get install -y \
     libvulkan1 \
     unzip \
     libgomp1 \
-    && rm -rf /var/lib/apt/lists/*  
+    && rm -rf /var/lib/apt/lists/*
 
 # Create application directory
 WORKDIR /opt/lemonade

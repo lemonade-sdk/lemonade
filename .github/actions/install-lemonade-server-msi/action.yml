@@ -25,7 +25,7 @@ runs:
         $logPath = "$((Get-Location).Path)\lemonade-msi-install.log"
         Write-Host "Installing Lemonade Server to: $installPath" -ForegroundColor Cyan
         Write-Host "Log file will be at: $logPath" -ForegroundColor Gray
-        
+
         if (-not (Test-Path "lemonade-server-minimal.msi")) {
             Write-Host "ERROR: lemonade-server-minimal.msi not found in current directory!" -ForegroundColor Red
             Get-ChildItem
@@ -35,10 +35,10 @@ runs:
         # Run installer silently with verbose logging
         $args = "/i lemonade-server-minimal.msi /qn INSTALLDIR=`"$installPath`" /L*V `"$logPath`""
         $p = Start-Process -FilePath "msiexec.exe" -ArgumentList $args -Wait -PassThru
-        
+
         if ($p.ExitCode -ne 0) {
              Write-Host "ERROR: Installation failed with exit code $($p.ExitCode)" -ForegroundColor Red
-             
+
              if (Test-Path $logPath) {
                  Write-Host "=== MSI Install Log ($logPath) ===" -ForegroundColor Yellow
                  Get-Content $logPath
@@ -46,10 +46,10 @@ runs:
              } else {
                  Write-Host "ERROR: Log file not found at $logPath" -ForegroundColor Red
              }
-             
+
              exit $p.ExitCode
         }
-        
+
         Write-Host "Installation complete." -ForegroundColor Green
 
     - name: Verify Installation
@@ -58,9 +58,9 @@ runs:
         $ErrorActionPreference = "Stop"
         $installPath = "${{ inputs.install-path }}"
         $logPath = "$((Get-Location).Path)\lemonade-msi-install.log"
-        
+
         Write-Host "Verifying installation at: $installPath" -ForegroundColor Cyan
-        
+
         # Function to print log on failure
         function Print-InstallLog {
             if (Test-Path $logPath) {
@@ -71,21 +71,21 @@ runs:
                 Write-Host "Log file not found at: $logPath" -ForegroundColor Red
             }
         }
-        
+
         # Check if installation directory exists
         if (-not (Test-Path $installPath)) {
             Write-Host "ERROR: Installation directory not found at $installPath" -ForegroundColor Red
             Print-InstallLog
             exit 1
         }
-        
+
         # Check for key binaries
         $expectedBinaries = @(
             "bin\lemonade-router.exe",
             "bin\lemonade-server.exe",
             "bin\lemonade-tray.exe"
         )
-        
+
         $missingItems = @()
         foreach ($item in $expectedBinaries) {
             $fullPath = Join-Path $installPath $item
@@ -95,7 +95,7 @@ runs:
                 Write-Host "Found: $item" -ForegroundColor Green
             }
         }
-        
+
         if ($missingItems.Count -gt 0) {
             Write-Host "ERROR: Missing expected files after installation:" -ForegroundColor Red
             foreach ($missing in $missingItems) {
@@ -104,7 +104,7 @@ runs:
             Print-InstallLog
             exit 1
         }
-        
+
         Write-Host "Installation directory verification successful!" -ForegroundColor Green
 
     - name: Verify Server Version
@@ -113,26 +113,25 @@ runs:
         $ErrorActionPreference = "Stop"
         $installPath = "${{ inputs.install-path }}"
         $serverExe = Join-Path $installPath "bin\lemonade-server.exe"
-        
+
         Write-Host "Checking lemonade-server version..." -ForegroundColor Cyan
-        
+
         try {
             # Capture output and exit code
             $process = Start-Process -FilePath $serverExe -ArgumentList "--version" -NoNewWindow -Wait -PassThru
-            
+
             if ($process.ExitCode -ne 0) {
                 Write-Host "ERROR: lemonade-server --version exited with code $($process.ExitCode)" -ForegroundColor Red
                 exit 1
             }
-            
+
             # Run again to capture output for display (Start-Process -PassThru doesn't easily capture stdout to variable without redirect)
             # Simpler approach for display:
             & $serverExe --version
-            
+
             Write-Host "Version check passed (Exit Code 0)" -ForegroundColor Green
-            
+
         } catch {
             Write-Host "ERROR: Failed to run version check: $_" -ForegroundColor Red
             exit 1
         }
-
