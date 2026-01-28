@@ -206,8 +206,9 @@ def start_server(
     # Build the command
     cmd = [server_binary, "serve"]
 
-    # Add --no-tray option on Windows
-    if os.name == "nt":
+    # Add --no-tray option on Windows or in CI environments
+    # The tray app requires a display server (X11/Wayland) which isn't available in CI containers
+    if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
         cmd.append("--no-tray")
 
     # Add debug logging for CI environments

@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 9.1.4)
+project(lemon_cpp VERSION 9.2.0)
 
 # ============================================================
 # Electron source paths (used by both runtime and installers)
@@ -57,23 +57,6 @@ if(CLI11_INCLUDE_DIRS)
             if(CLI11_VERSION VERSION_LESS MIN_CLI11_VERSION)
                 message(STATUS "System CLI11 version ${CLI11_VERSION} is less than required ${MIN_CLI11_VERSION}")
                 unset(CLI11_INCLUDE_DIRS)
-            endif()
-        endif()
-    endif()
-endif()
-
-# Verify httplib version if found (when not found via pkg-config)
-if(HTTPLIB_INCLUDE_DIRS AND NOT HTTPLIB_FOUND)
-    if(EXISTS "${HTTPLIB_INCLUDE_DIRS}/httplib.h")
-        file(STRINGS "${HTTPLIB_INCLUDE_DIRS}/httplib.h" HTTPLIB_VERSION_LINE REGEX "^#define CPPHTTPLIB_VERSION \"[0-9]+\\.[0-9]+\\.[0-9]+\"")
-        if(HTTPLIB_VERSION_LINE)
-            string(REGEX REPLACE "^#define CPPHTTPLIB_VERSION \"([0-9]+\\.[0-9]+\\.[0-9]+)\"" "\\1" HTTPLIB_VERSION "${HTTPLIB_VERSION_LINE}")
-            if(HTTPLIB_VERSION VERSION_LESS MIN_HTTPLIB_VERSION)
-                message(STATUS "System cpp-httplib version ${HTTPLIB_VERSION} is less than required ${MIN_HTTPLIB_VERSION}")
-                unset(HTTPLIB_INCLUDE_DIRS)
-            else()
-                # Set HTTPLIB_FOUND if version is acceptable
-                set(HTTPLIB_FOUND TRUE)
             endif()
         endif()
     endif()
@@ -199,6 +182,19 @@ if(NOT USE_SYSTEM_ZSTD)
     set(ZSTD_BUILD_TESTS OFF CACHE INTERNAL "")
     FetchContent_MakeAvailable(zstd)
     add_library(zstd::libzstd ALIAS libzstd_static)
+else()
+    # Create an imported target for system zstd so httplib can find it
+    if(NOT TARGET zstd::libzstd)
+        add_library(zstd::libzstd UNKNOWN IMPORTED)
+        # Find the actual library file
+        find_library(ZSTD_LIBRARY NAMES zstd)
+        if(ZSTD_LIBRARY)
+            set_target_properties(zstd::libzstd PROPERTIES
+                IMPORTED_LOCATION "${ZSTD_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${ZSTD_INCLUDE_DIRS}"
+            )
+        endif()
+    endif()
 endif()
 
 # === httplib ===

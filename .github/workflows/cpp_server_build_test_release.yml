@@ -580,6 +580,8 @@ jobs:
               echo "Running CLI tests..."
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY"
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --ephemeral
+              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --listen-all
+              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --api-key
           else
               echo "Running endpoint tests..."
               $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY"
@@ -606,6 +608,11 @@ jobs:
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
     steps:
+      - name: Checkout for release notes action
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+
       - name: Download Lemonade Server Installer (Windows)
         uses: actions/download-artifact@v4
         with:
@@ -632,9 +639,19 @@ jobs:
           ls -lh lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb
           ls -lh lemonade_${LEMONADE_VERSION}_amd64.deb
 
+      - name: Generate release notes
+        id: release-notes
+        uses: ./.github/actions/generate-release-notes
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+          repo: ${{ github.repository }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          name: ${{ github.ref_name }}
+          body_path: ${{ steps.release-notes.outputs.release_notes_file }}
           files: |
             lemonade-server-minimal.msi
             lemonade.msi

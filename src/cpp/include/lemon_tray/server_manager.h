@@ -69,7 +69,13 @@ public:
     bool set_log_level(LogLevel level);
     
     int get_port() const { return port_; }
-    std::string get_connection_host() const { return (host_ == "0.0.0.0") ? "localhost" : host_; }
+    // Translate bind addresses to connection addresses.
+    // "0.0.0.0" is a bind-all address that isn't valid for connections.
+    // "localhost" can resolve to IPv6 (::1) on some Windows systems, which fails
+    // if the server is only listening on IPv4 when bound to 0.0.0.0.
+    std::string get_connection_host() const {
+        return (host_ == "0.0.0.0" || host_ == "localhost") ? "127.0.0.1" : host_;
+    }
     
     // API communication (returns JSON or throws exception)
     nlohmann::json get_health();
