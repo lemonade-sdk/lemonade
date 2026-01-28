@@ -22,9 +22,6 @@
 #ifdef __APPLE__
 #include <sys/sysctl.h>
 #include <mach/mach.h>
-#include <IOKit/IOKitLib.h>
-#include <IOKit/graphics/IOGraphicsLib.h>
-#include <CoreFoundation/CoreFoundation.h>
 #endif
 
 namespace lemon {
