@@ -481,7 +481,7 @@
     "Qwen2.5-Coder-32B-Instruct-GGUF": {
         "checkpoint": "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF:Q4_K_M",
         "recipe": "llamacpp",
-        "suggested": true,  
+        "suggested": true,
         "labels": ["coding"],
         "size": 19.85
     },
@@ -592,7 +592,7 @@
         "recipe": "flm",
         "suggested": true,
         "labels": ["reasoning"],
-        "size": 5.57 
+        "size": 5.57
     },
     "Llama-3.1-8B-FLM": {
         "checkpoint": "llama3.1:8b",

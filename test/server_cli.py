@@ -37,13 +37,12 @@ from utils.test_models import (
     get_default_server_binary,
 )
 
-
 # Global configuration
 _config = {
     "server_binary": None,
     "ephemeral": False,
     "apikey": False,
-    "listen_all": False
+    "listen_all": False,
 }
 
 
@@ -208,10 +207,10 @@ class PersistentServerCLITests(CLITestBase):
         if _config["listen_all"]:
             cmd.append("--host")
             cmd.append("0.0.0.0")
-        
+
         if _config["apikey"]:
             os.environ["LEMONADE_API_KEY"] = "api-key"
-            
+
         cls._server_process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,

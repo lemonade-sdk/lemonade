@@ -13,10 +13,10 @@ import platform
 def get_default_server_binary():
     """
     Get the default server binary path from the CMake build directory.
-    
+
     This is the single source of truth for the default server binary path.
     All test files should import this function rather than computing the path themselves.
-    
+
     Returns:
         Path to lemonade-server binary in the build directory.
     """

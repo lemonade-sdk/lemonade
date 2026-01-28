@@ -12,7 +12,7 @@
 int main(int argc, char* argv[]) {
     // Note: Single-instance check moved to serve command specifically
     // This allows status, list, pull, delete, stop to run while server is active
-    
+
     try {
         lemon::CLIParser parser;
         parser.parse(argc, argv);
@@ -31,4 +31,3 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 }
-

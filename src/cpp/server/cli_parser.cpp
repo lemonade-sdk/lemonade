@@ -122,7 +122,7 @@ CLIParser::CLIParser()
     pull->add_option("--mmproj", tray_config_.mmproj, "Multimodal projector file for vision models. Required for GGUF vision models. Example: mmproj-model-f16.gguf")
         ->type_name("FILENAME");
     pull->footer(PULL_FOOTER);
-    
+
     // Delete
     CLI::App* del = app_.add_subcommand("delete", "Delete a model");
     del->add_option("model", tray_config_.model, "The model to delete")->required();
@@ -134,7 +134,7 @@ CLIParser::CLIParser()
     CLI::App* stop = app_.add_subcommand("stop", "Stop the server");
 #else
     add_serve_options(&app_, config_, max_models_vec_);
-#endif    
+#endif
 }
 
 int CLIParser::parse(int argc, char** argv) {

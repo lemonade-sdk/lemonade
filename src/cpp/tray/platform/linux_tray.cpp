@@ -23,17 +23,17 @@ LinuxTray::~LinuxTray() {
 bool LinuxTray::initialize(const std::string& app_name, const std::string& icon_path) {
     app_name_ = app_name;
     icon_path_ = icon_path;
-    
+
     if (log_level_ == "debug") {
         std::cout << "[Linux Tray] Headless mode - tray not supported on Linux" << std::endl;
         std::cout << "[Linux Tray] Please use --no-tray flag to run in headless mode" << std::endl;
     }
-    
+
     // Call ready callback immediately since there's no UI to initialize
     if (ready_callback_) {
         ready_callback_();
     }
-    
+
     // Return false to indicate tray is not available
     // This will cause the app to fall back to --no-tray behavior
     return false;
@@ -55,7 +55,7 @@ void LinuxTray::stop() {
 
 void LinuxTray::set_menu(const Menu& menu) {
     if (log_level_ == "debug") {
-        std::cout << "[Linux Tray] Headless mode - ignoring menu with " 
+        std::cout << "[Linux Tray] Headless mode - ignoring menu with "
                   << menu.items.size() << " items" << std::endl;
     }
     // No-op in headless mode

@@ -11,11 +11,11 @@ void StreamingProxy::forward_sse_stream(
     httplib::DataSink& sink,
     std::function<void(const TelemetryData&)> on_complete,
     long timeout_seconds) {
-    
+
     std::string telemetry_buffer;
     bool stream_error = false;
     bool has_done_marker = false;
-    
+
     // Use HttpClient to stream from backend
     auto result = utils::HttpClient::post_stream(
         backend_url,
@@ -23,29 +23,29 @@ void StreamingProxy::forward_sse_stream(
         [&sink, &telemetry_buffer, &has_done_marker](const char* data, size_t length) {
             // Buffer for telemetry parsing
             telemetry_buffer.append(data, length);
-            
+
             // Check if this chunk contains [DONE]
             std::string chunk(data, length);
             if (chunk.find("[DONE]") != std::string::npos) {
                 has_done_marker = true;
             }
-            
+
             // Forward chunk to client immediately
             if (!sink.write(data, length)) {
                 return false; // Client disconnected
             }
-            
+
             return true; // Continue streaming
         },
         {}, // Empty headers map
         timeout_seconds
     );
-    
+
     if (result.status_code != 200) {
         stream_error = true;
         std::cerr << "[StreamingProxy] Backend returned error: " << result.status_code << std::endl;
     }
-    
+
     if (!stream_error) {
         // Ensure [DONE] marker is sent if backend didn't send it
         if (!has_done_marker) {
@@ -53,16 +53,16 @@ void StreamingProxy::forward_sse_stream(
             const char* done_marker = "data: [DONE]\n\n";
             sink.write(done_marker, strlen(done_marker));
         }
-        
+
         // Explicitly flush and signal completion
         sink.done();
-        
+
         std::cout << "[Server] Streaming completed - 200 OK" << std::endl;
-        
+
         // Parse telemetry from buffered data
         auto telemetry = parse_telemetry(telemetry_buffer);
         telemetry.print();
-        
+
         if (on_complete) {
             on_complete(telemetry);
         }
@@ -71,11 +71,11 @@ void StreamingProxy::forward_sse_stream(
 
 StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string& buffer) {
     TelemetryData telemetry;
-    
+
     std::istringstream stream(buffer);
     std::string line;
     json last_chunk_with_usage;
-    
+
     while (std::getline(stream, line)) {
         // Handle SSE format (data: ...)
         std::string json_str;
@@ -85,7 +85,7 @@ StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string&
             // FLM debug format
             json_str = line.substr(21); // Remove "ChatCompletionChunk: " prefix
         }
-        
+
         if (!json_str.empty() && json_str != "[DONE]") {
             try {
                 auto chunk = json::parse(json_str);
@@ -98,20 +98,20 @@ StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string&
             }
         }
     }
-    
+
     // Extract telemetry from the last chunk with usage data
     if (!last_chunk_with_usage.empty()) {
         try {
             if (last_chunk_with_usage.contains("usage")) {
                 auto usage = last_chunk_with_usage["usage"];
-                
+
                 if (usage.contains("prompt_tokens")) {
                     telemetry.input_tokens = usage["prompt_tokens"].get<int>();
                 }
                 if (usage.contains("completion_tokens")) {
                     telemetry.output_tokens = usage["completion_tokens"].get<int>();
                 }
-                
+
                 // FLM format
                 if (usage.contains("prefill_duration_ttft")) {
                     telemetry.time_to_first_token = usage["prefill_duration_ttft"].get<double>();
@@ -120,11 +120,11 @@ StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string&
                     telemetry.tokens_per_second = usage["decoding_speed_tps"].get<double>();
                 }
             }
-            
+
             // Alternative format (timings)
             if (last_chunk_with_usage.contains("timings")) {
                 auto timings = last_chunk_with_usage["timings"];
-                
+
                 if (timings.contains("prompt_n")) {
                     telemetry.input_tokens = timings["prompt_n"].get<int>();
                 }
@@ -142,7 +142,7 @@ StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string&
             std::cerr << "[StreamingProxy] Error parsing telemetry: " << e.what() << std::endl;
         }
     }
-    
+
     return telemetry;
 }
 

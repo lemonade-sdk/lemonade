@@ -20,7 +20,7 @@ WMIConnection::WMIConnection() {
     if (FAILED(hres) && hres != RPC_E_CHANGED_MODE) {
         return;
     }
-    
+
     // Initialize COM security
     hres = CoInitializeSecurity(
         NULL,
@@ -33,7 +33,7 @@ WMIConnection::WMIConnection() {
         EOAC_NONE,
         NULL
     );
-    
+
     // Create WMI locator
     hres = CoCreateInstance(
         CLSID_WbemLocator,
@@ -42,11 +42,11 @@ WMIConnection::WMIConnection() {
         IID_IWbemLocator,
         (LPVOID*)&pLoc_
     );
-    
+
     if (FAILED(hres)) {
         return;
     }
-    
+
     // Connect to WMI
     hres = pLoc_->ConnectServer(
         _bstr_t(L"ROOT\\CIMV2"),
@@ -58,13 +58,13 @@ WMIConnection::WMIConnection() {
         0,
         &pSvc_
     );
-    
+
     if (FAILED(hres)) {
         pLoc_->Release();
         pLoc_ = nullptr;
         return;
     }
-    
+
     // Set security levels on proxy
     hres = CoSetProxyBlanket(
         pSvc_,
@@ -76,7 +76,7 @@ WMIConnection::WMIConnection() {
         NULL,
         EOAC_NONE
     );
-    
+
     if (FAILED(hres)) {
         pSvc_->Release();
         pSvc_ = nullptr;
@@ -99,7 +99,7 @@ bool WMIConnection::query(const std::wstring& wql_query,
     if (!is_valid()) {
         return false;
     }
-    
+
     IEnumWbemClassObject* pEnumerator = nullptr;
     HRESULT hres = pSvc_->ExecQuery(
         bstr_t("WQL"),
@@ -108,26 +108,26 @@ bool WMIConnection::query(const std::wstring& wql_query,
         NULL,
         &pEnumerator
     );
-    
+
     if (FAILED(hres)) {
         return false;
     }
-    
+
     // Iterate through results
     IWbemClassObject* pclsObj = nullptr;
     ULONG uReturn = 0;
-    
+
     while (pEnumerator) {
         HRESULT hr = pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturn);
-        
+
         if (0 == uReturn) {
             break;
         }
-        
+
         callback(pclsObj);
         pclsObj->Release();
     }
-    
+
     pEnumerator->Release();
     return true;
 }
@@ -138,7 +138,7 @@ bool WMIConnection::query(const std::wstring& wql_query,
 
 std::wstring string_to_wstring(const std::string& str) {
     if (str.empty()) return std::wstring();
-    
+
     int size_needed = MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), NULL, 0);
     std::wstring wstrTo(size_needed, 0);
     MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), &wstrTo[0], size_needed);
@@ -147,7 +147,7 @@ std::wstring string_to_wstring(const std::string& str) {
 
 std::string wstring_to_string(const std::wstring& wstr) {
     if (wstr.empty()) return std::string();
-    
+
     int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
     std::string strTo(size_needed, 0);
     WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
@@ -157,16 +157,16 @@ std::string wstring_to_string(const std::wstring& wstr) {
 std::string get_property_string(IWbemClassObject* pObj, const std::wstring& prop_name) {
     VARIANT vtProp;
     VariantInit(&vtProp);
-    
+
     HRESULT hr = pObj->Get(prop_name.c_str(), 0, &vtProp, 0, 0);
     if (FAILED(hr) || vtProp.vt != VT_BSTR) {
         VariantClear(&vtProp);
         return "";
     }
-    
+
     std::wstring wstr(vtProp.bstrVal, SysStringLen(vtProp.bstrVal));
     std::string result = wstring_to_string(wstr);
-    
+
     VariantClear(&vtProp);
     return result;
 }
@@ -174,20 +174,20 @@ std::string get_property_string(IWbemClassObject* pObj, const std::wstring& prop
 int get_property_int(IWbemClassObject* pObj, const std::wstring& prop_name) {
     VARIANT vtProp;
     VariantInit(&vtProp);
-    
+
     HRESULT hr = pObj->Get(prop_name.c_str(), 0, &vtProp, 0, 0);
     if (FAILED(hr)) {
         VariantClear(&vtProp);
         return 0;
     }
-    
+
     int result = 0;
     if (vtProp.vt == VT_I4) {
         result = vtProp.lVal;
     } else if (vtProp.vt == VT_UI4) {
         result = vtProp.ulVal;
     }
-    
+
     VariantClear(&vtProp);
     return result;
 }
@@ -195,13 +195,13 @@ int get_property_int(IWbemClassObject* pObj, const std::wstring& prop_name) {
 uint64_t get_property_uint64(IWbemClassObject* pObj, const std::wstring& prop_name) {
     VARIANT vtProp;
     VariantInit(&vtProp);
-    
+
     HRESULT hr = pObj->Get(prop_name.c_str(), 0, &vtProp, 0, 0);
     if (FAILED(hr)) {
         VariantClear(&vtProp);
         return 0;
     }
-    
+
     uint64_t result = 0;
     try {
         if (vtProp.vt == VT_BSTR) {
@@ -224,7 +224,7 @@ uint64_t get_property_uint64(IWbemClassObject* pObj, const std::wstring& prop_na
         std::cerr << "[WMI WARNING] Failed to parse uint64 property: " << e.what() << std::endl;
         result = 0;
     }
-    
+
     VariantClear(&vtProp);
     return result;
 }
@@ -233,4 +233,3 @@ uint64_t get_property_uint64(IWbemClassObject* pObj, const std::wstring& prop_na
 } // namespace lemon
 
 #endif // _WIN32
-

@@ -41,12 +41,12 @@ const ResizablePanel: React.FC<ResizablePanelProps> = ({
       let delta = isVertical
         ? e.clientX - startPosRef.current
         : e.clientY - startPosRef.current;
-      
+
       // For dividers before content, reverse the delta (drag left to grow)
       if ((isDraggingRef as any).isBefore) {
         delta = -delta;
       }
-      
+
       const newSize = Math.max(minSize, Math.min(maxSize, startSizeRef.current + delta));
       setSize(newSize);
     };
@@ -73,10 +73,10 @@ const ResizablePanel: React.FC<ResizablePanelProps> = ({
     isDraggingRef.current = true;
     startPosRef.current = isVertical ? e.clientX : e.clientY;
     startSizeRef.current = size || (panelRef.current ? (isVertical ? panelRef.current.offsetWidth : panelRef.current.offsetHeight) : defaultSize || minSize);
-    
+
     // Store whether this is a before divider for use in mouse move
     (isDraggingRef as any).isBefore = isBefore;
-    
+
     document.body.style.cursor = isVertical ? 'col-resize' : 'row-resize';
     document.body.style.userSelect = 'none';
   };
@@ -110,4 +110,3 @@ const ResizablePanel: React.FC<ResizablePanelProps> = ({
 };
 
 export default ResizablePanel;
-

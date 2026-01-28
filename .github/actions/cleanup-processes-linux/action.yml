@@ -9,23 +9,23 @@ runs:
         echo "========================================"
         echo "Cleaning up processes on Linux..."
         echo "========================================"
-        
+
         # Kill processes aggressively by pattern
         kill_by_pattern() {
             local pattern=$1
             local description=$2
-            
+
             echo ""
             echo "Killing $description processes..."
-            
+
             # Find and kill in one shot with SIGKILL
             pkill -9 -f "$pattern" 2>/dev/null && echo "  Killed processes matching: $pattern" || echo "  No $description processes found"
         }
-        
+
         # Kill by exact name (even more aggressive)
         kill_by_exact_name() {
             local name=$1
-            
+
             if pgrep -x "$name" > /dev/null 2>&1; then
                 echo "Killing $name (exact match)..."
                 pkill -9 -x "$name"
@@ -46,7 +46,7 @@ runs:
 
         # Kill everything lemonade-related
         kill_by_pattern "lemonade" "lemonade"
-        
+
         # Kill Python processes (this is aggressive - be careful!)
         kill_by_pattern "python" "Python"
 
@@ -56,23 +56,23 @@ runs:
         for proc_name in lemonade-server lemonade-router lemonade-server-dev lemonade-tray llama-server llama-cli llama-bench; do
             kill_by_exact_name "$proc_name"
         done
-        
+
         # Wait for processes to die
         sleep 2
-        
+
         # FINAL VERIFICATION - show what's still alive
         echo ""
         echo "=== Verification: checking for remaining processes ==="
         if pgrep -f "lemonade|llama" > /dev/null 2>&1; then
             echo "WARNING: Some processes still alive:"
             ps aux | grep -E "lemonade|llama" | grep -v grep | grep -v "cleanup-processes" || true
-            
+
             # NUCLEAR OPTION: Kill them with extreme prejudice
             echo "Using nuclear option..."
             pkill -9 -f "llama" 2>/dev/null || true
             pkill -9 -f "lemonade" 2>/dev/null || true
             sleep 1
-            
+
             # Check again
             if pgrep -f "lemonade|llama" > /dev/null 2>&1; then
                 echo "ERROR: Processes STILL alive after nuclear option!"
@@ -83,7 +83,7 @@ runs:
         else
             echo "All target processes terminated successfully"
         fi
-        
+
         # Clean up lock files and PID files
         echo ""
         echo "Cleaning up lock and PID files..."
@@ -91,7 +91,7 @@ runs:
         rm -f /tmp/lemonade*.pid 2>/dev/null || true
         rm -f /tmp/lemonade-router.pid 2>/dev/null || true
         echo "Lock and PID files cleaned."
-        
+
         # Clean up log files
         echo ""
         echo "Cleaning up log files..."
@@ -99,7 +99,7 @@ runs:
         rm -f /tmp/lemonade-server*.log 2>/dev/null || true
         rm -f /tmp/lemonade-router*.log 2>/dev/null || true
         echo "Log files cleaned."
-        
+
         # Clean up installation directories
         echo ""
         echo "Cleaning up lemonade installation directories..."
@@ -109,7 +109,7 @@ runs:
         else
             echo "No lemonade-server directory found in ~/.local/share/"
         fi
-        
+
         echo ""
         echo "========================================"
         echo "Process cleanup complete!"

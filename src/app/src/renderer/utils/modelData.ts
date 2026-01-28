@@ -112,21 +112,21 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
 
 const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
   const { serverFetch } = await import('./serverConfig');
-  
+
   try {
     const response = await serverFetch('/models?show_all=true');
     if (!response.ok) {
       throw new Error(`Failed to fetch models: ${response.status} ${response.statusText}`);
     }
-    
+
     const data = await response.json();
     const modelList = Array.isArray(data) ? data : data.data || [];
-    
+
     return modelList.reduce((acc: ModelsData, model: any) => {
       if (!model.id || !model.checkpoint || !model.recipe) {
         return acc;
       }
-      
+
       const modelInfo: ModelInfo = {
         checkpoint: model.checkpoint,
         recipe: model.recipe,
@@ -134,35 +134,35 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         suggested: model.suggested === true,
         downloaded: model.downloaded || false,
       };
-      
+
       if (Array.isArray(model.labels)) {
         modelInfo.labels = model.labels;
       }
-      
+
       if (typeof model.size === 'number' && Number.isFinite(model.size)) {
         modelInfo.size = model.size;
       }
-      
+
       if (typeof model.max_prompt_length === 'number' && Number.isFinite(model.max_prompt_length)) {
         modelInfo.max_prompt_length = model.max_prompt_length;
       }
-      
+
       if (typeof model.mmproj === 'string' && model.mmproj) {
         modelInfo.mmproj = model.mmproj;
       }
-      
+
       if (typeof model.source === 'string' && model.source) {
         modelInfo.source = model.source;
       }
-      
+
       if (typeof model.model_name === 'string' && model.model_name) {
         modelInfo.model_name = model.model_name;
       }
-      
+
       if (typeof model.reasoning === 'boolean') {
         modelInfo.reasoning = model.reasoning;
       }
-      
+
       if (typeof model.vision === 'boolean') {
         modelInfo.vision = model.vision;
       }
@@ -191,5 +191,3 @@ export const fetchSupportedModelsData = async (): Promise<ModelsData> => {
   // The /models?show_all=true endpoint returns both built-in and user models
   return fetchBuiltInModelsFromAPI();
 };
-
-

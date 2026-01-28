@@ -773,9 +773,9 @@
             <div class="chat-area">
                 <div class="question-bar">
                     <div class="question-input-group">
-                        <input type="text" 
-                               class="question-input" 
-                               id="questionInput" 
+                        <input type="text"
+                               class="question-input"
+                               id="questionInput"
                                placeholder="Ask a yes/no question..."
                                value="Is star wars better than star trek?"
                                disabled>
@@ -888,7 +888,7 @@
             4: `Final thoughts! ONE concise sentence, then cast your vote: MY VOTE: YES or MY VOTE: NO`,
             5: `ONLY say "MY VOTE: YES" or "MY VOTE: NO". Nothing else. No explanation.`
         };
-        
+
         // Phase announcement messages
         const PHASE_MESSAGES = {
             1: '🎤 Phase 1: Hot Takes!',
@@ -930,34 +930,34 @@
         // Scroll management - keep scroll locked to bottom during streaming
         let isScrollLocked = true;
         let lastScrollHeight = 0;
-        
+
         function smoothScrollToBottom() {
             const container = elements.chatContainer;
             container.scrollTop = container.scrollHeight;
             isScrollLocked = true;
         }
-        
+
         // Use MutationObserver to maintain scroll position from bottom
         function setupScrollLock() {
             const container = elements.chatContainer;
-            
+
             // Track if user manually scrolled away from bottom
             container.addEventListener('scroll', () => {
                 const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
                 isScrollLocked = distanceFromBottom < 50;
             });
-            
+
             // When content changes, maintain position from bottom
             const observer = new MutationObserver(() => {
                 if (isScrollLocked) {
                     container.scrollTop = container.scrollHeight;
                 }
             });
-            
-            observer.observe(container, { 
-                childList: true, 
-                subtree: true, 
-                characterData: true 
+
+            observer.observe(container, {
+                childList: true,
+                subtree: true,
+                characterData: true
             });
         }
 
@@ -1048,7 +1048,7 @@
         function selectDebateModels(allModels) {
             // Use the hardcoded list of debate models
             const selected = [];
-            
+
             for (const modelId of DEBATE_MODELS) {
                 // Find this model in the available models list
                 const model = allModels.find(m => m.id === modelId);
@@ -1140,10 +1140,10 @@
                 const isLoaded = state.loadedModels.has(model.id);
                 const isDownloaded = state.downloadedModels.has(model.id);
                 const progress = state.downloadProgress[model.id];
-                
+
                 let statusIcon;
                 let progressHtml = '';
-                
+
                 if (isLoaded) {
                     statusIcon = '<span class="check">✓</span>';
                 } else if (progress && progress.status === 'downloading') {
@@ -1160,7 +1160,7 @@
                 } else {
                     statusIcon = '<div class="spinner"></div>';
                 }
-                
+
                 return `
                     <div class="loading-model-item">
                         ${statusIcon}
@@ -1178,7 +1178,7 @@
             const popup = document.getElementById('errorPopup');
             const message = document.getElementById('errorPopupMessage');
             const command = document.getElementById('errorPopupCommand');
-            
+
             message.textContent = `You selected ${selectedCount} models, but the server only has ${maxSlots} LLM slot${maxSlots === 1 ? '' : 's'} available.`;
             command.textContent = `lemonade-server serve --max-loaded-models ${selectedCount}`;
             popup.style.display = 'flex';
@@ -1192,13 +1192,13 @@
 
             // Filter models to only selected ones
             const selectedModelsList = state.models.filter(m => state.selectedModels.has(m.id));
-            
+
             // Check if server has enough LLM slots
             if (state.maxModels && state.maxModels.llm < selectedModelsList.length) {
                 showSlotError(selectedModelsList.length, state.maxModels.llm);
                 return;
             }
-            
+
             // Reassign colors to selected models only
             state.modelColors = {};
             selectedModelsList.forEach((model, i) => {
@@ -1220,26 +1220,26 @@
                         console.log(`Pulling model: ${model.id}`);
                         state.downloadProgress[model.id] = { percent: 0, status: 'downloading' };
                         renderLoadingOverlay();
-                        
+
                         await pullModel(model.id, (data) => {
                             // Handle progress updates
                             if (data.percent !== undefined) {
-                                state.downloadProgress[model.id] = { 
-                                    percent: data.percent, 
-                                    status: 'downloading' 
+                                state.downloadProgress[model.id] = {
+                                    percent: data.percent,
+                                    status: 'downloading'
                                 };
                                 renderLoadingOverlay();
                             }
                         });
-                        
+
                         state.downloadedModels.add(model.id);
                         console.log(`Downloaded model: ${model.id}`);
                     }
-                    
+
                     // Now load the model
                     state.downloadProgress[model.id] = { percent: 100, status: 'loading' };
                     renderLoadingOverlay();
-                    
+
                     await loadModel(model.id);
                     state.loadedModels.add(model.id);
                     delete state.downloadProgress[model.id];
@@ -1252,7 +1252,7 @@
 
             // Update CONFIG.numModels to reflect actually loaded models
             CONFIG.numModels = state.loadedModels.size;
-            
+
             // Filter state.models to only include successfully loaded models
             state.models = state.models.filter(m => state.loadedModels.has(m.id));
 
@@ -1276,7 +1276,7 @@
             const yesDisplay = document.getElementById('yesCountDisplay');
             const noDisplay = document.getElementById('noCountDisplay');
             const pendingDisplay = document.getElementById('pendingCountDisplay');
-            
+
             if (yesDisplay) yesDisplay.textContent = yesVotes;
             if (noDisplay) noDisplay.textContent = noVotes;
             if (pendingDisplay) pendingDisplay.textContent = pending;
@@ -1300,7 +1300,7 @@
         function addChatMessage(type, author, content, modelId = null) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `chat-message ${type}`;
-            
+
             if (type === 'system') {
                 messageDiv.textContent = content;
             } else {
@@ -1366,7 +1366,7 @@
         function detectVote(text) {
             // Remove markdown formatting
             const cleanText = text.replace(/\*+/g, '').toUpperCase();
-            
+
             // Look for various vote formats
             const patterns = [
                 /MY\s*VOTE\s*:?\s*(YES|NO)/,
@@ -1374,14 +1374,14 @@
                 /VOTE\s*:?\s*(YES|NO)/,
                 /\b(YES|NO)\b.*(?:VOTE|SANDWICH|HOTDOG)/,  // "NO, a hotdog is not..."
             ];
-            
+
             for (const pattern of patterns) {
                 const match = cleanText.match(pattern);
                 if (match) {
                     return match[1].toLowerCase();
                 }
             }
-            
+
             // Check if response is just YES or NO (or starts with it)
             const trimmed = cleanText.trim();
             if (trimmed === 'YES' || trimmed === 'NO') {
@@ -1390,7 +1390,7 @@
             if (trimmed.startsWith('YES') || trimmed.startsWith('NO,') || trimmed.startsWith('NO ') || trimmed.startsWith('NO.')) {
                 return trimmed.startsWith('YES') ? 'yes' : 'no';
             }
-            
+
             return null;
         }
 
@@ -1419,10 +1419,10 @@
             // This ensures all models in the same phase see identical context
             const modelMessages = state.phaseSnapshot.filter(m => m.type === 'model');
             const recentMessages = modelMessages.slice(-CONFIG.maxHistoryMessages);
-            
+
             // Start with just the question
             let prompt = `Question: ${state.question}`;
-            
+
             // Only add conversation history if there are actual messages
             if (recentMessages.length > 0) {
                 prompt += `\n\nOther opinions:\n`;
@@ -1469,12 +1469,12 @@
             try {
                 // Add /no_think to system prompt for SmolLM3
                 const finalSystemPrompt = modelId === 'SmolLM3-3B-GGUF'
-                    ? systemPrompt + '\n/no_think' 
+                    ? systemPrompt + '\n/no_think'
                     : systemPrompt;
 
                 // For level 5, use minimal tokens and simplified prompt
                 const isVotingRound = state.pressureLevel >= 5;
-                const userPrompt = isVotingRound 
+                const userPrompt = isVotingRound
                     ? `Question: ${state.question}\n\nVote YES or NO:`
                     : chatHistory;
 
@@ -1540,11 +1540,11 @@
             if (!trimmedResponse) {
                 console.log(`Empty response from ${modelId}, removing message and will retry`);
                 messageDiv.remove();
-                
+
                 // Track empty response count for retry limiting
                 state.emptyResponseCount = state.emptyResponseCount || {};
                 state.emptyResponseCount[modelId] = (state.emptyResponseCount[modelId] || 0) + 1;
-                
+
                 // Retry after a delay if we haven't exceeded retry limit
                 if (state.emptyResponseCount[modelId] < 3 && state.debateActive && !state.votes[modelId]) {
                     setTimeout(() => {
@@ -1558,10 +1558,10 @@
                 if (state.emptyResponseCount) {
                     state.emptyResponseCount[modelId] = 0;
                 }
-                
+
                 // Mark that this model has responded in this phase
                 state.phaseResponses.add(modelId);
-                
+
                 // Add to chat history
                 state.chatHistory.push({
                     type: 'model',
@@ -1582,7 +1582,7 @@
                         voteDiv.className = `vote-announcement ${vote}`;
                         voteDiv.innerHTML = `${vote === 'yes' ? '✅' : '❌'} VOTED ${vote.toUpperCase()}`;
                         contentDiv.appendChild(voteDiv);
-                        
+
                         updateVoteTally();
                     }
                 }
@@ -1599,47 +1599,47 @@
 
         function scheduleNextResponses() {
             // Get models that haven't voted yet
-            const unvotedModels = state.models.filter(m => 
-                !state.votes[m.id] && 
+            const unvotedModels = state.models.filter(m =>
+                !state.votes[m.id] &&
                 state.loadedModels.has(m.id)
             );
-            
+
             // If all models have voted, we're done
             if (unvotedModels.length === 0) {
                 return;
             }
 
             // Get models that need to respond this phase (haven't responded yet and not currently speaking)
-            const needToRespond = unvotedModels.filter(m => 
-                !state.phaseResponses.has(m.id) && 
+            const needToRespond = unvotedModels.filter(m =>
+                !state.phaseResponses.has(m.id) &&
                 !state.speakingModels.has(m.id)
             );
-            
+
             // If some models are still speaking, wait for them
             if (needToRespond.length === 0 && state.speakingModels.size > 0) {
                 return;
             }
-            
+
             // Check if all unvoted models have responded this phase
-            const allRespondedThisPhase = unvotedModels.every(m => 
+            const allRespondedThisPhase = unvotedModels.every(m =>
                 state.phaseResponses.has(m.id) || state.speakingModels.has(m.id)
             );
-            
+
             if (allRespondedThisPhase && state.speakingModels.size === 0) {
                 // All done with this phase - advance to next phase
                 if (state.pressureLevel < 5) {
                     // Snapshot current history BEFORE advancing - new phase sees all previous responses
                     state.phaseSnapshot = [...state.chatHistory];
-                    
+
                     state.pressureLevel++;
                     state.phaseResponses.clear(); // Reset for new phase
                     updatePressure();
-                    
+
                     // Announce new phase
                     if (PHASE_MESSAGES[state.pressureLevel]) {
                         addChatMessage('system', '', PHASE_MESSAGES[state.pressureLevel]);
                     }
-                    
+
                     // Start all unvoted models responding for the new phase
                     const stillUnvoted = state.models.filter(m => !state.votes[m.id]);
                     stillUnvoted.forEach((model, i) => {
@@ -1652,7 +1652,7 @@
                 }
                 return;
             }
-            
+
             // Prompt models that still need to respond this phase
             if (needToRespond.length > 0) {
                 needToRespond.forEach((model, i) => {
@@ -1670,18 +1670,18 @@
 
         function checkDebateEnd() {
             const votedCount = Object.values(state.votes).filter(v => v).length;
-            
+
             if (votedCount >= CONFIG.numModels) {
                 state.debateActive = false;
-                
+
                 // Cancel any pending responses
                 Object.values(state.abortControllers).forEach(c => c.abort());
                 state.abortControllers = {};
                 state.speakingModels.clear();
-                
+
                 addChatMessage('system', '', '🎉 All votes in!');
                 showWinnerBanner();
-                
+
                 // Re-enable input for new debate
                 elements.questionInput.disabled = false;
                 elements.startBtn.textContent = 'GO';
@@ -1691,16 +1691,16 @@
 
         function stopDebate() {
             if (!state.debateActive) return;
-            
+
             state.debateActive = false;
-            
+
             // Cancel all ongoing requests
             Object.values(state.abortControllers).forEach(c => c.abort());
             state.abortControllers = {};
             state.speakingModels.clear();
-            
+
             addChatMessage('system', '', '⏹️ Debate stopped');
-            
+
             // Reset button
             elements.questionInput.disabled = false;
             elements.startBtn.textContent = 'GO';
@@ -1764,7 +1764,7 @@
         async function init() {
             // Setup scroll lock for smooth scrolling
             setupScrollLock();
-            
+
             // Setup event listeners
             elements.serverUrl.addEventListener('change', (e) => {
                 CONFIG.serverUrl = e.target.value.replace(/\/$/, '');
@@ -1781,7 +1781,7 @@
             // Check server connection
             elements.loadingOverlay.style.display = 'flex';
             const connected = await checkServerHealth();
-            
+
             if (!connected) {
                 elements.loadingModels.innerHTML = `
                     <div class="chat-message system" style="margin: 0; color: var(--accent-red); text-align: center;">
@@ -1845,4 +1845,3 @@
     </script>
 </body>
 </html>
-

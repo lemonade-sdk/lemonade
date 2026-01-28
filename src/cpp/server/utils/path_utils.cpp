@@ -53,26 +53,26 @@ std::string get_executable_dir() {
 std::string get_resource_path(const std::string& relative_path) {
     fs::path exe_dir = get_executable_dir();
     fs::path resource_path = exe_dir / relative_path;
-    
+
     // Check if resource exists next to executable (for dev builds)
     if (fs::exists(resource_path)) {
         return resource_path.string();
     }
-    
+
 #ifndef _WIN32
     // On Linux/macOS, also check standard install locations
     std::vector<std::string> install_prefixes = {
         "/usr/local/share/lemonade-server",
         "/usr/share/lemonade-server"
     };
-    
+
     // Also check user's local install directory
     const char* home = std::getenv("HOME");
     if (home) {
         std::string home_local = std::string(home) + "/.local/share/lemonade-server";
         install_prefixes.insert(install_prefixes.begin(), home_local);
     }
-    
+
     for (const auto& prefix : install_prefixes) {
         fs::path installed_path = fs::path(prefix) / relative_path;
         if (fs::exists(installed_path)) {
@@ -80,7 +80,7 @@ std::string get_resource_path(const std::string& relative_path) {
         }
     }
 #endif
-    
+
     // Fallback: return original path (will fail but with clear error)
     return resource_path.string();
 }
@@ -95,7 +95,7 @@ std::string find_flm_executable() {
                       0, KEY_READ, &hKey) == ERROR_SUCCESS) {
         char buffer[32767];
         DWORD bufferSize = sizeof(buffer);
-        if (RegQueryValueExA(hKey, "PATH", nullptr, nullptr, 
+        if (RegQueryValueExA(hKey, "PATH", nullptr, nullptr,
                             reinterpret_cast<LPBYTE>(buffer), &bufferSize) == ERROR_SUCCESS) {
             std::string system_path = buffer;
             // Combine with current process PATH (system PATH takes priority for FLM lookup)
@@ -107,7 +107,7 @@ std::string find_flm_executable() {
         }
         RegCloseKey(hKey);
     }
-    
+
     // Use SearchPathA which is the same API that CreateProcessA uses internally
     // This ensures we find the exact same executable that will be launched
     char found_path[MAX_PATH];
@@ -119,11 +119,11 @@ std::string find_flm_executable() {
         found_path,
         nullptr
     );
-    
+
     if (result > 0 && result < MAX_PATH) {
         return found_path;
     }
-    
+
     return "";
 #else
     // On Linux/Mac, check PATH using which
@@ -139,7 +139,7 @@ std::string get_cache_dir() {
     if (cache_dir_env) {
         return std::string(cache_dir_env);
     }
-    
+
     #ifdef _WIN32
     const char* userprofile = std::getenv("USERPROFILE");
     if (userprofile) {
@@ -151,7 +151,7 @@ std::string get_cache_dir() {
         return std::string(home) + "/.cache/lemonade";
     }
     #endif
-    
+
     return ".cache/lemonade";
 }
 
@@ -170,4 +170,3 @@ std::string get_downloaded_bin_dir() {
 
 } // namespace utils
 } // namespace lemon
-

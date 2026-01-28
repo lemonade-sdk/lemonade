@@ -106,4 +106,3 @@ inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
 }
 
 } // namespace lemon
-

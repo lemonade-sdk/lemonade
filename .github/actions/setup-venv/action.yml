@@ -97,45 +97,45 @@ runs:
         $VENV_NAME = "${{ inputs.venv-name }}"
         $VENV_PATH = "$env:GITHUB_WORKSPACE\$VENV_NAME"
         $BASE_PYTHON = $env:SETUP_PYTHON_PATH
-        
+
         Write-Host "Creating virtual environment at $VENV_PATH..."
         Write-Host "Using base Python: $BASE_PYTHON"
-        
+
         # Verify we're using the correct Python
         & $BASE_PYTHON --version
-        
+
         # Remove existing venv if present
         if (Test-Path $VENV_PATH) {
           Write-Host "Removing existing venv..."
           Remove-Item -Recurse -Force $VENV_PATH
         }
-        
+
         # Create the venv using the explicit Python path
         & $BASE_PYTHON -m venv $VENV_PATH
-        if ($LASTEXITCODE -ne 0) { 
+        if ($LASTEXITCODE -ne 0) {
           Write-Host "venv creation failed, trying with --without-pip..."
           & $BASE_PYTHON -m venv $VENV_PATH --without-pip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
+
           # Install pip manually
           Write-Host "Installing pip manually..."
           Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$VENV_PATH\get-pip.py"
           & "$VENV_PATH\Scripts\python.exe" "$VENV_PATH\get-pip.py"
         }
-        
+
         $PYTHON_PATH = "$VENV_PATH\Scripts\python.exe"
         $PIP_PATH = "$VENV_PATH\Scripts\pip.exe"
-        
+
         # PREPEND venv Scripts to PATH (write to file first, then prepend)
         # This ensures venv Python takes precedence over system Python
         "$VENV_PATH\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        
+
         # Upgrade pip
         & $PYTHON_PATH -m pip install --upgrade pip
-        
+
         "venv-path=$VENV_PATH" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         "python-path=$PYTHON_PATH" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        
+
         Write-Host "Virtual environment created successfully!"
         Write-Host "Venv Python location:"
         & $PYTHON_PATH -c "import sys; print(sys.executable)"
@@ -149,34 +149,34 @@ runs:
         VENV_NAME="${{ inputs.venv-name }}"
         VENV_PATH="$GITHUB_WORKSPACE/$VENV_NAME"
         BASE_PYTHON="$SETUP_PYTHON_PATH"
-        
+
         echo "Creating virtual environment at $VENV_PATH..."
         echo "Using base Python: $BASE_PYTHON"
-        
+
         # Verify we're using the correct Python
         "$BASE_PYTHON" --version
-        
+
         # Remove existing venv if present
         if [ -d "$VENV_PATH" ]; then
           echo "Removing existing venv..."
           rm -rf "$VENV_PATH"
         fi
-        
+
         # Create the venv using the explicit Python path
         "$BASE_PYTHON" -m venv "$VENV_PATH"
-        
+
         PYTHON_PATH="$VENV_PATH/bin/python"
         PIP_PATH="$VENV_PATH/bin/pip"
-        
+
         # Add bin to PATH (prepended in subsequent steps)
         echo "$VENV_PATH/bin" >> $GITHUB_PATH
-        
+
         # Upgrade pip
         "$PYTHON_PATH" -m pip install --upgrade pip
-        
+
         echo "venv-path=$VENV_PATH" >> $GITHUB_OUTPUT
         echo "python-path=$PYTHON_PATH" >> $GITHUB_OUTPUT
-        
+
         echo "Virtual environment created successfully!"
         echo "Venv Python location:"
         "$PYTHON_PATH" -c "import sys; print(sys.executable)"
@@ -188,7 +188,7 @@ runs:
       run: |
         $VENV_PATH = "${{ steps.create-venv-windows.outputs.venv-path }}"
         $PIP = "$VENV_PATH\Scripts\pip.exe"
-        
+
         Write-Host "Installing requirements from ${{ inputs.requirements-file }}..."
         & $PIP install -r "${{ inputs.requirements-file }}"
 
@@ -198,7 +198,7 @@ runs:
       run: |
         VENV_PATH="${{ steps.create-venv-linux.outputs.venv-path }}"
         PIP="$VENV_PATH/bin/pip"
-        
+
         echo "Installing requirements from ${{ inputs.requirements-file }}..."
         "$PIP" install -r "${{ inputs.requirements-file }}"
 
@@ -208,12 +208,12 @@ runs:
       run: |
         $VENV_PATH = "${{ steps.create-venv-windows.outputs.venv-path }}"
         $PIP = "$VENV_PATH\Scripts\pip.exe"
-        
+
         $EXTRA_INDEX = ""
         if ("${{ inputs.extra-index-url }}" -ne "") {
           $EXTRA_INDEX = "--extra-index-url ${{ inputs.extra-index-url }}"
         }
-        
+
         Write-Host "Installing package: ${{ inputs.install-package }}..."
         $cmd = "$PIP install ${{ inputs.install-package }} $EXTRA_INDEX"
         Invoke-Expression $cmd
@@ -224,11 +224,11 @@ runs:
       run: |
         VENV_PATH="${{ steps.create-venv-linux.outputs.venv-path }}"
         PIP="$VENV_PATH/bin/pip"
-        
+
         EXTRA_INDEX=""
         if [ -n "${{ inputs.extra-index-url }}" ]; then
           EXTRA_INDEX="--extra-index-url ${{ inputs.extra-index-url }}"
         fi
-        
+
         echo "Installing package: ${{ inputs.install-package }}..."
         "$PIP" install ${{ inputs.install-package }} $EXTRA_INDEX

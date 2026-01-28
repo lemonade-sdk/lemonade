@@ -20,41 +20,41 @@ if(WIN32)
         platform/windows_tray.cpp
     )
     set(PLATFORM_LIBS
-        user32 
-        shell32 
-        ole32 
+        user32
+        shell32
+        ole32
         comctl32
     )
-    
+
     # Note: Not using WIN32 flag to support both --no-tray (console) and tray modes
     # For true GUI-only mode, could add WIN32 flag and use WinMain
-    
+
 elseif(APPLE)
     set(PLATFORM_SOURCES
         platform/macos_tray.mm
     )
-    
+
     find_library(COCOA_LIBRARY Cocoa REQUIRED)
     find_library(FOUNDATION_LIBRARY Foundation REQUIRED)
-    
+
     set(PLATFORM_LIBS
         ${COCOA_LIBRARY}
         ${FOUNDATION_LIBRARY}
     )
-    
+
     # Enable Objective-C++ compilation
     set_source_files_properties(
         platform/macos_tray.mm
         PROPERTIES
         COMPILE_FLAGS "-x objective-c++"
     )
-    
+
 elseif(UNIX)  # Linux
     # Linux builds are headless-only (no tray support)
     # This avoids LGPL dependencies (GTK3, libappindicator3, libnotify)
     message(STATUS "Linux build: Tray application disabled (headless mode only)")
     message(STATUS "Use 'lemonade-server serve --no-tray' to run server")
-    
+
     # Include stub Linux tray implementation (headless mode)
     set(PLATFORM_SOURCES
         platform/linux_tray.cpp
@@ -135,33 +135,33 @@ if(WIN32)
     add_executable(lemonade-tray WIN32
         tray_launcher.cpp
     )
-    
+
     # Add version resource for tray launcher
     target_sources(lemonade-tray PRIVATE version.rc)
-    
+
     # Include directories for single_instance.h
     target_include_directories(lemonade-tray PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
     )
-    
+
     target_link_libraries(lemonade-tray PRIVATE
         user32
         shell32
     )
-    
+
     set_target_properties(lemonade-tray PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
         RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/Debug"
         RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release"
     )
-    
+
     # ============================================================
     # lemonade-log-viewer.exe - Log file viewer (Windows only)
     # ============================================================
     add_executable(lemonade-log-viewer
         log-viewer.cpp
     )
-    
+
     set_target_properties(lemonade-log-viewer PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
         RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/Debug"
@@ -176,13 +176,13 @@ if(WIN32)
         UNICODE
         _UNICODE
     )
-    
+
     # Link with networking and system libraries
     target_link_libraries(lemonade-server PRIVATE
         ws2_32     # Winsock
         iphlpapi   # IP Helper API for network connection enumeration
     )
-    
+
     # Embed manifest file
     if(MSVC)
         set_target_properties(lemonade-server PROPERTIES
@@ -220,4 +220,3 @@ elseif(UNIX)
     message(STATUS "  No LGPL dependencies - permissively licensed only")
 endif()
 message(STATUS "===============================================")
-

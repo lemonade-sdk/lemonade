@@ -37,12 +37,12 @@ For now, UI and frontend development is being handled exclusively by core mainta
 
 We want your creativity and insights! Share UI/UX ideas, report bugs, or request features via [Issue](https://github.com/lemonade-sdk/lemonade/issues) or [Discord](https://discord.gg/5xXzkMu8Zk). Include mockups, screenshots, and reproduction steps where relevant.
 
-**UI Scope: Management, Not Competition:**  
+**UI Scope: Management, Not Competition:**
 Our UI exists to facilitate Lemonade management - not to compete with the apps built on top of Lemonade. While it's tempting to add agentic workflows, advanced chat features, or other sophisticated capabilities, that's not our goal. We focus on making model management, configuration, and monitoring delightful and effortless. Defining this line isn't always easy, but use this principle as your guide when considering new UI features.
 
 ## Issues
 
-Use [Issues](https://github.com/lemonade-sdk/lemonade/issues) to report bugs or suggest features. 
+Use [Issues](https://github.com/lemonade-sdk/lemonade/issues) to report bugs or suggest features.
 
 A maintainer will apply one of these labels to indicate the status:
 - `on roadmap`: planned for development.
@@ -70,7 +70,7 @@ The easiest way to ensure proper formatting is to enable the black formatter in 
 
 1. **Install the Python extension**: Install the Python extension for VSCode if you haven't already.
 
-2. **Set black as the default formatter**: 
+2. **Set black as the default formatter**:
    - Open VSCode settings (Ctrl/Cmd + ,)
    - Search for "Formatter"
    - Set the Python default formatter to "black"

@@ -6,13 +6,13 @@
     <title>Lemonade Server</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap');
-        
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
             background: linear-gradient(145deg, #0a0a0a 0%, #1a1a1a 50%, #0f0f0f 100%);
@@ -25,7 +25,7 @@
             position: relative;
             overflow-x: hidden;
         }
-        
+
         body::before {
             content: '';
             position: absolute;
@@ -37,26 +37,26 @@
                         radial-gradient(circle at 70% 70%, rgba(255, 200, 0, 0.02) 0%, transparent 30%);
             pointer-events: none;
         }
-        
+
         .container {
             max-width: 700px;
             width: 100%;
             text-align: center;
             z-index: 1;
         }
-        
+
         .logo {
             font-size: 64px;
             margin-bottom: 16px;
             filter: drop-shadow(0 0 30px rgba(255, 220, 0, 0.3));
             animation: float 3s ease-in-out infinite;
         }
-        
+
         @keyframes float {
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-8px); }
         }
-        
+
         h1 {
             font-size: 2.2rem;
             font-weight: 600;
@@ -67,7 +67,7 @@
             background-clip: text;
             letter-spacing: -0.5px;
         }
-        
+
         .status {
             display: inline-flex;
             align-items: center;
@@ -80,7 +80,7 @@
             font-size: 0.9rem;
             color: #22c55e;
         }
-        
+
         .status-dot {
             width: 8px;
             height: 8px;
@@ -88,12 +88,12 @@
             border-radius: 50%;
             animation: pulse 2s ease-in-out infinite;
         }
-        
+
         @keyframes pulse {
             0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
             50% { opacity: 0.8; box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
         }
-        
+
         .card {
             background: rgba(255, 255, 255, 0.03);
             border: 1px solid rgba(255, 255, 255, 0.08);
@@ -103,7 +103,7 @@
             backdrop-filter: blur(10px);
             text-align: left;
         }
-        
+
         .card h2 {
             font-size: 1rem;
             font-weight: 500;
@@ -113,11 +113,11 @@
             align-items: center;
             gap: 8px;
         }
-        
+
         .card h2 .icon {
             font-size: 1.1rem;
         }
-        
+
         .code-block {
             background: #0d0d0d;
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -130,28 +130,28 @@
             margin-bottom: 12px;
             line-height: 1.5;
         }
-        
+
         .code-block:last-child {
             margin-bottom: 0;
         }
-        
+
         .code-block .comment {
             color: #5a5a5a;
         }
-        
+
         .code-block .string {
             color: #98c379;
         }
-        
+
         .code-block .keyword {
             color: #FFCC00;
         }
-        
+
         .code-block code {
             white-space: pre-wrap;
             word-break: break-all;
         }
-        
+
         .copy-btn {
             float: right;
             background: rgba(255, 255, 255, 0.1);
@@ -164,34 +164,34 @@
             font-family: 'Space Grotesk', sans-serif;
             transition: all 0.2s;
         }
-        
+
         .copy-btn:hover {
             background: rgba(255, 204, 0, 0.2);
             color: #FFCC00;
         }
-        
+
         .footer {
             margin-top: 24px;
             font-size: 0.8rem;
             color: #555;
         }
-        
+
         .footer a {
             color: #888;
             text-decoration: none;
         }
-        
+
         .footer a:hover {
             color: #FFCC00;
         }
-        
+
         .section-desc {
             color: #808080;
             font-size: 0.85rem;
             margin-bottom: 14px;
             line-height: 1.5;
         }
-        
+
         .section-desc code {
             background: rgba(255, 204, 0, 0.15);
             padding: 2px 6px;
@@ -210,7 +210,7 @@
             <span class="status-dot"></span>
             Running on port {{SERVER_PORT}}
         </div>
-        
+
         <!-- Quick Start -->
         <div class="card">
             <h2><span class="icon">⚡</span> Quick Test</h2>
@@ -244,9 +244,9 @@ curl -X POST http://localhost:{{SERVER_PORT}}/api/v1/chat/completions \
                 Using the minimal install? Get the full version from <a href="https://github.com/lemonade-sdk/lemonade">github.com/lemonade-sdk/lemonade</a> for a built-in chat interface and model manager.
             </p>
         </div>
-        
+
         <div class="footer">
-            <a href="https://github.com/lemonade-sdk/lemonade" target="_blank">GitHub</a> · 
+            <a href="https://github.com/lemonade-sdk/lemonade" target="_blank">GitHub</a> ·
             <a href="https://lemonade-server.ai/docs/" target="_blank">Documentation</a>
         </div>
     </div>
@@ -267,7 +267,7 @@ curl -X POST http://localhost:{{SERVER_PORT}}/api/v1/chat/completions \
             const isWindows = platform.includes('win');
             const hintWindows = document.getElementById('gui-hint-windows');
             const hintLinux = document.getElementById('gui-hint-linux');
-            
+
             if (isWindows) {
                 hintWindows.style.display = 'block';
             } else {

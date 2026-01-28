@@ -21,22 +21,22 @@ jobs:
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             https://api.github.com/repos/${{ github.repository }}/actions/runners \
             > repo_runners.json
-          
+
           # Also get org-level runners
           curl -s \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             https://api.github.com/orgs/${{ github.repository_owner }}/actions/runners \
             > org_runners.json
-          
+
           # Combine and deduplicate runner names
           repo_names=$(jq -r '.runners[]?.name // empty' repo_runners.json 2>/dev/null || echo "")
           org_names=$(jq -r '.runners[]?.name // empty' org_runners.json 2>/dev/null || echo "")
-          
+
           # Fallback to known runner list if API fails
           known_runners="jfowers-stx-01,jfowers-stx-02,sjlab-stx-halo-06,sjlab-stx-halo-07,sjlab-stx-halo-08,sjlab-stx-halo-09,sjlab-stx-halo-10,sjlab-stx-halo-11,sjlab-stx-halo-12,sjlab-stx-halo-13,sjlab-stx-0"
-          
+
           if [ -n "$repo_names" ] || [ -n "$org_names" ]; then
-            all_names=$(echo -e "$repo_names\n$org_names" | sort -u | tr '\n' ',' | sed 's/,$//') 
+            all_names=$(echo -e "$repo_names\n$org_names" | sort -u | tr '\n' ',' | sed 's/,$//')
             echo "names=$all_names" >> $GITHUB_OUTPUT
             echo "Using API discovered runners: $all_names"
           else
@@ -118,14 +118,14 @@ jobs:
               ]
             }' \
             "${{ secrets.TEAMS_WEBHOOK_URL }}")
-          
+
           http_code="${response: -3}"
           response_body="${response%???}"
-          
+
           echo "HTTP Status: $http_code"
           echo "Response: $response_body"
-          
-          
+
+
           if [ "$http_code" != "200" ] && [ "$http_code" != "202" ]; then
             echo "Power Automate webhook failed with status $http_code"
           else

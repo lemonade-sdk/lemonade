@@ -50,7 +50,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
     if (!logsContent) return;
 
     const handleScroll = () => {
-      const isAtBottom = 
+      const isAtBottom =
         logsContent.scrollHeight - logsContent.scrollTop <= logsContent.clientHeight + 30;
       setAutoScroll(isAtBottom);
     };
@@ -78,7 +78,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
     const connectToLogStream = () => {
       try {
         setConnectionStatus('connecting');
-        
+
         // Close existing connection if any
         if (eventSourceRef.current) {
           eventSourceRef.current.close();
@@ -95,7 +95,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
         eventSource.onmessage = (event) => {
           // SSE sends data as "data: <log line>"
           const logLine = event.data;
-          
+
           // Skip heartbeat messages
           if (logLine.trim() === '' || logLine === 'heartbeat') {
             return;
@@ -112,7 +112,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
           console.error('Log stream error:', error);
           setConnectionStatus('error');
           eventSource.close();
-          
+
           // Attempt to reconnect after 5 seconds
           reconnectTimeoutRef.current = setTimeout(() => {
             console.log('Attempting to reconnect to log stream...');
@@ -122,7 +122,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
       } catch (error) {
         console.error('Failed to connect to log stream:', error);
         setConnectionStatus('error');
-        
+
         // Attempt to reconnect after 5 seconds
         reconnectTimeoutRef.current = setTimeout(() => {
           connectToLogStream();

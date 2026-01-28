@@ -63,9 +63,7 @@ class WhisperTests(ServerTestBase):
 
     def test_001_transcription_basic(self):
         """Test basic audio transcription with Whisper."""
-        self.assertIsNotNone(
-            self._test_audio_path, "Test audio file not downloaded"
-        )
+        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
         self.assertTrue(
             os.path.exists(self._test_audio_path),
             f"Test audio file not found at {self._test_audio_path}",
@@ -94,17 +92,13 @@ class WhisperTests(ServerTestBase):
         self.assertIsInstance(
             result["text"], str, "Transcription text should be a string"
         )
-        self.assertGreater(
-            len(result["text"]), 0, "Transcription should not be empty"
-        )
+        self.assertGreater(len(result["text"]), 0, "Transcription should not be empty")
 
         print(f"[OK] Transcription result: {result['text']}")
 
     def test_002_transcription_with_language(self):
         """Test audio transcription with explicit language parameter."""
-        self.assertIsNotNone(
-            self._test_audio_path, "Test audio file not downloaded"
-        )
+        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
 
         with open(self._test_audio_path, "rb") as audio_file:
             files = {"file": ("test_speech.wav", audio_file, "audio/wav")}
@@ -130,9 +124,7 @@ class WhisperTests(ServerTestBase):
 
         result = response.json()
         self.assertIn("text", result, "Response should contain 'text' field")
-        self.assertGreater(
-            len(result["text"]), 0, "Transcription should not be empty"
-        )
+        self.assertGreater(len(result["text"]), 0, "Transcription should not be empty")
 
         print(f"[OK] Transcription with language=en: {result['text']}")
 
@@ -152,9 +144,7 @@ class WhisperTests(ServerTestBase):
             [400, 422],
             f"Expected 400 or 422 for missing file, got {response.status_code}",
         )
-        print(
-            f"[OK] Correctly rejected request without file: {response.status_code}"
-        )
+        print(f"[OK] Correctly rejected request without file: {response.status_code}")
 
     def test_004_transcription_missing_model_error(self):
         """Test error handling when model is missing."""
@@ -173,9 +163,7 @@ class WhisperTests(ServerTestBase):
             [400, 422],
             f"Expected 400 or 422 for missing model, got {response.status_code}",
         )
-        print(
-            f"[OK] Correctly rejected request without model: {response.status_code}"
-        )
+        print(f"[OK] Correctly rejected request without model: {response.status_code}")
 
 
 if __name__ == "__main__":

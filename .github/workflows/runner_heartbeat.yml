@@ -12,7 +12,7 @@ jobs:
   heartbeat:
     strategy:
       matrix:
-        runner: 
+        runner:
           - jfowers-stx-01
           - jfowers-stx-02
           - sjlab-stx-halo-06

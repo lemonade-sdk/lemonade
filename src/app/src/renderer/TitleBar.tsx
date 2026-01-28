@@ -18,10 +18,10 @@ interface TitleBarProps {
   onToggleDownloadManager: () => void;
 }
 
-const TitleBar: React.FC<TitleBarProps> = ({ 
-  isChatVisible, 
-  onToggleChat, 
-  isModelManagerVisible, 
+const TitleBar: React.FC<TitleBarProps> = ({
+  isChatVisible,
+  onToggleChat,
+  isModelManagerVisible,
   onToggleModelManager,
   isCenterPanelVisible,
   onToggleCenterPanel,
@@ -133,7 +133,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
           <img src={logo} alt="Lemonade" className="title-bar-logo" />
           <div className="menu-items">
             <div className="menu-item-wrapper">
-              <span 
+              <span
                 className={`menu-item ${activeMenu === 'view' ? 'active' : ''}`}
                 onClick={() => handleMenuClick('view')}
               >
@@ -171,7 +171,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
             </div>
 
             <div className="menu-item-wrapper">
-              <span 
+              <span
                 className={`menu-item ${activeMenu === 'help' ? 'active' : ''}`}
                 onClick={() => handleMenuClick('help')}
               >
@@ -198,7 +198,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
           <span className="app-title">Lemonade</span>
         </div>
         <div className="title-bar-right">
-          <button 
+          <button
             className={`title-bar-button downloads ${isDownloadManagerVisible ? 'active' : ''}`}
             onClick={onToggleDownloadManager}
             title="Downloads"
@@ -209,7 +209,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
               <path d="M8 10V2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
-          <button 
+          <button
             className="title-bar-button settings"
             onClick={() => setIsSettingsOpen(true)}
             title="Settings"
@@ -219,7 +219,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
               <circle cx="8" cy="8.5" r="2.5" stroke="currentColor" strokeWidth="1.2"/>
             </svg>
           </button>
-          <button 
+          <button
             className="title-bar-button minimize"
             onClick={() => window.api.minimizeWindow()}
             title="Minimize"
@@ -228,7 +228,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
               <rect x="0" y="5" width="12" height="1" fill="currentColor"/>
             </svg>
           </button>
-          <button 
+          <button
             className="title-bar-button maximize"
             onClick={() => window.api.maximizeWindow()}
             title={isMaximized ? "Restore Down" : "Maximize"}
@@ -244,7 +244,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
               </svg>
             )}
           </button>
-          <button 
+          <button
             className="title-bar-button close"
             onClick={() => window.api.closeWindow()}
             title="Close"
@@ -262,4 +262,3 @@ const TitleBar: React.FC<TitleBarProps> = ({
 };
 
 export default TitleBar;
-

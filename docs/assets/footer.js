@@ -6,7 +6,7 @@ async function fetchStarCount() {
   try {
     const response = await fetch('https://api.github.com/repos/lemonade-sdk/lemonade');
     const repo = await response.json();
-    
+
     if (repo.stargazers_count !== undefined) {
       const starCount = repo.stargazers_count;
       const starElement = document.getElementById('star-count');
@@ -41,7 +41,7 @@ function createFooter(basePath = '') {
             </a>
           </div>
         </div>
-        
+
         <div class="footer-section">
           <h4>Product</h4>
           <div class="footer-links">
@@ -51,7 +51,7 @@ function createFooter(basePath = '') {
             <a href="${basePath}docs/lemonade_api/">API Reference</a>
           </div>
         </div>
-        
+
         <div class="footer-section">
           <h4>Community</h4>
           <div class="footer-links">
@@ -69,7 +69,7 @@ function createFooter(basePath = '') {
             </a>
           </div>
         </div>
-        
+
         <div class="footer-section">
           <h4>Resources</h4>
           <div class="footer-links">
@@ -80,7 +80,7 @@ function createFooter(basePath = '') {
           </div>
         </div>
       </div>
-      
+
       <div class="footer-bottom">
         <div class="copyright">© 2025 AMD. Licensed under Apache 2.0.</div>
       </div>

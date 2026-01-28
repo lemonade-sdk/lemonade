@@ -21,19 +21,19 @@ MacOSTray::~MacOSTray() {
 bool MacOSTray::initialize(const std::string& app_name, const std::string& icon_path) {
     app_name_ = app_name;
     icon_path_ = icon_path;
-    
+
     std::cout << "[macOS Tray] TODO: Initialize system tray" << std::endl;
     std::cout << "[macOS Tray] App name: " << app_name << std::endl;
     std::cout << "[macOS Tray] Icon path: " << icon_path << std::endl;
-    
+
     // TODO: Implement using NSStatusBar
     // NSStatusBar *statusBar = [NSStatusBar systemStatusBar];
     // NSStatusItem *statusItem = [statusBar statusItemWithLength:NSVariableStatusItemLength];
-    
+
     if (ready_callback_) {
         ready_callback_();
     }
-    
+
     return false; // Not implemented yet
 }
 
@@ -84,4 +84,3 @@ void MacOSTray::set_ready_callback(std::function<void()> callback) {
 } // namespace lemon_tray
 
 #endif // __APPLE__
-

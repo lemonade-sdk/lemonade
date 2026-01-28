@@ -135,15 +135,13 @@ class StableDiffusionTests(ServerTestBase):
             "prompt": "A blue square",
             "size": "256x256",
             "steps": 2,
-            "response_format": "b64_json"
+            "response_format": "b64_json",
         }
 
         print(f"[INFO] Testing image generation with steps=2")
 
         response = requests.post(
-            f"{self.base_url}/images/generations",
-            json=payload,
-            timeout=600
+            f"{self.base_url}/images/generations", json=payload, timeout=600
         )
 
         self.assertEqual(
@@ -159,7 +157,7 @@ class StableDiffusionTests(ServerTestBase):
         # Verify valid PNG
         b64_data = result["data"][0]["b64_json"]
         decoded = base64.b64decode(b64_data)
-        self.assertTrue(decoded[:4] == b'\x89PNG', "Should be valid PNG")
+        self.assertTrue(decoded[:4] == b"\x89PNG", "Should be valid PNG")
         print(f"[OK] Image generation with steps=2 successful ({len(decoded)} bytes)")
 
     # Test 5: Image generation with custom cfg_scale parameter
@@ -171,15 +169,13 @@ class StableDiffusionTests(ServerTestBase):
             "size": "256x256",
             "steps": 2,
             "cfg_scale": 5.0,
-            "response_format": "b64_json"
+            "response_format": "b64_json",
         }
 
         print(f"[INFO] Testing image generation with cfg_scale=5.0")
 
         response = requests.post(
-            f"{self.base_url}/images/generations",
-            json=payload,
-            timeout=600
+            f"{self.base_url}/images/generations", json=payload, timeout=600
         )
 
         self.assertEqual(
@@ -195,8 +191,10 @@ class StableDiffusionTests(ServerTestBase):
         # Verify valid PNG
         b64_data = result["data"][0]["b64_json"]
         decoded = base64.b64decode(b64_data)
-        self.assertTrue(decoded[:4] == b'\x89PNG', "Should be valid PNG")
-        print(f"[OK] Image generation with cfg_scale=5.0 successful ({len(decoded)} bytes)")
+        self.assertTrue(decoded[:4] == b"\x89PNG", "Should be valid PNG")
+        print(
+            f"[OK] Image generation with cfg_scale=5.0 successful ({len(decoded)} bytes)"
+        )
 
     # Test 6: Image generation with explicit seed parameter
     def test_006_image_generation_with_seed(self):
@@ -207,15 +205,13 @@ class StableDiffusionTests(ServerTestBase):
             "size": "256x256",
             "steps": 2,
             "seed": 12345,
-            "response_format": "b64_json"
+            "response_format": "b64_json",
         }
 
         print(f"[INFO] Testing image generation with seed=12345")
 
         response = requests.post(
-            f"{self.base_url}/images/generations",
-            json=payload,
-            timeout=600
+            f"{self.base_url}/images/generations", json=payload, timeout=600
         )
 
         self.assertEqual(
@@ -231,18 +227,17 @@ class StableDiffusionTests(ServerTestBase):
         # Verify valid PNG
         b64_data = result["data"][0]["b64_json"]
         decoded = base64.b64decode(b64_data)
-        self.assertTrue(decoded[:4] == b'\x89PNG', "Should be valid PNG")
-        print(f"[OK] Image generation with seed=12345 successful ({len(decoded)} bytes)")
+        self.assertTrue(decoded[:4] == b"\x89PNG", "Should be valid PNG")
+        print(
+            f"[OK] Image generation with seed=12345 successful ({len(decoded)} bytes)"
+        )
 
     # Test 7: Models endpoint returns image_defaults for SD-Turbo
     def test_007_models_endpoint_returns_image_defaults(self):
         """Test that /models endpoint returns image_defaults for SD-Turbo."""
         print(f"[INFO] Testing /models endpoint for image_defaults")
 
-        response = requests.get(
-            f"{self.base_url}/models?show_all=true",
-            timeout=60
-        )
+        response = requests.get(f"{self.base_url}/models?show_all=true", timeout=60)
 
         self.assertEqual(
             response.status_code,
@@ -267,7 +262,9 @@ class StableDiffusionTests(ServerTestBase):
         defaults = sd_turbo["image_defaults"]
 
         self.assertEqual(defaults.get("steps"), 4, "SD-Turbo steps should be 4")
-        self.assertEqual(defaults.get("cfg_scale"), 1.0, "SD-Turbo cfg_scale should be 1.0")
+        self.assertEqual(
+            defaults.get("cfg_scale"), 1.0, "SD-Turbo cfg_scale should be 1.0"
+        )
         self.assertEqual(defaults.get("width"), 512, "SD-Turbo width should be 512")
         self.assertEqual(defaults.get("height"), 512, "SD-Turbo height should be 512")
 
@@ -278,10 +275,7 @@ class StableDiffusionTests(ServerTestBase):
         """Test that /models endpoint returns correct image_defaults for SDXL-Base-1.0."""
         print(f"[INFO] Testing /models endpoint for SDXL-Base-1.0 image_defaults")
 
-        response = requests.get(
-            f"{self.base_url}/models?show_all=true",
-            timeout=60
-        )
+        response = requests.get(f"{self.base_url}/models?show_all=true", timeout=60)
 
         self.assertEqual(
             response.status_code,
@@ -299,16 +293,26 @@ class StableDiffusionTests(ServerTestBase):
                 sdxl_base = model
                 break
 
-        self.assertIsNotNone(sdxl_base, "SDXL-Base-1.0 model not found in /models response")
+        self.assertIsNotNone(
+            sdxl_base, "SDXL-Base-1.0 model not found in /models response"
+        )
 
         # Verify image_defaults exists and has correct values
-        self.assertIn("image_defaults", sdxl_base, "SDXL-Base-1.0 should have image_defaults")
+        self.assertIn(
+            "image_defaults", sdxl_base, "SDXL-Base-1.0 should have image_defaults"
+        )
         defaults = sdxl_base["image_defaults"]
 
         self.assertEqual(defaults.get("steps"), 20, "SDXL-Base-1.0 steps should be 20")
-        self.assertEqual(defaults.get("cfg_scale"), 7.5, "SDXL-Base-1.0 cfg_scale should be 7.5")
-        self.assertEqual(defaults.get("width"), 1024, "SDXL-Base-1.0 width should be 1024")
-        self.assertEqual(defaults.get("height"), 1024, "SDXL-Base-1.0 height should be 1024")
+        self.assertEqual(
+            defaults.get("cfg_scale"), 7.5, "SDXL-Base-1.0 cfg_scale should be 7.5"
+        )
+        self.assertEqual(
+            defaults.get("width"), 1024, "SDXL-Base-1.0 width should be 1024"
+        )
+        self.assertEqual(
+            defaults.get("height"), 1024, "SDXL-Base-1.0 height should be 1024"
+        )
 
         print(f"[OK] SDXL-Base-1.0 image_defaults verified: {defaults}")
 

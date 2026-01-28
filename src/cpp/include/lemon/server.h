@@ -28,18 +28,18 @@ public:
            int max_audio_models,
            int max_image_models,
            const std::string& extra_models_dir);
-    
+
     ~Server();
-    
+
     // Start the server
     void run();
-    
+
     // Stop the server
     void stop();
-    
+
     // Get server status
     bool is_running() const;
-    
+
 private:
     std::string resolve_host_to_ip(int ai_family, const std::string& host);
     void setup_routes(httplib::Server &web_server);
@@ -51,7 +51,7 @@ private:
 
     // Endpoint handlers
     void handle_health(const httplib::Request& req, httplib::Response& res);
-    void handle_live(const httplib::Request& req, httplib::Response& res);    
+    void handle_live(const httplib::Request& req, httplib::Response& res);
     void handle_models(const httplib::Request& req, httplib::Response& res);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
@@ -69,7 +69,7 @@ private:
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_logs_stream(const httplib::Request& req, httplib::Response& res);
-    
+
     // Helper function for local model resolution and registration
     void resolve_and_register_local_model(
         const std::string& dest_path,
@@ -89,16 +89,16 @@ private:
 
     // Image endpoint handlers (OpenAI /v1/images/* compatible)
     void handle_image_generations(const httplib::Request& req, httplib::Response& res);
-    
+
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
-    
+
     // Helper function to convert ModelInfo to JSON (used by models endpoints)
     nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info);
-    
+
     // Helper function to generate detailed model error responses (not found, not supported, load failure)
     nlohmann::json create_model_error(const std::string& requested_model, const std::string& exception_msg);
-    
+
     int port_;
     std::string host_;
     std::string log_level_;
@@ -108,17 +108,16 @@ private:
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;
 
-    
+
     std::unique_ptr<httplib::Server> http_server_;
     std::unique_ptr<httplib::Server> http_server_v6_;
-    
+
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
-    
+
     bool running_;
 
     std::string api_key_;
 };
 
 } // namespace lemon
-

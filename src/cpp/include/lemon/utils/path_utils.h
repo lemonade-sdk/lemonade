@@ -40,5 +40,3 @@ std::string get_downloaded_bin_dir();
 
 } // namespace utils
 } // namespace lemon
-
-

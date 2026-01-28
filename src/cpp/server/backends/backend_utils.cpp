@@ -37,7 +37,7 @@ namespace lemon::backends {
             if (system_root) {
                 powershell_path = std::string(system_root) + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
             }
-            command = powershell_path + " -Command \"Expand-Archive -Path '" + zip_path + 
+            command = powershell_path + " -Command \"Expand-Archive -Path '" + zip_path +
                     "' -DestinationPath '" + dest_dir + "' -Force\"";
         }
 #elif defined(__APPLE__) || defined(__linux__)
@@ -80,7 +80,7 @@ namespace lemon::backends {
 #ifdef _WIN32
         // Windows 10/11 ships with 'bsdtar' as 'tar.exe'.
         // It natively supports gzip (-z) and --strip-components.
-        
+
         // Check if tar exists first
         int tar_check = system("tar --version >nul 2>&1");
         if (tar_check != 0) {
@@ -107,7 +107,7 @@ namespace lemon::backends {
     // Helper to extract archive files based on extension
     bool BackendUtils::extract_archive(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name) {
         // Check if it's a tar.gz file
-        if (archive_path.size() > 7 && 
+        if (archive_path.size() > 7 &&
             archive_path.substr(archive_path.size() - 7) == ".tar.gz") {
             return extract_tarball(archive_path, dest_dir, backend_name);
         }

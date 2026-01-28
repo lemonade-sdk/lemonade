@@ -2,11 +2,11 @@
  * Centralized server configuration management
  * This module provides a single source of truth for the server API base URL
  * and handles automatic port discovery when connections fail.
- * 
+ *
  * Supports remote servers via:
  * - Command line: --base-url http://192.168.0.2:8000
  * - Environment variable: LEMONADE_APP_BASE_URL=http://192.168.0.2:8000
- * 
+ *
  * When an explicit URL is configured, port discovery is disabled.
  * Falls back to localhost + port discovery when no explicit URL is provided.
  */
@@ -59,7 +59,7 @@ class ServerConfig {
           this.port = port;
         }
       }
-      
+
       console.log('Using localhost mode with port:', this.port);
       this.initialized = true;
     } catch (error) {
@@ -160,13 +160,13 @@ class ServerConfig {
 
       console.log('Discovering server port...');
       const port = await window.api.discoverServerPort();
-      
+
       // discoverServerPort returns null when explicit URL is configured
       if (port === null) {
         console.log('Port discovery returned null (explicit URL configured)');
         return null;
       }
-      
+
       this.setPort(port);
       return port;
     } catch (error) {
@@ -223,8 +223,8 @@ class ServerConfig {
    * (only attempts discovery in localhost mode)
    */
   async fetch(endpoint: string, options?: RequestInit): Promise<Response> {
-    const fullUrl = endpoint.startsWith('http') 
-      ? endpoint 
+    const fullUrl = endpoint.startsWith('http')
+      ? endpoint
       : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
     try {
@@ -238,13 +238,13 @@ class ServerConfig {
 
       // If fetch fails in localhost mode, try discovering the port and retry once
       console.warn('Fetch failed, attempting port discovery...', error);
-      
+
       try {
         await this.discoverPort();
         const newUrl = endpoint.startsWith('http')
           ? endpoint.replace(/localhost:\d+/, `localhost:${this.port}`)
           : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
-        
+
         return await fetch(newUrl, options);
       } catch (retryError) {
         // If retry also fails, throw the original error

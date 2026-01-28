@@ -9,23 +9,23 @@ runs:
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host "Cleaning up processes on Windows..." -ForegroundColor Cyan
         Write-Host "========================================" -ForegroundColor Cyan
-        
+
         # Function to safely kill processes by name pattern
         function Stop-ProcessByPattern {
             param(
                 [string]$Pattern,
                 [string]$Description
             )
-            
+
             Write-Host "`nSearching for $Description processes..." -ForegroundColor Yellow
             $processes = Get-Process | Where-Object { $_.ProcessName -like "*$Pattern*" }
-            
+
             if ($processes) {
                 Write-Host "Found $($processes.Count) $Description process(es):" -ForegroundColor Yellow
                 $processes | ForEach-Object {
                     Write-Host "  - $($_.ProcessName) (PID: $($_.Id))" -ForegroundColor Gray
                 }
-                
+
                 $processes | ForEach-Object {
                     try {
                         Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
@@ -38,26 +38,26 @@ runs:
                 Write-Host "No $Description processes found." -ForegroundColor Gray
             }
         }
-        
+
         # Kill llama-server processes
         Stop-ProcessByPattern -Pattern "llama-server" -Description "llama-server"
         Stop-ProcessByPattern -Pattern "llama" -Description "llama"
-        
+
         # Kill FLM processes (Windows only)
         Stop-ProcessByPattern -Pattern "flm" -Description "FLM"
 
         # Kill lemonade processes (lemonade-server, lemonade-router, lemonade-server-dev, etc.)
         Stop-ProcessByPattern -Pattern "lemonade" -Description "lemonade"
-        
+
         # Kill Python processes
         Stop-ProcessByPattern -Pattern "python" -Description "Python"
-        
+
         # Kill wscript processes (VBScript launcher used by lemonade)
         Stop-ProcessByPattern -Pattern "wscript" -Description "wscript"
-        
+
         # Wait a moment for processes to fully terminate
         Start-Sleep -Seconds 2
-        
+
         # Attempt to uninstall legacy C++ NSIS-based Lemonade Server, if present
         Write-Host "`nChecking for legacy Lemonade Server NSIS installer..." -ForegroundColor Yellow
         $nsisKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Lemonade Server'
@@ -100,7 +100,7 @@ runs:
         } else {
             Write-Host "  No legacy C++ NSIS installer registry key detected in HKCU (already clean)" -ForegroundColor Gray
         }
-        
+
         # Clean up Python user directory that can cause issues
         Write-Host "`nCleaning up system Python directory..." -ForegroundColor Yellow
         $systemPythonPath = "C:\windows\system32\config\systemprofile\AppData\Roaming\Python"
@@ -114,7 +114,7 @@ runs:
         } else {
             Write-Host "  System Python directory not found (already clean)" -ForegroundColor Gray
         }
-        
+
         # Clean up log files to avoid confusion between test runs
         Write-Host "`nCleaning up log files..." -ForegroundColor Yellow
         $logPatterns = @("lemonade*.log", "lemonade-router*.log", "lemonade-server*.log")
@@ -132,7 +132,7 @@ runs:
                 }
             }
         }
-        
+
         Write-Host "`n========================================" -ForegroundColor Cyan
         Write-Host "Process cleanup complete!" -ForegroundColor Cyan
         Write-Host "========================================" -ForegroundColor Cyan
@@ -143,21 +143,21 @@ runs:
         Write-Host "`n========================================" -ForegroundColor Magenta
         Write-Host "Uninstalling Lemonade Server (MSI)..." -ForegroundColor Magenta
         Write-Host "========================================" -ForegroundColor Magenta
-        
+
         # Uninstall by Product Code - Attempt to find it first
         $productName = "Lemonade Server"
-        
+
         Write-Host "Searching for product: $productName" -ForegroundColor Cyan
-        
+
         $product = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -eq $productName }
-        
+
         if ($product) {
             Write-Host "Found installed product: $($product.Name) (Version: $($product.Version))" -ForegroundColor Green
             Write-Host "IdentifyingNumber (ProductCode): $($product.IdentifyingNumber)" -ForegroundColor Gray
-            
+
             Write-Host "Uninstalling..." -ForegroundColor Yellow
             $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x $($product.IdentifyingNumber) /qn" -Wait -PassThru
-            
+
             if ($proc.ExitCode -eq 0) {
                 Write-Host "Uninstall successful!" -ForegroundColor Green
             } else {
@@ -165,12 +165,12 @@ runs:
             }
         } else {
             Write-Host "Product '$productName' not found installed via MSI." -ForegroundColor Gray
-            
+
             # Fallback: Check if we can uninstall via the MSI file if it exists in current directory
             if (Test-Path "lemonade-server-minimal.msi") {
                 Write-Host "Found lemonade-server-minimal.msi in current directory. Attempting uninstall via file..." -ForegroundColor Yellow
                 $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x lemonade-server-minimal.msi /qn" -Wait -PassThru
-                
+
                 if ($proc.ExitCode -eq 0) {
                     Write-Host "Uninstall via MSI file successful!" -ForegroundColor Green
                 } else {
@@ -178,4 +178,3 @@ runs:
                 }
             }
         }
-

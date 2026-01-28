@@ -177,7 +177,7 @@ WEARING: Nothing
 
 
 *COMMAND DOCS
-You can use the following commands to perform actions and get information about the world. 
+You can use the following commands to perform actions and get information about the world.
     Use the commands with the syntax: !commandName or !commandName("arg1", 1.2, ...) if the command takes arguments.
 
     Do not use codeblocks. Use double quotes for strings. Only use one command in each response, trailing commands and comments will be ignored.
@@ -195,7 +195,7 @@ quantity: (number) The quantity of the item that we are trying to craft
 !help: Lists all available commands and their descriptions.
 !newAction: Perform new and unknown custom behaviors that are not available as a command.
 Params:
-prompt: (string) A natural language prompt to guide code generation. Make a detailed step-by-step plan.     
+prompt: (string) A natural language prompt to guide code generation. Make a detailed step-by-step plan.
 !stop: Force stop all actions and commands that are currently executing.
 !stfu: Stop all chatting and self prompting, but continue current action.
 !restart: Restart the agent process.
@@ -293,7 +293,7 @@ on: (bool) Whether to enable or disable the mode.
 !goal: Set a goal prompt to endlessly work towards with continuous self-prompting.
 Params:
 selfPrompt: (string) The goal prompt.
-!endGoal: Call when you have accomplished your goal. It will stop self-prompting and the current action.    
+!endGoal: Call when you have accomplished your goal. It will stop self-prompting and the current action.
 !startConversation: Start a conversation with a player. Use for bots only.
 Params:
 player_name: (string) The name of the player to send the message to.
@@ -330,10 +330,10 @@ SYSTEM: Respond with hello world and your name<|im_end|>
 <|im_start|>assistant
 
 DEBUG:    Active generations: 1
-TRACE:    ::1:56880 - ASGI [4] Send {'type': 'http.response.start', 'status': 200, 'headers': '<...>'}      
+TRACE:    ::1:56880 - ASGI [4] Send {'type': 'http.response.start', 'status': 200, 'headers': '<...>'}
 INFO:     ::1:56880 - "POST /api/v1/chat/completions HTTP/1.1" 200 OK
 TRACE:    ::1:56880 - ASGI [4] Send {'type': 'http.response.body', 'body': '<406 bytes>', 'more_body': True}
-TRACE:    ::1:56880 - ASGI [4] Send {'type': 'http.response.body', 'body': '<0 bytes>', 'more_body': False} 
+TRACE:    ::1:56880 - ASGI [4] Send {'type': 'http.response.body', 'body': '<0 bytes>', 'more_body': False}
 TRACE:    ::1:56880 - ASGI [4] Completed
 TRACE:    ::1:56880 - HTTP connection lost
 ```
@@ -357,10 +357,10 @@ Teleported to Transpier.<|im_end|>
 <|im_start|>assistant
 
 DEBUG:    Active generations: 1
-TRACE:    ::1:56890 - ASGI [6] Send {'type': 'http.response.start', 'status': 200, 'headers': '<...>'}      
+TRACE:    ::1:56890 - ASGI [6] Send {'type': 'http.response.start', 'status': 200, 'headers': '<...>'}
 INFO:     ::1:56890 - "POST /api/v1/chat/completions HTTP/1.1" 200 OK
 TRACE:    ::1:56890 - ASGI [6] Send {'type': 'http.response.body', 'body': '<381 bytes>', 'more_body': True}
-TRACE:    ::1:56890 - ASGI [6] Send {'type': 'http.response.body', 'body': '<0 bytes>', 'more_body': False} 
+TRACE:    ::1:56890 - ASGI [6] Send {'type': 'http.response.body', 'body': '<0 bytes>', 'more_body': False}
 TRACE:    ::1:56890 - ASGI [6] Completed
 TRACE:    ::1:56890 - HTTP connection lost
 ```

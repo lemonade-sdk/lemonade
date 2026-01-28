@@ -29,7 +29,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => {
         return ''; // use external default escaping
       }
     });
-    
+
     // Add math support with KaTeX
     mdInstance.use(texmath, {
       engine: katex,
@@ -39,7 +39,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => {
         displayMode: false
       }
     });
-    
+
     return mdInstance;
   }, []);
 
@@ -70,7 +70,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => {
   }, [htmlContent]);
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className="markdown-content"
       dangerouslySetInnerHTML={{ __html: htmlContent }}
@@ -79,4 +79,3 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => {
 };
 
 export default MarkdownMessage;
-

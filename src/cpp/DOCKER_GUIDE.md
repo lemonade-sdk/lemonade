@@ -188,7 +188,7 @@ RUN apt-get update && apt-get install -y \
     libvulkan1 \
     unzip \
     libgomp1 \
-    && rm -rf /var/lib/apt/lists/*  
+    && rm -rf /var/lib/apt/lists/*
 
 # Create application directory
 WORKDIR /opt/lemonade
@@ -315,7 +315,7 @@ Once the model is loaded:
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8000/api/v1", 
+    base_url="http://localhost:8000/api/v1",
     api_key="lemonade"  # required but unused
 )
 

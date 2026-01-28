@@ -77,7 +77,7 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
 }
 
 static const bool is_empty_option(json option) {
-    return (option.is_number() && (option == -1)) || 
+    return (option.is_number() && (option == -1)) ||
            (option.is_string() && (option == ""));
 }
 
@@ -131,7 +131,7 @@ std::vector<std::string> RecipeOptions::to_cli_options(const json& raw_options) 
 RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
     recipe_ = recipe;
     std::vector<std::string> to_copy = get_keys_for_recipe(recipe_);
-    
+
     for (auto key : to_copy) {
         if (options.contains(key) && !is_empty_option(options[key])) {
             options_[key] = options[key];
@@ -166,10 +166,10 @@ std::string RecipeOptions::to_log_string(bool resolve_defaults) const {
         if (resolve_defaults || options_.contains(key)) {
             if (!first) log_string += ", ";
             first = false;
-            log_string += key + "=" + format_option_for_logging(get_option(key)); 
+            log_string += key + "=" + format_option_for_logging(get_option(key));
         }
     }
-    
+
     return log_string;
 }
 
