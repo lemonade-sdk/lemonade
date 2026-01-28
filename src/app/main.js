@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { exec, spawn } = require('child_process');
+const { exec, spawn, spawnSync } = require('child_process');
 
 const DEFAULT_MIN_WIDTH = 400;
 const DEFAULT_MIN_HEIGHT = 600;
@@ -310,35 +310,6 @@ const broadcastServerPortUpdated = (port) => {
   }
 };
 
-const findLemonadeServerBinary = () => {
-  const possiblePaths = [
-    '/usr/local/bin/lemonade-server',
-    '/usr/bin/lemonade-server',
-  ];
-
-  for (const path of possiblePaths) {
-    try {
-      if (fs.existsSync(path)) {
-        return path;
-      }
-    } catch (e) {
-      // Continue checking other paths
-    }
-  }
-
-  // If not found in common locations, try which command
-  try {
-    const which = require('child_process').spawnSync('which', ['lemonade-server']);
-    if (which.status === 0) {
-      return which.stdout.toString().trim();
-    }
-  } catch (e) {
-    // which command failed
-  }
-
-  return null;
-};
-
 const ensureTrayRunning = () => {
   return new Promise((resolve) => {
     if (process.platform !== 'darwin') {
@@ -360,14 +331,11 @@ const ensureTrayRunning = () => {
     // We must kill any "Ghost" processes and delete the lock files
     // or the new one will think it's already running and quit immediately.
     try {
-      // Kill any existing instances (ignore errors if none exist)
-      require('child_process').execSync('pkill -9 -f "lemonade-server tray" || true');
-
-      // Delete the lock files that cause "Already Running" errors
-      const locks = ['/tmp/lemonade_Tray.lock', '/tmp/lemonade_Server.lock', '/tmp/lemonade.lock'];
-      locks.forEach(lock => {
-        if (fs.existsSync(lock)) fs.unlinkSync(lock);
-      });
+      gracefulKillBlocking('lemonade-server tray');
+      
+      // Delete the lock file that cause "Already Running" error
+      const lock = '/tmp/lemonade_Tray.lock';
+      if (fs.existsSync(lock)) fs.unlinkSync(lock);
       console.log('Cleanup complete (Zombies killed, Locks deleted).');
     } catch (e) {
       console.error('Cleanup warning:', e.message);
@@ -378,7 +346,7 @@ const ensureTrayRunning = () => {
     const env = { ...process.env };
     env.PATH = `${env.PATH}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`;
     // Ensure it can find libraries in /usr/local/lib
-    env.DYLD_LIBRARY_PATH = '/usr/local/lib';
+    env.DYLD_LIBRARY_PATH = `${env.DYLD_LIBRARY_PATH}:/usr/local/lib`;
 
     // 3. LAUNCH
     console.log('Spawning tray process...');
@@ -398,20 +366,58 @@ const ensureTrayRunning = () => {
   });
 };
 
+function gracefulKillBlocking(processPattern) {
+    const TIMEOUT_MS = 30000;
+
+    // Send SIGTERM (Polite kill)
+    const killResult = spawnSync('pkill', ['-f', processPattern]);
+
+    // If pkill returned non-zero, the process wasn't running. We are done.
+    if (killResult.status !== 0) {
+        return; 
+    }
+
+    // 2. Poll for exit
+    const deadline = Date.now() + TIMEOUT_MS;
+    let isRunning = true;
+
+    while (isRunning && Date.now() < deadline) {
+        // Check if process exists using pgrep
+        const checkResult = spawnSync('pgrep', ['-f', processPattern]);
+
+        if (checkResult.status !== 0) {
+            // pgrep returned non-zero (process not found) -> It exited!
+            isRunning = false;
+        } else {
+            // Process still exists -> Block for 1 second
+            spawnSync('sleep', ['1']);
+        }
+    }
+
+    // 3. Force Kill (SIGKILL) if the flag is still true
+    if (isRunning) {
+        spawnSync('pkill', ['-9', '-f', processPattern]);
+    }
+}
+
 const discoverServerPort = () => {
+  //This is the default port to try macos lemonade server on.
+  const DEFAULT_PORT = 8000;
+  const StatusResponseWaitMs = 5000;
+  
   return new Promise((resolve) => {
     // Always ensure tray is running on macOS, regardless of server status
     ensureTrayRunning().then(() => {
-      exec('lemonade-server status', { timeout: 5000 }, (error, stdout, stderr) => {
+      exec('lemonade-server status', { timeout: StatusResponseWaitMs }, (error, stdout, stderr) => {
         if (error || (stdout && stdout.trim().includes('not running'))) {
           // Server not running, tray should start it
           if (process.platform === 'darwin') {
             console.warn('Server not running, tray should start it. Waiting...');
             setTimeout(() => {
-              exec('lemonade-server status', { timeout: 5000 }, (error3, stdout3, stderr3) => {
+              exec('lemonade-server status', { timeout: StatusResponseWaitMs }, (error3, stdout3, stderr3) => {
                 if (error3 || (stdout3 && stdout3.trim().includes('not running'))) {
                   console.warn('Server still not running after waiting, using default port 8000');
-                  resolve(8000);
+                  resolve(DEFAULT_PORT);
                   return;
                 }
 
@@ -424,6 +430,7 @@ const discoverServerPort = () => {
 
                   if (portMatch && portMatch[1]) {
                     const port = parseInt(portMatch[1], 10);
+                    //Verify parsing since ports can not be less than 0 and not more than 65536 because they are a uint16
                     if (!isNaN(port) && port > 0 && port < 65536) {
                       console.log('Discovered server port after tray start:', port);
                       resolve(port);
@@ -432,10 +439,10 @@ const discoverServerPort = () => {
                   }
 
                   console.warn('Could not parse port from status output:', output);
-                  resolve(8000);
+                  resolve(DEFAULT_PORT);
                 } catch (parseError) {
                   console.error('Error parsing status:', parseError);
-                  resolve(8000);
+                  resolve(DEFAULT_PORT);
                 }
               });
             }, 10000); // Wait 10 seconds for tray to start server
@@ -443,7 +450,7 @@ const discoverServerPort = () => {
           } else {
             // On non-macOS platforms, just fall back to default
             console.warn('Failed to discover server port:', error);
-            resolve(8000);
+            resolve(DEFAULT_PORT);
             return;
           }
         }
@@ -467,10 +474,10 @@ const discoverServerPort = () => {
           }
 
           console.warn('Could not parse port from lemonade-server status output:', output);
-          resolve(8000);
+          resolve(DEFAULT_PORT);
         } catch (parseError) {
           console.error('Error parsing server status:', parseError);
-          resolve(8000);
+          resolve(DEFAULT_PORT);
         }
       });
     });
