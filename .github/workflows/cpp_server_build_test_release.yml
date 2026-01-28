@@ -658,4 +658,3 @@ jobs:
             lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
             lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
           fail_on_unmatched_files: true
-

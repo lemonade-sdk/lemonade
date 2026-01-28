@@ -18,10 +18,13 @@
 #include <set>
 
 #ifdef _WIN32
-#include <windows.h>
+    #include <windows.h>
+#elif defined(__APPLE__)
+    #include <mach-o/dyld.h>
+    #include <limits.h>
 #else
-#include <sys/stat.h>
-#include <unistd.h>
+    #include <sys/stat.h>
+    #include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -736,4 +739,3 @@ std::string LlamaCppServer::get_llama_server_path(const std::string& backend) {
 
 } // namespace backends
 } // namespace lemon
-

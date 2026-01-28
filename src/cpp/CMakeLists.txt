@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.28)
+cmake_minimum_required(VERSION 3.10...3.28)
 
 # Use static runtime library on Windows to avoid DLL dependencies
 if(MSVC)
@@ -6,6 +6,11 @@ if(MSVC)
 endif()
 
 project(lemon_cpp VERSION 9.2.0)
+
+# Prevent finding Homebrew libraries on macOS to use system ones
+if(APPLE)
+    set(CMAKE_IGNORE_PATH "/opt/homebrew/lib" "/opt/homebrew/include")
+endif()
 
 # ============================================================
 # Electron source paths (used by both runtime and installers)
@@ -16,7 +21,7 @@ if(WIN32)
     set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/win-unpacked")
     set(ELECTRON_EXE_NAME "Lemonade.exe")
 elseif(APPLE)
-    set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/mac")
+    set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/mac-arm64")
     set(ELECTRON_EXE_NAME "Lemonade.app")
 else()
     set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/linux-unpacked")
@@ -121,6 +126,15 @@ if(NOT USE_SYSTEM_JSON OR NOT USE_SYSTEM_CURL OR NOT USE_SYSTEM_ZSTD OR NOT USE_
     include(FetchContent)
 endif()
 
+if(APPLE)
+    # brotli (MIT License) - required by httplib for compression on macOS
+    FetchContent_Declare(brotli
+        GIT_REPOSITORY https://github.com/google/brotli.git
+        GIT_TAG v1.1.0
+        EXCLUDE_FROM_ALL
+    )
+endif()
+
 # === nlohmann/json ===
 if(NOT USE_SYSTEM_JSON)
     FetchContent_Declare(json
@@ -187,13 +201,37 @@ else()
     if(NOT TARGET zstd::libzstd)
         add_library(zstd::libzstd UNKNOWN IMPORTED)
         # Find the actual library file
-        find_library(ZSTD_LIBRARY NAMES zstd)
+        find_library(ZSTD_LIBRARY NAMES zstd HINTS ${ZSTD_LIBRARY_DIRS})
         if(ZSTD_LIBRARY)
             set_target_properties(zstd::libzstd PROPERTIES
                 IMPORTED_LOCATION "${ZSTD_LIBRARY}"
+                IMPORTED_LOCATION_RELEASE "${ZSTD_LIBRARY}"
+                IMPORTED_LOCATION_DEBUG "${ZSTD_LIBRARY}"
                 INTERFACE_INCLUDE_DIRECTORIES "${ZSTD_INCLUDE_DIRS}"
             )
         endif()
+    endif()
+endif()
+
+if(APPLE)
+    # === brotli ===
+    set(BROTLI_BUILD_STATIC ON CACHE INTERNAL "")
+    set(BROTLI_BUILD_PROGRAMS OFF CACHE INTERNAL "")
+    set(BROTLI_BUILD_SHARED OFF CACHE INTERNAL "")
+    set(BROTLI_BUILD_TESTS OFF CACHE INTERNAL "")
+    
+    FetchContent_MakeAvailable(brotli)
+    
+    if(TARGET brotlicommon)
+        add_library(Brotli::common ALIAS brotlicommon)
+    endif()
+    
+    if(TARGET brotlienc)
+        add_library(Brotli::encoder ALIAS brotlienc)
+    endif()
+    
+    if(TARGET brotlidec)
+        add_library(Brotli::decoder ALIAS brotlidec)
     endif()
 endif()
 
@@ -216,6 +254,14 @@ if(NOT USE_SYSTEM_HTTPLIB)
             ${zstd_SOURCE_DIR}/lib/common
         )
     endif()
+endif()
+
+
+# Use brotli for compression on macOS
+if(APPLE)
+    set(HTTPLIB_REQUIRE_BROTLI OFF CACHE INTERNAL "")           # Skip brotli checks
+    set(HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF CACHE INTERNAL "")  # Skip brotli checks
+    set(HTTPLIB_IS_USING_BROTLI ON CACHE INTERNAL "")           # brotli is provided
 endif()
 
 
@@ -397,6 +443,11 @@ set(SOURCES
     server/backends/backend_utils.cpp
 )
 
+# Add platform-specific source files
+if(APPLE)
+    list(APPEND SOURCES server/macos_system_info.mm)
+endif()
+
 # Add version resource file on Windows
 if(WIN32)
     list(APPEND SOURCES server/version.rc)
@@ -461,11 +512,17 @@ endif()
 if(USE_SYSTEM_ZSTD)
     target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${ZSTD_LIBRARIES})
     target_include_directories(${EXECUTABLE_NAME} PRIVATE ${ZSTD_INCLUDE_DIRS})
+    target_link_directories(${EXECUTABLE_NAME} PRIVATE ${ZSTD_LIBRARY_DIRS})
     target_compile_options(${EXECUTABLE_NAME} PRIVATE ${ZSTD_CFLAGS_OTHER})
 endif()
 
 if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
     target_include_directories(${EXECUTABLE_NAME} PRIVATE ${HTTPLIB_INCLUDE_DIRS})
+endif()
+
+# Enable ARC (Automatic Reference Counting) for macOS Objective-C++ files
+if(APPLE)
+    target_compile_options(${EXECUTABLE_NAME} PRIVATE -fobjc-arc)
 endif()
 
 # Platform-specific linking
@@ -477,8 +534,16 @@ if(WIN32)
         ole32
         oleaut32
     )
+elseif(APPLE)
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE
+        "-framework Metal"
+        "-framework Foundation"
+        "-framework CoreServices"
+        "-lobjc"
+    )
+    # Prevent linking to Homebrew OpenSSL on macOS, use Apple's built-in SSL
+    target_link_options(${EXECUTABLE_NAME} PRIVATE -Wl,-no_weak_imports)
 endif()
-
 
 # ============================================================
 # Resources
@@ -535,21 +600,185 @@ else()
     message(STATUS "Install Node.js to enable: https://nodejs.org/")
 endif()
 
-# Custom command to copy Electron app files after building the C++ server
-add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Checking for Electron app at ${ELECTRON_APP_UNPACKED_DIR}..."
-    COMMAND ${CMAKE_COMMAND}
-        -DELECTRON_APP_UNPACKED_DIR=${ELECTRON_APP_UNPACKED_DIR}
-        -DTARGET_DIR=$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>
-        -DELECTRON_EXE_NAME=${ELECTRON_EXE_NAME}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/CopyElectronApp.cmake
-    COMMENT "Copying Electron app if available"
-    VERBATIM
-)
+# Custom command to copy Electron app (Wrapped in NOT APPLE to avoid conflicts)
+if(NOT APPLE)
+    add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "Checking for Electron app at ${ELECTRON_APP_UNPACKED_DIR}..."
+        COMMAND ${CMAKE_COMMAND}
+            -DELECTRON_APP_UNPACKED_DIR=${ELECTRON_APP_UNPACKED_DIR}
+            -DTARGET_DIR=$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>
+            -DELECTRON_EXE_NAME=${ELECTRON_EXE_NAME}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/CopyElectronApp.cmake
+        COMMENT "Copying Electron app if available"
+        VERBATIM
+    )
+endif()
 
-# Add tray application subdirectory
+# ============================================================
+# macOS Packaging & Notarization
+# ============================================================
+if(APPLE)
+    # SETUP IDENTITIES
+    set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+    set(CPACK_PACKAGE_VENDOR "Lemonade")
+    set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lemonade Local LLM Server")
+    set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server.")
+    set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/../../LICENSE")
+    # Skip readme page entirely
+    set(CPACK_INSTALL_README_DIR "")
+
+    if(NOT DEFINED SIGNING_IDENTITY)
+        if(DEFINED ENV{DEVELOPER_ID_APPLICATION_IDENTITY})
+            set(SIGNING_IDENTITY "$ENV{DEVELOPER_ID_APPLICATION_IDENTITY}")
+        else()
+            set(SIGNING_IDENTITY "BBC1E1924FF481293CF0928B5DFFF8A6419D7DA0")
+        endif()
+    endif()
+
+    if(NOT DEFINED INSTALLER_IDENTITY)
+        if(DEFINED ENV{DEVELOPER_ID_INSTALLER_IDENTITY})
+            set(INSTALLER_IDENTITY "$ENV{DEVELOPER_ID_INSTALLER_IDENTITY}")
+        else()
+            set(INSTALLER_IDENTITY "B69167355F20D364EE8FD7126D767B93B5344EBB")
+        endif()
+    endif()
+
+    # Configure Plists & Entitlements
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/com.lemonade.server.plist.in ${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist @ONLY)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/com.lemonade.tray.plist.in ${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.tray.plist @ONLY)
+
+    set(ENTITLEMENTS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/server/entitlements.plist")
+    if(NOT EXISTS "${ENTITLEMENTS_PATH}")
+        file(WRITE "${ENTITLEMENTS_PATH}" 
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+            <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+            <plist version=\"1.0\">
+            <dict>
+                <key>com.apple.security.cs.allow-jit</key><true/>
+                <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+                <key>com.apple.security.cs.disable-library-validation</key><true/>
+                <key>com.apple.security.cs.allow-dyld-environment-variables</key><true/>
+            </dict>
+            </plist>")
+    endif()
+endif()
+
+# ============================================================
+# TRAY SUBDIRECTORY (Depends on Identities being set above)
+# ============================================================
 add_subdirectory(tray)
 
+if(APPLE)
+    # SIGNING LOGIC (Release Only)
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        message(STATUS "Release Build: Configuring Hardened Runtime Signing for Router")
+        
+        # Sign 'lemonade-router'
+        add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "--- Signing ${EXECUTABLE_NAME} ---"
+            COMMAND codesign --force --options runtime --timestamp --entitlements "${ENTITLEMENTS_PATH}" --sign "${SIGNING_IDENTITY}" -v $<TARGET_FILE:${EXECUTABLE_NAME}>
+            COMMENT "Signing ${EXECUTABLE_NAME} with Hardened Runtime"
+            VERBATIM
+        )
+        # Note: 'lemonade-server' (Tray) signs itself inside tray/CMakeLists.txt 
+        # using the SIGNING_IDENTITY we defined above.
+    endif()
+
+    # Prepare Electron App
+    set(ELECTRON_BUILD_COPY "${CMAKE_BINARY_DIR}/Lemonade.app")
+    add_custom_target(prepare_electron_app
+        COMMAND ${CMAKE_COMMAND} -E remove_directory "${ELECTRON_BUILD_COPY}"
+        COMMAND cp -R "${ELECTRON_APP_UNPACKED_DIR}/Lemonade.app" "${CMAKE_BINARY_DIR}/"
+        COMMENT "Copying Electron App (Preserving Signature)..."
+        DEPENDS electron-app
+    )
+    
+    set(CPACK_PRE_BUILD_SCRIPTS "${CMAKE_BINARY_DIR}/cpack_prebuild.cmake")
+    file(WRITE "${CMAKE_BINARY_DIR}/cpack_prebuild.cmake"
+        "message(STATUS \"Pre-build: Ensuring Electron app is prepared...\")\n"
+        "execute_process(COMMAND ${CMAKE_COMMAND} --build \"${CMAKE_BINARY_DIR}\" --target prepare_electron_app)\n"
+    )
+
+    # INSTALLATION (Component Structure)
+    
+    # Main Router -> /usr/local/bin
+    install(TARGETS ${EXECUTABLE_NAME} RUNTIME DESTINATION "usr/local/bin" COMPONENT Runtime)
+
+    # Tray/Server -> /usr/local/bin
+    # (Since tray/CMakeLists.txt skips install on Apple, we must do it here)
+    if(TARGET lemonade-server)
+        install(TARGETS lemonade-server RUNTIME DESTINATION "usr/local/bin" COMPONENT Runtime)
+    endif()
+
+    # Resources -> /Library/Application Support/Lemonade/resources
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/ DESTINATION "Library/Application Support/Lemonade/resources" COMPONENT Resources)
+
+    # App Bundle -> /Applications
+    install(DIRECTORY "${ELECTRON_BUILD_COPY}" 
+        DESTINATION "Applications" 
+        USE_SOURCE_PERMISSIONS 
+        COMPONENT Applications
+    )
+    
+    # Plists -> /Library/...
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist" DESTINATION "Library/LaunchDaemons" COMPONENT Runtime)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.tray.plist" DESTINATION "Library/LaunchAgents" COMPONENT Runtime)
+
+    # Placeholder -> /usr/local/share/lemonade-server
+    file(WRITE "${CMAKE_BINARY_DIR}/.keep" "")
+    install(FILES "${CMAKE_BINARY_DIR}/.keep" DESTINATION "usr/local/share/lemonade-server" COMPONENT Runtime)
+
+    # ackaging & Notarization
+    set(CPACK_GENERATOR "productbuild")
+    set(CPACK_PACKAGE_NAME "Lemonade")
+    set(CPACK_PRODUCTBUILD_IDENTIFIER "com.lemonade.server")
+    
+    set(CPACK_PRODUCTBUILD_DOMAIN "system") 
+    
+    if(INSTALLER_IDENTITY)
+        set(CPACK_PRODUCTBUILD_IDENTITY_NAME "${INSTALLER_IDENTITY}")
+    endif()
+    set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
+    set(CPACK_PRODUCTBUILD_BUNDLE com.lemonade.server.Applications OFF)
+    set(CPACK_PRODUCTBUILD_BUNDLE_ID com.lemonade.server.Applications)
+
+    set(CPACK_PACKAGING_INSTALL_PREFIX "/")
+    set(CPACK_PACKAGE_RELOCATABLE OFF)
+    set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+    set(CPACK_COMPONENT_APPLICATIONS_IS_ABSOLUTE ON)
+
+    # license file extension for CPack
+    configure_file("${CMAKE_SOURCE_DIR}/../../LICENSE" "${CMAKE_BINARY_DIR}/LICENSE.txt" COPYONLY)
+    set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_BINARY_DIR}/LICENSE.txt")
+
+    set(CPACK_POSTFLIGHT_SERVICES_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/postinst-full-mac")
+    include(CPack)
+
+    set(PACKAGE_DEPENDS prepare_electron_app ${EXECUTABLE_NAME})
+    
+    add_custom_target(package-macos
+        DEPENDS ${PACKAGE_DEPENDS}
+        COMMAND ${CMAKE_COMMAND} --build . --config $<CONFIG> --target package
+        COMMENT "Running CPack to create signed installer..."
+        VERBATIM
+    )
+
+    find_program(XCRUN_EXE xcrun)
+    if(XCRUN_EXE)
+        set(PKG_NAME "Lemonade-${PROJECT_VERSION}-Darwin.pkg")
+        add_custom_target(notarize_package
+            COMMAND ${CMAKE_COMMAND} -E echo "Submitting ${PKG_NAME}..."
+            COMMAND ${XCRUN_EXE} notarytool submit "${CMAKE_BINARY_DIR}/${PKG_NAME}" --keychain-profile "AC_PASSWORD" --wait
+            COMMAND ${CMAKE_COMMAND} -E echo "Stapling ticket..."
+            COMMAND ${XCRUN_EXE} stapler staple "${CMAKE_BINARY_DIR}/${PKG_NAME}"
+            WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+            COMMENT "Notarizing and Stapling..."
+            VERBATIM
+        )
+        add_dependencies(notarize_package package-macos)
+    endif()
+endif()
 
 # ============================================================
 # CPack Configuration for .deb Package (Linux only)
@@ -568,29 +797,22 @@ if(UNIX AND NOT APPLE)
     set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
     set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
     
-    # Installation paths - use ~/.local for user install (no sudo needed)
-    # Set via environment: cmake -DCPACK_PACKAGING_INSTALL_PREFIX=$HOME/.local ..
+    # Installation paths
     if(NOT DEFINED CPACK_PACKAGING_INSTALL_PREFIX)
         set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
     endif()
     
-    # Only install our executables (not curl/development files)
-    # Note: lemonade-server installation is handled in tray/CMakeLists.txt
-    install(TARGETS ${EXECUTABLE_NAME}
-        RUNTIME DESTINATION bin
-    )
+    # Install executables
+    install(TARGETS ${EXECUTABLE_NAME} RUNTIME DESTINATION bin)
     
     # Install resources
-    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/
-        DESTINATION share/lemonade-server/resources
-    )
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/ DESTINATION share/lemonade-server/resources)
     
     # Check if Electron app is available for full package
     option(INCLUDE_ELECTRON_APP "Include Electron app in deb package" OFF)
     
     if(INCLUDE_ELECTRON_APP AND EXISTS "${ELECTRON_APP_UNPACKED_DIR}/${ELECTRON_EXE_NAME}")
         message(STATUS "Electron app found at ${ELECTRON_APP_UNPACKED_DIR}")
-        message(STATUS "Building full deb package with Electron app")
         
         # Full package name
         set(CPACK_PACKAGE_NAME "lemonade")
@@ -605,8 +827,6 @@ if(UNIX AND NOT APPLE)
         )
         
         # Post-install script for full package
-        # Note: CPack requires the script to be named 'postinst' exactly
-        # We copy postinst-full to a temporary postinst file for CPack
         configure_file("${CMAKE_CURRENT_SOURCE_DIR}/postinst-full" 
                        "${CMAKE_CURRENT_BINARY_DIR}/postinst" COPYONLY)
         set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_BINARY_DIR}/postinst")
@@ -618,13 +838,8 @@ if(UNIX AND NOT APPLE)
         
         # Post-install script for minimal package
         set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/postinst")
-        
-        if(INCLUDE_ELECTRON_APP)
-            message(WARNING "INCLUDE_ELECTRON_APP is ON but Electron app not found at ${ELECTRON_APP_UNPACKED_DIR}")
-            message(WARNING "Building minimal deb package instead")
-        endif()
     endif()
-    
+
     # RPM specific variables defined within
     include(${CMAKE_CURRENT_SOURCE_DIR}/CPackRPM.cmake)
     include(CPack)
