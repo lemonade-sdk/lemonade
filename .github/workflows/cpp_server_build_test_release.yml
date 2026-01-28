@@ -638,6 +638,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           sparse-checkout: .github
+          fetch-tags: true
 
       - name: Generate release notes
         id: release-notes
