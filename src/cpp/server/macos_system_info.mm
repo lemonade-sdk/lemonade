@@ -12,6 +12,10 @@ namespace lemon {
 
 std::vector<GPUInfo> MacOSSystemInfo::detect_metal_gpus() {
     std::vector<GPUInfo> gpus;
+    //Check to make sure we are on atleast version 10.5 to support the API calls to MTLDevice
+    if (!@available(macOS 10.5, *)) {
+        return {}; // or return empty vector
+    }
 
     // Use Metal to enumerate available GPUs
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
@@ -38,10 +42,10 @@ std::vector<GPUInfo> MacOSSystemInfo::detect_metal_gpus() {
                 GPUInfo additional_gpu;
                 additional_gpu.name = [dev.name UTF8String];
                 additional_gpu.available = true;
-
+                
                 uint64_t additional_vram = [dev recommendedMaxWorkingSetSize];
                 additional_gpu.vram_gb = additional_vram / (1024.0 * 1024.0 * 1024.0);
-                additional_gpu.driver_version = "Metal";
+                additional_gpu.driver_version = [dev.architecture.name UTF8String];
 
                 // Detect inference engines for additional Metal GPU
                 additional_gpu.inference_engines = detect_inference_engines("metal_gpu", additional_gpu.name);
@@ -51,9 +55,6 @@ std::vector<GPUInfo> MacOSSystemInfo::detect_metal_gpus() {
         }
         // ARC handles memory management automatically
     }
-
-    // ARC handles memory management automatically
-
     if (gpus.empty()) {
         GPUInfo gpu;
         gpu.available = false;

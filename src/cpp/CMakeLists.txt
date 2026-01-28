@@ -112,15 +112,6 @@ else()
     message(STATUS "System cpp-httplib not found or version < ${MIN_HTTPLIB_VERSION}, will use FetchContent")
 endif()
 
-if(APPLE)
-    # brotli (MIT License) - required by httplib for compression on macOS
-    FetchContent_Declare(brotli
-        GIT_REPOSITORY https://github.com/google/brotli.git
-        GIT_TAG v1.1.0
-        EXCLUDE_FROM_ALL
-    )
-endif()
-
 # ============================================================
 # Common dependency configurations
 # ============================================================
@@ -133,6 +124,15 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 # Fetch missing dependencies
 if(NOT USE_SYSTEM_JSON OR NOT USE_SYSTEM_CURL OR NOT USE_SYSTEM_ZSTD OR NOT USE_SYSTEM_CLI11 OR NOT USE_SYSTEM_HTTPLIB)
     include(FetchContent)
+endif()
+
+if(APPLE)
+    # brotli (MIT License) - required by httplib for compression on macOS
+    FetchContent_Declare(brotli
+        GIT_REPOSITORY https://github.com/google/brotli.git
+        GIT_TAG v1.1.0
+        EXCLUDE_FROM_ALL
+    )
 endif()
 
 # === nlohmann/json ===
@@ -201,10 +201,12 @@ else()
     if(NOT TARGET zstd::libzstd)
         add_library(zstd::libzstd UNKNOWN IMPORTED)
         # Find the actual library file
-        find_library(ZSTD_LIBRARY NAMES zstd)
+        find_library(ZSTD_LIBRARY NAMES zstd HINTS ${ZSTD_LIBRARY_DIRS})
         if(ZSTD_LIBRARY)
             set_target_properties(zstd::libzstd PROPERTIES
                 IMPORTED_LOCATION "${ZSTD_LIBRARY}"
+                IMPORTED_LOCATION_RELEASE "${ZSTD_LIBRARY}"
+                IMPORTED_LOCATION_DEBUG "${ZSTD_LIBRARY}"
                 INTERFACE_INCLUDE_DIRECTORIES "${ZSTD_INCLUDE_DIRS}"
             )
         endif()
@@ -510,6 +512,7 @@ endif()
 if(USE_SYSTEM_ZSTD)
     target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${ZSTD_LIBRARIES})
     target_include_directories(${EXECUTABLE_NAME} PRIVATE ${ZSTD_INCLUDE_DIRS})
+    target_link_directories(${EXECUTABLE_NAME} PRIVATE ${ZSTD_LIBRARY_DIRS})
     target_compile_options(${EXECUTABLE_NAME} PRIVATE ${ZSTD_CFLAGS_OTHER})
 endif()
 
@@ -534,6 +537,9 @@ if(WIN32)
 elseif(APPLE)
     target_link_libraries(${EXECUTABLE_NAME} PRIVATE
         "-framework Metal"
+        "-framework Foundation"
+        "-framework CoreServices"
+        "-lobjc"
     )
     # Prevent linking to Homebrew OpenSSL on macOS, use Apple's built-in SSL
     target_link_options(${EXECUTABLE_NAME} PRIVATE -Wl,-no_weak_imports)

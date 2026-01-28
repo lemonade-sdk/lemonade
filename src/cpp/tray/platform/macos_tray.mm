@@ -40,9 +40,11 @@
 
 @implementation MenuActionReceiver
 - (void)actionHandler:(id)sender {
-    NSMenuItem *item = (NSMenuItem*)sender;
-    if ([item.representedObject isKindOfClass:[CallbackWrapper class]]) {
-        [(CallbackWrapper*)item.representedObject execute];
+    if ([sender isKindOfClass:[NSMenuItem class]]) {
+        NSMenuItem *item = (NSMenuItem*)sender;
+        if ([item.representedObject isKindOfClass:[CallbackWrapper class]]) {
+            [(CallbackWrapper*)item.representedObject execute];
+        }
     }
 }
 @end
@@ -170,7 +172,6 @@ bool MacOSTray::initialize(const std::string& app_name, const std::string& icon_
     trayImpl.statusItem = [statusBar statusItemWithLength:NSVariableStatusItemLength];
 
     if (trayImpl.statusItem) {
-        //trayImpl.statusItem.button.title = @"🍋";
 
         if (!icon_path.empty()) {
             set_icon(icon_path);
@@ -304,9 +305,18 @@ void MacOSTray::set_icon(const std::string& icon_path) {
         NSString *nsPath = [NSString stringWithUTF8String:icon_path.c_str()];
         NSImage *image = [[NSImage alloc] initWithContentsOfFile:nsPath];
         if (image) {
-            [image setSize:NSMakeSize(18, 18)];
+            // Request bar thickness in order to get rid of hard coded icon sizes.
+            CGFloat barThickness = [[NSStatusBar systemStatusBar] thickness];
+            // Standard padding is usually ~2pts top/bottom, so preferred height is thickness - 4
+            CGFloat iconDimension = barThickness - 4.0;
+            [image setSize:NSMakeSize(iconDimension, iconDimension)];
+
             [image setTemplate:NO];  // Allow the icon to display in color
             trayImpl.statusItem.button.image = image;
+        }
+        else {
+            //If the image is unavailable make the title a lemon so it looks like the logo.
+            trayImpl.statusItem.button.title = @"🍋";
         }
     });
 }
