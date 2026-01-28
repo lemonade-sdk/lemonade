@@ -357,32 +357,161 @@ void Server::setup_static_files(httplib::Server &web_server) {
         res.set_content(html_template, "text/html");
     };
 
-    // Root path - serve index.html
-    web_server.Get("/", serve_index_html);
+    // Keep status page at /status endpoint
+    web_server.Get("/status", serve_index_html);
 
-    // Also serve index.html at /api/v1
+    // Also serve index.html at /api/v1 for compatibility
     web_server.Get("/api/v1", serve_index_html);
 
-    // Serve favicon.ico from root as expected by most browsers
-    web_server.Get("/favicon.ico", [static_dir](const httplib::Request& req, httplib::Response& res) {
-        std::ifstream ifs(static_dir + "/favicon.ico", std::ios::binary);
-        if (ifs) {
-            // Read favicon bytes to string to pass to response
-            std::string content((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
-            res.set_content(content, "image/x-icon");
-            res.status = 200;
-        } else {
-            res.set_content("Favicon not found.", "text/plain");
-            res.status = 404;
-        }
-    });
-
-    // Mount static files directory for other files (CSS, JS, images)
+    // Mount static files directory for status page assets (CSS, JS, images)
     if (!web_server.set_mount_point("/static", static_dir)) {
         std::cerr << "[Server WARNING] Could not mount static files from: " << static_dir << std::endl;
-        std::cerr << "[Server] Web UI assets will not be available" << std::endl;
+        std::cerr << "[Server] Status page assets will not be available" << std::endl;
     } else {
         std::cout << "[Server] Static files mounted from: " << static_dir << std::endl;
+    }
+
+    // Web app UI endpoint - serve the React web app at root
+    std::string web_app_dir = utils::get_resource_path("resources/web-app");
+
+    // Check if web app directory exists
+    if (fs::exists(web_app_dir) && fs::is_directory(web_app_dir)) {
+        // Create a handler for serving web app index.html for SPA routing
+        auto serve_web_app_html = [web_app_dir](const httplib::Request&, httplib::Response& res) {
+            std::string index_path = web_app_dir + "/index.html";
+            std::ifstream file(index_path);
+
+            if (!file.is_open()) {
+                res.status = 404;
+                res.set_content("{\"error\": \"Web app not found\"}", "application/json");
+                return;
+            }
+
+            std::string html((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            file.close();
+
+            // No base tag needed for root path serving
+            // std::string base_tag = "<base href=\"/web-app/\">";
+            // size_t head_start_pos = html.find("<head>");
+            // if (head_start_pos != std::string::npos) {
+            //     html.insert(head_start_pos + 6, base_tag);
+            // }
+
+            // Set no-cache headers
+            res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
+            res.set_header("Pragma", "no-cache");
+            res.set_header("Expires", "0");
+            res.set_content(html, "text/html");
+        };
+
+        // Serve the web app's index.html at root and for SPA routes
+        web_server.Get("/", serve_web_app_html);
+
+        // Also serve at /web-app for backwards compatibility
+        web_server.Get("/web-app/?", serve_web_app_html);
+
+        // Serve all static assets from the web app directory (JS, CSS, fonts, assets, etc.)
+        // Handle both root-level assets and /web-app/ prefixed paths for backwards compatibility
+        auto serve_web_app_asset = [web_app_dir](const httplib::Request& req, httplib::Response& res, const std::string& file_path) {
+            std::string full_path = web_app_dir + "/" + file_path;
+
+            // Serve the file
+            std::ifstream file(full_path, std::ios::binary);
+            if (!file.is_open()) {
+                res.status = 404;
+                res.set_content("File not found", "text/plain");
+                return;
+            }
+
+            // Read file content
+            std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            file.close();
+
+            // Determine content type based on extension
+            std::string content_type = "application/octet-stream";
+            size_t dot_pos = file_path.rfind('.');
+            if (dot_pos != std::string::npos) {
+                std::string ext = file_path.substr(dot_pos);
+                if (ext == ".js") content_type = "text/javascript";
+                else if (ext == ".css") content_type = "text/css";
+                else if (ext == ".html") content_type = "text/html";
+                else if (ext == ".woff") content_type = "font/woff";
+                else if (ext == ".woff2") content_type = "font/woff2";
+                else if (ext == ".ttf") content_type = "font/ttf";
+                else if (ext == ".svg") content_type = "image/svg+xml";
+                else if (ext == ".png") content_type = "image/png";
+                else if (ext == ".jpg" || ext == ".jpeg") content_type = "image/jpeg";
+                else if (ext == ".json") content_type = "application/json";
+                else if (ext == ".ico") content_type = "image/x-icon";
+            }
+
+            res.set_content(content, content_type);
+        };
+
+        // Serve favicon from web-app directory at root
+        web_server.Get("/favicon.ico", [serve_web_app_asset](const httplib::Request& req, httplib::Response& res) {
+            serve_web_app_asset(req, res, "favicon.ico");
+        });
+
+        // Serve web app assets from root (for files like renderer.bundle.js, fonts, etc.)
+        web_server.Get(R"(/([^/]+\.(js|css|woff|woff2|ttf|svg|png|jpg|jpeg|json|ico)))",
+                      [serve_web_app_asset](const httplib::Request& req, httplib::Response& res) {
+            std::string file_path = req.matches[1].str();
+            serve_web_app_asset(req, res, file_path);
+        });
+
+        // Keep /web-app/ prefix routes for backwards compatibility
+        web_server.Get(R"(/web-app/(.+))", [serve_web_app_asset](const httplib::Request& req, httplib::Response& res) {
+            std::string file_path = req.matches[1].str();
+            serve_web_app_asset(req, res, file_path);
+        });
+
+        std::cout << "[Server] Web app UI available at root (/) from: " << web_app_dir << std::endl;
+
+        // SPA fallback: serve index.html for any unmatched GET routes that don't start with /api, /static, or /live
+        // This enables client-side routing
+        web_server.Get(R"(^(?!/api|/static|/live|/status|/internal).*)",
+                      [serve_web_app_html](const httplib::Request& req, httplib::Response& res) {
+            // Only serve index.html if the path doesn't look like a file with extension
+            std::string path = req.path;
+            size_t last_slash = path.rfind('/');
+            std::string last_segment = (last_slash != std::string::npos) ? path.substr(last_slash + 1) : path;
+
+            // If the last segment has an extension and it's not .html, let it 404
+            // (This helps catch missing assets more clearly)
+            size_t dot_pos = last_segment.rfind('.');
+            if (dot_pos != std::string::npos) {
+                std::string ext = last_segment.substr(dot_pos);
+                if (ext != ".html" && ext != ".htm") {
+                    // File with extension not found, return 404
+                    res.status = 404;
+                    return;
+                }
+            }
+
+            // Otherwise, serve the SPA index.html for client-side routing
+            serve_web_app_html(req, res);
+        });
+    } else {
+        // Fallback to static page when web-app is not compiled
+        std::cout << "[Server] Web app directory not found at: " << web_app_dir << std::endl;
+        std::cout << "[Server] Falling back to static status page at root" << std::endl;
+
+        // Serve the static status page at root instead
+        web_server.Get("/", serve_index_html);
+
+        // Serve favicon from static directory
+        web_server.Get("/favicon.ico", [static_dir](const httplib::Request& req, httplib::Response& res) {
+            std::ifstream ifs(static_dir + "/favicon.ico", std::ios::binary);
+            if (ifs) {
+                std::string content((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
+                res.set_content(content, "image/x-icon");
+                res.status = 200;
+            } else {
+                res.set_content("Favicon not found.", "text/plain");
+                res.status = 404;
+            }
+        });
     }
 
     // Override default headers for static files to include no-cache
