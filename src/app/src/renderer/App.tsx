@@ -243,7 +243,7 @@ const App: React.FC = () => {
 
   return (
     <ModelsProvider>
-      <TitleBar 
+      <TitleBar
         isChatVisible={isChatVisible}
         onToggleChat={() => setIsChatVisible(!isChatVisible)}
         isModelManagerVisible={isModelManagerVisible}
@@ -255,7 +255,7 @@ const App: React.FC = () => {
         isDownloadManagerVisible={isDownloadManagerVisible}
         onToggleDownloadManager={() => setIsDownloadManagerVisible(!isDownloadManagerVisible)}
       />
-      <DownloadManager 
+      <DownloadManager
         isVisible={isDownloadManagerVisible}
         onClose={() => setIsDownloadManagerVisible(false)}
       />
@@ -274,15 +274,15 @@ const App: React.FC = () => {
               </div>
             )}
             {isCenterPanelVisible && isLogsVisible && (
-              <ResizableDivider 
-                onMouseDown={handleBottomDividerMouseDown} 
+              <ResizableDivider
+                onMouseDown={handleBottomDividerMouseDown}
                 orientation="horizontal"
               />
             )}
             {isLogsVisible && (
-              <LogsWindow 
-                isVisible={true} 
-                height={isCenterPanelVisible ? logsHeight : undefined} 
+              <LogsWindow
+                isVisible={true}
+                height={isCenterPanelVisible ? logsHeight : undefined}
               />
             )}
           </div>
@@ -305,4 +305,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-

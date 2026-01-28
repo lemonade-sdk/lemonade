@@ -12,7 +12,7 @@ This guide walks through how to connect Lemonade Server to Open WebUI and highli
 
 ▶️ [Watch on YouTube](https://www.youtube.com/watch?v=yZs-Yzl736E)
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/yZs-Yzl736E?si=BFfxJYSqfu0wBMEP" 
+<iframe width="560" height="315" src="https://www.youtube.com/embed/yZs-Yzl736E?si=BFfxJYSqfu0wBMEP"
 title="YouTube video player" frameborder="0" allowfullscreen></iframe>
 
 ## Installing Open WebUI

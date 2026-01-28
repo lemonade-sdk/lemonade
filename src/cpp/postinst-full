@@ -40,4 +40,3 @@ if [ -f "$APP_DIR/lemonade" ] && [ -d "$BIN_DIR" ]; then
 fi
 
 exit 0
-

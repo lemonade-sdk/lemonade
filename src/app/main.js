@@ -32,20 +32,20 @@ const normalizeServerUrl = (url) => {
   if (!url || typeof url !== 'string') {
     return null;
   }
-  
+
   let normalized = url.trim();
   if (!normalized) {
     return null;
   }
-  
+
   // Add http:// if no protocol specified
   if (!normalized.match(/^https?:\/\//i)) {
     normalized = 'http://' + normalized;
   }
-  
+
   // Strip trailing slashes
   normalized = normalized.replace(/\/+$/, '');
-  
+
   // Validate URL format
   try {
     new URL(normalized);
@@ -88,7 +88,7 @@ const initializeServerBaseUrl = () => {
       return;
     }
   }
-  
+
   // Check environment variable (second priority)
   const envUrl = process.env.LEMONADE_APP_BASE_URL;
   if (envUrl) {
@@ -99,7 +99,7 @@ const initializeServerBaseUrl = () => {
       return;
     }
   }
-  
+
   // No explicit URL configured - will use localhost + port discovery
   console.log('No explicit server URL configured, will use localhost with port discovery');
   configuredServerBaseUrl = null;
@@ -323,7 +323,7 @@ const discoverServerPort = () => {
         // Parse the output to find the port
         // Expected format: "Server is running on port {port}" or "Server is not running"
         const output = stdout.trim();
-        
+
         // Check if server is not running
         if (output.includes('not running')) {
           console.log('Server is not running, using default port 8000');
@@ -333,10 +333,10 @@ const discoverServerPort = () => {
 
         // Try regex pattern to extract port number
         // Pattern matches: "Server is running on port 8080" or any similar format
-        const portMatch = output.match(/port[:\s]+(\d+)/i) || 
+        const portMatch = output.match(/port[:\s]+(\d+)/i) ||
                          output.match(/localhost:(\d+)/i) ||
                          output.match(/127\.0\.0\.1:(\d+)/i);
-        
+
         if (portMatch && portMatch[1]) {
           const port = parseInt(portMatch[1], 10);
           if (!isNaN(port) && port > 0 && port < 65536) {
@@ -375,13 +375,13 @@ ipcMain.handle('get-version', async () => {
   try {
     const http = require('http');
     const https = require('https');
-    
+
     // Use configured base URL or fall back to localhost with cached port
     const baseUrl = configuredServerBaseUrl || `http://localhost:${cachedServerPort}`;
     const healthUrl = `${baseUrl}/api/v1/health`;
     const isHttps = healthUrl.startsWith('https://');
     const httpModule = isHttps ? https : http;
-    
+
     return new Promise((resolve, reject) => {
       const req = httpModule.get(healthUrl, (res) => {
         let data = '';
@@ -413,7 +413,7 @@ ipcMain.handle('discover-server-port', async () => {
     console.log('Port discovery skipped - using explicit server URL:', configuredServerBaseUrl);
     return null;
   }
-  
+
   const port = await discoverServerPort();
   cachedServerPort = port;
   broadcastServerPortUpdated(port);
@@ -793,10 +793,10 @@ function createWindow() {
   });
 
   // In development, load from dist/renderer; in production from root
-  const htmlPath = app.isPackaged 
+  const htmlPath = app.isPackaged
     ? path.join(__dirname, 'dist', 'renderer', 'index.html')
     : path.join(__dirname, 'dist', 'renderer', 'index.html');
-  
+
   mainWindow.loadFile(htmlPath);
 
   // Open all external links in the default browser
@@ -828,12 +828,12 @@ function createWindow() {
 
 app.on('ready', () => {
   createWindow();
-  
+
   // Window control handlers
   ipcMain.on('minimize-window', () => {
     if (mainWindow) mainWindow.minimize();
   });
-  
+
   ipcMain.on('maximize-window', () => {
     if (mainWindow) {
       if (mainWindow.isMaximized()) {
@@ -843,11 +843,11 @@ app.on('ready', () => {
       }
     }
   });
-  
+
   ipcMain.on('close-window', () => {
     if (mainWindow) mainWindow.close();
   });
-  
+
   ipcMain.on('open-external', (event, url) => {
     shell.openExternal(url);
   });
@@ -876,5 +876,3 @@ app.on('activate', function () {
     createWindow();
   }
 });
-
-

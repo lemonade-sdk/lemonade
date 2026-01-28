@@ -26,16 +26,16 @@ runs:
         REPO: ${{ inputs.repo }}
       run: |
         set -e
-        
+
         TAG_NAME="v$VERSION"
         echo "Generating release notes for $TAG_NAME"
-        
+
         # Check if tag exists via GitHub API (works without local git tags)
         TAG_EXISTS=$(gh api repos/$REPO/git/refs/tags/$TAG_NAME --jq '.ref' 2>/dev/null || echo "")
-        
+
         # Check if this tag already has a release on GitHub
         RELEASE_EXISTS=$(gh api repos/$REPO/releases/tags/$TAG_NAME --jq '.tag_name' 2>/dev/null || echo "")
-        
+
         if [ -n "$TAG_EXISTS" ]; then
           # Tag exists on GitHub - use it as target (covers both new and existing releases)
           TARGET_COMMIT="$TAG_NAME"
@@ -54,10 +54,10 @@ runs:
           PREVIOUS_TAG=$(gh api repos/$REPO/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
           TARGET_COMMIT="HEAD"
         fi
-        
+
         echo "Previous release: ${PREVIOUS_TAG:-none}"
         echo "Target commit: $TARGET_COMMIT"
-        
+
         # Generate auto release notes from GitHub
         if [ -n "$PREVIOUS_TAG" ]; then
           AUTO_NOTES=$(gh api repos/$REPO/releases/generate-notes \
@@ -71,33 +71,33 @@ runs:
             -f target_commitish="$TARGET_COMMIT" \
             --jq '.body' 2>/dev/null || echo "")
         fi
-        
+
         echo "AUTO_NOTES length: ${#AUTO_NOTES}"
         echo "=== AUTO_NOTES content ==="
         echo "$AUTO_NOTES"
         echo "=== end AUTO_NOTES ==="
-        
+
         # Extract What's Changed content (just the bullet points)
         WHATS_CHANGED_CONTENT=""
         if echo "$AUTO_NOTES" | grep -q "What's Changed"; then
           WHATS_CHANGED_CONTENT=$(echo "$AUTO_NOTES" | sed -n "/## What's Changed/,/## New Contributors\|## Full Changelog\|^$/p" | grep "^\* " || echo "")
         fi
-        
+
         # Extract New Contributors section
         NEW_CONTRIBUTORS=""
         if echo "$AUTO_NOTES" | grep -q "New Contributors"; then
           NEW_CONTRIBUTORS=$(echo "$AUTO_NOTES" | sed -n "/## New Contributors/,/## Full Changelog\|^$/p" | head -20)
         fi
-        
+
         # Extract Full Changelog link
         FULL_CHANGELOG=$(echo "$AUTO_NOTES" | grep "Full Changelog" | head -1 || echo "")
-        
+
         # Extract unique contributors from the changelog (exclude bots)
         CONTRIBUTORS=$(echo "$AUTO_NOTES" | grep -oE '@[a-zA-Z0-9_-]+' | grep -ivE '^@(copilot|claude)$' | sort -u | tr '\n' ' ' | sed 's/ /, /g' | sed 's/, $//' || echo "")
-        
+
         # Build the release notes file
         RELEASE_NOTES_FILE="release_notes.md"
-        
+
         {
           echo "## Quick Install"
           echo ""
@@ -111,7 +111,7 @@ runs:
           echo "---"
           echo ""
         } > "$RELEASE_NOTES_FILE"
-        
+
         # Build What's Changed section with thank you and collapsible details
         if [ -n "$WHATS_CHANGED_CONTENT" ]; then
           {
@@ -132,6 +132,6 @@ runs:
         fi
         [ -n "$NEW_CONTRIBUTORS" ] && echo "$NEW_CONTRIBUTORS" >> "$RELEASE_NOTES_FILE" && echo "" >> "$RELEASE_NOTES_FILE"
         [ -n "$FULL_CHANGELOG" ] && echo "$FULL_CHANGELOG" >> "$RELEASE_NOTES_FILE"
-        
+
         echo "release_notes_file=$RELEASE_NOTES_FILE" >> $GITHUB_OUTPUT
         cat "$RELEASE_NOTES_FILE"

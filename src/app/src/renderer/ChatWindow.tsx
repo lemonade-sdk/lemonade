@@ -74,13 +74,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
-  
+
   // Embedding model state
   const [embeddingInput, setEmbeddingInput] = useState('');
   const [embeddingHistory, setEmbeddingHistory] = useState<Array<{input: string, embedding: number[], dimensions?: number}>>([]);
   const [isProcessingEmbedding, setIsProcessingEmbedding] = useState(false);
   const [expandedEmbeddings, setExpandedEmbeddings] = useState<Set<number>>(new Set());
-  
+
   // Reranking model state
   const [rerankQuery, setRerankQuery] = useState('');
   const [rerankDocuments, setRerankDocuments] = useState('');
@@ -90,7 +90,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     results: Array<{index: number, text: string, score: number}>;
   }>>([]);
   const [isProcessingRerank, setIsProcessingRerank] = useState(false);
-  
+
   // Transcription model state
   const [transcriptionFile, setTranscriptionFile] = useState<File | null>(null);
   const [transcriptionHistory, setTranscriptionHistory] = useState<Array<{
@@ -201,7 +201,7 @@ useEffect(() => {
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
       }
-      
+
       // Use requestAnimationFrame to scroll after render completes
       requestAnimationFrame(() => {
         if (!userScrolledAwayRef.current) {
@@ -209,7 +209,7 @@ useEffect(() => {
         }
       });
     }
-    
+
     return () => {
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
@@ -251,7 +251,7 @@ useEffect(() => {
   const checkIfAtBottom = () => {
     const container = messagesContainerRef.current;
     if (!container) return true;
-    
+
     const threshold = 20; // pixels from bottom to consider "at bottom"
     const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
     return isAtBottom;
@@ -260,7 +260,7 @@ useEffect(() => {
   const handleScroll = () => {
     const atBottom = checkIfAtBottom();
     setIsUserAtBottom(atBottom);
-    
+
     // Track immediately via ref - if user scrolls away during streaming, respect it
     if (!atBottom && isLoading) {
       userScrolledAwayRef.current = true;
@@ -298,25 +298,25 @@ const fetchLoadedModel = async () => {
 
   const isVisionModel = (): boolean => {
     if (!selectedModel) return false;
-    
+
     const modelInfo = modelsData[selectedModel];
-    
+
     return modelInfo?.labels?.includes('vision') || false;
   };
 
   const isEmbeddingModel = (): boolean => {
     if (!selectedModel) return false;
-    
+
     const modelInfo = modelsData[selectedModel];
-    
+
     return !!(modelInfo?.labels?.includes('embeddings') || (modelInfo as any)?.embedding);
   };
 
   const isRerankingModel = (): boolean => {
     if (!selectedModel) return false;
-    
+
     const modelInfo = modelsData[selectedModel];
-    
+
     return !!(modelInfo?.labels?.includes('reranking') || (modelInfo as any)?.reranking);
   };
 
@@ -357,28 +357,28 @@ const fetchLoadedModel = async () => {
 
     const file = files[0];
     const reader = new FileReader();
-    
+
     reader.onload = (e) => {
       const result = e.target?.result;
       if (typeof result === 'string') {
         setUploadedImages(prev => [...prev, result]);
       }
     };
-    
+
     reader.readAsDataURL(file);
   };
 
   const handleImagePaste = (event: React.ClipboardEvent) => {
     const items = event.clipboardData.items;
-    
+
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      
+
       if (item.type.indexOf('image') !== -1) {
         event.preventDefault();
         const file = item.getAsFile();
         if (!file) continue;
-        
+
         const reader = new FileReader();
         reader.onload = (e) => {
           const result = e.target?.result;
@@ -407,18 +407,18 @@ const buildChatRequestBody = (messageHistory: Message[]) => ({
 const extractThinking = (content: string): { content: string; thinking: string } => {
   let extractedThinking = '';
   let cleanedContent = content;
-  
+
   // Extract all complete <think>...</think> blocks
   const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
   let match;
-  
+
   while ((match = thinkRegex.exec(content)) !== null) {
     extractedThinking += match[1];
   }
-  
+
   // Remove all complete <think>...</think> blocks from content
   cleanedContent = cleanedContent.replace(thinkRegex, '');
-  
+
   return {
     content: cleanedContent,
     thinking: extractedThinking
@@ -454,7 +454,7 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
   try {
     while (true) {
       const { done, value } = await reader.read();
-      
+
       if (done) break;
 
       const chunk = decoder.decode(value, { stream: true });
@@ -463,7 +463,7 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           const data = line.slice(6).trim();
-          
+
           if (data === '[DONE]') {
             continue;
           }
@@ -477,15 +477,15 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
             const delta = parsed.choices?.[0]?.delta;
             const content = delta?.content;
             const thinkingContent = delta?.reasoning_content || delta?.thinking;
-            
+
             if (content) {
               accumulatedContent += content;
             }
-            
+
             if (thinkingContent) {
               accumulatedThinking += thinkingContent;
             }
-            
+
             if (content || thinkingContent) {
               // First response received - model is loaded, clear loading indicator
               if (!receivedFirstChunk) {
@@ -493,15 +493,15 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
                 setIsModelLoading(false);
                 setCurrentLoadedModel(selectedModel);
               }
-              
+
               // Extract thinking from <think> tags in content
               const extracted = extractThinking(accumulatedContent);
               const displayContent = extracted.content;
               const embeddedThinking = extracted.thinking;
-              
+
               // Combine thinking from both sources (API field and embedded tags)
               const totalThinking = (accumulatedThinking || '') + (embeddedThinking || '');
-              
+
               setMessages(prev => {
                 const newMessages = [...prev];
                 const messageIndex = newMessages.length - 1;
@@ -510,7 +510,7 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
                   content: displayContent,
                   thinking: totalThinking || undefined,
                 };
-                
+
                 // Auto-expand thinking section if thinking content is present
                 // and collapseThinkingByDefault is not enabled
                 if (totalThinking && !appSettings?.collapseThinkingByDefault?.value) {
@@ -520,7 +520,7 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
                     return next;
                   });
                 }
-                
+
                 return newMessages;
               });
             }
@@ -547,12 +547,12 @@ const downloadModelForChat = async (modelName: string): Promise<boolean> => {
   return new Promise((resolve) => {
     const abortController = new AbortController();
     const downloadId = downloadTracker.startDownload(modelName, abortController);
-    
+
     // Dispatch event to open download manager
     window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName } }));
-    
+
     let downloadCompleted = false;
-    
+
     const performDownload = async () => {
       try {
         const response = await serverFetch('/pull', {
@@ -561,36 +561,36 @@ const downloadModelForChat = async (modelName: string): Promise<boolean> => {
           body: JSON.stringify({ model_name: modelName, stream: true }),
           signal: abortController.signal,
         });
-        
+
         if (!response.ok) {
           throw new Error(`Failed to download model: ${response.statusText}`);
         }
-        
+
         const reader = response.body?.getReader();
         if (!reader) {
           throw new Error('No response body');
         }
-        
+
         const decoder = new TextDecoder();
         let buffer = '';
         let currentEventType = 'progress';
-        
+
         while (true) {
           const { done, value } = await reader.read();
-          
+
           if (done) break;
-          
+
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
-          
+
           for (const line of lines) {
             if (line.startsWith('event:')) {
               currentEventType = line.substring(6).trim();
             } else if (line.startsWith('data:')) {
               try {
                 const data = JSON.parse(line.substring(5).trim());
-                
+
                 if (currentEventType === 'progress') {
                   downloadTracker.updateProgress(downloadId, data);
                 } else if (currentEventType === 'complete') {
@@ -608,16 +608,16 @@ const downloadModelForChat = async (modelName: string): Promise<boolean> => {
             }
           }
         }
-        
+
         if (!downloadCompleted) {
           downloadTracker.completeDownload(downloadId);
           downloadCompleted = true;
         }
-        
+
         // Notify all components that models have been updated
         // (The ModelsProvider listens for this and refreshes automatically)
         window.dispatchEvent(new CustomEvent('modelsUpdated'));
-        
+
         resolve(true);
       } catch (error: any) {
         if (error.name === 'AbortError') {
@@ -629,7 +629,7 @@ const downloadModelForChat = async (modelName: string): Promise<boolean> => {
         resolve(false);
       }
     };
-    
+
     performDownload();
   });
 };
@@ -644,7 +644,7 @@ const sendMessage = async () => {
 
     // Create new abort controller
     abortControllerRef.current = new AbortController();
-    
+
     // When sending a new message, ensure we're at the bottom and reset scroll tracking
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
@@ -653,14 +653,14 @@ const sendMessage = async () => {
     let messageContent: MessageContent;
     if (uploadedImages.length > 0) {
       const contentArray: Array<TextContent | ImageContent> = [];
-      
+
       if (inputValue.trim()) {
         contentArray.push({
           type: 'text',
           text: inputValue
         });
       }
-      
+
       uploadedImages.forEach(imageUrl => {
         contentArray.push({
           type: 'image_url',
@@ -669,7 +669,7 @@ const sendMessage = async () => {
           }
         });
       });
-      
+
       messageContent = contentArray;
     } else {
       messageContent = inputValue;
@@ -682,30 +682,30 @@ const sendMessage = async () => {
       setInputValue('');
       setUploadedImages([]);
       setIsDownloadingForChat(true);
-      
+
       // Show the user message immediately
       const userMessage: Message = { role: 'user', content: messageContent };
       setMessages(prev => [...prev, userMessage]);
-      
+
       // Download the model
       const downloadSuccess = await downloadModelForChat(selectedModel);
-      
+
       if (downloadSuccess) {
         // Model downloaded successfully - close download manager
         window.dispatchEvent(new CustomEvent('download:chatComplete'));
-        
+
         // Now send the message (isDefaultModelPending will be updated by the hook)
         const pendingMessage = pendingMessageRef.current;
         pendingMessageRef.current = null;
-        
+
         if (pendingMessage) {
           // Continue with the chat request
           setIsLoading(true);
           setIsModelLoading(true);
-          
+
           // Add placeholder for assistant message
           setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
-          
+
           try {
             const messageHistory = messages.concat([{ role: 'user' as const, content: pendingMessage.content }]);
             await handleStreamingResponse(messageHistory);
@@ -739,13 +739,13 @@ const sendMessage = async () => {
         }
       } else {
         // Download failed - show error
-        setMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: 'Failed to download the model. Please try again or download a model from the Model Manager.' 
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: 'Failed to download the model. Please try again or download a model from the Model Manager.'
         }]);
         pendingMessageRef.current = null;
       }
-      
+
       setIsDownloadingForChat(false);
       return;
     }
@@ -753,7 +753,7 @@ const sendMessage = async () => {
     // Normal flow - model is already downloaded
     const userMessage: Message = { role: 'user', content: messageContent };
     const messageHistory = [...messages, userMessage];
-    
+
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setUploadedImages([]);
@@ -852,25 +852,25 @@ const sendMessage = async () => {
       <>
         {thinking && (
           <div className="thinking-section">
-            <button 
+            <button
               className="thinking-toggle"
               onClick={() => messageIndex !== undefined && toggleThinking(messageIndex)}
             >
-              <svg 
-                width="12" 
-                height="12" 
-                viewBox="0 0 24 24" 
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
                 fill="none"
-                style={{ 
+                style={{
                   transform: expandedThinking.has(messageIndex!) ? 'rotate(180deg)' : 'rotate(0deg)',
                   transition: 'transform 0.2s'
                 }}
               >
-                <path 
-                  d="M6 9L12 15L18 9" 
-                  stroke="currentColor" 
-                  strokeWidth="2" 
-                  strokeLinecap="round" 
+                <path
+                  d="M6 9L12 15L18 9"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
                   strokeLinejoin="round"
                 />
               </svg>
@@ -892,10 +892,10 @@ const sendMessage = async () => {
                 return <MarkdownMessage key={index} content={item.text} />;
               } else if (item.type === 'image_url') {
                 return (
-                  <img 
-                    key={index} 
-                    src={item.image_url.url} 
-                    alt="Uploaded" 
+                  <img
+                    key={index}
+                    src={item.image_url.url}
+                    alt="Uploaded"
                     className="message-image"
                   />
                 );
@@ -910,7 +910,7 @@ const sendMessage = async () => {
 
   const handleEditMessage = (index: number, e: React.MouseEvent) => {
     if (isLoading) return; // Don't allow editing while loading
-    
+
     e.stopPropagation(); // Prevent triggering the outside click
     const message = messages[index];
     if (message.role === 'user') {
@@ -923,7 +923,7 @@ const sendMessage = async () => {
         // If content is an array, extract the text and image parts
         const textContent = message.content.find(item => item.type === 'text');
         setEditingValue(textContent ? textContent.text : '');
-        
+
         const imageContents = message.content.filter(item => item.type === 'image_url');
         setEditingImages(imageContents.map(img => img.image_url.url));
       }
@@ -949,28 +949,28 @@ const sendMessage = async () => {
 
     const file = files[0];
     const reader = new FileReader();
-    
+
     reader.onload = (e) => {
       const result = e.target?.result;
       if (typeof result === 'string') {
         setEditingImages(prev => [...prev, result]);
       }
     };
-    
+
     reader.readAsDataURL(file);
   };
 
   const handleEditImagePaste = (event: React.ClipboardEvent) => {
     const items = event.clipboardData.items;
-    
+
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      
+
       if (item.type.indexOf('image') !== -1) {
         event.preventDefault();
         const file = item.getAsFile();
         if (!file) continue;
-        
+
         const reader = new FileReader();
         reader.onload = (e) => {
           const result = e.target?.result;
@@ -1003,26 +1003,26 @@ const sendMessage = async () => {
 
     // Create new abort controller
     abortControllerRef.current = new AbortController();
-    
+
     // When submitting an edit, ensure we're at the bottom and reset scroll tracking
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
 
     // Truncate messages up to the edited message
     const truncatedMessages = messages.slice(0, editingIndex);
-    
+
     // Build edited message content with images if present
     let messageContent: MessageContent;
     if (editingImages.length > 0) {
       const contentArray: Array<TextContent | ImageContent> = [];
-      
+
       if (editingValue.trim()) {
         contentArray.push({
           type: 'text',
           text: editingValue
         });
       }
-      
+
       editingImages.forEach(imageUrl => {
         contentArray.push({
           type: 'image_url',
@@ -1031,16 +1031,16 @@ const sendMessage = async () => {
           }
         });
       });
-      
+
       messageContent = contentArray;
     } else {
       messageContent = editingValue;
     }
-    
+
     // Add the edited message
     const editedMessage: Message = { role: 'user', content: messageContent };
     const messageHistory = [...truncatedMessages, editedMessage];
-    
+
     setMessages(messageHistory);
     setEditingIndex(null);
     setEditingValue('');
@@ -1159,7 +1159,7 @@ const sendMessage = async () => {
         model: selectedModel,
         input: currentInput
       };
-      
+
       const response = await serverFetch('/embeddings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1171,7 +1171,7 @@ const sendMessage = async () => {
       }
 
       const data = await response.json();
-      
+
       // Extract the embedding from the response
       // OpenAI format: { data: [{ embedding: [...] }] }
       let embedding: number[];
@@ -1182,10 +1182,10 @@ const sendMessage = async () => {
       } else {
         throw new Error('Unexpected response format');
       }
-      
+
       // Add to history
-      setEmbeddingHistory(prev => [...prev, { 
-        input: currentInput, 
+      setEmbeddingHistory(prev => [...prev, {
+        input: currentInput,
         embedding
       }]);
     } catch (error: any) {
@@ -1213,13 +1213,13 @@ const sendMessage = async () => {
 
     const currentQuery = rerankQuery;
     const currentDocuments = rerankDocuments;
-    
+
     setIsProcessingRerank(true);
 
     try {
       // Parse documents - assume one document per line
       const docs = currentDocuments.split('\n').filter(d => d.trim());
-      
+
       const response = await serverFetch('/reranking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1235,7 +1235,7 @@ const sendMessage = async () => {
       }
 
       const data = await response.json();
-      
+
       // Extract the reranking results from the response
       // Expected format: { results: [{ index: 0, relevance_score: 0.95 }] }
       if (data.results && Array.isArray(data.results)) {
@@ -1244,7 +1244,7 @@ const sendMessage = async () => {
           text: docs[r.index],
           score: r.relevance_score || r.score || 0
         }));
-        
+
         // Add to history
         setRerankHistory(prev => [...prev, {
           query: currentQuery,
@@ -1265,7 +1265,7 @@ const sendMessage = async () => {
   const handleAudioFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
-    
+
     const file = files[0];
     setTranscriptionFile(file);
   };
@@ -1281,7 +1281,7 @@ const sendMessage = async () => {
       const formData = new FormData();
       formData.append('file', currentFile);
       formData.append('model', selectedModel);
-      
+
       const response = await serverFetch('/audio/transcriptions', {
         method: 'POST',
         body: formData
@@ -1292,7 +1292,7 @@ const sendMessage = async () => {
       }
 
       const data = await response.json();
-      
+
       // Extract the transcription text from the response
       let transcriptionText: string;
       if (data.text) {
@@ -1300,13 +1300,13 @@ const sendMessage = async () => {
       } else {
         throw new Error('Unexpected response format');
       }
-      
+
       // Add to history
-      setTranscriptionHistory(prev => [...prev, { 
-        filename: currentFile.name, 
+      setTranscriptionHistory(prev => [...prev, {
+        filename: currentFile.name,
         text: transcriptionText
       }]);
-      
+
       // Clear the file input
       setTranscriptionFile(null);
       if (audioFileInputRef.current) {
@@ -1413,8 +1413,8 @@ const sendMessage = async () => {
   );
 
   // Build the list of models for the dropdown
-  const dropdownModels = isDefaultModelPending 
-    ? [{ id: DEFAULT_MODEL_ID }] 
+  const dropdownModels = isDefaultModelPending
+    ? [{ id: DEFAULT_MODEL_ID }]
     : downloadedModels;
 
   const ModelSelector = ({ disabled }: { disabled: boolean }) => (
@@ -1459,7 +1459,7 @@ const sendMessage = async () => {
     <div className="chat-window" style={width ? { width: `${width}px` } : undefined}>
       <div className="chat-header">
         <h3>{headerTitle}</h3>
-        <button 
+        <button
           className="new-chat-button"
           onClick={handleNewChat}
           disabled={isLoading || isProcessingEmbedding || isProcessingRerank || isDownloadingForChat}
@@ -1482,12 +1482,12 @@ const sendMessage = async () => {
         <>
           <div className="chat-messages" ref={messagesContainerRef}>
             {embeddingHistory.length === 0 && <EmptyState title="Lemonade Embeddings" />}
-            
+
             {embeddingHistory.map((item, index) => {
               const isExpanded = expandedEmbeddings.has(index);
               const previewLength = 10;
               const embeddingPreview = item.embedding.slice(0, previewLength);
-              
+
               return (
                 <div key={index} className="embedding-history-item">
                   <div className="embedding-user-input">
@@ -1508,7 +1508,7 @@ const sendMessage = async () => {
                         </div>
                       )}
                     </div>
-                    <button 
+                    <button
                       className="embedding-toggle-button"
                       onClick={() => toggleEmbeddingExpansion(index)}
                     >
@@ -1523,7 +1523,7 @@ const sendMessage = async () => {
                 </div>
               );
             })}
-            
+
             {isProcessingEmbedding && (
               <div className="chat-message assistant-message">
                 <TypingIndicator />
@@ -1568,19 +1568,19 @@ const sendMessage = async () => {
         <>
           <div className="chat-messages" ref={messagesContainerRef}>
             {rerankHistory.length === 0 && <EmptyState title="Lemonade Reranking" />}
-            
+
             {rerankHistory.map((item, index) => (
               <div key={index} className="reranking-history-item">
                 <div className="reranking-user-input">
                   <div className="reranking-input-label">Query</div>
                   <div className="reranking-input-text">{item.query}</div>
                 </div>
-                
+
                 <div className="reranking-user-input">
                   <div className="reranking-input-label">Documents</div>
                   <div className="reranking-input-text">{item.documents.split('\n').filter(d => d.trim()).length} documents</div>
                 </div>
-                
+
                 <div className="reranking-result-container">
                   <div className="reranking-result-header">
                     <h4>Ranked Results</h4>
@@ -1598,7 +1598,7 @@ const sendMessage = async () => {
                 </div>
               </div>
             ))}
-            
+
             {isProcessingRerank && (
               <div className="chat-message assistant-message">
                 <TypingIndicator />
@@ -1623,7 +1623,7 @@ const sendMessage = async () => {
                   disabled={isProcessingRerank}
                 />
               </div>
-              
+
               <div className="reranking-documents-section">
                 <label className="reranking-label">Documents (one per line)</label>
                 <textarea
@@ -1638,7 +1638,7 @@ const sendMessage = async () => {
                   disabled={isProcessingRerank}
                 />
               </div>
-              
+
               <div className="chat-controls">
                 <div className="chat-controls-left">
                   <ModelSelector disabled={isProcessingRerank} />
@@ -1674,7 +1674,7 @@ const sendMessage = async () => {
         <>
           <div className="chat-messages" ref={messagesContainerRef}>
             {transcriptionHistory.length === 0 && <EmptyState title="Lemonade Transcriber" />}
-            
+
             {transcriptionHistory.map((item, index) => (
               <div key={index} className="transcription-history-item">
                 <div className="transcription-file-info">
@@ -1691,7 +1691,7 @@ const sendMessage = async () => {
                     {item.filename}
                   </div>
                 </div>
-                
+
                 <div className="transcription-result-container">
                   <div className="transcription-result-header">
                     <h4>Transcription</h4>
@@ -1702,7 +1702,7 @@ const sendMessage = async () => {
                 </div>
               </div>
             ))}
-            
+
             {isProcessingTranscription && (
               <div className="chat-message assistant-message">
                 <TypingIndicator />
@@ -1720,7 +1720,7 @@ const sendMessage = async () => {
                 onChange={handleAudioFileSelect}
                 style={{ display: 'none' }}
               />
-              
+
               <div className="transcription-file-display">
                 {transcriptionFile ? (
                   <div className="transcription-file-info-display">
@@ -1733,7 +1733,7 @@ const sendMessage = async () => {
                   <span className="transcription-placeholder">No audio file selected</span>
                 )}
               </div>
-              
+
               <div className="chat-controls">
                 <div className="chat-controls-left">
                   <button
@@ -1754,9 +1754,9 @@ const sendMessage = async () => {
                   </button>
                   <ModelSelector disabled={isProcessingTranscription} />
                 </div>
-                <SendButton 
-                  onClick={handleTranscription} 
-                  disabled={!transcriptionFile || isProcessingTranscription} 
+                <SendButton
+                  onClick={handleTranscription}
+                  disabled={!transcriptionFile || isProcessingTranscription}
                 />
               </div>
             </div>
@@ -1925,8 +1925,8 @@ const sendMessage = async () => {
       {/* LLM Chat UI (default) */}
       {modelType === 'llm' && (
         <>
-          <div 
-            className="chat-messages" 
+          <div
+            className="chat-messages"
             ref={messagesContainerRef}
             onScroll={handleScroll}
             onClick={editingIndex !== null ? cancelEdit : undefined}
@@ -2131,5 +2131,3 @@ const sendMessage = async () => {
 };
 
 export default ChatWindow;
-
-
