@@ -30,14 +30,14 @@ runs:
         TAG_NAME="v$VERSION"
         echo "Generating release notes for $TAG_NAME"
         
-        # Check if tag exists in git (locally after checkout)
-        TAG_EXISTS_IN_GIT=$(git tag -l "$TAG_NAME" 2>/dev/null || echo "")
+        # Check if tag exists via GitHub API (works without local git tags)
+        TAG_EXISTS=$(gh api repos/$REPO/git/refs/tags/$TAG_NAME --jq '.ref' 2>/dev/null || echo "")
         
         # Check if this tag already has a release on GitHub
         RELEASE_EXISTS=$(gh api repos/$REPO/releases/tags/$TAG_NAME --jq '.tag_name' 2>/dev/null || echo "")
         
-        if [ -n "$TAG_EXISTS_IN_GIT" ]; then
-          # Tag exists in git - use it as target (covers both new and existing releases)
+        if [ -n "$TAG_EXISTS" ]; then
+          # Tag exists on GitHub - use it as target (covers both new and existing releases)
           TARGET_COMMIT="$TAG_NAME"
           if [ -n "$RELEASE_EXISTS" ]; then
             # Release already exists - find the release before this one
@@ -45,11 +45,11 @@ runs:
             PREVIOUS_TAG=$(gh api repos/$REPO/releases --jq "[.[] | select(.tag_name != \"$TAG_NAME\")] | .[0].tag_name" 2>/dev/null || echo "")
           else
             # New release - use latest release as previous
-            echo "Tag $TAG_NAME exists in git, creating new release..."
+            echo "Tag $TAG_NAME exists on GitHub, creating new release..."
             PREVIOUS_TAG=$(gh api repos/$REPO/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
           fi
         else
-          # Tag doesn't exist in git - preview mode, use HEAD
+          # Tag doesn't exist yet - preview mode, use HEAD
           echo "Tag $TAG_NAME doesn't exist yet, using HEAD for preview"
           PREVIOUS_TAG=$(gh api repos/$REPO/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
           TARGET_COMMIT="HEAD"
