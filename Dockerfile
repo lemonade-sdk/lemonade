@@ -10,6 +10,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
+    ninja-build \
     libssl-dev \
     pkg-config \
     git \
@@ -21,10 +22,8 @@ WORKDIR /app
 
 # Build the project
 RUN rm -rf build && \
-    mkdir -p build && \
-    cd build && \
-    cmake .. && \
-    cmake --build . --config Release -j"$(nproc)"
+    cmake --preset default && \
+    cmake --build --preset default
 
 # Debug: Check build outputs
 RUN echo "=== Build directory contents ===" && \
