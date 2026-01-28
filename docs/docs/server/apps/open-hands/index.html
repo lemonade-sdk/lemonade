@@ -1093,7 +1093,7 @@
 <p>This integration is in its early stages. We encourage you to test it and share any issues you encounter—your feedback will help us make the Lemonade–OpenHands functionality as robust as possible.</p>
 </li>
 <li>
-<p>Due to the complexity of the scaffolding of agentic software agents, the compute requirements for this application is very high. For a low latency experience, we recommend using a discrete GPU with at least 16 GB of VRAM, or a Strix Halo PC with at least 64 GB of RAM. </p>
+<p>Due to the complexity of the scaffolding of agentic software agents, the compute requirements for this application is very high. For a low latency experience, we recommend using a discrete GPU with at least 16 GB of VRAM, or a Strix Halo PC with at least 64 GB of RAM.</p>
 </li>
 </ul>
 <h2 id="prerequisites">Prerequisites</h2>
@@ -1101,7 +1101,7 @@
 <li><strong>Docker</strong>: OpenHands leverages Docker containers to create environments for the software agents. To see how to install docker for OpenHands, see their <a href="https://docs.all-hands.dev/usage/local-setup">documentation</a>.</li>
 <li><strong>Lemonade Server</strong>: Install Lemonade Server using the <a href="https://lemonade-server.ai/docs/server/">Getting Started Guide</a>.</li>
 <li><strong>Server running</strong>: Ensure Lemonade Server is running on <code>http://localhost:8000</code></li>
-<li><strong>Models installed</strong>: Ensure at least one model from the <a href="https://lemonade-server.ai/docs/server/server_models/">supported models list</a> is downloaded locally. For OpenHands functionality, we recommend models denoted with the <code>coding</code> label, which can be found in your Lemonade installation's <code>Model Manager</code> or in the labels of the <a href="https://lemonade-server.ai/docs/server/server_models/">models list</a>. </li>
+<li><strong>Models installed</strong>: Ensure at least one model from the <a href="https://lemonade-server.ai/docs/server/server_models/">supported models list</a> is downloaded locally. For OpenHands functionality, we recommend models denoted with the <code>coding</code> label, which can be found in your Lemonade installation's <code>Model Manager</code> or in the labels of the <a href="https://lemonade-server.ai/docs/server/server_models/">models list</a>.</li>
 </ul>
 <h2 id="installation">Installation</h2>
 <h3 id="launch-lemonade-server-with-the-correct-settings">Launch Lemonade Server with the correct settings</h3>
@@ -1110,7 +1110,7 @@
 </code></pre></div>
 <h3 id="installing-openhands">Installing OpenHands</h3>
 <p>Follow the <a href="https://docs.all-hands.dev/usage/local-setup#local-llm-e-g-lm-studio-llama-cpp-ollama">OpenHands documentation</a> on how to install OpenHands locally. This can be done via the <code>uvx</code> tool or through <code>docker</code>. No special installation instructions are necessary to integrate with Lemonade.</p>
-<p>In the next section, we will show how to configure OpenHands to talk to a local model running via Lemonade Server. </p>
+<p>In the next section, we will show how to configure OpenHands to talk to a local model running via Lemonade Server.</p>
 <h2 id="launching-openhands">Launching OpenHands</h2>
 <p>To launch OpenHands, open a browser and navigate to http://localhost:3000. When first launching the application, the "AI Provider Configuration" window will appear. Select "Lemonade" as the LLM Provider and your favorite coding model from the drop-down. For a nice balance of quality and speed, we recommend <code>Qwen3-Coder-30B-A3B-Instruct-GGUF</code>. When complete, hit <code>Save Changes</code>.</p>
 <p><img width="1276" height="677" alt="openhands-llm-settings-wide" src="https://github.com/user-attachments/assets/b39bb75b-1593-48db-a17d-697c872cb7e4" /></p>

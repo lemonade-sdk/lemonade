@@ -1791,7 +1791,7 @@
 </ul>
 <p>Visit the <a href="https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations">Supported Configurations</a> section to see the support matrix for CPU, GPU, and NPU.</p>
 <h3 id="4-how-do-i-uninstall-lemonade-server-windows">4. <strong>How do I uninstall Lemonade Server? (Windows)</strong></h3>
-<p>To uninstall Lemonade Server, use the Windows Add/Remove Programs menu. </p>
+<p>To uninstall Lemonade Server, use the Windows Add/Remove Programs menu.</p>
 <p><strong>Optional: Remove cached files</strong>
    - Open File Explorer and navigate to <code>%USERPROFILE%\.cache</code>
    - Delete the <code>lemonade</code> folder if it exists
@@ -1807,7 +1807,7 @@
 <p><strong>Secondary: Extra Models Directory (GGUF)</strong></p>
 <p>Lemonade Server can discover GGUF models from a secondary directory using the <code>--extra-models-dir</code> option, enabling compatibility with llama.cpp and LM Studio model caches. Suggested paths:</p>
 <ul>
-<li><strong>Windows:</strong> <ul>
+<li><strong>Windows:</strong><ul>
 <li>LM Studio: <code>C:\Users\You\.lmstudio\models</code></li>
 <li>llamacpp: <code>%LOCALAPPDATA%\llama.cpp</code> (e.g., <code>C:\Users\You\AppData\Local\llama.cpp</code>)</li>
 </ul>
@@ -1817,7 +1817,7 @@
 <p>Example: <code>lemonade-server serve --extra-models-dir "%LOCALAPPDATA%\llama.cpp"</code></p>
 <p>Any <code>.gguf</code> files found in this directory (including subdirectories) will automatically appear in Lemonade's model list in the <code>custom</code> category.</p>
 <p><strong>FastFlowLM</strong></p>
-<p>FastFlowLM (FLM) has its own model management system. When you first install FLM the install wizard asks for a model directory, which is then saved to the <code>FLM_MODEL_PATH</code> environment variable on your system PATH. Models are stored in that directory. If you change the variable's value, newly downloaded models will be stored on the new path, but your prior models will still be at the prior path.  </p>
+<p>FastFlowLM (FLM) has its own model management system. When you first install FLM the install wizard asks for a model directory, which is then saved to the <code>FLM_MODEL_PATH</code> environment variable on your system PATH. Models are stored in that directory. If you change the variable's value, newly downloaded models will be stored on the new path, but your prior models will still be at the prior path.</p>
 <h3 id="2-what-models-are-supported">2. <strong>What models are supported?</strong></h3>
 <p>Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, gpt-oss, LFM, and many more. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface in the app or the <code>pull</code> command on the CLI.</p>
 <p>👉 <a href="https://lemonade-server.ai/docs/server/server_models/">Supported Models List</a>
