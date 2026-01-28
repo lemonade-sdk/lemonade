@@ -1667,7 +1667,7 @@ CPUInfo MacOSSystemInfo::get_cpu_device() {
     // Get max clock speed (in Hz, convert to MHz)
     uint64_t freq = 0;
     size = sizeof(freq);
-    if (sysctlbyname("hw.cpufrequency", &freq, &size, nullptr, 0) == 0) {
+    if (sysctlbyname("hw.cpufrequency_max", &freq, &size, nullptr, 0) == 0) {
         cpu.max_clock_speed_mhz = freq / 1000000;  // Hz to MHz
     }
 
