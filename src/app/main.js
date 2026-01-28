@@ -595,6 +595,7 @@ const getGpuUsage = async () => {
 // Platform-specific VRAM/GTT usage detection (returns used memory in GB)
 // For dGPU: returns dedicated VRAM only
 // For APU: returns VRAM + GTT combined (since GTT is primary GPU memory)
+// On multi-GPU systems, returns memory from the GPU with highest utilization
 const getVramUsage = async () => {
   if (process.platform === 'linux') {
     // Linux: Read from AMD sysfs
@@ -605,10 +606,23 @@ const getVramUsage = async () => {
         return [];
       });
 
+      let highestUsage = -1;
+      let highestCard = null;
+      let highestCardMemory = null;
+
       for (const card of cards) {
         if (!card.match(/^card\d+$/)) continue;
 
         const devicePath = path.join(drmPath, card, 'device');
+
+        // Read GPU utilization to find the most active GPU
+        let gpuUsage = 0;
+        try {
+          const content = await fs.promises.readFile(path.join(devicePath, 'gpu_busy_percent'), 'utf-8');
+          gpuUsage = parseFloat(content.trim()) || 0;
+        } catch (err) {
+          console.debug(`VRAM detection: ${card} gpu_busy_percent not available:`, err.code || err.message);
+        }
 
         let vramUsed = 0;
         let gttUsed = 0;
@@ -648,21 +662,33 @@ const getVramUsage = async () => {
           continue;
         }
 
+        // Calculate memory for this card
+        let cardMemory = 0;
         if (isDGPU) {
-          // Discrete GPU: report only dedicated VRAM
-          if (vramUsed > 0) {
-            console.debug(`VRAM detection: dGPU ${card}, VRAM used: ${(vramUsed / (1024 * 1024 * 1024)).toFixed(2)} GB`);
-            return vramUsed / (1024 * 1024 * 1024);
-          }
+          cardMemory = vramUsed;
         } else {
-          // APU: report VRAM + GTT combined (GTT is primary GPU memory carved from system RAM)
-          const totalUsed = vramUsed + gttUsed;
-          if (totalUsed > 0) {
-            console.debug(`VRAM detection: APU ${card}, VRAM+GTT used: ${(totalUsed / (1024 * 1024 * 1024)).toFixed(2)} GB (VRAM: ${(vramUsed / (1024 * 1024 * 1024)).toFixed(2)}, GTT: ${(gttUsed / (1024 * 1024 * 1024)).toFixed(2)})`);
-            return totalUsed / (1024 * 1024 * 1024);
-          }
+          cardMemory = vramUsed + gttUsed;
+        }
+
+        // Track the GPU with highest utilization
+        if (gpuUsage > highestUsage || highestCard === null) {
+          highestUsage = gpuUsage;
+          highestCard = card;
+          highestCardMemory = { vramUsed, gttUsed, isDGPU, cardMemory };
         }
       }
+
+      // Return memory from the GPU with highest utilization
+      if (highestCard !== null && highestCardMemory !== null) {
+        const memGb = highestCardMemory.cardMemory / (1024 * 1024 * 1024);
+        if (highestCardMemory.isDGPU) {
+          console.debug(`VRAM detection: dGPU ${highestCard} (${highestUsage}% usage), VRAM used: ${memGb.toFixed(2)} GB`);
+        } else {
+          console.debug(`VRAM detection: APU ${highestCard} (${highestUsage}% usage), VRAM+GTT used: ${memGb.toFixed(2)} GB`);
+        }
+        return memGb;
+      }
+
       console.debug('VRAM detection: No GPU with memory info found');
     } catch (error) {
       console.error('Failed to read VRAM/GTT stats from sysfs:', error);
