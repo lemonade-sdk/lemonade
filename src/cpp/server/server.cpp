@@ -397,6 +397,61 @@ void Server::setup_static_files(httplib::Server &web_server) {
             //     html.insert(head_start_pos + 6, base_tag);
             // }
 
+            // Inject mock API for web compatibility with Electron app code
+            std::string mock_api = R"(
+<script>
+// Mock Electron API for web compatibility
+window.api = {
+    isWebApp: true,  // Explicit flag to indicate web mode
+    platform: navigator.platform || 'web',
+    minimizeWindow: () => {},
+    maximizeWindow: () => {},
+    closeWindow: () => {},
+    openExternal: (url) => window.open(url, '_blank'),
+    onMaximizeChange: () => {},
+    updateMinWidth: () => {},
+    zoomIn: () => document.body.style.zoom = (parseFloat(document.body.style.zoom || '1') + 0.1).toString(),
+    zoomOut: () => document.body.style.zoom = (parseFloat(document.body.style.zoom || '1') - 0.1).toString(),
+    getSettings: async () => {
+        const saved = localStorage.getItem('lemonade-settings');
+        return saved ? JSON.parse(saved) : { layout: {}, theme: 'dark', apiUrl: window.location.origin };
+    },
+    saveSettings: async (settings) => {
+        localStorage.setItem('lemonade-settings', JSON.stringify(settings));
+        return settings;
+    },
+    onSettingsUpdated: () => {},
+    getServerPort: () => parseInt(window.location.port) || 8000,
+    onServerPortUpdated: () => {},
+    getVersion: async () => ({ version: '9.2.0-web', electronVersion: 'N/A', chromeVersion: 'N/A', nodeVersion: 'N/A' }),
+    downloadModel: () => console.log('Model downloads not available in web mode'),
+    onDownloadProgress: () => {},
+    getDownloads: async () => [],
+    pauseDownload: () => {},
+    resumeDownload: () => {},
+    cancelDownload: () => {},
+    restartApp: () => window.location.reload(),
+    getSystemStats: async () => {
+        try {
+            const response = await fetch('/api/v1/system-stats');
+            if (response.ok) {
+                return await response.json();
+            }
+        } catch (e) {
+            console.warn('Failed to fetch system stats:', e);
+        }
+        return { cpu_percent: null, memory_gb: 0, gpu_percent: null, vram_gb: null };
+    }
+};
+</script>
+)";
+
+            // Insert mock API before the closing </head> tag
+            size_t head_end_pos = html.find("</head>");
+            if (head_end_pos != std::string::npos) {
+                html.insert(head_end_pos, mock_api);
+            }
+
             // Set no-cache headers
             res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
             res.set_header("Pragma", "no-cache");
