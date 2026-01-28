@@ -362,7 +362,7 @@ static std::pair<std::string, std::string> get_npu_cache_info(const std::string&
     return {"", ""};
 }
 
-// Helper to download NPU compiled cache (.rai file) for a model
+// Helper to download NPU compiled cache (.rai file) for a given ggml .bin model
 void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
                                                  const std::string& checkpoint,
                                                  bool do_not_upgrade) {
@@ -376,7 +376,7 @@ void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
     std::cout << "[WhisperServer] Downloading NPU compiled cache: " << cache_filename << std::endl;
     std::cout << "[WhisperServer] From repository: " << cache_repo << std::endl;
     
-    // Determine where to place the .rai file (same directory as .bin file)
+    // Determine where to place the .rai file (must be in the same directory as .bin file)
     fs::path model_dir = fs::path(model_path).parent_path();
     fs::path cache_path = model_dir / cache_filename;
     
@@ -386,70 +386,24 @@ void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
         return;
     }
     
-    if (!model_manager_) {
-        throw std::runtime_error("ModelManager not available for NPU cache download");
-    }
-    
     try {
-        // Use ModelManager to download the .rai file from HuggingFace
-        // Prefix with "user." to indicate it's a user-defined model
-        std::string cache_model_name = "user.whisper-npu-cache-" + cache_filename;
-        std::string cache_checkpoint = cache_repo + ":" + cache_filename;
+        // Download .rai file directly from HuggingFace using HttpClient
+        std::string hf_url = "https://huggingface.co/" + cache_repo + "/resolve/main/" + cache_filename;
         
-        model_manager_->download_model(
-            cache_model_name,  // model_name with user. prefix
-            cache_checkpoint,  // checkpoint
-            "whispercpp",      // recipe
-            false,             // reasoning
-            false,             // vision
-            false,             // embedding
-            false,             // reranking
-            false,             // image
-            "",                // mmproj
-            do_not_upgrade
+        std::cout << "[WhisperServer] Downloading from: " << hf_url << std::endl;
+        
+        // Download directly to the target location
+        auto download_result = utils::HttpClient::download_file(
+            hf_url,
+            cache_path.string(),
+            utils::create_throttled_progress_callback()
         );
         
-        // Get the downloaded cache path from the AMD HF repo
-        ModelInfo cache_info = model_manager_->get_model_info(cache_checkpoint);
-        std::string downloaded_cache_path = cache_info.resolved_path;
-        
-        if (downloaded_cache_path.empty() || !fs::exists(downloaded_cache_path)) {
-            throw std::runtime_error("Failed to download NPU cache file");
+        if (!download_result.success) {
+            throw std::runtime_error("Failed to download NPU cache from: " + hf_url + " - " + download_result.error_message);
         }
         
-        // The .rai file is downloaded to: ~/.cache/huggingface/hub/models--amd--whisper-small-onnx-npu/snapshots/.../
-        // whisper-server needs it alongside the .bin file in: ~/.cache/huggingface/hub/models--ggerganov--whisper.cpp/snapshots/.../
-        // Use hardlink (like HF cache does) to avoid duplication while keeping both locations valid
-        if (fs::path(downloaded_cache_path).parent_path() != model_dir) {
-            // Check if hardlink already exists
-            if (fs::exists(cache_path)) {
-                try {
-                    // Check if it's already a hardlink to the same file
-                    if (fs::equivalent(cache_path, downloaded_cache_path)) {
-                        std::cout << "[WhisperServer] NPU cache hardlink already exists at: " << cache_path << std::endl;
-                        return;
-                    }
-                } catch (...) {
-                    // equivalent() can throw if files are on different filesystems
-                }
-                // Remove old file/link
-                fs::remove(cache_path);
-            }
-            
-            std::cout << "[WhisperServer] Creating hardlink for NPU cache..." << std::endl;
-            try {
-                // Create hardlink (no admin rights needed, works cross-platform, no duplication)
-                fs::create_hard_link(downloaded_cache_path, cache_path);
-                std::cout << "[WhisperServer] NPU cache hardlink created: " << cache_path << std::endl;
-            } catch (const std::exception& hardlink_error) {
-                // Hardlink creation might fail if files are on different filesystems, fall back to copy
-                std::cout << "[WhisperServer] Hardlink creation failed (" << hardlink_error.what() << "), copying file instead..." << std::endl;
-                fs::copy_file(downloaded_cache_path, cache_path, fs::copy_options::overwrite_existing);
-                std::cout << "[WhisperServer] NPU cache copied to: " << cache_path << std::endl;
-            }
-        } else {
-            std::cout << "[WhisperServer] NPU cache already in correct location: " << cache_path << std::endl;
-        }
+        std::cout << "[WhisperServer] NPU cache ready at: " << cache_path << std::endl;
         
     } catch (const std::exception& e) {
         std::cerr << "[WhisperServer] Warning: Failed to download NPU cache: " << e.what() << std::endl;
@@ -460,7 +414,6 @@ void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
 std::string WhisperServer::download_model(const std::string& checkpoint,
                                          const std::string& mmproj,
                                          bool do_not_upgrade) {
-    // Parse checkpoint: "ggml-org/whisper.cpp:ggml-large-v3.bin"
     std::string repo, filename;
     size_t colon_pos = checkpoint.find(':');
 
@@ -471,16 +424,12 @@ std::string WhisperServer::download_model(const std::string& checkpoint,
         throw std::runtime_error("Invalid checkpoint format. Expected 'repo:filename'");
     }
 
-    // Download .bin file from Hugging Face using ModelManager
     if (!model_manager_) {
         throw std::runtime_error("ModelManager not available for model download");
     }
 
     std::cout << "[WhisperServer] Downloading model: " << filename << " from " << repo << std::endl;
 
-    // Use ModelManager's download_model which handles HuggingFace downloads
-    // The download is triggered through the model registry system
-    // Model path will be resolved via ModelInfo.resolved_path
     model_manager_->download_model(
         checkpoint,  // model_name
         checkpoint,  // checkpoint
@@ -494,7 +443,6 @@ std::string WhisperServer::download_model(const std::string& checkpoint,
         do_not_upgrade
     );
 
-    // Get the resolved path from model info
     ModelInfo info = model_manager_->get_model_info(checkpoint);
     std::string model_path = info.resolved_path;
 
@@ -511,16 +459,12 @@ void WhisperServer::load(const std::string& model_name,
                         const RecipeOptions& options,
                         bool do_not_upgrade) {
     std::cout << "[WhisperServer] Loading model: " << model_name << std::endl;
-
-    // WhisperCpp Backend logging
     std::cout << "[WhisperServer] Per-model settings: " << options.to_log_string() << std::endl;
 
     std::string whispercpp_backend = options.get_option("whispercpp_backend");
 
-    // Install whisper-server if needed (use per-model backend)
     install(whispercpp_backend);
 
-    // Use pre-resolved model path
     std::string model_path = model_info.resolved_path;
     if (model_path.empty()) {
         throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint);
@@ -530,7 +474,7 @@ void WhisperServer::load(const std::string& model_name,
     std::cout << "[WhisperServer] Using backend: " << whispercpp_backend << std::endl;
     model_path_ = model_path;
 
-    // For NPU backend, download the compiled cache (.rai file) if needed
+    // For NPU backend, download the compiled cache (.rai file). This is a must-have for NPU backend.
     if (whispercpp_backend == "npu") {
         download_npu_compiled_cache(model_path, model_info.checkpoint, do_not_upgrade);
     }
