@@ -353,7 +353,7 @@ int TrayApp::run() {
         // Check for single instance - prevent duplicate tray processes, 
         // the use case here is not for a tray launched by the system its when its being launched by the user or electron app.
         #ifdef __APPLE__
-        if(LemonadeServiceManager::isTrayActive())
+        if (LemonadeServiceManager::isTrayActive())
         {
             std::cout << "Lemonade Tray is already running." << std::endl;
             return 0;
