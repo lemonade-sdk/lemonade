@@ -91,7 +91,7 @@ But `wut` does a nice job interpreting:
 ```
 The output suggests that the API endpoint is returning a list of models, and the owned_by field indicates that all models are owned by "lemonade". Thecreated timestamp indicates when each model was created.
 
-The output is a valid JSON response, and there is no error or warning message. The command was successful, and the output can be used for further processing or analysis. 
+The output is a valid JSON response, and there is no error or warning message. The command was successful, and the output can be used for further processing or analysis.
 ```
 
 
@@ -110,7 +110,7 @@ Results in:
 
 And then `wut` provides some helpful feedback:
 
-> Key takeaway: The command git pull-request is not a valid Git command. The correct command to create a pull request is git request-pull, but it's not a standard Git command. To create a pull request, use git request-pull or git pull with the --pr option. 
+> Key takeaway: The command git pull-request is not a valid Git command. The correct command to create a pull request is git request-pull, but it's not a standard Git command. To create a pull request, use git request-pull or git pull with the --pr option.
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->

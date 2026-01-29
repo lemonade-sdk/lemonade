@@ -37,11 +37,12 @@ from utils.test_models import (
     get_default_server_binary,
 )
 
-
 # Global configuration
 _config = {
     "server_binary": None,
     "ephemeral": False,
+    "apikey": False,
+    "listen_all": False,
 }
 
 
@@ -59,11 +60,23 @@ def parse_cli_args():
         action="store_true",
         help="Run in ephemeral mode (each command starts its own server)",
     )
+    parser.add_argument(
+        "--api-key",
+        action="store_true",
+        help="Run with API Key",
+    )
+    parser.add_argument(
+        "--listen-all",
+        action="store_true",
+        help="Listens on 0.0.0.0 instead of localhost",
+    )
 
     args, unknown = parser.parse_known_args()
 
     _config["server_binary"] = args.server_binary
     _config["ephemeral"] = args.ephemeral
+    _config["apikey"] = args.api_key
+    _config["listen_all"] = args.listen_all
 
     return args
 
@@ -190,6 +203,13 @@ class PersistentServerCLITests(CLITestBase):
         # Add --no-tray on Windows or in CI environments (no display server in containers)
         if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
             cmd.append("--no-tray")
+
+        if _config["listen_all"]:
+            cmd.append("--host")
+            cmd.append("0.0.0.0")
+
+        if _config["apikey"]:
+            os.environ["LEMONADE_API_KEY"] = "api-key"
 
         cls._server_process = subprocess.Popen(
             cmd,

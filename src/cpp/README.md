@@ -24,21 +24,33 @@ This directory contains the C++ implementation of the Lemonade Server, providing
 - WiX 5.x (only required for building the installer)
 
 **Linux (Ubuntu/Debian):**
+
+Note: CMake 3.28+ is required. Ubuntu 24.04+ and Debian Trixie (testing/13)+ include this.
+For older versions, you may need to install a newer CMake manually.
+
 ```bash
-sudo apt install build-essential cmake libcurl4-openssl-dev libssl-dev pkg-config
-# Note: Tray application is disabled on Linux (headless mode only)
-# This avoids LGPL dependencies and provides a cleaner server-only experience
+# Build dependencies
+sudo apt install build-essential g++ cmake git curl \
+  libcurl4-openssl-dev libssl-dev zlib1g-dev pkg-config
+
+# Optional: For running tests
+sudo apt install python3 python3-pip python3-venv
+
+# Verify CMake version (must be 3.28+)
+cmake --version
 ```
 
 **Linux (Fedora):**
 ```bash
-sudo dnf install @development-tools cmake libcurl-devel openssl-devel
+# Build dependencies
+sudo dnf install @development-tools gcc-c++ cmake git curl \
+  libcurl-devel openssl-devel zlib-devel pkgconf
+
+# Optional: For running tests
+sudo dnf install python3 python3-pip
 
 # If you then want to package the binaries into .rpm
 sudo dnf install rpm-build rpmdevtools
-
-# Note: Tray application is disabled on Linux (headless mode only)
-# This avoids LGPL dependencies and provides a cleaner server-only experience
 ```
 
 **macOS:**
@@ -69,12 +81,12 @@ cmake --build . --config Release -j
 
 ### Build Outputs
 
-- **Windows:** 
+- **Windows:**
   - `build/Release/lemonade-router.exe` - HTTP server
   - `build/Release/lemonade-server.exe` - Console CLI client
   - `build/Release/lemonade-tray.exe` - GUI tray launcher
   - `build/Release/lemonade-log-viewer.exe` - Log file viewer
-- **Linux/macOS:** 
+- **Linux/macOS:**
   - `build/lemonade-router` - HTTP server
   - `build/lemonade-server` - Console CLI client
 - **Resources:** Automatically copied to `build/Release/resources/` (web UI files, model registry, backend version configuration)
@@ -240,7 +252,7 @@ cpack -G RPM
 
 **Package Output:**
 
-Creates `lemonade-server-minimal-<VERSION>.x86_64.rpm` (e.g., `lemonade-server-minimal-9.1.2.x86_64.rpm`) and 
+Creates `lemonade-server-minimal-<VERSION>.x86_64.rpm` (e.g., `lemonade-server-minimal-9.1.2.x86_64.rpm`) and
 resources are installed as per DEB version above
 
 **Installation:**
@@ -299,7 +311,7 @@ Same as .deb above
 > Cmake: Select a Kit
 # Select a kit or Scan for kit. (Two options should be available gcc or clang)
 > Cmake: Configure
-# Optional commands are: 
+# Optional commands are:
 > Cmake: Build Target
 # use this to select a cmake target to build
 > Cmake: Set Launch/Debug target

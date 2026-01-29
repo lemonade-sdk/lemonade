@@ -32,8 +32,8 @@
   <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/banner_02.png?raw=true" alt="Lemonade Banner" />
 </p>
 <h3 align="center">
-  <a href="https://lemonade-server.ai/install_options.html">Download</a> | 
-  <a href="https://lemonade-server.ai/docs/">Documentation</a> | 
+  <a href="https://lemonade-server.ai/install_options.html">Download</a> |
+  <a href="https://lemonade-server.ai/docs/">Documentation</a> |
   <a href="https://discord.gg/5xXzkMu8Zk">Discord</a>
 </h3>
 

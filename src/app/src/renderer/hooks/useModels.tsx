@@ -18,26 +18,26 @@ export interface SuggestedModel {
 interface ModelsContextValue {
   // All models with full metadata (keyed by model ID)
   modelsData: ModelsData;
-  
+
   // List of downloaded models (derived from modelsData)
   downloadedModels: DownloadedModel[];
-  
+
   // List of suggested models for Model Manager (derived from modelsData)
   suggestedModels: SuggestedModel[];
-  
+
   // Currently selected model in chat dropdown
   selectedModel: string;
   setSelectedModel: (model: string) => void;
-  
+
   // Whether the selected model is the default (not yet downloaded)
   isDefaultModelPending: boolean;
-  
+
   // Whether data is currently being fetched
   isLoading: boolean;
-  
+
   // Refresh model data from server
   refresh: () => Promise<void>;
-  
+
   // Track if user has manually selected a model
   userHasSelectedModel: boolean;
   setUserHasSelectedModel: (value: boolean) => void;
@@ -84,7 +84,7 @@ export const ModelsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       } else {
         // Models are available
         setIsDefaultModelPending(false);
-        
+
         // Update selected model if needed
         setSelectedModelState(prev => {
           // If no selection or selection is the fake default, use first downloaded model
