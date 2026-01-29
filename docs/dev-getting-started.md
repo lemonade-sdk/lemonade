@@ -1,9 +1,8 @@
-# Lemonade C++ Server
-
-This directory contains the C++ implementation of the Lemonade Server, providing a lightweight, high-performance alternative to the Python implementation.
+# Lemonade development
 
 ## Components
 
+Here is an overi
 - **lemonade-router.exe** - Core HTTP server executable that handles requests and LLM backend orchestration
 - **lemonade-server.exe** - Console CLI client for terminal users that manages server lifecycle, executes commands via HTTP API
 - **lemonade-tray.exe** (Windows only) - GUI tray launcher for desktop users, automatically starts `lemonade-server.exe serve`
@@ -23,56 +22,35 @@ This directory contains the C++ implementation of the Lemonade Server, providing
 - Visual Studio 2019 or later
 - WiX 5.x (only required for building the installer)
 
-**Linux (Ubuntu/Debian):**
-
-Note: CMake 3.28+ is required. Ubuntu 24.04+ and Debian Trixie (testing/13)+ include this.
-For older versions, you may need to install a newer CMake manually.
-
-```bash
-# Build dependencies
-sudo apt install build-essential g++ cmake git curl \
-  libcurl4-openssl-dev libssl-dev zlib1g-dev pkg-config
-
-# Optional: For running tests
-sudo apt install python3 python3-pip python3-venv
-
-# Verify CMake version (must be 3.28+)
-cmake --version
-```
-
-**Linux (Fedora):**
-```bash
-# Build dependencies
-sudo dnf install @development-tools gcc-c++ cmake git curl \
-  libcurl-devel openssl-devel zlib-devel pkgconf
-
-# Optional: For running tests
-sudo dnf install python3 python3-pip
-
-# If you then want to package the binaries into .rpm
-sudo dnf install rpm-build rpmdevtools
-```
-
-**macOS:**
-```bash
-# Install Xcode command line tools
-xcode-select --install
-```
+**Linux:**
+ - Ninja build system (optional, recommended)
 
 ### Build Steps
+A helper script is available that will set up the build environment on popular
+Linux distributions.  This will prompt to install dependencies via native package
+managers and create the build directory.
 
+**Linux**
 ```bash
-# Configure with CMake
-cmake --preset default
-
-# Build with all cores
-cmake --build --preset default
-
-# On Windows, executables will be in: build/Release/
-# On Linux/macOS, executables will be in: build/
+./setup.sh
 ```
 
-### Build Outputs
+**Windows**
+```shell
+./setup.ps1
+```
+
+The build can be run by running:
+**Linux**
+```bash
+cmake --build --preset default
+
+** Windows**
+```powershell
+cmake --build --preset windows
+```
+###
+ Build Outputs
 
 - **Windows:**
   - `build/Release/lemonade-router.exe` - HTTP server
@@ -100,16 +78,6 @@ cmake --build . --config Release
 ```
 
 The tray app looks for `Lemonade.exe` in the same directory as the executable (development) or in `../app/` (installed). If not found, the "Open app" option is hidden but everything else works.
-
-### RyzenAI Server Dependency
-
-The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NPU/Hybrid model inference. This is handled automatically:
-
-- **Runtime download:** `lemonade-router` automatically downloads the `ryzenai-server` executable from [lemonade-sdk/ryzenai-server](https://github.com/lemonade-sdk/ryzenai-server) releases when needed
-- **Version management:** The version is configured in `resources/backend_versions.json` and auto-upgrades when changed
-- **Custom binary:** Set `LEMONADE_RYZENAI_SERVER_BIN` environment variable to use a custom build
-
-For development on `ryzenai-server` itself, see the [ryzenai-server repository](https://github.com/lemonade-sdk/ryzenai-server).
 
 ### Platform-Specific Notes
 
@@ -327,8 +295,14 @@ Same as .deb above
 
 ```
 src/cpp/
-├── CMakeLists.txt              # Main build configuration
 ├── build_installer.ps1         # Installer build script
+├── CopyElectronApp.cmake       # CMake module to copy Electron app to build output
+├── CPackRPM.cmake              # RPM packaging configuration
+├── DOCKER_GUIDE.md             # Docker containerization guide
+├── Extra-Models-Dir-Spec.md    # Extra models directory specification
+├── Multi-Model-Spec.md         # Multi-model loading specification
+├── postinst                    # Debian package post-install script
+├── postinst-full               # Debian package post-install script (full version)
 ├── resources/                  # Configuration and data files (self-contained)
 │   ├── backend_versions.json   # llama.cpp/whisper version configuration
 │   ├── server_models.json      # Model registry (available models)
@@ -347,14 +321,19 @@ src/cpp/
 │   ├── router.cpp              # Routes requests to backends
 │   ├── model_manager.cpp       # Model registry, downloads, caching
 │   ├── cli_parser.cpp          # Command-line argument parsing (CLI11)
+│   ├── recipe_options.cpp      # Recipe option handling
 │   ├── wrapped_server.cpp      # Base class for backend wrappers
 │   ├── streaming_proxy.cpp     # Server-Sent Events for streaming
 │   ├── system_info.cpp         # NPU/GPU device detection
+│   ├── lemonade.manifest.in    # Windows manifest template
+│   ├── version.rc              # Windows version resource
 │   │
 │   ├── backends/               # Model backend implementations
+│   │   ├── backend_utils.cpp     # Shared backend utilities
 │   │   ├── llamacpp_server.cpp   # Wraps llama.cpp for LLM inference (CPU/GPU)
 │   │   ├── fastflowlm_server.cpp # Wraps FastFlowLM for NPU inference
 │   │   ├── ryzenaiserver.cpp     # Wraps RyzenAI server for hybrid NPU
+│   │   ├── sd_server.cpp         # Wraps Stable Diffusion for image generation
 │   │   └── whisper_server.cpp    # Wraps whisper.cpp for audio transcription
 │   │
 │   └── utils/                  # Utility functions
@@ -362,19 +341,36 @@ src/cpp/
 │       ├── json_utils.cpp      # JSON file I/O
 │       ├── process_manager.cpp # Cross-platform process management
 │       ├── path_utils.cpp      # Path manipulation
-│       └── wmi_helper.cpp      # Windows WMI for NPU detection
+│       ├── wmi_helper.cpp      # Windows WMI for NPU detection
+│       └── wmi_helper.h        # WMI helper header
 │
 ├── include/lemon/              # Public headers
-│   ├── server.h, router.h, model_manager.h, cli_parser.h
-│   ├── wrapped_server.h, streaming_proxy.h, system_info.h
+│   ├── server.h                # HTTP server interface
+│   ├── router.h                # Request routing
+│   ├── model_manager.h         # Model management
+│   ├── cli_parser.h            # CLI argument parsing
+│   ├── recipe_options.h        # Recipe option definitions
+│   ├── wrapped_server.h        # Backend wrapper base class
+│   ├── streaming_proxy.h       # Streaming proxy
+│   ├── system_info.h           # System information
+│   ├── model_types.h           # Model type definitions
+│   ├── audio_types.h           # Audio type definitions
+│   ├── error_types.h           # Error type definitions
+│   ├── server_capabilities.h   # Server capability definitions
+│   ├── single_instance.h       # Single instance enforcement
+│   ├── version.h.in            # Version header template
 │   ├── backends/               # Backend headers
-│   │   ├── llamacpp_server.h
-│   │   ├── fastflowlm_server.h
-│   │   ├── ryzenaiserver.h
-│   │   └── whisper_server.h
+│   │   ├── backend_utils.h       # Backend utilities
+│   │   ├── llamacpp_server.h     # LlamaCpp backend
+│   │   ├── fastflowlm_server.h   # FastFlowLM backend
+│   │   ├── ryzenaiserver.h       # RyzenAI backend
+│   │   ├── sd_server.h           # Stable Diffusion backend
+│   │   └── whisper_server.h      # Whisper backend
 │   └── utils/                  # Utility headers
-│       ├── http_client.h, json_utils.h
-│       ├── process_manager.h, path_utils.h
+│       ├── http_client.h       # HTTP client
+│       ├── json_utils.h        # JSON utilities
+│       ├── process_manager.h   # Process management
+│       └── path_utils.h        # Path utilities
 │
 └── tray/                       # System tray application
     ├── CMakeLists.txt          # Tray-specific build config
@@ -383,6 +379,8 @@ src/cpp/
     ├── log-viewer.cpp          # Log file viewer (lemonade-log-viewer)
     ├── server_manager.cpp      # Manages lemonade-router process
     ├── tray_app.cpp            # Main tray application logic
+    ├── lemonade-server.manifest.in  # Windows manifest template
+    ├── version.rc              # Windows version resource
     └── platform/               # Platform-specific implementations
         ├── windows_tray.cpp    # Win32 system tray API
         ├── macos_tray.mm       # Objective-C++ NSStatusBar
