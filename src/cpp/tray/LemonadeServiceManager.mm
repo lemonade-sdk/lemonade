@@ -3,6 +3,7 @@
 #include "LemonadeServiceManager.h"
 #import <Foundation/Foundation.h>
 #include <unistd.h> // For usleep
+#include "lemon/utils/platform_constants.h"
 
 // Service identifiers
 const std::string LemonadeServiceManager::trayServiceID = "com.lemonade.tray";
@@ -52,7 +53,9 @@ bool LemonadeServiceManager::isServerEnabled() {
 
 void LemonadeServiceManager::startServer() {
     std::string target = getTargetSpecifier(serverServiceID);
-    std::string plistPath = "/Library/LaunchDaemons/com.lemonade.server.plist";
+    std::string plistPath = std::string(PlatformConstants::MACOS_LAUNCH_DAEMON_DIR) 
+                        + PlatformConstants::MACOS_BUNDLE_ID 
+                        + PlatformConstants::MACOS_PROPERTY_LIST_EXT;
     
     NSLog(@"[Lemonade] Requesting Root privileges to START server...");
 
@@ -67,9 +70,6 @@ void LemonadeServiceManager::startServer() {
 
     if (ExecuteAsRoot(combinedCmd)) {
         NSLog(@"[Lemonade] Server start sequence finished (Admin approved).");
-        
-        // Wait briefly for process to spawn
-        usleep(500000); // 0.5s
         if (isServerActive()) {
              NSLog(@"[Lemonade] Verification: Server is RUNNING.");
         } else {
@@ -100,13 +100,13 @@ void LemonadeServiceManager::stopServer() {
         
         // Wait loop to verify it actually stops
         int retries = 0;
-        while (isServerActive() && retries < 20) {
-            usleep(100000); // 0.1s
+        while (isServerActive() && retries < PlatformConstants::MACOS_STOP_RETRY_LIMIT) {
+            usleep(PlatformConstants::MACOS_STOP_POLL_INTERVAL_USEC);
             retries++;
         }
-        
         if (isServerActive()) {
-            NSLog(@"[Lemonade] Warning: Server still reports active after stop command.");
+            NSLog(@"[Lemonade] Server failed to stop within %.1f seconds.", 
+                PlatformConstants::MACOS_STOP_TOTAL_TIMEOUT_SEC);
         } else {
             NSLog(@"[Lemonade] Server stopped successfully.");
         }

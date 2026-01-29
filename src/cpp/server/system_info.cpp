@@ -226,7 +226,7 @@ json SystemInfo::get_device_dict() {
             devices["metal_gpu"] = {
                 {"name", "Unknown"},
                 {"available", false},
-                {"error", std::string("Detection exception: ") + e.what()}
+                {"error", std::string("Detection exception: ")}
             };
         }
     } catch (const std::exception& e) {

@@ -401,7 +401,7 @@ int TrayApp::run() {
             LemonadeServiceManager::startServer();
 
             // Wait for the service to start (up to 30 seconds)
-            int max_wait = 30;
+            int max_wait = 5;
             for (int i = 0; i < max_wait; ++i) {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 auto [pid, running_port] = get_server_info();
