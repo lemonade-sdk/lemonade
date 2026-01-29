@@ -18,18 +18,31 @@ namespace lemon {
 namespace backends {
 
 // Helper to get stable-diffusion.cpp version from configuration
-static std::string get_sd_version() {
+// ADDED: Support for backend-specific versions (cpu vs rocm)
+static std::string get_sd_version(const std::string& backend = "cpu") {
     std::string config_path = utils::get_resource_path("resources/backend_versions.json");
 
     try {
         json config = utils::JsonUtils::load_from_file(config_path);
 
-        if (!config.contains("sd-cpp") || !config["sd-cpp"].is_string()) {
-            throw std::runtime_error("backend_versions.json is missing 'sd-cpp' version");
+        if (!config.contains("sd-cpp")) {
+            throw std::runtime_error("backend_versions.json is missing 'sd-cpp'");
         }
 
-        std::string version = config["sd-cpp"].get<std::string>();
-        std::cout << "[SDServer] Using sd-cpp version from config: " << version << std::endl;
+        std::string version;
+        // Support both old string format and new object format with backend keys
+        if (config["sd-cpp"].is_string()) {
+            version = config["sd-cpp"].get<std::string>();
+        } else if (config["sd-cpp"].is_object()) {
+            if (!config["sd-cpp"].contains(backend)) {
+                throw std::runtime_error("backend_versions.json sd-cpp missing backend: " + backend);
+            }
+            version = config["sd-cpp"][backend].get<std::string>();
+        } else {
+            throw std::runtime_error("backend_versions.json 'sd-cpp' has invalid format");
+        }
+
+        std::cout << "[SDServer] Using sd-cpp version for backend '" << backend << "': " << version << std::endl;
         return version;
 
     } catch (const std::exception& e) {
@@ -46,16 +59,20 @@ static std::string get_sd_version() {
 }
 
 // Helper to get the install directory for sd executable
-static std::string get_sd_install_dir() {
-    return (fs::path(get_downloaded_bin_dir()) / "sd-cpp").string();
+// ADDED: Include backend subdirectory to support multiple backends
+static std::string get_sd_install_dir(const std::string& backend = "cpu") {
+    return (fs::path(get_downloaded_bin_dir()) / "sd-cpp" / backend).string();
 }
 
 SDServer::SDServer(const std::string& log_level,
-                   ModelManager* model_manager)
-    : WrappedServer("sd-server", log_level, model_manager) {
+                   ModelManager* model_manager,
+                   const std::string& backend)
+    : WrappedServer("sd-server", log_level, model_manager),
+      backend_(backend) {
 
     if (is_debug()) {
-        std::cout << "[SDServer] Created with log_level=" << log_level << std::endl;
+        std::cout << "[SDServer] Created with log_level=" << log_level
+                  << ", backend=" << backend << std::endl;
     }
 }
 
@@ -132,7 +149,7 @@ std::string SDServer::find_executable_in_install_dir(const std::string& install_
 
 
 void SDServer::install(const std::string& /* backend */) {
-    std::string install_dir = get_sd_install_dir();
+    std::string install_dir = get_sd_install_dir(backend_);
 
     // Check if already installed
     std::string exe_path = find_executable_in_install_dir(install_dir);
@@ -141,10 +158,10 @@ void SDServer::install(const std::string& /* backend */) {
         return;
     }
 
-    std::cout << "[SDServer] Installing stable-diffusion.cpp server..." << std::endl;
+    std::cout << "[SDServer] Installing stable-diffusion.cpp server (backend: " << backend_ << ")..." << std::endl;
 
     // Get version and construct download URL
-    std::string expected_version = get_sd_version();
+    std::string expected_version = get_sd_version(backend_);
     std::string repo = "leejet/stable-diffusion.cpp";
 
     // Transform version for URL (master-NNN-HASH -> master-HASH)
@@ -158,19 +175,34 @@ void SDServer::install(const std::string& /* backend */) {
         }
     }
 
+    // ADDED: ROCm backend selection for AMD GPU support
     std::string filename;
+    if (backend_ == "rocm") {
+        // ADDED: ROCm GPU build download support
+        // Downloads HIP/ROCm-enabled binaries for AMD GPUs (e.g., Radeon 8060S)
 #ifdef _WIN32
-    // Windows CPU build with AVX2
-    filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
+        filename = "sd-" + short_version + "-bin-win-rocm-x64.zip";
 #elif defined(__linux__)
-    // Linux build
-    filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
-#elif defined(__APPLE__)
-    // macOS ARM build
-    filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.2-arm64.zip";
+        filename = "sd-" + short_version + "-bin-linux-rocm-x64.zip";
 #else
-    throw std::runtime_error("Unsupported platform for stable-diffusion.cpp");
+        throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
 #endif
+        std::cout << "[SDServer] Using ROCm GPU backend" << std::endl;
+    } else {
+        // CPU build (default) - unchanged from original
+#ifdef _WIN32
+        // Windows CPU build with AVX2
+        filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
+#elif defined(__linux__)
+        // Linux build
+        filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
+#elif defined(__APPLE__)
+        // macOS ARM build
+        filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.2-arm64.zip";
+#else
+        throw std::runtime_error("Unsupported platform for stable-diffusion.cpp");
+#endif
+    }
 
     std::string url = "https://github.com/" + repo + "/releases/download/" +
                      expected_version + "/" + filename;
@@ -331,7 +363,7 @@ void SDServer::load(const std::string& model_name,
     model_path_ = model_path;
 
     // Get sd-server executable path
-    std::string exe_path = find_executable_in_install_dir(get_sd_install_dir());
+    std::string exe_path = find_executable_in_install_dir(get_sd_install_dir(backend_));
     if (exe_path.empty()) {
         throw std::runtime_error("sd-server executable not found");
     }
@@ -342,7 +374,7 @@ void SDServer::load(const std::string& model_name,
         throw std::runtime_error("Failed to find an available port");
     }
 
-    std::cout << "[SDServer] Starting server on port " << port_ << std::endl;
+    std::cout << "[SDServer] Starting server on port " << port_ << " (backend: " << backend_ << ")" << std::endl;
 
     // Build command line arguments
     std::vector<std::string> args = {
@@ -354,10 +386,12 @@ void SDServer::load(const std::string& model_name,
         args.push_back("-v");
     }
 
-    // Set up environment variables for Linux (LD_LIBRARY_PATH)
+    // Set up environment variables
     std::vector<std::pair<std::string, std::string>> env_vars;
-#ifndef _WIN32
     fs::path exe_dir = fs::path(exe_path).parent_path();
+
+#ifndef _WIN32
+    // For Linux, always set LD_LIBRARY_PATH to include executable directory
     std::string lib_path = exe_dir.string();
 
     const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
@@ -368,6 +402,22 @@ void SDServer::load(const std::string& model_name,
     env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
     if (is_debug()) {
         std::cout << "[SDServer] Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+    }
+#else
+    // ADDED: ROCm Windows DLL loading support
+    // ROCm builds on Windows require hipblaslt.dll, rocblas.dll, amdhip64.dll, etc.
+    // These DLLs are distributed alongside sd-server.exe but need PATH to be set for loading
+    if (backend_ == "rocm") {
+        // Add executable directory to PATH for ROCm runtime DLLs
+        // This allows the sd-server.exe to find required HIP/ROCm libraries at runtime
+        std::string new_path = exe_dir.string();
+        const char* existing_path = std::getenv("PATH");
+        if (existing_path && strlen(existing_path) > 0) {
+            new_path = new_path + ";" + std::string(existing_path);
+        }
+        env_vars.push_back({"PATH", new_path});
+        
+        std::cout << "[SDServer] ROCm backend: added " << exe_dir.string() << " to PATH" << std::endl;
     }
 #endif
 

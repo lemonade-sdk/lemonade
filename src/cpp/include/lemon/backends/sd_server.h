@@ -13,7 +13,8 @@ namespace backends {
 class SDServer : public WrappedServer, public IImageServer {
 public:
     explicit SDServer(const std::string& log_level = "info",
-                      ModelManager* model_manager = nullptr);
+                      ModelManager* model_manager = nullptr,
+                      const std::string& backend = "cpu");
 
     ~SDServer() override;
 
@@ -38,6 +39,9 @@ public:
 
     // IImageServer implementation
     json image_generations(const json& request) override;
+
+private:
+    std::string backend_;
 
 private:
     // Server executable helper

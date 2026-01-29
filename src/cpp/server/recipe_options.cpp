@@ -9,6 +9,7 @@ static const json DEFAULTS = {
     {"ctx_size", 4096},
     {"llamacpp_backend", "vulkan"},
     {"llamacpp_args", ""},
+    {"sdcpp_backend", "cpu"},  // ADDED: sd.cpp backend selection (cpu or rocm)
     // Image generation defaults (for sd-cpp recipe)
     {"steps", 20},
     {"cfg_scale", 7.0},
@@ -35,6 +36,14 @@ static const json CLI_OPTIONS = {
         {"type_name", "ARGS"},
         {"envname", "LEMONADE_LLAMACPP_ARGS"},
         {"help", "Custom arguments to pass to llama-server (must not conflict with managed args)"}
+    }},
+    // ADDED: sd.cpp backend selection option
+    {"--sdcpp", {
+        {"option_name", "sdcpp_backend"},
+        {"type_name", "BACKEND"},
+        {"allowed_values", {"cpu", "rocm"}},
+        {"envname", "LEMONADE_SDCPP"},
+        {"help", "SD.cpp backend to use (cpu for CPU, rocm for AMD GPU)"}
     }},
     // Image generation options (for sd-cpp recipe)
     {"--steps", {
@@ -69,7 +78,8 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     } else if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu" || recipe == "ryzenai" || recipe == "flm") {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
-        return {"steps", "cfg_scale", "width", "height"};
+        // ADDED: Include sdcpp_backend for backend selection (cpu vs rocm)
+        return {"sdcpp_backend", "steps", "cfg_scale", "width", "height"};
     } else {
         // "whispercpp" has currently no option
         return {};
