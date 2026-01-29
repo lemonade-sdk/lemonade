@@ -282,7 +282,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         'oga-hybrid': 'ONNX Runtime Hybrid',
         'oga-npu': 'ONNX Runtime NPU',
         'whispercpp': 'Whisper.cpp',
-        'sd-cpp': 'Stable Diffusion CPP'
+        'sd-cpp': 'StableDiffusion.cpp'
       };
       return recipeLabels[key] || key;
     } else {
