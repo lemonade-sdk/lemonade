@@ -40,6 +40,7 @@ from utils.capabilities import (
 from utils.test_models import (
     PORT,
     STANDARD_MESSAGES,
+    RESPONSES_MESSAGES,
     SIMPLE_MESSAGES,
     TEST_PROMPT,
     SAMPLE_TOOL,
@@ -241,7 +242,7 @@ class LLMTests(ServerTestBase):
 
         response = client.responses.create(
             model=model,
-            input=self.messages,
+            input=RESPONSES_MESSAGES,
             stream=False,
             temperature=0.0,
             max_output_tokens=10,
@@ -258,7 +259,7 @@ class LLMTests(ServerTestBase):
 
         stream = client.responses.create(
             model=model,
-            input=self.messages,
+            input=RESPONSES_MESSAGES,
             stream=True,
             temperature=0.0,
             max_output_tokens=10,

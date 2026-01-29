@@ -56,6 +56,14 @@ STANDARD_MESSAGES = [
     {"role": "user", "content": "What was the best play?"},
 ]
 
+# Standard test messages for responses
+RESPONSES_MESSAGES = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Who won the world series in 2020?"},
+    {"role": "assistant", "type": "message", "content": [{"text": "The LA Dodgers won in 2020.", "type": "output_text"}]},
+    {"role": "user", "content": "What was the best play?"},
+]
+
 # Simple test messages for quick tests
 SIMPLE_MESSAGES = [
     {"role": "user", "content": "Say hello in exactly 5 words."},
