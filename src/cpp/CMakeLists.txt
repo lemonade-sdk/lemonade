@@ -384,6 +384,7 @@ set(SOURCES
     server/streaming_proxy.cpp
     server/system_info.cpp
     server/recipe_options.cpp
+    server/utils/network_beacon.cpp
     server/utils/http_client.cpp
     server/utils/json_utils.cpp
     server/utils/process_manager.cpp
