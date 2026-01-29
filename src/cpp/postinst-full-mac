@@ -90,6 +90,19 @@ chown root:wheel "$LEMONADE_SHARE_DIR"
 SOURCE_RES="${INSTALL_ROOT}/usr/local/resources"
 
 if [ -d "$SOURCE_RES" ]; then
+
+    # 1. Check if unset or empty (the :- handles unset variables cleanly)
+    if [ -z "${APP_SUPPORT_DIR:-}" ]; then
+        echo "CRITICAL ERROR: APP_SUPPORT_DIR is unset or empty. Aborting."
+        exit 1
+    fi
+
+    # 2. Check if set to root ("/")
+    if [ "$APP_SUPPORT_DIR" = "/" ]; then
+        echo "CRITICAL ERROR: APP_SUPPORT_DIR is set to root ('/'). Aborting to prevent system deletion."
+        exit 1
+    fi
+
     echo "Moving resources to Application Support..."
     mkdir -p "$APP_SUPPORT_DIR"
 
