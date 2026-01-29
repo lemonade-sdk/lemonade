@@ -191,6 +191,21 @@ jobs:
               exit 1
           }
 
+          # Move output to build directory where CMake expects it
+          Write-Host "Moving Electron app to build directory..." -ForegroundColor Yellow
+          $targetDir = "..\..\build\app"
+          if (Test-Path $targetDir) {
+              Remove-Item -Recurse -Force $targetDir
+          }
+          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+          Move-Item -Path "dist-app\*" -Destination $targetDir -Force
+
+          # Verify the final output exists
+          if (-not (Test-Path "..\..\build\app\win-unpacked\Lemonade.exe")) {
+              Write-Host "ERROR: Electron app not found in final location!" -ForegroundColor Red
+              exit 1
+          }
+
           Write-Host "Electron app build successful!" -ForegroundColor Green
 
       - name: Build the Lemonade Server Installer

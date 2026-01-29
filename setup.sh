@@ -235,12 +235,17 @@ if [ ${#missing_packages[@]} -gt 0 ]; then
     echo "  $install_cmd"
     echo ""
 
-    read -p "Do you want to install these dependencies? (y/N): " -n 1 -r
-    echo ""
+    # Check if running in CI environment
+    if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
+        print_info "CI environment detected, proceeding with automatic installation..."
+    else
+        read -p "Do you want to install these dependencies? (y/N): " -n 1 -r
+        echo ""
 
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        print_error "Installation aborted by user"
-        exit 1
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_error "Installation aborted by user"
+            exit 1
+        fi
     fi
 
     print_info "Installing dependencies..."

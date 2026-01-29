@@ -32,80 +32,18 @@ jobs:
             python: python3
 
     steps:
-      - name: Install build dependencies
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Run setup.sh to configure environment
         run: |
           set -e
 
-          if [ "${{ matrix.distro }}" = "Arch" ]; then
-            echo "Updating Arch package database..."
-            pacman -Syu --noconfirm
-
-            echo "Installing build dependencies..."
-            pacman -S --noconfirm --needed \
-              base-devel \
-              cmake \
-              ninja \
-              git \
-              curl \
-              openssl \
-              zlib \
-              pkgconf \
-              python \
-              python-pip \
-              ca-certificates \
-              procps-ng
-
-          elif [ "${{ matrix.distro }}" = "Debian" ]; then
-            echo "Updating Debian package database..."
-            apt-get update
-
-            echo "Installing build dependencies..."
-            apt-get install -y \
-              build-essential \
-              g++ \
-              cmake \
-              ninja-build \
-              git \
-              curl \
-              libcurl4-openssl-dev \
-              libssl-dev \
-              zlib1g-dev \
-              pkg-config \
-              python3 \
-              python3-pip \
-              python3-venv \
-              ca-certificates \
-              procps
-
-          elif [ "${{ matrix.distro }}" = "Fedora" ]; then
-            echo "Updating Fedora package database..."
-            dnf update -y
-
-            echo "Installing build dependencies..."
-            dnf install -y \
-              @development-tools \
-              gcc-c++ \
-              cmake \
-              ninja-build \
-              git \
-              curl \
-              libcurl-devel \
-              openssl-devel \
-              zlib-devel \
-              pkgconf \
-              python3 \
-              python3-pip \
-              ca-certificates \
-              procps-ng
-          fi
-
-          echo "Verifying installations..."
-          cmake --version
-          ninja --version
-          gcc --version
-          g++ --version
-          pkg-config --version
-          ${{ matrix.python }} --version
+          echo "Running setup.sh for ${{ matrix.distro }}..."
+          bash setup.sh
 
           echo "Verifying process management tools..."
           command -v pgrep && command -v pkill && command -v ps
@@ -116,29 +54,13 @@ jobs:
           echo "Testing HTTPS connectivity..."
           curl -sI https://huggingface.co | head -5 || echo "Warning: HTTPS test failed"
 
-          echo "Build dependencies installed successfully!"
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          clean: true
-          fetch-depth: 0
+          echo "Setup completed successfully!"
 
       - name: Build C++ Server with CMake
         run: |
           set -e
 
           echo "Building lemonade-router and lemonade-server on ${{ matrix.distro }}..."
-
-          # Create build directory
-          if [ -d "build" ]; then
-              echo "Removing existing build directory..."
-              rm -rf build
-          fi
-
-          # Configure and build with preset
-          echo "Configuring CMake with preset..."
-          cmake --preset default
 
           # Build
           echo "Building binaries..."
@@ -186,6 +108,10 @@ jobs:
       - name: Setup Python virtual environment
         run: |
           echo "Creating Python virtual environment..."
+          if [ "${{ matrix.distro }}" = "Debian" ]; then
+              apt install -y python3-venv
+          fi
+
           ${{ matrix.python }} -m venv .venv
 
           echo "Activating virtual environment and installing dependencies..."

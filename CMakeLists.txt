@@ -587,9 +587,21 @@ if(UNIX AND NOT APPLE)
     )
 
     # Check if Electron app is available for full package
-    option(INCLUDE_ELECTRON_APP "Include Electron app in deb package" OFF)
+    option(BUILD_ELECTRON_APP "Build and include Electron app in deb package" OFF)
 
-    if(INCLUDE_ELECTRON_APP AND EXISTS "${ELECTRON_APP_UNPACKED_DIR}/${ELECTRON_EXE_NAME}")
+    # Build electron app if requested and target is available
+    if(BUILD_ELECTRON_APP AND TARGET electron-app)
+        message(STATUS "BUILD_ELECTRON_APP is ON - building Electron app...")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target electron-app
+            RESULT_VARIABLE ELECTRON_BUILD_RESULT
+        )
+        if(NOT ELECTRON_BUILD_RESULT EQUAL 0)
+            message(FATAL_ERROR "Failed to build Electron app")
+        endif()
+    endif()
+
+    if(BUILD_ELECTRON_APP AND EXISTS "${ELECTRON_APP_UNPACKED_DIR}/${ELECTRON_EXE_NAME}")
         message(STATUS "Electron app found at ${ELECTRON_APP_UNPACKED_DIR}")
         message(STATUS "Building full deb package with Electron app")
 
@@ -620,8 +632,8 @@ if(UNIX AND NOT APPLE)
         # Post-install script for minimal package
         set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst")
 
-        if(INCLUDE_ELECTRON_APP)
-            message(WARNING "INCLUDE_ELECTRON_APP is ON but Electron app not found at ${ELECTRON_APP_UNPACKED_DIR}")
+        if(BUILD_ELECTRON_APP)
+            message(WARNING "BUILD_ELECTRON_APP is ON but Electron app not found at ${ELECTRON_APP_UNPACKED_DIR}")
             message(WARNING "Building minimal deb package instead")
         endif()
     endif()
