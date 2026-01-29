@@ -21,7 +21,6 @@
 
 #ifdef __APPLE__
 #include <sys/sysctl.h>
-#include <mach/mach.h>
 #endif
 
 namespace lemon {
