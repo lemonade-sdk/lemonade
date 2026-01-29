@@ -317,29 +317,89 @@ if(WIN32)
         set(WIX_ELECTRON_FRAGMENT "${CMAKE_CURRENT_BINARY_DIR}/installer/ElectronAppFragment.wxs")
         file(TO_NATIVE_PATH "${WIX_ELECTRON_FRAGMENT}" WIX_ELECTRON_FRAGMENT_NATIVE)
 
-        # Minimal installer (server only)
-        add_custom_target(wix_installer_minimal
-            COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (server only)..."
-            COMMAND ${WIX_EXECUTABLE} build
-                -arch x64
-                -ext WixToolset.UI.wixext
-                -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
-                -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
-                -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
-                -d IncludeElectron=0
-                -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
-                "${WIX_PRODUCT_WXS_NATIVE}"
-            COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
-            DEPENDS ${EXECUTABLE_NAME}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-            COMMENT "Building WiX MSI installer (server only)"
-        )
+        # Web app fragment paths
+        file(TO_NATIVE_PATH "${WEB_APP_BUILD_DIR}" WIX_WEBAPP_SOURCE_NATIVE)
+        set(WIX_WEBAPP_FRAGMENT "${CMAKE_CURRENT_BINARY_DIR}/installer/WebAppFragment.wxs")
+        file(TO_NATIVE_PATH "${WIX_WEBAPP_FRAGMENT}" WIX_WEBAPP_FRAGMENT_NATIVE)
+
+        # Minimal installer (server only, optionally with web-app if built)
+        if(Python3_FOUND)
+            add_custom_target(wix_installer_minimal
+                COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (server only)..."
+                # Generate web-app fragment if web-app directory exists
+                COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
+                    --source "${WEB_APP_BUILD_DIR}"
+                    --output "${WIX_WEBAPP_FRAGMENT}"
+                    --component-group "WebAppComponents"
+                    --root-id "WebAppDir"
+                    --path-variable "WebAppSourceDir"
+                    || ${CMAKE_COMMAND} -E echo "Web-app fragment generation skipped (web-app not built)"
+                COMMAND ${WIX_EXECUTABLE} build
+                    -arch x64
+                    -ext WixToolset.UI.wixext
+                    -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                    -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
+                    -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
+                    -d IncludeElectron=0
+                    -d IncludeWebApp=1
+                    -d WebAppSourceDir="${WIX_WEBAPP_SOURCE_NATIVE}"
+                    -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
+                    "${WIX_PRODUCT_WXS_NATIVE}"
+                    "${WIX_WEBAPP_FRAGMENT_NATIVE}"
+                    || ${WIX_EXECUTABLE} build
+                        -arch x64
+                        -ext WixToolset.UI.wixext
+                        -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                        -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
+                        -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
+                        -d IncludeElectron=0
+                        -d IncludeWebApp=0
+                        -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
+                        "${WIX_PRODUCT_WXS_NATIVE}"
+                COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
+                DEPENDS ${EXECUTABLE_NAME}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                COMMENT "Building WiX MSI installer (server only)"
+            )
+        else()
+            add_custom_target(wix_installer_minimal
+                COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (server only, no web-app)..."
+                COMMAND ${WIX_EXECUTABLE} build
+                    -arch x64
+                    -ext WixToolset.UI.wixext
+                    -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                    -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
+                    -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
+                    -d IncludeElectron=0
+                    -d IncludeWebApp=0
+                    -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
+                    "${WIX_PRODUCT_WXS_NATIVE}"
+                COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
+                DEPENDS ${EXECUTABLE_NAME}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                COMMENT "Building WiX MSI installer (server only)"
+            )
+        endif()
 
         set(WIX_INSTALLER_TARGETS wix_installer_minimal)
+
+        # Add web-app dependency to minimal installer if target exists
+        if(TARGET web-app)
+            add_dependencies(wix_installer_minimal web-app)
+        endif()
 
         if(Python3_FOUND)
             add_custom_target(wix_installer_full
                 COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (with Electron app)..."
+                # Generate web-app fragment
+                COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
+                    --source "${WEB_APP_BUILD_DIR}"
+                    --output "${WIX_WEBAPP_FRAGMENT}"
+                    --component-group "WebAppComponents"
+                    --root-id "WebAppDir"
+                    --path-variable "WebAppSourceDir"
+                    || ${CMAKE_COMMAND} -E echo "Warning: Web-app fragment generation failed"
+                # Generate Electron app fragment
                 COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
                     --source "${ELECTRON_APP_UNPACKED_DIR}"
                     --output "${WIX_ELECTRON_FRAGMENT}"
@@ -353,10 +413,25 @@ if(WIN32)
                     -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
                     -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
                     -d IncludeElectron=1
+                    -d IncludeWebApp=1
                     -d ElectronSourceDir="${WIX_ELECTRON_SOURCE_NATIVE}"
+                    -d WebAppSourceDir="${WIX_WEBAPP_SOURCE_NATIVE}"
                     -out "${WIX_FULL_OUTPUT_NATIVE}"
                     "${WIX_PRODUCT_WXS_NATIVE}"
                     "${WIX_ELECTRON_FRAGMENT_NATIVE}"
+                    "${WIX_WEBAPP_FRAGMENT_NATIVE}"
+                    || ${WIX_EXECUTABLE} build
+                        -arch x64
+                        -ext WixToolset.UI.wixext
+                        -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                        -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
+                        -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
+                        -d IncludeElectron=1
+                        -d IncludeWebApp=0
+                        -d ElectronSourceDir="${WIX_ELECTRON_SOURCE_NATIVE}"
+                        -out "${WIX_FULL_OUTPUT_NATIVE}"
+                        "${WIX_PRODUCT_WXS_NATIVE}"
+                        "${WIX_ELECTRON_FRAGMENT_NATIVE}"
                 COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade.msi"
                 DEPENDS ${EXECUTABLE_NAME}
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -365,6 +440,10 @@ if(WIN32)
 
             if(TARGET electron-app)
                 add_dependencies(wix_installer_full electron-app)
+            endif()
+
+            if(TARGET web-app)
+                add_dependencies(wix_installer_full web-app)
             endif()
 
             list(APPEND WIX_INSTALLER_TARGETS wix_installer_full)
@@ -566,8 +645,13 @@ endif()
 # Web App Integration (Cross-Platform)
 # ============================================================
 
-# Option to control Web app build (enabled by default)
-option(BUILD_WEB_APP "Build the Web app" ON)
+# On Windows, disable automatic build by default (can be enabled with -DBUILD_WEB_APP=ON)
+# On other platforms, enable automatic build by default (can be disabled with -DBUILD_WEB_APP=OFF)
+if(WIN32)
+    option(BUILD_WEB_APP "Build the Web app automatically" OFF)
+else()
+    option(BUILD_WEB_APP "Build the Web app automatically" ON)
+endif()
 
 # Custom target to build the Web app with proper dependency tracking
 if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
@@ -603,13 +687,26 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
     # Add custom target that depends on the stamp file
     add_custom_target(web-app ALL DEPENDS ${WEB_APP_STAMP})
 
-    message(STATUS "Web app will be built automatically only when sources change (disable with -DBUILD_WEB_APP=OFF)")
+    message(STATUS "Web app will be built automatically (disable with -DBUILD_WEB_APP=OFF)")
 else()
     if(NOT NODE_EXECUTABLE OR NOT NPM_EXECUTABLE)
         message(STATUS "Node.js or npm not found - Web app build target disabled")
     else()
-        message(STATUS "Web app build disabled (enable with -DBUILD_WEB_APP=ON)")
+        message(STATUS "Web app automatic build disabled (enable with -DBUILD_WEB_APP=ON)")
     endif()
+endif()
+
+# Add manual web-app target for platforms where automatic build is disabled
+if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND NOT BUILD_WEB_APP)
+    add_custom_target(web-app
+        COMMAND ${CMAKE_COMMAND} -E echo "Building Web app..."
+        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} install
+        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} run build
+        COMMENT "Building Web app with npm"
+        WORKING_DIRECTORY "${WEB_APP_SOURCE_DIR}"
+        VERBATIM
+    )
+    message(STATUS "Web app can be built manually with: cmake --build . --target web-app")
 endif()
 
 # Add tray application subdirectory
