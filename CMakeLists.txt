@@ -11,7 +11,7 @@ project(lemon_cpp VERSION 9.2.0)
 # Electron source paths (used by both runtime and installers)
 # ============================================================
 get_filename_component(ELECTRON_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/app" ABSOLUTE)
-set(ELECTRON_APP_BUILD_DIR "${ELECTRON_APP_SOURCE_DIR}/dist-app")
+set(ELECTRON_APP_BUILD_DIR "${CMAKE_BINARY_DIR}/app")
 if(WIN32)
     set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/win-unpacked")
     set(ELECTRON_EXE_NAME "Lemonade.exe")
@@ -524,34 +524,29 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
         set(ELECTRON_BUILD_TARGET "build:linux")
     endif()
 
+    set(ELECTRON_BUILD_SOURCE_DIR "${CMAKE_BINARY_DIR}/app-src")
+
     add_custom_target(electron-app
+        COMMAND ${CMAKE_COMMAND} -E echo "Copying Electron app source to build directory..."
+        COMMAND ${CMAKE_COMMAND} -E remove_directory "${ELECTRON_BUILD_SOURCE_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${ELECTRON_BUILD_SOURCE_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${ELECTRON_APP_SOURCE_DIR}" "${ELECTRON_BUILD_SOURCE_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies (clean install)..."
+        COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_BUILD_SOURCE_DIR}" ${NPM_EXECUTABLE} ci
         COMMAND ${CMAKE_COMMAND} -E echo "Building Electron app for current platform..."
-        COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} install
-        COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} run ${ELECTRON_BUILD_TARGET}
+        COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_BUILD_SOURCE_DIR}" ${NPM_EXECUTABLE} run ${ELECTRON_BUILD_TARGET} -- --config.directories.output=${ELECTRON_APP_BUILD_DIR}
         COMMENT "Building Electron app with npm"
-        WORKING_DIRECTORY "${ELECTRON_APP_SOURCE_DIR}"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
         VERBATIM
     )
 
     message(STATUS "Node.js found: ${NODE_EXECUTABLE}")
     message(STATUS "npm found: ${NPM_EXECUTABLE}")
-    message(STATUS "Electron app can be built with: cmake --build . --target electron-app")
+    message(STATUS "Electron app can be built with: cmake --build --preset default --target electron-app")
 else()
     message(STATUS "Node.js or npm not found - Electron app build target disabled")
     message(STATUS "Install Node.js to enable: https://nodejs.org/")
 endif()
-
-# Custom command to copy Electron app files after building the C++ server
-add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Checking for Electron app at ${ELECTRON_APP_UNPACKED_DIR}..."
-    COMMAND ${CMAKE_COMMAND}
-        -DELECTRON_APP_UNPACKED_DIR=${ELECTRON_APP_UNPACKED_DIR}
-        -DTARGET_DIR=$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>
-        -DELECTRON_EXE_NAME=${ELECTRON_EXE_NAME}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/CopyElectronApp.cmake
-    COMMENT "Copying Electron app if available"
-    VERBATIM
-)
 
 # Add tray application subdirectory
 add_subdirectory(src/cpp/tray)
