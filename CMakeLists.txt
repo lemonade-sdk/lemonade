@@ -562,8 +562,13 @@ add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
 # Web App Integration (Cross-Platform)
 # ============================================================
 
-# Option to control Web app build (enabled by default)
-option(BUILD_WEB_APP "Build the Web app" ON)
+# On Windows, disable automatic build by default (can be enabled with -DBUILD_WEB_APP=ON)
+# On other platforms, enable automatic build by default (can be disabled with -DBUILD_WEB_APP=OFF)
+if(WIN32)
+    option(BUILD_WEB_APP "Build the Web app automatically" OFF)
+else()
+    option(BUILD_WEB_APP "Build the Web app automatically" ON)
+endif()
 
 # Custom target to build the Web app with proper dependency tracking
 if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
@@ -599,13 +604,26 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
     # Add custom target that depends on the stamp file
     add_custom_target(web-app ALL DEPENDS ${WEB_APP_STAMP})
 
-    message(STATUS "Web app will be built automatically only when sources change (disable with -DBUILD_WEB_APP=OFF)")
+    message(STATUS "Web app will be built automatically (disable with -DBUILD_WEB_APP=OFF)")
 else()
     if(NOT NODE_EXECUTABLE OR NOT NPM_EXECUTABLE)
         message(STATUS "Node.js or npm not found - Web app build target disabled")
     else()
-        message(STATUS "Web app build disabled (enable with -DBUILD_WEB_APP=ON)")
+        message(STATUS "Web app automatic build disabled (enable with -DBUILD_WEB_APP=ON)")
     endif()
+endif()
+
+# Add manual web-app target for platforms where automatic build is disabled
+if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND NOT BUILD_WEB_APP)
+    add_custom_target(web-app
+        COMMAND ${CMAKE_COMMAND} -E echo "Building Web app..."
+        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} install
+        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} run build
+        COMMENT "Building Web app with npm"
+        WORKING_DIRECTORY "${WEB_APP_SOURCE_DIR}"
+        VERBATIM
+    )
+    message(STATUS "Web app can be built manually with: cmake --build . --target web-app")
 endif()
 
 # Add tray application subdirectory
