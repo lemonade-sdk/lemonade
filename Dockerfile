@@ -10,6 +10,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
+    ninja-build \
     libssl-dev \
     pkg-config \
     git \
@@ -17,14 +18,12 @@ RUN apt-get update && apt-get install -y \
 
 # Copy source code
 COPY . /app
-WORKDIR /app/src/cpp
+WORKDIR /app
 
 # Build the project
 RUN rm -rf build && \
-    mkdir -p build && \
-    cd build && \
-    cmake .. && \
-    cmake --build . --config Release -j"$(nproc)"
+    cmake --preset default && \
+    cmake --build --preset default
 
 # Debug: Check build outputs
 RUN echo "=== Build directory contents ===" && \
@@ -53,9 +52,9 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /opt/lemonade
 
 # Copy built executables and resources from builder
-COPY --from=builder /app/src/cpp/build/lemonade-router ./lemonade-router
-COPY --from=builder /app/src/cpp/build/lemonade-server ./lemonade-server
-COPY --from=builder /app/src/cpp/build/resources ./resources
+COPY --from=builder /app/build/lemonade-router ./lemonade-router
+COPY --from=builder /app/build/lemonade-server ./lemonade-server
+COPY --from=builder /app/build/resources ./resources
 
 # Make executables executable
 RUN chmod +x ./lemonade-router ./lemonade-server
