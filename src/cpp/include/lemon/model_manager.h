@@ -63,17 +63,17 @@ struct ModelInfo {
 class ModelManager {
 public:
     ModelManager();
-    
+
     // Get all supported models from server_models.json
     std::map<std::string, ModelInfo> get_supported_models();
-    
+
     // Get downloaded models
     std::map<std::string, ModelInfo> get_downloaded_models();
-    
+
     // Filter models by available backends
     std::map<std::string, ModelInfo> filter_models_by_backend(
         const std::map<std::string, ModelInfo>& models);
-    
+
     // Register a user model
     void register_user_model(const std::string& model_name,
                             const std::string& checkpoint,
@@ -98,86 +98,86 @@ public:
                        const std::string& mmproj = "",
                        bool do_not_upgrade = false,
                        DownloadProgressCallback progress_callback = nullptr);
-    
+
     // Delete a model
     void delete_model(const std::string& model_name);
-    
+
     // Get model info by name
     ModelInfo get_model_info(const std::string& model_name);
-    
+
     // Check if model exists (in filtered list based on system capabilities)
     bool model_exists(const std::string& model_name);
-    
+
     // Check if model exists in the raw registry (before filtering)
     // Returns true even for NPU models on systems without NPU
     bool model_exists_unfiltered(const std::string& model_name);
-    
+
     // Get model info from raw registry (without filtering)
     // Useful for generating helpful error messages about unsupported models
     ModelInfo get_model_info_unfiltered(const std::string& model_name);
-    
+
     // Get the reason why a model was filtered out (empty string if not filtered)
     // Returns a user-friendly message explaining why the model is not available
     std::string get_model_filter_reason(const std::string& model_name);
-    
+
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
-    
+
     // Check if model is downloaded with optional FLM cache (optimization)
-    bool is_model_downloaded(const std::string& model_name, 
+    bool is_model_downloaded(const std::string& model_name,
                              const std::vector<std::string>* flm_cache);
-    
+
     // Get list of installed FLM models (for caching)
     std::vector<std::string> get_flm_installed_models();
-    
+
     // Refresh FLM model download status from 'flm list' (call after FLM install/upgrade)
     void refresh_flm_download_status();
-    
+
     // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
-    
+
     // Set extra models directory for GGUF discovery
     void set_extra_models_dir(const std::string& dir);
 
     void save_model_options(const ModelInfo& info);
-    
+
 private:
     json load_server_models();
     json load_optional_json(const std::string& path);
     void save_user_models(const json& user_models);
-    
+
     std::string get_user_models_file();
     std::string get_recipe_options_file();
-    
+
     // Cache management
     void build_cache();
     void add_model_to_cache(const std::string& model_name);
     void update_model_options_in_cache(const ModelInfo& info);
     void update_model_in_cache(const std::string& model_name, bool downloaded);
     void remove_model_from_cache(const std::string& model_name);
-    
+
     // Resolve model checkpoint to absolute path on disk
     std::string resolve_model_path(const ModelInfo& info) const;
-    
+
     // Download from Hugging Face
-    void download_from_huggingface(const std::string& repo_id, 
+    void download_from_huggingface(const std::string& repo_id,
                                    const std::string& variant = "",
                                    const std::string& mmproj = "",
                                    DownloadProgressCallback progress_callback = nullptr);
-    
+
     // Download from FLM
-    void download_from_flm(const std::string& checkpoint, 
+    void download_from_flm(const std::string& checkpoint,
                           bool do_not_upgrade = true,
                           DownloadProgressCallback progress_callback = nullptr);
-    
+
     // Discover GGUF models from extra_models_dir
     std::map<std::string, ModelInfo> discover_extra_models() const;
-    
+
     json server_models_;
     json user_models_;
     json recipe_options_;
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
-    
+
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;
     mutable std::map<std::string, ModelInfo> models_cache_;
@@ -186,4 +186,3 @@ private:
 };
 
 } // namespace lemon
-

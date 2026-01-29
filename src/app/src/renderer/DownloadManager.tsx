@@ -47,14 +47,14 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
 
     const handleDownloadComplete = (event: CustomEvent<{ id: string }>) => {
       const { id } = event.detail;
-      setDownloads(prev => prev.map(d => 
+      setDownloads(prev => prev.map(d =>
         d.id === id ? { ...d, status: 'completed' as const, percent: 100 } : d
       ));
     };
 
     const handleDownloadError = (event: CustomEvent<{ id: string; error: string }>) => {
       const { id, error } = event.detail;
-      setDownloads(prev => prev.map(d => 
+      setDownloads(prev => prev.map(d =>
         d.id === id ? { ...d, status: 'error' as const, error } : d
       ));
     };
@@ -92,17 +92,17 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     if (download.status !== 'downloading' || download.bytesDownloaded === 0) {
       return '--';
     }
-    
+
     const speed = calculateSpeed(download);
     if (speed === 0) return '--';
-    
+
     const remainingBytes = download.bytesTotal - download.bytesDownloaded;
-    
+
     // Handle edge case where bytesDownloaded > bytesTotal (incomplete byte tracking)
     if (remainingBytes <= 0) return '--';
-    
+
     const remainingSeconds = remainingBytes / speed;
-    
+
     if (remainingSeconds < 60) {
       return `${Math.round(remainingSeconds)}s`;
     } else if (remainingSeconds < 3600) {
@@ -116,33 +116,33 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     if (download.abortController) {
       download.abortController.abort();
     }
-    setDownloads(prev => prev.map(d => 
+    setDownloads(prev => prev.map(d =>
       d.id === download.id ? { ...d, status: 'paused' as const } : d
     ));
-    
+
     // Dispatch event for other components to react
-    window.dispatchEvent(new CustomEvent('download:paused', { 
-      detail: { id: download.id, modelName: download.modelName } 
+    window.dispatchEvent(new CustomEvent('download:paused', {
+      detail: { id: download.id, modelName: download.modelName }
     }));
   };
 
   const handleCancelDownload = async (download: DownloadItem) => {
     // Mark as deleting to prevent retry during cleanup
     setDeletingModels(prev => new Set(prev).add(download.modelName));
-    
+
     // First, abort the download to stop any active streams
     if (download.abortController) {
       download.abortController.abort();
     }
-    
+
     // Update UI to show deleting status (visual feedback during cleanup)
-    setDownloads(prev => prev.map(d => 
+    setDownloads(prev => prev.map(d =>
       d.id === download.id ? { ...d, status: 'deleting' as const } : d
     ));
-    
+
     // Dispatch event for other components to react
-    window.dispatchEvent(new CustomEvent('download:cancelled', { 
-      detail: { id: download.id, modelName: download.modelName } 
+    window.dispatchEvent(new CustomEvent('download:cancelled', {
+      detail: { id: download.id, modelName: download.modelName }
     }));
 
     // Wait for the download stream to fully close and release file handles
@@ -175,7 +175,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_name: download.modelName })
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Failed to delete partial download files:', response.statusText, errorText);
@@ -186,7 +186,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
       alert(`Download cancelled, but failed to delete files: ${error instanceof Error ? error.message : 'Unknown error'}\nPartial files may remain on disk.`);
     } finally {
       // Mark as cancelled now that deletion is complete
-      setDownloads(prev => prev.map(d => 
+      setDownloads(prev => prev.map(d =>
         d.id === download.id ? { ...d, status: 'cancelled' as const } : d
       ));
       // Remove from deleting set
@@ -201,12 +201,12 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   const handleDeleteDownload = async (download: DownloadItem) => {
     // Mark as deleting to prevent retry during cleanup
     setDeletingModels(prev => new Set(prev).add(download.modelName));
-    
+
     // Update UI to show deleting status
-    setDownloads(prev => prev.map(d => 
+    setDownloads(prev => prev.map(d =>
       d.id === download.id ? { ...d, status: 'deleting' as const } : d
     ));
-    
+
     // Call delete endpoint to clean up files
     try {
       const response = await serverFetch('/delete', {
@@ -214,7 +214,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_name: download.modelName })
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Failed to delete model files:', response.statusText, errorText);
@@ -228,7 +228,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
       console.error('Error deleting model files:', error);
       alert(`Error deleting model files: ${error instanceof Error ? error.message : 'Unknown error'}`);
       // Revert status on error
-      setDownloads(prev => prev.map(d => 
+      setDownloads(prev => prev.map(d =>
         d.id === download.id ? { ...d, status: 'paused' as const } : d
       ));
     } finally {
@@ -243,10 +243,10 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
 
   const handleResumeDownload = (download: DownloadItem) => {
     // Dispatch event to trigger a new download
-    window.dispatchEvent(new CustomEvent('download:resume', { 
-      detail: { modelName: download.modelName } 
+    window.dispatchEvent(new CustomEvent('download:resume', {
+      detail: { modelName: download.modelName }
     }));
-    
+
     // Remove the paused download from the list as a new one will be created
     handleRemoveDownload(download.id);
   };
@@ -266,7 +266,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
             return prev;
           });
         }, 100);
-        
+
         // Timeout after 10 seconds
         setTimeout(() => {
           clearInterval(checkInterval);
@@ -274,12 +274,12 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
         }, 10000);
       });
     }
-    
+
     // Dispatch event to trigger a new download
-    window.dispatchEvent(new CustomEvent('download:retry', { 
-      detail: { modelName: download.modelName } 
+    window.dispatchEvent(new CustomEvent('download:retry', {
+      detail: { modelName: download.modelName }
     }));
-    
+
     // Remove the cancelled download from the list as a new one will be created
     handleRemoveDownload(download.id);
   };
@@ -289,7 +289,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   };
 
   const handleClearCompleted = () => {
-    setDownloads(prev => prev.filter(d => 
+    setDownloads(prev => prev.filter(d =>
       d.status !== 'completed' && d.status !== 'error' && d.status !== 'cancelled' && d.status !== 'paused'
     ));
   };
@@ -312,11 +312,11 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   if (!isVisible) return null;
 
   return (
-    <div 
+    <div
       className="download-manager-overlay"
       onClick={onClose}
     >
-      <div 
+      <div
         className="download-manager-panel"
         onClick={(e) => e.stopPropagation()}
       >
@@ -330,7 +330,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
               {completedDownloads} completed
             </span>
           </div>
-          <button 
+          <button
             className="download-manager-close"
             onClick={onClose}
             title="Close"
@@ -360,10 +360,10 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                 const isExpanded = expandedDownloads.has(download.id);
                 const speed = calculateSpeed(download);
                 const eta = calculateETA(download);
-                
+
                 return (
-                  <div 
-                    key={download.id} 
+                  <div
+                    key={download.id}
                     className={`download-item ${download.status}`}
                   >
                     <div className="download-item-header">
@@ -373,11 +373,11 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                           onClick={() => toggleExpanded(download.id)}
                           title={isExpanded ? "Collapse" : "Expand"}
                         >
-                          <svg 
-                            width="12" 
-                            height="12" 
+                          <svg
+                            width="12"
+                            height="12"
                             viewBox="0 0 12 12"
-                            style={{ 
+                            style={{
                               transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
                               transition: 'transform 0.2s'
                             }}
@@ -494,11 +494,11 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                         )}
                       </div>
                     </div>
-                    
+
                     {download.status === 'downloading' && (
                       <div className="download-progress-container">
                         <div className="download-progress-bar">
-                          <div 
+                          <div
                             className="download-progress-fill"
                             style={{ width: `${download.percent}%` }}
                           />
@@ -506,7 +506,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                         <span className="download-progress-text">{download.percent}%</span>
                       </div>
                     )}
-                    
+
                     {isExpanded && (
                       <div className="download-item-details">
                         <div className="download-detail-row">
@@ -548,7 +548,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
 
         {downloads.some(d => d.status === 'completed' || d.status === 'error' || d.status === 'cancelled' || d.status === 'paused' || d.status === 'deleting') && (
           <div className="download-manager-footer">
-            <button 
+            <button
               className="clear-completed-btn"
               onClick={handleClearCompleted}
             >
@@ -562,4 +562,3 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
 };
 
 export default DownloadManager;
-

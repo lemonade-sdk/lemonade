@@ -115,11 +115,11 @@ bool ServerManager::start_server(
         std::cerr << "Failed to spawn server process" << std::endl;
         return false;
     }
-    
+
     // Step 1: Wait for server process to start (check health endpoint)
     DEBUG_LOG(this, "Waiting for server process to start...");
     DEBUG_LOG(this, "Will check health at: http://" << get_connection_host() << ":" << port_ << "/api/v1/health");
-    
+
     bool process_started = false;
     for (int i = 0; i < 5; ++i) {  // Wait up to 5 seconds
         DEBUG_LOG(this, "Health check attempt " << (i+1) << "/5...");
@@ -127,15 +127,15 @@ bool ServerManager::start_server(
         try {
             DEBUG_LOG(this, "Making HTTP request...");
             auto health = get_health();
-            
+
             server_started_ = true;
-            
+
 #ifndef _WIN32
             // Write PID file on Linux for efficient server discovery
             DEBUG_LOG(this, "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")");
             write_pid_file();
 #endif
-            
+
             DEBUG_LOG(this, "Server process is running!");
             process_started = true;
             break;  // Process is up, move to next step
@@ -145,18 +145,19 @@ bool ServerManager::start_server(
             DEBUG_LOG(this, "Health check failed with unknown error");
         }
     }
-    
+
     if (!process_started) {
         std::cerr << "Server failed to start within timeout" << std::endl;
         stop_server();
         return false;
     }
-    
+
+    // Step 2: Quick check if server is ready (try models endpoint with short timeout)
     DEBUG_LOG(this, "Checking if server is ready...");
     try {
         // Use 1 second timeout for quick check
         make_http_request("/api/v1/models", "GET", "", 1);
-        
+
         // Success! Server is ready immediately
         if (!is_ephemeral) {
             std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
@@ -166,31 +167,31 @@ bool ServerManager::start_server(
             std::cout << "Connect your apps to the endpoint above." << std::endl;
             std::cout << "Documentation: https://lemonade-server.ai/" << std::endl;
         }
-        
+
         server_started_ = true;
-        
+
 #ifndef _WIN32
         // Write PID file on Linux for efficient server discovery
         DEBUG_LOG(this, "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")");
         write_pid_file();
 #endif
-        
+
         return true;
-        
+
     } catch (const std::exception& e) {
         DEBUG_LOG(this, "Quick check failed (expected on first run): " << e.what());
     }
-    
+
     // Step 3: Server is initializing, wait for it
     std::cout << "Setting things up..." << std::endl;
-    
+
     // Step 4: Poll models endpoint with longer timeout
     for (int i = 0; i < 10; ++i) {
         DEBUG_LOG(this, "Waiting for initialization... attempt " << (i+1) << "/10");
         try {
             // Use 10 second timeout for initialization wait
             make_http_request("/api/v1/models", "GET", "", 10);
-            
+
             // Success! Server is ready
             if (!is_ephemeral) {
                 std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
@@ -203,13 +204,13 @@ bool ServerManager::start_server(
             
             server_started_ = true;    
             return true;
-            
+
         } catch (const std::exception& e) {
             DEBUG_LOG(this, "Still initializing: " << e.what());
             // Don't sleep here - the 10 second timeout handles the wait
         }
     }
-    
+
     std::cerr << "Server failed to become ready within timeout" << std::endl;
     stop_server();
     return false;
@@ -217,20 +218,20 @@ bool ServerManager::start_server(
 
 bool ServerManager::stop_server() {
     DEBUG_LOG(this, "stop_server() called, server_started_=" << server_started_ << ", server_pid_=" << server_pid_);
-    
+
     if (!is_server_running()) {
         DEBUG_LOG(this, "Server not running, checking for orphaned children...");
-        
+
         // Even if server appears not running, try to kill children if we have a PID
         // The router might have crashed/exited but children could still be alive
         if (server_pid_ != 0) {
             DEBUG_LOG(this, "Attempting to clean up process tree for PID " << server_pid_);
             terminate_router_tree();
         }
-        
+
         server_started_ = false;
         server_pid_ = 0;
-        
+
 #ifdef _WIN32
         if (process_handle_) {
             CloseHandle(process_handle_);
@@ -239,19 +240,19 @@ bool ServerManager::stop_server() {
 #else
         remove_pid_file();
 #endif
-        
+
         return true;
     }
-    
+
     DEBUG_LOG(this, "Stopping server and children...");
-    
+
     // Kill the entire process tree (router + children)
     // This does NOT kill the parent tray app (we might be running inside it!)
     terminate_router_tree();
-    
+
     server_started_ = false;
     server_pid_ = 0;
-    
+
 #ifdef _WIN32
     if (process_handle_) {
         CloseHandle(process_handle_);
@@ -261,7 +262,7 @@ bool ServerManager::stop_server() {
     // Remove PID file on Linux
     remove_pid_file();
 #endif
-    
+
     // Only print message for non-ephemeral servers
     if (!is_ephemeral_) {
         std::cout << "Server stopped successfully" << std::endl;
@@ -306,7 +307,7 @@ bool ServerManager::set_log_level(LogLevel level) {
         case LogLevel::WARNING: level_str = "warning"; break;
         case LogLevel::ERROR: level_str = "error"; break;
     }
-    
+
     try {
         std::string body = "{\"level\": \"" + level_str + "\"}";
         make_http_request("/api/v1/log-level", "POST", body);
@@ -340,11 +341,11 @@ bool ServerManager::load_model(const std::string& model_name, const nlohmann::js
         }
 
         std::string body = load_req.dump();
-        
+
         // 24 hour timeout - models can be 100GB+ and downloads may need many retries
         DEBUG_LOG(this, "Loading model...");
         DEBUG_LOG(this, "Request body: " << body);
-        
+
         std::string response = make_http_request("/api/v1/load", "POST", body, 86400);
         DEBUG_LOG(this, "Load request succeeded");
         return true;
@@ -365,7 +366,7 @@ bool ServerManager::unload_model(const std::string& model_name) {
         if (!model_name.empty()) {
             body = "{\"model_name\": \"" + model_name + "\"}";
         }
-        
+
         // Unload can take time, so use 30 second timeout
         make_http_request("/api/v1/unload", "POST", body, 30);
         return true;
@@ -389,7 +390,7 @@ bool ServerManager::spawn_process() {
     cmdline += " --port " + std::to_string(port_);
     cmdline += " --host " + host_;
     cmdline += " --log-level debug";  // Always use debug logging for router
-    
+
     std::vector<std::string> recipe_cli = lemon::RecipeOptions::to_cli_options(recipe_options_);
 
     for (const auto& arg : recipe_cli) {
@@ -410,21 +411,21 @@ bool ServerManager::spawn_process() {
     }
 
     DEBUG_LOG(this, "Starting server: " << cmdline);
-    
+
     STARTUPINFOA si = {};
     si.cb = sizeof(si);
-    
+
     // Redirect stdout/stderr to log file if specified
     // Note: When show_console_ is true, the parent process will tail the log file
     HANDLE log_handle = INVALID_HANDLE_VALUE;
     if (!log_file_.empty()) {
         DEBUG_LOG(this, "Redirecting output to: " << log_file_);
-        
+
         SECURITY_ATTRIBUTES sa = {};
         sa.nLength = sizeof(sa);
         sa.bInheritHandle = TRUE;
         sa.lpSecurityDescriptor = nullptr;
-        
+
         log_handle = CreateFileA(
             log_file_.c_str(),
             GENERIC_WRITE,
@@ -434,7 +435,7 @@ bool ServerManager::spawn_process() {
             FILE_ATTRIBUTE_NORMAL,
             nullptr
         );
-        
+
         if (log_handle != INVALID_HANDLE_VALUE) {
             si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
             si.hStdOutput = log_handle;
@@ -450,9 +451,9 @@ bool ServerManager::spawn_process() {
         si.dwFlags = STARTF_USESHOWWINDOW;
         si.wShowWindow = SW_HIDE;
     }
-    
+
     PROCESS_INFORMATION pi = {};
-    
+
     // Get the directory containing the server executable to use as working directory
     // Resources are now in bin/resources/, so working dir should be bin/
     std::string working_dir;
@@ -461,7 +462,7 @@ bool ServerManager::spawn_process() {
         working_dir = server_binary_path_.substr(0, last_slash);
         DEBUG_LOG(this, "Setting working directory to: " << working_dir);
     }
-    
+
     // Create process
     if (!CreateProcessA(
         nullptr,
@@ -481,16 +482,16 @@ bool ServerManager::spawn_process() {
         }
         return false;
     }
-    
+
     process_handle_ = pi.hProcess;
     server_pid_ = pi.dwProcessId;
     CloseHandle(pi.hThread);
-    
+
     // Close the log file handle in parent process (child has its own copy)
     if (log_handle != INVALID_HANDLE_VALUE) {
         CloseHandle(log_handle);
     }
-    
+
     return true;
 }
 
@@ -505,7 +506,7 @@ bool ServerManager::terminate_process() {
 
 bool ServerManager::is_process_alive() const {
     if (!process_handle_) return false;
-    
+
     DWORD exit_code;
     if (GetExitCodeProcess(process_handle_, &exit_code)) {
         return exit_code == STILL_ACTIVE;
@@ -516,11 +517,11 @@ bool ServerManager::is_process_alive() const {
 bool ServerManager::terminate_router_tree() {
     // Windows implementation: Kill router and its children
     // This does NOT kill the parent tray app!
-    
+
     DEBUG_LOG(this, "terminate_router_tree() called for PID " << server_pid_);
-    
+
     std::vector<DWORD> child_pids;
-    
+
     // 1. Find router's children (before killing router)
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot != INVALID_HANDLE_VALUE) {
@@ -536,16 +537,16 @@ bool ServerManager::terminate_router_tree() {
         }
         CloseHandle(snapshot);
     }
-    
+
     DEBUG_LOG(this, "Found " << child_pids.size() << " child process(es)");
-    
+
     // 2. Terminate router
     if (process_handle_) {
         DEBUG_LOG(this, "Terminating router (PID: " << server_pid_ << ")");
         TerminateProcess(process_handle_, 0);
         WaitForSingleObject(process_handle_, 5000);  // Wait up to 5 seconds
     }
-    
+
     // 3. Terminate children
     for (DWORD child_pid : child_pids) {
         DEBUG_LOG(this, "Terminating child process (PID: " << child_pid << ")");
@@ -556,9 +557,9 @@ bool ServerManager::terminate_router_tree() {
             CloseHandle(hChild);
         }
     }
-    
+
     DEBUG_LOG(this, "terminate_router_tree() complete");
-    
+
     return true;
 }
 
@@ -566,12 +567,12 @@ bool ServerManager::terminate_router_tree() {
 
 bool ServerManager::spawn_process() {
     pid_t pid = fork();
-    
+
     if (pid < 0) {
         std::cerr << "Fork failed" << std::endl;
         return false;
     }
-    
+
     if (pid == 0) {
         // Child process - redirect stdout/stderr to log file if specified, or /dev/null if not
         if (!log_file_.empty()) {
@@ -592,7 +593,7 @@ bool ServerManager::spawn_process() {
                 close(null_fd);
             }
         }
-                
+
         std::vector<const char*> args;
         args.push_back(server_binary_path_.c_str());
         args.push_back("--port");
@@ -602,13 +603,13 @@ bool ServerManager::spawn_process() {
         args.push_back(host_.c_str());
         args.push_back("--log-level");
         args.push_back("debug");  // Always use debug logging
-        
+
         std::vector<std::string> recipe_cli = lemon::RecipeOptions::to_cli_options(recipe_options_);
 
         for (const auto& arg : recipe_cli) {
             args.push_back(arg.c_str());
         }
-        
+
         // Multi-model support
         args.push_back("--max-loaded-models");
         std::string max_llm_str = std::to_string(max_llm_models_);
@@ -629,14 +630,14 @@ bool ServerManager::spawn_process() {
         }
 
         args.push_back(nullptr);
-        
+
         execv(server_binary_path_.c_str(), const_cast<char**>(args.data()));
-        
+
         // If execv returns, it failed
         std::cerr << "execv failed" << std::endl;
         exit(1);
     }
-    
+
     // Parent process
     server_pid_ = pid;
     return true;
@@ -645,7 +646,7 @@ bool ServerManager::spawn_process() {
 bool ServerManager::terminate_process() {
     if (server_pid_ > 0) {
         kill(server_pid_, SIGTERM);
-        
+
         // Wait for process to exit gracefully (up to 5 seconds)
         int status;
         for (int i = 0; i < 50; i++) {  // 50 * 100ms = 5 seconds
@@ -665,12 +666,12 @@ bool ServerManager::terminate_process() {
             // result == 0 means still running, continue waiting
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-        
+
         // If still alive after 5 seconds, force kill
         std::cerr << "[ServerManager] Process did not exit gracefully, forcing termination..." << std::endl;
         kill(server_pid_, SIGKILL);
         waitpid(server_pid_, &status, 0);  // Block until process is dead
-        
+
         return true;
     }
     return false;
@@ -720,16 +721,16 @@ bool ServerManager::is_process_alive() const {
 bool ServerManager::terminate_router_tree() {
     // Linux implementation: Kill router and its children
     // This does NOT kill the parent tray app!
-    
+
     DEBUG_LOG(this, "terminate_router_tree() called for PID " << server_pid_);
-    
+
     if (server_pid_ <= 0) {
         DEBUG_LOG(this, "Invalid server_pid, returning");
         return false;
     }
-    
+
     std::vector<pid_t> child_pids;
-    
+
     // 1. Find router's children BEFORE killing router
     // (they get reparented to init if router dies first)
     std::string cmd = "pgrep -P " + std::to_string(server_pid_);
@@ -745,41 +746,41 @@ bool ServerManager::terminate_router_tree() {
         }
         pclose(pipe);
     }
-    
+
     DEBUG_LOG(this, "Found " << child_pids.size() << " child process(es)");
-    
+
     // 2. Send SIGTERM to router
     DEBUG_LOG(this, "Sending SIGTERM to router (PID: " << server_pid_ << ")");
     kill(server_pid_, SIGTERM);
-    
+
     // 3. Send SIGTERM to children
     for (pid_t child_pid : child_pids) {
         DEBUG_LOG(this, "Sending SIGTERM to child process (PID: " << child_pid << ")");
         kill(child_pid, SIGTERM);
     }
-    
+
     // 4. Wait up to 5 seconds for graceful shutdown
     bool all_dead = false;
     for (int i = 0; i < 50; i++) {  // 50 * 100ms = 5 seconds
         bool router_alive = (kill(server_pid_, 0) == 0);
         bool any_child_alive = false;
-        
+
         for (pid_t child_pid : child_pids) {
             if (kill(child_pid, 0) == 0) {
                 any_child_alive = true;
                 break;
             }
         }
-        
+
         if (!router_alive && !any_child_alive) {
             all_dead = true;
             DEBUG_LOG(this, "All processes exited gracefully");
             break;
         }
-        
+
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-    
+
     // 5. Force kill if still alive
     if (!all_dead) {
         DEBUG_LOG(this, "Timeout expired, sending SIGKILL");
@@ -787,20 +788,20 @@ bool ServerManager::terminate_router_tree() {
         for (pid_t child_pid : child_pids) {
             kill(child_pid, SIGKILL);
         }
-        
+
         // Wait for forced kill to complete
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
-    
+
     DEBUG_LOG(this, "terminate_router_tree() complete");
-    
+
     return true;
 }
 
 void ServerManager::write_pid_file() {
     std::string pid_file_path = "/tmp/lemonade-router.pid";
     DEBUG_LOG(this, "write_pid_file() called - PID: " << server_pid_ << ", Port: " << port_);
-    
+
     std::ofstream pid_file(pid_file_path);
     if (pid_file.is_open()) {
         pid_file << server_pid_ << "\n" << port_ << "\n";
@@ -831,8 +832,8 @@ httplib::Client ServerManager::make_http_client(int timeout_seconds, int connect
 
     if (api_key_ != "") {
         cli.set_bearer_token_auth(api_key_);
-    } 
-    
+    }
+
     return cli;
 }
 
@@ -845,7 +846,7 @@ std::string ServerManager::make_http_request(
 
     httplib::Client cli = make_http_client(timeout_seconds, 10); // 10 second connection timeout
     httplib::Result res;
-    
+
     if (method == "GET") {
         res = cli.Get(endpoint.c_str());
     } else if (method == "POST") {
@@ -853,7 +854,7 @@ std::string ServerManager::make_http_request(
     } else {
         throw std::runtime_error("Unsupported HTTP method: " + method);
     }
-    
+
     if (!res) {
         auto err = res.error();
         std::string error_msg;
@@ -883,7 +884,7 @@ std::string ServerManager::make_http_request(
         }
         throw std::runtime_error(error_msg);
     }
-    
+
     if (res->status != 200) {
         // Try to parse error message from response body
         std::string error_msg = "HTTP request failed with status: " + std::to_string(res->status);
@@ -902,9 +903,8 @@ std::string ServerManager::make_http_request(
         }
         throw std::runtime_error(error_msg);
     }
-    
+
     return res->body;
 }
 
 } // namespace lemon_tray
-

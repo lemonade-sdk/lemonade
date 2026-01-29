@@ -41,20 +41,20 @@ int main(int argc, char** argv) {
                   << "Only one instance can run at a time.\n" << std::endl;
         return 1;
     }
-    
+
     try {
         CLIParser parser;
-        
+
         parser.parse(argc, argv);
-        
+
         // Check if we should continue (false for --help, --version, or errors)
         if (!parser.should_continue()) {
             return parser.get_exit_code();
         }
-        
+
         // Get server configuration
         auto config = parser.get_config();
-        
+
         // Start the server
         std::cout << "Starting Lemonade Server..." << std::endl;
         std::cout << "  Version: " << LEMON_VERSION_STRING << std::endl;
@@ -70,19 +70,19 @@ int main(int argc, char** argv) {
                     config.max_embedding_models, config.max_reranking_models,
                     config.max_audio_models, config.max_image_models,
                     config.extra_models_dir);
-        
+
         // Register signal handler for Ctrl+C
         g_server_instance = &server;
         std::signal(SIGINT, signal_handler);
         std::signal(SIGTERM, signal_handler);
-        
+
         server.run();
-        
+
         // Clean up
         g_server_instance = nullptr;
-        
+
         return 0;
-        
+
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;

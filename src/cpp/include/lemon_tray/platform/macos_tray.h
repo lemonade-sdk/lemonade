@@ -10,7 +10,7 @@ class MacOSTray : public TrayInterface {
 public:
     MacOSTray();
     ~MacOSTray() override;
-    
+
     // TrayInterface implementation
     bool initialize(const std::string& app_name, const std::string& icon_path) override;
     void run() override;
