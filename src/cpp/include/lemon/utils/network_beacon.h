@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <string>
 #include <thread>
+#include <mutex>
+#include <atomic>
 
 #ifdef _WIN32
     #include <winsock2.h>
