@@ -158,7 +158,7 @@ RUN apt-get update && apt-get install -y \
 
 # Copy source code
 COPY lemonade /app
-WORKDIR /app/src/cpp
+WORKDIR /app/
 
 # Build the project
 RUN rm -rf build && \
@@ -194,9 +194,9 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /opt/lemonade
 
 # Copy built executables and resources from builder
-COPY --from=builder /app/src/cpp/build/lemonade-router ./lemonade-router
-COPY --from=builder /app/src/cpp/build/lemonade-server ./lemonade-server
-COPY --from=builder /app/src/cpp/build/resources ./resources
+COPY --from=builder /app/build/lemonade-router ./lemonade-router
+COPY --from=builder /app/build/lemonade-server ./lemonade-server
+COPY --from=builder /app/build/resources ./resources
 
 # Make executables executable
 RUN chmod +x ./lemonade-router ./lemonade-server

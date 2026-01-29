@@ -25,7 +25,9 @@ if ($Help) {
 # Script configuration
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$BuildDir = Join-Path $ScriptDir "build"
+# Navigate to repository root (CMakeLists.txt is at top level now)
+$RepoRoot = Resolve-Path (Join-Path $ScriptDir "..\..")
+$BuildDir = Join-Path $RepoRoot "build"
 
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host "  Lemonade Server - WiX MSI Installer Build" -ForegroundColor Cyan
@@ -65,7 +67,7 @@ Write-Host ""
 # Step 1: Configure with CMake (if build directory doesn't exist)
 if (-not (Test-Path $BuildDir)) {
     Write-Host "Configuring project with CMake..." -ForegroundColor Yellow
-    cmake -S $ScriptDir -B $BuildDir
+    cmake -S $RepoRoot -B $BuildDir
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: CMake configuration failed!" -ForegroundColor Red
         exit $LASTEXITCODE
@@ -97,8 +99,8 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 
 # Success!
-$MinimalMsi = Join-Path $ScriptDir "lemonade-server-minimal.msi"
-$FullMsi = Join-Path $ScriptDir "lemonade.msi"
+$MinimalMsi = Join-Path $RepoRoot "lemonade-server-minimal.msi"
+$FullMsi = Join-Path $RepoRoot "lemonade.msi"
 
 Write-Host "================================================" -ForegroundColor Green
 Write-Host "  SUCCESS!" -ForegroundColor Green

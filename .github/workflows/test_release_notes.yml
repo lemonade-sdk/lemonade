@@ -26,7 +26,7 @@ jobs:
             echo "Using existing tag $LATEST_TAG for testing"
           else
             # Fallback to CMakeLists version
-            VERSION=$(grep -Po 'project\(lemon_cpp VERSION \K[0-9]+\.[0-9]+\.[0-9]+' src/cpp/CMakeLists.txt)
+            VERSION=$(grep -Po 'project\(lemon_cpp VERSION \K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
             echo "No tags found, using CMakeLists version $VERSION"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT

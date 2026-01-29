@@ -10,7 +10,7 @@ project(lemon_cpp VERSION 9.2.0)
 # ============================================================
 # Electron source paths (used by both runtime and installers)
 # ============================================================
-get_filename_component(ELECTRON_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../../src/app" ABSOLUTE)
+get_filename_component(ELECTRON_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/app" ABSOLUTE)
 set(ELECTRON_APP_BUILD_DIR "${ELECTRON_APP_SOURCE_DIR}/dist-app")
 if(WIN32)
     set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/win-unpacked")
@@ -23,6 +23,12 @@ else()
     # Electron builder uses lowercase product name on Linux
     set(ELECTRON_EXE_NAME "lemonade")
 endif()
+
+# ============================================================
+# Web App source paths
+# ============================================================
+get_filename_component(WEB_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/web-app" ABSOLUTE)
+set(WEB_APP_BUILD_DIR "${CMAKE_BINARY_DIR}/resources/web-app")
 
 # C++ Standard
 set(CMAKE_CXX_STANDARD 17)
@@ -47,7 +53,6 @@ if(PkgConfig_FOUND)
 endif()
 find_path(CLI11_INCLUDE_DIRS "CLI/CLI.hpp")
 find_path(HTTPLIB_INCLUDE_DIRS "httplib.h")
-
 # Verify CLI11 version if found
 if(CLI11_INCLUDE_DIRS)
     if(EXISTS "${CLI11_INCLUDE_DIRS}/CLI/Version.hpp")
@@ -254,7 +259,7 @@ endif()
 
 # Generate version header from template
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/lemon/version.h.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include/lemon/version.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/include/lemon/version.h
     @ONLY
 )
@@ -262,7 +267,7 @@ configure_file(
 # Generate manifest files from templates (Windows only)
 if(WIN32)
     configure_file(
-        ${CMAKE_CURRENT_SOURCE_DIR}/server/lemonade.manifest.in
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/lemonade.manifest.in
         ${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest
         @ONLY
     )
@@ -273,13 +278,13 @@ if(WIN32)
 
     # Configure WiX Product.wxs template with version
     configure_file(
-        ${CMAKE_CURRENT_SOURCE_DIR}/installer/Product.wxs.in
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/installer/Product.wxs.in
         ${CMAKE_CURRENT_BINARY_DIR}/installer/Product.wxs
         @ONLY
     )
 
     set(WIX_PRODUCT_WXS "${CMAKE_CURRENT_BINARY_DIR}/installer/Product.wxs")
-    set(WIX_FRAGMENT_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/installer/generate_electron_fragment.py")
+    set(WIX_FRAGMENT_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/installer/generate_electron_fragment.py")
 
     # Find WiX Toolset 5.0+ (unified 'wix' command) and Python for fragment generation
     find_program(WIX_EXECUTABLE wix)
@@ -298,6 +303,8 @@ if(WIN32)
         file(TO_NATIVE_PATH "${WIX_PRODUCT_WXS}" WIX_PRODUCT_WXS_NATIVE)
         file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lemonade-server-minimal.msi" WIX_MINIMAL_OUTPUT_NATIVE)
         file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lemonade.msi" WIX_FULL_OUTPUT_NATIVE)
+        file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp" WIX_CPP_SOURCE_DIR_NATIVE)
+        file(TO_NATIVE_PATH "${CMAKE_BINARY_DIR}" WIX_BUILD_DIR_NATIVE)
         file(TO_NATIVE_PATH "${ELECTRON_APP_UNPACKED_DIR}" WIX_ELECTRON_SOURCE_NATIVE)
         set(WIX_ELECTRON_FRAGMENT "${CMAKE_CURRENT_BINARY_DIR}/installer/ElectronAppFragment.wxs")
         file(TO_NATIVE_PATH "${WIX_ELECTRON_FRAGMENT}" WIX_ELECTRON_FRAGMENT_NATIVE)
@@ -309,6 +316,8 @@ if(WIN32)
                 -arch x64
                 -ext WixToolset.UI.wixext
                 -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
+                -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
                 -d IncludeElectron=0
                 -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
                 "${WIX_PRODUCT_WXS_NATIVE}"
@@ -333,6 +342,8 @@ if(WIN32)
                     -arch x64
                     -ext WixToolset.UI.wixext
                     -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                    -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
+                    -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
                     -d IncludeElectron=1
                     -d ElectronSourceDir="${WIX_ELECTRON_SOURCE_NATIVE}"
                     -out "${WIX_FULL_OUTPUT_NATIVE}"
@@ -368,38 +379,38 @@ endif()
 
 # Include directories
 include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
     ${CMAKE_CURRENT_BINARY_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 # Source files
 set(SOURCES
-    server/main.cpp
-    server/server.cpp
-    server/router.cpp
-    server/cli_parser.cpp
-    server/model_manager.cpp
-    server/wrapped_server.cpp
-    server/streaming_proxy.cpp
-    server/system_info.cpp
-    server/recipe_options.cpp
-    server/utils/http_client.cpp
-    server/utils/json_utils.cpp
-    server/utils/process_manager.cpp
-    server/utils/path_utils.cpp
-    server/utils/wmi_helper.cpp
-    server/backends/llamacpp_server.cpp
-    server/backends/fastflowlm_server.cpp
-    server/backends/ryzenaiserver.cpp
-    server/backends/whisper_server.cpp
-    server/backends/sd_server.cpp
-    server/backends/backend_utils.cpp
+    src/cpp/server/main.cpp
+    src/cpp/server/server.cpp
+    src/cpp/server/router.cpp
+    src/cpp/server/cli_parser.cpp
+    src/cpp/server/model_manager.cpp
+    src/cpp/server/wrapped_server.cpp
+    src/cpp/server/streaming_proxy.cpp
+    src/cpp/server/system_info.cpp
+    src/cpp/server/recipe_options.cpp
+    src/cpp/server/utils/http_client.cpp
+    src/cpp/server/utils/json_utils.cpp
+    src/cpp/server/utils/process_manager.cpp
+    src/cpp/server/utils/path_utils.cpp
+    src/cpp/server/utils/wmi_helper.cpp
+    src/cpp/server/backends/llamacpp_server.cpp
+    src/cpp/server/backends/fastflowlm_server.cpp
+    src/cpp/server/backends/ryzenaiserver.cpp
+    src/cpp/server/backends/whisper_server.cpp
+    src/cpp/server/backends/sd_server.cpp
+    src/cpp/server/backends/backend_utils.cpp
 )
 
 # Add version resource file on Windows
 if(WIN32)
-    list(APPEND SOURCES server/version.rc)
+    list(APPEND SOURCES src/cpp/server/version.rc)
 endif()
 
 # Create executable
@@ -489,7 +500,7 @@ endif()
 #   - static/index.html, static/favicon.ico (web UI)
 #   - server_models.json (model registry)
 #   - backend_versions.json (backend version configuration)
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/resources/
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/
      DESTINATION ${CMAKE_BINARY_DIR}/resources)
 
 # Copy resources to the runtime directoriy after build
@@ -508,7 +519,7 @@ add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
 find_program(NODE_EXECUTABLE node)
 find_program(NPM_EXECUTABLE npm)
 
-# Custom target to build the Electron app
+# Custom target to build the Electron app (must be called manually)
 if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
     if(WIN32)
         set(ELECTRON_BUILD_TARGET "build:win")
@@ -542,13 +553,81 @@ add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
         -DELECTRON_APP_UNPACKED_DIR=${ELECTRON_APP_UNPACKED_DIR}
         -DTARGET_DIR=$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>
         -DELECTRON_EXE_NAME=${ELECTRON_EXE_NAME}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/CopyElectronApp.cmake
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/src/app/CopyElectronApp.cmake
     COMMENT "Copying Electron app if available"
     VERBATIM
 )
 
+# ============================================================
+# Web App Integration (Cross-Platform)
+# ============================================================
+
+# On Windows, disable automatic build by default (can be enabled with -DBUILD_WEB_APP=ON)
+# On other platforms, enable automatic build by default (can be disabled with -DBUILD_WEB_APP=OFF)
+if(WIN32)
+    option(BUILD_WEB_APP "Build the Web app automatically" OFF)
+else()
+    option(BUILD_WEB_APP "Build the Web app automatically" ON)
+endif()
+
+# Custom target to build the Web app with proper dependency tracking
+if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
+    # Create a stamp file to track build state
+    set(WEB_APP_STAMP "${CMAKE_CURRENT_BINARY_DIR}/web-app.stamp")
+    set(WEB_APP_BUILD_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/web-app-src")
+
+    # Get all source files in src/web-app (excluding node_modules and dist)
+    file(GLOB_RECURSE WEB_APP_SOURCES
+        CONFIGURE_DEPENDS
+        "${WEB_APP_SOURCE_DIR}/src/*"
+        "${WEB_APP_SOURCE_DIR}/*.json"
+        "${WEB_APP_SOURCE_DIR}/*.js"
+        "${WEB_APP_SOURCE_DIR}/*.ts"
+        "${WEB_APP_SOURCE_DIR}/*.tsx"
+        "${WEB_APP_SOURCE_DIR}/*.css"
+    )
+
+    # Add custom command to build web app (only runs if sources change)
+    add_custom_command(
+        OUTPUT ${WEB_APP_STAMP}
+        COMMAND ${CMAKE_COMMAND}
+            -DWEB_APP_SOURCE_DIR=${WEB_APP_SOURCE_DIR}
+            -DWEB_APP_BUILD_SOURCE_DIR=${WEB_APP_BUILD_SOURCE_DIR}
+            -DWEB_APP_BUILD_DIR=${WEB_APP_BUILD_DIR}
+            -DNPM_EXECUTABLE=${NPM_EXECUTABLE}
+            -DWEB_APP_STAMP=${WEB_APP_STAMP}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/src/web-app/BuildWebApp.cmake
+        DEPENDS ${WEB_APP_SOURCES}
+        COMMENT "Building Web app with npm"
+    )
+
+    # Add custom target that depends on the stamp file
+    add_custom_target(web-app ALL DEPENDS ${WEB_APP_STAMP})
+
+    message(STATUS "Web app will be built automatically (disable with -DBUILD_WEB_APP=OFF)")
+else()
+    if(NOT NODE_EXECUTABLE OR NOT NPM_EXECUTABLE)
+        message(STATUS "Node.js or npm not found - Web app build target disabled")
+    else()
+        message(STATUS "Web app automatic build disabled (enable with -DBUILD_WEB_APP=ON)")
+    endif()
+endif()
+
+# Add manual web-app target for platforms where automatic build is disabled
+if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND NOT BUILD_WEB_APP)
+    add_custom_target(web-app
+        COMMAND ${CMAKE_COMMAND} -E echo "Building Web app..."
+        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} install
+        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} run build
+        COMMENT "Building Web app with npm"
+        WORKING_DIRECTORY "${WEB_APP_SOURCE_DIR}"
+        VERBATIM
+    )
+    message(STATUS "Web app can be built manually with: cmake --build . --target web-app")
+endif()
+
 # Add tray application subdirectory
-add_subdirectory(tray)
+add_subdirectory(src/cpp/tray)
 
 
 # ============================================================
@@ -607,7 +686,7 @@ if(UNIX AND NOT APPLE)
         # Post-install script for full package
         # Note: CPack requires the script to be named 'postinst' exactly
         # We copy postinst-full to a temporary postinst file for CPack
-        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/postinst-full"
+        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst-full"
                        "${CMAKE_CURRENT_BINARY_DIR}/postinst" COPYONLY)
         set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_BINARY_DIR}/postinst")
     else()
@@ -617,7 +696,7 @@ if(UNIX AND NOT APPLE)
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
 
         # Post-install script for minimal package
-        set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/postinst")
+        set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst")
 
         if(INCLUDE_ELECTRON_APP)
             message(WARNING "INCLUDE_ELECTRON_APP is ON but Electron app not found at ${ELECTRON_APP_UNPACKED_DIR}")
@@ -626,6 +705,6 @@ if(UNIX AND NOT APPLE)
     endif()
 
     # RPM specific variables defined within
-    include(${CMAKE_CURRENT_SOURCE_DIR}/CPackRPM.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/CPackRPM.cmake)
     include(CPack)
 endif()

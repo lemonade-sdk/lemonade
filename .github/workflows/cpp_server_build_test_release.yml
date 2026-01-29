@@ -124,35 +124,31 @@ jobs:
 
           Write-Host "Building lemonade-router and lemonade-server..." -ForegroundColor Cyan
 
-          cd src\cpp
-
           # Create build directory
           if (Test-Path "build") {
               Remove-Item -Recurse -Force "build"
           }
-          mkdir build
-          cd build
 
-          # Configure
-          cmake .. -G "Visual Studio 17 2022" -A x64
+          # Configure with preset
+          cmake --preset windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Build
-          cmake --build . --config Release
+          cmake --build build --config Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Verify binaries exist
-          if (-not (Test-Path "Release\lemonade-router.exe")) {
+          if (-not (Test-Path "build\Release\lemonade-router.exe")) {
               Write-Host "ERROR: lemonade-router.exe not found!" -ForegroundColor Red
               exit 1
           }
 
-          if (-not (Test-Path "Release\lemonade-server.exe")) {
+          if (-not (Test-Path "build\Release\lemonade-server.exe")) {
               Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
               exit 1
           }
 
-          if (-not (Test-Path "Release\lemonade-tray.exe")) {
+          if (-not (Test-Path "build\Release\lemonade-tray.exe")) {
               Write-Host "ERROR: lemonade-tray.exe not found!" -ForegroundColor Red
               exit 1
           }
@@ -197,15 +193,46 @@ jobs:
 
           Write-Host "Electron app build successful!" -ForegroundColor Green
 
+      - name: Build Web App
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Write-Host "Building Web app..." -ForegroundColor Cyan
+
+          cd src\web-app
+
+          # Install dependencies
+          Write-Host "Installing npm dependencies..." -ForegroundColor Yellow
+          npm install
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "ERROR: npm install failed!" -ForegroundColor Red
+              exit $LASTEXITCODE
+          }
+
+          # Build the Web app
+          Write-Host "Building Web app..." -ForegroundColor Yellow
+          npm run build
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "ERROR: Web app build failed!" -ForegroundColor Red
+              exit $LASTEXITCODE
+          }
+
+          # Verify the build output exists
+          if (-not (Test-Path "dist\renderer\index.html")) {
+              Write-Host "ERROR: Web app build output not found!" -ForegroundColor Red
+              exit 1
+          }
+
+          Write-Host "Web app build successful!" -ForegroundColor Green
+
       - name: Build the Lemonade Server Installer
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
 
-          cd src\cpp
-
           # Run the build installer script
-          .\build_installer.ps1
+          .\src\cpp\build_installer.ps1
 
           # Verify installers were created
           if (-not (Test-Path "lemonade-server-minimal.msi")) {
@@ -225,8 +252,8 @@ jobs:
         with:
           name: Lemonade_Server_MSI
           path: |
-            src\cpp\lemonade-server-minimal.msi
-            src\cpp\lemonade.msi
+            lemonade-server-minimal.msi
+            lemonade.msi
           retention-days: 7
 
   build-lemonade-server-deb:
@@ -253,7 +280,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-server-deb
-          path: src/cpp/build/lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
+          path: build/lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
   build-lemonade-deb-full:
@@ -280,7 +307,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-deb-full
-          path: src/cpp/build/lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
+          path: build/lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
   # ========================================================================

@@ -30,6 +30,10 @@
     #include <unistd.h>
 #endif
 
+#ifdef __APPLE__
+    #include <sys/sysctl.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace lemon {
@@ -238,6 +242,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_system_info(req, res);
     });
 
+    register_get("system-stats", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_system_stats(req, res);
+    });
+
     register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
         handle_log_level(req, res);
     });
@@ -375,6 +383,152 @@ void Server::setup_static_files(httplib::Server &web_server) {
         std::cerr << "[Server] Web UI assets will not be available" << std::endl;
     } else {
         std::cout << "[Server] Static files mounted from: " << static_dir << std::endl;
+    }
+
+    // Web app UI endpoint - serve the React web app
+    std::string web_app_dir = utils::get_resource_path("resources/web-app");
+
+    // Check if web app directory exists
+    if (fs::exists(web_app_dir) && fs::is_directory(web_app_dir)) {
+        // Create a handler for serving web app index.html for SPA routing
+        auto serve_web_app_html = [web_app_dir](const httplib::Request&, httplib::Response& res) {
+            std::string index_path = web_app_dir + "/index.html";
+            std::ifstream file(index_path);
+
+            if (!file.is_open()) {
+                res.status = 404;
+                res.set_content("{\"error\": \"Web app not found\"}", "application/json");
+                return;
+            }
+
+            std::string html((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            file.close();
+
+            // Add base tag to fix relative paths
+            std::string base_tag = "<base href=\"/web-app/\">";
+            size_t head_start_pos = html.find("<head>");
+            if (head_start_pos != std::string::npos) {
+                html.insert(head_start_pos + 6, base_tag);
+            }
+
+            // Inject mock API for web compatibility with Electron app code
+            std::string mock_api = R"(
+<script>
+// Mock Electron API for web compatibility
+window.api = {
+    isWebApp: true,  // Explicit flag to indicate web mode
+    platform: navigator.platform || 'web',
+    minimizeWindow: () => {},
+    maximizeWindow: () => {},
+    closeWindow: () => {},
+    openExternal: (url) => window.open(url, '_blank'),
+    onMaximizeChange: () => {},
+    updateMinWidth: () => {},
+    zoomIn: () => document.body.style.zoom = (parseFloat(document.body.style.zoom || '1') + 0.1).toString(),
+    zoomOut: () => document.body.style.zoom = (parseFloat(document.body.style.zoom || '1') - 0.1).toString(),
+    getSettings: async () => {
+        const saved = localStorage.getItem('lemonade-settings');
+        return saved ? JSON.parse(saved) : { layout: {}, theme: 'dark', apiUrl: window.location.origin };
+    },
+    saveSettings: async (settings) => {
+        localStorage.setItem('lemonade-settings', JSON.stringify(settings));
+        return settings;
+    },
+    onSettingsUpdated: () => {},
+    getServerPort: () => parseInt(window.location.port) || 8000,
+    onServerPortUpdated: () => {},
+    getVersion: async () => {
+        try {
+            const response = await fetch('/api/v1/health');
+            if (response.ok) {
+                const data = await response.json();
+                return data.version || 'Unknown';
+            }
+        } catch (e) {
+            console.warn('Failed to fetch version:', e);
+        }
+        return 'Unknown';
+    },
+    downloadModel: () => console.log('Model downloads not available in web mode'),
+    onDownloadProgress: () => {},
+    getDownloads: async () => [],
+    pauseDownload: () => {},
+    resumeDownload: () => {},
+    cancelDownload: () => {},
+    restartApp: () => window.location.reload(),
+    getSystemStats: async () => {
+        try {
+            const response = await fetch('/api/v1/system-stats');
+            if (response.ok) {
+                return await response.json();
+            }
+        } catch (e) {
+            console.warn('Failed to fetch system stats:', e);
+        }
+        return { cpu_percent: null, memory_gb: 0, gpu_percent: null, vram_gb: null };
+    }
+};
+</script>
+)";
+
+            // Insert mock API before the closing </head> tag
+            size_t head_end_pos = html.find("</head>");
+            if (head_end_pos != std::string::npos) {
+                html.insert(head_end_pos, mock_api);
+            }
+
+            // Set no-cache headers
+            res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
+            res.set_header("Pragma", "no-cache");
+            res.set_header("Expires", "0");
+            res.set_content(html, "text/html");
+        };
+
+        // Serve the web app's index.html at /web-app and /web-app/
+        web_server.Get("/web-app/?", serve_web_app_html);
+
+        // Serve all other files from the web app directory (JS, CSS, fonts, assets, etc.)
+        web_server.Get(R"(/web-app/(.+))", [web_app_dir](const httplib::Request& req, httplib::Response& res) {
+            // Extract the file path from the request
+            std::string file_path = req.matches[1].str();
+            std::string full_path = web_app_dir + "/" + file_path;
+
+            // Serve the file
+            std::ifstream file(full_path, std::ios::binary);
+            if (!file.is_open()) {
+                res.status = 404;
+                res.set_content("File not found", "text/plain");
+                return;
+            }
+
+            // Read file content
+            std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            file.close();
+
+            // Determine content type based on extension
+            std::string content_type = "application/octet-stream";
+            size_t dot_pos = file_path.rfind('.');
+            if (dot_pos != std::string::npos) {
+                std::string ext = file_path.substr(dot_pos);
+                if (ext == ".js") content_type = "text/javascript";
+                else if (ext == ".css") content_type = "text/css";
+                else if (ext == ".html") content_type = "text/html";
+                else if (ext == ".woff") content_type = "font/woff";
+                else if (ext == ".woff2") content_type = "font/woff2";
+                else if (ext == ".ttf") content_type = "font/ttf";
+                else if (ext == ".svg") content_type = "image/svg+xml";
+                else if (ext == ".png") content_type = "image/png";
+                else if (ext == ".jpg" || ext == ".jpeg") content_type = "image/jpeg";
+                else if (ext == ".json") content_type = "application/json";
+            }
+
+            res.set_content(content, content_type);
+        });
+
+        std::cout << "[Server] Web app UI available at /web-app from: " << web_app_dir << std::endl;
+    } else {
+        std::cout << "[Server] Web app directory not found at: " << web_app_dir << std::endl;
+        std::cout << "[Server] Web app UI will not be available. Build with: cd src/web-app && npm run build" << std::endl;
     }
 
     // Override default headers for static files to include no-cache
@@ -2124,6 +2278,254 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
     // Get system info - this function handles all errors internally and never throws
     nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache(verbose);
     res.set_content(system_info.dump(), "application/json");
+}
+
+// Helper: Get CPU usage percentage
+double Server::get_cpu_usage() {
+#ifdef __linux__
+    // Linux: Parse /proc/stat for system-wide CPU usage
+    std::lock_guard<std::mutex> lock(cpu_stats_mutex_);
+
+    std::ifstream stat_file("/proc/stat");
+    if (!stat_file.is_open()) {
+        return -1.0;
+    }
+
+    std::string line;
+    std::getline(stat_file, line);
+    stat_file.close();
+
+    // Parse: "cpu  user nice system idle iowait irq softirq steal"
+    std::istringstream iss(line);
+    std::string cpu_label;
+    uint64_t user, nice, system, idle, iowait, irq, softirq, steal;
+
+    iss >> cpu_label >> user >> nice >> system >> idle >> iowait >> irq >> softirq >> steal;
+
+    uint64_t total_idle = idle + iowait;
+    uint64_t total_active = user + nice + system + irq + softirq + steal;
+    uint64_t total = total_idle + total_active;
+
+    if (last_cpu_stats_.total > 0) {
+        uint64_t idle_diff = total_idle - last_cpu_stats_.total_idle;
+        uint64_t total_diff = total - last_cpu_stats_.total;
+
+        last_cpu_stats_.total_idle = total_idle;
+        last_cpu_stats_.total = total;
+
+        if (total_diff > 0) {
+            return ((total_diff - idle_diff) * 100.0) / total_diff;
+        }
+    }
+
+    last_cpu_stats_.total_idle = total_idle;
+    last_cpu_stats_.total = total;
+    return 0.0; // First call, no delta yet
+
+#elif defined(_WIN32)
+    // Windows: Use PDH (Performance Data Helper) API
+    // Note: This is a simplified approach - full implementation would use PDH counters
+    return -1.0; // Not implemented yet
+
+#elif defined(__APPLE__)
+    // macOS: Could use host_processor_info or top command
+    return -1.0; // Not implemented yet
+
+#else
+    return -1.0;
+#endif
+}
+
+// Helper: Get GPU usage percentage (AMD GPUs on Linux)
+double Server::get_gpu_usage() {
+#ifdef __linux__
+    // Linux: Read from AMD sysfs (gpu_busy_percent)
+    // Check all GPUs and return the highest utilization
+    try {
+        std::string drm_path = "/sys/class/drm";
+
+        if (!fs::exists(drm_path)) {
+            return -1.0;
+        }
+
+        double highest_usage = -1.0;
+
+        for (const auto& entry : fs::directory_iterator(drm_path)) {
+            std::string card_name = entry.path().filename().string();
+            if (card_name.find("card") != 0 || card_name.find("-") != std::string::npos) {
+                continue;
+            }
+
+            std::string busy_path = entry.path().string() + "/device/gpu_busy_percent";
+            std::ifstream busy_file(busy_path);
+            if (busy_file.is_open()) {
+                double usage;
+                busy_file >> usage;
+                busy_file.close();
+                if (usage > highest_usage) {
+                    highest_usage = usage;
+                }
+            }
+        }
+
+        return highest_usage;
+    } catch (...) {
+        return -1.0;
+    }
+
+#else
+    // GPU usage monitoring not implemented for Windows/macOS
+    return -1.0;
+#endif
+}
+
+// Helper: Get VRAM/GTT usage in GB (AMD GPUs on Linux)
+double Server::get_vram_usage() {
+#ifdef __linux__
+    // Linux: Read from AMD sysfs
+    // For dGPU: return VRAM used
+    // For APU: return VRAM + GTT used
+    // On multi-GPU systems, return memory from GPU with highest utilization
+    try {
+        std::string drm_path = "/sys/class/drm";
+
+        if (!fs::exists(drm_path)) {
+            return -1.0;
+        }
+
+        double highest_usage = -1.0;
+        std::string highest_card;
+        double highest_card_memory = 0.0;
+
+        for (const auto& entry : fs::directory_iterator(drm_path)) {
+            std::string card_name = entry.path().filename().string();
+            if (card_name.find("card") != 0 || card_name.find("-") != std::string::npos) {
+                continue;
+            }
+
+            std::string device_path = entry.path().string() + "/device";
+
+            // Read GPU utilization to find the most active GPU
+            double gpu_usage = 0.0;
+            std::ifstream busy_file(device_path + "/gpu_busy_percent");
+            if (busy_file.is_open()) {
+                busy_file >> gpu_usage;
+                busy_file.close();
+            }
+
+            // Check if this is a dGPU (has board_info) or APU (no board_info)
+            bool is_dgpu = fs::exists(device_path + "/board_info");
+
+            // Read VRAM used
+            uint64_t vram_used = 0;
+            std::ifstream vram_file(device_path + "/mem_info_vram_used");
+            if (vram_file.is_open()) {
+                vram_file >> vram_used;
+                vram_file.close();
+            }
+
+            // Read GTT used
+            uint64_t gtt_used = 0;
+            std::ifstream gtt_file(device_path + "/mem_info_gtt_used");
+            if (gtt_file.is_open()) {
+                gtt_file >> gtt_used;
+                gtt_file.close();
+            }
+
+            // Skip if no memory info found
+            if (vram_used == 0 && gtt_used == 0) {
+                continue;
+            }
+
+            // Calculate memory for this card
+            uint64_t card_memory = is_dgpu ? vram_used : (vram_used + gtt_used);
+
+            // Track the GPU with highest utilization
+            if (gpu_usage > highest_usage || highest_usage < 0) {
+                highest_usage = gpu_usage;
+                highest_card = card_name;
+                highest_card_memory = card_memory / (1024.0 * 1024.0 * 1024.0); // Convert to GB
+            }
+        }
+
+        return highest_card_memory > 0 ? highest_card_memory : -1.0;
+    } catch (...) {
+        return -1.0;
+    }
+
+#else
+    // VRAM monitoring not implemented for Windows/macOS
+    return -1.0;
+#endif
+}
+
+void Server::handle_system_stats(const httplib::Request& req, httplib::Response& res) {
+    // For HEAD requests, just return 200 OK without processing
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+
+    nlohmann::json stats;
+
+    // CPU usage
+    double cpu_percent = get_cpu_usage();
+    stats["cpu_percent"] = (cpu_percent >= 0) ? nlohmann::json(cpu_percent) : nlohmann::json();
+
+    // Get memory info
+#ifdef _WIN32
+    MEMORYSTATUSEX memInfo;
+    memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+    if (GlobalMemoryStatusEx(&memInfo)) {
+        double used_gb = (memInfo.ullTotalPhys - memInfo.ullAvailPhys) / (1024.0 * 1024.0 * 1024.0);
+        stats["memory_gb"] = std::round(used_gb * 10.0) / 10.0;
+    } else {
+        stats["memory_gb"] = 0;
+    }
+#elif defined(__linux__)
+    // Linux: Read /proc/meminfo
+    std::ifstream meminfo("/proc/meminfo");
+    if (meminfo.is_open()) {
+        std::string line;
+        long long total_kb = 0, available_kb = 0;
+        while (std::getline(meminfo, line)) {
+            if (line.find("MemTotal:") == 0) {
+                sscanf(line.c_str(), "MemTotal: %lld kB", &total_kb);
+            } else if (line.find("MemAvailable:") == 0) {
+                sscanf(line.c_str(), "MemAvailable: %lld kB", &available_kb);
+                break;
+            }
+        }
+        meminfo.close();
+        double used_gb = (total_kb - available_kb) / (1024.0 * 1024.0);
+        stats["memory_gb"] = std::round(used_gb * 10.0) / 10.0;
+    } else {
+        stats["memory_gb"] = 0;
+    }
+#elif defined(__APPLE__)
+    // macOS: Get memory info
+    int64_t physical_memory = 0;
+    size_t length = sizeof(physical_memory);
+    if (sysctlbyname("hw.memsize", &physical_memory, &length, nullptr, 0) == 0) {
+        // For now, just report total memory since getting free memory is complex on macOS
+        double total_gb = physical_memory / (1024.0 * 1024.0 * 1024.0);
+        stats["memory_gb"] = std::round(total_gb * 10.0) / 10.0;
+    } else {
+        stats["memory_gb"] = 0;
+    }
+#else
+    stats["memory_gb"] = 0;
+#endif
+
+    // GPU usage
+    double gpu_percent = get_gpu_usage();
+    stats["gpu_percent"] = (gpu_percent >= 0) ? nlohmann::json(gpu_percent) : nlohmann::json();
+
+    // VRAM usage
+    double vram_gb = get_vram_usage();
+    stats["vram_gb"] = (vram_gb >= 0) ? nlohmann::json(vram_gb) : nlohmann::json();
+
+    res.set_content(stats.dump(), "application/json");
 }
 
 void Server::handle_log_level(const httplib::Request& req, httplib::Response& res) {
