@@ -23,6 +23,7 @@ public:
     // Server: Starts a blocking loop to shout presence
     std::string getLocalHostname();
     std::string buildStandardPayloadPattern(std::string hostname, std::string hostUrl);
+    bool isRFC1918(const std::string& ipAddress);
     void startBroadcasting(int port, const std::string& payload, uint16_t intervalSeconds);
     void stopBroadcasting();
 

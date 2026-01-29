@@ -513,15 +513,22 @@ void Server::run() {
     }
     //For now we will use getLocalHostname to get the machines hostname.
     //This allows external devices to not have to do a rDNS lookup. 
-    udp_beacon_.startBroadcasting(
-        port_, 
-        udp_beacon_.buildStandardPayloadPattern
-        (
-            udp_beacon_.getLocalHostname(),
-            "http://" + ipv4 + "/api/v1/"
-        ), 
-        2
-    );
+    bool RFC1918_IP = udp_beacon_.isRFC1918(ipv4);
+    if(RFC1918_IP) {
+        udp_beacon_.startBroadcasting(
+            port_, 
+            udp_beacon_.buildStandardPayloadPattern
+            (
+                udp_beacon_.getLocalHostname(),
+                "http://" + ipv4 + "/api/v1/"
+            ), 
+            2
+        );
+    }
+    else {
+        std::cout << "[Server] [Net Broadcast] Unable to broadcast my existance please use a RFC1918 IPv4," << std::endl 
+                    << "[Server] [Net Broadcast] or hostname that resolves to RFC1918 IPv4." << std::endl;
+    }
 
     if(http_v4_thread_.joinable())
         http_v4_thread_.join();

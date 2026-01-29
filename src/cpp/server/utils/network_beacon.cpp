@@ -64,6 +64,29 @@ std::string NetworkBeacon::getLocalHostname() {
     return "UnknownHost";
 }
 
+bool NetworkBeacon::isRFC1918(const std::string& ipAddress) {
+    struct in_addr addr;
+    
+    // Convert string to network address structure
+    if (inet_pton(AF_INET, ipAddress.c_str(), &addr) != 1) {
+        return false; // Not a valid IPv4 address
+    }
+
+    // Convert to host byte order for easier comparison
+    uint32_t ip = ntohl(addr.s_addr);
+    
+    // 10.0.0.0/8
+    if ((ip & 0xFF000000) == 0x0A000000) return true;
+    
+    // 172.16.0.0/12 (172.16.0.0 - 172.31.255.255)
+    if ((ip & 0xFFF00000) == 0xAC100000) return true;
+    
+    // 192.168.0.0/16
+    if ((ip & 0xFFFF0000) == 0xC0A80000) return true;
+
+    return false;
+}
+
 void NetworkBeacon::updatePayloadString(const std::string& str) {
     // We lock the mutex to ensure the broadcast thread isn't 
     // reading the payload while we modify it.
