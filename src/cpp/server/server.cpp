@@ -516,11 +516,11 @@ void Server::run() {
     bool RFC1918_IP = udp_beacon_.isRFC1918(ipv4);
     if(RFC1918_IP) {
         udp_beacon_.startBroadcasting(
-            port_, 
+            8000, //Broadcast port best to not make it adjustable, so clients dont have to scan.
             udp_beacon_.buildStandardPayloadPattern
             (
                 udp_beacon_.getLocalHostname(),
-                "http://" + ipv4 + "/api/v1/"
+                "http://" + ipv4 + ":" + std::to_string(port_) + "/api/v1/"
             ), 
             2
         );
