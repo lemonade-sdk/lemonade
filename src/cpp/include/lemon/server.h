@@ -13,6 +13,7 @@
 #include <httplib.h>
 #include "router.h"
 #include "model_manager.h"
+#include "lemon/utils/network_beacon.h"
 
 namespace lemon {
 
@@ -118,6 +119,7 @@ private:
     bool running_;
 
     std::string api_key_;
+    NetworkBeacon udp_beacon_;
 };
 
 } // namespace lemon

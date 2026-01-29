@@ -4,6 +4,7 @@
 #include <mutex>
 #include <thread>
 #include <stdexcept>
+#include <sstream>
 
 #ifdef _WIN32
     #include <ws2tcpip.h>
@@ -55,6 +56,61 @@ void NetworkBeacon::createSocket() {
     }
 }
 
+std::string NetworkBeacon::getLocalHostname() {
+    char buffer[256];
+    if (gethostname(buffer, sizeof(buffer)) == 0) {
+        return std::string(buffer);
+    }
+    return "UnknownHost";
+}
+
+void NetworkBeacon::updatePayloadString(const std::string& str) {
+    // We lock the mutex to ensure the broadcast thread isn't 
+    // reading the payload while we modify it.
+    std::lock_guard<std::mutex> lock(_netMtx);
+    _payload = str; 
+}
+
+std::string NetworkBeacon::buildStandardPayloadPattern(std::string hostname, std::string hostUrl) {
+    std::stringstream ss;
+    
+    ss << "{";
+    ss << "\"service\": \"lemonade\", ";
+    ss << "\"hostname\": \"" << hostname << "\", ";
+    ss << "\"url\": \"" << hostUrl << "\"";
+    ss << "}";
+
+    return ss.str();
+}
+
+void NetworkBeacon::startBroadcasting(int port, const std::string& payload, uint16_t intervalSeconds) {
+    std::lock_guard<std::mutex> lock(_netMtx);
+    
+    if (_netThreadRunning) return; 
+
+    _port = port;
+    _payload = payload;
+    _broadcastIntervalSeconds = intervalSeconds <= 0 ? 1 : intervalSeconds; //Protect against intervals less than 1
+    _netThreadRunning = true;
+
+    _netThread = std::thread(&NetworkBeacon::broadcastThreadLoop, this);
+}
+
+void NetworkBeacon::stopBroadcasting() {
+    {
+        std::lock_guard<std::mutex> lock(_netMtx);
+        if (!_netThreadRunning) return;
+        _netThreadRunning = false;
+    }
+
+    // Join net thread.
+    if (_netThread.joinable()) {
+        _netThread.join();
+    }
+    
+    cleanup(); // Close socket after thread is dead
+}
+
 void NetworkBeacon::broadcastThreadLoop() {
     // Setup - Localize data to minimize lock time
     sockaddr_in addr{};
@@ -86,32 +142,4 @@ void NetworkBeacon::broadcastThreadLoop() {
         sendto(_socket, currentPayload.c_str(), (int)currentPayload.size(), 0, (sockaddr*)&addr, sizeof(addr));
         std::this_thread::sleep_for(std::chrono::seconds(interval));
     }
-}
-
-void NetworkBeacon::startBroadcasting(int port, const std::string& payload, uint16_t intervalSeconds) {
-    std::lock_guard<std::mutex> lock(_netMtx);
-    
-    if (_netThreadRunning) return; 
-
-    _port = port;
-    _payload = payload;
-    _broadcastIntervalSeconds = intervalSeconds <= 0 ? 1 : intervalSeconds; //Protect against intervals less than 1
-    _netThreadRunning = true;
-
-    _netThread = std::thread(&NetworkBeacon::broadcastThreadLoop, this);
-}
-
-void NetworkBeacon::stopBroadcasting() {
-    {
-        std::lock_guard<std::mutex> lock(_netMtx);
-        if (!_netThreadRunning) return;
-        _netThreadRunning = false;
-    }
-
-    // Join net thread.
-    if (_netThread.joinable()) {
-        _netThread.join();
-    }
-    
-    cleanup(); // Close socket after thread is dead
 }

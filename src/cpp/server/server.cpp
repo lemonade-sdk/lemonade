@@ -39,7 +39,7 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
                int max_embedding_models, int max_reranking_models, int max_audio_models,
                int max_image_models, const std::string& extra_models_dir)
     : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
-      running_(false) {
+      running_(false), udp_beacon_() {
 
     // Detect log file path (same location as tray uses)
     // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
@@ -511,6 +511,18 @@ void Server::run() {
             http_server_v6_->listen_after_bind();
         });
     }
+    //For now we will use getLocalHostname to get the machines hostname.
+    //This allows external devices to not have to do a rDNS lookup. 
+    udp_beacon_.startBroadcasting(
+        port_, 
+        udp_beacon_.buildStandardPayloadPattern
+        (
+            udp_beacon_.getLocalHostname(),
+            "http://" + ipv4 + "/api/v1/"
+        ), 
+        2
+    );
+
     if(http_v4_thread_.joinable())
         http_v4_thread_.join();
     if(http_v6_thread_.joinable())
@@ -520,6 +532,7 @@ void Server::run() {
 void Server::stop() {
     if (running_) {
         std::cout << "[Server] Stopping HTTP server..." << std::endl;
+        udp_beacon_.stopBroadcasting();
         http_server_v6_->stop();
         http_server_->stop();
         running_ = false;

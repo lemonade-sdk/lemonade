@@ -21,8 +21,12 @@ public:
     ~NetworkBeacon();
 
     // Server: Starts a blocking loop to shout presence
+    std::string getLocalHostname();
+    std::string buildStandardPayloadPattern(std::string hostname, std::string hostUrl);
     void startBroadcasting(int port, const std::string& payload, uint16_t intervalSeconds);
     void stopBroadcasting();
+
+    void updatePayloadString(const std::string& str);
 
 private:
     std::mutex _netMtx;
