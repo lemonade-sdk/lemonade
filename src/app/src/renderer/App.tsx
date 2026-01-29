@@ -8,6 +8,7 @@ import ResizableDivider from './ResizableDivider';
 import DownloadManager from './DownloadManager';
 import StatusBar from './StatusBar';
 import { ModelsProvider } from './hooks/useModels';
+import { SystemProvider } from './hooks/useSystem';
 import '../../styles.css';
 
 const LAYOUT_CONSTANTS = {
@@ -242,65 +243,67 @@ const App: React.FC = () => {
   };
 
   return (
-    <ModelsProvider>
-      <TitleBar
-        isChatVisible={isChatVisible}
-        onToggleChat={() => setIsChatVisible(!isChatVisible)}
-        isModelManagerVisible={isModelManagerVisible}
-        onToggleModelManager={() => setIsModelManagerVisible(!isModelManagerVisible)}
-        isCenterPanelVisible={isCenterPanelVisible}
-        onToggleCenterPanel={() => setIsCenterPanelVisible(!isCenterPanelVisible)}
-        isLogsVisible={isLogsVisible}
-        onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
-        isDownloadManagerVisible={isDownloadManagerVisible}
-        onToggleDownloadManager={() => setIsDownloadManagerVisible(!isDownloadManagerVisible)}
-      />
-      <DownloadManager
-        isVisible={isDownloadManagerVisible}
-        onClose={() => setIsDownloadManagerVisible(false)}
-      />
-      <div className="app-layout">
-        {isModelManagerVisible && (
-          <>
-            <ModelManager isVisible={true} width={modelManagerWidth} />
-            <ResizableDivider onMouseDown={handleLeftDividerMouseDown} />
-          </>
-        )}
-        {(isCenterPanelVisible || isLogsVisible) && (
-          <div className="main-content-container">
-            {isCenterPanelVisible && (
-              <div className={`main-content ${isChatVisible ? 'with-chat' : 'full-width'} ${isModelManagerVisible ? 'with-model-manager' : ''}`}>
-                <CenterPanel isVisible={true} onClose={() => setIsCenterPanelVisible(false)} />
-              </div>
-            )}
-            {isCenterPanelVisible && isLogsVisible && (
-              <ResizableDivider
-                onMouseDown={handleBottomDividerMouseDown}
-                orientation="horizontal"
-              />
-            )}
-            {isLogsVisible && (
-              <LogsWindow
+    <SystemProvider>
+      <ModelsProvider>
+        <TitleBar
+          isChatVisible={isChatVisible}
+          onToggleChat={() => setIsChatVisible(!isChatVisible)}
+          isModelManagerVisible={isModelManagerVisible}
+          onToggleModelManager={() => setIsModelManagerVisible(!isModelManagerVisible)}
+          isCenterPanelVisible={isCenterPanelVisible}
+          onToggleCenterPanel={() => setIsCenterPanelVisible(!isCenterPanelVisible)}
+          isLogsVisible={isLogsVisible}
+          onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
+          isDownloadManagerVisible={isDownloadManagerVisible}
+          onToggleDownloadManager={() => setIsDownloadManagerVisible(!isDownloadManagerVisible)}
+        />
+        <DownloadManager
+          isVisible={isDownloadManagerVisible}
+          onClose={() => setIsDownloadManagerVisible(false)}
+        />
+        <div className="app-layout">
+          {isModelManagerVisible && (
+            <>
+              <ModelManager isVisible={true} width={modelManagerWidth}/>
+              <ResizableDivider onMouseDown={handleLeftDividerMouseDown}/>
+            </>
+          )}
+          {(isCenterPanelVisible || isLogsVisible) && (
+            <div className="main-content-container">
+              {isCenterPanelVisible && (
+                <div className={`main-content ${isChatVisible ? 'with-chat' : 'full-width'} ${isModelManagerVisible ? 'with-model-manager' : ''}`}>
+                  <CenterPanel isVisible={true} onClose={() => setIsCenterPanelVisible(false)}/>
+                </div>
+              )}
+              {isCenterPanelVisible && isLogsVisible && (
+                <ResizableDivider
+                  onMouseDown={handleBottomDividerMouseDown}
+                  orientation="horizontal"
+                />
+              )}
+              {isLogsVisible && (
+                <LogsWindow
+                  isVisible={true}
+                  height={isCenterPanelVisible ? logsHeight : undefined}
+                />
+              )}
+            </div>
+          )}
+          {isChatVisible && (
+            <>
+              {(isCenterPanelVisible || isLogsVisible) && (
+                <ResizableDivider onMouseDown={handleRightDividerMouseDown}/>
+              )}
+              <ChatWindow
                 isVisible={true}
-                height={isCenterPanelVisible ? logsHeight : undefined}
+                width={(isCenterPanelVisible || isLogsVisible) ? chatWidth : undefined}
               />
-            )}
-          </div>
-        )}
-        {isChatVisible && (
-          <>
-            {(isCenterPanelVisible || isLogsVisible) && (
-              <ResizableDivider onMouseDown={handleRightDividerMouseDown} />
-            )}
-            <ChatWindow
-              isVisible={true}
-              width={(isCenterPanelVisible || isLogsVisible) ? chatWidth : undefined}
-            />
-          </>
-        )}
-      </div>
-      <StatusBar />
-    </ModelsProvider>
+            </>
+          )}
+        </div>
+        <StatusBar />
+      </ModelsProvider>
+    </SystemProvider>
   );
 };
 
