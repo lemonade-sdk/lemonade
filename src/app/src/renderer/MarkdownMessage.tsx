@@ -7,9 +7,14 @@ import 'katex/dist/katex.min.css';
 
 interface MarkdownMessageProps {
   content: string;
+  isComplete?: boolean;
 }
 
-const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => {
+const COPY_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+
+const CHECK_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+
+const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete = true }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const md = useMemo(() => {
@@ -44,14 +49,25 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => {
   }, []);
 
   const htmlContent = useMemo(() => {
-    return md.render(content);
-  }, [content, md]);
+    const rendered = md.render(content);
+    // Wrap each <pre> block with a wrapper div and add copy button (only when complete)
+    if (isComplete) {
+      return rendered.replace(
+        /<pre>/g,
+        `<div class="code-block-wrapper"><button class="code-copy-button" title="Copy code">${COPY_ICON_SVG}</button><pre>`
+      ).replace(
+        /<\/pre>/g,
+        '</pre></div>'
+      );
+    }
+    return rendered;
+  }, [content, md, isComplete]);
 
   useEffect(() => {
-    // Add click handlers for links to open in external browser
     const container = containerRef.current;
     if (!container) return;
 
+    // Add click handlers for links to open in external browser
     const handleLinkClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'A') {
@@ -63,11 +79,36 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => {
       }
     };
 
+    // Add click handlers for copy buttons
+    const handleCopyClick = async (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const button = target.closest('.code-copy-button') as HTMLButtonElement;
+      if (!button) return;
+
+      const wrapper = button.closest('.code-block-wrapper');
+      const codeElement = wrapper?.querySelector('code');
+      const codeText = codeElement?.textContent || wrapper?.querySelector('pre')?.textContent || '';
+
+      try {
+        await navigator.clipboard.writeText(codeText);
+        button.innerHTML = CHECK_ICON_SVG;
+        button.classList.add('copied');
+        setTimeout(() => {
+          button.innerHTML = COPY_ICON_SVG;
+          button.classList.remove('copied');
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to copy code:', err);
+      }
+    };
+
     container.addEventListener('click', handleLinkClick);
+    container.addEventListener('click', handleCopyClick);
     return () => {
       container.removeEventListener('click', handleLinkClick);
+      container.removeEventListener('click', handleCopyClick);
     };
-  }, [htmlContent]);
+  }, []);
 
   return (
     <div
