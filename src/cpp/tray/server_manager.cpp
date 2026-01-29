@@ -5,9 +5,6 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
-#ifdef __APPLE__
-#include <sys/sysctl.h>
-#endif
 
 // Helper macro for debug logging
 #define DEBUG_LOG(mgr, msg) \
