@@ -5,6 +5,9 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch } from './utils/serverConfig';
 import { downloadTracker } from './utils/downloadTracker';
 import { useModels } from './hooks/useModels';
+import ModelOptionsModal from "./ModelOptionsModal";
+import { RecipeOptions } from "./recipes/recipeOptions";
+import { OgaRecipies } from "./recipes/onnx/recipeOptions";
 
 interface ModelManagerProps {
   isVisible: boolean;
@@ -45,6 +48,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const [loadedModels, setLoadedModels] = useState<Set<string>>(new Set());
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
+  const [showModelOptionsModal, setShowModelOptionsModal] = useState(false);
   const [newModel, setNewModel] = useState(createEmptyModelForm);
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
@@ -542,12 +546,33 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     };
   }, [handleDownloadModel]);
 
-  const handleLoadModel = async (modelName: string, autoLoadAfterDownload: boolean = false) => {
+  const handleLoadModel = async (modelName: string, options?: RecipeOptions, autoLoadAfterDownload: boolean = false) => {
     try {
-      const modelData = modelsData[modelName];
+      let modelData = modelsData[modelName];
       if (!modelData) {
         showError('Model metadata is unavailable. Please refresh and try again.');
         return;
+      }
+
+      // if options are provided, which is not required
+      if (options) {
+        if (options.recipe === 'llamacpp') {
+          modelData = {
+            ...modelData,
+            ctx_size: options.ctxSize.value,
+            // llamacpp_backend: options.llamacppBackend.value,
+            llamacpp_args: options.llamacppArgs.value,
+            save_options: options.saveOptions.value
+          }
+        } else if (options.recipe === 'whispercpp') {
+          modelData = { ...modelData, ctx_size: options.ctxSize.value, save_options: options.saveOptions.value }
+        } else if (options.recipe === 'sd-cpp') {
+          modelData = { ...modelData, ctx_size: options.ctxSize.value, save_options: options.saveOptions.value }
+        } else if (options.recipe === 'flm') {
+          modelData = { ...modelData, ctx_size: options.ctxSize.value, save_options: options.saveOptions.value }
+        } else if (OgaRecipies.includes(options.recipe)) {
+          modelData = { ...modelData, ctx_size: options.ctxSize.value, save_options: options.saveOptions.value }
+        }
       }
 
       // Add to loading state
@@ -585,7 +610,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
             // After download completes, load the model
             console.log('[ModelManager] Re-download complete, loading model:', modelName);
-            await handleLoadModel(modelName, true);
+            await handleLoadModel(modelName, undefined, true);
             return;
           }
         } catch (parseError) {
@@ -750,6 +775,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
             {shouldShowCategory(category) && (
               <div className="model-list">
+                <ModelOptionsModal model={hoveredModel} isOpen={showModelOptionsModal}
+                                   onCancel={() => setShowModelOptionsModal(false)}
+                                   onSubmit={(modelName, options) => {
+                                     setShowModelOptionsModal(false);
+                                     handleLoadModel(modelName, options);
+                                   }}/>
                 {groupedModels[category].map(model => {
                   const isDownloaded = modelsData[model.name]?.downloaded ?? false;
                   const isLoaded = loadedModels.has(model.name);
@@ -812,7 +843,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                                 </button>
                               )}
 
-                              {/* Downloaded but not loaded: show load button + delete button */}
+                              {/* Downloaded but not loaded: show load button, delete button and load with options button */}
                               {isDownloaded && !isLoaded && !isLoading && (
                                 <>
                                   <button
@@ -840,10 +871,28 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                                       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                                     </svg>
                                   </button>
+                                  {!['sd-cpp', 'whispercpp'].includes(model.info.recipe) && <button
+                                    className="model-action-btn load-btn"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setShowModelOptionsModal(!showModelOptionsModal);
+                                    }}
+                                    title="Load model with options"
+                                  >
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+                                         xmlns="http://www.w3.org/2000/svg">
+                                      <path
+                                        d="M6.5 1.5H9.5L9.9 3.4C10.4 3.6 10.9 3.9 11.3 4.2L13.1 3.5L14.6 6L13.1 7.4C13.2 7.9 13.2 8.1 13.2 8.5C13.2 8.9 13.2 9.1 13.1 9.6L14.6 11L13.1 13.5L11.3 12.8C10.9 13.1 10.4 13.4 9.9 13.6L9.5 15.5H6.5L6.1 13.6C5.6 13.4 5.1 13.1 4.7 12.8L2.9 13.5L1.4 11L2.9 9.6C2.8 9.1 2.8 8.9 2.8 8.5C2.8 8.1 2.8 7.9 2.9 7.4L1.4 6L2.9 3.5L4.7 4.2C5.1 3.9 5.6 3.6 6.1 3.4L6.5 1.5Z"
+                                        stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"
+                                        strokeLinejoin="round"/>
+                                      <circle cx="8" cy="8.5" r="2.5" stroke="currentColor"
+                                              strokeWidth="1.2"/>
+                                    </svg>
+                                  </button>}
                                 </>
                               )}
 
-                              {/* Downloaded and loaded: show unload button + delete button */}
+                              {/* Downloaded and loaded: show unload button, delete button, and load with options button */}
                               {isLoaded && (
                                 <>
                                   <button
@@ -873,6 +922,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                                       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                                     </svg>
                                   </button>
+                                  {!['sd-cpp', 'whispercpp'].includes(model.info.recipe) && <button
+                                    className="model-action-btn load-btn"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setShowModelOptionsModal(!showModelOptionsModal);
+                                    }}
+                                    title="Load model with options"
+                                  >
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+                                         xmlns="http://www.w3.org/2000/svg">
+                                      <path
+                                        d="M6.5 1.5H9.5L9.9 3.4C10.4 3.6 10.9 3.9 11.3 4.2L13.1 3.5L14.6 6L13.1 7.4C13.2 7.9 13.2 8.1 13.2 8.5C13.2 8.9 13.2 9.1 13.1 9.6L14.6 11L13.1 13.5L11.3 12.8C10.9 13.1 10.4 13.4 9.9 13.6L9.5 15.5H6.5L6.1 13.6C5.6 13.4 5.1 13.1 4.7 12.8L2.9 13.5L1.4 11L2.9 9.6C2.8 9.1 2.8 8.9 2.8 8.5C2.8 8.1 2.8 7.9 2.9 7.4L1.4 6L2.9 3.5L4.7 4.2C5.1 3.9 5.6 3.6 6.1 3.4L6.5 1.5Z"
+                                        stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"
+                                        strokeLinejoin="round"/>
+                                      <circle cx="8" cy="8.5" r="2.5" stroke="currentColor"
+                                              strokeWidth="1.2"/>
+                                    </svg>
+                                  </button>}
                                 </>
                               )}
                             </span>
