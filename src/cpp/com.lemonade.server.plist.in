@@ -19,9 +19,9 @@
     <false/>
 
     <key>StandardOutPath</key>
-    <string>/tmp/lemonade-server.out.log</string>
+    <string>/var/log/lemonade/lemonade-server.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/lemonade-server.err.log</string>
+    <string>/var/log/lemonade/lemonade-server.err.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
