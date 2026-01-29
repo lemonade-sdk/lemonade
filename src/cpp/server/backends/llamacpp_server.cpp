@@ -186,8 +186,8 @@ LlamaCppServer::~LlamaCppServer() {
 }
 
 // Helper to identify ROCm architecture from system
+// Returns empty string if no supported ROCm architecture is found
 static std::string identify_rocm_arch() {
-    // Try to detect GPU architecture, default to gfx110X on any failure
     try {
         auto system_info = lemon::create_system_info();
 
@@ -211,10 +211,10 @@ static std::string identify_rocm_arch() {
             }
         }
     } catch (...) {
-        // Detection failed - use default
+        // Detection failed
     }
 
-    return "gfx110X";  // Default architecture
+    return "";  // No supported architecture found
 }
 
 // Helper to get the install directory for llama-server binaries
@@ -277,6 +277,15 @@ void LlamaCppServer::install(const std::string& backend) {
             // ROCm support from lemonade-sdk/llamacpp-rocm
             repo = "lemonade-sdk/llamacpp-rocm";
             std::string target_arch = identify_rocm_arch();
+
+            if (target_arch.empty()) {
+                throw std::runtime_error(
+                    "ROCm is not supported on this system. No compatible AMD GPU was detected. "
+                    "ROCm requires an AMD GPU with one of the following architectures: "
+                    "gfx1150 (Radeon 880M/890M), gfx1151 (Radeon 8050S/8060S), "
+                    "gfx110X (RX 7000 series), or gfx120X (RX 9000 series)."
+                );
+            }
 
 #ifdef _WIN32
             filename = "llama-" + expected_version + "-windows-rocm-" + target_arch + "-x64.zip";

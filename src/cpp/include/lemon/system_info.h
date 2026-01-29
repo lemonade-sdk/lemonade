@@ -68,10 +68,18 @@ public:
     // Helper to detect inference engines for a device (public so it can be called after loading from cache)
     static json detect_inference_engines(const std::string& device_type, const std::string& device_name);
 
+    // Check if a recipe is supported on the current system
+    // Returns empty string if supported, or a reason string if not supported
+    static std::string check_recipe_supported(const std::string& recipe, const json& system_info);
+
 protected:
     // Helper methods for version detection
     static std::string get_llamacpp_version(const std::string& backend);
+    static std::string get_whispercpp_version();
+    static std::string get_sdcpp_version();
     static bool is_llamacpp_installed(const std::string& backend);
+    static bool is_whispercpp_installed();
+    static bool is_sdcpp_installed();
     static bool check_vulkan_support();
     static bool check_rocm_support(const std::string& device_name);
     static std::string get_flm_version();

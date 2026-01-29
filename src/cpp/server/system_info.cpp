@@ -222,11 +222,20 @@ json SystemInfo::detect_inference_engines(const std::string& device_type, const 
         bool device_supported = (device_type == "cpu") || check_vulkan_support();
 
         if (!device_supported) {
-            engines["llamacpp-vulkan"] = {{"available", false}, {"error", "vulkan not available"}};
+            engines["llamacpp-vulkan"] = {
+                {"supported", false},
+                {"available", false},
+                {"error", "vulkan not available"}
+            };
         } else if (!is_llamacpp_installed("vulkan")) {
-            engines["llamacpp-vulkan"] = {{"available", false}, {"error", "vulkan binaries not installed"}};
+            engines["llamacpp-vulkan"] = {
+                {"supported", true},
+                {"available", false},
+                {"error", "vulkan binaries not installed yet"}
+            };
         } else {
             engines["llamacpp-vulkan"] = {
+                {"supported", true},
                 {"available", true},
                 {"version", get_llamacpp_version("vulkan")},
                 {"backend", "vulkan"}
@@ -234,16 +243,79 @@ json SystemInfo::detect_inference_engines(const std::string& device_type, const 
         }
     }
 
+    // whispercpp: Available for CPU only (audio transcription)
+    if (device_type == "cpu") {
+        #ifdef _WIN32
+        // Whisper.cpp is currently only supported on Windows
+        if (!is_whispercpp_installed()) {
+            engines["whispercpp"] = {
+                {"supported", true},
+                {"available", false},
+                {"error", "whispercpp binaries not installed yet"}
+            };
+        } else {
+            engines["whispercpp"] = {
+                {"supported", true},
+                {"available", true},
+                {"version", get_whispercpp_version()}
+            };
+        }
+        #else
+        // Not yet supported on Linux/macOS
+        engines["whispercpp"] = {
+            {"supported", false},
+            {"available", false},
+            {"error", "whispercpp is only supported on Windows"}
+        };
+        #endif
+    }
+
+    // sd-cpp: Available for CPU only (image generation)
+    if (device_type == "cpu") {
+        #if defined(_WIN32) || defined(__linux__)
+        // stable-diffusion.cpp is supported on Windows and Linux
+        if (!is_sdcpp_installed()) {
+            engines["sd-cpp"] = {
+                {"supported", true},
+                {"available", false},
+                {"error", "sd-cpp binaries not installed yet"}
+            };
+        } else {
+            engines["sd-cpp"] = {
+                {"supported", true},
+                {"available", true},
+                {"version", get_sdcpp_version()}
+            };
+        }
+        #else
+        // Not yet supported on macOS
+        engines["sd-cpp"] = {
+            {"supported", false},
+            {"available", false},
+            {"error", "sd-cpp is not yet supported on macOS"}
+        };
+        #endif
+    }
+
     // llamacpp-rocm: Available for AMD iGPU and AMD dGPU only
     if (device_type == "amd_igpu" || device_type == "amd_dgpu") {
         bool device_supported = check_rocm_support(device_name);
 
         if (!device_supported) {
-            engines["llamacpp-rocm"] = {{"available", false}, {"error", "rocm not available"}};
+            engines["llamacpp-rocm"] = {
+                {"supported", false},
+                {"available", false},
+                {"error", "rocm not available"}
+            };
         } else if (!is_llamacpp_installed("rocm")) {
-            engines["llamacpp-rocm"] = {{"available", false}, {"error", "rocm binaries not installed"}};
+            engines["llamacpp-rocm"] = {
+                {"supported", true},
+                {"available", false},
+                {"error", "rocm binaries not installed yet"}
+            };
         } else {
             engines["llamacpp-rocm"] = {
+                {"supported", true},
                 {"available", true},
                 {"version", get_llamacpp_version("rocm")},
                 {"backend", "rocm"}
@@ -251,9 +323,10 @@ json SystemInfo::detect_inference_engines(const std::string& device_type, const 
         }
     }
 
-    // FLM: Only available for NPU (Windows only)
+    // FLM and OGA: Only available for NPU
     if (device_type == "npu") {
         #ifdef _WIN32
+        // FLM: Windows only
         bool flm_available = false;
 
         // Check common Windows locations
@@ -276,16 +349,81 @@ json SystemInfo::detect_inference_engines(const std::string& device_type, const 
         }
 
         engines["flm"] = {
+            {"supported", true},  // FLM is supported on Windows NPU
             {"available", flm_available},
             {"version", flm_available ? get_flm_version() : "unknown"}
         };
-        #endif
 
-        // OGA (RyzenAI-Server)
-        engines["oga"] = {{"available", is_ryzenai_serve_available()}};
+        // OGA (RyzenAI-Server): Supported on Windows NPU
+        bool oga_available = is_ryzenai_serve_available();
+        engines["oga"] = {
+            {"supported", true},
+            {"available", oga_available}
+        };
+        #else
+        // On Linux, NPU inference engines are not yet supported
+        engines["flm"] = {
+            {"supported", false},
+            {"available", false},
+            {"error", "FLM is only supported on Windows"}
+        };
+
+        engines["oga"] = {
+            {"supported", false},
+            {"available", false},
+            {"error", "OGA is only supported on Windows"}
+        };
+        #endif
     }
 
     return engines;
+}
+
+std::string SystemInfo::check_recipe_supported(const std::string& recipe, const json& system_info) {
+    // Map recipe to (device_key, engine_name)
+    // Returns the error message from the engine if not supported, empty string if supported
+    std::string device_key;
+    std::string engine_name;
+
+    if (recipe == "flm") {
+        device_key = "npu";
+        engine_name = "flm";
+    } else if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu") {
+        device_key = "npu";
+        engine_name = "oga";
+    } else if (recipe == "whispercpp") {
+        device_key = "cpu";
+        engine_name = "whispercpp";
+    } else if (recipe == "sd-cpp") {
+        device_key = "cpu";
+        engine_name = "sd-cpp";
+    } else {
+        // llamacpp is generally supported everywhere
+        return "";
+    }
+
+    // Look up the engine in system_info and check if supported
+    if (!system_info.contains(device_key) || !system_info[device_key].is_object()) {
+        return "Device '" + device_key + "' not found in system info";
+    }
+
+    const auto& device = system_info[device_key];
+    if (!device.contains("inference_engines") || !device["inference_engines"].is_object()) {
+        return "No inference engines found for device '" + device_key + "'";
+    }
+
+    const auto& engines = device["inference_engines"];
+    if (!engines.contains(engine_name) || !engines[engine_name].is_object()) {
+        return "Inference engine '" + engine_name + "' not found for device '" + device_key + "'";
+    }
+
+    const auto& engine = engines[engine_name];
+    if (engine.value("supported", false)) {
+        return "";  // Supported
+    }
+
+    // Not supported - return the error message from the engine
+    return engine.value("error", "Not supported on this system");
 }
 
 std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
@@ -294,6 +432,56 @@ std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
 
     fs::path bin_dir = utils::get_downloaded_bin_dir();
     fs::path version_file = bin_dir / "llama" / backend / "version.txt";
+
+    if (fs::exists(version_file)) {
+        std::ifstream file(version_file);
+        if (file.is_open()) {
+            std::string version;
+            std::getline(file, version);
+            file.close();
+            // Trim whitespace
+            size_t start = version.find_first_not_of(" \t\n\r");
+            size_t end = version.find_last_not_of(" \t\n\r");
+            if (start != std::string::npos && end != std::string::npos) {
+                return version.substr(start, end - start + 1);
+            }
+        }
+    }
+
+    return "unknown";
+}
+
+std::string SystemInfo::get_whispercpp_version() {
+    // Try to find version.txt in the whisper directory
+    // Location: {cache_dir}/bin/whisper/version.txt
+
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    fs::path version_file = bin_dir / "whisper" / "version.txt";
+
+    if (fs::exists(version_file)) {
+        std::ifstream file(version_file);
+        if (file.is_open()) {
+            std::string version;
+            std::getline(file, version);
+            file.close();
+            // Trim whitespace
+            size_t start = version.find_first_not_of(" \t\n\r");
+            size_t end = version.find_last_not_of(" \t\n\r");
+            if (start != std::string::npos && end != std::string::npos) {
+                return version.substr(start, end - start + 1);
+            }
+        }
+    }
+
+    return "unknown";
+}
+
+std::string SystemInfo::get_sdcpp_version() {
+    // Try to find version.txt in the sd-cpp directory
+    // Location: {cache_dir}/bin/sd-cpp/version.txt
+
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    fs::path version_file = bin_dir / "sd-cpp" / "version.txt";
 
     if (fs::exists(version_file)) {
         std::ifstream file(version_file);
@@ -332,6 +520,53 @@ bool SystemInfo::is_llamacpp_installed(const std::string& backend) {
     fs::path root_path = install_dir / "llama-server";
     return fs::exists(root_path);
 #endif
+}
+
+bool SystemInfo::is_whispercpp_installed() {
+    // Check if whisper-server executable exists
+    // Location: {cache_dir}/bin/whisper/
+
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    fs::path install_dir = bin_dir / "whisper";
+
+#ifdef _WIN32
+    std::vector<std::string> exe_names = {"whisper-server.exe", "server.exe"};
+#else
+    std::vector<std::string> exe_names = {"whisper-server", "server"};
+#endif
+    std::vector<std::string> subdirs = {"Release", "bin", ""};
+
+    for (const auto& subdir : subdirs) {
+        for (const auto& exe_name : exe_names) {
+            fs::path exe_path;
+            if (subdir.empty()) {
+                exe_path = install_dir / exe_name;
+            } else {
+                exe_path = install_dir / subdir / exe_name;
+            }
+            if (fs::exists(exe_path)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool SystemInfo::is_sdcpp_installed() {
+    // Check if sd-server executable exists
+    // Location: {cache_dir}/bin/sd-cpp/
+
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    fs::path install_dir = bin_dir / "sd-cpp";
+
+#ifdef _WIN32
+    fs::path exe_path = install_dir / "sd-server.exe";
+#else
+    fs::path exe_path = install_dir / "sd-server";
+#endif
+
+    return fs::exists(exe_path);
 }
 
 bool SystemInfo::check_vulkan_support() {
@@ -1272,6 +1507,8 @@ NPUInfo LinuxSystemInfo::get_npu_device() {
     npu.name = "AMD NPU";
     npu.available = false;
     npu.error = "NPU detection not yet implemented for Linux";
+    // Still detect inference engines to show what's not supported
+    npu.inference_engines = detect_inference_engines("npu", "AMD NPU");
     return npu;
 }
 

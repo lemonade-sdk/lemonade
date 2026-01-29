@@ -1560,6 +1560,17 @@ void ModelManager::download_model(const std::string& model_name,
         variant = actual_checkpoint.substr(colon_pos + 1);
     }
 
+    // Check if this recipe is supported on the current system
+    // Use system-info to check if the required inference engine is supported
+    json system_info = SystemInfoCache::get_system_info_with_cache(false);
+    std::string unsupported_reason = SystemInfo::check_recipe_supported(actual_recipe, system_info);
+    if (!unsupported_reason.empty()) {
+        throw std::runtime_error(
+            "Model '" + model_name + "' cannot be used on this system (recipe: " + actual_recipe + "): " +
+            unsupported_reason
+        );
+    }
+
     std::cout << "Downloading model: " << repo_id;
     if (!variant.empty()) {
         std::cout << " (variant: " << variant << ")";
