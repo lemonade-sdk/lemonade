@@ -197,30 +197,44 @@ json SystemInfo::get_device_dict() {
     #ifdef __APPLE__
     // Get Metal GPU info (macOS only) - with fault tolerance
     try {
-        auto metal_gpus = dynamic_cast<MacOSSystemInfo*>(this)->detect_metal_gpus();
-        devices["metal_gpu"] = json::array();
-        for (const auto& gpu : metal_gpus) {
-            json gpu_json = {
-                {"name", gpu.name},
-                {"available", gpu.available}
+        auto* mac_info = dynamic_cast<MacOSSystemInfo*>(this);
+
+        if (mac_info) {
+            auto metal_gpus = dynamic_cast<MacOSSystemInfo*>(this)->detect_metal_gpus();
+            devices["metal_gpu"] = json::array();
+            for (const auto& gpu : metal_gpus) {
+                json gpu_json = {
+                    {"name", gpu.name},
+                    {"available", gpu.available}
+                };
+                if (gpu.vram_gb > 0) {
+                    gpu_json["vram_gb"] = gpu.vram_gb;
+                }
+                if (!gpu.driver_version.empty()) {
+                    gpu_json["driver_version"] = gpu.driver_version;
+                }
+                if (!gpu.error.empty()) {
+                    gpu_json["error"] = gpu.error;
+                }
+                if (!gpu.inference_engines.empty()) {
+                    gpu_json["inference_engines"] = gpu.inference_engines;
+                }
+                devices["metal_gpu"].push_back(gpu_json);
+            }
+        }
+        else {
+            devices["metal_gpu"] = {
+                {"name", "Unknown"},
+                {"available", false},
+                {"error", std::string("Detection exception: ") + e.what()}
             };
-            if (gpu.vram_gb > 0) {
-                gpu_json["vram_gb"] = gpu.vram_gb;
-            }
-            if (!gpu.driver_version.empty()) {
-                gpu_json["driver_version"] = gpu.driver_version;
-            }
-            if (!gpu.error.empty()) {
-                gpu_json["error"] = gpu.error;
-            }
-            if (!gpu.inference_engines.empty()) {
-                gpu_json["inference_engines"] = gpu.inference_engines;
-            }
-            devices["metal_gpu"].push_back(gpu_json);
         }
     } catch (const std::exception& e) {
-        devices["metal_gpu"] = json::array();
-        devices["metal_gpu_error"] = std::string("Metal GPU detection exception: ") + e.what();
+        devices["metal_gpu"] = {
+            {"name", "Unknown"},
+            {"available", false},
+            {"error", std::string("Detection exception: ") + e.what()}
+        };
     }
     #endif
     
@@ -251,7 +265,6 @@ json SystemInfo::detect_inference_engines(const std::string& device_type, const 
 
 
     // llamacpp-vulkan: Available for CPU, AMD iGPU, AMD dGPU, NVIDIA dGPU (NOT NPU)
-    if (device_type == "cpu" || device_type == "amd_igpu" ||
     if (device_type == "cpu" || device_type == "amd_igpu" ||
         device_type == "amd_dgpu" || device_type == "nvidia_dgpu") {
 
@@ -1639,42 +1652,50 @@ std::string LinuxSystemInfo::get_physical_memory() {
 CPUInfo MacOSSystemInfo::get_cpu_device() {
     CPUInfo cpu;
     cpu.available = false;
+    
+    // Initialize numeric values to -1 to distinguish between "0" and "Failed to fetch"
+    cpu.cores = -1;
+    cpu.threads = -1;
+    cpu.max_clock_speed_mhz = 0;
 
     size_t size;
     char buffer[256];
 
-    // Get CPU name
     size = sizeof(buffer);
     if (sysctlbyname("machdep.cpu.brand_string", buffer, &size, nullptr, 0) == 0) {
         cpu.name = buffer;
         cpu.available = true;
     } else {
-        cpu.error = "Failed to get CPU name";
-        return cpu;
+        cpu.name = "Unknown Apple Processor";
+        cpu.error = "sysctl failed for machdep.cpu.brand_string";
     }
 
-    // Get core count
     int cores = 0;
     size = sizeof(cores);
     if (sysctlbyname("hw.physicalcpu", &cores, &size, nullptr, 0) == 0) {
         cpu.cores = cores;
+    } else {
+        cpu.error += " | Failed to get physical cores";
     }
 
-    // Get thread count
     int threads = 0;
     size = sizeof(threads);
     if (sysctlbyname("hw.logicalcpu", &threads, &size, nullptr, 0) == 0) {
         cpu.threads = threads;
+    } else {
+        cpu.error += " | Failed to get logical threads";
     }
 
-    // Get max clock speed (in Hz, convert to MHz)
+    // 4. Get Max Clock Speed
     uint64_t freq = 0;
     size = sizeof(freq);
     if (sysctlbyname("hw.cpufrequency_max", &freq, &size, nullptr, 0) == 0) {
-        cpu.max_clock_speed_mhz = freq / 1000000;  // Hz to MHz
+        //Calculation of hz to mhz
+        cpu.max_clock_speed_mhz = (freq > 0) ? (uint32_t)(freq / 1000000) : 0;
+    } else {
+        cpu.error += " | Failed to get maximum frequency";
     }
 
-    // Detect inference engines
     cpu.inference_engines = detect_inference_engines("cpu", cpu.name);
 
     return cpu;
