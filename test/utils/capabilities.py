@@ -36,8 +36,8 @@ WRAPPED_SERVER_CAPABILITIES = {
             "completions": True,
             "completions_streaming": True,
             "completions_async": True,
-            "responses_api": False,  # Not supported
-            "responses_api_streaming": False,
+            "responses_api": True,
+            "responses_api_streaming": True,
             "embeddings": True,
             "reranking": True,
             "tool_calls": False,
@@ -62,8 +62,8 @@ WRAPPED_SERVER_CAPABILITIES = {
             "completions": True,
             "completions_streaming": True,
             "completions_async": True,
-            "responses_api": True,  # Supported
-            "responses_api_streaming": True,
+            "responses_api": False,  # Support is WIP
+            "responses_api_streaming": False,
             "embeddings": False,  # Not yet
             "reranking": False,  # Not yet
             "tool_calls": True,
