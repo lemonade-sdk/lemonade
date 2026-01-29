@@ -4272,63 +4272,94 @@ footer {
    Streaming Transcription Styles
    ======================================== */
 
-/* Transcription Mode Toggle */
-.transcription-mode-toggle {
-    display: flex;
-    justify-content: center;
-    gap: 8px;
-    padding: 12px 16px;
-    background: #0f0f0f;
-    border-bottom: 1px solid #333;
-}
-
-.transcription-mode-toggle .mode-button {
+/* Mic Button */
+.mic-button {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 16px;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
     background: transparent;
     border: 1px solid #333;
     border-radius: 6px;
     color: #888;
-    font-size: 13px;
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
-.transcription-mode-toggle .mode-button:hover {
+.mic-button:hover:not(:disabled):not(.recording) {
     border-color: #555;
     color: #ccc;
 }
 
-.transcription-mode-toggle .mode-button.active {
-    background: #1a1a1a;
-    border-color: #4caf50;
-    color: #4caf50;
+.mic-button.recording {
+    background: rgba(244, 67, 54, 0.15);
+    border-color: #f44336;
+    color: #f44336;
+    animation: mic-pulse 1.5s ease-in-out infinite;
 }
 
-.transcription-mode-toggle .mode-button svg {
-    opacity: 0.7;
+.mic-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
-.transcription-mode-toggle .mode-button.active svg {
-    opacity: 1;
+@keyframes mic-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
 }
 
-/* Streaming Transcription Container */
-.streaming-transcription-container {
+/* Live Recording Status */
+.live-status {
     display: flex;
-    flex-direction: column;
-    flex: 1;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+    color: #888;
+}
+
+.live-status .status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.live-status .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.live-status .dot.connected { background-color: #4caf50; }
+.live-status .dot.connecting { background-color: #ff9800; }
+.live-status .dot.speaking { background-color: #2196f3; }
+
+.live-status .level-meter {
+    height: 6px;
+    background-color: #121212;
+    border-radius: 3px;
     overflow: hidden;
+    min-width: 80px;
+    max-width: 160px;
+    flex: 1;
 }
 
-.streaming-model-selector {
-    display: flex;
-    justify-content: center;
-    padding: 12px 16px;
-    background: #0a0a0a;
-    border-bottom: 1px solid #222;
+.live-status .level-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.08s ease-out;
+}
+
+/* Transcription Error */
+.transcription-error {
+    padding: 8px 12px;
+    margin: 0 16px 8px;
+    background-color: rgba(244, 67, 54, 0.1);
+    border: 1px solid rgba(244, 67, 54, 0.3);
+    border-radius: 4px;
+    color: #f44336;
+    font-size: 13px;
 }
 
 /* Transcription History Items (shared styles) */
