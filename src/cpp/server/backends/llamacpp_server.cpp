@@ -185,6 +185,60 @@ LlamaCppServer::~LlamaCppServer() {
     unload();
 }
 
+// Helper to resolve "auto" backend mode - check ROCm first, fall back to Vulkan
+std::string LlamaCppServer::resolve_auto_backend() {
+    try {
+        auto system_info = lemon::create_system_info();
+
+        // Check iGPU first
+        auto igpu = system_info->get_amd_igpu_device();
+        if (igpu.available && !igpu.name.empty()) {
+            // Check if ROCm is supported on this AMD iGPU (based on architecture)
+            // We check hardware support, not whether binaries are installed
+            std::string arch = identify_rocm_arch_from_name(igpu.name);
+            if (!arch.empty()) {
+                std::cout << "[LlamaCpp] Auto mode: AMD iGPU detected (" << igpu.name
+                         << " - " << arch << "), will attempt ROCm (binaries will be downloaded if needed)" << std::endl;
+                return "rocm";
+            }
+        }
+
+        // Check dGPUs
+        auto dgpus = system_info->get_amd_dgpu_devices();
+        for (const auto& gpu : dgpus) {
+            if (gpu.available && !gpu.name.empty()) {
+                // Check if ROCm is supported on this AMD dGPU (based on architecture)
+                std::string arch = identify_rocm_arch_from_name(gpu.name);
+                if (!arch.empty()) {
+                    std::cout << "[LlamaCpp] Auto mode: AMD dGPU detected (" << gpu.name
+                             << " - " << arch << "), will attempt ROCm (binaries will be downloaded if needed)" << std::endl;
+                    return "rocm";
+                }
+            }
+        }
+
+        // Check if NVIDIA GPU is available (Vulkan support)
+        auto nvidia_dgpus = system_info->get_nvidia_dgpu_devices();
+        if (!nvidia_dgpus.empty() && nvidia_dgpus[0].available) {
+            std::cout << "[LlamaCpp] Auto mode: NVIDIA GPU detected (" << nvidia_dgpus[0].name
+                     << "), using Vulkan" << std::endl;
+            return "vulkan";
+        }
+
+        // Check if Vulkan is available on CPU (don't require binaries to be installed)
+        std::cout << "[LlamaCpp] Auto mode: No discrete GPU detected, will use Vulkan" << std::endl;
+        return "vulkan";
+
+    } catch (const std::exception& e) {
+        std::cerr << "[LlamaCpp] Auto mode: Error during device detection: " << e.what()
+                 << ", falling back to Vulkan" << std::endl;
+    }
+
+    // Default fallback to Vulkan
+    std::cout << "[LlamaCpp] Auto mode: Falling back to Vulkan" << std::endl;
+    return "vulkan";
+}
+
 // Helper to identify ROCm architecture from system
 static std::string identify_rocm_arch() {
     // Try to detect GPU architecture, default to gfx110X on any failure
@@ -224,18 +278,26 @@ static std::string get_install_directory(const std::string& backend) {
 }
 
 void LlamaCppServer::install(const std::string& backend) {
+    std::string install_backend = backend;
+
+    // Resolve "auto" mode: try ROCm first, fall back to Vulkan
+    if (install_backend == "auto") {
+        install_backend = resolve_auto_backend();
+        std::cout << "[LlamaCpp] Auto mode resolved to: " << install_backend << " for installation" << std::endl;
+    }
+
     std::string install_dir;
     std::string version_file;
     std::string backend_file;
 
-    std::string exe_path = find_external_llama_server(backend);
+    std::string exe_path = find_external_llama_server(install_backend);
     bool needs_install = exe_path.empty();
 
     // Get expected version from config file (or fallback to defaults)
-    std::string expected_version = get_llamacpp_version(backend);
+    std::string expected_version = get_llamacpp_version(install_backend);
 
     if (needs_install) {
-        install_dir = get_install_directory(backend);
+        install_dir = get_install_directory(install_backend);
         version_file = (fs::path(install_dir) / "version.txt").string();
         backend_file = (fs::path(install_dir) / "backend.txt").string();
 
@@ -254,7 +316,7 @@ void LlamaCppServer::install(const std::string& backend) {
                 std::getline(bf, installed_backend);
             }  // Files are closed here when ifstream objects go out of scope
 
-            if (installed_version != expected_version || installed_backend != backend) {
+            if (installed_version != expected_version || installed_backend != install_backend) {
                 std::cout << "[LlamaCpp] Upgrading from " << installed_version
                         << " to " << expected_version << std::endl;
                 needs_install = true;
@@ -264,7 +326,7 @@ void LlamaCppServer::install(const std::string& backend) {
     }
 
     if (needs_install) {
-        std::cout << "[LlamaCpp] Installing llama-server (backend: " << backend
+        std::cout << "[LlamaCpp] Installing llama-server (backend: " << install_backend
                  << ", version: " << expected_version << ")" << std::endl;
 
         // Create install directory
@@ -273,7 +335,7 @@ void LlamaCppServer::install(const std::string& backend) {
         // Determine download URL
         std::string repo, filename;
 
-        if (backend == "rocm") {
+        if (install_backend == "rocm") {
             // ROCm support from lemonade-sdk/llamacpp-rocm
             repo = "lemonade-sdk/llamacpp-rocm";
             std::string target_arch = identify_rocm_arch();
@@ -287,7 +349,7 @@ void LlamaCppServer::install(const std::string& backend) {
 #endif
             std::cout << "[LlamaCpp] Detected ROCm architecture: " << target_arch << std::endl;
 
-        } else if (backend == "metal") {
+        } else if (install_backend == "metal") {
             // Metal support for macOS Apple Silicon from ggml-org/llama.cpp
             repo = "ggml-org/llama.cpp";
 #ifdef __APPLE__
@@ -296,7 +358,7 @@ void LlamaCppServer::install(const std::string& backend) {
             throw std::runtime_error("Metal llamacpp only supported on macOS");
 #endif
 
-        } else if (backend == "cpu") {
+        } else if (install_backend == "cpu") {
             // CPU-only builds from ggml-org/llama.cpp
             repo = "ggml-org/llama.cpp";
 
@@ -334,13 +396,27 @@ void LlamaCppServer::install(const std::string& backend) {
         std::cout << "[LlamaCpp] Downloading from: " << url << std::endl;
         std::cout << "[LlamaCpp] Downloading to: " << archive_path << std::endl;
 
+        // For ROCm, disable retries to fail fast on 404 (build may not exist for this version/architecture)
+        utils::DownloadOptions download_opts;
+        if (install_backend == "rocm") {
+            download_opts.max_retries = 0;  // No retries for ROCm - fail fast on 404
+        }
+
         auto result = utils::HttpClient::download_file(
             url,
             archive_path,
-            utils::create_throttled_progress_callback()
+            utils::create_throttled_progress_callback(),
+            {},  // headers
+            download_opts
         );
 
         if (!result.success) {
+            // For ROCm, provide helpful message for 404
+            if (install_backend == "rocm" && result.http_code == 404) {
+                throw std::runtime_error("ROCm build for version " + expected_version +
+                    " not found (HTTP 404). The requested version may not be available for your architecture (" +
+                    identify_rocm_arch() + ").");
+            }
             throw std::runtime_error("Failed to download llama-server: " + result.error_message);
         }
 
@@ -390,7 +466,7 @@ void LlamaCppServer::install(const std::string& backend) {
         vf.close();
 
         std::ofstream bf(backend_file);
-        bf << backend;
+        bf << install_backend;
         bf.close();
 
 #ifndef _WIN32
@@ -427,10 +503,30 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string llamacpp_backend = options.get_option("llamacpp_backend");
     std::string llamacpp_args = options.get_option("llamacpp_args");
 
+    // Resolve "auto" mode: try ROCm first, fall back to Vulkan
+    bool is_auto_mode = (llamacpp_backend == "auto");
+    if (is_auto_mode) {
+        llamacpp_backend = resolve_auto_backend();
+        std::cout << "[LlamaCpp] Auto mode resolved to: " << llamacpp_backend << std::endl;
+    }
+
     bool use_gpu = (llamacpp_backend != "cpu");
 
     // Install llama-server if needed (use per-model backend)
-    install(llamacpp_backend);
+    // In auto mode, if we resolved to ROCm but installation fails, fall back to Vulkan
+    try {
+        install(llamacpp_backend);
+    } catch (const std::exception& e) {
+        if (is_auto_mode && llamacpp_backend == "rocm") {
+            std::cout << "[LlamaCpp] ROCm installation failed: " << e.what() << std::endl;
+            std::cout << "[LlamaCpp] Auto mode: falling back to Vulkan" << std::endl;
+            llamacpp_backend = "vulkan";
+            use_gpu = true;
+            install(llamacpp_backend);
+        } else {
+            throw;
+        }
+    }
 
     // Use pre-resolved GGUF path
     std::string gguf_path = model_info.resolved_path;

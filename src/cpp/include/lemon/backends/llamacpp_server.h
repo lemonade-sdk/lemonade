@@ -41,6 +41,7 @@ private:
     std::string get_llama_server_path(const std::string& backend);
     std::string find_executable_in_install_dir(const std::string& install_dir);
     std::string find_external_llama_server(const std::string& backend);
+    std::string resolve_auto_backend();
 };
 
 } // namespace backends
