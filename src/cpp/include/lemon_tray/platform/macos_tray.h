@@ -25,14 +25,16 @@ public:
     void set_icon(const std::string& icon_path) override;
     void set_tooltip(const std::string& tooltip) override;
     void set_ready_callback(std::function<void()> callback) override;
-
+    void set_log_level(const std::string& log_level) override;
+    
 private:
-    // TODO: Add macOS-specific implementation details
-    // Will use NSStatusBar and NSMenu via Objective-C++
     void* impl_; // Pointer to Objective-C implementation
+    std::string tooltip_;
     std::string app_name_;
     std::string icon_path_;
+    std::string log_level_;
     std::function<void()> ready_callback_;
+    bool should_exit_;
 };
 
 } // namespace lemon_tray

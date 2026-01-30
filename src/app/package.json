@@ -89,6 +89,7 @@
     },
     "electronLanguages": ["en-US"],
     "mac": {
+      "icon": "../../docs/assets/logo_512.png",
       "target": [
         "dmg"
       ],
