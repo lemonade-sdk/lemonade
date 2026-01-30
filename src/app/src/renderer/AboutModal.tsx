@@ -12,7 +12,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (isOpen && window.api?.getVersion) {
       setVersion('Loading...');
-      
+
       // Retry logic to handle backend startup delay
       const fetchVersionWithRetry = async (retries = 3, delay = 1000) => {
         for (let i = 0; i < retries; i++) {
@@ -27,7 +27,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
         }
         setVersion('Unknown (Backend not running)');
       };
-      
+
       fetchVersionWithRetry();
     }
   }, [isOpen]);
@@ -83,4 +83,3 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
 };
 
 export default AboutModal;
-

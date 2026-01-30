@@ -129,7 +129,7 @@ std::string WhisperServer::find_external_whisper_server(const std::string& backe
     }
 
     std::string whisper_bin = std::string(whisper_bin_env);
-    
+
     return fs::exists(whisper_bin) ? whisper_bin : "";
 }
 

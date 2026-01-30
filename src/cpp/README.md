@@ -81,12 +81,12 @@ cmake --build . --config Release -j
 
 ### Build Outputs
 
-- **Windows:** 
+- **Windows:**
   - `build/Release/lemonade-router.exe` - HTTP server
   - `build/Release/lemonade-server.exe` - Console CLI client
   - `build/Release/lemonade-tray.exe` - GUI tray launcher
   - `build/Release/lemonade-log-viewer.exe` - Log file viewer
-- **Linux/macOS:** 
+- **Linux/macOS:**
   - `build/lemonade-router` - HTTP server
   - `build/lemonade-server` - Console CLI client
 - **Resources:** Automatically copied to `build/Release/resources/` (web UI files, model registry, backend version configuration)
@@ -252,7 +252,7 @@ cpack -G RPM
 
 **Package Output:**
 
-Creates `lemonade-server-minimal-<VERSION>.x86_64.rpm` (e.g., `lemonade-server-minimal-9.1.2.x86_64.rpm`) and 
+Creates `lemonade-server-minimal-<VERSION>.x86_64.rpm` (e.g., `lemonade-server-minimal-9.1.2.x86_64.rpm`) and
 resources are installed as per DEB version above
 
 **Installation:**
@@ -311,7 +311,7 @@ Same as .deb above
 > Cmake: Select a Kit
 # Select a kit or Scan for kit. (Two options should be available gcc or clang)
 > Cmake: Configure
-# Optional commands are: 
+# Optional commands are:
 > Cmake: Build Target
 # use this to select a cmake target to build
 > Cmake: Set Launch/Debug target

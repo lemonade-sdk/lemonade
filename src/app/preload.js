@@ -51,6 +51,6 @@ contextBridge.exposeInMainWorld('api', {
     return () => {
       ipcRenderer.removeListener(channel, handler);
     };
-  }
+  },
+  getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
 });
-

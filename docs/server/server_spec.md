@@ -594,7 +594,7 @@ Image Generation API. You provide a text prompt and receive a generated image. T
 >
 > **Performance:** CPU inference takes ~4-5 minutes per image. GPU (Vulkan) is faster but may have compatibility issues with some hardware.
 
-#### Parameters 
+#### Parameters
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
@@ -1100,7 +1100,7 @@ curl http://localhost:8000/api/v1/health
       "recipe": "oga-hybrid",
       "recipe_options": {
         "ctx_size": 4096
-      },      
+      },
       "backend_url": "http://127.0.0.1:8001/v1"
     },
     {

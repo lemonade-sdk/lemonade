@@ -15,7 +15,7 @@ struct ServerConfig {
     std::string log_level = "info";
     json recipe_options = json::object();
     std::string extra_models_dir = "";  // Secondary directory for GGUF model discovery
-    
+
     // Multi-model support: Max loaded models by type
     int max_llm_models = 1;
     int max_embedding_models = 1;
@@ -51,11 +51,11 @@ struct TrayConfig {
 class CLIParser {
 public:
     CLIParser();
-    
+
     // Parse command line arguments
     // Returns: 0 if should continue, exit code (may be 0) if should exit
     int parse(int argc, char** argv);
-    
+
     // Get server configuration
     ServerConfig get_config() const { return config_; }
 #ifdef LEMONADE_TRAY
@@ -64,7 +64,7 @@ public:
 #endif
     // Check if we should continue (false means exit cleanly, e.g., after --help)
     bool should_continue() const { return should_continue_; }
-    
+
     // Get exit code (only valid if should_continue() is false)
     int get_exit_code() const { return exit_code_; }
 private:

@@ -13,10 +13,10 @@ import platform
 def get_default_server_binary():
     """
     Get the default server binary path from the CMake build directory.
-    
+
     This is the single source of truth for the default server binary path.
     All test files should import this function rather than computing the path themselves.
-    
+
     Returns:
         Path to lemonade-server binary in the build directory.
     """
@@ -53,6 +53,14 @@ STANDARD_MESSAGES = [
     {"role": "system", "content": "You are a helpful assistant."},
     {"role": "user", "content": "Who won the world series in 2020?"},
     {"role": "assistant", "content": "The LA Dodgers won in 2020."},
+    {"role": "user", "content": "What was the best play?"},
+]
+
+# Standard test messages for responses
+RESPONSES_MESSAGES = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Who won the world series in 2020?"},
+    {"role": "assistant", "type": "message", "content": [{"text": "The LA Dodgers won in 2020.", "type": "output_text"}]},
     {"role": "user", "content": "What was the best play?"},
 ]
 

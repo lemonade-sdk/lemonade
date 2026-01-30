@@ -40,7 +40,7 @@ class ServerManager {
 public:
     ServerManager(const std::string& host, int port);
     ~ServerManager();
-    
+
     // Server lifecycle
     bool start_server(
         const std::string& server_binary_path,
@@ -58,16 +58,16 @@ public:
         int max_image_models,
         const std::string& extra_models_dir
     );
-    
+
     bool stop_server();
     bool restart_server();
     bool is_server_running() const;
-    
+
     // Configuration
     void set_port(int port);
     void set_context_size(int ctx_size);
     bool set_log_level(LogLevel level);
-    
+
     int get_port() const { return port_; }
     // Translate bind addresses to connection addresses.
     // "0.0.0.0" is a bind-all address that isn't valid for connections.
@@ -76,14 +76,14 @@ public:
     std::string get_connection_host() const {
         return (host_ == "0.0.0.0" || host_ == "localhost") ? "127.0.0.1" : host_;
     }
-    
+
     // API communication (returns JSON or throws exception)
     nlohmann::json get_health();
     nlohmann::json get_models();
     bool load_model(const std::string& model_name, const nlohmann::json& recipe_options=nlohmann::json::object(), bool save_options=false);
     bool unload_model();  // Unload all models
     bool unload_model(const std::string& model_name);  // Unload specific model
-    
+
     // HTTP communication (public for custom requests)
     std::string make_http_request(
         const std::string& endpoint,
@@ -92,20 +92,20 @@ public:
         int timeout_seconds = 5
     );
     httplib::Client make_http_client(int timeout_seconds, int connection_timeout);
-    
+
 private:
     // Platform-specific process management
     bool spawn_process();
     bool terminate_process();
     bool terminate_router_tree();  // Kills router and its children (but NOT parent tray app)
     bool is_process_alive() const;
-    
+
 #ifndef _WIN32
     // Linux-specific PID file management
     void write_pid_file();
     void remove_pid_file();
 #endif
-    
+
     // Member variables
     pid_t server_pid_;
     std::string server_binary_path_;
@@ -124,11 +124,10 @@ private:
     bool show_console_;
     bool is_ephemeral_;  // Suppress output for ephemeral servers
     std::atomic<bool> server_started_;
-    
+
 #ifdef _WIN32
     HANDLE process_handle_;
 #endif
 };
 
 } // namespace lemon_tray
-

@@ -66,7 +66,7 @@ const apps = [
 const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
   const galleryRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  
+
   // Drag state
   const [isDragging, setIsDragging] = useState(false);
   const [startX, setStartX] = useState(0);
@@ -76,7 +76,7 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
   const [translateX, setTranslateX] = useState(0);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
-  
+
   // Track mouse positions for velocity calculation
   const lastMouseX = useRef(0);
   const lastTime = useRef(0);
@@ -100,11 +100,11 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
   const wrapPosition = useCallback((pos: number) => {
     const setWidth = getSetWidth();
     if (setWidth === 0) return pos;
-    
+
     // Keep position within bounds of -setWidth to 0 for seamless loop
     while (pos < -setWidth * 2) pos += setWidth;
     while (pos > 0) pos -= setWidth;
-    
+
     return pos;
   }, [getSetWidth]);
 
@@ -123,11 +123,11 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
         // Blend towards drift speed instead of zero
         const diff = prev - driftSpeed;
         const newVelocity = driftSpeed + diff * friction;
-        
+
         setTranslateX(pos => wrapPosition(pos + newVelocity));
         return newVelocity;
       });
-      
+
       animationFrame.current = requestAnimationFrame(animate);
     };
 
@@ -145,11 +145,11 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
     const target = e.target as HTMLElement;
     const linkElement = target.tagName === 'A' ? target as HTMLAnchorElement : target.closest('a');
     clickTarget.current = linkElement;
-    
+
     if (animationFrame.current) {
       cancelAnimationFrame(animationFrame.current);
     }
-    
+
     setHasInteracted(true);
     setIsDragging(true);
     setIsSpinning(false);
@@ -166,12 +166,12 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
 
     const x = e.clientX;
     const walk = x - startX;
-    
+
     // Mark as dragged if moved more than a few pixels
     if (Math.abs(walk) > 5) {
       hasDragged.current = true;
     }
-    
+
     const newTranslate = wrapPosition(scrollLeft + walk);
     setTranslateX(newTranslate);
 
@@ -182,20 +182,20 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
       const dx = x - lastMouseX.current;
       const currentVelocity = dx / dt * 16; // Normalize to ~60fps
       velocityHistory.current.push(currentVelocity);
-      
+
       // Keep only last 5 velocity samples
       if (velocityHistory.current.length > 5) {
         velocityHistory.current.shift();
       }
     }
-    
+
     lastMouseX.current = x;
     lastTime.current = now;
   }, [isDragging, startX, scrollLeft, wrapPosition]);
 
   const handleMouseUp = useCallback(() => {
     if (!isDragging) return;
-    
+
     setIsDragging(false);
 
     // If user clicked on a link and didn't drag, navigate to it
@@ -204,13 +204,13 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
       clickTarget.current = null;
       return;
     }
-    
+
     clickTarget.current = null;
 
     // Calculate average velocity from history
     if (velocityHistory.current.length > 0) {
       const avgVelocity = velocityHistory.current.reduce((a, b) => a + b, 0) / velocityHistory.current.length;
-      
+
       // Apply velocity boost if significant, otherwise just let drift take over
       if (Math.abs(avgVelocity) > 2) {
         setVelocity(avgVelocity * 1.5); // Boost for more satisfying spin
@@ -233,7 +233,7 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
     if (isDragging) {
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
-      
+
       return () => {
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
@@ -246,8 +246,8 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
   return (
     <div className="center-panel">
       {onClose && (
-        <button 
-          className="center-panel-close-btn" 
+        <button
+          className="center-panel-close-btn"
           onClick={onClose}
           title="Close panel"
         >
@@ -263,15 +263,15 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
         <p className="marketplace-subtitle">
           Quick start for your favorite AI apps
         </p>
-        
-        <div 
+
+        <div
           ref={containerRef}
           className={`apps-gallery-container ${hasInteracted ? 'interactive' : ''}`}
           onMouseDown={handleMouseDown}
           onMouseEnter={() => setIsHovering(true)}
           onMouseLeave={() => setIsHovering(false)}
         >
-          <div 
+          <div
             ref={galleryRef}
             className={`apps-gallery ${isDragging ? 'dragging' : ''}`}
             style={{
@@ -304,4 +304,3 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
 };
 
 export default CenterPanel;
-

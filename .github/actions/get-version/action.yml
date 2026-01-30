@@ -12,16 +12,15 @@ runs:
       shell: bash
       run: |
         set -e
-        
+
         # Extract version from CMakeLists.txt
         VERSION=$(grep -Po 'project\(lemon_cpp VERSION \K[0-9]+\.[0-9]+\.[0-9]+' src/cpp/CMakeLists.txt)
-        
+
         if [ -z "$VERSION" ]; then
           echo "ERROR: Could not extract version from CMakeLists.txt"
           exit 1
         fi
-        
+
         echo "Extracted version: $VERSION"
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "LEMONADE_VERSION=$VERSION" >> $GITHUB_ENV
-

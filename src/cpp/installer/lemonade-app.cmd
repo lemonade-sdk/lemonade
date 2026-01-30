@@ -4,4 +4,3 @@
 :: Forwards all command-line arguments (e.g., --base-url)
 
 "%~dp0..\app\Lemonade.exe" %*
-
