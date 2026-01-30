@@ -71,13 +71,22 @@
 }
 
 - (void)terminateApp:(id)sender {
-    // Clean up status item first
     if (self.statusItem) {
         [[NSStatusBar systemStatusBar] removeStatusItem:self.statusItem];
         self.statusItem = nil;
     }
-    // Force exit as required for Accessory apps
-    exit(0); 
+
+    // 2. Notify any observers we're shutting down
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"AppWillTerminate" object:nil];
+
+    // 3. Give cleanup handlers a moment to run
+    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+
+    // 4. Force flush any pending I/O
+    fflush(stdout);
+    fflush(stderr);
+
+    exit (0);
 }
 
 #pragma clang diagnostic push

@@ -154,8 +154,12 @@ bool LemonadeServiceManager::ExecuteAsRoot(const std::string& command) {
 
 
 void LemonadeServiceManager::enableServer() {
-    runLaunchctlCommand("enable", getTargetSpecifier(serverServiceID));
+    bool success = runLaunchctlCommand("enable", getTargetSpecifier(serverServiceID));
+    if(!success) {
+        NSLog(@"[Tray] Server could not be enable successfully, please try again or view the logs and file a issue/report.");
+    }
 }
+
 
 void LemonadeServiceManager::disableServer() {
     std::string target = getTargetSpecifier(serverServiceID);
