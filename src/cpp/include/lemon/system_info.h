@@ -13,7 +13,6 @@ struct DeviceInfo {
     std::string name;
     bool available = false;
     std::string error;
-    json inference_engines;
 };
 
 struct CPUInfo : DeviceInfo {
@@ -64,9 +63,6 @@ public:
     // Common methods (can be overridden for detailed platform info)
     virtual std::string get_os_version();
 
-    // Helper to detect inference engines for a device (legacy, used internally)
-    static json detect_inference_engines(const std::string& device_type, const std::string& device_name);
-
     // Build the recipes section for system_info
     // If cached_devices is provided, uses it instead of re-querying hardware
     json build_recipes_info(const json& cached_devices = json::object());
@@ -108,8 +104,6 @@ public:
     static bool is_ryzenai_serve_available();
 
     // Device support detection
-    static bool check_vulkan_support();
-    static bool check_rocm_support(const std::string& device_name);
     static std::string get_rocm_arch();
 
     // Generate human-readable error message for unsupported backend

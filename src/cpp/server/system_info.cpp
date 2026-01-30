@@ -467,173 +467,6 @@ std::string SystemInfo::get_os_version() {
     #endif
 }
 
-json SystemInfo::detect_inference_engines(const std::string& device_type, const std::string& device_name) {
-    json engines;
-
-    // llamacpp-vulkan: Available for CPU, AMD iGPU, AMD dGPU, NVIDIA dGPU (NOT NPU)
-    if (device_type == "cpu" || device_type == "amd_igpu" ||
-        device_type == "amd_dgpu" || device_type == "nvidia_dgpu") {
-
-        bool device_supported = (device_type == "cpu") || check_vulkan_support();
-
-        if (!device_supported) {
-            engines["llamacpp-vulkan"] = {
-                {"supported", false},
-                {"available", false},
-                {"error", "vulkan not available"}
-            };
-        } else if (!is_llamacpp_installed("vulkan")) {
-            engines["llamacpp-vulkan"] = {
-                {"supported", true},
-                {"available", false},
-                {"error", "vulkan binaries not installed yet"}
-            };
-        } else {
-            engines["llamacpp-vulkan"] = {
-                {"supported", true},
-                {"available", true},
-                {"version", get_llamacpp_version("vulkan")},
-                {"backend", "vulkan"}
-            };
-        }
-    }
-
-    // whispercpp: Available for CPU only (audio transcription)
-    if (device_type == "cpu") {
-        #ifdef _WIN32
-        // Whisper.cpp is currently only supported on Windows
-        if (!is_whispercpp_installed()) {
-            engines["whispercpp"] = {
-                {"supported", true},
-                {"available", false},
-                {"error", "whispercpp binaries not installed yet"}
-            };
-        } else {
-            engines["whispercpp"] = {
-                {"supported", true},
-                {"available", true},
-                {"version", get_whispercpp_version()}
-            };
-        }
-        #else
-        // Not yet supported on Linux/macOS
-        engines["whispercpp"] = {
-            {"supported", false},
-            {"available", false},
-            {"error", "whispercpp is only supported on Windows"}
-        };
-        #endif
-    }
-
-    // sd-cpp: Available for CPU only (image generation)
-    if (device_type == "cpu") {
-        #if defined(_WIN32) || defined(__linux__)
-        // stable-diffusion.cpp is supported on Windows and Linux
-        if (!is_sdcpp_installed()) {
-            engines["sd-cpp"] = {
-                {"supported", true},
-                {"available", false},
-                {"error", "sd-cpp binaries not installed yet"}
-            };
-        } else {
-            engines["sd-cpp"] = {
-                {"supported", true},
-                {"available", true},
-                {"version", get_sdcpp_version()}
-            };
-        }
-        #else
-        // Not yet supported on macOS
-        engines["sd-cpp"] = {
-            {"supported", false},
-            {"available", false},
-            {"error", "sd-cpp is not yet supported on macOS"}
-        };
-        #endif
-    }
-
-    // llamacpp-rocm: Available for AMD iGPU and AMD dGPU only
-    if (device_type == "amd_igpu" || device_type == "amd_dgpu") {
-        bool device_supported = check_rocm_support(device_name);
-
-        if (!device_supported) {
-            engines["llamacpp-rocm"] = {
-                {"supported", false},
-                {"available", false},
-                {"error", "rocm not available"}
-            };
-        } else if (!is_llamacpp_installed("rocm")) {
-            engines["llamacpp-rocm"] = {
-                {"supported", true},
-                {"available", false},
-                {"error", "rocm binaries not installed yet"}
-            };
-        } else {
-            engines["llamacpp-rocm"] = {
-                {"supported", true},
-                {"available", true},
-                {"version", get_llamacpp_version("rocm")},
-                {"backend", "rocm"}
-            };
-        }
-    }
-
-    // FLM and OGA: Only available for NPU
-    if (device_type == "npu") {
-        #ifdef _WIN32
-        // FLM: Windows only
-        bool flm_available = false;
-
-        // Check common Windows locations
-        for (const auto& path : {"C:\\Program Files\\AMD\\FLM\\flm.exe",
-                                  "C:\\Program Files (x86)\\AMD\\FLM\\flm.exe"}) {
-            if (fs::exists(path)) {
-                flm_available = true;
-                break;
-            }
-        }
-
-        // Check if flm is in PATH
-        if (!flm_available) {
-            FILE* pipe = _popen("where flm 2>NUL", "r");
-            if (pipe) {
-                char buffer[256];
-                flm_available = (fgets(buffer, sizeof(buffer), pipe) != nullptr);
-                _pclose(pipe);
-            }
-        }
-
-        engines["flm"] = {
-            {"supported", true},  // FLM is supported on Windows NPU
-            {"available", flm_available},
-            {"version", flm_available ? get_flm_version() : "unknown"}
-        };
-
-        // OGA (RyzenAI-Server): Supported on Windows NPU
-        bool oga_available = is_ryzenai_serve_available();
-        engines["oga"] = {
-            {"supported", true},
-            {"available", oga_available}
-        };
-        #else
-        // On Linux, NPU inference engines are not yet supported
-        engines["flm"] = {
-            {"supported", false},
-            {"available", false},
-            {"error", "FLM is only supported on Windows"}
-        };
-
-        engines["oga"] = {
-            {"supported", false},
-            {"available", false},
-            {"error", "OGA is only supported on Windows"}
-        };
-        #endif
-    }
-
-    return engines;
-}
-
 json SystemInfo::build_recipes_info(const json& cached_devices) {
     json recipes;
 
@@ -1000,13 +833,8 @@ std::vector<SystemInfo::RecipeStatus> SystemInfo::get_all_recipe_statuses() {
     return statuses;
 }
 
-std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
-    // Try to find version.txt in the llamacpp directory for specific backend
-    // Location: {cache_dir}/bin/llama/{backend}/version.txt
-
-    fs::path bin_dir = utils::get_downloaded_bin_dir();
-    fs::path version_file = bin_dir / "llama" / backend / "version.txt";
-
+// Helper to read version from a version.txt file
+static std::string read_version_file(const fs::path& version_file) {
     if (fs::exists(version_file)) {
         std::ifstream file(version_file);
         if (file.is_open()) {
@@ -1021,83 +849,27 @@ std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
             }
         }
     }
-
     return "unknown";
+}
+
+std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    return read_version_file(bin_dir / "llama" / backend / "version.txt");
 }
 
 std::string SystemInfo::get_whispercpp_version() {
-    // Try to find version.txt in the whisper directory
-    // Location: {cache_dir}/bin/whisper/version.txt
-
     fs::path bin_dir = utils::get_downloaded_bin_dir();
-    fs::path version_file = bin_dir / "whisper" / "version.txt";
-
-    if (fs::exists(version_file)) {
-        std::ifstream file(version_file);
-        if (file.is_open()) {
-            std::string version;
-            std::getline(file, version);
-            file.close();
-            // Trim whitespace
-            size_t start = version.find_first_not_of(" \t\n\r");
-            size_t end = version.find_last_not_of(" \t\n\r");
-            if (start != std::string::npos && end != std::string::npos) {
-                return version.substr(start, end - start + 1);
-            }
-        }
-    }
-
-    return "unknown";
+    return read_version_file(bin_dir / "whisper" / "version.txt");
 }
 
 std::string SystemInfo::get_sdcpp_version() {
-    // Try to find version.txt in the sd-cpp directory
-    // Location: {cache_dir}/bin/sd-cpp/version.txt
-
     fs::path bin_dir = utils::get_downloaded_bin_dir();
-    fs::path version_file = bin_dir / "sd-cpp" / "version.txt";
-
-    if (fs::exists(version_file)) {
-        std::ifstream file(version_file);
-        if (file.is_open()) {
-            std::string version;
-            std::getline(file, version);
-            file.close();
-            // Trim whitespace
-            size_t start = version.find_first_not_of(" \t\n\r");
-            size_t end = version.find_last_not_of(" \t\n\r");
-            if (start != std::string::npos && end != std::string::npos) {
-                return version.substr(start, end - start + 1);
-            }
-        }
-    }
-
-    return "unknown";
+    return read_version_file(bin_dir / "sd-cpp" / "version.txt");
 }
 
 std::string SystemInfo::get_oga_version() {
-    // Try to find version.txt in the ryzenai-server directory
-    // Location: {cache_dir}/bin/ryzenai-server/version.txt
-
     fs::path bin_dir = utils::get_downloaded_bin_dir();
-    fs::path version_file = bin_dir / "ryzenai-server" / "version.txt";
-
-    if (fs::exists(version_file)) {
-        std::ifstream file(version_file);
-        if (file.is_open()) {
-            std::string version;
-            std::getline(file, version);
-            file.close();
-            // Trim whitespace
-            size_t start = version.find_first_not_of(" \t\n\r");
-            size_t end = version.find_last_not_of(" \t\n\r");
-            if (start != std::string::npos && end != std::string::npos) {
-                return version.substr(start, end - start + 1);
-            }
-        }
-    }
-
-    return "unknown";
+    return read_version_file(bin_dir / "ryzenai-server" / "version.txt");
 }
 
 bool SystemInfo::is_llamacpp_installed(const std::string& backend) {
@@ -1166,49 +938,6 @@ bool SystemInfo::is_sdcpp_installed() {
 #endif
 
     return fs::exists(exe_path);
-}
-
-bool SystemInfo::check_vulkan_support() {
-    // Check if Vulkan is available
-    #ifdef _WIN32
-    // Check for Vulkan DLL on Windows
-    if (fs::exists("C:\\Windows\\System32\\vulkan-1.dll") ||
-        fs::exists("C:\\Windows\\SysWOW64\\vulkan-1.dll")) {
-        return true;
-    }
-    #else
-    // Check for Vulkan libraries on Linux
-    std::vector<std::string> vulkan_lib_paths = {
-        "/usr/lib/x86_64-linux-gnu/libvulkan.so.1",
-        "/usr/lib/libvulkan.so.1",
-        "/lib/x86_64-linux-gnu/libvulkan.so.1"
-    };
-    for (const auto& path : vulkan_lib_paths) {
-        if (fs::exists(path)) {
-            return true;
-        }
-    }
-    #endif
-
-    // Try vulkaninfo command
-    #ifdef _WIN32
-    FILE* pipe = _popen("vulkaninfo --summary 2>NUL", "r");
-    #else
-    FILE* pipe = popen("vulkaninfo --summary 2>/dev/null", "r");
-    #endif
-
-    if (pipe) {
-        char buffer[128];
-        bool has_output = (fgets(buffer, sizeof(buffer), pipe) != nullptr);
-        #ifdef _WIN32
-        _pclose(pipe);
-        #else
-        pclose(pipe);
-        #endif
-        return has_output;
-    }
-
-    return false;
 }
 
 // Helper to identify ROCm architecture from GPU name
@@ -1311,13 +1040,6 @@ std::string identify_npu_arch(const std::string& processor_name) {
     // Future: Add XDNA3, XDNA4, etc. as new architectures are released
 
     return "";
-}
-
-bool SystemInfo::check_rocm_support(const std::string& device_name) {
-    // Check if device supports ROCm by attempting to identify the architecture
-    // This matches the Python implementation which uses identify_rocm_arch_from_name
-    std::string arch = identify_rocm_arch_from_name(device_name);
-    return !arch.empty();
 }
 
 std::string SystemInfo::get_rocm_arch() {
@@ -1442,9 +1164,6 @@ CPUInfo WindowsSystemInfo::get_cpu_device() {
         cpu.threads = wmi::get_property_int(pObj, L"NumberOfLogicalProcessors");
         cpu.max_clock_speed_mhz = wmi::get_property_int(pObj, L"MaxClockSpeed");
         cpu.available = true;
-
-        // Detect inference engines for CPU
-        cpu.inference_engines = detect_inference_engines("cpu", cpu.name);
     });
 
     if (!cpu.available) {
@@ -1517,9 +1236,6 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_dgpu_devices() {
                     gpu.vram_gb = adapter_ram / (1024.0 * 1024.0 * 1024.0);
                 }
 
-                // Detect inference engines
-                gpu.inference_engines = detect_inference_engines("nvidia_dgpu", name);
-
                 gpus.push_back(gpu);
             }
         }
@@ -1577,9 +1293,6 @@ NPUInfo WindowsSystemInfo::get_npu_device() {
     if (!driver_version.empty()) {
         npu.power_mode = get_npu_power_mode();
         npu.available = true;
-
-        // Detect inference engines
-        npu.inference_engines = detect_inference_engines("npu", "AMD NPU");
     } else {
         npu.error = "No NPU device found";
     }
@@ -1647,10 +1360,6 @@ std::vector<GPUInfo> WindowsSystemInfo::detect_amd_gpus(const std::string& gpu_t
                         gpu.vram_gb = vram_gb;
                     }
                 }
-
-                // Detect inference engines
-                std::string device_type = is_integrated ? "amd_igpu" : "amd_dgpu";
-                gpu.inference_engines = detect_inference_engines(device_type, name);
 
                 gpus.push_back(gpu);
             }
@@ -2065,9 +1774,6 @@ CPUInfo LinuxSystemInfo::get_cpu_device() {
         return cpu;
     }
 
-    // Detect inference engines
-    cpu.inference_engines = detect_inference_engines("cpu", cpu.name);
-
     return cpu;
 }
 
@@ -2152,9 +1858,6 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_dgpu_devices() {
                     gpu.vram_gb = vram;
                 }
 
-                // Detect inference engines
-                gpu.inference_engines = detect_inference_engines("nvidia_dgpu", name);
-
                 gpus.push_back(gpu);
             }
         }
@@ -2175,8 +1878,6 @@ NPUInfo LinuxSystemInfo::get_npu_device() {
     npu.name = "AMD NPU";
     npu.available = false;
     npu.error = "NPU detection not yet implemented for Linux";
-    // Still detect inference engines to show what's not supported
-    npu.inference_engines = detect_inference_engines("npu", "AMD NPU");
     return npu;
 }
 
@@ -2236,10 +1937,6 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
         // Get VRAM and GTT for GPUs
         gpu.vram_gb = get_amd_vram(drm_render_minor);
         gpu.virtual_gb = get_amd_gtt(drm_render_minor);
-
-        // Detect inference engines
-        std::string device_type = is_integrated ? "amd_igpu" : "amd_dgpu";
-        gpu.inference_engines = detect_inference_engines(device_type, gfx_target_version);
 
         gpus.push_back(gpu);
     }
