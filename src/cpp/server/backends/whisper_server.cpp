@@ -221,7 +221,6 @@ void WhisperServer::install(const std::string& backend) {
         } else {
             throw std::runtime_error("[WhisperServer] Only CPU and NPU backends are supported for automatic installation");
         }
-    }
 
         std::string url = "https://github.com/" + repo + "/releases/download/" +
                          expected_version + "/" + filename;
