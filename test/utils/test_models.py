@@ -96,7 +96,7 @@ MULTI_MODEL_SECONDARY = "Tiny-Test-Model-GGUF"
 MULTI_MODEL_TERTIARY = "Qwen3-0.6B-GGUF"
 
 # Whisper test configuration
-WHISPER_MODEL = "Whisper-Small"
+WHISPER_MODEL = "Whisper-Tiny"
 TEST_AUDIO_URL = (
     "https://raw.githubusercontent.com/lemonade-sdk/assets/main/audio/test_speech.wav"
 )

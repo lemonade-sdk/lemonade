@@ -263,7 +263,6 @@ void WhisperServer::install(const std::string& backend) {
             throw std::runtime_error("Downloaded file is too small, likely corrupted");
         }
 
-        // Extract using BackendUtils (handles tar/PowerShell/unzip automatically)
         if (!backends::BackendUtils::extract_archive(zip_path, install_dir, "WhisperServer")) {
             fs::remove(zip_path);
             fs::remove_all(install_dir);
@@ -383,6 +382,11 @@ void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
         std::cout << "[WhisperServer] NPU cache ready at: " << cache_path << std::endl;
         
     } catch (const std::exception& e) {
+        if (fs::exists(cache_path)) {
+            fs::remove(cache_path);
+            std::cout << "[WhisperServer] Cleaned up partial cache file" << std::endl;
+        }
+
         std::cerr << "[WhisperServer] Warning: Failed to download NPU cache: " << e.what() << std::endl;
         std::cerr << "[WhisperServer] Continuing without NPU cache (may cause runtime errors)" << std::endl;
     }
