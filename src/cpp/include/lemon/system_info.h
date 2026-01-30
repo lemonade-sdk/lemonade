@@ -63,27 +63,57 @@ public:
 
     // Common methods (can be overridden for detailed platform info)
     virtual std::string get_os_version();
-    static std::vector<std::string> get_python_packages();
 
-    // Helper to detect inference engines for a device (public so it can be called after loading from cache)
+    // Helper to detect inference engines for a device (legacy, used internally)
     static json detect_inference_engines(const std::string& device_type, const std::string& device_name);
+
+    // Build the recipes section for system_info
+    // If cached_devices is provided, uses it instead of re-querying hardware
+    json build_recipes_info(const json& cached_devices = json::object());
 
     // Check if a recipe is supported on the current system
     // Returns empty string if supported, or a reason string if not supported
     static std::string check_recipe_supported(const std::string& recipe, const json& system_info);
 
-protected:
-    // Helper methods for version detection
+    // Get list of supported backends for a recipe
+    static std::vector<std::string> get_supported_backends(const std::string& recipe);
+
+    // Get all recipes with their support status
+    // Returns a vector of {recipe_name, supported, available, error_message, backends}
+    struct BackendStatus {
+        std::string name;
+        bool supported;
+        bool available;
+        std::string version;
+        std::string error;
+    };
+    struct RecipeStatus {
+        std::string name;
+        bool supported;
+        bool available;
+        std::string error;
+        std::vector<BackendStatus> backends;
+    };
+    static std::vector<RecipeStatus> get_all_recipe_statuses();
+
+    // Version and installation detection (public for use by backends and helpers)
     static std::string get_llamacpp_version(const std::string& backend);
     static std::string get_whispercpp_version();
     static std::string get_sdcpp_version();
+    static std::string get_oga_version();
+    static std::string get_flm_version();
     static bool is_llamacpp_installed(const std::string& backend);
     static bool is_whispercpp_installed();
     static bool is_sdcpp_installed();
+    static bool is_ryzenai_serve_available();
+
+    // Device support detection
     static bool check_vulkan_support();
     static bool check_rocm_support(const std::string& device_name);
-    static std::string get_flm_version();
-    static bool is_ryzenai_serve_available();
+    static std::string get_rocm_arch();
+
+    // Generate human-readable error message for unsupported backend
+    static std::string get_unsupported_backend_error(const std::string& recipe, const std::string& backend);
 };
 
 // Windows implementation
@@ -187,7 +217,7 @@ public:
     std::string get_cache_file_path() const { return cache_file_path_; }
 
     // High-level function: Get complete system info (with cache handling and friendly messages)
-    static json get_system_info_with_cache(bool verbose = false);
+    static json get_system_info_with_cache();
 
 private:
     std::string cache_file_path_;

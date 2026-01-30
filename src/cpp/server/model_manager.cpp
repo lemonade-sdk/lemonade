@@ -1165,7 +1165,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 #endif
 
     // Get hardware info once (this will print the message)
-    json system_info = SystemInfoCache::get_system_info_with_cache(false);
+    json system_info = SystemInfoCache::get_system_info_with_cache();
     json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
 
     // Check backend availability (passing hardware info)
@@ -1236,30 +1236,11 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         bool filter_out = false;
         std::string filter_reason;
 
-        // Filter FLM models based on NPU availability
-        if (recipe == "flm") {
-            if (!flm_available) {
-                filter_out = true;
-                filter_reason = "NPU models require AMD Ryzen AI 300- and 400-series processors with XDNA2 NPUs running Windows 11. "
-                               "Detected processor: " + processor + ". "
-                               "Detected operating system: " + os_version + ".";
-            }
-        }
-
-        // Filter OGA models based on NPU availability
-        if (recipe == "oga-npu" || recipe == "oga-hybrid") {
-            if (!oga_available) {
-                filter_out = true;
-                filter_reason = "NPU models require AMD Ryzen AI 300- and 400-series processors with XDNA2 NPUs running Windows 11. "
-                               "Detected processor: " + processor + ". "
-                               "Detected operating system: " + os_version + ".";
-            }
-        }
-
-        // OGA-CPU models
-        if (recipe == "oga-cpu" && !oga_available) {
+        // Check recipe support using the centralized system_info recipes structure
+        std::string unsupported_reason = SystemInfo::check_recipe_supported(recipe, system_info);
+        if (!unsupported_reason.empty()) {
             filter_out = true;
-            filter_reason = "OGA-CPU models require AMD Ryzen AI 300- and 400-series processors running Windows 11. "
+            filter_reason = unsupported_reason + " "
                            "Detected processor: " + processor + ". "
                            "Detected operating system: " + os_version + ".";
         }
@@ -1562,7 +1543,7 @@ void ModelManager::download_model(const std::string& model_name,
 
     // Check if this recipe is supported on the current system
     // Use system-info to check if the required inference engine is supported
-    json system_info = SystemInfoCache::get_system_info_with_cache(false);
+    json system_info = SystemInfoCache::get_system_info_with_cache();
     std::string unsupported_reason = SystemInfo::check_recipe_supported(actual_recipe, system_info);
     if (!unsupported_reason.empty()) {
         throw std::runtime_error(

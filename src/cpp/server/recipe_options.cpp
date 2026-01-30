@@ -1,13 +1,20 @@
 #include <lemon/recipe_options.h>
+#include <lemon/system_info.h>
 #include <nlohmann/json.hpp>
 
 namespace lemon {
 
 using json = nlohmann::json;
 
+// Get the default backend for a recipe (first supported = most preferred)
+static std::string get_default_backend(const std::string& recipe) {
+    auto backends = SystemInfo::get_supported_backends(recipe);
+    return backends.empty() ? "" : backends[0];
+}
+
 static const json DEFAULTS = {
     {"ctx_size", 4096},
-    {"llamacpp_backend", "vulkan"},
+    {"llamacpp_backend", "vulkan"},  // Will be overridden dynamically
     {"llamacpp_args", ""},
     // Image generation defaults (for sd-cpp recipe)
     {"steps", 20},
@@ -16,6 +23,7 @@ static const json DEFAULTS = {
     {"height", 512}
 };
 
+// CLI_OPTIONS without allowed_values for llamacpp (will be set dynamically)
 static const json CLI_OPTIONS = {
     {"--ctx-size", {
         {"option_name", "ctx_size"},
@@ -26,7 +34,6 @@ static const json CLI_OPTIONS = {
     {"--llamacpp", {
         {"option_name", "llamacpp_backend"},
         {"type_name", "BACKEND"},
-        {"allowed_values", {"vulkan", "rocm", "metal", "cpu"}},
         {"envname", "LEMONADE_LLAMACPP"},
         {"help", "LlamaCpp backend to use"}
     }},
@@ -82,10 +89,25 @@ static const bool is_empty_option(json option) {
 }
 
 void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
+    // Get supported llamacpp backends once
+    static std::vector<std::string> supported_backends = SystemInfo::get_supported_backends("llamacpp");
+    static std::string default_backend = get_default_backend("llamacpp");
+
     for (auto& [key, opt] : CLI_OPTIONS.items()) {
         const std::string opt_name = opt["option_name"];
         CLI::Option* o;
         json defval = DEFAULTS[opt_name];
+
+        // Special handling for llamacpp_backend
+        if (opt_name == "llamacpp_backend") {
+            o = app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
+            o->default_val(default_backend);
+            o->envname(opt["envname"]);
+            o->type_name(opt["type_name"]);
+            o->check(CLI::IsMember(supported_backends));
+            continue;
+        }
+
         if (defval.is_number_float()) {
             o = app.add_option_function<double>(key, [opt_name, &storage = storage](double val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val((double) defval);

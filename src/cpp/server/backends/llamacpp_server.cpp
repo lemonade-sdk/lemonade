@@ -185,38 +185,6 @@ LlamaCppServer::~LlamaCppServer() {
     unload();
 }
 
-// Helper to identify ROCm architecture from system
-// Returns empty string if no supported ROCm architecture is found
-static std::string identify_rocm_arch() {
-    try {
-        auto system_info = lemon::create_system_info();
-
-        // Check iGPU first
-        auto igpu = system_info->get_amd_igpu_device();
-        if (igpu.available && !igpu.name.empty()) {
-            std::string arch = identify_rocm_arch_from_name(igpu.name);
-            if (!arch.empty()) {
-                return arch;
-            }
-        }
-
-        // Check dGPUs
-        auto dgpus = system_info->get_amd_dgpu_devices();
-        for (const auto& gpu : dgpus) {
-            if (gpu.available && !gpu.name.empty()) {
-                std::string arch = identify_rocm_arch_from_name(gpu.name);
-                if (!arch.empty()) {
-                    return arch;
-                }
-            }
-        }
-    } catch (...) {
-        // Detection failed
-    }
-
-    return "";  // No supported architecture found
-}
-
 // Helper to get the install directory for llama-server binaries
 // Policy: Put in llama/{backend}/ next to the executable
 static std::string get_install_directory(const std::string& backend) {
@@ -276,14 +244,11 @@ void LlamaCppServer::install(const std::string& backend) {
         if (backend == "rocm") {
             // ROCm support from lemonade-sdk/llamacpp-rocm
             repo = "lemonade-sdk/llamacpp-rocm";
-            std::string target_arch = identify_rocm_arch();
+            std::string target_arch = lemon::SystemInfo::get_rocm_arch();
 
             if (target_arch.empty()) {
                 throw std::runtime_error(
-                    "ROCm is not supported on this system. No compatible AMD GPU was detected. "
-                    "ROCm requires an AMD GPU with one of the following architectures: "
-                    "gfx1150 (Radeon 880M/890M), gfx1151 (Radeon 8050S/8060S), "
-                    "gfx110X (RX 7000 series), or gfx120X (RX 9000 series)."
+                    lemon::SystemInfo::get_unsupported_backend_error("llamacpp", "rocm")
                 );
             }
 
@@ -619,7 +584,7 @@ void LlamaCppServer::load(const std::string& model_name,
     // For ROCm on Windows with gfx1151, set OCL_SET_SVMSIZE
     // This is a patch to enable loading larger models
     if (llamacpp_backend == "rocm") {
-        std::string arch = identify_rocm_arch();
+        std::string arch = lemon::SystemInfo::get_rocm_arch();
         if (arch == "gfx1151") {
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
             std::cout << "[LlamaCpp] Setting OCL_SET_SVM_SIZE=262144 for gfx1151 (enables loading larger models)" << std::endl;
