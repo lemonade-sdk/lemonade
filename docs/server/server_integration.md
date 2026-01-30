@@ -62,14 +62,21 @@ The recommended way of directing users to the installer is pointing users to htt
 
 ### Installing Additional Models
 
-Lemonade Server installations always come with at least one LLM installed. If you want to install additional models on behalf of your users, the following tools are available:
+If you want to install models on behalf of your users, the following tools are available:
 
-- Discovering which LLMs are available:
-  - [A human-readable list of supported models](./server_models.md).
-  - [A JSON file with the list of supported models](https://github.com/lemonade-sdk/lemonade/tree/main/src/lemonade_server/server_models.json) is included in every Lemonade Server installation.
-- Installing LLMs:
-  - [The `pull` endpoint in the server](./server_spec.md#get-apiv1pull).
+- LLMs that are already available in lemonade:
+  - Run `lemonade-server list`.
+  - Use the [models endpoint](./server_spec.md#get-apiv1models).
+  - [A human-readable list of supported models](./server_models.md). Do not modify this file in an existing install (see `user_models.json` below).
+  - [A JSON file that defines the list of built-in models](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/server_models.json).
   - `lemonade-server pull MODEL` on the command line interface.
+
+- Adding new LLMs:
+
+  - The `user_models.json` file is similar to `server_models.json` (see above), but contains a user-specific registry that persists across lemonade updates. It is located at `$LEMONADE_CACHE_DIR/user_models.json`, which defaults to `~/.cache/lemonade/user_models.json`.
+  - [The `pull` endpoint in the server](./server_spec.md#get-apiv1pull) automates the process of registering models into `user_models.json` and downloading them.
+  - The `lemonade-server pull` CLI command can also register and download new models, see [Options for pull](./lemonade-server-cli.md#options-for-pull).
+
 
 ## Stand-Alone Server Integration
 
