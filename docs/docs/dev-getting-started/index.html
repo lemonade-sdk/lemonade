@@ -1,0 +1,2024 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Lemonade Server is a lightweight, open-source local LLM server that allows you to run and manage multiple AI applications on your local machine. It provides a simple CLI for managing applications and supports various LLMs, making it easy to deploy and use AI models locally.">
+      
+      
+      
+        <link rel="canonical" href="https://lemonade-server.ai/dev-getting-started/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Lemonade Development - Lemonade Server Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="lightmode" data-md-color-primary="amber" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#lemonade-development" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-header__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
+      
+  <img src="../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Lemonade Server Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Lemonade Development
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="lightmode" data-md-color-primary="amber" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="amber" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/lemonade-sdk/lemonade" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lemonade-sdk/lemonade
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-nav__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
+      
+  <img src="../assets/logo.png" alt="logo">
+
+    </a>
+    Lemonade Server Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/lemonade-sdk/lemonade" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lemonade-sdk/lemonade
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Downloading and Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported Applications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Application Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Application Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/apps/ai-dev-gallery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Dev Gallery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/apps/ai-toolkit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Toolkit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/apps/anythingLLM/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AnythingLLM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/apps/codeGPT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CodeGPT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/apps/continue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/apps/mindcraft/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mindcraft
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/apps/open-hands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenHands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/apps/open-webui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open WebUI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/apps/wut/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wut
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/lemonade-server-cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lemonade Server CLI Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding local LLM servers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/server_models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models List
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/server_spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server Spec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/server_integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contribute/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contribution Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Components
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-from-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building from Source
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Building from Source">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build Steps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build-outputs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build Outputs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#building-the-electron-desktop-app-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building the Electron Desktop App (Optional)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#platform-specific-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Platform-Specific Notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-installers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building Installers
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Building Installers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#windows-installer-wixmsi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Windows Installer (WiX/MSI)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#linux-deb-package-debianubuntu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Linux .deb Package (Debian/Ubuntu)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#linux-rpm-package-fedora-rhel-etc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Linux .rpm Package (Fedora, RHEL etc)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#developer-ide-ide-build-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Developer IDE &amp; IDE Build Steps
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Developer IDE &amp; IDE Build Steps">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#visual-studio-code-setup-guide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visual Studio Code Setup Guide
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build-compile-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build &amp; Compile Options
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#debug-runtime-console-arguments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Debug / Runtime / Console arguments
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Debug / Runtime / Console arguments">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-hard-way-commands-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The hard way - commands only.
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture Overview
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Architecture Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lemonade-router-server-component" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lemonade-router (Server Component)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lemonade-server-cli-client-component" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lemonade-server (CLI Client Component)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lemonade-tray-gui-launcher-windows-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lemonade-tray (GUI Launcher - Windows Only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#client-server-communication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client-Server Communication
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dependencies
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usage
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Usage">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lemonade-router-server-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lemonade-router (Server Only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lemonade-serverexe-console-cli-client" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lemonade-server.exe (Console CLI Client)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lemonade-trayexe-gui-tray-launcher-windows-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lemonade-tray.exe (GUI Tray Launcher - Windows Only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#logging-and-console-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Logging and Console Output
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#basic-functionality-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Basic Functionality Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#integration-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#development" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Development
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Development">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#code-style" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Style
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Resources
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#license" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        License
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="lemonade-development">Lemonade Development</h1>
+<p>This guide covers everything you need to build, test, and contribute to Lemonade from source. Whether you're fixing a bug, adding a feature, or just exploring the codebase, this document will help you get started.</p>
+<h2 id="table-of-contents">Table of Contents</h2>
+<ul>
+<li><a href="#components">Components</a></li>
+<li><a href="#building-from-source">Building from Source</a></li>
+<li><a href="#prerequisites">Prerequisites</a></li>
+<li><a href="#build-steps">Build Steps</a></li>
+<li><a href="#build-outputs">Build Outputs</a></li>
+<li><a href="#building-the-electron-desktop-app-optional">Building the Electron Desktop App (Optional)</a></li>
+<li><a href="#platform-specific-notes">Platform-Specific Notes</a></li>
+<li><a href="#building-installers">Building Installers</a></li>
+<li><a href="#windows-installer-wixmsi">Windows Installer (WiX/MSI)</a></li>
+<li><a href="#linux-deb-package-debianubuntu">Linux .deb Package (Debian/Ubuntu)</a></li>
+<li><a href="#linux-rpm-package-fedora-rhel-etc">Linux .rpm Package (Fedora, RHEL etc)</a></li>
+<li><a href="#developer-ide--ide-build-steps">Developer IDE &amp; IDE Build Steps</a></li>
+<li><a href="#code-structure">Code Structure</a></li>
+<li><a href="#architecture-overview">Architecture Overview</a></li>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#client-server-communication">Client-Server Communication</a></li>
+<li><a href="#dependencies">Dependencies</a></li>
+<li><a href="#usage">Usage</a></li>
+<li><a href="#lemonade-router-server-only">lemonade-router (Server Only)</a></li>
+<li><a href="#lemonade-serverexe-console-cli-client">lemonade-server.exe (Console CLI Client)</a></li>
+<li><a href="#lemonade-trayexe-gui-tray-launcher---windows-only">lemonade-tray.exe (GUI Tray Launcher)</a></li>
+<li><a href="#logging-and-console-output">Logging and Console Output</a></li>
+<li><a href="#testing">Testing</a></li>
+<li><a href="#basic-functionality-tests">Basic Functionality Tests</a></li>
+<li><a href="#integration-tests">Integration Tests</a></li>
+<li><a href="#development">Development</a></li>
+<li><a href="#code-style">Code Style</a></li>
+<li><a href="#key-resources">Key Resources</a></li>
+<li><a href="#license">License</a></li>
+</ul>
+<h2 id="components">Components</h2>
+<p>Lemonade consists of these main executables:
+- <strong>lemonade-router.exe</strong> - Core HTTP server executable that handles requests and LLM backend orchestration
+- <strong>lemonade-server.exe</strong> - Console CLI client for terminal users that manages server lifecycle, executes commands via HTTP API
+- <strong>lemonade-tray.exe</strong> (Windows only) - GUI tray launcher for desktop users, automatically starts <code>lemonade-server.exe serve</code>
+- <strong>lemonade-log-viewer.exe</strong> (Windows only) - Log file viewer with live tail support and installer-friendly file sharing</p>
+<h2 id="building-from-source">Building from Source</h2>
+<h3 id="prerequisites">Prerequisites</h3>
+<p><strong>All Platforms:</strong>
+- CMake 3.28 or higher
+- C++17 compatible compiler
+- Git (for fetching dependencies)
+- Internet connection (first build downloads dependencies)</p>
+<p><strong>Windows:</strong>
+- Visual Studio 2019 or later
+- WiX 5.x (only required for building the installer)</p>
+<p><strong>Linux:</strong>
+ - Ninja build system (optional, recommended)</p>
+<h3 id="build-steps">Build Steps</h3>
+<p>A helper script is available that will set up the build environment on popular
+Linux distributions.  This will prompt to install dependencies via native package
+managers and create the build directory.</p>
+<p><strong>Linux</strong>
+<div class="highlight"><pre><span></span><code>./setup.sh
+</code></pre></div></p>
+<p><strong>Windows</strong>
+<div class="highlight"><pre><span></span><code>./setup.ps1
+</code></pre></div></p>
+<p>Build by running:</p>
+<p><strong>Linux</strong>
+<div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>default
+</code></pre></div></p>
+<p><strong>Windows</strong>
+<div class="highlight"><pre><span></span><code><span class="n">cmake</span> <span class="p">-</span><span class="n">-build</span> <span class="p">-</span><span class="n">-preset</span> <span class="n">windows</span>
+</code></pre></div></p>
+<h3 id="build-outputs">Build Outputs</h3>
+<ul>
+<li><strong>Windows:</strong></li>
+<li><code>build/Release/lemonade-router.exe</code> - HTTP server</li>
+<li><code>build/Release/lemonade-server.exe</code> - Console CLI client</li>
+<li><code>build/Release/lemonade-tray.exe</code> - GUI tray launcher</li>
+<li><code>build/Release/lemonade-log-viewer.exe</code> - Log file viewer</li>
+<li><strong>Linux/macOS:</strong></li>
+<li><code>build/lemonade-router</code> - HTTP server</li>
+<li><code>build/lemonade-server</code> - Console CLI client</li>
+<li><strong>Resources:</strong> Automatically copied to <code>build/Release/resources/</code> on Windows, <code>build/resources/</code> on Linux/macOS (web UI files, model registry, backend version configuration)</li>
+</ul>
+<h3 id="building-the-electron-desktop-app-optional">Building the Electron Desktop App (Optional)</h3>
+<p>The tray menu's "Open app" option and the <code>lemonade-server run</code> command can launch the Electron desktop app. To include it in your build:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Build the Electron app using CMake (requires Node.js 20+)</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"> </span>--target<span class="w"> </span>electron-app
+
+<span class="c1"># This will:</span>
+<span class="c1"># 1. Copy src/app to build/app-src (keeps source tree clean)</span>
+<span class="c1"># 2. Run npm install in build/app-src</span>
+<span class="c1"># 3. Build to build/app/win-unpacked/ (or similar)</span>
+</code></pre></div>
+<p>The tray app looks for <code>Lemonade.exe</code> in the same directory as the executable (development) or in <code>../app/</code> (installed). If not found, the "Open app" option is hidden but everything else works.</p>
+<h3 id="platform-specific-notes">Platform-Specific Notes</h3>
+<p><strong>Windows:</strong>
+- The build uses static linking to minimize DLL dependencies
+- All dependencies are built from source (no external DLL requirements)
+- Security features enabled: Control Flow Guard, ASLR, DEP</p>
+<p><strong>Linux:</strong>
+- Linux builds are headless-only (no tray application) by default
+- This avoids LGPL dependencies (GTK3, libappindicator3, libnotify)
+- Run server using: <code>lemonade-server serve</code> (headless mode is automatic)
+- Fully functional for server operations and model management
+- Uses permissively licensed dependencies only (MIT, Apache 2.0, BSD, curl license)
+- Clean .deb package with only runtime files (no development headers)
+- PID file system (<code>/tmp/lemonade-router.pid</code>) for reliable process management
+- Proper graceful shutdown - all child processes cleaned up correctly
+- File locations:
+  - Installed binaries: <code>/usr/local/bin/</code>
+  - Downloaded backends (llama-server, ryzenai-server): <code>~/.cache/lemonade/bin/</code>
+  - Model downloads: <code>~/.cache/huggingface/</code> (follows HF conventions)</p>
+<p><strong>macOS:</strong>
+- Uses native system frameworks (Cocoa, Foundation)
+- ARM Macs use Metal backend by default for llama.cpp
+- ⚠️ <strong>Note:</strong> macOS build is currently a stub implementation and not fully functional</p>
+<h2 id="building-installers">Building Installers</h2>
+<h3 id="windows-installer-wixmsi">Windows Installer (WiX/MSI)</h3>
+<p><strong>Prerequisites:</strong>
+- WiX Toolset 5.0.2 installed from <a href="https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi">wix-cli-x64.msi</a>
+- Completed C++ build (see above)</p>
+<p><strong>Building:</strong></p>
+<p>Using PowerShell script (recommended):
+<div class="highlight"><pre><span></span><code><span class="nb">cd </span><span class="n">src</span><span class="p">\</span><span class="nb">cpp</span>
+<span class="p">.\</span><span class="n">build_installer</span><span class="p">.</span><span class="n">ps1</span>
+</code></pre></div></p>
+<p>Manual build using CMake:
+<div class="highlight"><pre><span></span><code><span class="nb">cd </span><span class="n">src</span><span class="p">\</span><span class="n">cpp</span><span class="p">\</span><span class="n">build</span>
+<span class="n">cmake</span> <span class="p">-</span><span class="n">-build</span> <span class="p">.</span> <span class="p">-</span><span class="n">-config</span> <span class="n">Release</span> <span class="p">-</span><span class="n">-target</span> <span class="n">wix_installer</span>
+</code></pre></div></p>
+<p><strong>Installer Output:</strong></p>
+<p>Creates <code>lemonade-server-minimal.msi</code> which:
+- MSI-based installer (Windows Installer technology)
+- <strong>Per-user install (default):</strong> Installs to <code>%LOCALAPPDATA%\lemonade_server\</code>, adds to user PATH, no UAC required
+- <strong>All-users install (CLI only):</strong> Installs to <code>%PROGRAMFILES%\Lemonade Server\</code>, adds to system PATH, requires elevation
+- Creates Start Menu shortcuts (launches <code>lemonade-tray.exe</code>)
+- Optionally creates desktop shortcut and startup entry
+- Uses Windows Installer Restart Manager to gracefully close running processes
+- Includes all executables (router, server, tray, log-viewer)
+- Proper upgrade handling between versions
+- Includes uninstaller</p>
+<p><strong>Available Installers:</strong>
+- <code>lemonade-server-minimal.msi</code> - Server only (~3 MB)
+- <code>lemonade.msi</code> - Full installer with Electron desktop app (~105 MB)</p>
+<p><strong>Installation:</strong></p>
+<p>For detailed installation instructions including silent install, custom directories, and all-users installation, see the <a href="../../docs/server/server_integration.md#windows-installation">Server Integration Guide</a>.</p>
+<h3 id="linux-deb-package-debianubuntu">Linux .deb Package (Debian/Ubuntu)</h3>
+<p><strong>Prerequisites:</strong>
+- Completed C++ build (see above)</p>
+<p><strong>Building:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>build
+cpack
+</code></pre></div>
+<p><strong>Package Output:</strong></p>
+<p>Creates <code>lemonade-server-minimal_&lt;VERSION&gt;_amd64.deb</code> (e.g., <code>lemonade-server-minimal_9.0.3_amd64.deb</code>) which:
+- Installs to <code>/usr/local/bin/</code> (executables)
+- Installs resources to <code>/usr/local/share/lemonade-server/</code>
+- Creates desktop entry in <code>/usr/local/share/applications/</code>
+- Declares dependencies: libcurl4, libssl3, libz1
+- Package size: ~2.2 MB (clean, runtime-only package)
+- Includes postinst script that creates writable <code>/usr/local/share/lemonade-server/llama/</code> directory</p>
+<p><strong>Installation:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Replace &lt;VERSION&gt; with the actual version (e.g., 9.0.0)</span>
+sudo<span class="w"> </span>dpkg<span class="w"> </span>-i<span class="w"> </span>lemonade-server-minimal_&lt;VERSION&gt;_amd64.deb
+
+<span class="c1"># If dependencies are missing:</span>
+sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>-f
+</code></pre></div>
+<p><strong>Uninstallation:</strong></p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>dpkg<span class="w"> </span>-r<span class="w"> </span>lemonade-server
+</code></pre></div>
+<p><strong>Post-Installation:</strong></p>
+<p>The executables will be available in PATH:
+<div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>--help
+lemonade-router<span class="w"> </span>--help
+
+<span class="c1"># Start server in headless mode:</span>
+lemonade-server<span class="w"> </span>serve<span class="w"> </span>--no-tray
+
+<span class="c1"># Or just:</span>
+lemonade-server<span class="w"> </span>serve
+</code></pre></div></p>
+<h3 id="linux-rpm-package-fedora-rhel-etc">Linux .rpm Package (Fedora, RHEL etc)</h3>
+<p>Very similar to the Debian instructions above with minor changes</p>
+<p><strong>Building:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>build
+cpack<span class="w"> </span>-G<span class="w"> </span>RPM
+</code></pre></div>
+<p><strong>Package Output:</strong></p>
+<p>Creates <code>lemonade-server-minimal-&lt;VERSION&gt;.x86_64.rpm</code> (e.g., <code>lemonade-server-minimal-9.1.2.x86_64.rpm</code>) and
+resources are installed as per DEB version above</p>
+<p><strong>Installation:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Replace &lt;VERSION&gt; with the actual version (e.g., 9.0.0)</span>
+sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>./lemonade-server-minimal-&lt;VERSION&gt;.x86_64.rpm
+</code></pre></div>
+<p><strong>Uninstallation:</strong></p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>dnf<span class="w"> </span>remove<span class="w"> </span>lemonade-server-minimal
+</code></pre></div>
+<p><strong>Post-Installation:</strong></p>
+<p>Same as .deb above</p>
+<h3 id="developer-ide-ide-build-steps">Developer IDE &amp; IDE Build Steps</h3>
+<h4 id="visual-studio-code-setup-guide">Visual Studio Code Setup Guide</h4>
+<ol>
+<li>Clone the repository into a blank folder locally on your computer.</li>
+<li>Open the folder in visual studio code.</li>
+<li>Install Dev Containers extension in Visual Studio Code by using
+  control + p to open the command bar at the top of the IDE or if on mac with Cmd + p.</li>
+<li>Type "&gt; Extensions: Install Extensions" which will open the Extensions side panel.</li>
+<li>in the extensions search type <code>Dev Containers</code> and install it.</li>
+<li>Once completed with the prior steps you may run command
+<code>&gt;Dev Containers: Open Workspace in Container</code> or <code>&gt;Dev Containers: Open Folder in Container</code> which you can do in the command bar in the IDE and it should reopen the visual studio code project.</li>
+<li>It will launch a docker and start building a new docker and then the project will open in visual studio code.</li>
+</ol>
+<h4 id="build-compile-options">Build &amp; Compile Options</h4>
+<ol>
+<li>Assuming your VSCode IDE is open and the dev container is working.</li>
+<li>Go to the CMake plugin you may select the "Folder" that is where you currently want to build.</li>
+<li>Once done with that you may select which building toolkit you are using under Configure and then begin configure.</li>
+<li>Under Build, Test, Debug and/or Launch you may select whatever configuration you want to build, test, debug and/or launch.</li>
+</ol>
+<h4 id="debug-runtime-console-arguments">Debug / Runtime / Console arguments</h4>
+<ol>
+<li>You may find arguments which are passed through to the application you are debugging in .vscode/settings.json which will look like the following:
+<div class="highlight"><pre><span></span><code>&quot;cmake.debugConfig&quot;: {
+        &quot;args&quot;: [
+            &quot;--llamacpp&quot;, &quot;cpu&quot;
+        ]
+    }
+</code></pre></div></li>
+<li>If you want to debug lemonade-router you may pass --llamacpp cpu for cpu based tests.</li>
+<li>For lemonade-server you may pass serve as a argument as well.</li>
+</ol>
+<h5 id="the-hard-way-commands-only">The hard way - commands only.</h5>
+<ol>
+<li>
+<p>Now if you want to do it the hard way below are the commands in which you can run in the command dropdown in which you can see if you use the following keyboard shortcuts. cmd + p / control + p
+<div class="highlight"><pre><span></span><code>&gt; Cmake: Select a Kit
+# Select a kit or Scan for kit. (Two options should be available gcc or clang)
+&gt; Cmake: Configure
+# Optional commands are:
+&gt; Cmake: Build Target
+# use this to select a cmake target to build
+&gt; Cmake: Set Launch/Debug target
+# use this to select/set your cmake target you want to build/debug
+
+# This next command lets you debug
+&gt; Cmake: Debug
+
+# This command lets you delete the cmake cache and reconfigure which is rarely needed.
+&gt; Cmake: Delete Cache and Reconfigure
+</code></pre></div></p>
+</li>
+<li>
+<p>Custom configurations for cmake are in the root directory under <code>.vscode/settings.json</code> in which you may set custom args for launching the debug in the json key <code>cmake.debugConfig</code></p>
+</li>
+</ol>
+<blockquote>
+<p><strong>Note</strong></p>
+<p>For running Lemonade as a containerized application (as an alternative to the MSI-based distribution), see <code>DOCKER_GUIDE.md</code>.</p>
+</blockquote>
+<h2 id="code-structure">Code Structure</h2>
+<div class="highlight"><pre><span></span><code>src/cpp/
+├── build_installer.ps1         # Installer build script
+├── CopyElectronApp.cmake       # CMake module to copy Electron app to build output
+├── CPackRPM.cmake              # RPM packaging configuration
+├── DOCKER_GUIDE.md             # Docker containerization guide
+├── Extra-Models-Dir-Spec.md    # Extra models directory specification
+├── Multi-Model-Spec.md         # Multi-model loading specification
+├── postinst                    # Debian package post-install script
+├── postinst-full               # Debian package post-install script (full version)
+├── resources/                  # Configuration and data files (self-contained)
+│   ├── backend_versions.json   # llama.cpp/whisper version configuration
+│   ├── server_models.json      # Model registry (available models)
+│   └── static/                 # Web UI assets
+│       ├── index.html          # Server landing page (with template variables)
+│       └── favicon.ico         # Site icon
+│
+├── installer/                  # WiX MSI installer (Windows)
+│   ├── Product.wxs.in          # WiX installer definition template
+│   ├── installer_banner_wix.bmp  # Left-side banner (493×312)
+│   └── top_banner.bmp          # Top banner with lemon icon (493×58)
+│
+├── server/                     # Server implementation
+│   ├── main.cpp                # Entry point, CLI routing
+│   ├── server.cpp              # HTTP server (cpp-httplib)
+│   ├── router.cpp              # Routes requests to backends
+│   ├── model_manager.cpp       # Model registry, downloads, caching
+│   ├── cli_parser.cpp          # Command-line argument parsing (CLI11)
+│   ├── recipe_options.cpp      # Recipe option handling
+│   ├── wrapped_server.cpp      # Base class for backend wrappers
+│   ├── streaming_proxy.cpp     # Server-Sent Events for streaming
+│   ├── system_info.cpp         # NPU/GPU device detection
+│   ├── lemonade.manifest.in    # Windows manifest template
+│   ├── version.rc              # Windows version resource
+│   │
+│   ├── backends/               # Model backend implementations
+│   │   ├── backend_utils.cpp     # Shared backend utilities
+│   │   ├── llamacpp_server.cpp   # Wraps llama.cpp for LLM inference (CPU/GPU)
+│   │   ├── fastflowlm_server.cpp # Wraps FastFlowLM for NPU inference
+│   │   ├── ryzenaiserver.cpp     # Wraps RyzenAI server for hybrid NPU
+│   │   ├── sd_server.cpp         # Wraps Stable Diffusion for image generation
+│   │   └── whisper_server.cpp    # Wraps whisper.cpp for audio transcription
+│   │
+│   └── utils/                  # Utility functions
+│       ├── http_client.cpp     # HTTP client using libcurl
+│       ├── json_utils.cpp      # JSON file I/O
+│       ├── process_manager.cpp # Cross-platform process management
+│       ├── path_utils.cpp      # Path manipulation
+│       ├── wmi_helper.cpp      # Windows WMI for NPU detection
+│       └── wmi_helper.h        # WMI helper header
+│
+├── include/lemon/              # Public headers
+│   ├── server.h                # HTTP server interface
+│   ├── router.h                # Request routing
+│   ├── model_manager.h         # Model management
+│   ├── cli_parser.h            # CLI argument parsing
+│   ├── recipe_options.h        # Recipe option definitions
+│   ├── wrapped_server.h        # Backend wrapper base class
+│   ├── streaming_proxy.h       # Streaming proxy
+│   ├── system_info.h           # System information
+│   ├── model_types.h           # Model type definitions
+│   ├── audio_types.h           # Audio type definitions
+│   ├── error_types.h           # Error type definitions
+│   ├── server_capabilities.h   # Server capability definitions
+│   ├── single_instance.h       # Single instance enforcement
+│   ├── version.h.in            # Version header template
+│   ├── backends/               # Backend headers
+│   │   ├── backend_utils.h       # Backend utilities
+│   │   ├── llamacpp_server.h     # LlamaCpp backend
+│   │   ├── fastflowlm_server.h   # FastFlowLM backend
+│   │   ├── ryzenaiserver.h       # RyzenAI backend
+│   │   ├── sd_server.h           # Stable Diffusion backend
+│   │   └── whisper_server.h      # Whisper backend
+│   └── utils/                  # Utility headers
+│       ├── http_client.h       # HTTP client
+│       ├── json_utils.h        # JSON utilities
+│       ├── process_manager.h   # Process management
+│       └── path_utils.h        # Path utilities
+│
+└── tray/                       # System tray application
+    ├── CMakeLists.txt          # Tray-specific build config
+    ├── main.cpp                # Tray entry point (lemonade-server)
+    ├── tray_launcher.cpp       # GUI launcher (lemonade-tray)
+    ├── log-viewer.cpp          # Log file viewer (lemonade-log-viewer)
+    ├── server_manager.cpp      # Manages lemonade-router process
+    ├── tray_app.cpp            # Main tray application logic
+    ├── lemonade-server.manifest.in  # Windows manifest template
+    ├── version.rc              # Windows version resource
+    └── platform/               # Platform-specific implementations
+        ├── windows_tray.cpp    # Win32 system tray API
+        ├── macos_tray.mm       # Objective-C++ NSStatusBar
+        ├── linux_tray.cpp      # GTK/AppIndicator
+        └── tray_factory.cpp    # Platform detection
+</code></pre></div>
+<h2 id="architecture-overview">Architecture Overview</h2>
+<h3 id="overview">Overview</h3>
+<p>The Lemonade Server C++ implementation uses a client-server architecture:</p>
+<h4 id="lemonade-router-server-component">lemonade-router (Server Component)</h4>
+<p>A pure HTTP server that:
+- Serves OpenAI-compatible REST API endpoints (supports both <code>/api/v0</code> and <code>/api/v1</code>)
+- Routes requests to appropriate LLM backends (llamacpp, fastflowlm, ryzenai)
+- Manages model loading/unloading and backend processes
+- Supports loading multiple models simultaneously with LRU eviction
+- Handles all inference requests
+- No command-based user interface - only accepts startup options</p>
+<p><strong>Key Layers:</strong>
+- <strong>HTTP Layer:</strong> Uses cpp-httplib for HTTP server
+- <strong>Router:</strong> Determines which backend handles each request based on model recipe, manages multiple WrappedServer instances with LRU cache
+- <strong>Model Manager:</strong> Handles model discovery, downloads, and registry management
+- <strong>Backend Wrappers:</strong> Manages llama.cpp, FastFlowLM, RyzenAI, and whisper.cpp backends</p>
+<p><strong>Multi-Model Support:</strong>
+- Router maintains multiple WrappedServer instances simultaneously
+- Separate LRU caches for LLM, embedding, reranking, and audio model types
+- NPU exclusivity: only one model can use NPU at a time
+- Configurable limits via <code>--max-loaded-models</code> (default: 1 1 1 1)
+- Automatic eviction of least-recently-used models when limits reached
+- Thread-safe model loading with serialization to prevent races
+- Protection against evicting models actively serving inference requests</p>
+<h4 id="lemonade-server-cli-client-component">lemonade-server (CLI Client Component)</h4>
+<p>A console application for terminal users:
+- Provides command-based user interface (<code>list</code>, <code>pull</code>, <code>delete</code>, <code>run</code>, <code>status</code>, <code>stop</code>, <code>serve</code>)
+- Manages server lifecycle (start/stop persistent or ephemeral servers)
+- Communicates with <code>lemonade-router</code> via HTTP endpoints
+- Starts <code>lemonade-router</code> with appropriate options
+- Provides optional system tray interface via <code>serve</code> command</p>
+<p><strong>Command Types:</strong>
+- <strong>serve:</strong> Starts a persistent server (with optional tray interface)
+- <strong>run:</strong> Starts persistent server, loads model, opens browser
+- <strong>Other commands:</strong> Use existing server or start ephemeral server, execute command via API, auto-cleanup</p>
+<h4 id="lemonade-tray-gui-launcher-windows-only">lemonade-tray (GUI Launcher - Windows Only)</h4>
+<p>A minimal WIN32 GUI application for desktop users:
+- Simple launcher that starts <code>lemonade-server.exe serve</code>
+- Zero console output or CLI interface
+- Used by Start Menu, Desktop shortcuts, and autostart
+- Provides seamless GUI experience for non-technical users</p>
+<h3 id="client-server-communication">Client-Server Communication</h3>
+<p>The <code>lemonade-server</code> client communicates with <code>lemonade-router</code> server via HTTP:
+- <strong>Model operations:</strong> <code>/api/v1/models</code>, <code>/api/v1/pull</code>, <code>/api/v1/delete</code>
+- <strong>Model control:</strong> <code>/api/v1/load</code>, <code>/api/v1/unload</code>
+- <strong>Server management:</strong> <code>/api/v1/health</code>, <code>/internal/shutdown</code>
+- <strong>Inference:</strong> <code>/api/v1/chat/completions</code>, <code>/api/v1/completions</code>, <code>/api/v1/audio/transcriptions</code></p>
+<p>The client automatically:
+- Detects if a server is already running
+- Starts ephemeral servers for one-off commands
+- Cleans up ephemeral servers after command completion
+- Manages persistent servers with proper lifecycle handling</p>
+<p><strong>Single-Instance Protection:</strong>
+- Each component (<code>lemonade-router</code>, <code>lemonade-server serve</code>, <code>lemonade-tray</code>) enforces single-instance using system-wide mutexes
+- Only the <code>serve</code> command is blocked when a server is running
+- Commands like <code>status</code>, <code>list</code>, <code>pull</code>, <code>delete</code>, <code>stop</code> can run alongside an active server
+- Provides clear error messages with suggestions when blocked
+- <strong>Linux-specific:</strong> Uses PID file (<code>/tmp/lemonade-router.pid</code>) for efficient server discovery and port detection
+  - Avoids port scanning, finds exact server PID and port instantly
+  - Validated on read (checks if process is still alive)
+  - Automatically cleaned up on graceful shutdown</p>
+<h3 id="dependencies">Dependencies</h3>
+<p>All dependencies are automatically fetched by CMake via FetchContent:</p>
+<ul>
+<li><strong>cpp-httplib</strong> (v0.26.0) - HTTP server with thread pool support [MIT License]</li>
+<li><strong>nlohmann/json</strong> (v3.11.3) - JSON parsing and serialization [MIT License]</li>
+<li><strong>CLI11</strong> (v2.4.2) - Command-line argument parsing [BSD 3-Clause]</li>
+<li><strong>libcurl</strong> (8.5.0) - HTTP client for model downloads [curl license]</li>
+<li><strong>zstd</strong> (v1.5.7) - Compression library for HTTP [BSD License]</li>
+</ul>
+<p>Platform-specific SSL backends are used (Schannel on Windows, SecureTransport on macOS, OpenSSL on Linux).</p>
+<h2 id="usage">Usage</h2>
+<h3 id="lemonade-router-server-only">lemonade-router (Server Only)</h3>
+<p>The <code>lemonade-router</code> executable is a pure HTTP server without any command-based interface:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Start server with default options</span>
+./lemonade-router
+
+<span class="c1"># Start server with custom options</span>
+./lemonade-router<span class="w"> </span>--port<span class="w"> </span><span class="m">8080</span><span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">8192</span><span class="w"> </span>--log-level<span class="w"> </span>debug
+
+<span class="c1"># Available options:</span>
+<span class="c1">#   --port PORT              Port number (default: 8000)</span>
+<span class="c1">#   --host HOST              Bind address (default: localhost)</span>
+<span class="c1">#   --ctx-size SIZE          Context size (default: 4096)</span>
+<span class="c1">#   --log-level LEVEL        Log level: critical, error, warning, info, debug, trace</span>
+<span class="c1">#   --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal</span>
+<span class="c1">#   --max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO]</span>
+<span class="c1">#                            Maximum models to keep loaded (default: 1 1 1 1)</span>
+<span class="c1">#   --version, -v            Show version</span>
+<span class="c1">#   --help, -h               Show help</span>
+</code></pre></div>
+<h3 id="lemonade-serverexe-console-cli-client">lemonade-server.exe (Console CLI Client)</h3>
+<p>The <code>lemonade-server</code> executable is the command-line interface for terminal users:
+- Command-line interface for all model and server management
+- Starts persistent servers (with optional tray interface)
+- Manages ephemeral servers for one-off commands
+- Communicates with <code>lemonade-router</code> via HTTP endpoints</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># List available models</span>
+./lemonade-server<span class="w"> </span>list
+
+<span class="c1"># Pull a model</span>
+./lemonade-server<span class="w"> </span>pull<span class="w"> </span>Llama-3.2-1B-Instruct-CPU
+
+<span class="c1"># Delete a model</span>
+./lemonade-server<span class="w"> </span>delete<span class="w"> </span>Llama-3.2-1B-Instruct-CPU
+
+<span class="c1"># Check server status</span>
+./lemonade-server<span class="w"> </span>status
+
+<span class="c1"># Stop the server</span>
+./lemonade-server<span class="w"> </span>stop
+
+<span class="c1"># Run a model (starts persistent server with tray and opens browser)</span>
+./lemonade-server<span class="w"> </span>run<span class="w"> </span>Llama-3.2-1B-Instruct-CPU
+
+<span class="c1"># Start persistent server (with tray on Windows/macOS, headless on Linux)</span>
+./lemonade-server<span class="w"> </span>serve
+
+<span class="c1"># Start persistent server without tray (headless mode, explicit on all platforms)</span>
+./lemonade-server<span class="w"> </span>serve<span class="w"> </span>--no-tray
+
+<span class="c1"># Start server with custom options</span>
+./lemonade-server<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">8080</span><span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">8192</span>
+</code></pre></div>
+<p><strong>Available Options:</strong>
+- <code>--port PORT</code> - Server port (default: 8000)
+- <code>--host HOST</code> - Server host (default: localhost)
+- <code>--ctx-size SIZE</code> - Context size (default: 4096)
+- <code>--log-level LEVEL</code> - Logging verbosity: info, debug (default: info)
+- <code>--log-file PATH</code> - Custom log file location
+- <code>--server-binary PATH</code> - Path to lemonade-router executable
+- <code>--no-tray</code> - Run without tray (headless mode)
+- <code>--max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO]</code> - Maximum number of models to keep loaded simultaneously (default: 1 1 1 1)</p>
+<p><strong>Note:</strong> <code>lemonade-router</code> is always launched with <code>--log-level debug</code> for optimal troubleshooting. Use <code>--log-level debug</code> on <code>lemonade-server</code> commands to see client-side debug output.</p>
+<h3 id="lemonade-trayexe-gui-tray-launcher-windows-only">lemonade-tray.exe (GUI Tray Launcher - Windows Only)</h3>
+<p>The <code>lemonade-tray</code> executable is a simple GUI launcher for desktop users:
+- Double-click from Start Menu or Desktop to start server
+- Automatically runs <code>lemonade-server.exe serve</code> in tray mode
+- Zero console windows or CLI interface
+- Perfect for non-technical users
+- Single-instance protection: shows friendly message if already running</p>
+<p><strong>What it does:</strong>
+1. Finds <code>lemonade-server.exe</code> in the same directory
+2. Launches it with the <code>serve</code> command
+3. Exits immediately (server continues running with tray icon)</p>
+<p><strong>When to use:</strong>
+- Launching from Start Menu
+- Desktop shortcuts
+- Windows startup
+- Any GUI/point-and-click scenario</p>
+<p><strong>System Tray Features (when running):</strong>
+- Left-click or right-click icon to show menu
+- Load/unload models via menu
+- Change server port and context size
+- Open web UI, documentation, and logs
+- "Show Logs" opens log viewer with historical and live logs
+- Background model monitoring
+- Click balloon notifications to open menu
+- Quit option</p>
+<p><strong>UI Improvements:</strong>
+- Displays as "Lemonade Local LLM Server" in Task Manager
+- Shows large lemon icon in notification balloons
+- Single-instance protection prevents multiple tray apps</p>
+<h3 id="logging-and-console-output">Logging and Console Output</h3>
+<p>When running <code>lemonade-server.exe serve</code>:
+- <strong>Console Output:</strong> Router logs are streamed to the terminal in real-time via a background tail thread
+- <strong>Log File:</strong> All logs are written to a persistent log file (default: <code>%TEMP%\lemonade-server.log</code>)
+- <strong>Log Viewer:</strong> Click "Show Logs" in the tray to open <code>lemonade-log-viewer.exe</code>
+  - Displays last 100KB of historical logs
+  - Live tails new content as it's written
+  - Automatically closes when server stops
+  - Uses shared file access (won't block installer)</p>
+<p><strong>Log Viewer Features:</strong>
+- Cross-platform tail implementation
+- Parent process monitoring for auto-cleanup
+- Installer-friendly (FILE_SHARE_DELETE on Windows)
+- Real-time updates with minimal latency (100ms polling)</p>
+<h2 id="testing">Testing</h2>
+<h3 id="basic-functionality-tests">Basic Functionality Tests</h3>
+<p>Run the commands from the Usage section above to verify basic functionality.</p>
+<h3 id="integration-tests">Integration Tests</h3>
+<p>The C++ implementation is tested using the existing Python test suite.</p>
+<p><strong>Prerequisites:</strong>
+- Python 3.10+
+- Test dependencies: <code>pip install -r test/requirements.txt</code></p>
+<p><strong>Python integration tests</strong> (from <code>test/</code> directory, ordered least to most complex):</p>
+<table>
+<thead>
+<tr>
+<th>Test File</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>server_cli.py</code></td>
+<td>CLI commands (version, list, pull, status, delete, serve, stop, run)</td>
+</tr>
+<tr>
+<td><code>server_endpoints.py</code></td>
+<td>HTTP endpoints (health, models, pull, load, unload, system-info, stats)</td>
+</tr>
+<tr>
+<td><code>server_llm.py</code></td>
+<td>LLM inference (chat completions, embeddings, reranking)</td>
+</tr>
+<tr>
+<td><code>server_whisper.py</code></td>
+<td>Audio transcription (whisper models)</td>
+</tr>
+<tr>
+<td><code>server_sd.py</code></td>
+<td>Image generation (Stable Diffusion, ~2-3 min per image on CPU)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Running tests:</strong>
+<div class="highlight"><pre><span></span><code><span class="c1"># CLI tests (no inference backend needed)</span>
+python<span class="w"> </span>test/server_cli.py
+
+<span class="c1"># Endpoint tests (no inference backend needed)</span>
+python<span class="w"> </span>test/server_endpoints.py
+
+<span class="c1"># LLM tests (specify wrapped server and backend)</span>
+python<span class="w"> </span>test/server_llm.py<span class="w"> </span>--wrapped-server<span class="w"> </span>llamacpp<span class="w"> </span>--backend<span class="w"> </span>vulkan
+
+<span class="c1"># Audio transcription tests</span>
+python<span class="w"> </span>test/server_whisper.py
+
+<span class="c1"># Image generation tests (slow)</span>
+python<span class="w"> </span>test/server_sd.py
+</code></pre></div></p>
+<p>The tests auto-discover the server binary from the build directory. Use <code>--server-binary</code> to override if needed.</p>
+<p>See the <code>.github/workflows/</code> directory for CI/CD test configurations.</p>
+<p><strong>Note:</strong> The Python tests should now use <code>lemonade-server.exe</code> as the entry point since it provides the CLI interface.</p>
+<h2 id="development">Development</h2>
+<h3 id="code-style">Code Style</h3>
+<ul>
+<li>C++17 standard</li>
+<li>Snake_case for functions and variables</li>
+<li>CamelCase for classes and types</li>
+<li>4-space indentation</li>
+<li>Header guards using <code>#pragma once</code></li>
+<li>All code in <code>lemon::</code> namespace</li>
+</ul>
+<h3 id="key-resources">Key Resources</h3>
+<ul>
+<li><strong>API Specification:</strong> <code>docs/server/server_spec.md</code></li>
+<li><strong>Model Registry:</strong> <code>src/cpp/resources/server_models.json</code></li>
+<li><strong>Web UI Files:</strong> <code>src/cpp/resources/static/</code></li>
+<li><strong>Backend Versions:</strong> <code>src/cpp/resources/backend_versions.json</code></li>
+</ul>
+<h2 id="license">License</h2>
+<p>This project is licensed under the Apache 2.0 License. All dependencies use permissive licenses (MIT, BSD, Apache 2.0, curl license).</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2025 AMD. All rights reserved.
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.youtube.com/@AMDDevCentral" target="_blank" rel="noopener" title="www.youtube.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M23.498 6.186a3.02 3.02 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.02 3.02 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.02 3.02 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.02 3.02 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814M9.545 15.568V8.432L15.818 12z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://discord.gg/5xXzkMu8Zk" target="_blank" rel="noopener" title="discord.gg" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.317 4.37a19.8 19.8 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.3 18.3 0 0 0-5.487 0 13 13 0 0 0-.617-1.25.08.08 0 0 0-.079-.037A19.7 19.7 0 0 0 3.677 4.37a.1.1 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.08.08 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.08.08 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13 13 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10 10 0 0 0 .372-.292.07.07 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.07.07 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.08.08 0 0 0 .084.028 19.8 19.8 0 0 0 6.002-3.03.08.08 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.06.06 0 0 0-.031-.03M8.02 15.33c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418m7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.footer", "navigation.tracking", "navigation.expand", "navigation.top", "content.code.annotate", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../assets/carousel.js"></script>
+      
+    
+  </body>
+</html>
