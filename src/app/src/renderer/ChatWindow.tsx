@@ -110,6 +110,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [liveTranscript, setLiveTranscript] = useState('');
   const audioLevelRef = useRef(0);
   const wsClientRef = useRef<TranscriptionWebSocket | null>(null);
+  const isLiveRecordingRef = useRef(false);
 
   // Image generation model state
   const [imagePrompt, setImagePrompt] = useState('');
@@ -1304,11 +1305,26 @@ const sendMessage = async () => {
   const { isRecording: isMicActive, startRecording, stopRecording, error: micError } =
     useAudioCapture(handleAudioChunk, handleAudioLevel);
 
-  // Exactly mirrors StreamingTranscription's handleTranscription
   const handleLiveTranscription = useCallback((text: string) => {
     const trimmedText = text.trim();
-    if (trimmedText) {
+    if (!trimmedText) return;
+
+    if (isLiveRecordingRef.current) {
+      // During recording: accumulate in live transcript
       setLiveTranscript(prev => prev ? `${prev} ${trimmedText}` : trimmedText);
+    } else {
+      // After stop: append to the last history entry (from the commit response)
+      setTranscriptionHistory(h => {
+        if (h.length > 0 && h[h.length - 1].filename === 'Live Recording') {
+          const updated = [...h];
+          updated[updated.length - 1] = {
+            ...updated[updated.length - 1],
+            text: (updated[updated.length - 1].text + ' ' + trimmedText).trim(),
+          };
+          return updated;
+        }
+        return [...h, { filename: 'Live Recording', text: trimmedText }];
+      });
     }
   }, []);
 
@@ -1332,13 +1348,24 @@ const sendMessage = async () => {
 
     await new Promise(r => setTimeout(r, 500));
     await startRecording();
+    isLiveRecordingRef.current = true;
     setIsLiveRecording(true);
   }, [selectedModel, handleLiveTranscription, handleSpeechEvent, startRecording]);
 
-  // Exactly mirrors StreamingTranscription's handleStop
-  // Then adds result to transcriptionHistory so it persists alongside file uploads
+  // Stop recording and push transcript to history immediately.
+  // Any late-arriving commit response is appended to the history entry
+  // by handleLiveTranscription (via isLiveRecordingRef check).
   const handleMicStop = useCallback(() => {
     stopRecording();
+    isLiveRecordingRef.current = false;
+
+    // Push accumulated transcript to history immediately
+    setLiveTranscript(prev => {
+      if (prev.trim()) {
+        setTranscriptionHistory(h => [...h, { filename: 'Live Recording', text: prev.trim() }]);
+      }
+      return '';
+    });
 
     if (wsClientRef.current) {
       wsClientRef.current.commitAudio();
@@ -1353,14 +1380,6 @@ const sendMessage = async () => {
     setIsSpeaking(false);
     setAudioLevel(0);
     audioLevelRef.current = 0;
-
-    // Push accumulated transcript to history
-    setLiveTranscript(prev => {
-      if (prev.trim()) {
-        setTranscriptionHistory(h => [...h, { filename: 'Live Recording', text: prev.trim() }]);
-      }
-      return '';
-    });
   }, [stopRecording]);
 
   // Cleanup WebSocket on unmount
@@ -1773,7 +1792,7 @@ const sendMessage = async () => {
       {modelType === 'transcription' && (
         <>
           <div className="chat-messages" ref={messagesContainerRef}>
-            {transcriptionHistory.length === 0 && !isLiveRecording && !liveTranscript && <EmptyState title="Lemonade Transcriber" />}
+            {transcriptionHistory.length === 0 && !isLiveRecording && <EmptyState title="Lemonade Transcriber" />}
 
             {transcriptionHistory.map((item, index) => (
               <div key={index} className="transcription-history-item">
@@ -1824,7 +1843,7 @@ const sendMessage = async () => {
               </div>
             ))}
 
-            {(isLiveRecording || liveTranscript) && (
+            {isLiveRecording && (
               <div className="transcription-history-item">
                 <div className="transcription-file-info">
                   <div className="transcription-label">
