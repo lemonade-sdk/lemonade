@@ -87,7 +87,7 @@ Documentation below shows container based workflows and how to build your own en
 This repository supports two container-related workflows with different goals:
 
 ### Development (Dev Containers)
-The `.devcontainer` ([dev container](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/README.md#developer-ide--ide-build-steps)) configuration is intended for contributors and developers.
+The `.devcontainer` ([dev container](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md#developer-ide--ide-build-steps)) configuration is intended for contributors and developers.
 It provides a full development environment (tooling, debuggers, source mounted)
 and is primarily used with VS Code Dev Containers or GitHub Codespaces.
 

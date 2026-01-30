@@ -1,8 +1,42 @@
-# Lemonade development
+# Lemonade Development
+
+This guide covers everything you need to build, test, and contribute to Lemonade from source. Whether you're fixing a bug, adding a feature, or just exploring the codebase, this document will help you get started.
+
+## Table of Contents
+
+- [Components](#components)
+- [Building from Source](#building-from-source)
+  - [Prerequisites](#prerequisites)
+  - [Build Steps](#build-steps)
+  - [Build Outputs](#build-outputs)
+  - [Building the Electron Desktop App (Optional)](#building-the-electron-desktop-app-optional)
+  - [Platform-Specific Notes](#platform-specific-notes)
+- [Building Installers](#building-installers)
+  - [Windows Installer (WiX/MSI)](#windows-installer-wixmsi)
+  - [Linux .deb Package (Debian/Ubuntu)](#linux-deb-package-debianubuntu)
+  - [Linux .rpm Package (Fedora, RHEL etc)](#linux-rpm-package-fedora-rhel-etc)
+  - [Developer IDE & IDE Build Steps](#developer-ide--ide-build-steps)
+- [Code Structure](#code-structure)
+- [Architecture Overview](#architecture-overview)
+  - [Overview](#overview)
+  - [Client-Server Communication](#client-server-communication)
+  - [Dependencies](#dependencies)
+- [Usage](#usage)
+  - [lemonade-router (Server Only)](#lemonade-router-server-only)
+  - [lemonade-server.exe (Console CLI Client)](#lemonade-serverexe-console-cli-client)
+  - [lemonade-tray.exe (GUI Tray Launcher)](#lemonade-trayexe-gui-tray-launcher---windows-only)
+  - [Logging and Console Output](#logging-and-console-output)
+- [Testing](#testing)
+  - [Basic Functionality Tests](#basic-functionality-tests)
+  - [Integration Tests](#integration-tests)
+- [Development](#development)
+  - [Code Style](#code-style)
+  - [Key Resources](#key-resources)
+- [License](#license)
 
 ## Components
 
-Here is an overview:
+Lemonade consists of these main executables:
 - **lemonade-router.exe** - Core HTTP server executable that handles requests and LLM backend orchestration
 - **lemonade-server.exe** - Console CLI client for terminal users that manages server lifecycle, executes commands via HTTP API
 - **lemonade-tray.exe** (Windows only) - GUI tray launcher for desktop users, automatically starts `lemonade-server.exe serve`
@@ -40,7 +74,7 @@ managers and create the build directory.
 ./setup.ps1
 ```
 
-Build can by running:
+Build by running:
 
 **Linux**
 ```bash
@@ -49,7 +83,7 @@ cmake --build --preset default
 
 **Windows**
 ```powershell
-cmake --build --preset windows
+cmake --build --preset windows --config Release
 ```
 
 ### Build Outputs
@@ -62,7 +96,7 @@ cmake --build --preset windows
 - **Linux/macOS:**
   - `build/lemonade-router` - HTTP server
   - `build/lemonade-server` - Console CLI client
-- **Resources:** Automatically copied to `build/Release/resources/` (web UI files, model registry, backend version configuration)
+- **Resources:** Automatically copied to `build/Release/resources/` on Windows, `build/resources/` on Linux/macOS (web UI files, model registry, backend version configuration)
 
 ### Building the Electron Desktop App (Optional)
 
@@ -618,19 +652,35 @@ The C++ implementation is tested using the existing Python test suite.
 - Python 3.10+
 - Test dependencies: `pip install -r test/requirements.txt`
 
+**Python integration tests** (from `test/` directory, ordered least to most complex):
+
+| Test File | Description |
+|-----------|-------------|
+| `server_cli.py` | CLI commands (version, list, pull, status, delete, serve, stop, run) |
+| `server_endpoints.py` | HTTP endpoints (health, models, pull, load, unload, system-info, stats) |
+| `server_llm.py` | LLM inference (chat completions, embeddings, reranking) |
+| `server_whisper.py` | Audio transcription (whisper models) |
+| `server_sd.py` | Image generation (Stable Diffusion, ~2-3 min per image on CPU) |
+
 **Running tests:**
 ```bash
-# Test lemonade-router (server) directly
-./build/Release/lemonade-router.exe --port 8000 --log-level debug
+# CLI tests (no inference backend needed)
+python test/server_cli.py
 
-# Test lemonade-server (client) commands
-./build/Release/lemonade-server.exe list
-./build/Release/lemonade-server.exe status
+# Endpoint tests (no inference backend needed)
+python test/server_endpoints.py
 
-# Run Python integration tests
-python test/server_llamacpp.py vulkan --server-binary ./build/Release/lemonade-server.exe
-python test/server_flm.py --server-binary ./build/Release/lemonade-server.exe
+# LLM tests (specify wrapped server and backend)
+python test/server_llm.py --wrapped-server llamacpp --backend vulkan
+
+# Audio transcription tests
+python test/server_whisper.py
+
+# Image generation tests (slow)
+python test/server_sd.py
 ```
+
+The tests auto-discover the server binary from the build directory. Use `--server-binary` to override if needed.
 
 See the `.github/workflows/` directory for CI/CD test configurations.
 
@@ -653,15 +703,6 @@ See the `.github/workflows/` directory for CI/CD test configurations.
 - **Model Registry:** `src/cpp/resources/server_models.json`
 - **Web UI Files:** `src/cpp/resources/static/`
 - **Backend Versions:** `src/cpp/resources/backend_versions.json`
-- **Python Reference:** `src/lemonade_server/` and `src/lemonade/tools/server/`
-
-### Adding New Features
-
-When adding functionality, ensure compatibility with the Python implementation:
-1. Review the Python reference implementation
-2. Implement the C++ equivalent
-3. Test using the Python test suite
-4. Update API documentation if adding new endpoints
 
 ## License
 
