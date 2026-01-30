@@ -424,324 +424,38 @@ ipcMain.handle('get-server-port', async () => {
   return cachedServerPort;
 });
 
-
-// Track CPU usage between calls (for Linux /proc/stat parsing)
-let lastCpuStats = null;
-
-// Platform-specific system-wide CPU utilization detection
-const getCpuUsage = async () => {
-  if (process.platform === 'linux') {
-    // Linux: Parse /proc/stat for system-wide CPU usage
-    try {
-      const content = await fs.promises.readFile('/proc/stat', 'utf-8');
-      const firstLine = content.split('\n')[0]; // "cpu  user nice system idle iowait irq softirq steal"
-      const parts = firstLine.split(/\s+/).slice(1).map(Number);
-
-      const [user, nice, system, idle, iowait, irq, softirq, steal] = parts;
-      const totalIdle = idle + iowait;
-      const totalActive = user + nice + system + irq + softirq + steal;
-      const total = totalIdle + totalActive;
-
-      if (lastCpuStats) {
-        const idleDiff = totalIdle - lastCpuStats.totalIdle;
-        const totalDiff = total - lastCpuStats.total;
-
-        lastCpuStats = { totalIdle, total };
-
-        if (totalDiff > 0) {
-          return ((totalDiff - idleDiff) / totalDiff) * 100;
-        }
-      }
-
-      lastCpuStats = { totalIdle, total };
-      return 0; // First call, no delta yet
-    } catch (err) {
-      console.debug('CPU detection (Linux): Failed to read /proc/stat:', err.message);
-      return null;
-    }
-
-  } else if (process.platform === 'win32') {
-    // Windows: Use PowerShell to query CPU utilization
-    return new Promise((resolve) => {
-      const psCommand = `Get-Counter '\\Processor(_Total)\\% Processor Time' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty CounterSamples | Select-Object -ExpandProperty CookedValue`;
-      exec(`powershell -NoProfile -Command "${psCommand}"`, { timeout: 3000 }, (error, stdout) => {
-        if (error) {
-          console.debug('CPU detection (Windows): PowerShell query failed:', error.message);
-          resolve(null);
-          return;
-        }
-        const percent = parseFloat(stdout.trim());
-        if (isNaN(percent)) {
-          console.debug('CPU detection (Windows): Could not parse CPU percentage from:', stdout.trim());
-          resolve(null);
-        } else {
-          resolve(Math.round(percent * 100) / 100);
-        }
-      });
-    });
-
-  } else if (process.platform === 'darwin') {
-    // macOS: Use top to get CPU usage
-    return new Promise((resolve) => {
-      exec('top -l 1 -n 0 | grep "CPU usage"', { timeout: 3000 }, (error, stdout) => {
-        if (error) {
-          console.debug('CPU detection (macOS): top query failed:', error.message);
-          resolve(null);
-          return;
-        }
-        // Format: "CPU usage: X.X% user, X.X% sys, X.X% idle"
-        const match = stdout.match(/(\d+\.?\d*)% user.*?(\d+\.?\d*)% sys/);
-        if (match) {
-          const userPercent = parseFloat(match[1]);
-          const sysPercent = parseFloat(match[2]);
-          resolve(Math.round((userPercent + sysPercent) * 100) / 100);
-        } else {
-          console.debug('CPU detection (macOS): Could not parse CPU usage from:', stdout.trim());
-          resolve(null);
-        }
-      });
-    });
-  }
-
-  console.debug('CPU detection: Unsupported platform:', process.platform);
-  return null;
-};
-
-// Platform-specific GPU utilization detection
-// On multi-GPU systems, returns the highest utilization (likely the active GPU)
-const getGpuUsage = async () => {
-  if (process.platform === 'linux') {
-    // Linux: Read from sysfs (AMD GPUs expose gpu_busy_percent)
-    // Check all GPUs and return the highest utilization
-    try {
-      const drmPath = '/sys/class/drm';
-      const cards = await fs.promises.readdir(drmPath).catch((err) => {
-        console.debug('GPU detection: Failed to read /sys/class/drm:', err.message);
-        return [];
-      });
-
-      let highestUsage = null;
-      let highestCard = null;
-
-      for (const card of cards) {
-        if (!card.match(/^card\d+$/)) continue;
-
-        const amdBusyPath = path.join(drmPath, card, 'device', 'gpu_busy_percent');
-        try {
-          const content = await fs.promises.readFile(amdBusyPath, 'utf-8');
-          const percent = parseFloat(content.trim());
-          if (!isNaN(percent)) {
-            if (highestUsage === null || percent > highestUsage) {
-              highestUsage = percent;
-              highestCard = card;
-            }
-          }
-        } catch (err) {
-          console.debug(`GPU detection: ${amdBusyPath} not available:`, err.code || err.message);
-        }
-      }
-
-      if (highestUsage !== null) {
-        console.debug(`GPU detection: Highest usage on ${highestCard}: ${highestUsage}%`);
-        return highestUsage;
-      }
-      console.debug('GPU detection: No GPU with gpu_busy_percent found');
-    } catch (error) {
-      console.error('Failed to read GPU stats from sysfs:', error);
-    }
-    return null;
-
-  } else if (process.platform === 'win32') {
-    // Windows: Use PowerShell to query GPU utilization
-    return new Promise((resolve) => {
-      const psCommand = `(Get-Counter '\\GPU Engine(*engtype_3D)\\Utilization Percentage' -ErrorAction SilentlyContinue).CounterSamples | Measure-Object -Property CookedValue -Average | Select-Object -ExpandProperty Average`;
-      exec(`powershell -NoProfile -Command "${psCommand}"`, { timeout: 3000 }, (error, stdout) => {
-        if (error) {
-          console.debug('GPU detection (Windows): PowerShell query failed:', error.message);
-          resolve(null);
-          return;
-        }
-        const percent = parseFloat(stdout.trim());
-        if (isNaN(percent)) {
-          console.debug('GPU detection (Windows): Could not parse GPU percentage from:', stdout.trim());
-        }
-        resolve(isNaN(percent) ? null : Math.round(percent * 100) / 100);
-      });
-    });
-
-  } else if (process.platform === 'darwin') {
-    // macOS: Use ioreg to query GPU performance stats
-    return new Promise((resolve) => {
-      exec('ioreg -r -d 1 -c IOAccelerator', { timeout: 2000 }, (error, stdout) => {
-        if (error) {
-          console.debug('GPU detection (macOS): ioreg query failed:', error.message);
-          resolve(null);
-          return;
-        }
-        const match = stdout.match(/"Device Utilization %"\s*=\s*(\d+)/i) ||
-                      stdout.match(/"GPU Activity"\s*=\s*(\d+)/i);
-        if (!match) {
-          console.debug('GPU detection (macOS): No utilization data found in ioreg output');
-        }
-        resolve(match ? parseFloat(match[1]) : null);
-      });
-    });
-  }
-
-  console.debug('GPU detection: Unsupported platform:', process.platform);
-  return null;
-};
-
-// Platform-specific VRAM/GTT usage detection (returns used memory in GB)
-// For dGPU: returns dedicated VRAM only
-// For APU: returns VRAM + GTT combined (since GTT is primary GPU memory)
-// On multi-GPU systems, returns memory from the GPU with highest utilization
-const getVramUsage = async () => {
-  if (process.platform === 'linux') {
-    // Linux: Read from AMD sysfs
-    try {
-      const drmPath = '/sys/class/drm';
-      const cards = await fs.promises.readdir(drmPath).catch((err) => {
-        console.debug('VRAM detection: Failed to read /sys/class/drm:', err.code || err.message);
-        return [];
-      });
-
-      let highestUsage = -1;
-      let highestCard = null;
-      let highestCardMemory = null;
-
-      for (const card of cards) {
-        if (!card.match(/^card\d+$/)) continue;
-
-        const devicePath = path.join(drmPath, card, 'device');
-
-        // Read GPU utilization to find the most active GPU
-        let gpuUsage = 0;
-        try {
-          const content = await fs.promises.readFile(path.join(devicePath, 'gpu_busy_percent'), 'utf-8');
-          gpuUsage = parseFloat(content.trim()) || 0;
-        } catch (err) {
-          console.debug(`VRAM detection: ${card} gpu_busy_percent not available:`, err.code || err.message);
-        }
-
-        let vramUsed = 0;
-        let gttUsed = 0;
-        let isDGPU = false;
-
-        // Check for board_info to determine if this is a dGPU
-        // board_info is present on discrete GPUs but not APUs
-        try {
-          await fs.promises.access(path.join(devicePath, 'board_info'));
-          isDGPU = true;
-          console.debug(`VRAM detection: ${card} has board_info, detected as dGPU`);
-        } catch (err) {
-          console.debug(`VRAM detection: ${card} has no board_info, detected as APU:`, err.code || err.message);
-        }
-
-        // Read VRAM used
-        const vramUsedPath = path.join(devicePath, 'mem_info_vram_used');
-        try {
-          const content = await fs.promises.readFile(vramUsedPath, 'utf-8');
-          vramUsed = parseInt(content.trim(), 10) || 0;
-        } catch (err) {
-          console.debug(`VRAM detection: ${vramUsedPath} not available:`, err.code || err.message);
-        }
-
-        // Read GTT used
-        const gttUsedPath = path.join(devicePath, 'mem_info_gtt_used');
-        try {
-          const content = await fs.promises.readFile(gttUsedPath, 'utf-8');
-          gttUsed = parseInt(content.trim(), 10) || 0;
-        } catch (err) {
-          console.debug(`VRAM detection: ${gttUsedPath} not available:`, err.code || err.message);
-        }
-
-        // Skip if no memory info found for this card
-        if (vramUsed === 0 && gttUsed === 0) {
-          console.debug(`VRAM detection: ${card} has no memory info, skipping`);
-          continue;
-        }
-
-        // Calculate memory for this card
-        let cardMemory = 0;
-        if (isDGPU) {
-          cardMemory = vramUsed;
-        } else {
-          cardMemory = vramUsed + gttUsed;
-        }
-
-        // Track the GPU with highest utilization
-        if (gpuUsage > highestUsage || highestCard === null) {
-          highestUsage = gpuUsage;
-          highestCard = card;
-          highestCardMemory = { vramUsed, gttUsed, isDGPU, cardMemory };
-        }
-      }
-
-      // Return memory from the GPU with highest utilization
-      if (highestCard !== null && highestCardMemory !== null) {
-        const memGb = highestCardMemory.cardMemory / (1024 * 1024 * 1024);
-        if (highestCardMemory.isDGPU) {
-          console.debug(`VRAM detection: dGPU ${highestCard} (${highestUsage}% usage), VRAM used: ${memGb.toFixed(2)} GB`);
-        } else {
-          console.debug(`VRAM detection: APU ${highestCard} (${highestUsage}% usage), VRAM+GTT used: ${memGb.toFixed(2)} GB`);
-        }
-        return memGb;
-      }
-
-      console.debug('VRAM detection: No GPU with memory info found');
-    } catch (error) {
-      console.error('Failed to read VRAM/GTT stats from sysfs:', error);
-    }
-    return null;
-
-  } else if (process.platform === 'win32') {
-    // Windows: AMD VRAM monitoring not yet implemented
-    console.debug('VRAM detection (Windows): Not yet implemented');
-    return null;
-
-  } else if (process.platform === 'darwin') {
-    // macOS: Metal doesn't expose VRAM usage in a standard way
-    console.debug('VRAM detection (macOS): Metal does not expose VRAM usage');
-    return null;
-  }
-
-  console.debug('VRAM detection: Unsupported platform:', process.platform);
-  return null;
-};
-
 ipcMain.handle('get-system-stats', async () => {
   try {
-    // Get memory info
-    const totalMemory = os.totalmem();
-    const freeMemory = os.freemem();
-    const usedMemory = totalMemory - freeMemory;
-    const memoryGb = usedMemory / (1024 * 1024 * 1024);
+    let serverUrl = 'http://localhost:8000';
 
-    // Get system-wide CPU usage (platform-specific)
-    const cpuPercent = await getCpuUsage();
+    // Use explicit server URL if configured
+    if (configuredServerBaseUrl) {
+      serverUrl = configuredServerBaseUrl;
+    } else if (cachedServerPort) {
+      serverUrl = `http://localhost:${cachedServerPort}`;
+    }
 
-    // Get GPU usage (platform-specific)
-    const gpuPercent = await getGpuUsage();
-
-    // Get VRAM usage (platform-specific)
-    const vramGb = await getVramUsage();
-
-    return {
-      cpu_percent: cpuPercent !== null ? Math.min(cpuPercent, 100) : null,
-      memory_gb: memoryGb,
-      gpu_percent: gpuPercent,
-      vram_gb: vramGb,
-    };
+    const response = await fetch(`${serverUrl}/api/v1/system-stats`, { timeout: 2000 });
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        cpu_percent: data.cpu_percent,
+        memory_gb: data.memory_gb || 0,
+        gpu_percent: data.gpu_percent,
+        vram_gb: data.vram_gb,
+      };
+    }
   } catch (error) {
-    console.error('Failed to get system stats:', error);
-    return {
-      cpu_percent: null,
-      memory_gb: 0,
-      gpu_percent: null,
-      vram_gb: null,
-    };
+    console.error('Failed to fetch system stats from server:', error);
   }
+
+  // Return null stats if server is unavailable
+  return {
+    cpu_percent: null,
+    memory_gb: 0,
+    gpu_percent: null,
+    vram_gb: null,
+  };
 });
 
 function updateWindowMinWidth(requestedWidth) {
