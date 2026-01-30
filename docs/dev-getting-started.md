@@ -2,7 +2,7 @@
 
 ## Components
 
-Here is an overi
+Here is an overview:
 - **lemonade-router.exe** - Core HTTP server executable that handles requests and LLM backend orchestration
 - **lemonade-server.exe** - Console CLI client for terminal users that manages server lifecycle, executes commands via HTTP API
 - **lemonade-tray.exe** (Windows only) - GUI tray launcher for desktop users, automatically starts `lemonade-server.exe serve`
@@ -40,7 +40,8 @@ managers and create the build directory.
 ./setup.ps1
 ```
 
-The build can be run by running:
+Build can by running:
+
 **Linux**
 ```bash
 cmake --build --preset default
