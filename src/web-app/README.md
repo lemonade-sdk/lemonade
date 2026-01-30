@@ -26,17 +26,8 @@ The web-app directory allows building the React app **without installing Electro
 ## Building
 
 ```bash
-# Auto-build during CMake configuration (if dist/renderer doesn't exist)
 cd build
-cmake ../src/cpp
-
-# Manual build via CMake target
-cmake --build . --target webapp
-
-# Direct build with npm
-cd src/web-app
-npm install
-npm run build:renderer:prod
+cmake --preset default web-app
 ```
 
 ## Key Differences from Electron App
