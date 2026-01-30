@@ -27,6 +27,13 @@ module.exports = (env, argv) => ({
         type: 'asset/resource',
       },
       {
+        test: /\.(png|jpg|jpeg|gif|ico|woff|woff2|ttf|eot)$/,
+        type: 'asset/resource',
+        generator: {
+          filename: '[name][ext]'
+        }
+      },
+      {
         test: /\.json$/,
         type: 'json',
       },
