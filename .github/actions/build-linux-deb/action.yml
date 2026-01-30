@@ -12,74 +12,21 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Install build dependencies
+    - name: Run setup.sh to configure environment
       shell: bash
       run: |
         set -e
 
-        echo "Updating package lists..."
-        sudo apt-get update
+        echo "Running setup.sh to configure build environment..."
+        bash setup.sh
 
-        echo "Installing build dependencies..."
-        sudo apt-get install -y \
-          build-essential \
-          cmake \
-          pkg-config \
-          libcurl4-openssl-dev \
-          libssl-dev \
-          zlib1g-dev \
-          git
-
-        echo "Verifying installations..."
-        cmake --version
-        gcc --version
-        pkg-config --version
-
-        echo "Build dependencies installed successfully!"
+        echo "Build environment configured successfully!"
 
     - name: Setup Node.js
       if: inputs.include-electron == 'true'
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-
-    - name: Build Electron App for Linux
-      if: inputs.include-electron == 'true'
-      shell: bash
-      run: |
-        set -e
-
-        echo "Building Electron app for Linux..."
-
-        cd src/app
-
-        # Install dependencies
-        echo "Installing npm dependencies..."
-        npm install
-
-        # Build the Electron app for Linux
-        echo "Building Electron app for Linux..."
-        npm run build:linux
-
-        # List what was created
-        echo "Contents of dist-app:"
-        ls -la dist-app/ || echo "dist-app directory not found"
-
-        echo "Contents of linux-unpacked:"
-        ls -la dist-app/linux-unpacked/ || echo "linux-unpacked directory not found"
-
-        # Verify the build output exists (check both uppercase and lowercase)
-        if [ -f "dist-app/linux-unpacked/lemonade" ]; then
-            echo "Found: dist-app/linux-unpacked/lemonade"
-        elif [ -f "dist-app/linux-unpacked/Lemonade" ]; then
-            echo "Found: dist-app/linux-unpacked/Lemonade"
-        else
-            echo "ERROR: Electron app executable not found!"
-            echo "Looking for 'lemonade' or 'Lemonade' in dist-app/linux-unpacked/"
-            exit 1
-        fi
-
-        echo "Electron app build successful!"
 
     - name: Build C++ Server with CMake
       shell: bash
@@ -88,48 +35,36 @@ runs:
 
         echo "Building lemonade-router and lemonade-server for Linux..."
 
-        cd src/cpp
-
-        # Create build directory
-        if [ -d "build" ]; then
-            echo "Removing existing build directory..."
-            rm -rf build
-        fi
-        mkdir build
-        cd build
-
-        # Configure with explicit Release build type
-        echo "Configuring CMake..."
+        # Reconfigure if Electron app is included (setup.sh already did basic config)
         if [ "${{ inputs.include-electron }}" == "true" ]; then
-            cmake .. -DCMAKE_BUILD_TYPE=Release -DINCLUDE_ELECTRON_APP=ON
-        else
-            cmake .. -DCMAKE_BUILD_TYPE=Release
+            echo "Reconfiguring CMake with Electron app enabled..."
+            cmake --preset default -DBUILD_ELECTRON_APP=ON
         fi
 
-        # Build using all available cores
+        # Build (BUILD_ELECTRON_APP will trigger electron build automatically)
         echo "Building binaries..."
-        cmake --build . -j$(nproc)
+        cmake --build --preset default
 
         # Verify binaries exist
-        if [ ! -f "lemonade-router" ]; then
+        if [ ! -f "build/lemonade-router" ]; then
             echo "ERROR: lemonade-router not found!"
             echo "Build directory contents:"
-            ls -lh
+            ls -lh build/
             exit 1
         fi
 
-        if [ ! -f "lemonade-server" ]; then
+        if [ ! -f "build/lemonade-server" ]; then
             echo "ERROR: lemonade-server not found!"
             echo "Build directory contents:"
-            ls -lh
+            ls -lh build/
             exit 1
         fi
 
         echo "✓ Binaries found successfully"
 
         echo "Verifying binary executability..."
-        ./lemonade-router --version
-        ./lemonade-server --version
+        ./build/lemonade-router --version
+        ./build/lemonade-server --version
 
         echo "C++ build successful!"
 
@@ -139,7 +74,7 @@ runs:
       run: |
         set -e
 
-        cd src/cpp/build
+        cd build
 
         echo "Creating .deb package with CPack..."
         cpack -G DEB -V
