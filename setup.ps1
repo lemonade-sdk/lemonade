@@ -141,7 +141,7 @@ Write-Host ""
 # Configure with CMake presets
 Write-Info "Configuring CMake with presets..."
 
-cmake --preset default
+cmake --preset windows
 if ($LASTEXITCODE -ne 0) {
     Write-Error-Custom "CMake configuration failed"
     exit 1
@@ -176,6 +176,6 @@ Write-Success "Setup completed successfully!"
 Write-Host "==========================================" -ForegroundColor Green
 Write-Host ""
 Write-Info "Next steps:"
-Write-Host "  Build the project: cmake --build build"
+Write-Host "  Build the project: cmake --build --preset windows"
 Write-Host ""
 Write-Info "For more information, see the README.md file"
