@@ -662,28 +662,7 @@ class EndpointTests(ServerTestBase):
 
         print(f"[OK] /system-info: OS={data['OS Version'][:30]}...")
 
-    def test_019_system_info_verbose(self):
-        """Test the /system-info endpoint with verbose flag includes extra details."""
-        response = requests.get(
-            f"{self.base_url}/system-info?verbose=true", timeout=TIMEOUT_DEFAULT
-        )
-        self.assertEqual(response.status_code, 200)
-
-        data = response.json()
-        self.assertIsInstance(data, dict)
-
-        # Check that Python Packages is present in verbose mode
-        self.assertIn(
-            "Python Packages",
-            data,
-            "Python Packages should be present in verbose mode",
-        )
-        packages = data["Python Packages"]
-        self.assertIsInstance(packages, list)
-
-        print(f"[OK] /system-info verbose: {len(packages)} packages listed")
-
-    def test_020_stats_endpoint(self):
+    def test_019_stats_endpoint(self):
         """Test the /stats endpoint returns performance metrics."""
         # First, make an inference request to populate stats
         requests.post(

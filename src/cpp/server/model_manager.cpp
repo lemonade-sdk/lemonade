@@ -1237,7 +1237,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         std::string filter_reason;
 
         // Check recipe support using the centralized system_info recipes structure
-        std::string unsupported_reason = SystemInfo::check_recipe_supported(recipe, system_info);
+        std::string unsupported_reason = SystemInfo::check_recipe_supported(recipe);
         if (!unsupported_reason.empty()) {
             filter_out = true;
             filter_reason = unsupported_reason + " "
@@ -1542,9 +1542,7 @@ void ModelManager::download_model(const std::string& model_name,
     }
 
     // Check if this recipe is supported on the current system
-    // Use system-info to check if the required inference engine is supported
-    json system_info = SystemInfoCache::get_system_info_with_cache();
-    std::string unsupported_reason = SystemInfo::check_recipe_supported(actual_recipe, system_info);
+    std::string unsupported_reason = SystemInfo::check_recipe_supported(actual_recipe);
     if (!unsupported_reason.empty()) {
         throw std::runtime_error(
             "Model '" + model_name + "' cannot be used on this system (recipe: " + actual_recipe + "): " +

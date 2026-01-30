@@ -63,16 +63,21 @@ public:
     // Common methods (can be overridden for detailed platform info)
     virtual std::string get_os_version();
 
-    // Build the recipes section for system_info
-    // If cached_devices is provided, uses it instead of re-querying hardware
-    json build_recipes_info(const json& cached_devices = json::object());
+    // Build the recipes section for system_info using pre-collected device info
+    json build_recipes_info(const json& devices);
+
+    // Result of checking supported backends for a recipe
+    struct SupportedBackendsResult {
+        std::vector<std::string> backends;  // Supported backends in preference order
+        std::string not_supported_error;    // Error message if no backends are supported
+    };
+
+    // Get list of supported backends for a recipe (in preference order)
+    static SupportedBackendsResult get_supported_backends(const std::string& recipe);
 
     // Check if a recipe is supported on the current system
     // Returns empty string if supported, or a reason string if not supported
-    static std::string check_recipe_supported(const std::string& recipe, const json& system_info);
-
-    // Get list of supported backends for a recipe
-    static std::vector<std::string> get_supported_backends(const std::string& recipe);
+    static std::string check_recipe_supported(const std::string& recipe);
 
     // Get all recipes with their support status
     // Returns a vector of {recipe_name, supported, available, error_message, backends}

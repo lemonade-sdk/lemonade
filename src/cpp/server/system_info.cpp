@@ -138,10 +138,25 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"XDNA2", "AMD Ryzen AI 300/400 series or Z2 Extreme NPU"},
 };
 
-// Get human-readable name for a device family
+// Maps device types to human-readable names (for error messages)
+static const std::map<std::string, std::string> DEVICE_TYPE_NAMES = {
+    {"cpu", "CPU"},
+    {"amd_igpu", "AMD iGPU"},
+    {"amd_dgpu", "AMD dGPU"},
+    {"npu", "NPU"},
+    {"nvidia_dgpu", "NVIDIA GPU"},
+};
+
+// Get human-readable name for a device family (e.g., "gfx1150" -> "Radeon 880M/890M")
 static std::string get_family_name(const std::string& family) {
     auto it = DEVICE_FAMILY_NAMES.find(family);
     return it != DEVICE_FAMILY_NAMES.end() ? it->second : family;
+}
+
+// Get human-readable name for a device type (e.g., "amd_igpu" -> "AMD iGPU")
+static std::string get_device_type_name(const std::string& device_type) {
+    auto it = DEVICE_TYPE_NAMES.find(device_type);
+    return it != DEVICE_TYPE_NAMES.end() ? it->second : device_type;
 }
 
 // Generate a human-readable error message for unsupported backend
@@ -467,7 +482,7 @@ std::string SystemInfo::get_os_version() {
     #endif
 }
 
-json SystemInfo::build_recipes_info(const json& cached_devices) {
+json SystemInfo::build_recipes_info(const json& devices) {
     json recipes;
 
     // Get current OS
@@ -475,112 +490,64 @@ json SystemInfo::build_recipes_info(const json& cached_devices) {
 
     std::vector<DetectedDevice> detected_devices;
 
-    // Use cached devices if provided, otherwise query hardware
-    if (!cached_devices.empty()) {
-        // Get cached CPU name for NPU detection (avoids WMI query)
-        std::string cached_cpu_name;
-        if (cached_devices.contains("cpu")) {
-            cached_cpu_name = cached_devices["cpu"].value("name", "");
-        }
+    // Get CPU name for NPU family detection
+    std::string cpu_name;
+    if (devices.contains("cpu")) {
+        cpu_name = devices["cpu"].value("name", "");
+    }
 
-        // Build detected_devices from cached JSON
-        // CPU is always present
-        if (cached_devices.contains("cpu")) {
-            const auto& cpu = cached_devices["cpu"];
-            std::string cpu_name = cpu.value("name", "CPU");
-            detected_devices.push_back({"cpu", cpu_name, get_device_family("cpu", ""), true});
-        } else {
-            detected_devices.push_back({"cpu", "CPU", get_device_family("cpu", ""), true});
-        }
+    // Build detected_devices from devices JSON
+    // CPU is always present
+    if (devices.contains("cpu")) {
+        const auto& cpu = devices["cpu"];
+        std::string name = cpu.value("name", "CPU");
+        detected_devices.push_back({"cpu", name, get_device_family("cpu", ""), true});
+    } else {
+        detected_devices.push_back({"cpu", "CPU", get_device_family("cpu", ""), true});
+    }
 
-        // AMD iGPU
-        if (cached_devices.contains("amd_igpu")) {
-            const auto& igpu = cached_devices["amd_igpu"];
-            if (igpu.value("available", false)) {
-                std::string name = igpu.value("name", "");
+    // AMD iGPU
+    if (devices.contains("amd_igpu")) {
+        const auto& igpu = devices["amd_igpu"];
+        if (igpu.value("available", false)) {
+            std::string name = igpu.value("name", "");
+            if (!name.empty()) {
+                detected_devices.push_back({
+                    "amd_igpu",
+                    name,
+                    get_device_family("amd_igpu", name),
+                    true
+                });
+            }
+        }
+    }
+
+    // AMD dGPUs
+    if (devices.contains("amd_dgpu") && devices["amd_dgpu"].is_array()) {
+        for (const auto& gpu : devices["amd_dgpu"]) {
+            if (gpu.value("available", false)) {
+                std::string name = gpu.value("name", "");
                 if (!name.empty()) {
                     detected_devices.push_back({
-                        "amd_igpu",
+                        "amd_dgpu",
                         name,
-                        get_device_family("amd_igpu", name),
+                        get_device_family("amd_dgpu", name),
                         true
                     });
                 }
             }
         }
+    }
 
-        // AMD dGPUs
-        if (cached_devices.contains("amd_dgpu") && cached_devices["amd_dgpu"].is_array()) {
-            for (const auto& gpu : cached_devices["amd_dgpu"]) {
-                if (gpu.value("available", false)) {
-                    std::string name = gpu.value("name", "");
-                    if (!name.empty()) {
-                        detected_devices.push_back({
-                            "amd_dgpu",
-                            name,
-                            get_device_family("amd_dgpu", name),
-                            true
-                        });
-                    }
-                }
-            }
-        }
-
-        // NPU - use cached CPU name for family detection
-        if (cached_devices.contains("npu")) {
-            const auto& npu = cached_devices["npu"];
-            if (npu.value("available", false)) {
-                std::string name = npu.value("name", "");
-                detected_devices.push_back({
-                    "npu",
-                    name,
-                    get_device_family("npu", name, cached_cpu_name),
-                    true
-                });
-            }
-        }
-    } else {
-        // No cached devices - query hardware directly
-        auto sys_info = create_system_info();
-
-        // Get CPU name for NPU family detection
-        auto cpu = sys_info->get_cpu_device();
-        std::string cpu_name = cpu.name;
-
-        // CPU is always present
-        detected_devices.push_back({"cpu", cpu_name, get_device_family("cpu", ""), true});
-
-        // AMD iGPU
-        auto igpu = sys_info->get_amd_igpu_device();
-        if (igpu.available && !igpu.name.empty()) {
-            detected_devices.push_back({
-                "amd_igpu",
-                igpu.name,
-                get_device_family("amd_igpu", igpu.name),
-                true
-            });
-        }
-
-        // AMD dGPUs
-        auto dgpus = sys_info->get_amd_dgpu_devices();
-        for (const auto& gpu : dgpus) {
-            if (gpu.available && !gpu.name.empty()) {
-                detected_devices.push_back({
-                    "amd_dgpu",
-                    gpu.name,
-                    get_device_family("amd_dgpu", gpu.name),
-                    true
-                });
-            }
-        }
-
-        // NPU - use already-queried CPU name for family detection
-        auto npu = sys_info->get_npu_device();
-        if (npu.available) {
+    // NPU - use CPU name for family detection
+    if (devices.contains("npu")) {
+        const auto& npu = devices["npu"];
+        if (npu.value("available", false)) {
+            std::string name = npu.value("name", "");
             detected_devices.push_back({
                 "npu",
-                npu.name,
-                get_device_family("npu", npu.name, cpu_name),
+                name,
+                get_device_family("npu", name, cpu_name),
                 true
             });
         }
@@ -678,26 +645,16 @@ json SystemInfo::build_recipes_info(const json& cached_devices) {
             std::string error;
 
             if (!missing_device_types.empty()) {
-                // Device type not present - use human-readable name
-                std::string device = missing_device_types[0];
-                if (device == "npu") {
-                    error = "Requires NPU";
-                } else if (device == "amd_igpu") {
-                    error = "Requires AMD iGPU";
-                } else if (device == "amd_dgpu") {
-                    error = "Requires AMD dGPU";
-                } else {
-                    error = "Requires " + device;
-                }
+                // Device type not present
+                error = "Requires " + get_device_type_name(missing_device_types[0]);
             } else if (!wrong_family.empty()) {
-                // Device present but wrong family - be concise
+                // Device present but wrong family - show required families
                 const auto& [device_type, required_families] = wrong_family[0];
-                if (device_type == "npu") {
-                    error = "Requires XDNA2 NPU";
-                } else if (device_type == "amd_igpu" || device_type == "amd_dgpu") {
-                    error = "Requires ROCm GPU";
+                if (!required_families.empty()) {
+                    // Use first required family name for concise message
+                    error = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
                 } else {
-                    error = "Incompatible " + device_type;
+                    error = "Incompatible " + get_device_type_name(device_type);
                 }
             } else {
                 error = "No compatible device";
@@ -723,69 +680,47 @@ json SystemInfo::build_recipes_info(const json& cached_devices) {
     return recipes;
 }
 
-std::string SystemInfo::check_recipe_supported(const std::string& recipe, const json& system_info) {
-    // Check if recipes section exists
-    if (!system_info.contains("recipes") || !system_info["recipes"].is_object()) {
-        return "Recipes not found in system info";
-    }
-
-    const auto& recipes = system_info["recipes"];
-    if (!recipes.contains(recipe) || !recipes[recipe].is_object()) {
-        // Unknown recipe - assume supported
-        return "";
-    }
-
-    const auto& recipe_info = recipes[recipe];
-    if (!recipe_info.contains("backends") || !recipe_info["backends"].is_object()) {
-        return "No backends found for recipe '" + recipe + "'";
-    }
-
-    // Check if any backend is supported
-    const auto& backends = recipe_info["backends"];
-    for (auto& [backend_name, backend_info] : backends.items()) {
-        if (backend_info.value("supported", false)) {
-            return "";  // At least one backend is supported
-        }
-    }
-
-    // No backends supported - get error from first backend
-    for (auto& [backend_name, backend_info] : backends.items()) {
-        if (backend_info.contains("error")) {
-            return backend_info["error"].get<std::string>();
-        }
-    }
-
-    return "No supported backend found for recipe '" + recipe + "'";
-}
-
-std::vector<std::string> SystemInfo::get_supported_backends(const std::string& recipe) {
-    std::vector<std::string> backends;
-
-    // Get system info and read supported backends from recipes structure
+SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std::string& recipe) {
+    SupportedBackendsResult result;
     json system_info = SystemInfoCache::get_system_info_with_cache();
 
     if (!system_info.contains("recipes") || !system_info["recipes"].contains(recipe)) {
-        return backends;
+        result.not_supported_error = "Recipe '" + recipe + "' not found";
+        return result;
     }
 
     const auto& recipe_info = system_info["recipes"][recipe];
     if (!recipe_info.contains("backends")) {
-        return backends;
+        result.not_supported_error = "No backends found for recipe '" + recipe + "'";
+        return result;
     }
 
-    // Return backends in preference order (defined by RECIPE_DEFS table order)
+    // Collect supported backends and capture first error (in preference order from RECIPE_DEFS)
     for (const auto& def : RECIPE_DEFS) {
         if (def.recipe == recipe) {
             if (recipe_info["backends"].contains(def.backend)) {
                 const auto& backend = recipe_info["backends"][def.backend];
                 if (backend.value("supported", false)) {
-                    backends.push_back(def.backend);
+                    result.backends.push_back(def.backend);
+                } else if (result.not_supported_error.empty() && backend.contains("error")) {
+                    // Capture first error encountered (in preference order)
+                    result.not_supported_error = backend["error"].get<std::string>();
                 }
             }
         }
     }
 
-    return backends;
+    // If no backends supported and no specific error, provide generic message
+    if (result.backends.empty() && result.not_supported_error.empty()) {
+        result.not_supported_error = "No supported backend found for recipe '" + recipe + "'";
+    }
+
+    return result;
+}
+
+std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
+    auto result = get_supported_backends(recipe);
+    return result.backends.empty() ? result.not_supported_error : "";
 }
 
 std::vector<SystemInfo::RecipeStatus> SystemInfo::get_all_recipe_statuses() {
@@ -2393,9 +2328,7 @@ json SystemInfoCache::get_system_info_with_cache() {
         }
 
         // Add recipes section (always fresh, never cached)
-        // Pass cached devices to avoid re-querying hardware
-        json cached_devices = system_info.contains("devices") ? system_info["devices"] : json::object();
-        system_info["recipes"] = sys_info->build_recipes_info(cached_devices);
+        system_info["recipes"] = sys_info->build_recipes_info(system_info["devices"]);
 
     } catch (const std::exception& e) {
         // Catastrophic failure - return minimal info but don't crash

@@ -8,8 +8,8 @@ using json = nlohmann::json;
 
 // Get the default backend for a recipe (first supported = most preferred)
 static std::string get_default_backend(const std::string& recipe) {
-    auto backends = SystemInfo::get_supported_backends(recipe);
-    return backends.empty() ? "" : backends[0];
+    auto result = SystemInfo::get_supported_backends(recipe);
+    return result.backends.empty() ? "" : result.backends[0];
 }
 
 static const json DEFAULTS = {
@@ -90,7 +90,8 @@ static const bool is_empty_option(json option) {
 
 void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
     // Get supported llamacpp backends once
-    static std::vector<std::string> supported_backends = SystemInfo::get_supported_backends("llamacpp");
+    static auto llamacpp_result = SystemInfo::get_supported_backends("llamacpp");
+    static std::vector<std::string> supported_backends = llamacpp_result.backends;
     static std::string default_backend = get_default_backend("llamacpp");
 
     for (auto& [key, opt] : CLI_OPTIONS.items()) {
