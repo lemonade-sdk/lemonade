@@ -45,13 +45,14 @@ Build can by running:
 **Linux**
 ```bash
 cmake --build --preset default
+```
 
-** Windows**
+**Windows**
 ```powershell
 cmake --build --preset windows
 ```
-###
- Build Outputs
+
+### Build Outputs
 
 - **Windows:**
   - `build/Release/lemonade-router.exe` - HTTP server
