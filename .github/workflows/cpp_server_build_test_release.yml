@@ -124,35 +124,31 @@ jobs:
 
           Write-Host "Building lemonade-router and lemonade-server..." -ForegroundColor Cyan
 
-          cd src\cpp
-
           # Create build directory
           if (Test-Path "build") {
               Remove-Item -Recurse -Force "build"
           }
-          mkdir build
-          cd build
 
-          # Configure
-          cmake .. -G "Visual Studio 17 2022" -A x64
+          # Configure with preset
+          cmake --preset windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Build
-          cmake --build . --config Release
+          cmake --build build --config Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Verify binaries exist
-          if (-not (Test-Path "Release\lemonade-router.exe")) {
+          if (-not (Test-Path "build\Release\lemonade-router.exe")) {
               Write-Host "ERROR: lemonade-router.exe not found!" -ForegroundColor Red
               exit 1
           }
 
-          if (-not (Test-Path "Release\lemonade-server.exe")) {
+          if (-not (Test-Path "build\Release\lemonade-server.exe")) {
               Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
               exit 1
           }
 
-          if (-not (Test-Path "Release\lemonade-tray.exe")) {
+          if (-not (Test-Path "build\Release\lemonade-tray.exe")) {
               Write-Host "ERROR: lemonade-tray.exe not found!" -ForegroundColor Red
               exit 1
           }
@@ -195,6 +191,21 @@ jobs:
               exit 1
           }
 
+          # Move output to build directory where CMake expects it
+          Write-Host "Moving Electron app to build directory..." -ForegroundColor Yellow
+          $targetDir = "..\..\build\app"
+          if (Test-Path $targetDir) {
+              Remove-Item -Recurse -Force $targetDir
+          }
+          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+          Move-Item -Path "dist-app\*" -Destination $targetDir -Force
+
+          # Verify the final output exists
+          if (-not (Test-Path "..\..\build\app\win-unpacked\Lemonade.exe")) {
+              Write-Host "ERROR: Electron app not found in final location!" -ForegroundColor Red
+              exit 1
+          }
+
           Write-Host "Electron app build successful!" -ForegroundColor Green
 
       - name: Build the Lemonade Server Installer
@@ -202,10 +213,8 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          cd src\cpp
-
           # Run the build installer script
-          .\build_installer.ps1
+          .\src\cpp\build_installer.ps1
 
           # Verify installers were created
           if (-not (Test-Path "lemonade-server-minimal.msi")) {
@@ -225,8 +234,8 @@ jobs:
         with:
           name: Lemonade_Server_MSI
           path: |
-            src\cpp\lemonade-server-minimal.msi
-            src\cpp\lemonade.msi
+            lemonade-server-minimal.msi
+            lemonade.msi
           retention-days: 7
 
   build-lemonade-server-deb:
@@ -253,7 +262,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-server-deb
-          path: src/cpp/build/lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
+          path: build/lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
   build-lemonade-deb-full:
@@ -280,7 +289,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-deb-full
-          path: src/cpp/build/lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
+          path: build/lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
   # ========================================================================
