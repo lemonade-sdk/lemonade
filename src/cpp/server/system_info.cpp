@@ -223,9 +223,9 @@ std::string identify_rocm_arch_from_name(const std::string& device_name);
 std::string identify_npu_arch(const std::string& processor_name);
 
 // Get device family from device name
-// Optional CPU name can be passed for NPU detection to avoid querying hardware
+// cpu_name is required for NPU detection (pass empty string for other device types)
 static std::string get_device_family(const std::string& device_type, const std::string& device_name,
-                                      const std::string& cached_cpu_name = "") {
+                                      const std::string& cpu_name) {
     if (device_type == "cpu") {
         #if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
         return "x86_64";
@@ -237,21 +237,14 @@ static std::string get_device_family(const std::string& device_type, const std::
     }
 
     if (device_type == "amd_igpu" || device_type == "amd_dgpu") {
-        // Use existing ROCm arch detection
         return identify_rocm_arch_from_name(device_name);
     }
 
     if (device_type == "npu") {
         // Use the processor name to identify NPU architecture
         // The device_name for NPU is typically "AMD NPU" which isn't useful,
-        // so we need to get the processor name
-        if (!cached_cpu_name.empty()) {
-            return identify_npu_arch(cached_cpu_name);
-        }
-        // Fallback to querying hardware (slow)
-        auto sys_info = create_system_info();
-        auto cpu = sys_info->get_cpu_device();
-        return identify_npu_arch(cpu.name);
+        // so we need the processor name (always available from cached devices)
+        return identify_npu_arch(cpu_name);
     }
 
     return "";
@@ -501,9 +494,9 @@ json SystemInfo::build_recipes_info(const json& devices) {
     if (devices.contains("cpu")) {
         const auto& cpu = devices["cpu"];
         std::string name = cpu.value("name", "CPU");
-        detected_devices.push_back({"cpu", name, get_device_family("cpu", ""), true});
+        detected_devices.push_back({"cpu", name, get_device_family("cpu", "", ""), true});
     } else {
-        detected_devices.push_back({"cpu", "CPU", get_device_family("cpu", ""), true});
+        detected_devices.push_back({"cpu", "CPU", get_device_family("cpu", "", ""), true});
     }
 
     // AMD iGPU
@@ -515,7 +508,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 detected_devices.push_back({
                     "amd_igpu",
                     name,
-                    get_device_family("amd_igpu", name),
+                    get_device_family("amd_igpu", name, ""),
                     true
                 });
             }
@@ -531,7 +524,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     detected_devices.push_back({
                         "amd_dgpu",
                         name,
-                        get_device_family("amd_dgpu", name),
+                        get_device_family("amd_dgpu", name, ""),
                         true
                     });
                 }
