@@ -95,9 +95,10 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
         // Generic handling for any *_backend option
         // Pattern: {recipe}_backend -> get supported backends for {recipe}
         const std::string backend_suffix = "_backend";
-        if (opt_name.size() > backend_suffix.size() &&
-            opt_name.compare(opt_name.size() - backend_suffix.size(), backend_suffix.size(), backend_suffix) == 0) {
+        bool is_backend_option = opt_name.size() > backend_suffix.size() &&
+            opt_name.compare(opt_name.size() - backend_suffix.size(), backend_suffix.size(), backend_suffix) == 0;
 
+        if (is_backend_option) {
             // Extract recipe name (everything before "_backend")
             std::string recipe = opt_name.substr(0, opt_name.size() - backend_suffix.size());
 
@@ -110,13 +111,8 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
 
             o = app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val(default_backend);
-            o->envname(opt["envname"]);
-            o->type_name(opt["type_name"]);
             o->check(CLI::IsMember(result.backends));
-            continue;
-        }
-
-        if (defval.is_number_float()) {
+        } else if (defval.is_number_float()) {
             o = app.add_option_function<double>(key, [opt_name, &storage = storage](double val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val((double) defval);
         } else if (defval.is_number_integer()) {
@@ -127,6 +123,7 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
             o->default_val(defval);
         }
 
+        // Common settings for all options
         o->envname(opt["envname"]);
         o->type_name(opt["type_name"]);
         if (opt.contains("allowed_values")) {
