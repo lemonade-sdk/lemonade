@@ -2,7 +2,7 @@
 
 This guide provides instructions on how to integrate Lemonade Server into your application.
 
-There are two main ways in which Lemonade Sever might integrate into apps:
+There are two main ways in which Lemonade Server might integrate into apps:
 
 * User-Managed Server: User is responsible for installing and managing Lemonade Server.
 * App-Managed Server: App is responsible for installing and managing Lemonade Server on behalf of the user.
@@ -16,7 +16,7 @@ The first part of this guide contains instructions that are common for both inte
 To identify if Lemonade Server is installed on a system, you can use the [`lemonade-server` CLI command](./lemonade-server-cli.md), which is added to path when using our installer. This is a reliable method to:
 
 - Verify if the server is installed.
-- Check which version is currently available is running the command below.
+- Check which version is currently available by running the command below.
 
 ```
 lemonade-server --version
@@ -74,7 +74,7 @@ If you want to install models on behalf of your users, the following tools are a
 - Adding new LLMs:
 
   - The `user_models.json` file is similar to `server_models.json` (see above), but contains a user-specific registry that persists across lemonade updates. It is located at `$LEMONADE_CACHE_DIR/user_models.json`, which defaults to `~/.cache/lemonade/user_models.json`.
-  - [The `pull` endpoint in the server](./server_spec.md#get-apiv1pull) automates the process of registering models into `user_models.json` and downloading them.
+  - [The `pull` endpoint in the server](./server_spec.md#post-apiv1pull) automates the process of registering models into `user_models.json` and downloading them.
   - The `lemonade-server pull` CLI command can also register and download new models, see [Options for pull](./lemonade-server-cli.md#options-for-pull).
 
 
