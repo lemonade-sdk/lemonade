@@ -27,11 +27,19 @@ def get_default_server_binary():
     workspace_root = os.path.dirname(test_dir)
 
     if platform.system() == "Windows":
-        return os.path.join(
-            workspace_root, "src", "cpp", "build", "Release", "lemonade-server.exe"
+        # Visual Studio is a multi-config generator; prefer Release, fall back to Debug
+        release_path = os.path.join(
+            workspace_root, "build", "Release", "lemonade-server.exe"
         )
+        debug_path = os.path.join(
+            workspace_root, "build", "Debug", "lemonade-server.exe"
+        )
+        if os.path.exists(release_path):
+            return release_path
+        return debug_path
     else:
-        return os.path.join(workspace_root, "src", "cpp", "build", "lemonade-server")
+        # Ninja/Make are single-config generators; output is directly in build/
+        return os.path.join(workspace_root, "build", "lemonade-server")
 
 
 # Default port for lemonade server
@@ -60,7 +68,11 @@ STANDARD_MESSAGES = [
 RESPONSES_MESSAGES = [
     {"role": "system", "content": "You are a helpful assistant."},
     {"role": "user", "content": "Who won the world series in 2020?"},
-    {"role": "assistant", "type": "message", "content": [{"text": "The LA Dodgers won in 2020.", "type": "output_text"}]},
+    {
+        "role": "assistant",
+        "type": "message",
+        "content": [{"text": "The LA Dodgers won in 2020.", "type": "output_text"}],
+    },
     {"role": "user", "content": "What was the best play?"},
 ]
 
