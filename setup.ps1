@@ -150,32 +150,12 @@ if ($LASTEXITCODE -ne 0) {
 Write-Success "CMake configured successfully"
 
 Write-Host ""
-
-# Install npm dependencies for Electron app
-Write-Info "Installing Electron app dependencies..."
-
-if (Test-Path "src\app") {
-    Write-Info "Installing npm dependencies in src/app..."
-    Push-Location "src\app"
-
-    if (-not (Test-Path "node_modules")) {
-        npm install
-        Write-Success "npm dependencies installed"
-    } else {
-        Write-Success "npm dependencies already installed"
-    }
-
-    Pop-Location
-} else {
-    Write-Warning "src\app directory not found, skipping Electron app setup"
-}
-
-Write-Host ""
 Write-Host "==========================================" -ForegroundColor Green
 Write-Success "Setup completed successfully!"
 Write-Host "==========================================" -ForegroundColor Green
 Write-Host ""
 Write-Info "Next steps:"
 Write-Host "  Build the project: cmake --build --preset windows"
+Write-Host "  Build the electron app: cmake --build --preset windows --target electron-app"
 Write-Host ""
 Write-Info "For more information, see the README.md file"
