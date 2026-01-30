@@ -2,6 +2,12 @@
 <?ifndef IncludeElectron?>
 <?define IncludeElectron = 0?>
 <?endif?>
+<?ifndef CppSourceDir?>
+<?define CppSourceDir = "src\cpp"?>
+<?endif?>
+<?ifndef BuildDir?>
+<?define BuildDir = "build"?>
+<?endif?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
@@ -24,8 +30,15 @@
                         Manufacturer="AMD"
                         Keywords="LLM, AI, Server, Local" />
 
+    <!-- Custom branding images (must be defined before UI is loaded) -->
+    <!-- WixUIDialogBmp = 493×312 left-side banner for welcome/finish screens -->
+    <WixVariable Id="WixUIDialogBmp" Value="$(var.CppSourceDir)\installer\installer_banner_wix.bmp" />
+
+    <!-- WixUIBannerBmp = 493×58 top banner with lemon icon (replaces red CD) -->
+    <WixVariable Id="WixUIBannerBmp" Value="$(var.CppSourceDir)\installer\top_banner.bmp" />
+
     <!-- Icon for installer window and Add/Remove Programs -->
-    <Icon Id="LemonadeIcon" SourceFile="$(var.SourceDir)\build\Release\resources\static\favicon.ico" />
+    <Icon Id="LemonadeIcon" SourceFile="$(var.BuildDir)\Release\resources\static\favicon.ico" />
 
     <!-- Set installer window icon -->
     <Property Id="ARPPRODUCTICON" Value="LemonadeIcon" />
@@ -148,25 +161,25 @@
     <!-- Executable files -->
     <ComponentGroup Id="ExecutableComponents" Directory="BinDir">
       <Component Id="LemonadeTray" Guid="c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f">
-        <File Id="lemonade_tray.exe" Source="$(var.SourceDir)\build\Release\lemonade-tray.exe" KeyPath="yes" />
+        <File Id="lemonade_tray.exe" Source="$(var.BuildDir)\Release\lemonade-tray.exe" KeyPath="yes" />
       </Component>
 
       <Component Id="LemonadeServer" Guid="d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a">
-        <File Id="lemonade_server.exe" Source="$(var.SourceDir)\build\Release\lemonade-server.exe" KeyPath="yes" />
+        <File Id="lemonade_server.exe" Source="$(var.BuildDir)\Release\lemonade-server.exe" KeyPath="yes" />
       </Component>
 
       <Component Id="LemonadeRouter" Guid="e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b">
-        <File Id="lemonade_router.exe" Source="$(var.SourceDir)\build\Release\lemonade-router.exe" KeyPath="yes" />
+        <File Id="lemonade_router.exe" Source="$(var.BuildDir)\Release\lemonade-router.exe" KeyPath="yes" />
       </Component>
 
       <Component Id="LemonadeLogViewer" Guid="f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c">
-        <File Id="lemonade_log_viewer.exe" Source="$(var.SourceDir)\build\Release\lemonade-log-viewer.exe" KeyPath="yes" />
+        <File Id="lemonade_log_viewer.exe" Source="$(var.BuildDir)\Release\lemonade-log-viewer.exe" KeyPath="yes" />
       </Component>
 
 <?if $(var.IncludeElectron) = 1 ?>
       <!-- Launcher script for Lemonade Desktop App (adds lemonade-app to PATH) -->
       <Component Id="LemonadeAppLauncher" Guid="a9b0c1d2-e3f4-5a6b-7c8d-9e0f1a2b3c4d">
-        <File Id="lemonade_app.cmd" Source="$(var.SourceDir)\installer\lemonade-app.cmd" KeyPath="yes" />
+        <File Id="lemonade_app.cmd" Source="$(var.CppSourceDir)\installer\lemonade-app.cmd" KeyPath="yes" />
       </Component>
 <?endif?>
     </ComponentGroup>
@@ -174,19 +187,19 @@
     <!-- Resource files -->
     <ComponentGroup Id="ResourceComponents">
       <Component Id="ServerModelsJson" Directory="ResourcesDir" Guid="a8b9c0d1-e2f3-4a4b-5c6d-7e8f9a0b1c2d">
-        <File Id="server_models.json" Source="$(var.SourceDir)\build\Release\resources\server_models.json" KeyPath="yes" />
+        <File Id="server_models.json" Source="$(var.BuildDir)\Release\resources\server_models.json" KeyPath="yes" />
       </Component>
 
       <Component Id="BackendVersionsJson" Directory="ResourcesDir" Guid="b9c0d1e2-f3a4-4b5c-6d7e-8f9a0b1c2d3e">
-        <File Id="backend_versions.json" Source="$(var.SourceDir)\build\Release\resources\backend_versions.json" KeyPath="yes" />
+        <File Id="backend_versions.json" Source="$(var.BuildDir)\Release\resources\backend_versions.json" KeyPath="yes" />
       </Component>
 
       <Component Id="FaviconIco" Directory="StaticDir" Guid="c0d1e2f3-a4b5-4c6d-7e8f-9a0b1c2d3e4f">
-        <File Id="favicon.ico" Source="$(var.SourceDir)\build\Release\resources\static\favicon.ico" KeyPath="yes" />
+        <File Id="favicon.ico" Source="$(var.BuildDir)\Release\resources\static\favicon.ico" KeyPath="yes" />
       </Component>
 
       <Component Id="IndexHtml" Directory="StaticDir" Guid="f3a4b5c6-d7e8-4f9a-0b1c-2d3e4f5a6b7c">
-        <File Id="index.html" Source="$(var.SourceDir)\build\Release\resources\static\index.html" KeyPath="yes" />
+        <File Id="index.html" Source="$(var.BuildDir)\Release\resources\static\index.html" KeyPath="yes" />
       </Component>
     </ComponentGroup>
 
@@ -287,13 +300,6 @@
                Value="LaunchApplication"
                Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1" />
     </UI>
-
-    <!-- Custom branding images -->
-    <!-- WixUIDialogBmp = 493×312 left-side banner for welcome/finish screens -->
-    <WixVariable Id="WixUIDialogBmp" Value="$(var.SourceDir)\installer\installer_banner_wix.bmp" />
-
-    <!-- WixUIBannerBmp = 493×58 top banner with lemon icon (replaces red CD) -->
-    <WixVariable Id="WixUIBannerBmp" Value="$(var.SourceDir)\installer\top_banner.bmp" />
 
     <!-- ============================================ -->
     <!-- Custom Actions -->

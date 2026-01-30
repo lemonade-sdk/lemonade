@@ -1961,15 +1961,18 @@ bool TrayApp::find_electron_app() {
 
     // The Electron app has exactly two possible locations:
     // 1. Production (WIX installer): ../app/ relative to bin/ directory
-    // 2. Development: same directory (copied by CopyElectronApp.cmake)
+    // 2. Development: app/<platform>-unpacked/ relative to build directory
     // 3. Linux production: /usr/local/share/lemonade-server/app/lemonade
 
 #ifdef _WIN32
     constexpr const char* exe_name = "Lemonade.exe";
+    constexpr const char* unpacked_dir = "win-unpacked";
 #elif defined(__APPLE__)
     constexpr const char* exe_name = "Lemonade.app";
+    constexpr const char* unpacked_dir = "mac";
 #else
     constexpr const char* exe_name = "lemonade";
+    constexpr const char* unpacked_dir = "linux-unpacked";
 #endif
 
 #if defined(__linux__)
@@ -1993,10 +1996,18 @@ bool TrayApp::find_electron_app() {
         return true;
     }
 
-    // Check development path (same directory as tray executable)
-    fs::path dev_path = exe_dir / exe_name;
+    // Check development path (app/<platform>-unpacked/ in build directory)
+    fs::path dev_path = exe_dir / "app" / unpacked_dir / exe_name;
     if (fs::exists(dev_path)) {
         electron_app_path_ = fs::canonical(dev_path).string();
+        std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
+        return true;
+    }
+
+    // Legacy development path (same directory as tray executable - for backwards compatibility)
+    fs::path legacy_dev_path = exe_dir / exe_name;
+    if (fs::exists(legacy_dev_path)) {
+        electron_app_path_ = fs::canonical(legacy_dev_path).string();
         std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
         return true;
     }
@@ -2004,6 +2015,7 @@ bool TrayApp::find_electron_app() {
     std::cerr << "Warning: Could not find Electron app" << std::endl;
     std::cerr << "  Checked: " << production_path.string() << std::endl;
     std::cerr << "  Checked: " << dev_path.string() << std::endl;
+    std::cerr << "  Checked: " << legacy_dev_path.string() << std::endl;
     return false;
 }
 

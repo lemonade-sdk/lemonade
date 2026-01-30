@@ -266,14 +266,14 @@ function renderDownload() {
       if (downloadArea) downloadArea.style.display = 'none';
       if (installCmdDiv) installCmdDiv.style.display = 'none';
       if (cmdDiv) {
-        cmdDiv.innerHTML = `<div class="lmn-coming-soon">For Fedora, please follow the build instructions as described in the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/README.md#building-from-source" target="_blank">README</a> file.</div>`;
+        cmdDiv.innerHTML = `<div class="lmn-coming-soon">For Fedora, please follow the build instructions as described in the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md#building-from-source" target="_blank">Developer Guide</a>.</div>`;
       }
       return;
     } else if (distro === 'debian') {
       if (downloadArea) downloadArea.style.display = 'none';
       if (installCmdDiv) installCmdDiv.style.display = 'none';
       if (cmdDiv) {
-        cmdDiv.innerHTML = `<div class="lmn-coming-soon">For Debian, please follow the build instructions as described in the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/README.md#building-from-source" target="_blank">README</a> file.</div>`;
+        cmdDiv.innerHTML = `<div class="lmn-coming-soon">For Debian, please follow the build instructions as described in the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md#building-from-source" target="_blank">Developer Guide</a>.</div>`;
       }
       return;
     }
@@ -333,11 +333,9 @@ function renderDownload() {
     notes += `<div class="lmn-note">Lemonade is tested on Ubuntu 24.04 LTS but should also work on other versions.</div>`;
   }
 
-  notes += `<div class="lmn-note lmn-source-note">To build from source, see the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/README.md" target="_blank">Server</a>`;
+  notes += `<div class="lmn-note lmn-source-note">To build from source, see the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md" target="_blank">Developer Guide</a>`;
   if (type === 'app') {
-    notes += ` and <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/app/README.md" target="_blank">App</a> dev READMEs`;
-  } else {
-    notes += ` dev README`;
+    notes += ` and <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/app/README.md" target="_blank">App README</a>`;
   }
   notes += `.</div>`;
 
