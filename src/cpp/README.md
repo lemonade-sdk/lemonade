@@ -362,7 +362,7 @@ src/cpp/
 │   │   ├── llamacpp_server.cpp   # Wraps llama.cpp for LLM inference (CPU/GPU)
 │   │   ├── fastflowlm_server.cpp # Wraps FastFlowLM for NPU inference
 │   │   ├── ryzenaiserver.cpp     # Wraps RyzenAI server for hybrid NPU
-│   │   └── whisper_server.cpp    # Wraps whisper.cpp for audio transcription
+│   │   └── whisper_server.cpp    # Wraps whisper.cpp for audio transcription (CPU/NPU)
 │   │
 │   └── utils/                  # Utility functions
 │       ├── http_client.cpp     # HTTP client using libcurl
@@ -505,6 +505,7 @@ The `lemonade-router` executable is a pure HTTP server without any command-based
 #   --ctx-size SIZE          Context size (default: 4096)
 #   --log-level LEVEL        Log level: critical, error, warning, info, debug, trace
 #   --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal
+#   --whispercpp BACKEND     WhisperCpp backend: cpu, npu
 #   --max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO]
 #                            Maximum models to keep loaded (default: 1 1 1 1)
 #   --version, -v            Show version
