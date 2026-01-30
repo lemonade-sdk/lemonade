@@ -134,7 +134,7 @@ CLIParser::CLIParser()
     CLI::App* stop = app_.add_subcommand("stop", "Stop the server");
 
     // Recipes
-    CLI::App* recipes = app_.add_subcommand("recipes", "List available recipes and their support status");
+    CLI::App* recipes = app_.add_subcommand("recipes", "List execution backends");
 #else
     add_serve_options(&app_, config_, max_models_vec_);
 #endif
