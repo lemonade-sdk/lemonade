@@ -200,38 +200,12 @@ void WhisperServer::install(const std::string& backend) {
 
 #ifdef _WIN32
             filename = "whisper-" + expected_version + "-windows-npu-x64.zip";
-#elif defined(__linux__)
-            filename = "whisper-" + expected_version + "-ubuntu-npu-x64.zip";
 #else
-            throw std::runtime_error("NPU whisper.cpp only supported on Windows and Linux");
+            throw std::runtime_error("NPU whisper.cpp only supported on Windows");
 #endif
             std::cout << "[WhisperServer] Using NPU backend" << std::endl;
 
-        } else if (backend == "rocm") {
-            // ROCm support from lemonade-sdk/whispercpp-rocm
-            repo = "lemonade-sdk/whispercpp-rocm";
-
-#ifdef _WIN32
-            filename = "whisper-" + expected_version + "-windows-rocm-x64.zip";
-#elif defined(__linux__)
-            filename = "whisper-" + expected_version + "-ubuntu-rocm-x64.zip";
-#else
-            throw std::runtime_error("ROCm whisper.cpp only supported on Windows and Linux");
-#endif
-
-        } else if (backend == "vulkan") {
-            // Vulkan support from ggml-org/whisper.cpp
-            repo = "ggml-org/whisper.cpp";
-
-#ifdef _WIN32
-            filename = "whisper-bin-x64.zip";
-#elif defined(__linux__)
-            filename = "whisper-bin-x64.zip";
-#else
-            throw std::runtime_error("Vulkan whisper.cpp only supported on Windows and Linux");
-#endif
-
-        } else {  // cpu
+        } else if (backend == "cpu") {
             // CPU-only builds from ggml-org/whisper.cpp
             repo = "ggml-org/whisper.cpp";
 
@@ -240,11 +214,14 @@ void WhisperServer::install(const std::string& backend) {
 #elif defined(__linux__)
             filename = "whisper-bin-x64.zip";
 #elif defined(__APPLE__)
-            filename = "whisper-bin-arm64.zip";  // macOS Apple Silicon
+            filename = "whisper-bin-arm64.zip";
 #else
             throw std::runtime_error("Unsupported platform for whisper.cpp");
 #endif
+        } else {
+            throw std::runtime_error("[WhisperServer] Only CPU and NPU backends are supported for automatic installation");
         }
+    }
 
         std::string url = "https://github.com/" + repo + "/releases/download/" +
                          expected_version + "/" + filename;
@@ -342,19 +319,20 @@ static std::pair<std::string, std::string> get_npu_cache_info(const std::string&
         model_filename = checkpoint;
     }
     
-    // Map common whisper models to their NPU cache repositories
-    if (model_filename.find("small") != std::string::npos) {
+    // Map common whisper models to their NPU cache repositories using more specific matching to avoid accidental overlaps
+    if (model_filename.find("ggml-small.bin") != std::string::npos) {
         return {"amd/whisper-small-onnx-npu", "ggml-small-encoder-vitisai.rai"};
-    } else if (model_filename.find("large-v3-turbo") != std::string::npos || 
-               model_filename.find("large_v3_turbo") != std::string::npos) {
+    } else if (model_filename.find("ggml-large-v3-turbo.bin") != std::string::npos ||
+               model_filename.find("ggml-large_v3_turbo.bin") != std::string::npos) {
         return {"amd/whisper-large-turbo-onnx-npu", "ggml-large-v3-turbo-encoder-vitisai.rai"};
-    } else if (model_filename.find("large-v3") != std::string::npos) {
+    } else if (model_filename.find("ggml-large-v3.bin") != std::string::npos ||
+               model_filename.find("ggml-large_v3.bin") != std::string::npos) {
         return {"amd/whisper-large-v3-onnx-npu", "ggml-large-v3-encoder-vitisai.rai"};
-    } else if (model_filename.find("medium") != std::string::npos) {
+    } else if (model_filename.find("ggml-medium.bin") != std::string::npos) {
         return {"amd/whisper-medium-onnx-npu", "ggml-medium-encoder-vitisai.rai"};
-    } else if (model_filename.find("base") != std::string::npos) {
+    } else if (model_filename.find("ggml-base.bin") != std::string::npos) {
         return {"amd/whisper-base-onnx-npu", "ggml-base-encoder-vitisai.rai"};
-    } else if (model_filename.find("tiny") != std::string::npos) {
+    } else if (model_filename.find("ggml-tiny.bin") != std::string::npos) {
         return {"amd/whisper-tiny-onnx-npu", "ggml-tiny-encoder-vitisai.rai"};
     }
     
