@@ -1,16 +1,11 @@
 #include <lemon/recipe_options.h>
 #include <lemon/system_info.h>
 #include <nlohmann/json.hpp>
+#include <map>
 
 namespace lemon {
 
 using json = nlohmann::json;
-
-// Get the default backend for a recipe (first supported = most preferred)
-static std::string get_default_backend(const std::string& recipe) {
-    auto result = SystemInfo::get_supported_backends(recipe);
-    return result.backends.empty() ? "" : result.backends[0];
-}
 
 static const json DEFAULTS = {
     {"ctx_size", 4096},
@@ -89,23 +84,35 @@ static const bool is_empty_option(json option) {
 }
 
 void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
-    // Get supported llamacpp backends once
-    static auto llamacpp_result = SystemInfo::get_supported_backends("llamacpp");
-    static std::vector<std::string> supported_backends = llamacpp_result.backends;
-    static std::string default_backend = get_default_backend("llamacpp");
+    // Cache for supported backends per recipe (computed once per recipe)
+    static std::map<std::string, SystemInfo::SupportedBackendsResult> backend_cache;
 
     for (auto& [key, opt] : CLI_OPTIONS.items()) {
         const std::string opt_name = opt["option_name"];
         CLI::Option* o;
         json defval = DEFAULTS[opt_name];
 
-        // Special handling for llamacpp_backend
-        if (opt_name == "llamacpp_backend") {
+        // Generic handling for any *_backend option
+        // Pattern: {recipe}_backend -> get supported backends for {recipe}
+        const std::string backend_suffix = "_backend";
+        if (opt_name.size() > backend_suffix.size() &&
+            opt_name.compare(opt_name.size() - backend_suffix.size(), backend_suffix.size(), backend_suffix) == 0) {
+
+            // Extract recipe name (everything before "_backend")
+            std::string recipe = opt_name.substr(0, opt_name.size() - backend_suffix.size());
+
+            // Get supported backends (cached)
+            if (backend_cache.find(recipe) == backend_cache.end()) {
+                backend_cache[recipe] = SystemInfo::get_supported_backends(recipe);
+            }
+            const auto& result = backend_cache[recipe];
+            std::string default_backend = result.backends.empty() ? "" : result.backends[0];
+
             o = app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val(default_backend);
             o->envname(opt["envname"]);
             o->type_name(opt["type_name"]);
-            o->check(CLI::IsMember(supported_backends));
+            o->check(CLI::IsMember(result.backends));
             continue;
         }
 
