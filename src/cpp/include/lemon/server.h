@@ -125,8 +125,8 @@ private:
 
     std::string api_key_;
 
-    // CPU usage tracking (for Linux)
-#ifdef __linux__
+    // CPU usage tracking
+#if defined(__linux__) || defined(_WIN32)
     struct CpuStats {
         uint64_t total_idle = 0;
         uint64_t total = 0;

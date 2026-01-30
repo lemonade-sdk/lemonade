@@ -2161,9 +2161,42 @@ double Server::get_cpu_usage() {
     return 0.0; // First call, no delta yet
 
 #elif defined(_WIN32)
-    // Windows: Use PDH (Performance Data Helper) API
-    // Note: This is a simplified approach - full implementation would use PDH counters
-    return -1.0; // Not implemented yet
+    // Windows: Use GetSystemTimes for system-wide CPU usage
+    std::lock_guard<std::mutex> lock(cpu_stats_mutex_);
+
+    FILETIME idle_time, kernel_time, user_time;
+    if (!GetSystemTimes(&idle_time, &kernel_time, &user_time)) {
+        return -1.0;
+    }
+
+    // Convert FILETIME to uint64_t (100-nanosecond intervals)
+    auto filetime_to_uint64 = [](const FILETIME& ft) -> uint64_t {
+        return (static_cast<uint64_t>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
+    };
+
+    uint64_t idle = filetime_to_uint64(idle_time);
+    uint64_t kernel = filetime_to_uint64(kernel_time); // Includes idle time
+    uint64_t user = filetime_to_uint64(user_time);
+
+    // Kernel time includes idle time, so subtract it to get actual kernel time
+    uint64_t total = kernel + user;
+    uint64_t total_idle = idle;
+
+    if (last_cpu_stats_.total > 0) {
+        uint64_t idle_diff = total_idle - last_cpu_stats_.total_idle;
+        uint64_t total_diff = total - last_cpu_stats_.total;
+
+        last_cpu_stats_.total_idle = total_idle;
+        last_cpu_stats_.total = total;
+
+        if (total_diff > 0) {
+            return ((total_diff - idle_diff) * 100.0) / total_diff;
+        }
+    }
+
+    last_cpu_stats_.total_idle = total_idle;
+    last_cpu_stats_.total = total;
+    return 0.0; // First call, no delta yet
 
 #elif defined(__APPLE__)
     // macOS: Could use host_processor_info or top command
