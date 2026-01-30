@@ -51,7 +51,8 @@
     },
     {
       "name": "windows",
-      "configurePreset": "windows"
+      "configurePreset": "windows",
+      "configuration": "Release"
     },
     {
       "name": "debug",

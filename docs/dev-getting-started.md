@@ -83,7 +83,7 @@ cmake --build --preset default
 
 **Windows**
 ```powershell
-cmake --build --preset windows --config Release
+cmake --build --preset windows
 ```
 
 ### Build Outputs
