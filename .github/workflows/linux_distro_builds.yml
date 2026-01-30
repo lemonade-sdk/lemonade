@@ -32,76 +32,18 @@ jobs:
             python: python3
 
     steps:
-      - name: Install build dependencies
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Run setup.sh to configure environment
         run: |
           set -e
 
-          if [ "${{ matrix.distro }}" = "Arch" ]; then
-            echo "Updating Arch package database..."
-            pacman -Syu --noconfirm
-
-            echo "Installing build dependencies..."
-            pacman -S --noconfirm --needed \
-              base-devel \
-              cmake \
-              git \
-              curl \
-              openssl \
-              zlib \
-              pkgconf \
-              python \
-              python-pip \
-              ca-certificates \
-              procps-ng
-
-          elif [ "${{ matrix.distro }}" = "Debian" ]; then
-            echo "Updating Debian package database..."
-            apt-get update
-
-            echo "Installing build dependencies..."
-            apt-get install -y \
-              build-essential \
-              g++ \
-              cmake \
-              git \
-              curl \
-              libcurl4-openssl-dev \
-              libssl-dev \
-              zlib1g-dev \
-              pkg-config \
-              python3 \
-              python3-pip \
-              python3-venv \
-              ca-certificates \
-              procps
-
-          elif [ "${{ matrix.distro }}" = "Fedora" ]; then
-            echo "Updating Fedora package database..."
-            dnf update -y
-
-            echo "Installing build dependencies..."
-            dnf install -y \
-              @development-tools \
-              gcc-c++ \
-              cmake \
-              git \
-              curl \
-              libcurl-devel \
-              openssl-devel \
-              zlib-devel \
-              pkgconf \
-              python3 \
-              python3-pip \
-              ca-certificates \
-              procps-ng
-          fi
-
-          echo "Verifying installations..."
-          cmake --version
-          gcc --version
-          g++ --version
-          pkg-config --version
-          ${{ matrix.python }} --version
+          echo "Running setup.sh for ${{ matrix.distro }}..."
+          bash setup.sh
 
           echo "Verifying process management tools..."
           command -v pgrep && command -v pkill && command -v ps
@@ -112,13 +54,7 @@ jobs:
           echo "Testing HTTPS connectivity..."
           curl -sI https://huggingface.co | head -5 || echo "Warning: HTTPS test failed"
 
-          echo "Build dependencies installed successfully!"
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          clean: true
-          fetch-depth: 0
+          echo "Setup completed successfully!"
 
       - name: Build C++ Server with CMake
         run: |
@@ -126,52 +62,38 @@ jobs:
 
           echo "Building lemonade-router and lemonade-server on ${{ matrix.distro }}..."
 
-          cd src/cpp
-
-          # Create build directory
-          if [ -d "build" ]; then
-              echo "Removing existing build directory..."
-              rm -rf build
-          fi
-          mkdir build
-          cd build
-
-          # Configure with Release build type
-          echo "Configuring CMake..."
-          cmake .. -DCMAKE_BUILD_TYPE=Release
-
-          # Build using all available cores
+          # Build
           echo "Building binaries..."
-          cmake --build . -j$(nproc)
+          cmake --build --preset default
 
           # Verify binaries exist
-          if [ ! -f "lemonade-router" ]; then
+          if [ ! -f "build/lemonade-router" ]; then
               echo "ERROR: lemonade-router not found!"
               echo "Build directory contents:"
-              ls -lh
+              ls -lh build/
               exit 1
           fi
 
-          if [ ! -f "lemonade-server" ]; then
+          if [ ! -f "build/lemonade-server" ]; then
               echo "ERROR: lemonade-server not found!"
               echo "Build directory contents:"
-              ls -lh
+              ls -lh build/
               exit 1
           fi
 
           echo "Binaries found successfully"
-          ls -lh lemonade-router lemonade-server
+          ls -lh build/lemonade-router build/lemonade-server
 
           echo "Verifying binary executability..."
-          ./lemonade-router --version
-          ./lemonade-server --version
+          ./build/lemonade-router --version
+          ./build/lemonade-server --version
 
           echo "${{ matrix.distro }} build successful!"
 
       - name: Verify system library linking
         run: |
           echo "Checking library dependencies..."
-          cd src/cpp/build
+          cd build
 
           echo "=== lemonade-router dependencies ==="
           ldd lemonade-router
@@ -186,6 +108,10 @@ jobs:
       - name: Setup Python virtual environment
         run: |
           echo "Creating Python virtual environment..."
+          if [ "${{ matrix.distro }}" = "Debian" ]; then
+              apt install -y python3-venv
+          fi
+
           ${{ matrix.python }} -m venv .venv
 
           echo "Activating virtual environment and installing dependencies..."
@@ -203,7 +129,7 @@ jobs:
           set -e
 
           . .venv/bin/activate
-          SERVER_BINARY="$(pwd)/src/cpp/build/lemonade-server"
+          SERVER_BINARY="$(pwd)/build/lemonade-server"
 
           echo "Running CLI tests..."
           python test/server_cli.py --server-binary "$SERVER_BINARY"
@@ -218,7 +144,7 @@ jobs:
           set -e
 
           . .venv/bin/activate
-          SERVER_BINARY="$(pwd)/src/cpp/build/lemonade-server"
+          SERVER_BINARY="$(pwd)/build/lemonade-server"
 
           echo "Running endpoint tests..."
           python test/server_endpoints.py --server-binary "$SERVER_BINARY"
