@@ -164,6 +164,61 @@ Smaller LLMs can produce simple pages with tasteful styling and basic interactiv
       <img src="https://github.com/lemonade-sdk/assets/blob/main/webui/3d_rendering.png?raw=true" alt="3D rendering" width="600"/>
     </div>
 
+### Image Generation
+
+Open WebUI supports image generation using Stable Diffusion models through Lemonade Server.
+
+Official documentation: <https://docs.openwebui.com/features/image-generation-and-editing/usage/>
+
+> Note: Image generation requires a Stable Diffusion CPP Model for lemonade. See available models at [Image Generation (Stable Diffusion CPP)](https://lemonade-server.ai/docs/server/server_models/#image-generation-stable-diffusion-cpp).
+
+#### Configuring Image Generation
+
+1. Install a Stable Diffusion model in Lemonade by opening the Lemonade Model Manager:
+    1. Open <http://localhost:8000> in your browser.
+    2. Select the Model Management tab.
+    3. Scroll down until you see a model with the `IMAGE` label (such as SDXL-Turbo or SD-Turbo) and click the "+" button to install it.
+
+2. Navigate to Admin > Settings > Images in Open WebUI to configure image generation:
+    1. Toggle **Image Generation** on.
+    2. Choose **Standard (Open AI)** as the Image Generation Engine.
+    3. Toggle **Prompt Generation** on.
+    4. For **OpenAI-API-Basis-URL**, fill in `http://localhost:8000/api/v1` (unless you're using a different port).
+    5. Add a character like `-` for **OpenAI-API-Key**.
+    6. If you want to add more parameters, add them to the text field as JSON. For example: `{ "steps": 4, "cfg_scale": 1 }`. See available parameters at [Image Generation (Stable Diffusion CPP)](https://lemonade-server.ai/docs/server/server_models/#image-generation-stable-diffusion-cpp).
+    7. Add your model name to **Model**, e.g., `SDXL-Turbo`.
+    8. Click **Save**.
+
+#### Using Image Generation
+
+There are two modes to call image generation in Open WebUI:
+
+**1. Using Image Generation Switch**
+
+This mode allows you to generate images by toggling a switch in the chat interface.
+
+1. First, enable Image Generation as a capability for your model:
+    1. Go to Admin > Settings > Models and choose your model.
+    2. Turn on **Image Generation**.
+    3. Toggle the **default** option, too, if you wish to use it directly in a chat.
+
+2. To generate an image:
+    1. Toggle the **Image Generation** switch in the chat on.
+    2. Enter your image generation prompt.
+    3. Click **Send**.
+
+**2. Native Tool-Based Generation (Agentic)**
+
+This mode uses tool calling for image generation and is recommended for high-quality models.
+
+1. Configure your model for native tool calling:
+    1. Go to Admin > Settings > Models and choose your model.
+    2. Go to **Advanced Parameters** and toggle **Standard** to **Native**.
+    
+    > Note: Open WebUI recommends using native mode only for high-quality models. See [Tool Calling Modes](https://docs.openwebui.com/features/plugin/tools/#tool-calling-modes-default-vs-native) for more information.
+
+2. The LLM will automatically call the image generation tool when appropriate based on your prompts.
+
 ## Conclusion
 
 These are just a few of our favorite ways to try out LLMs in Open WebUI. There are a lot more features to explore, such as voice interaction and chatting with documents, so be sure to check out the [Open WebUI documentation](https://docs.openwebui.com/) and YouTube content.
