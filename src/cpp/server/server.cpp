@@ -414,7 +414,21 @@ window.api = {
     zoomOut: () => document.body.style.zoom = (parseFloat(document.body.style.zoom || '1') - 0.1).toString(),
     getSettings: async () => {
         const saved = localStorage.getItem('lemonade-settings');
-        return saved ? JSON.parse(saved) : { layout: {}, theme: 'dark', apiUrl: window.location.origin };
+        if (saved) return JSON.parse(saved);
+        // Return defaults matching DEFAULT_LAYOUT_SETTINGS from appSettings.ts
+        return {
+            layout: {
+                isChatVisible: true,
+                isModelManagerVisible: true,
+                isCenterPanelVisible: true,
+                isLogsVisible: false,
+                modelManagerWidth: 280,
+                chatWidth: 350,
+                logsHeight: 200
+            },
+            theme: 'dark',
+            apiUrl: window.location.origin
+        };
     },
     saveSettings: async (settings) => {
         localStorage.setItem('lemonade-settings', JSON.stringify(settings));
