@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Lemonade Web App
+Comment=Local LLMs with GPU and NPU acceleration - Web Interface
+GenericName=AI Model Manager
+Exec=xdg-open http://localhost:8000
+Icon=lemonade-app
+Terminal=false
+Categories=Development;Utility;AI;
+Keywords=AI;LLM;GPU;NPU;Machine Learning;

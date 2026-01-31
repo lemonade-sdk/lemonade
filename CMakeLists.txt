@@ -679,6 +679,17 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
     add_custom_target(web-app ALL DEPENDS ${WEB_APP_STAMP})
 
     message(STATUS "Web app will be built automatically (disable with -DBUILD_WEB_APP=OFF)")
+
+    if (NOT WIN32 AND NOT APPLE AND NOT BUILD_ELECTRON_APP)
+        # Install .desktop file for web app
+        install(FILES ${CMAKE_SOURCE_DIR}/lemonade-web-app.desktop
+            DESTINATION share/applications
+        )
+        install(FILES ${CMAKE_SOURCE_DIR}/src/web-app/assets/logo.svg
+            DESTINATION share/pixmaps
+            RENAME lemonade-app.svg
+        )
+    endif()
 else()
     if(NOT NODE_EXECUTABLE OR NOT NPM_EXECUTABLE)
         message(STATUS "Node.js or npm not found - Web app build target disabled")
@@ -768,6 +779,23 @@ if(UNIX AND NOT APPLE)
             USE_SOURCE_PERMISSIONS
             PATTERN "*.so" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
         )
+
+        if (NOT WIN32 AND NOT APPLE)
+            # Install .desktop file for electron app
+            install(FILES ${CMAKE_SOURCE_DIR}/lemonade-app.desktop
+                DESTINATION share/applications
+            )
+            install(FILES ${CMAKE_SOURCE_DIR}/src/web-app/assets/logo.svg
+                DESTINATION share/pixmaps
+                RENAME lemonade-app.svg
+            )
+            install(CODE "
+                file(CREATE_LINK
+                    \"\${CMAKE_INSTALL_PREFIX}/share/lemonade-server/app/lemonade\"
+                    \"\${CMAKE_INSTALL_PREFIX}/bin/lemonade\"
+                    SYMBOLIC)
+            ")
+        endif()
 
         # Post-install script for full package
         # Note: CPack requires the script to be named 'postinst' exactly
