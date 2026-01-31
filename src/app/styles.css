@@ -2248,6 +2248,7 @@ footer {
     position: absolute;
     top: 8px;
     right: 8px;
+    background: #2a2a2a;
     border: 1px solid #555;
     border-radius: 4px;
     padding: 3px;
