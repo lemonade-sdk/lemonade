@@ -156,7 +156,7 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     if (model_info.recipe == "whispercpp") {
         std::cout << "[Router] Creating WhisperServer backend" << std::endl;
         new_server = std::make_unique<backends::WhisperServer>(log_level_, model_manager_);
-    } if (model_info.recipe == "kokoro") {
+    } else if (model_info.recipe == "kokoro") {
         std::cout << "[Router] Creating Kokoro backend" << std::endl;
         new_server = std::make_unique<backends::KokoroServer>(log_level_, model_manager_);
     } else if (model_info.recipe == "sd-cpp") {
