@@ -67,6 +67,7 @@ private:
     void handle_params(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
+    void handle_system_stats(const httplib::Request& req, httplib::Response& res);
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_logs_stream(const httplib::Request& req, httplib::Response& res);
@@ -99,6 +100,11 @@ private:
 
     // Helper function to generate detailed model error responses (not found, not supported, load failure)
     nlohmann::json create_model_error(const std::string& requested_model, const std::string& exception_msg);
+    
+    // System stats helper methods
+    double get_cpu_usage();
+    double get_gpu_usage();
+    double get_vram_usage();
 
     int port_;
     std::string host_;
@@ -120,6 +126,16 @@ private:
 
     std::string api_key_;
     NetworkBeacon udp_beacon_;
+
+    // CPU usage tracking
+#if defined(__linux__) || defined(_WIN32)
+    struct CpuStats {
+        uint64_t total_idle = 0;
+        uint64_t total = 0;
+    };
+    CpuStats last_cpu_stats_;
+    std::mutex cpu_stats_mutex_;
+#endif
 };
 
 } // namespace lemon
