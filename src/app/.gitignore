@@ -30,6 +30,7 @@ yarn-error.log*
 
 # Package manager
 # Note: package-lock.json is now tracked for reproducible CI/CD builds
+package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
