@@ -43,6 +43,15 @@ public:
     virtual json audio_transcriptions(const json& request) = 0;
 };
 
+// Optional audio capability (text-to-speech)
+class ITextToSpeechServer : public virtual ICapability {
+public:
+    virtual ~ITextToSpeechServer() = default;
+
+    // Speech-to-text transcription (OpenAI /v1/audio/speech compatible)
+    virtual json audio_speech(const json& request) = 0;
+};
+
 // Optional image generation capability
 class IImageServer : public virtual ICapability {
 public:
