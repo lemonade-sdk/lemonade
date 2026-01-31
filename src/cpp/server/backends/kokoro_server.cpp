@@ -97,7 +97,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
 
     try {
         std::cout << "[KokoroServer] Reading " << model_path.filename() << std::endl;
-        model_index = JsonUtils::load_from_file(model_path);
+        model_index = JsonUtils::load_from_file(model_path.string());
     } catch (const std::exception& e) {
         throw std::runtime_error("Warning: Could not load " + model_path.filename().string() + ": " + e.what());
     }
