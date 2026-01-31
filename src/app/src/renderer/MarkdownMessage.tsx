@@ -87,8 +87,10 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       if (!button) return;
 
       const wrapper = button.closest('.code-block-wrapper');
-      const codeElement = wrapper?.querySelector('code');
-      const codeText = codeElement?.textContent || wrapper?.querySelector('pre')?.textContent || '';
+      const preElement = wrapper?.querySelector('pre');
+      const codeElement = preElement?.querySelector('code') as HTMLElement | null;
+      if (!codeElement) return;
+      const codeText = codeElement.textContent || '';
 
       try {
         await navigator.clipboard.writeText(codeText);
