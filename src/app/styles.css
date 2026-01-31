@@ -2258,6 +2258,8 @@ footer {
     justify-content: center;
     transition: background-color 0.2s ease, color 0.2s ease;
     z-index: 100;
+    min-width: 44px;
+    min-height: 44px;
 }
 
 .code-copy-button:hover {
