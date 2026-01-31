@@ -1177,7 +1177,7 @@
 
 <h1 id="integrating-with-lemonade-server">Integrating with Lemonade Server</h1>
 <p>This guide provides instructions on how to integrate Lemonade Server into your application.</p>
-<p>There are two main ways in which Lemonade Sever might integrate into apps:</p>
+<p>There are two main ways in which Lemonade Server might integrate into apps:</p>
 <ul>
 <li>User-Managed Server: User is responsible for installing and managing Lemonade Server.</li>
 <li>App-Managed Server: App is responsible for installing and managing Lemonade Server on behalf of the user.</li>
@@ -1188,7 +1188,7 @@
 <p>To identify if Lemonade Server is installed on a system, you can use the <a href="../lemonade-server-cli/"><code>lemonade-server</code> CLI command</a>, which is added to path when using our installer. This is a reliable method to:</p>
 <ul>
 <li>Verify if the server is installed.</li>
-<li>Check which version is currently available is running the command below.</li>
+<li>Check which version is currently available by running the command below.</li>
 </ul>
 <div class="highlight"><pre><span></span><code>lemonade-server --version
 </code></pre></div>
@@ -1217,14 +1217,24 @@
 <h3 id="downloading-server-installer">Downloading Server Installer</h3>
 <p>The recommended way of directing users to the installer is pointing users to https://lemonade-server.ai/install_options.html</p>
 <h3 id="installing-additional-models">Installing Additional Models</h3>
-<p>Lemonade Server installations always come with at least one LLM installed. If you want to install additional models on behalf of your users, the following tools are available:</p>
+<p>If you want to install models on behalf of your users, the following tools are available:</p>
 <ul>
-<li>Discovering which LLMs are available:</li>
-<li><a href="../server_models/">A human-readable list of supported models</a>.</li>
-<li><a href="https://github.com/lemonade-sdk/lemonade/tree/main/src/lemonade_server/server_models.json">A JSON file with the list of supported models</a> is included in every Lemonade Server installation.</li>
-<li>Installing LLMs:</li>
-<li><a href="../server_spec/#get-apiv1pull">The <code>pull</code> endpoint in the server</a>.</li>
-<li><code>lemonade-server pull MODEL</code> on the command line interface.</li>
+<li>LLMs that are already available in lemonade:</li>
+<li>Run <code>lemonade-server list</code>.</li>
+<li>Use the <a href="../server_spec/#get-apiv1models">models endpoint</a>.</li>
+<li><a href="../server_models/">A human-readable list of supported models</a>. Do not modify this file in an existing install (see <code>user_models.json</code> below).</li>
+<li><a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/server_models.json">A JSON file that defines the list of built-in models</a>.</li>
+<li>
+<p><code>lemonade-server pull MODEL</code> on the command line interface.</p>
+</li>
+<li>
+<p>Adding new LLMs:</p>
+</li>
+<li>
+<p>The <code>user_models.json</code> file is similar to <code>server_models.json</code> (see above), but contains a user-specific registry that persists across lemonade updates. It is located at <code>$LEMONADE_CACHE_DIR/user_models.json</code>, which defaults to <code>~/.cache/lemonade/user_models.json</code>.</p>
+</li>
+<li><a href="../server_spec/#post-apiv1pull">The <code>pull</code> endpoint in the server</a> automates the process of registering models into <code>user_models.json</code> and downloading them.</li>
+<li>The <code>lemonade-server pull</code> CLI command can also register and download new models, see <a href="../lemonade-server-cli/#options-for-pull">Options for pull</a>.</li>
 </ul>
 <h2 id="stand-alone-server-integration">Stand-Alone Server Integration</h2>
 <p>Some apps might prefer to be responsible for installing and managing Lemonade Server on behalf of the user. This part of the guide includes steps for installing and running Lemonade Server so that your users don't have to install Lemonade Server separately.</p>
