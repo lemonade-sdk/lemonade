@@ -67,6 +67,8 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     const container = containerRef.current;
     if (!container) return;
 
+    let copyTimeoutId: NodeJS.Timeout | null = null;
+
     // Add click handlers for links to open in external browser
     const handleLinkClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -93,9 +95,16 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
         await navigator.clipboard.writeText(codeText);
         button.innerHTML = CHECK_ICON_SVG;
         button.classList.add('copied');
-        setTimeout(() => {
+        
+        // Clear any existing timeout before setting a new one
+        if (copyTimeoutId) {
+          clearTimeout(copyTimeoutId);
+        }
+        
+        copyTimeoutId = setTimeout(() => {
           button.innerHTML = COPY_ICON_SVG;
           button.classList.remove('copied');
+          copyTimeoutId = null;
         }, 2000);
       } catch (err) {
         console.error('Failed to copy code:', err);
@@ -107,6 +116,10 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     return () => {
       container.removeEventListener('click', handleLinkClick);
       container.removeEventListener('click', handleCopyClick);
+      // Clean up the timeout when component unmounts
+      if (copyTimeoutId) {
+        clearTimeout(copyTimeoutId);
+      }
     };
   }, [htmlContent]);
 
