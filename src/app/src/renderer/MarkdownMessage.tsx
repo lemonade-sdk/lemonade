@@ -108,7 +108,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       container.removeEventListener('click', handleLinkClick);
       container.removeEventListener('click', handleCopyClick);
     };
-  }, []);
+  }, [htmlContent]);
 
   return (
     <div
