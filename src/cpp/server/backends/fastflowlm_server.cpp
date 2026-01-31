@@ -201,6 +201,7 @@ void FastFlowLMServer::load(const std::string& model_name,
     bool ready = wait_for_ready();
     if (!ready) {
         utils::ProcessManager::stop_process(process_handle_);
+        process_handle_ = {nullptr, 0};  // Reset to prevent double-stop on destructor
         throw std::runtime_error("flm-server failed to start");
     }
 

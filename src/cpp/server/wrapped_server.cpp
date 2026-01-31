@@ -25,8 +25,8 @@ bool WrappedServer::wait_for_ready() {
 
     std::cout << "Waiting for " + server_name_ + " to be ready..." << std::endl;
 
-    // Wait up to 5 minutes (large models can take time to load)
-    const int max_attempts = 3000; // 5 minutes at 100ms intervals
+    // Wait up to 10 minutes (large models can take time to load)
+    const int max_attempts = 6000; // 10 minutes at 100ms intervals
 
     for (int i = 0; i < max_attempts; i++) {
         // Check if process is still running
