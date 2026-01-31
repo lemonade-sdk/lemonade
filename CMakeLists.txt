@@ -688,6 +688,45 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
     add_custom_target(web-app ALL DEPENDS ${WEB_APP_STAMP})
 
     message(STATUS "Web app will be built automatically (disable with -DBUILD_WEB_APP=OFF)")
+
+    if (NOT WIN32 AND NOT APPLE AND NOT BUILD_ELECTRON_APP)
+        # Install .desktop file for web app
+        install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-web-app.desktop
+            DESTINATION share/applications
+        )
+        # Create symlink in standard applications path only if not installing to /usr
+        if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+            install(CODE "
+                file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/applications\")
+                execute_process(
+                    COMMAND ${CMAKE_COMMAND} -E create_symlink
+                        ${CMAKE_INSTALL_PREFIX}/share/applications/lemonade-web-app.desktop
+                        \"\$ENV{DESTDIR}/usr/share/applications/lemonade-web-app.desktop\"
+                )
+            ")
+        endif()
+        install(FILES ${CMAKE_SOURCE_DIR}/src/web-app/assets/logo.svg
+            DESTINATION share/pixmaps
+            RENAME lemonade-app.svg
+        )
+        # Install launch script for web app
+        install(FILES ${CMAKE_SOURCE_DIR}/data/launch-lemonade-web-app.sh
+            DESTINATION bin
+            RENAME lemonade-web-app
+            PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+        )
+        # Create symlink in standard bin path only if not installing to /usr
+        if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+            install(CODE "
+                file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
+                execute_process(
+                    COMMAND ${CMAKE_COMMAND} -E create_symlink
+                        ${CMAKE_INSTALL_PREFIX}/bin/lemonade-web-app
+                        \"\$ENV{DESTDIR}/usr/bin/lemonade-web-app\"
+                )
+            ")
+        endif()
+    endif()
 else()
     if(NOT NODE_EXECUTABLE OR NOT NPM_EXECUTABLE)
         message(STATUS "Node.js or npm not found - Web app build target disabled")
