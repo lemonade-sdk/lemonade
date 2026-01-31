@@ -51,17 +51,36 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
 
   const htmlContent = useMemo(() => {
     const rendered = md.render(content);
-    // Wrap each <pre> block with a wrapper div and add copy button (only when complete)
-    if (isComplete) {
-      return rendered.replace(
-        /<pre>/g,
-        `<div class="code-block-wrapper"><button class="code-copy-button" title="Copy code" aria-label="Copy code">${COPY_ICON_SVG}</button><pre>`
-      ).replace(
-        /<\/pre>/g,
-        '</pre></div>'
-      );
+
+    if (!isComplete) {
+      return rendered;
     }
-    return rendered;
+
+    // Use DOM manipulation to wrap each <pre> block with a wrapper div and add copy button
+    const tempContainer = document.createElement('div');
+    tempContainer.innerHTML = rendered;
+
+    const preElements = tempContainer.querySelectorAll('pre');
+    preElements.forEach((pre) => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'code-block-wrapper';
+
+      const button = document.createElement('button');
+      button.className = 'code-copy-button';
+      button.title = 'Copy code';
+      button.innerHTML = COPY_ICON_SVG;
+
+      const parent = pre.parentNode;
+      if (!parent) {
+        return;
+      }
+
+      parent.insertBefore(wrapper, pre);
+      wrapper.appendChild(button);
+      wrapper.appendChild(pre);
+    });
+
+    return tempContainer.innerHTML;
   }, [content, md, isComplete]);
 
   useEffect(() => {
