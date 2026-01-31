@@ -180,28 +180,28 @@ Open WebUI supports [image generation](https://docs.openwebui.com/features/image
     7. Add your model name to `Model`, e.g., `SDXL-Turbo`.
     8. Click `Save`.
 
-**Option 1: Using Image Generation Switch**
+**Allow Image Generation for Model**
 
-This mode allows you to generate images by toggling a switch in the chat interface.
-
-1. First, enable Image Generation as a capability for your model:
+Enable Image Generation as a capability for your model:
     1. Go to Admin > Settings > Models and choose your model.
     2. Turn on `Image Generation`. If you want start chat always with image generation, also toggle the default option.
 
-2. To generate an image:
+**Option 1: Using Image Generation Switch**
+
+To generate an image:
     1. Toggle the `Image Generation` switch in the chat on.
     2. Enter your image generation prompt.
     3. Click `Send`.
 
 **Option 2: Native Tool-Based Generation (Agentic)**
 
-This mode uses tool calling for image generation and is recommended for high-quality models.
+This mode uses tool calling for image generation and is recommended for high-quality models with tool calling capabilities. Normally the models will alter and improve your prompt.
 
 1. Configure your model for native tool calling:
     1. Go to Admin > Settings > Models and choose your model.
     2. Go to `Advanced Parameters` and toggle `Standard` to `Native`.
     
-    > Note: Open WebUI recommends using native mode only for high-quality models. See [Tool Calling Modes](https://docs.openwebui.com/features/plugin/tools/#tool-calling-modes-default-vs-native) for more information.
+    > Note: Open WebUI recommends using native mode only for high-quality models. See [Tool Calling Modes](https://docs.openwebui.com/features/plugin/tools/#tool-calling-modes-default-vs-native) for more information. (try out >30B models like GPT-OSS-120B, GLM-4.7-Flash or Qwen-3-Next-80B-A3B)
 
 2. The LLM will automatically call the image generation tool when appropriate based on your prompts.
 
