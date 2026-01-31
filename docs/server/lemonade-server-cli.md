@@ -16,6 +16,7 @@ The `lemonade-server` command-line interface (CLI) provides a set of utility com
 
 | Option/Command      | Description                         |
 |---------------------|-------------------------------------|
+| *(no command)*      | Start the server process (equivalent to `serve`). See command options [below](#options-for-serve-and-run). |
 | `-v`, `--version`   | Print the `lemonade-sdk` package version used to install Lemonade Server. |
 | `serve`             | Start the server process in the current terminal. See command options [below](#options-for-serve-and-run). |
 | `status`            | Check if server is running. If it is, print the port number. |
@@ -29,6 +30,9 @@ The `lemonade-server` command-line interface (CLI) provides a set of utility com
 Examples:
 
 ```bash
+# Start server with default settings (same as 'serve')
+lemonade-server
+
 # Start server with custom settings
 lemonade-server serve --port 8080 --log-level debug --llamacpp vulkan
 
@@ -38,9 +42,10 @@ lemonade-server run Qwen3-0.6B-GGUF --port 8080 --log-level debug --llamacpp roc
 
 ## Options for serve and run
 
-When using the `serve` command, you can configure the server with these additional options. The `run` command supports the same options but also requires a `MODEL_NAME` parameter:
+When using the `serve` command (or when running `lemonade-server` with no command), you can configure the server with these additional options. The `run` command supports the same options but also requires a `MODEL_NAME` parameter:
 
 ```bash
+lemonade-server [options]
 lemonade-server serve [options]
 lemonade-server run MODEL_NAME [options]
 ```

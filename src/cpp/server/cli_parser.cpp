@@ -87,7 +87,7 @@ CLIParser::CLIParser()
     app_.set_version_flag("-v,--version", (APP_NAME " version " LEMON_VERSION_STRING));
 
 #ifdef LEMONADE_TRAY
-    app_.require_subcommand(1);
+    app_.require_subcommand(0, 1);  // 0 or 1 subcommand required, making it optional
     app_.set_help_all_flag("--help-all", "Print help for all commands");
 
     // Serve
@@ -161,7 +161,13 @@ int CLIParser::parse(int argc, char** argv) {
             }
         }
 #ifdef LEMONADE_TRAY
-        tray_config_.command = app_.get_subcommands().at(0)->get_name();
+        // Default to "serve" command if no subcommand is provided
+        auto subcommands = app_.get_subcommands();
+        if (subcommands.empty()) {
+            tray_config_.command = "serve";
+        } else {
+            tray_config_.command = subcommands.at(0)->get_name();
+        }
 #endif
         should_continue_ = true;
         exit_code_ = 0;
