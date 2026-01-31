@@ -16,6 +16,7 @@ const CHECK_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" heigh
 
 const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete = true }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const copyTimeoutIdRef = useRef<NodeJS.Timeout | null>(null);
 
   const md = useMemo(() => {
     const mdInstance = new MarkdownIt({
@@ -93,9 +94,16 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
         await navigator.clipboard.writeText(codeText);
         button.innerHTML = CHECK_ICON_SVG;
         button.classList.add('copied');
-        setTimeout(() => {
+        
+        // Clear any existing timeout before setting a new one
+        if (copyTimeoutIdRef.current) {
+          clearTimeout(copyTimeoutIdRef.current);
+        }
+        
+        copyTimeoutIdRef.current = setTimeout(() => {
           button.innerHTML = COPY_ICON_SVG;
           button.classList.remove('copied');
+          copyTimeoutIdRef.current = null;
         }, 2000);
       } catch (err) {
         console.error('Failed to copy code:', err);
@@ -107,6 +115,10 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     return () => {
       container.removeEventListener('click', handleLinkClick);
       container.removeEventListener('click', handleCopyClick);
+      // Clean up the timeout when component unmounts
+      if (copyTimeoutIdRef.current) {
+        clearTimeout(copyTimeoutIdRef.current);
+      }
     };
   }, [htmlContent]);
 
