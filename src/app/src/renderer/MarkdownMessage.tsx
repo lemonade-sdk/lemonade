@@ -55,7 +55,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     if (isComplete) {
       return rendered.replace(
         /<pre>/g,
-        `<div class="code-block-wrapper"><button class="code-copy-button" title="Copy code">${COPY_ICON_SVG}</button><pre>`
+        `<div class="code-block-wrapper"><button class="code-copy-button" title="Copy code" aria-label="Copy code">${COPY_ICON_SVG}</button><pre>`
       ).replace(
         /<\/pre>/g,
         '</pre></div>'
