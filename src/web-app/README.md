@@ -11,7 +11,7 @@ This directory uses **symlinks** to share source code with the main Electron app
 - `package.json` - Web-only dependencies (no Electron)
 - `webpack.config.js` - Browser-targeted webpack config (`target: 'web'`)
 - `tsconfig.json` - TypeScript configuration
-- `node_modules/` - Separate dependency tree (~95MB vs ~300MB with Electron)
+- `node_modules/` - Separate build dependency tree (~95MB vs ~300MB with Electron)
 - `dist/renderer/` - Build output (copied to `build/resources/app/`)
 
 ## Why This Approach?
