@@ -122,8 +122,8 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     // Note: Don't include exe_path here - ProcessManager::start_process already handles it
     fs::path model_dir = model_path.parent_path();
     std::vector<std::string> args = {
-        "-m", (model_dir / model_index["model"]),
-        "-d", (model_dir / model_index["voices"]),
+        "-m", (model_dir / model_index["model"]).string(),
+        "-d", (model_dir / model_index["voices"]).string(),
         "openai",
         "--ip", "127.0.0.1",
         "--port", std::to_string(port_)
