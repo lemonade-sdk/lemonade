@@ -17,6 +17,7 @@ public:
         int output_tokens = 0;
         double time_to_first_token = 0.0;
         double tokens_per_second = 0.0;
+        std::vector<double> decode_token_times;
 
         void print() const {
             if (input_tokens > 0 || output_tokens > 0) {
@@ -27,6 +28,10 @@ public:
                           << time_to_first_token << std::endl;
                 std::cout << "TPS:           " << std::fixed << std::setprecision(2)
                           << tokens_per_second << std::endl;
+                if (!decode_token_times.empty()) {
+                    std::cout << "Decode times:  " << decode_token_times.size()
+                              << " tokens" << std::endl;
+                }
                 std::cout << "=================" << std::endl;
             }
         }
