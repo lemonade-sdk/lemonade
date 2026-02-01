@@ -3,6 +3,7 @@
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/backends/ryzenaiserver.h"
 #include "lemon/backends/whisper_server.h"
+#include "lemon/backends/kokoro_server.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/server_capabilities.h"
 #include "lemon/error_types.h"
@@ -155,6 +156,9 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     if (model_info.recipe == "whispercpp") {
         std::cout << "[Router] Creating WhisperServer backend" << std::endl;
         new_server = std::make_unique<backends::WhisperServer>(log_level_, model_manager_);
+    } else if (model_info.recipe == "kokoro") {
+        std::cout << "[Router] Creating Kokoro backend" << std::endl;
+        new_server = std::make_unique<backends::KokoroServer>(log_level_, model_manager_);
     } else if (model_info.recipe == "sd-cpp") {
         std::cout << "[Router] Creating SDServer backend" << std::endl;
         new_server = std::make_unique<backends::SDServer>(log_level_, model_manager_);
@@ -621,6 +625,16 @@ json Router::audio_transcriptions(const json& request) {
             );
         }
         return audio_server->audio_transcriptions(request);
+    });
+}
+
+void Router::audio_speech(const json& request, httplib::DataSink& sink) {
+    execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+        auto tts_server = dynamic_cast<ITextToSpeechServer*>(server);
+        if (!tts_server) {
+            throw UnsupportedOperationException("Text to speech", device_type_to_string(server->get_device_type()));
+        }
+        tts_server->audio_speech(request, sink);
     });
 }
 

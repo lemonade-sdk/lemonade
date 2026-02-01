@@ -41,6 +41,13 @@ public:
         long timeout_seconds = 300
     );
 
+    static void forward_byte_stream(
+        const std::string& backend_url,
+        const std::string& request_body,
+        httplib::DataSink& sink,
+        long timeout_seconds = 300
+    );
+
 private:
     // Parse telemetry from SSE chunks
     static TelemetryData parse_telemetry(const std::string& buffer);

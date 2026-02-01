@@ -457,6 +457,19 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
         return model_cache_path;  // Return directory even if genai_config not found
     }
 
+    // For kokoro models, look for index.json directory
+    if (info.recipe == "kokoro") {
+        if (fs::exists(model_cache_path)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+                if (entry.is_regular_file() && entry.path().filename() == "index.json") {
+                    return entry.path().string();
+                }
+            }
+        }
+
+        return model_cache_path;  // Return directory even if index not found
+    }
+
     // For whispercpp, find the .bin model file
     if (info.recipe == "whispercpp") {
         if (!fs::exists(model_cache_path)) {

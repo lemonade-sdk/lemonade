@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nlohmann/json.hpp>
+#include <httplib.h>
 
 namespace lemon {
 
@@ -41,6 +42,15 @@ public:
 
     // Speech-to-text transcription (OpenAI /v1/audio/transcriptions compatible)
     virtual json audio_transcriptions(const json& request) = 0;
+};
+
+// Optional audio capability (text-to-speech)
+class ITextToSpeechServer : public virtual ICapability {
+public:
+    virtual ~ITextToSpeechServer() = default;
+
+    // Speech-to-text transcription (OpenAI /v1/audio/speech compatible)
+    virtual void audio_speech(const json& request, httplib::DataSink& sink) = 0;
 };
 
 // Optional image generation capability

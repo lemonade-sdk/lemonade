@@ -136,7 +136,8 @@ public:
     // Virtual so backends can transform request (e.g., FLM needs checkpoint in model field)
     virtual void forward_streaming_request(const std::string& endpoint,
                                            const std::string& request_body,
-                                           httplib::DataSink& sink);
+                                           httplib::DataSink& sink,
+                                           bool sse = true);
 
     // Get the server address
     std::string get_address() const {
