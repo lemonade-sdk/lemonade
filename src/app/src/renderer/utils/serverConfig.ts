@@ -3,10 +3,6 @@
  * This module provides a single source of truth for the server API base URL
  * and handles automatic port discovery when connections fail.
  *
- * Supports remote servers via:
- * - Command line: --base-url http://192.168.0.2:8000
- * - Environment variable: LEMONADE_APP_BASE_URL=http://192.168.0.2:8000
- *
  * When an explicit URL is configured, port discovery is disabled.
  * Falls back to localhost + port discovery when no explicit URL is provided.
  */

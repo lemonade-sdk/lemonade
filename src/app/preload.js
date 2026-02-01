@@ -34,7 +34,7 @@ contextBridge.exposeInMainWorld('api', {
   getVersion: () => ipcRenderer.invoke('get-version'),
   discoverServerPort: () => ipcRenderer.invoke('discover-server-port'),
   getServerPort: () => ipcRenderer.invoke('get-server-port'),
-  // Returns the configured server base URL (from --base-url or LEMONADE_APP_BASE_URL), or null if using localhost discovery
+  // Returns the configured server base URL, or null if using localhost discovery
   getServerBaseUrl: () => ipcRenderer.invoke('get-server-base-url'),
   getServerAPIKey: () => ipcRenderer.invoke('get-server-api-key'),
   onServerPortUpdated: (callback) => {
