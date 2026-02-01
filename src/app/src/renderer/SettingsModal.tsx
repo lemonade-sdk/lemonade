@@ -241,9 +241,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   <div className="settings-label-row">
                     <label className="settings-label">
                       <span className="settings-label-text">{label}</span>
-                      <span className="settings-description">
-                        {description}
-                      </span>
+                      <span className="settings-description">{description}</span>
                     </label>
                     <button
                       type="button"
@@ -324,7 +322,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             </div>
 
             <div
-              className={`settings-section ${ settings.collapseThinkingByDefault.useDefault ? 'settings-section-default' : ''}`}>
+              className={`settings-section ${
+                settings.collapseThinkingByDefault.useDefault ? 'settings-section-default' : ''
+             }`}
+            >
               <div className="settings-label-row">
                 <span className="settings-label-text">Collapse Thinking by Default</span>
                 <button

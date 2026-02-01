@@ -263,7 +263,7 @@ class ServerConfig {
 
     const options = { ...opts };
   
-    if(this.apiKey != null && this.apiKey != "") {
+    if(this.apiKey != null && this.apiKey != '') {
       options.headers = {
         ...options.headers,
         Authorization: `Bearer ${this.apiKey}`,

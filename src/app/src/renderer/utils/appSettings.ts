@@ -54,8 +54,8 @@ export const BASE_SETTING_VALUES: BaseSettingValues = {
   repeatPenalty: 1.1,
   enableThinking: true,
   collapseThinkingByDefault: false,
-  baseURL: "",
-  apiKey: "",
+  baseURL: '',
+  apiKey: '',
 };
 
 export const NUMERIC_SETTING_LIMITS: Record<NumericSettingKey, { min: number; max: number; step: number }> = {
@@ -111,9 +111,7 @@ export const clampNumericSettingValue = (key: NumericSettingKey, value: number):
   return Math.min(Math.max(value, min), max);
 };
 
-export const mergeWithDefaultSettings = (
-  incoming?: Partial<AppSettings>,
-): AppSettings => {
+export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSettings => {
   const defaults = createDefaultSettings();
 
   if (!incoming) {

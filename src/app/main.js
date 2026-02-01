@@ -392,9 +392,9 @@ ipcMain.handle('get-version', async () => {
   try {
     const http = require('http');
     const https = require('https');
-    const baseURL = await getBaseURLFromConfig() || `http://localhost:${cachedServerPort}`;
-
-    const healthUrl = `${baseURL}/api/v1/health`;
+    // Use configured base URL or fall back to localhost with cached port
+    const baseUrl = await getBaseURLFromConfig() || `http://localhost:${cachedServerPort}`;
+    const healthUrl = `${baseUrl}/api/v1/health`;
     const isHttps = healthUrl.startsWith('https://');
     const httpModule = isHttps ? https : http;
 
