@@ -206,13 +206,7 @@ if [ "$OS" = "linux" ]; then
         print_warning "KaTeX fonts not found (optional, enables symlinks in packages)"
         if command_exists apt; then
             missing_packages+=("fonts-katex")
-        elif command_exists dnf; then
-            # Fedora/RHEL might need to check if fonts-katex is available
-            if dnf list fonts-katex &>/dev/null; then
-                missing_packages+=("fonts-katex")
-            fi
         fi
-        # Note: Arch Linux users may need to install from AUR or use bundled fonts
     fi
 fi
 
