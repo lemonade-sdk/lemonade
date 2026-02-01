@@ -68,6 +68,7 @@ These settings can also be provided via environment variables that Lemonade Serv
 | `LEMONADE_PORT`                    | Port number to run the server on                                                                                                                        |
 | `LEMONADE_LOG_LEVEL`               | Logging level                                                                                                                                           |
 | `LEMONADE_LLAMACPP`                | Default LlamaCpp backend (`vulkan`, `rocm`, or `cpu`)                                                                                                   |
+| `LEMONADE_WHISPERCPP`              | Default WhisperCpp backend (`cpu` or `npu`)                                                                                                             |
 | `LEMONADE_CTX_SIZE`                | Default context size for models                                                                                                                         |
 | `LEMONADE_LLAMACPP_ARGS`           | Custom arguments to pass to llama-server                                                                                                                |
 | `LEMONADE_EXTRA_MODELS_DIR`        | Secondary directory to scan for GGUF model files                                                                                                        |
@@ -83,7 +84,8 @@ You can provide your own `llama-server`, `whisper-server`, or `ryzenai-server` b
 | `LEMONADE_LLAMACPP_ROCM_BIN` | Path to custom `llama-server` binary for ROCm backend |
 | `LEMONADE_LLAMACPP_VULKAN_BIN` | Path to custom `llama-server` binary for Vulkan backend |
 | `LEMONADE_LLAMACPP_CPU_BIN` | Path to custom `llama-server` binary for CPU backend |
-| `LEMONADE_WHISPERCPP_BIN` | Path to custom `whisper-server` binary |
+| `LEMONADE_WHISPERCPP_CPU_BIN` | Path to custom `whisper-server` binary for CPU backend |
+| `LEMONADE_WHISPERCPP_NPU_BIN` | Path to custom `whisper-server` binary for NPU backend |
 | `LEMONADE_RYZENAI_SERVER_BIN` | Path to custom `ryzenai-server` binary for NPU/Hybrid models |
 
 **Note:** These environment variables do not override the `--llamacpp` option. They allow you to specify an alternative binary for specific backends while still using the standard backend selection mechanism.
