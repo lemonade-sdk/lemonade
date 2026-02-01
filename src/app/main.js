@@ -19,8 +19,8 @@ const BASE_SETTING_VALUES = {
   repeatPenalty: 1.1,
   enableThinking: true,
   collapseThinkingByDefault: false,
-  baseURL: "",
-  apiKey: "",
+  baseURL: '',
+  apiKey: '',
 };
 
 let mainWindow;

@@ -324,7 +324,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             <div
               className={`settings-section ${
                 settings.collapseThinkingByDefault.useDefault ? 'settings-section-default' : ''
-             }`}
+              }`}
             >
               <div className="settings-label-row">
                 <span className="settings-label-text">Collapse Thinking by Default</span>
