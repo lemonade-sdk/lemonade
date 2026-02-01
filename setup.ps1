@@ -60,6 +60,10 @@ if (-not (Command-Exists "pre-commit")) {
         pip install pre-commit
     } elseif (Command-Exists "pip3") {
         pip3 install pre-commit
+    } elseif (Command-Exists "py") {
+        Write-Warning "Pip or Pip3 not found. Installing using py."
+        py -m pip install pre-commit
+        Write-Warning "If you encounter issues, please ensure the Python Scripts directory is in your PATH."
     } else {
         Write-Error-Custom "Neither pip nor pip3 found. Please install Python 3 first."
         exit 1
