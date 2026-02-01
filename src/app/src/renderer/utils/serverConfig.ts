@@ -41,7 +41,6 @@ class ServerConfig {
 
   private async initialize(): Promise<void> {
     try {
-      // First, check if an explicit base URL was configured (--base-url or env var)
       if (typeof window !== 'undefined' && window.api?.getServerBaseUrl) {
         const baseUrl = await window.api.getServerBaseUrl();
         if (baseUrl) {

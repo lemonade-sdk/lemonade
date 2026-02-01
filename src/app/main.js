@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { exec } = require('child_process');
+const strict = require('assert/strict');
 
 const DEFAULT_MIN_WIDTH = 400;
 const DEFAULT_MIN_HEIGHT = 600;
@@ -11,16 +12,23 @@ const MIN_ZOOM_LEVEL = -2;
 const MAX_ZOOM_LEVEL = 3;
 const ZOOM_STEP = 0.2;
 
+const BASE_SETTING_VALUES = {
+  temperature: 0.7,
+  topK: 40,
+  topP: 0.9,
+  repeatPenalty: 1.1,
+  enableThinking: true,
+  collapseThinkingByDefault: false,
+  baseURL: "",
+  apiKey: "",
+};
+
 let mainWindow;
 let currentMinWidth = DEFAULT_MIN_WIDTH;
 const SETTINGS_FILE_NAME = 'app_settings.json';
 const SETTINGS_UPDATED_CHANNEL = 'settings-updated';
 const SERVER_PORT_UPDATED_CHANNEL = 'server-port-updated';
 let cachedServerPort = 8000; // Default port
-
-// Remote server support: explicit base URL from --base-url arg or LEMONADE_APP_BASE_URL env var
-// When set, this takes precedence over localhost + port discovery
-let configuredServerBaseUrl = null;
 
 /**
  * Parse and normalize a server base URL.
@@ -56,79 +64,24 @@ const normalizeServerUrl = (url) => {
   }
 };
 
-/**
- * Parse command line arguments for --base-url
- */
-const parseBaseUrlArg = () => {
-  const args = process.argv.slice(1); // Skip the electron executable
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--base-url' && args[i + 1]) {
-      return args[i + 1];
-    }
-    // Also support --base-url=value format
-    if (args[i].startsWith('--base-url=')) {
-      return args[i].substring('--base-url='.length);
-    }
-  }
-  return null;
-};
-
-/**
- * Initialize server base URL from command line or environment variable.
- * Precedence: --base-url > LEMONADE_APP_BASE_URL > null (fallback to localhost discovery)
- */
-const initializeServerBaseUrl = () => {
-  // Check command line argument first (highest priority)
-  const argUrl = parseBaseUrlArg();
-  if (argUrl) {
-    const normalized = normalizeServerUrl(argUrl);
-    if (normalized) {
-      console.log('Using server base URL from --base-url:', normalized);
-      configuredServerBaseUrl = normalized;
-      return;
-    }
-  }
-
-  // Check environment variable (second priority)
-  const envUrl = process.env.LEMONADE_APP_BASE_URL;
-  if (envUrl) {
-    const normalized = normalizeServerUrl(envUrl);
-    if (normalized) {
-      console.log('Using server base URL from LEMONADE_APP_BASE_URL:', normalized);
-      configuredServerBaseUrl = normalized;
-      return;
-    }
-  }
-
-  // No explicit URL configured - will use localhost + port discovery
-  console.log('No explicit server URL configured, will use localhost with port discovery');
-  configuredServerBaseUrl = null;
-};
-
-// Initialize on startup
-initializeServerBaseUrl();
-const BASE_APP_SETTING_VALUES = Object.freeze({
-  temperature: 0.7,
-  topK: 40,
-  topP: 0.9,
-  repeatPenalty: 1.1,
-  enableThinking: true,
-  collapseThinkingByDefault: false,
-});
 const DEFAULT_APP_SETTINGS = Object.freeze({
-  temperature: { value: BASE_APP_SETTING_VALUES.temperature, useDefault: true },
-  topK: { value: BASE_APP_SETTING_VALUES.topK, useDefault: true },
-  topP: { value: BASE_APP_SETTING_VALUES.topP, useDefault: true },
-  repeatPenalty: { value: BASE_APP_SETTING_VALUES.repeatPenalty, useDefault: true },
-  enableThinking: { value: BASE_APP_SETTING_VALUES.enableThinking, useDefault: true },
-  collapseThinkingByDefault: { value: BASE_APP_SETTING_VALUES.collapseThinkingByDefault, useDefault: true },
+  temperature: { value: BASE_SETTING_VALUES.temperature, useDefault: true },
+  topK: { value: BASE_SETTING_VALUES.topK, useDefault: true },
+  topP: { value: BASE_SETTING_VALUES.topP, useDefault: true },
+  repeatPenalty: { value: BASE_SETTING_VALUES.repeatPenalty, useDefault: true },
+  enableThinking: { value: BASE_SETTING_VALUES.enableThinking, useDefault: true },
+  collapseThinkingByDefault: { value: BASE_SETTING_VALUES.collapseThinkingByDefault, useDefault: true },
+  baseURL: { value: BASE_SETTING_VALUES.baseURL, useDefault: true },
+  apiKey: "",
 });
+
 const NUMERIC_APP_SETTING_LIMITS = Object.freeze({
   temperature: { min: 0, max: 2 },
   topK: { min: 1, max: 100 },
   topP: { min: 0, max: 1 },
   repeatPenalty: { min: 1, max: 2 },
 });
+
 const NUMERIC_APP_SETTING_KEYS = ['temperature', 'topK', 'topP', 'repeatPenalty'];
 
 const getHomeDirectory = () => {
@@ -178,6 +131,8 @@ const createDefaultAppSettings = () => ({
   repeatPenalty: { ...DEFAULT_APP_SETTINGS.repeatPenalty },
   enableThinking: { ...DEFAULT_APP_SETTINGS.enableThinking },
   collapseThinkingByDefault: { ...DEFAULT_APP_SETTINGS.collapseThinkingByDefault },
+  baseURL: { ...DEFAULT_APP_SETTINGS.baseURL},
+  apiKey: DEFAULT_APP_SETTINGS.apiKey,
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
 });
 
@@ -244,6 +199,25 @@ const sanitizeAppSettings = (incoming = {}) => {
     };
   }
 
+  const rawBaseURL = incoming.baseURL;
+  if (rawBaseURL && typeof rawBaseURL === "object") {
+    const useDefault =
+      typeof rawBaseURL.useDefault === 'boolean'
+        ? rawBaseURL.useDefault
+        : sanitized.baseURL.useDefault;
+    sanitized.baseURL = {
+      value: useDefault
+        ? sanitized.baseURL.value
+        : typeof rawBaseURL.value === 'string'
+          ? rawBaseURL.value
+          : sanitized.baseURL.value,
+      useDefault,
+    };
+  }
+
+  const rawApiKey = incoming.apiKey;
+  sanitized.apiKey = (rawApiKey != "" && typeof rawApiKey === "string") ? rawApiKey: sanitized.apiKey;
+
   // Sanitize layout settings
   const rawLayout = incoming.layout;
   if (rawLayout && typeof rawLayout === 'object') {
@@ -296,6 +270,24 @@ const writeAppSettingsFile = async (settings) => {
   await fs.promises.writeFile(settingsPath, JSON.stringify(sanitized, null, 2), 'utf-8');
 
   return sanitized;
+};
+
+/**
+ * Get base URL from Settings file.
+ * 
+ */
+const getBaseURLFromConfig = async () => {
+  const settings = await readAppSettingsFile();  
+  const defaultBaseUrl = settings.baseURL.value;
+
+  if (defaultBaseUrl) {
+    const normalized = normalizeServerUrl(defaultBaseUrl);
+    if (normalized) {
+       return normalized;
+    } 
+
+    return null;
+  }
 };
 
 const broadcastSettingsUpdated = (settings) => {
@@ -356,13 +348,13 @@ const discoverServerPort = () => {
   });
 };
 
-ipcMain.handle('get-app-settings', async () => {
-  return readAppSettingsFile();
+// Returns the configured server base URL, or null if using localhost discovery
+ipcMain.handle('get-server-base-url', async () => { 
+  return await getBaseURLFromConfig();
 });
 
-// Returns the configured server base URL, or null if using localhost discovery
-ipcMain.handle('get-server-base-url', async () => {
-  return configuredServerBaseUrl;
+ipcMain.handle('get-app-settings', async () => {
+  return readAppSettingsFile();
 });
 
 ipcMain.handle('save-app-settings', async (_event, payload) => {
@@ -375,10 +367,9 @@ ipcMain.handle('get-version', async () => {
   try {
     const http = require('http');
     const https = require('https');
+    const baseURL = await getBaseURLFromConfig() || `http://localhost:${cachedServerPort}`;
 
-    // Use configured base URL or fall back to localhost with cached port
-    const baseUrl = configuredServerBaseUrl || `http://localhost:${cachedServerPort}`;
-    const healthUrl = `${baseUrl}/api/v1/health`;
+    const healthUrl = `${baseURL}/api/v1/health`;
     const isHttps = healthUrl.startsWith('https://');
     const httpModule = isHttps ? https : http;
 
@@ -407,10 +398,9 @@ ipcMain.handle('get-version', async () => {
 });
 
 ipcMain.handle('discover-server-port', async () => {
-  // Skip port discovery if an explicit server URL is configured
-  // (port discovery only works for local servers)
-  if (configuredServerBaseUrl) {
-    console.log('Port discovery skipped - using explicit server URL:', configuredServerBaseUrl);
+  let baseURL = getBaseURLFromConfig();
+  if (baseURL) {
+    console.log('Port discovery skipped - using explicit server URL:', baseURL);
     return null;
   }
 
