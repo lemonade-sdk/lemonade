@@ -783,7 +783,7 @@ if(UNIX AND NOT APPLE)
         RUNTIME DESTINATION bin
     )
 
-    # Install resources
+    # Install resources (all files including KaTeX fonts)
     install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/
         DESTINATION share/lemonade-server/resources
     )
@@ -815,6 +815,55 @@ if(UNIX AND NOT APPLE)
         DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/lemonade
     )
 
+    # Create symlinks for KaTeX fonts if they exist on the system
+    # Check if fonts-katex package fonts are available
+    set(KATEX_FONTS_DIR "/usr/share/fonts/truetype/katex")
+    if(EXISTS "${KATEX_FONTS_DIR}")
+        message(STATUS "KaTeX fonts found at ${KATEX_FONTS_DIR}, creating symlinks")
+
+        # Ensure web-app directory exists in build directory
+        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/resources/web-app")
+
+        set(KATEX_FONTS
+            "KaTeX_AMS-Regular.ttf" "KaTeX_AMS-Regular.woff" "KaTeX_AMS-Regular.woff2"
+            "KaTeX_Caligraphic-Bold.ttf" "KaTeX_Caligraphic-Bold.woff" "KaTeX_Caligraphic-Bold.woff2"
+            "KaTeX_Caligraphic-Regular.ttf" "KaTeX_Caligraphic-Regular.woff" "KaTeX_Caligraphic-Regular.woff2"
+            "KaTeX_Fraktur-Bold.ttf" "KaTeX_Fraktur-Bold.woff" "KaTeX_Fraktur-Bold.woff2"
+            "KaTeX_Fraktur-Regular.ttf" "KaTeX_Fraktur-Regular.woff" "KaTeX_Fraktur-Regular.woff2"
+            "KaTeX_Main-Bold.ttf" "KaTeX_Main-Bold.woff" "KaTeX_Main-Bold.woff2"
+            "KaTeX_Main-BoldItalic.ttf" "KaTeX_Main-BoldItalic.woff" "KaTeX_Main-BoldItalic.woff2"
+            "KaTeX_Main-Italic.ttf" "KaTeX_Main-Italic.woff" "KaTeX_Main-Italic.woff2"
+            "KaTeX_Main-Regular.ttf" "KaTeX_Main-Regular.woff" "KaTeX_Main-Regular.woff2"
+            "KaTeX_Math-BoldItalic.ttf" "KaTeX_Math-BoldItalic.woff" "KaTeX_Math-BoldItalic.woff2"
+            "KaTeX_Math-Italic.ttf" "KaTeX_Math-Italic.woff" "KaTeX_Math-Italic.woff2"
+            "KaTeX_SansSerif-Bold.ttf" "KaTeX_SansSerif-Bold.woff" "KaTeX_SansSerif-Bold.woff2"
+            "KaTeX_SansSerif-Italic.ttf" "KaTeX_SansSerif-Italic.woff" "KaTeX_SansSerif-Italic.woff2"
+            "KaTeX_SansSerif-Regular.ttf" "KaTeX_SansSerif-Regular.woff" "KaTeX_SansSerif-Regular.woff2"
+            "KaTeX_Script-Regular.ttf" "KaTeX_Script-Regular.woff" "KaTeX_Script-Regular.woff2"
+            "KaTeX_Size1-Regular.ttf" "KaTeX_Size1-Regular.woff" "KaTeX_Size1-Regular.woff2"
+            "KaTeX_Size2-Regular.ttf" "KaTeX_Size2-Regular.woff" "KaTeX_Size2-Regular.woff2"
+            "KaTeX_Size3-Regular.ttf" "KaTeX_Size3-Regular.woff" "KaTeX_Size3-Regular.woff2"
+            "KaTeX_Size4-Regular.ttf" "KaTeX_Size4-Regular.woff" "KaTeX_Size4-Regular.woff2"
+            "KaTeX_Typewriter-Regular.ttf" "KaTeX_Typewriter-Regular.woff" "KaTeX_Typewriter-Regular.woff2"
+        )
+
+        foreach(font ${KATEX_FONTS})
+            set(FONT_LINK "${CMAKE_BINARY_DIR}/resources/web-app/${font}")
+            set(FONT_TARGET "${KATEX_FONTS_DIR}/${font}")
+            # Only create symlink if the target font exists
+            if(EXISTS "${FONT_TARGET}")
+                # Remove existing file/symlink if present
+                if(EXISTS "${FONT_LINK}" OR IS_SYMLINK "${FONT_LINK}")
+                    file(REMOVE "${FONT_LINK}")
+                endif()
+                # Create symlink in build directory
+                file(CREATE_LINK "${FONT_TARGET}" "${FONT_LINK}" SYMBOLIC)
+            endif()
+        endforeach()
+    else()
+        message(STATUS "KaTeX fonts not found at ${KATEX_FONTS_DIR}, using bundled fonts")
+    endif()
+
     # Check if Electron app is available for full package
     option(BUILD_ELECTRON_APP "Build and include Electron app in deb package" OFF)
 
@@ -836,7 +885,7 @@ if(UNIX AND NOT APPLE)
 
         # Full package name
         set(CPACK_PACKAGE_NAME "lemonade")
-        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libsecret-1-0, libasound2t64")
+        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libsecret-1-0, libasound2t64, fonts-katex")
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
 
         # Install Electron app
@@ -905,7 +954,7 @@ if(UNIX AND NOT APPLE)
     else()
         # Minimal package (server only)
         set(CPACK_PACKAGE_NAME "lemonade-server-minimal")
-        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip")
+        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, fonts-katex")
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
 
         if(BUILD_ELECTRON_APP)
