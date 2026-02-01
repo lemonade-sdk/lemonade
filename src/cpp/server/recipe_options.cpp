@@ -1,5 +1,7 @@
 #include <lemon/recipe_options.h>
+#include <lemon/system_info.h>
 #include <nlohmann/json.hpp>
+#include <map>
 
 namespace lemon {
 
@@ -7,7 +9,7 @@ using json = nlohmann::json;
 
 static const json DEFAULTS = {
     {"ctx_size", 4096},
-    {"llamacpp_backend", "vulkan"},
+    {"llamacpp_backend", "vulkan"},  // Will be overridden dynamically
     {"llamacpp_args", ""},
     // Image generation defaults (for sd-cpp recipe)
     {"steps", 20},
@@ -16,6 +18,7 @@ static const json DEFAULTS = {
     {"height", 512}
 };
 
+// CLI_OPTIONS without allowed_values for llamacpp (will be set dynamically)
 static const json CLI_OPTIONS = {
     {"--ctx-size", {
         {"option_name", "ctx_size"},
@@ -26,7 +29,6 @@ static const json CLI_OPTIONS = {
     {"--llamacpp", {
         {"option_name", "llamacpp_backend"},
         {"type_name", "BACKEND"},
-        {"allowed_values", {"vulkan", "rocm", "metal", "cpu"}},
         {"envname", "LEMONADE_LLAMACPP"},
         {"help", "LlamaCpp backend to use"}
     }},
@@ -82,11 +84,35 @@ static const bool is_empty_option(json option) {
 }
 
 void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
+    // Cache for supported backends per recipe (computed once per recipe)
+    static std::map<std::string, SystemInfo::SupportedBackendsResult> backend_cache;
+
     for (auto& [key, opt] : CLI_OPTIONS.items()) {
         const std::string opt_name = opt["option_name"];
         CLI::Option* o;
         json defval = DEFAULTS[opt_name];
-        if (defval.is_number_float()) {
+
+        // Generic handling for any *_backend option
+        // Pattern: {recipe}_backend -> get supported backends for {recipe}
+        const std::string backend_suffix = "_backend";
+        bool is_backend_option = opt_name.size() > backend_suffix.size() &&
+            opt_name.compare(opt_name.size() - backend_suffix.size(), backend_suffix.size(), backend_suffix) == 0;
+
+        if (is_backend_option) {
+            // Extract recipe name (everything before "_backend")
+            std::string recipe = opt_name.substr(0, opt_name.size() - backend_suffix.size());
+
+            // Get supported backends (cached)
+            if (backend_cache.find(recipe) == backend_cache.end()) {
+                backend_cache[recipe] = SystemInfo::get_supported_backends(recipe);
+            }
+            const auto& result = backend_cache[recipe];
+            std::string default_backend = result.backends.empty() ? "" : result.backends[0];
+
+            o = app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
+            o->default_val(default_backend);
+            o->check(CLI::IsMember(result.backends));
+        } else if (defval.is_number_float()) {
             o = app.add_option_function<double>(key, [opt_name, &storage = storage](double val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val((double) defval);
         } else if (defval.is_number_integer()) {
@@ -97,6 +123,7 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
             o->default_val(defval);
         }
 
+        // Common settings for all options
         o->envname(opt["envname"]);
         o->type_name(opt["type_name"]);
         if (opt.contains("allowed_values")) {

@@ -1184,58 +1184,154 @@ curl http://localhost:8000/api/v1/stats
 
 System information endpoint that provides complete hardware details and device enumeration.
 
-#### Parameters
-
-| Parameter | Required | Description | Status |
-|-----------|----------|-------------|--------|
-| `verbose` | No | Include detailed system information. When `false` (default), returns essential information (OS, processor, memory, devices). When `true`, includes additional details like Python packages and extended system information. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
 #### Example request
 
-=== "Basic system information"
-
-    ```bash
-    curl "http://localhost:8000/api/v1/system-info"
-    ```
-
-=== "Detailed system information"
-
-    ```bash
-    curl "http://localhost:8000/api/v1/system-info?verbose=true"
-    ```
+```bash
+curl "http://localhost:8000/api/v1/system-info"
+```
 
 #### Response format
 
-=== "Basic response (verbose=false)"
-
-    ```json
-    {
-      "OS Version": "Windows-10-10.0.26100-SP0",
-      "Processor": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
-      "Physical Memory": "32.0 GB",
-      "devices": {
+```json
+{
+  "OS Version": "Windows-10-10.0.26100-SP0",
+  "Processor": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
+  "Physical Memory": "32.0 GB",
+  "OEM System": "ASUS Zenbook S 16",
+  "BIOS Version": "1.0.0",
+  "CPU Max Clock": "5100 MHz",
+  "Windows Power Setting": "Balanced",
+  "devices": {
+    "cpu": {
+      "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
+      "cores": 12,
+      "threads": 24,
+      "available": true
+    },
+    "amd_igpu": {
+      "name": "AMD Radeon(TM) 890M Graphics",
+      "vram_gb": 0.5,
+      "available": true
+    },
+    "amd_dgpu": [],
+    "npu": {
+      "name": "AMD NPU",
+      "power_mode": "Default",
+      "available": true
+    }
+  },
+  "recipes": {
+    "llamacpp": {
+      "backends": {
+        "vulkan": {
+          "devices": ["cpu", "amd_igpu"],
+          "supported": true,
+          "available": true,
+          "version": "b7869"
+        },
+        "rocm": {
+          "devices": ["amd_igpu"],
+          "supported": true,
+          "available": false
+        },
+        "metal": {
+          "devices": [],
+          "supported": false,
+          "error": "Requires macOS"
+        },
         "cpu": {
-          "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
-          "cores": 12,
-          "threads": 24,
+          "devices": ["cpu"],
+          "supported": true,
+          "available": false
+        }
+      }
+    },
+    "whispercpp": {
+      "backends": {
+        "default": {
+          "devices": ["cpu"],
+          "supported": true,
+          "available": false
+        }
+      }
+    },
+    "sd-cpp": {
+      "backends": {
+        "default": {
+          "devices": ["cpu"],
+          "supported": true,
+          "available": false
+        }
+      }
+    },
+    "flm": {
+      "backends": {
+        "default": {
+          "devices": ["npu"],
+          "supported": true,
+          "available": true,
+          "version": "1.2.0"
+        }
+      }
+    },
+    "oga-npu": {
+      "backends": {
+        "default": {
+          "devices": ["npu"],
+          "supported": true,
           "available": true
-        },
-        "amd_igpu": {
-          "name": "AMD Radeon(TM) 890M Graphics",
-          "memory_mb": 512,
-          "driver_version": 32.0.12010.10001,
+        }
+      }
+    },
+    "oga-hybrid": {
+      "backends": {
+        "default": {
+          "devices": ["npu"],
+          "supported": true,
           "available": true
-        },
-        "amd_dgpu": [],
-        "npu": {
-          "name": "AMD NPU",
-          "driver_version": "32.0.203.257",
-          "power_mode": "Default",
+        }
+      }
+    },
+    "oga-cpu": {
+      "backends": {
+        "default": {
+          "devices": ["cpu"],
+          "supported": true,
           "available": true
         }
       }
     }
-    ```
+  }
+}
+```
+
+**Field Descriptions:**
+
+- **System fields:**
+  - `OS Version` - Operating system name and version
+  - `Processor` - CPU model name
+  - `Physical Memory` - Total RAM
+  - `OEM System` - System/laptop model name (Windows only)
+  - `BIOS Version` - BIOS information (Windows only)
+  - `CPU Max Clock` - Maximum CPU clock speed (Windows only)
+  - `Windows Power Setting` - Current power plan (Windows only)
+
+- `devices` - Hardware devices detected on the system (no software/support information)
+  - `cpu` - CPU information (name, cores, threads)
+  - `amd_igpu` - AMD integrated GPU (if present)
+  - `amd_dgpu` - Array of AMD discrete GPUs (if present)
+  - `nvidia_dgpu` - Array of NVIDIA discrete GPUs (if present)
+  - `npu` - NPU device (if present)
+
+- `recipes` - Software recipes and their backend support status
+  - Each recipe (e.g., `llamacpp`, `whispercpp`, `flm`) contains:
+    - `backends` - Available backends for this recipe
+      - Each backend contains:
+        - `devices` - List of devices **on this system** that support this backend (empty if not supported)
+        - `supported` - Whether installation is possible on this system
+        - `available` - Whether the backend is currently installed
+        - `version` - Installed version (if available)
+        - `error` - Reason why not supported (if applicable)
 
 # Debugging
 
