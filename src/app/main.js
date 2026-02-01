@@ -28,6 +28,7 @@ let currentMinWidth = DEFAULT_MIN_WIDTH;
 const SETTINGS_FILE_NAME = 'app_settings.json';
 const SETTINGS_UPDATED_CHANNEL = 'settings-updated';
 const SERVER_PORT_UPDATED_CHANNEL = 'server-port-updated';
+const CONNECTION_SETTINGS_UPDATED_CHANNEL = 'connection-settings-updated'
 let cachedServerPort = 8000; // Default port
 
 /**
@@ -72,7 +73,7 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
   enableThinking: { value: BASE_SETTING_VALUES.enableThinking, useDefault: true },
   collapseThinkingByDefault: { value: BASE_SETTING_VALUES.collapseThinkingByDefault, useDefault: true },
   baseURL: { value: BASE_SETTING_VALUES.baseURL, useDefault: true },
-  apiKey: "",
+  apiKey: { value: BASE_SETTING_VALUES.apiKey, useDefault: true },
 });
 
 const NUMERIC_APP_SETTING_LIMITS = Object.freeze({
@@ -132,7 +133,7 @@ const createDefaultAppSettings = () => ({
   enableThinking: { ...DEFAULT_APP_SETTINGS.enableThinking },
   collapseThinkingByDefault: { ...DEFAULT_APP_SETTINGS.collapseThinkingByDefault },
   baseURL: { ...DEFAULT_APP_SETTINGS.baseURL},
-  apiKey: DEFAULT_APP_SETTINGS.apiKey,
+  apiKey: { ...DEFAULT_APP_SETTINGS.apiKey},
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
 });
 
@@ -216,7 +217,20 @@ const sanitizeAppSettings = (incoming = {}) => {
   }
 
   const rawApiKey = incoming.apiKey;
-  sanitized.apiKey = (rawApiKey != "" && typeof rawApiKey === "string") ? rawApiKey: sanitized.apiKey;
+  if (rawApiKey && typeof rawApiKey === "object") {
+    const useDefault =
+      typeof rawApiKey.useDefault === 'boolean'
+        ? rawApiKey.useDefault
+        : sanitized.apiKey.useDefault;
+    sanitized.apiKey = {
+      value: useDefault
+        ? sanitized.apiKey.value
+        : typeof rawApiKey.value === 'string'
+          ? rawApiKey.value
+          : sanitized.apiKey.value,
+      useDefault,
+    };
+  }
 
   // Sanitize layout settings
   const rawLayout = incoming.layout;
@@ -296,6 +310,12 @@ const broadcastSettingsUpdated = (settings) => {
   }
 };
 
+const broadcastConnectionSettingsUpdated = (baseURL, apiKey) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(CONNECTION_SETTINGS_UPDATED_CHANNEL, baseURL, apiKey);
+  }
+};
+
 const broadcastServerPortUpdated = (port) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(SERVER_PORT_UPDATED_CHANNEL, port);
@@ -353,6 +373,10 @@ ipcMain.handle('get-server-base-url', async () => {
   return await getBaseURLFromConfig();
 });
 
+ipcMain.handle('get-server-api-key', async () => { 
+  return (await readAppSettingsFile()).apiKey.value;
+});
+
 ipcMain.handle('get-app-settings', async () => {
   return readAppSettingsFile();
 });
@@ -360,6 +384,7 @@ ipcMain.handle('get-app-settings', async () => {
 ipcMain.handle('save-app-settings', async (_event, payload) => {
   const sanitized = await writeAppSettingsFile(payload);
   broadcastSettingsUpdated(sanitized);
+  broadcastConnectionSettingsUpdated(sanitized.baseURL.value, sanitized.apiKey.value);
   return sanitized;
 });
 
@@ -416,16 +441,22 @@ ipcMain.handle('get-server-port', async () => {
 
 ipcMain.handle('get-system-stats', async () => {
   try {
-    let serverUrl = 'http://localhost:8000';
+    let serverUrl = await getBaseURLFromConfig();
+    let apiKey = (await readAppSettingsFile()).apiKey.value;
 
-    // Use explicit server URL if configured
-    if (configuredServerBaseUrl) {
-      serverUrl = configuredServerBaseUrl;
-    } else if (cachedServerPort) {
-      serverUrl = `http://localhost:${cachedServerPort}`;
+    if (!serverUrl) {
+      serverUrl = cachedServerPort ? "http://localhost:8000" : `http://localhost:${cachedServerPort}`;
     }
 
-    const response = await fetch(`${serverUrl}/api/v1/system-stats`, { timeout: 2000 });
+    const options = {timeout: 2000};
+  
+    if(apiKey != null && apiKey != "") {
+      options.headers = {
+        Authorization: `Bearer ${apiKey}`,
+      }
+    } 
+
+    const response = await fetch(`${serverUrl}/api/v1/system-stats`, options);
     if (response.ok) {
       const data = await response.json();
       return {
