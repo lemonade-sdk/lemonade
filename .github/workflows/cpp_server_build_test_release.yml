@@ -208,6 +208,39 @@ jobs:
 
           Write-Host "Electron app build successful!" -ForegroundColor Green
 
+      - name: Build Web App
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Write-Host "Building Web app..." -ForegroundColor Cyan
+
+          cd src\web-app
+
+          # Install dependencies
+          Write-Host "Installing npm dependencies..." -ForegroundColor Yellow
+          npm install
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "ERROR: npm install failed!" -ForegroundColor Red
+              exit $LASTEXITCODE
+          }
+
+          # Build the Web app
+          Write-Host "Building Web app..." -ForegroundColor Yellow
+          npm run build
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "ERROR: Web app build failed!" -ForegroundColor Red
+              exit $LASTEXITCODE
+          }
+
+          # Verify the build output exists
+          if (-not (Test-Path "dist\renderer\index.html")) {
+              Write-Host "ERROR: Web app build output not found!" -ForegroundColor Red
+              exit 1
+          }
+
+          Write-Host "Web app build successful!" -ForegroundColor Green
+
       - name: Build the Lemonade Server Installer
         shell: PowerShell
         run: |

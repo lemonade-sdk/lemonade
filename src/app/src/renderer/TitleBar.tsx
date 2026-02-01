@@ -42,6 +42,9 @@ const TitleBar: React.FC<TitleBarProps> = ({
   const zoomInShortcutLabel = isMacPlatform ? '⌘ +' : isWindowsPlatform ? 'Ctrl Shift +' : 'Ctrl +';
   const zoomOutShortcutLabel = isMacPlatform ? '⌘ -' : 'Ctrl -';
 
+  // Detect if running as web app vs Electron using explicit flag
+  const isWebApp = window.api?.isWebApp === true;
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -219,40 +222,44 @@ const TitleBar: React.FC<TitleBarProps> = ({
               <circle cx="8" cy="8.5" r="2.5" stroke="currentColor" strokeWidth="1.2"/>
             </svg>
           </button>
-          <button
-            className="title-bar-button minimize"
-            onClick={() => window.api.minimizeWindow()}
-            title="Minimize"
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12">
-              <rect x="0" y="5" width="12" height="1" fill="currentColor"/>
-            </svg>
-          </button>
-          <button
-            className="title-bar-button maximize"
-            onClick={() => window.api.maximizeWindow()}
-            title={isMaximized ? "Restore Down" : "Maximize"}
-          >
-            {isMaximized ? (
-              <svg width="12" height="12" viewBox="0 0 12 12">
-                <rect x="2.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1"/>
-                <rect x="0.5" y="2.5" width="9" height="9" fill="black" stroke="currentColor" strokeWidth="1"/>
-              </svg>
-            ) : (
-              <svg width="12" height="12" viewBox="0 0 12 12">
-                <rect x="0.5" y="0.5" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1"/>
-              </svg>
-            )}
-          </button>
-          <button
-            className="title-bar-button close"
-            onClick={() => window.api.closeWindow()}
-            title="Close"
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12">
-              <path d="M 1,1 L 11,11 M 11,1 L 1,11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-          </button>
+          {!isWebApp && (
+            <>
+              <button
+                className="title-bar-button minimize"
+                onClick={() => window.api.minimizeWindow()}
+                title="Minimize"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12">
+                  <rect x="0" y="5" width="12" height="1" fill="currentColor"/>
+                </svg>
+              </button>
+              <button
+                className="title-bar-button maximize"
+                onClick={() => window.api.maximizeWindow()}
+                title={isMaximized ? "Restore Down" : "Maximize"}
+              >
+                {isMaximized ? (
+                  <svg width="12" height="12" viewBox="0 0 12 12">
+                    <rect x="2.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1"/>
+                    <rect x="0.5" y="2.5" width="9" height="9" fill="black" stroke="currentColor" strokeWidth="1"/>
+                  </svg>
+                ) : (
+                  <svg width="12" height="12" viewBox="0 0 12 12">
+                    <rect x="0.5" y="0.5" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1"/>
+                  </svg>
+                )}
+              </button>
+              <button
+                className="title-bar-button close"
+                onClick={() => window.api.closeWindow()}
+                title="Close"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12">
+                  <path d="M 1,1 L 11,11 M 11,1 L 1,11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </>
+          )}
         </div>
       </div>
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />

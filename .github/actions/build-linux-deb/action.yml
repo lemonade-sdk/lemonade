@@ -108,12 +108,5 @@ runs:
         echo "Package information:"
         dpkg-deb --info "$DEB_FILE"
 
-        echo "Package contents:"
-        if [ "${{ inputs.include-electron }}" == "true" ]; then
-            dpkg-deb --contents "$DEB_FILE" | head -100
-        else
-            dpkg-deb --contents "$DEB_FILE"
-        fi
-
         # Output the package name for subsequent steps
         echo "package_name=$DEB_FILE" >> $GITHUB_OUTPUT
