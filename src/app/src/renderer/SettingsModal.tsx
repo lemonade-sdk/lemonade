@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from 'react';
 import {
   AppSettings,
   BASE_SETTING_VALUES,
@@ -7,7 +7,7 @@ import {
   createDefaultSettings,
   mergeWithDefaultSettings,
   NUMERIC_SETTING_LIMITS,
-} from "./utils/appSettings";
+} from './utils/appSettings';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -20,34 +20,29 @@ const numericSettingsConfig: Array<{
   description: string;
 }> = [
   {
-    key: "temperature",
-    label: "Temperature",
-    description:
-      "Controls randomness in responses (0 = deterministic, 2 = very random)",
+    key: 'temperature',
+    label: 'Temperature',
+    description: 'Controls randomness in responses (0 = deterministic, 2 = very random)',
   },
   {
-    key: "topK",
-    label: "Top K",
-    description: "Limits token selection to the K most likely tokens",
+    key: 'topK',
+    label: 'Top K',
+    description: 'Limits token selection to the K most likely tokens',
   },
   {
-    key: "topP",
-    label: "Top P",
-    description:
-      "Nucleus sampling - considers tokens within cumulative probability P",
+    key: 'topP',
+    label: 'Top P',
+    description: 'Nucleus sampling - considers tokens within cumulative probability P',
   },
   {
-    key: "repeatPenalty",
-    label: "Repeat Penalty",
-    description:
-      "Penalty for repeating tokens (1 = no penalty, >1 = less repetition)",
+    key: 'repeatPenalty',
+    label: 'Repeat Penalty',
+    description: 'Penalty for repeating tokens (1 = no penalty, >1 = less repetition)',
   },
 ];
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-  const [settings, setSettings] = useState<AppSettings>(
-    createDefaultSettings(),
-  );
+  const [settings, setSettings] = useState<AppSettings>(createDefaultSettings());
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -76,7 +71,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           setSettings(mergeWithDefaultSettings(stored));
         }
       } catch (error) {
-        console.error("Failed to load settings:", error);
+        console.error('Failed to load settings:', error);
         if (isMounted) {
           setSettings(createDefaultSettings());
         }
@@ -110,10 +105,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }));
   };
 
-  const handleBooleanChange = (
-    key: "enableThinking" | "collapseThinkingByDefault",
-    value: boolean,
-  ) => {
+  const handleBooleanChange = (key: 'enableThinking' | 'collapseThinkingByDefault', value: boolean) => {
     setSettings((prev) => ({
       ...prev,
       [key]: {
@@ -123,7 +115,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }));
   };
 
-  const handleTextInputChange = (key: "baseURL" | "apiKey", value: string) => {
+  const handleTextInputChange = (key: 'baseURL' | 'apiKey', value: string) => {
     setSettings((prev) => ({
       ...prev,
       [key]: {
@@ -133,15 +125,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }));
   };
 
-  const handleResetField = (
-    key:
-      | NumericSettingKey
-      | "enableThinking"
-      | "collapseThinkingByDefault"
-      | "baseURL" | "apiKey"
-  ) => {
+  const handleResetField = (key: NumericSettingKey | 'enableThinking' | 'collapseThinkingByDefault' | 'baseURL' | 'apiKey') => {
     setSettings((prev) => {
-      if (key === "enableThinking") {
+      if (key === 'enableThinking') {
         return {
           ...prev,
           enableThinking: {
@@ -151,21 +137,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         };
       }
 
-      if (key === "collapseThinkingByDefault") {
+      if (key === 'collapseThinkingByDefault') {
         return {
           ...prev,
           collapseThinkingByDefault: {
             value: BASE_SETTING_VALUES.collapseThinkingByDefault,
-            useDefault: true,
-          },
-        };
-      }
-
-      if (key === "baseURL") {
-        return {
-          ...prev,
-          baseURL: {
-            value: BASE_SETTING_VALUES.baseURL,
             useDefault: true,
           },
         };
@@ -197,8 +173,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       setSettings(mergeWithDefaultSettings(saved));
       onClose();
     } catch (error) {
-      console.error("Failed to save settings:", error);
-      alert("Failed to save settings. Please try again.");
+      console.error('Failed to save settings:', error);
+      alert('Failed to save settings. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -211,18 +187,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       <div className="settings-modal">
         <div className="settings-header">
           <h2>Settings</h2>
-          <button
-            className="settings-close-button"
-            onClick={onClose}
-            title="Close"
-          >
+          <button className="settings-close-button" onClick={onClose} title="Close">
             <svg width="14" height="14" viewBox="0 0 14 14">
-              <path
-                d="M 1,1 L 13,13 M 13,1 L 1,13"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
+              <path d="M 1,1 L 13,13 M 13,1 L 1,13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
             </svg>
           </button>
         </div>
@@ -240,17 +207,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   <span className="settings-label-text">Base URL</span>
                   <span className="settings-description">Connect the app to a server at the specified URL.</span>
                 </label>
-                <button type="button" className="settings-field-reset" onClick={() => handleResetField("baseURL")} disabled={settings.baseURL.useDefault}>
+                <button type="button" className="settings-field-reset" onClick={() => handleResetField('baseURL')} disabled={settings.baseURL.useDefault}>
                   Reset
                 </button>
               </div>
-              <input type="text" value={settings["baseURL"].value}
-                placeholder="http://localhost:8000/"
-                onChange={(e) =>
-                  handleTextInputChange("baseURL", e.target.value)
-                }
-                className="settings-text-input"
-              />
+              <input type="text" value={settings["baseURL"].value} placeholder="http://localhost:8000/" onChange={(e) => handleTextInputChange('baseURL', e.target.value)} className="settings-text-input"/>
             </div>
             <div className={`settings-section ${settings.apiKey.useDefault ? "settings-section-default" : ""}`}>
               <div className="settings-label-row">
@@ -258,16 +219,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   <span className="settings-label-text">API Key</span>
                   <span className="settings-description">If present, API Key will be required to execute any request.</span>
                 </label>
-                <button type="button" className="settings-field-reset" onClick={() => handleResetField("apiKey")} disabled={settings.apiKey.useDefault}>
+                <button type="button" className="settings-field-reset" onClick={() => handleResetField('apiKey')} disabled={settings.apiKey.useDefault}>
                   Reset
                 </button>
               </div>
-              <input type="text" value={settings["apiKey"].value}
-                onChange={(e) =>
-                  handleTextInputChange("apiKey", e.target.value)
-                }
-                className="settings-text-input"
-              />
+              <input type="text" value={settings['apiKey'].value} onChange={(e) => handleTextInputChange('apiKey', e.target.value)} className="settings-text-input"/>
             </div>
             <div className="settings-category-header">
               <h3>LLM Chat</h3>
@@ -280,7 +236,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
               return (
                 <div
                   key={key}
-                  className={`settings-section ${isDefault ? "settings-section-default" : ""}`}
+                  className={`settings-section ${isDefault ? 'settings-section-default' : ''}`}
                 >
                   <div className="settings-label-row">
                     <label className="settings-label">
@@ -305,19 +261,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                       max={limits.max}
                       step={limits.step}
                       value={settings[key].value}
-                      onChange={(e) =>
-                        handleNumericChange(key, parseFloat(e.target.value))
-                      }
-                      className={`settings-slider ${isDefault ? "slider-auto" : ""}`}
+                      onChange={(e) => handleNumericChange(key, parseFloat(e.target.value))}
+                      className={`settings-slider ${isDefault ? 'slider-auto' : ''}`}
                     />
                     <input
                       type="text"
-                      value={isDefault ? "auto" : settings[key].value}
+                      value={isDefault ? 'auto' : settings[key].value}
                       onChange={(e) => {
-                        if (
-                          e.target.value === "auto" ||
-                          e.target.value === ""
-                        ) {
+                        if (e.target.value === 'auto' || e.target.value === '') {
                           return;
                         }
                         const parsed = parseFloat(e.target.value);
@@ -343,9 +294,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
             <div
               className={`settings-section ${
-                settings.enableThinking.useDefault
-                  ? "settings-section-default"
-                  : ""
+                settings.enableThinking.useDefault ? 'settings-section-default' : ''
               }`}
             >
               <div className="settings-label-row">
@@ -353,7 +302,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 <button
                   type="button"
                   className="settings-field-reset"
-                  onClick={() => handleResetField("enableThinking")}
+                  onClick={() => handleResetField('enableThinking')}
                   disabled={settings.enableThinking.useDefault}
                 >
                   Reset
@@ -363,35 +312,25 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 <input
                   type="checkbox"
                   checked={settings.enableThinking.value}
-                  onChange={(e) =>
-                    handleBooleanChange("enableThinking", e.target.checked)
-                  }
+                  onChange={(e) => handleBooleanChange('enableThinking', e.target.checked)}
                   className="settings-checkbox"
                 />
                 <div className="settings-checkbox-content">
                   <span className="settings-description">
-                    Determines whether hybrid reasoning models, such as Qwen3,
-                    will use thinking.
+                    Determines whether hybrid reasoning models, such as Qwen3, will use thinking.
                   </span>
                 </div>
               </label>
             </div>
 
             <div
-              className={`settings-section ${
-                settings.collapseThinkingByDefault.useDefault
-                  ? "settings-section-default"
-                  : ""
-              }`}
-            >
+              className={`settings-section ${ settings.collapseThinkingByDefault.useDefault ? 'settings-section-default' : ''}`}>
               <div className="settings-label-row">
-                <span className="settings-label-text">
-                  Collapse Thinking by Default
-                </span>
+                <span className="settings-label-text">Collapse Thinking by Default</span>
                 <button
                   type="button"
                   className="settings-field-reset"
-                  onClick={() => handleResetField("collapseThinkingByDefault")}
+                  onClick={() => handleResetField('collapseThinkingByDefault')}
                   disabled={settings.collapseThinkingByDefault.useDefault}
                 >
                   Reset
@@ -401,18 +340,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 <input
                   type="checkbox"
                   checked={settings.collapseThinkingByDefault.value}
-                  onChange={(e) =>
-                    handleBooleanChange(
-                      "collapseThinkingByDefault",
-                      e.target.checked,
-                    )
-                  }
+                  onChange={(e) => handleBooleanChange('collapseThinkingByDefault', e.target.checked)}
                   className="settings-checkbox"
                 />
                 <div className="settings-checkbox-content">
                   <span className="settings-description">
-                    When enabled, thinking sections will be collapsed by default
-                    instead of automatically expanded.
+                    When enabled, thinking sections will be collapsed by default instead of automatically expanded.
                   </span>
                 </div>
               </label>
@@ -433,7 +366,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             onClick={handleSave}
             disabled={isSaving || isLoading}
           >
-            {isSaving ? "Saving…" : "Save"}
+            {isSaving ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>

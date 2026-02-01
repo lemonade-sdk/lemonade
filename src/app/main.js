@@ -201,7 +201,7 @@ const sanitizeAppSettings = (incoming = {}) => {
   }
 
   const rawBaseURL = incoming.baseURL;
-  if (rawBaseURL && typeof rawBaseURL === "object") {
+  if (rawBaseURL && typeof rawBaseURL === 'object') {
     const useDefault =
       typeof rawBaseURL.useDefault === 'boolean'
         ? rawBaseURL.useDefault
@@ -217,7 +217,7 @@ const sanitizeAppSettings = (incoming = {}) => {
   }
 
   const rawApiKey = incoming.apiKey;
-  if (rawApiKey && typeof rawApiKey === "object") {
+  if (rawApiKey && typeof rawApiKey === 'object') {
     const useDefault =
       typeof rawApiKey.useDefault === 'boolean'
         ? rawApiKey.useDefault
@@ -445,12 +445,12 @@ ipcMain.handle('get-system-stats', async () => {
     let apiKey = (await readAppSettingsFile()).apiKey.value;
 
     if (!serverUrl) {
-      serverUrl = cachedServerPort ? "http://localhost:8000" : `http://localhost:${cachedServerPort}`;
+      serverUrl = cachedServerPort ? 'http://localhost:8000' : `http://localhost:${cachedServerPort}`;
     }
 
     const options = {timeout: 2000};
   
-    if(apiKey != null && apiKey != "") {
+    if(apiKey != null && apiKey != '') {
       options.headers = {
         Authorization: `Bearer ${apiKey}`,
       }

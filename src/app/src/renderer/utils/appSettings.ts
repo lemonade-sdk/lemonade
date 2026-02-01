@@ -1,14 +1,7 @@
-export type NumericSettingKey =
-  | "temperature"
-  | "topK"
-  | "topP"
-  | "repeatPenalty";
-export type BooleanSettingKey = "enableThinking" | "collapseThinkingByDefault";
-export type StringSettingKey = "baseURL" | "apiKey";
-export type SettingKey =
-  | NumericSettingKey
-  | BooleanSettingKey
-  | StringSettingKey;
+export type NumericSettingKey = 'temperature' | 'topK' | 'topP' | 'repeatPenalty';
+export type BooleanSettingKey = 'enableThinking' | 'collapseThinkingByDefault';
+export type StringSettingKey = 'baseURL' | 'apiKey';
+export type SettingKey = NumericSettingKey | BooleanSettingKey | StringSettingKey;
 
 export interface NumericSetting {
   value: number;
@@ -65,22 +58,14 @@ export const BASE_SETTING_VALUES: BaseSettingValues = {
   apiKey: "",
 };
 
-export const NUMERIC_SETTING_LIMITS: Record<
-  NumericSettingKey,
-  { min: number; max: number; step: number }
-> = {
+export const NUMERIC_SETTING_LIMITS: Record<NumericSettingKey, { min: number; max: number; step: number }> = {
   temperature: { min: 0, max: 2, step: 0.1 },
   topK: { min: 1, max: 100, step: 1 },
   topP: { min: 0, max: 1, step: 0.01 },
   repeatPenalty: { min: 1, max: 2, step: 0.1 },
 };
 
-const numericSettingKeys: NumericSettingKey[] = [
-  "temperature",
-  "topK",
-  "topP",
-  "repeatPenalty",
-];
+const numericSettingKeys: NumericSettingKey[] = ['temperature', 'topK', 'topP', 'repeatPenalty'];
 
 export const DEFAULT_LAYOUT_SETTINGS: LayoutSettings = {
   isChatVisible: true,
@@ -97,14 +82,8 @@ export const createDefaultSettings = (): AppSettings => ({
   topK: { value: BASE_SETTING_VALUES.topK, useDefault: true },
   topP: { value: BASE_SETTING_VALUES.topP, useDefault: true },
   repeatPenalty: { value: BASE_SETTING_VALUES.repeatPenalty, useDefault: true },
-  enableThinking: {
-    value: BASE_SETTING_VALUES.enableThinking,
-    useDefault: true,
-  },
-  collapseThinkingByDefault: {
-    value: BASE_SETTING_VALUES.collapseThinkingByDefault,
-    useDefault: true,
-  },
+  enableThinking: { value: BASE_SETTING_VALUES.enableThinking, useDefault: true },
+  collapseThinkingByDefault: { value: BASE_SETTING_VALUES.collapseThinkingByDefault, useDefault: true },
   baseURL: { value: BASE_SETTING_VALUES.baseURL, useDefault: true },
   apiKey: { value: BASE_SETTING_VALUES.apiKey, useDefault: true },
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
@@ -122,10 +101,7 @@ export const cloneSettings = (settings: AppSettings): AppSettings => ({
   layout: { ...settings.layout },
 });
 
-export const clampNumericSettingValue = (
-  key: NumericSettingKey,
-  value: number,
-): number => {
+export const clampNumericSettingValue = (key: NumericSettingKey, value: number): number => {
   const { min, max } = NUMERIC_SETTING_LIMITS[key];
 
   if (!Number.isFinite(value)) {
@@ -146,17 +122,17 @@ export const mergeWithDefaultSettings = (
 
   numericSettingKeys.forEach((key) => {
     const rawSetting = incoming[key];
-    if (!rawSetting || typeof rawSetting !== "object") {
+    if (!rawSetting || typeof rawSetting !== 'object') {
       return;
     }
 
     const useDefault =
-      typeof rawSetting.useDefault === "boolean"
+      typeof rawSetting.useDefault === 'boolean'
         ? rawSetting.useDefault
         : defaults[key].useDefault;
     const numericValue = useDefault
       ? defaults[key].value
-      : typeof rawSetting.value === "number"
+      : typeof rawSetting.value === 'number'
         ? clampNumericSettingValue(key, rawSetting.value)
         : defaults[key].value;
 
@@ -167,14 +143,14 @@ export const mergeWithDefaultSettings = (
   });
 
   const rawEnableThinking = incoming.enableThinking;
-  if (rawEnableThinking && typeof rawEnableThinking === "object") {
+  if (rawEnableThinking && typeof rawEnableThinking === 'object') {
     const useDefault =
-      typeof rawEnableThinking.useDefault === "boolean"
+      typeof rawEnableThinking.useDefault === 'boolean'
         ? rawEnableThinking.useDefault
         : defaults.enableThinking.useDefault;
     const value = useDefault
       ? defaults.enableThinking.value
-      : typeof rawEnableThinking.value === "boolean"
+      : typeof rawEnableThinking.value === 'boolean'
         ? rawEnableThinking.value
         : defaults.enableThinking.value;
 
@@ -185,17 +161,14 @@ export const mergeWithDefaultSettings = (
   }
 
   const rawCollapseThinkingByDefault = incoming.collapseThinkingByDefault;
-  if (
-    rawCollapseThinkingByDefault &&
-    typeof rawCollapseThinkingByDefault === "object"
-  ) {
+  if (rawCollapseThinkingByDefault && typeof rawCollapseThinkingByDefault === 'object') {
     const useDefault =
-      typeof rawCollapseThinkingByDefault.useDefault === "boolean"
+      typeof rawCollapseThinkingByDefault.useDefault === 'boolean'
         ? rawCollapseThinkingByDefault.useDefault
         : defaults.collapseThinkingByDefault.useDefault;
     const value = useDefault
       ? defaults.collapseThinkingByDefault.value
-      : typeof rawCollapseThinkingByDefault.value === "boolean"
+      : typeof rawCollapseThinkingByDefault.value === 'boolean'
         ? rawCollapseThinkingByDefault.value
         : defaults.collapseThinkingByDefault.value;
 
@@ -206,14 +179,14 @@ export const mergeWithDefaultSettings = (
   }
 
   const rawBaseURL = incoming.baseURL;
-  if (rawBaseURL && typeof rawBaseURL === "object") {
+  if (rawBaseURL && typeof rawBaseURL === 'object') {
     const useDefault =
-      typeof rawBaseURL.useDefault === "boolean"
+      typeof rawBaseURL.useDefault === 'boolean'
         ? rawBaseURL.useDefault
         : defaults.baseURL.useDefault;
     const value = useDefault
       ? defaults.baseURL.value
-      : typeof rawBaseURL.value === "string"
+      : typeof rawBaseURL.value === 'string'
         ? rawBaseURL.value
         : defaults.baseURL.value;
 
@@ -224,14 +197,14 @@ export const mergeWithDefaultSettings = (
   }
 
   const rawApiKey = incoming.apiKey;
-  if (rawApiKey && typeof rawApiKey === "object") {
+  if (rawApiKey && typeof rawApiKey === 'object') {
     const useDefault =
-      typeof rawApiKey.useDefault === "boolean"
+      typeof rawApiKey.useDefault === 'boolean'
         ? rawApiKey.useDefault
         : defaults.apiKey.useDefault;
     const value = useDefault
       ? defaults.apiKey.value
-      : typeof rawApiKey.value === "string"
+      : typeof rawApiKey.value === 'string'
         ? rawApiKey.value
         : defaults.apiKey.value;
 
@@ -243,28 +216,28 @@ export const mergeWithDefaultSettings = (
 
   // Merge layout settings
   const rawLayout = incoming.layout;
-  if (rawLayout && typeof rawLayout === "object") {
+  if (rawLayout && typeof rawLayout === 'object') {
     // Merge boolean visibility settings
-    if (typeof rawLayout.isChatVisible === "boolean") {
+    if (typeof rawLayout.isChatVisible === 'boolean') {
       defaults.layout.isChatVisible = rawLayout.isChatVisible;
     }
-    if (typeof rawLayout.isModelManagerVisible === "boolean") {
+    if (typeof rawLayout.isModelManagerVisible === 'boolean') {
       defaults.layout.isModelManagerVisible = rawLayout.isModelManagerVisible;
     }
-    if (typeof rawLayout.isCenterPanelVisible === "boolean") {
+    if (typeof rawLayout.isCenterPanelVisible === 'boolean') {
       defaults.layout.isCenterPanelVisible = rawLayout.isCenterPanelVisible;
     }
-    if (typeof rawLayout.isLogsVisible === "boolean") {
+    if (typeof rawLayout.isLogsVisible === 'boolean') {
       defaults.layout.isLogsVisible = rawLayout.isLogsVisible;
     }
     // Merge numeric size settings
-    if (typeof rawLayout.modelManagerWidth === "number") {
+    if (typeof rawLayout.modelManagerWidth === 'number') {
       defaults.layout.modelManagerWidth = rawLayout.modelManagerWidth;
     }
-    if (typeof rawLayout.chatWidth === "number") {
+    if (typeof rawLayout.chatWidth === 'number') {
       defaults.layout.chatWidth = rawLayout.chatWidth;
     }
-    if (typeof rawLayout.logsHeight === "number") {
+    if (typeof rawLayout.logsHeight === 'number') {
       defaults.layout.logsHeight = rawLayout.logsHeight;
     }
   }
@@ -272,9 +245,7 @@ export const mergeWithDefaultSettings = (
   return defaults;
 };
 
-export const buildChatRequestOverrides = (
-  settings?: AppSettings | null,
-): Record<string, number | boolean> => {
+export const buildChatRequestOverrides = (settings?: AppSettings | null): Record<string, number | boolean> => {
   if (!settings) {
     return {};
   }
