@@ -187,12 +187,7 @@ msiexec /i lemonade.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemona
 
 The Debian package installer handles all system configuration automatically, including setting up a systemd service for managing the Lemonade Server.
 
-**Installation:**
-
-```bash
-sudo apt update
-sudo apt install lemonade-server
-```
+If you would prefer to manage the lifecycle of the server process manually, the service can be disabled and manually run as well.
 
 ### Systemd Service Management
 
