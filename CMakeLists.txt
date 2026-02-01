@@ -586,6 +586,14 @@ if(UNIX AND NOT APPLE)
         DESTINATION share/lemonade-server/resources
     )
 
+    # Install systemd service and configuration files
+    install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-server.service
+        DESTINATION /lib/systemd/system
+    )
+    install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.conf
+        DESTINATION /etc/lemonade
+    )
+
     # Check if Electron app is available for full package
     option(BUILD_ELECTRON_APP "Build and include Electron app in deb package" OFF)
 
