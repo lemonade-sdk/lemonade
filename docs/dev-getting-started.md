@@ -124,7 +124,7 @@ The tray app looks for `Lemonade.exe` in the same directory as the executable (d
 **Linux:**
 - Linux builds are headless-only (no tray application) by default
 - This avoids LGPL dependencies (GTK3, libappindicator3, libnotify)
-- Run server using: `lemonade-server serve` (headless mode is automatic)
+- Run server using: `lemonade-server` (headless mode is automatic)
 - Fully functional for server operations and model management
 - Uses permissively licensed dependencies only (MIT, Apache 2.0, BSD, curl license)
 - Clean .deb package with only runtime files (no development headers)
