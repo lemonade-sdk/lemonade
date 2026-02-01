@@ -35,12 +35,15 @@ public:
     json responses(const json& request) override;
 
     // ITextToSpeechServer implementation
-    json audio_speech(const json& request) override;
+    void audio_speech(const json& request, httplib::DataSink& sink) override;
 
 private:
     std::string get_kokoro_server_path();
     std::string find_executable_in_install_dir(const std::string& install_dir);
     std::string find_external_kokoro_server();
+
+    // Server lifecycle helpers
+    bool wait_for_ready(int timeout_seconds = 60);
 };
 
 } // namespace backends

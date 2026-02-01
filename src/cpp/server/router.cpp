@@ -628,15 +628,13 @@ json Router::audio_transcriptions(const json& request) {
     });
 }
 
-json Router::audio_speech(const json& request) {
-    return execute_inference(request, [&](WrappedServer* server) {
+void Router::audio_speech(const json& request, httplib::DataSink& sink) {
+    execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
         auto tts_server = dynamic_cast<ITextToSpeechServer*>(server);
         if (!tts_server) {
-            return ErrorResponse::from_exception(
-                UnsupportedOperationException("Text to speech", device_type_to_string(server->get_device_type()))
-            );
+            throw UnsupportedOperationException("Text to speech", device_type_to_string(server->get_device_type()));
         }
-        return tts_server->audio_speech(request);
+        tts_server->audio_speech(request, sink);
     });
 }
 

@@ -1454,15 +1454,56 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             return;
         }
 
-        // Forward to router
-        auto response = router_->audio_speech(request_json);
+        bool is_streaming = (request_json.contains("stream") && request_json["stream"].get<bool>());
 
-        // Check for error in response
-        if (response.contains("error")) {
-            res.status = 500;
+        if (request_json.contains("streaming_format")) {
+            is_streaming = true;
+            if (request_json["streaming_format"] != "audio") {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Only pcm audio streaming format is supported"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
         }
 
-        res.set_content(response.dump(), "application/json");
+        //TODO: implement detection
+        std::string mime_type = "audio/mpeg";
+
+        // Log the HTTP request
+        std::cout << "[Server] POST /api/v1/audio/speech" << std::endl;
+
+        res.set_header("Content-Type", mime_type);
+
+        auto audio_source = [this, request_json](size_t offset, httplib::DataSink& sink) {
+            // For chunked responses, offset tracks bytes sent so far
+            // We only want to stream once when offset is 0
+            if (offset > 0) {
+                return false; // We're done after the first call
+            }
+
+            // Use unified Router path for streaming
+            router_->audio_speech(request_json, sink);
+
+            // Explicitly signal we're done - this ensures proper chunked encoding termination
+            sink.done();
+            return false;
+        };
+
+        if (is_streaming) {
+            res.set_header("Cache-Control", "no-cache");
+            res.set_header("Connection", "keep-alive");
+            res.set_header("X-Accel-Buffering", "no"); // Disable nginx buffering
+
+            // Use cpp-httplib's chunked content provider for streaming
+            res.set_chunked_content_provider(mime_type, audio_source);
+        } else {
+            res.set_content_provider(mime_type, audio_source);
+        }
+
+        return;
     } catch (const std::exception& e) {
         std::cerr << "[Server] ERROR in handle_audio_speech: " << e.what() << std::endl;
         res.status = 500;
