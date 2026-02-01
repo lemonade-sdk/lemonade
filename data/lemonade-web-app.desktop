@@ -7,5 +7,5 @@ GenericName=AI Model Manager
 Exec=xdg-open http://localhost:8000
 Icon=lemonade-app
 Terminal=false
-Categories=Development;Utility;AI;
+Categories=Development;Utility;
 Keywords=AI;LLM;GPU;NPU;Machine Learning;
