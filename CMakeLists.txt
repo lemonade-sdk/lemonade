@@ -682,7 +682,7 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
 
     if (NOT WIN32 AND NOT APPLE AND NOT BUILD_ELECTRON_APP)
         # Install .desktop file for web app
-        install(FILES ${CMAKE_SOURCE_DIR}/lemonade-web-app.desktop
+        install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-web-app.desktop
             DESTINATION share/applications
         )
         install(FILES ${CMAKE_SOURCE_DIR}/src/web-app/assets/logo.svg
@@ -829,7 +829,7 @@ if(UNIX AND NOT APPLE)
 
         if (NOT WIN32 AND NOT APPLE)
             # Install .desktop file for electron app
-            install(FILES ${CMAKE_SOURCE_DIR}/lemonade-app.desktop
+            install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-app.desktop
                 DESTINATION share/applications
             )
             install(FILES ${CMAKE_SOURCE_DIR}/src/web-app/assets/logo.svg
