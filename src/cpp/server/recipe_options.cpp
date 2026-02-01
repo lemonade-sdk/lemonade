@@ -7,7 +7,7 @@ using json = nlohmann::json;
 
 static const json DEFAULTS = {
     {"ctx_size", 4096},
-    {"llamacpp_backend", "vulkan"},
+    {"llamacpp_backend", "auto"},
     {"llamacpp_args", ""},
     // Image generation defaults (for sd-cpp recipe)
     {"steps", 20},
@@ -26,7 +26,7 @@ static const json CLI_OPTIONS = {
     {"--llamacpp", {
         {"option_name", "llamacpp_backend"},
         {"type_name", "BACKEND"},
-        {"allowed_values", {"vulkan", "rocm", "metal", "cpu"}},
+        {"allowed_values", {"auto", "vulkan", "rocm", "metal", "cpu"}},
         {"envname", "LEMONADE_LLAMACPP"},
         {"help", "LlamaCpp backend to use"}
     }},

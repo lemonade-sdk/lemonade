@@ -51,7 +51,7 @@ lemonade-server run MODEL_NAME [options]
 | `--host [host]`                | Specify the host address for where to listen connections | `localhost` |
 | `--log-level [level]`          | Set the logging level               | info |
 | `--no-tray`                    | Start server without the tray app (headless mode) | False |
-| `--llamacpp [vulkan\|rocm\cpu]`    | Default LlamaCpp backend to use when loading models. Can be overridden per-model via the `/api/v1/load` endpoint. | vulkan |
+| `--llamacpp [auto\|vulkan\|rocm\|metal\|cpu]`    | Default LlamaCpp backend to use when loading models. When set to `auto`, the system automatically detects available hardware and uses ROCm for AMD devices or Vulkan as a fallback. Can be overridden per-model via the `/api/v1/load` endpoint. | auto |
 | `--ctx-size [size]`            | Default context size for models. For llamacpp recipes, this sets the `--ctx-size` parameter for the llama server. For other recipes, prompts exceeding this size will be truncated. Can be overridden per-model via the `/api/v1/load` endpoint. | 4096 |
 | `--llamacpp-args [args]`       | Default custom arguments to pass to llama-server. Must not conflict with arguments managed by Lemonade (e.g., `-m`, `--port`, `--ctx-size`, `-ngl`). Can be overridden per-model via the `/api/v1/load` endpoint. Example: `--llamacpp-args "--flash-attn on --no-mmap"` | "" |
 | `--extra-models-dir [path]`    | Experimental feature. Secondary directory to scan for LLM GGUF model files. Audio, embedding, reranking, and non-GGUF files are not supported, yet. | None |
