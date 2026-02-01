@@ -6,7 +6,7 @@ if ! getent group lemonade > /dev/null; then
 fi
 
 if ! getent passwd lemonade > /dev/null; then
-    useradd -m -r -g lemonade -d /var/lib/lemonade -s /usr/sbin/nologin lemonade
+    useradd -m -r -g lemonade -d /opt/var/lib/lemonade -s /usr/sbin/nologin lemonade
 fi
 
 # Add lemonade user to render group for GPU access

@@ -8,13 +8,12 @@ if ! getent group lemonade > /dev/null; then
 fi
 
 if ! getent passwd lemonade > /dev/null; then
-    useradd -m -r -g lemonade -d /var/lib/lemonade -s /usr/sbin/nologin lemonade
+    useradd -m -r -g lemonade -d /opt/var/lib/lemonade -s /usr/sbin/nologin lemonade
 fi
 
 # Add lemonade user to render group for GPU access
 usermod -a -G render lemonade
 
-# Create llama directory if it doesn't exist and make it writable
 # Fix chrome-sandbox permissions (required for Electron/Chromium sandbox)
 # The chrome-sandbox binary must be owned by root and have SUID bit set
 if [ -f "$APP_DIR/chrome-sandbox" ]; then

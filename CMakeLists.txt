@@ -7,6 +7,11 @@ endif()
 
 project(lemon_cpp VERSION 9.2.0)
 
+# Set default install prefix to /opt on Linux if not specified
+if(UNIX AND NOT APPLE AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "/opt" CACHE PATH "Install prefix" FORCE)
+endif()
+
 # Include GNUInstallDirs for standard installation directories
 include(GNUInstallDirs)
 
