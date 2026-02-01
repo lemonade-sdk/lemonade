@@ -249,7 +249,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 onChange={(e) =>
                   handleTextInputChange("baseURL", e.target.value)
                 }
-                className="settings-input-text"
+                className="settings-text-input"
               />
             </div>
             <div className={`settings-section ${settings.apiKey.useDefault ? "settings-section-default" : ""}`}>
@@ -266,7 +266,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 onChange={(e) =>
                   handleTextInputChange("apiKey", e.target.value)
                 }
-                className="settings-input-text"
+                className="settings-text-input"
               />
             </div>
             <div className="settings-category-header">
