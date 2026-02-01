@@ -53,4 +53,5 @@ contextBridge.exposeInMainWorld('api', {
     };
   },
   getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
+  getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
 });
