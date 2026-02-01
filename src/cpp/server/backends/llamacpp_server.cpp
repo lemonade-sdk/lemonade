@@ -70,22 +70,32 @@ static std::string get_llamacpp_version(const std::string& backend) {
     }
 }
 
+// Helper to push reserved flags and their aliases
+static void push_reserved(std::set<std::string>& reserved,
+                    const std::string& key, 
+                    const std::vector<std::string>& aliases) {
+    reserved.insert(key);
+    reserved.insert(aliases.begin(), aliases.end());
+}
+
 // Helper to add a flag-only argument (e.g., --jinja, --embeddings)
 static void push_arg(std::vector<std::string>& args,
                     std::set<std::string>& reserved,
-                    const std::string& key) {
+                    const std::string& key, 
+                    const std::vector<std::string>& aliases = {}) {
     args.push_back(key);
-    reserved.insert(key);
+    push_reserved(reserved, key, aliases);
 }
 
 // Helper to add a flag-value pair (e.g., --port 8000, -m model.gguf)
 static void push_arg(std::vector<std::string>& args,
                     std::set<std::string>& reserved,
                     const std::string& key,
-                    const std::string& value) {
+                    const std::string& value,
+                    const std::vector<std::string>& aliases = {}) {
     args.push_back(key);
     args.push_back(value);
-    reserved.insert(key);
+    push_reserved(reserved, key, aliases);
 }
 
 // Helper to add a flag-only overridable argument (e.g., --context-shift)
@@ -93,7 +103,13 @@ static void push_overridable_arg(std::vector<std::string>& args,
                     const std::string& custom_args,
                     const std::string& key) {
     // boolean flags in llama-server can be turned off adding the --no- prefix to their name
-    auto anti_key = "--no-" + key.substr(2);
+    std::string anti_key;
+    if (key.rfind("--no-", 0) == 0) {
+        anti_key = "--" + key.substr(5); // remove --no- prefix
+    } else {
+        anti_key = "--no-" + key.substr(2); //remove -- prefix
+    }
+
     if ((custom_args.find(key) == std::string::npos) && (custom_args.find(anti_key) == std::string::npos)) {
         args.push_back(key);
     }
@@ -524,10 +540,10 @@ void LlamaCppServer::load(const std::string& model_name,
     std::vector<std::string> args;
     std::set<std::string> reserved_flags;
 
-    push_arg(args, reserved_flags, "-m", gguf_path);
-    push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size));
+    push_arg(args, reserved_flags, "-m", gguf_path, std::vector<std::string>{"--model"});
+    push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
-    push_arg(args, reserved_flags, "--jinja");
+    push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
 
     std::cout << "[LlamaCpp] Using backend: " << llamacpp_backend << "\n"
             << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
@@ -540,6 +556,7 @@ void LlamaCppServer::load(const std::string& model_name,
             push_arg(args, reserved_flags, "--no-mmproj-offload");
         }
     }
+    push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
 
     // Enable context shift for vulkan/rocm (not supported on Metal)
     if (llamacpp_backend == "vulkan" || llamacpp_backend == "rocm") {
@@ -553,25 +570,27 @@ void LlamaCppServer::load(const std::string& model_name,
     // Use legacy reasoning formatting
     push_overridable_arg(args, llamacpp_args, "--reasoning-format", "auto");
 
+    // Disable llamacpp webui by default
+    push_overridable_arg(args, llamacpp_args, "--no-webui");
+
     // Add embeddings support if the model supports it
     if (supports_embeddings) {
         std::cout << "[LlamaCpp] Model supports embeddings, adding --embeddings flag" << std::endl;
         push_arg(args, reserved_flags, "--embeddings");
     }
+    push_reserved(reserved_flags, "--embeddings", std::vector<std::string>{"--embedding"});
 
     // Add reranking support if the model supports it
     if (supports_reranking) {
         std::cout << "[LlamaCpp] Model supports reranking, adding --reranking flag" << std::endl;
         push_arg(args, reserved_flags, "--reranking");
     }
+    push_reserved(reserved_flags, "--reranking", std::vector<std::string>{"--rerank"});
 
     // Configure GPU layers
-    if (use_gpu) {
-        push_arg(args, reserved_flags, "-ngl", "99");  // 99 for GPU, 0 for CPU-only
-    } else {
-        std::cout << "[LlamaCpp] ngl set to 0" << std::endl;
-        push_arg(args, reserved_flags, "-ngl", "0");   // 0
-    }
+    std::string gpu_layers = use_gpu ? "99" : "0";  // 99 for GPU, 0 for CPU-only
+    std::cout << "[LlamaCpp] ngl set to " << gpu_layers << std::endl;
+    push_arg(args, reserved_flags, "-ngl", gpu_layers, std::vector<std::string>{"--gpu-layers", "--n-gpu-layers"});
 
     // Validate and append custom arguments
     if (!llamacpp_args.empty()) {
