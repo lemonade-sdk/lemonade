@@ -242,6 +242,13 @@ json KokoroServer::responses(const json& request) {
 void KokoroServer::audio_speech(const json& request, httplib::DataSink& sink) {
     json tts_request = request;
     tts_request["model"] = "kokoro";
+
+    // OpenAI does not define "stream" for the speech endpoint
+    // relying solely on stream_format. Kokoros requires this boolean
+    if (request.contains("stream_format")) {
+        tts_request["stream"] = true;
+    }
+
     forward_streaming_request("/v1/audio/speech", tts_request.dump(), sink, false);
 }
 

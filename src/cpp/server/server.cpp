@@ -38,6 +38,15 @@ namespace fs = std::filesystem;
 
 namespace lemon {
 
+static const json MIME_TYPES = {
+    {"mp3",  "audio/mpeg"},
+    {"opus", "audio/opus"},
+    {"aac",  "audio/aac"},
+    {"flac", "audio/flac"},
+    {"wav",  "audio/wav"},
+    {"pcm",  "audio/l16;rate=24000;endianness=little-endian"}
+};
+
 Server::Server(int port, const std::string& host, const std::string& log_level,
                const json& default_options, int max_llm_models,
                int max_embedding_models, int max_reranking_models, int max_audio_models,
@@ -1456,9 +1465,9 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
 
         bool is_streaming = (request_json.contains("stream") && request_json["stream"].get<bool>());
 
-        if (request_json.contains("streaming_format")) {
+        if (request_json.contains("stream_format")) {
             is_streaming = true;
-            if (request_json["streaming_format"] != "audio") {
+            if (request_json["stream_format"] != "audio") {
                 res.status = 400;
                 nlohmann::json error = {{"error", {
                     {"message", "Only pcm audio streaming format is supported"},
@@ -1469,8 +1478,23 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             }
         }
 
-        //TODO: implement detection
-        std::string mime_type = "audio/mpeg";
+        std::string mime_type;
+        if (is_streaming) {
+            mime_type = MIME_TYPES["pcm"];
+        } else if (request_json.contains("response_format")) {
+            if (MIME_TYPES.contains(request_json["response_format"])) {
+                mime_type = MIME_TYPES[request_json["response_format"]];
+            } else {
+                nlohmann::json error = {{"error", {
+                    {"message", "Unsupported audio format requested"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+        } else {
+            mime_type = MIME_TYPES["mp3"];
+        }
 
         // Log the HTTP request
         std::cout << "[Server] POST /api/v1/audio/speech" << std::endl;
