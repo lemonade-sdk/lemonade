@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { exec } = require('child_process');
+const strict = require('assert/strict');
 
 const DEFAULT_MIN_WIDTH = 400;
 const DEFAULT_MIN_HEIGHT = 600;
@@ -11,16 +12,24 @@ const MIN_ZOOM_LEVEL = -2;
 const MAX_ZOOM_LEVEL = 3;
 const ZOOM_STEP = 0.2;
 
+const BASE_SETTING_VALUES = {
+  temperature: 0.7,
+  topK: 40,
+  topP: 0.9,
+  repeatPenalty: 1.1,
+  enableThinking: true,
+  collapseThinkingByDefault: false,
+  baseURL: '',
+  apiKey: '',
+};
+
 let mainWindow;
 let currentMinWidth = DEFAULT_MIN_WIDTH;
 const SETTINGS_FILE_NAME = 'app_settings.json';
 const SETTINGS_UPDATED_CHANNEL = 'settings-updated';
 const SERVER_PORT_UPDATED_CHANNEL = 'server-port-updated';
+const CONNECTION_SETTINGS_UPDATED_CHANNEL = 'connection-settings-updated'
 let cachedServerPort = 8000; // Default port
-
-// Remote server support: explicit base URL from --base-url arg or LEMONADE_APP_BASE_URL env var
-// When set, this takes precedence over localhost + port discovery
-let configuredServerBaseUrl = null;
 
 /**
  * Parse and normalize a server base URL.
@@ -56,79 +65,24 @@ const normalizeServerUrl = (url) => {
   }
 };
 
-/**
- * Parse command line arguments for --base-url
- */
-const parseBaseUrlArg = () => {
-  const args = process.argv.slice(1); // Skip the electron executable
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--base-url' && args[i + 1]) {
-      return args[i + 1];
-    }
-    // Also support --base-url=value format
-    if (args[i].startsWith('--base-url=')) {
-      return args[i].substring('--base-url='.length);
-    }
-  }
-  return null;
-};
-
-/**
- * Initialize server base URL from command line or environment variable.
- * Precedence: --base-url > LEMONADE_APP_BASE_URL > null (fallback to localhost discovery)
- */
-const initializeServerBaseUrl = () => {
-  // Check command line argument first (highest priority)
-  const argUrl = parseBaseUrlArg();
-  if (argUrl) {
-    const normalized = normalizeServerUrl(argUrl);
-    if (normalized) {
-      console.log('Using server base URL from --base-url:', normalized);
-      configuredServerBaseUrl = normalized;
-      return;
-    }
-  }
-
-  // Check environment variable (second priority)
-  const envUrl = process.env.LEMONADE_APP_BASE_URL;
-  if (envUrl) {
-    const normalized = normalizeServerUrl(envUrl);
-    if (normalized) {
-      console.log('Using server base URL from LEMONADE_APP_BASE_URL:', normalized);
-      configuredServerBaseUrl = normalized;
-      return;
-    }
-  }
-
-  // No explicit URL configured - will use localhost + port discovery
-  console.log('No explicit server URL configured, will use localhost with port discovery');
-  configuredServerBaseUrl = null;
-};
-
-// Initialize on startup
-initializeServerBaseUrl();
-const BASE_APP_SETTING_VALUES = Object.freeze({
-  temperature: 0.7,
-  topK: 40,
-  topP: 0.9,
-  repeatPenalty: 1.1,
-  enableThinking: true,
-  collapseThinkingByDefault: false,
-});
 const DEFAULT_APP_SETTINGS = Object.freeze({
-  temperature: { value: BASE_APP_SETTING_VALUES.temperature, useDefault: true },
-  topK: { value: BASE_APP_SETTING_VALUES.topK, useDefault: true },
-  topP: { value: BASE_APP_SETTING_VALUES.topP, useDefault: true },
-  repeatPenalty: { value: BASE_APP_SETTING_VALUES.repeatPenalty, useDefault: true },
-  enableThinking: { value: BASE_APP_SETTING_VALUES.enableThinking, useDefault: true },
-  collapseThinkingByDefault: { value: BASE_APP_SETTING_VALUES.collapseThinkingByDefault, useDefault: true },
+  temperature: { value: BASE_SETTING_VALUES.temperature, useDefault: true },
+  topK: { value: BASE_SETTING_VALUES.topK, useDefault: true },
+  topP: { value: BASE_SETTING_VALUES.topP, useDefault: true },
+  repeatPenalty: { value: BASE_SETTING_VALUES.repeatPenalty, useDefault: true },
+  enableThinking: { value: BASE_SETTING_VALUES.enableThinking, useDefault: true },
+  collapseThinkingByDefault: { value: BASE_SETTING_VALUES.collapseThinkingByDefault, useDefault: true },
+  baseURL: { value: BASE_SETTING_VALUES.baseURL, useDefault: true },
+  apiKey: { value: BASE_SETTING_VALUES.apiKey, useDefault: true },
 });
+
 const NUMERIC_APP_SETTING_LIMITS = Object.freeze({
   temperature: { min: 0, max: 2 },
   topK: { min: 1, max: 100 },
   topP: { min: 0, max: 1 },
   repeatPenalty: { min: 1, max: 2 },
 });
+
 const NUMERIC_APP_SETTING_KEYS = ['temperature', 'topK', 'topP', 'repeatPenalty'];
 
 const getHomeDirectory = () => {
@@ -178,6 +132,8 @@ const createDefaultAppSettings = () => ({
   repeatPenalty: { ...DEFAULT_APP_SETTINGS.repeatPenalty },
   enableThinking: { ...DEFAULT_APP_SETTINGS.enableThinking },
   collapseThinkingByDefault: { ...DEFAULT_APP_SETTINGS.collapseThinkingByDefault },
+  baseURL: { ...DEFAULT_APP_SETTINGS.baseURL},
+  apiKey: { ...DEFAULT_APP_SETTINGS.apiKey},
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
 });
 
@@ -244,6 +200,38 @@ const sanitizeAppSettings = (incoming = {}) => {
     };
   }
 
+  const rawBaseURL = incoming.baseURL;
+  if (rawBaseURL && typeof rawBaseURL === 'object') {
+    const useDefault =
+      typeof rawBaseURL.useDefault === 'boolean'
+        ? rawBaseURL.useDefault
+        : sanitized.baseURL.useDefault;
+    sanitized.baseURL = {
+      value: useDefault
+        ? sanitized.baseURL.value
+        : typeof rawBaseURL.value === 'string'
+          ? rawBaseURL.value
+          : sanitized.baseURL.value,
+      useDefault,
+    };
+  }
+
+  const rawApiKey = incoming.apiKey;
+  if (rawApiKey && typeof rawApiKey === 'object') {
+    const useDefault =
+      typeof rawApiKey.useDefault === 'boolean'
+        ? rawApiKey.useDefault
+        : sanitized.apiKey.useDefault;
+    sanitized.apiKey = {
+      value: useDefault
+        ? sanitized.apiKey.value
+        : typeof rawApiKey.value === 'string'
+          ? rawApiKey.value
+          : sanitized.apiKey.value,
+      useDefault,
+    };
+  }
+
   // Sanitize layout settings
   const rawLayout = incoming.layout;
   if (rawLayout && typeof rawLayout === 'object') {
@@ -298,9 +286,33 @@ const writeAppSettingsFile = async (settings) => {
   return sanitized;
 };
 
+/**
+ * Get base URL from Settings file.
+ * 
+ */
+const getBaseURLFromConfig = async () => {
+  const settings = await readAppSettingsFile();  
+  const defaultBaseUrl = settings.baseURL.value;
+
+  if (defaultBaseUrl) {
+    const normalized = normalizeServerUrl(defaultBaseUrl);
+    if (normalized) {
+       return normalized;
+    } 
+
+    return null;
+  }
+};
+
 const broadcastSettingsUpdated = (settings) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(SETTINGS_UPDATED_CHANNEL, settings);
+  }
+};
+
+const broadcastConnectionSettingsUpdated = (baseURL, apiKey) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(CONNECTION_SETTINGS_UPDATED_CHANNEL, baseURL, apiKey);
   }
 };
 
@@ -309,6 +321,25 @@ const broadcastServerPortUpdated = (port) => {
     mainWindow.webContents.send(SERVER_PORT_UPDATED_CHANNEL, port);
   }
 };
+
+const fetchWithApiKey = async (entpoint) => {
+  let serverUrl = await getBaseURLFromConfig();
+  let apiKey = (await readAppSettingsFile()).apiKey.value;
+  
+  if (!serverUrl) {
+    serverUrl = cachedServerPort ? 'http://localhost:8000' : `http://localhost:${cachedServerPort}`;
+  }
+  
+  const options = {timeout: 3000};
+  
+  if(apiKey != null && apiKey != '') {
+    options.headers = {
+      Authorization: `Bearer ${apiKey}`,
+    }
+  } 
+
+  return await fetch(`${serverUrl}${entpoint}`, options);
+}
 
 const discoverServerPort = () => {
   return new Promise((resolve) => {
@@ -356,61 +387,43 @@ const discoverServerPort = () => {
   });
 };
 
-ipcMain.handle('get-app-settings', async () => {
-  return readAppSettingsFile();
+// Returns the configured server base URL, or null if using localhost discovery
+ipcMain.handle('get-server-base-url', async () => { 
+  return await getBaseURLFromConfig();
 });
 
-// Returns the configured server base URL, or null if using localhost discovery
-ipcMain.handle('get-server-base-url', async () => {
-  return configuredServerBaseUrl;
+ipcMain.handle('get-server-api-key', async () => { 
+  return (await readAppSettingsFile()).apiKey.value;
+});
+
+ipcMain.handle('get-app-settings', async () => {
+  return readAppSettingsFile();
 });
 
 ipcMain.handle('save-app-settings', async (_event, payload) => {
   const sanitized = await writeAppSettingsFile(payload);
   broadcastSettingsUpdated(sanitized);
+  broadcastConnectionSettingsUpdated(sanitized.baseURL.value, sanitized.apiKey.value);
   return sanitized;
 });
 
 ipcMain.handle('get-version', async () => {
   try {
-    const http = require('http');
-    const https = require('https');
-
-    // Use configured base URL or fall back to localhost with cached port
-    const baseUrl = configuredServerBaseUrl || `http://localhost:${cachedServerPort}`;
-    const healthUrl = `${baseUrl}/api/v1/health`;
-    const isHttps = healthUrl.startsWith('https://');
-    const httpModule = isHttps ? https : http;
-
-    return new Promise((resolve, reject) => {
-      const req = httpModule.get(healthUrl, (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            resolve(parsed.version || 'Unknown');
-          } catch (e) {
-            resolve('Unknown');
-          }
-        });
-      });
-      req.on('error', () => resolve('Unknown'));
-      req.setTimeout(2000, () => {
-        req.destroy();
-        resolve('Unknown');
-      });
-    });
-  } catch (error) {
+    const response = await fetchWithApiKey('/api/v1/health');
+    if(response.ok) {
+      const data = await response.json();
+      return data.version || 'Unknown';
+    }
+  } catch(error) {
+    console.error('Failed to fetch version from server:', error);
     return 'Unknown';
   }
 });
 
 ipcMain.handle('discover-server-port', async () => {
-  // Skip port discovery if an explicit server URL is configured
-  // (port discovery only works for local servers)
-  if (configuredServerBaseUrl) {
-    console.log('Port discovery skipped - using explicit server URL:', configuredServerBaseUrl);
+  let baseURL = getBaseURLFromConfig();
+  if (baseURL) {
+    console.log('Port discovery skipped - using explicit server URL:', baseURL);
     return null;
   }
 
@@ -424,324 +437,100 @@ ipcMain.handle('get-server-port', async () => {
   return cachedServerPort;
 });
 
-
-// Track CPU usage between calls (for Linux /proc/stat parsing)
-let lastCpuStats = null;
-
-// Platform-specific system-wide CPU utilization detection
-const getCpuUsage = async () => {
-  if (process.platform === 'linux') {
-    // Linux: Parse /proc/stat for system-wide CPU usage
-    try {
-      const content = await fs.promises.readFile('/proc/stat', 'utf-8');
-      const firstLine = content.split('\n')[0]; // "cpu  user nice system idle iowait irq softirq steal"
-      const parts = firstLine.split(/\s+/).slice(1).map(Number);
-
-      const [user, nice, system, idle, iowait, irq, softirq, steal] = parts;
-      const totalIdle = idle + iowait;
-      const totalActive = user + nice + system + irq + softirq + steal;
-      const total = totalIdle + totalActive;
-
-      if (lastCpuStats) {
-        const idleDiff = totalIdle - lastCpuStats.totalIdle;
-        const totalDiff = total - lastCpuStats.total;
-
-        lastCpuStats = { totalIdle, total };
-
-        if (totalDiff > 0) {
-          return ((totalDiff - idleDiff) / totalDiff) * 100;
-        }
-      }
-
-      lastCpuStats = { totalIdle, total };
-      return 0; // First call, no delta yet
-    } catch (err) {
-      console.debug('CPU detection (Linux): Failed to read /proc/stat:', err.message);
-      return null;
-    }
-
-  } else if (process.platform === 'win32') {
-    // Windows: Use PowerShell to query CPU utilization
-    return new Promise((resolve) => {
-      const psCommand = `Get-Counter '\\Processor(_Total)\\% Processor Time' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty CounterSamples | Select-Object -ExpandProperty CookedValue`;
-      exec(`powershell -NoProfile -Command "${psCommand}"`, { timeout: 3000 }, (error, stdout) => {
-        if (error) {
-          console.debug('CPU detection (Windows): PowerShell query failed:', error.message);
-          resolve(null);
-          return;
-        }
-        const percent = parseFloat(stdout.trim());
-        if (isNaN(percent)) {
-          console.debug('CPU detection (Windows): Could not parse CPU percentage from:', stdout.trim());
-          resolve(null);
-        } else {
-          resolve(Math.round(percent * 100) / 100);
-        }
-      });
-    });
-
-  } else if (process.platform === 'darwin') {
-    // macOS: Use top to get CPU usage
-    return new Promise((resolve) => {
-      exec('top -l 1 -n 0 | grep "CPU usage"', { timeout: 3000 }, (error, stdout) => {
-        if (error) {
-          console.debug('CPU detection (macOS): top query failed:', error.message);
-          resolve(null);
-          return;
-        }
-        // Format: "CPU usage: X.X% user, X.X% sys, X.X% idle"
-        const match = stdout.match(/(\d+\.?\d*)% user.*?(\d+\.?\d*)% sys/);
-        if (match) {
-          const userPercent = parseFloat(match[1]);
-          const sysPercent = parseFloat(match[2]);
-          resolve(Math.round((userPercent + sysPercent) * 100) / 100);
-        } else {
-          console.debug('CPU detection (macOS): Could not parse CPU usage from:', stdout.trim());
-          resolve(null);
-        }
-      });
-    });
-  }
-
-  console.debug('CPU detection: Unsupported platform:', process.platform);
-  return null;
-};
-
-// Platform-specific GPU utilization detection
-// On multi-GPU systems, returns the highest utilization (likely the active GPU)
-const getGpuUsage = async () => {
-  if (process.platform === 'linux') {
-    // Linux: Read from sysfs (AMD GPUs expose gpu_busy_percent)
-    // Check all GPUs and return the highest utilization
-    try {
-      const drmPath = '/sys/class/drm';
-      const cards = await fs.promises.readdir(drmPath).catch((err) => {
-        console.debug('GPU detection: Failed to read /sys/class/drm:', err.message);
-        return [];
-      });
-
-      let highestUsage = null;
-      let highestCard = null;
-
-      for (const card of cards) {
-        if (!card.match(/^card\d+$/)) continue;
-
-        const amdBusyPath = path.join(drmPath, card, 'device', 'gpu_busy_percent');
-        try {
-          const content = await fs.promises.readFile(amdBusyPath, 'utf-8');
-          const percent = parseFloat(content.trim());
-          if (!isNaN(percent)) {
-            if (highestUsage === null || percent > highestUsage) {
-              highestUsage = percent;
-              highestCard = card;
-            }
-          }
-        } catch (err) {
-          console.debug(`GPU detection: ${amdBusyPath} not available:`, err.code || err.message);
-        }
-      }
-
-      if (highestUsage !== null) {
-        console.debug(`GPU detection: Highest usage on ${highestCard}: ${highestUsage}%`);
-        return highestUsage;
-      }
-      console.debug('GPU detection: No GPU with gpu_busy_percent found');
-    } catch (error) {
-      console.error('Failed to read GPU stats from sysfs:', error);
-    }
-    return null;
-
-  } else if (process.platform === 'win32') {
-    // Windows: Use PowerShell to query GPU utilization
-    return new Promise((resolve) => {
-      const psCommand = `(Get-Counter '\\GPU Engine(*engtype_3D)\\Utilization Percentage' -ErrorAction SilentlyContinue).CounterSamples | Measure-Object -Property CookedValue -Average | Select-Object -ExpandProperty Average`;
-      exec(`powershell -NoProfile -Command "${psCommand}"`, { timeout: 3000 }, (error, stdout) => {
-        if (error) {
-          console.debug('GPU detection (Windows): PowerShell query failed:', error.message);
-          resolve(null);
-          return;
-        }
-        const percent = parseFloat(stdout.trim());
-        if (isNaN(percent)) {
-          console.debug('GPU detection (Windows): Could not parse GPU percentage from:', stdout.trim());
-        }
-        resolve(isNaN(percent) ? null : Math.round(percent * 100) / 100);
-      });
-    });
-
-  } else if (process.platform === 'darwin') {
-    // macOS: Use ioreg to query GPU performance stats
-    return new Promise((resolve) => {
-      exec('ioreg -r -d 1 -c IOAccelerator', { timeout: 2000 }, (error, stdout) => {
-        if (error) {
-          console.debug('GPU detection (macOS): ioreg query failed:', error.message);
-          resolve(null);
-          return;
-        }
-        const match = stdout.match(/"Device Utilization %"\s*=\s*(\d+)/i) ||
-                      stdout.match(/"GPU Activity"\s*=\s*(\d+)/i);
-        if (!match) {
-          console.debug('GPU detection (macOS): No utilization data found in ioreg output');
-        }
-        resolve(match ? parseFloat(match[1]) : null);
-      });
-    });
-  }
-
-  console.debug('GPU detection: Unsupported platform:', process.platform);
-  return null;
-};
-
-// Platform-specific VRAM/GTT usage detection (returns used memory in GB)
-// For dGPU: returns dedicated VRAM only
-// For APU: returns VRAM + GTT combined (since GTT is primary GPU memory)
-// On multi-GPU systems, returns memory from the GPU with highest utilization
-const getVramUsage = async () => {
-  if (process.platform === 'linux') {
-    // Linux: Read from AMD sysfs
-    try {
-      const drmPath = '/sys/class/drm';
-      const cards = await fs.promises.readdir(drmPath).catch((err) => {
-        console.debug('VRAM detection: Failed to read /sys/class/drm:', err.code || err.message);
-        return [];
-      });
-
-      let highestUsage = -1;
-      let highestCard = null;
-      let highestCardMemory = null;
-
-      for (const card of cards) {
-        if (!card.match(/^card\d+$/)) continue;
-
-        const devicePath = path.join(drmPath, card, 'device');
-
-        // Read GPU utilization to find the most active GPU
-        let gpuUsage = 0;
-        try {
-          const content = await fs.promises.readFile(path.join(devicePath, 'gpu_busy_percent'), 'utf-8');
-          gpuUsage = parseFloat(content.trim()) || 0;
-        } catch (err) {
-          console.debug(`VRAM detection: ${card} gpu_busy_percent not available:`, err.code || err.message);
-        }
-
-        let vramUsed = 0;
-        let gttUsed = 0;
-        let isDGPU = false;
-
-        // Check for board_info to determine if this is a dGPU
-        // board_info is present on discrete GPUs but not APUs
-        try {
-          await fs.promises.access(path.join(devicePath, 'board_info'));
-          isDGPU = true;
-          console.debug(`VRAM detection: ${card} has board_info, detected as dGPU`);
-        } catch (err) {
-          console.debug(`VRAM detection: ${card} has no board_info, detected as APU:`, err.code || err.message);
-        }
-
-        // Read VRAM used
-        const vramUsedPath = path.join(devicePath, 'mem_info_vram_used');
-        try {
-          const content = await fs.promises.readFile(vramUsedPath, 'utf-8');
-          vramUsed = parseInt(content.trim(), 10) || 0;
-        } catch (err) {
-          console.debug(`VRAM detection: ${vramUsedPath} not available:`, err.code || err.message);
-        }
-
-        // Read GTT used
-        const gttUsedPath = path.join(devicePath, 'mem_info_gtt_used');
-        try {
-          const content = await fs.promises.readFile(gttUsedPath, 'utf-8');
-          gttUsed = parseInt(content.trim(), 10) || 0;
-        } catch (err) {
-          console.debug(`VRAM detection: ${gttUsedPath} not available:`, err.code || err.message);
-        }
-
-        // Skip if no memory info found for this card
-        if (vramUsed === 0 && gttUsed === 0) {
-          console.debug(`VRAM detection: ${card} has no memory info, skipping`);
-          continue;
-        }
-
-        // Calculate memory for this card
-        let cardMemory = 0;
-        if (isDGPU) {
-          cardMemory = vramUsed;
-        } else {
-          cardMemory = vramUsed + gttUsed;
-        }
-
-        // Track the GPU with highest utilization
-        if (gpuUsage > highestUsage || highestCard === null) {
-          highestUsage = gpuUsage;
-          highestCard = card;
-          highestCardMemory = { vramUsed, gttUsed, isDGPU, cardMemory };
-        }
-      }
-
-      // Return memory from the GPU with highest utilization
-      if (highestCard !== null && highestCardMemory !== null) {
-        const memGb = highestCardMemory.cardMemory / (1024 * 1024 * 1024);
-        if (highestCardMemory.isDGPU) {
-          console.debug(`VRAM detection: dGPU ${highestCard} (${highestUsage}% usage), VRAM used: ${memGb.toFixed(2)} GB`);
-        } else {
-          console.debug(`VRAM detection: APU ${highestCard} (${highestUsage}% usage), VRAM+GTT used: ${memGb.toFixed(2)} GB`);
-        }
-        return memGb;
-      }
-
-      console.debug('VRAM detection: No GPU with memory info found');
-    } catch (error) {
-      console.error('Failed to read VRAM/GTT stats from sysfs:', error);
-    }
-    return null;
-
-  } else if (process.platform === 'win32') {
-    // Windows: AMD VRAM monitoring not yet implemented
-    console.debug('VRAM detection (Windows): Not yet implemented');
-    return null;
-
-  } else if (process.platform === 'darwin') {
-    // macOS: Metal doesn't expose VRAM usage in a standard way
-    console.debug('VRAM detection (macOS): Metal does not expose VRAM usage');
-    return null;
-  }
-
-  console.debug('VRAM detection: Unsupported platform:', process.platform);
-  return null;
-};
-
 ipcMain.handle('get-system-stats', async () => {
-  try {
-    // Get memory info
-    const totalMemory = os.totalmem();
-    const freeMemory = os.freemem();
-    const usedMemory = totalMemory - freeMemory;
-    const memoryGb = usedMemory / (1024 * 1024 * 1024);
-
-    // Get system-wide CPU usage (platform-specific)
-    const cpuPercent = await getCpuUsage();
-
-    // Get GPU usage (platform-specific)
-    const gpuPercent = await getGpuUsage();
-
-    // Get VRAM usage (platform-specific)
-    const vramGb = await getVramUsage();
-
-    return {
-      cpu_percent: cpuPercent !== null ? Math.min(cpuPercent, 100) : null,
-      memory_gb: memoryGb,
-      gpu_percent: gpuPercent,
-      vram_gb: vramGb,
-    };
+  try {  
+    const response = await fetchWithApiKey('/api/v1/system-stats');
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        cpu_percent: data.cpu_percent,
+        memory_gb: data.memory_gb || 0,
+        gpu_percent: data.gpu_percent,
+        vram_gb: data.vram_gb,
+      };
+    }
   } catch (error) {
-    console.error('Failed to get system stats:', error);
-    return {
-      cpu_percent: null,
-      memory_gb: 0,
-      gpu_percent: null,
-      vram_gb: null,
-    };
+    console.error('Failed to fetch system stats from server:', error);
   }
+
+  // Return null stats if server is unavailable
+  return {
+    cpu_percent: null,
+    memory_gb: 0,
+    gpu_percent: null,
+    vram_gb: null,
+  };
+});
+
+ipcMain.handle('get-system-info', async () => {
+  try {
+    const response = await fetchWithApiKey('/api/v1/system-info');
+    if (response.ok) {
+      const data = await response.json();
+      let maxGttGb = 0;
+      let maxVramGb = 0;
+
+      const considerAmdGpu = (gpu) => {
+        if (gpu && typeof gpu.virtual_mem_gb === 'number' && isFinite(gpu.virtual_mem_gb)) {
+          maxGttGb = Math.max(maxGttGb, gpu.virtual_mem_gb);
+        }
+        if (gpu && typeof gpu.vram_gb === 'number' && isFinite(gpu.vram_gb)) {
+          maxVramGb = Math.max(maxVramGb, gpu.vram_gb);
+        }
+      };
+
+      if (data.devices?.amd_igpu) {
+        considerAmdGpu(data.devices.amd_igpu);
+      }
+      if (Array.isArray(data.devices?.amd_dgpu)) {
+        data.devices.amd_dgpu.forEach(considerAmdGpu);
+      }
+
+      // Transform server response to match the About window format
+      const systemInfo = {
+        system: 'Unknown',
+        os: data['OS Version'] || 'Unknown',
+        cpu: data['Processor'] || 'Unknown',
+        gpus: [],
+        gtt_gb: maxGttGb > 0 ? `${maxGttGb} GB` : undefined,
+        vram_gb: maxVramGb > 0 ? `${maxVramGb} GB` : undefined,
+      };
+
+      // Extract GPU information from devices
+      if (data.devices) {
+        if (data.devices.amd_igpu?.name) {
+          systemInfo.gpus.push(data.devices.amd_igpu.name);
+        }
+        if (data.devices.nvidia_igpu?.name) {
+          systemInfo.gpus.push(data.devices.nvidia_igpu.name);
+        }
+        if (Array.isArray(data.devices.amd_dgpu)) {
+          data.devices.amd_dgpu.forEach(gpu => {
+            if (gpu.name) systemInfo.gpus.push(gpu.name);
+          });
+        }
+        if (Array.isArray(data.devices.nvidia_dgpu)) {
+          data.devices.nvidia_dgpu.forEach(gpu => {
+            if (gpu.name) systemInfo.gpus.push(gpu.name);
+          });
+        }
+      }
+
+      return systemInfo;
+    }
+  } catch (error) {
+    console.error('Failed to fetch system info from server:', error);
+  }
+
+  // Return default if server is unavailable
+  return {
+    system: 'Unknown',
+    os: 'Unknown',
+    cpu: 'Unknown',
+    gpus: [],
+    gtt_gb: 'Unknown',
+    vram_gb: 'Unknown',
+  };
 });
 
 function updateWindowMinWidth(requestedWidth) {

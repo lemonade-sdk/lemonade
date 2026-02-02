@@ -1,6 +1,7 @@
 export type NumericSettingKey = 'temperature' | 'topK' | 'topP' | 'repeatPenalty';
 export type BooleanSettingKey = 'enableThinking' | 'collapseThinkingByDefault';
-export type SettingKey = NumericSettingKey | BooleanSettingKey;
+export type StringSettingKey = 'baseURL' | 'apiKey';
+export type SettingKey = NumericSettingKey | BooleanSettingKey | StringSettingKey;
 
 export interface NumericSetting {
   value: number;
@@ -9,6 +10,11 @@ export interface NumericSetting {
 
 export interface BooleanSetting {
   value: boolean;
+  useDefault: boolean;
+}
+
+export interface StringSetting {
+  value: string;
   useDefault: boolean;
 }
 
@@ -29,12 +35,16 @@ export interface AppSettings {
   repeatPenalty: NumericSetting;
   enableThinking: BooleanSetting;
   collapseThinkingByDefault: BooleanSetting;
+  baseURL: StringSetting;
+  apiKey: StringSetting;
   layout: LayoutSettings;
 }
 
 type BaseSettingValues = Record<NumericSettingKey, number> & {
   enableThinking: boolean;
   collapseThinkingByDefault: boolean;
+  baseURL: string;
+  apiKey: string;
 };
 
 export const BASE_SETTING_VALUES: BaseSettingValues = {
@@ -44,6 +54,8 @@ export const BASE_SETTING_VALUES: BaseSettingValues = {
   repeatPenalty: 1.1,
   enableThinking: true,
   collapseThinkingByDefault: false,
+  baseURL: '',
+  apiKey: '',
 };
 
 export const NUMERIC_SETTING_LIMITS: Record<NumericSettingKey, { min: number; max: number; step: number }> = {
@@ -72,6 +84,8 @@ export const createDefaultSettings = (): AppSettings => ({
   repeatPenalty: { value: BASE_SETTING_VALUES.repeatPenalty, useDefault: true },
   enableThinking: { value: BASE_SETTING_VALUES.enableThinking, useDefault: true },
   collapseThinkingByDefault: { value: BASE_SETTING_VALUES.collapseThinkingByDefault, useDefault: true },
+  baseURL: { value: BASE_SETTING_VALUES.baseURL, useDefault: true },
+  apiKey: { value: BASE_SETTING_VALUES.apiKey, useDefault: true },
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
 });
 
@@ -82,6 +96,8 @@ export const cloneSettings = (settings: AppSettings): AppSettings => ({
   repeatPenalty: { ...settings.repeatPenalty },
   enableThinking: { ...settings.enableThinking },
   collapseThinkingByDefault: { ...settings.collapseThinkingByDefault },
+  baseURL: { ...settings.baseURL },
+  apiKey: { ...settings.apiKey },
   layout: { ...settings.layout },
 });
 
@@ -155,6 +171,42 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
         : defaults.collapseThinkingByDefault.value;
 
     defaults.collapseThinkingByDefault = {
+      value,
+      useDefault,
+    };
+  }
+
+  const rawBaseURL = incoming.baseURL;
+  if (rawBaseURL && typeof rawBaseURL === 'object') {
+    const useDefault =
+      typeof rawBaseURL.useDefault === 'boolean'
+        ? rawBaseURL.useDefault
+        : defaults.baseURL.useDefault;
+    const value = useDefault
+      ? defaults.baseURL.value
+      : typeof rawBaseURL.value === 'string'
+        ? rawBaseURL.value
+        : defaults.baseURL.value;
+
+    defaults.baseURL = {
+      value,
+      useDefault,
+    };
+  }
+
+  const rawApiKey = incoming.apiKey;
+  if (rawApiKey && typeof rawApiKey === 'object') {
+    const useDefault =
+      typeof rawApiKey.useDefault === 'boolean'
+        ? rawApiKey.useDefault
+        : defaults.apiKey.useDefault;
+    const value = useDefault
+      ? defaults.apiKey.value
+      : typeof rawApiKey.value === 'string'
+        ? rawApiKey.value
+        : defaults.apiKey.value;
+
+    defaults.apiKey = {
       value,
       useDefault,
     };

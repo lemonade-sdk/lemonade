@@ -1961,15 +1961,18 @@ bool TrayApp::find_electron_app() {
 
     // The Electron app has exactly two possible locations:
     // 1. Production (WIX installer): ../app/ relative to bin/ directory
-    // 2. Development: same directory (copied by CopyElectronApp.cmake)
+    // 2. Development: app/<platform>-unpacked/ relative to build directory
     // 3. Linux production: /usr/local/share/lemonade-server/app/lemonade
 
 #ifdef _WIN32
     constexpr const char* exe_name = "Lemonade.exe";
+    constexpr const char* unpacked_dir = "win-unpacked";
 #elif defined(__APPLE__)
     constexpr const char* exe_name = "Lemonade.app";
+    constexpr const char* unpacked_dir = "mac";
 #else
     constexpr const char* exe_name = "lemonade";
+    constexpr const char* unpacked_dir = "linux-unpacked";
 #endif
 
 #if defined(__linux__)
@@ -1993,10 +1996,18 @@ bool TrayApp::find_electron_app() {
         return true;
     }
 
-    // Check development path (same directory as tray executable)
-    fs::path dev_path = exe_dir / exe_name;
+    // Check development path (app/<platform>-unpacked/ in build directory)
+    fs::path dev_path = exe_dir / "app" / unpacked_dir / exe_name;
     if (fs::exists(dev_path)) {
         electron_app_path_ = fs::canonical(dev_path).string();
+        std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
+        return true;
+    }
+
+    // Legacy development path (same directory as tray executable - for backwards compatibility)
+    fs::path legacy_dev_path = exe_dir / exe_name;
+    if (fs::exists(legacy_dev_path)) {
+        electron_app_path_ = fs::canonical(legacy_dev_path).string();
         std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
         return true;
     }
@@ -2004,6 +2015,7 @@ bool TrayApp::find_electron_app() {
     std::cerr << "Warning: Could not find Electron app" << std::endl;
     std::cerr << "  Checked: " << production_path.string() << std::endl;
     std::cerr << "  Checked: " << dev_path.string() << std::endl;
+    std::cerr << "  Checked: " << legacy_dev_path.string() << std::endl;
     return false;
 }
 
@@ -2069,14 +2081,14 @@ void TrayApp::launch_electron_app() {
         }
     }
 
-    // Launch the .exe with --base-url argument
+    // Launch the .exe with
     STARTUPINFOA si = {};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
 
-    // Build command line: "path\to\Lemonade.exe" --base-url http://host:port
+    // Build command line: "path\to\Lemonade.exe"
     // Note: CreateProcessA modifies the command line buffer, so we need a mutable copy
-    std::string cmd_line = "\"" + electron_app_path_ + "\" --base-url " + base_url;
+    std::string cmd_line = "\"" + electron_app_path_ + "\"";
     std::vector<char> cmd_line_buf(cmd_line.begin(), cmd_line.end());
     cmd_line_buf.push_back('\0');
 
@@ -2129,7 +2141,7 @@ void TrayApp::launch_electron_app() {
 
     // macOS: Use 'open' command to launch the .app with --args to pass arguments
     // Note: 'open' doesn't give us the PID directly, so we'll need to find it
-    std::string cmd = "open \"" + electron_app_path_ + "\" --args --base-url " + base_url;
+    std::string cmd = "open \"" + electron_app_path_ + "\"";
     int result = system(cmd.c_str());
     if (result == 0) {
         std::cout << "Launched Electron app" << std::endl;
@@ -2166,9 +2178,8 @@ void TrayApp::launch_electron_app() {
     // Linux: Launch the binary directly using fork/exec for proper PID tracking
     pid_t pid = fork();
     if (pid == 0) {
-        // Child process: execute the Electron app with --base-url argument
-        execl(electron_app_path_.c_str(), electron_app_path_.c_str(),
-              "--base-url", base_url.c_str(), nullptr);
+        // Child process: execute the Electron app
+        execl(electron_app_path_.c_str(), electron_app_path_.c_str(), nullptr);
         // If execl returns, it failed
         std::cerr << "Failed to execute Electron app: " << strerror(errno) << std::endl;
         _exit(1);
