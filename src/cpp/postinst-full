@@ -31,13 +31,6 @@ done
 # Ensure all .so files in the app directory are readable and executable
 find "$APP_DIR" -name "*.so*" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
-# Create lemonade-app symlink in bin directory for PATH access
-BIN_DIR="/opt/bin"
-if [ -f "$APP_DIR/lemonade" ] && [ -d "$BIN_DIR" ]; then
-    ln -sf "$APP_DIR/lemonade" "$BIN_DIR/lemonade-app"
-    echo "Created lemonade-app symlink in $BIN_DIR"
-fi
-
 # Set up the service
 if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-deconfigure" ] || [ "$1" = "abort-remove" ] ; then
         if deb-systemd-helper --quiet was-enabled 'lemonade-server.service'; then
