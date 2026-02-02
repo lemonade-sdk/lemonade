@@ -709,6 +709,17 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
             DESTINATION share/pixmaps
             RENAME lemonade-app.svg
         )
+        # Create symlink in standard pixmaps path only if not installing to /usr
+        if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+            install(CODE "
+                file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/pixmaps\")
+                execute_process(
+                    COMMAND ${CMAKE_COMMAND} -E create_symlink
+                        ${CMAKE_INSTALL_PREFIX}/share/pixmaps/lemonade-app.svg
+                        \"\$ENV{DESTDIR}/usr/share/pixmaps/lemonade-app.svg\"
+                )
+            ")
+        endif()
         # Install launch script for web app
         install(FILES ${CMAKE_SOURCE_DIR}/data/launch-lemonade-web-app.sh
             DESTINATION bin
@@ -931,6 +942,17 @@ if(UNIX AND NOT APPLE)
                 DESTINATION share/pixmaps
                 RENAME lemonade-app.svg
             )
+            # Create symlink in standard pixmaps path only if not installing to /usr
+            if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+                install(CODE "
+                    file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/pixmaps\")
+                    execute_process(
+                        COMMAND ${CMAKE_COMMAND} -E create_symlink
+                            ${CMAKE_INSTALL_PREFIX}/share/pixmaps/lemonade-app.svg
+                            \"\$ENV{DESTDIR}/usr/share/pixmaps/lemonade-app.svg\"
+                    )
+                ")
+            endif()
             # Create symlink in standard bin path only if not installing to /usr
             if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
                 install(CODE "
