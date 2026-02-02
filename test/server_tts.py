@@ -100,6 +100,62 @@ class TextToSpeechTests(ServerTestBase):
         )
         print(f"[OK] Correctly rejected invalid model: {response.status_code}")
 
+    def test_004_tts_voice(self):
+        """Test voice selection with Kokoro."""
+        payload = {
+            "model": TTS_MODEL,
+            "input": "Lemonade can speak",
+            "voice": "onyx",
+            "response_format": "opus",
+        }
+
+        print(f"[INFO] Sending speech generation request with model {TTS_MODEL}")
+
+        response = requests.post(
+            f"{self.base_url}/audio/speech",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Speech generation failed with status {response.status_code}: {response.text}",
+        )
+
+        # OPUS files start with specific magic bytes
+        self.assertTrue(
+            response.content[:4] == b"OggS",
+            "Decoded data should be a valid Ogg file",
+        )
+
+        print(f"[OK] Speech generation successful")
+
+    def test_005_tts_stream(self):
+        """Test streaming speech generation with Kokoro."""
+        payload = {
+            "model": TTS_MODEL,
+            "input": "Lemonade can speak",
+            "voice": "onyx",
+            "stream_format": "audio",
+        }
+
+        print(f"[INFO] Sending speech generation request with model {TTS_MODEL}")
+
+        response = requests.post(
+            f"{self.base_url}/audio/speech",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Speech generation failed with status {response.status_code}: {response.text}",
+        )
+
+        print(f"[OK] Speech generation successful")
+
 
 if __name__ == "__main__":
     run_server_tests(TextToSpeechTests, "TTS TESTS")
