@@ -548,9 +548,12 @@ jobs:
           echo "Installing .deb package: $DEB_FILE"
           sudo dpkg -i "$DEB_FILE"
 
-          # Verify installation
+          # Verify binaries installed
           lemonade-server --version
           lemonade-router --version
+
+          # Verify the systemd service started automatically
+          sudo systemctl status lemonade-server
 
       - name: Set environment (Linux)
         if: runner.os == 'Linux'
