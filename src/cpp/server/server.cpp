@@ -1463,6 +1463,16 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             return;
         }
 
+        if (!request_json.contains("input")) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'input' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
         bool is_streaming = (request_json.contains("stream") && request_json["stream"].get<bool>());
 
         if (request_json.contains("stream_format")) {
