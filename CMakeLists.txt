@@ -565,6 +565,7 @@ add_subdirectory(src/cpp/tray)
 # ============================================================
 if(UNIX AND NOT APPLE)
     set(CPACK_GENERATOR "DEB")
+    set(CPACK_SET_DESTDIR ON)
     set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
     set(CPACK_PACKAGE_VENDOR "Lemonade")
     set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
