@@ -322,6 +322,25 @@ const broadcastServerPortUpdated = (port) => {
   }
 };
 
+const fetchWithApiKey = async (entpoint) => {
+  let serverUrl = await getBaseURLFromConfig();
+  let apiKey = (await readAppSettingsFile()).apiKey.value;
+  
+  if (!serverUrl) {
+    serverUrl = cachedServerPort ? 'http://localhost:8000' : `http://localhost:${cachedServerPort}`;
+  }
+  
+  const options = {timeout: 3000};
+  
+  if(apiKey != null && apiKey != '') {
+    options.headers = {
+      Authorization: `Bearer ${apiKey}`,
+    }
+  } 
+
+  return await fetch(`${serverUrl}${entpoint}`, options);
+}
+
 const discoverServerPort = () => {
   return new Promise((resolve) => {
     exec('lemonade-server status', { timeout: 5000 }, (error, stdout, stderr) => {
@@ -390,34 +409,13 @@ ipcMain.handle('save-app-settings', async (_event, payload) => {
 
 ipcMain.handle('get-version', async () => {
   try {
-    const http = require('http');
-    const https = require('https');
-    // Use configured base URL or fall back to localhost with cached port
-    const baseUrl = await getBaseURLFromConfig() || `http://localhost:${cachedServerPort}`;
-    const healthUrl = `${baseUrl}/api/v1/health`;
-    const isHttps = healthUrl.startsWith('https://');
-    const httpModule = isHttps ? https : http;
-
-    return new Promise((resolve, reject) => {
-      const req = httpModule.get(healthUrl, (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            resolve(parsed.version || 'Unknown');
-          } catch (e) {
-            resolve('Unknown');
-          }
-        });
-      });
-      req.on('error', () => resolve('Unknown'));
-      req.setTimeout(2000, () => {
-        req.destroy();
-        resolve('Unknown');
-      });
-    });
-  } catch (error) {
+    const response = await fetchWithApiKey('/api/v1/health');
+    if(response.ok) {
+      const data = await response.json();
+      return data.version || 'Unknown';
+    }
+  } catch(error) {
+    console.error('Failed to fetch version from server:', error);
     return 'Unknown';
   }
 });
@@ -440,23 +438,8 @@ ipcMain.handle('get-server-port', async () => {
 });
 
 ipcMain.handle('get-system-stats', async () => {
-  try {
-    let serverUrl = await getBaseURLFromConfig();
-    let apiKey = (await readAppSettingsFile()).apiKey.value;
-
-    if (!serverUrl) {
-      serverUrl = cachedServerPort ? 'http://localhost:8000' : `http://localhost:${cachedServerPort}`;
-    }
-
-    const options = {timeout: 2000};
-  
-    if(apiKey != null && apiKey != '') {
-      options.headers = {
-        Authorization: `Bearer ${apiKey}`,
-      }
-    } 
-
-    const response = await fetch(`${serverUrl}/api/v1/system-stats`, options);
+  try {  
+    const response = await fetchWithApiKey('/api/v1/system-stats');
     if (response.ok) {
       const data = await response.json();
       return {
@@ -481,16 +464,7 @@ ipcMain.handle('get-system-stats', async () => {
 
 ipcMain.handle('get-system-info', async () => {
   try {
-    let serverUrl = 'http://localhost:8000';
-
-    // Use explicit server URL if configured
-    if (configuredServerBaseUrl) {
-      serverUrl = configuredServerBaseUrl;
-    } else if (cachedServerPort) {
-      serverUrl = `http://localhost:${cachedServerPort}`;
-    }
-
-    const response = await fetch(`${serverUrl}/api/v1/system-info`, { timeout: 3000 });
+    const response = await fetchWithApiKey('/api/v1/system-info');
     if (response.ok) {
       const data = await response.json();
       let maxGttGb = 0;
