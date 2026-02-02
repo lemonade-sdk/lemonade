@@ -1455,11 +1455,8 @@ lemonade-server<span class="w"> </span>pull<span class="w"> </span>user.nomic-em
 <h3 id="launching-the-app">Launching the App</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># Launch the app (connects to local server automatically)</span>
 lemonade-app
-
-<span class="c1"># Launch with a specific server URL</span>
-lemonade-app<span class="w"> </span>--base-url<span class="w"> </span>http://192.168.0.100:8000
 </code></pre></div>
-<p>By default, the app connects to a server running on <code>localhost</code> and automatically discovers the port. To connect to a remote server, use the <code>--base-url</code> option.</p>
+<p>By default, the app connects to a server running on <code>localhost</code> and automatically discovers the port. To connect to a remote server, change the app settings.</p>
 <h3 id="remote-server-connection">Remote Server Connection</h3>
 <p>To connect the app to a server running on a different machine:</p>
 <ol>
@@ -1472,32 +1469,12 @@ lemonade-app<span class="w"> </span>--base-url<span class="w"> </span>http://192
 </blockquote>
 </li>
 <li>
-<p><strong>Launch the app</strong> on the client machine with the <code>--base-url</code> flag:
-   <div class="highlight"><pre><span></span><code>lemonade-app<span class="w"> </span>--base-url<span class="w"> </span>http://192.168.0.100:8000
-</code></pre></div>
-   Replace <code>192.168.0.100</code> with the IP address of the machine running the server.</p>
+<p><strong>Launch the app</strong> on the client machine and configure the endpoint through the UI:
+   <div class="highlight"><pre><span></span><code>lemonade-app
+</code></pre></div></p>
 </li>
 </ol>
-<p>Alternatively, you can set the <code>LEMONADE_APP_BASE_URL</code> environment variable.</p>
-<table>
-<thead>
-<tr>
-<th>Option / Environment Variable</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--base-url URL</code></td>
-<td>Connect the app to a server at the specified URL (e.g., <code>http://192.168.0.100:8000</code>)</td>
-</tr>
-<tr>
-<td><code>LEMONADE_APP_BASE_URL</code></td>
-<td>Environment variable alternative to <code>--base-url</code>. The command-line flag takes precedence if both are set.</td>
-</tr>
-</tbody>
-</table>
-<p>When no <code>--base-url</code> is provided, the app automatically discovers and connects to a local server.</p>
+<p>The app automatically discovers and connects to a local server unless an endpoint is explicitly configured in the UI. </p>
 <h2 id="next-steps">Next Steps</h2>
 <p>The <a href="../server_integration/">Lemonade Server integration guide</a> provides more information about how these commands can be used to integrate Lemonade Server into an application.</p>
 <!--Copyright (c) 2025 AMD-->
