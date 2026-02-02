@@ -19,6 +19,7 @@
     "@types/react-dom": "^19.2.2",
     "axios": "^1.6.2",
     "css-loader": "^7.1.2",
+    "eventsource": "^4.1.0",
     "highlight.js": "^11.11.1",
     "html-webpack-plugin": "^5.6.4",
     "katex": "^0.16.25",
