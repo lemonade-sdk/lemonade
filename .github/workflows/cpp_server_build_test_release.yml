@@ -241,6 +241,25 @@ jobs:
 
           Write-Host "Web app build successful!" -ForegroundColor Green
 
+          # Copy web app output to the location expected by CMake/WiX installer
+          Write-Host "Copying web app to build\resources\web-app..." -ForegroundColor Yellow
+          $targetDir = "..\..\build\resources\web-app"
+          if (-not (Test-Path "..\..\build\resources")) {
+              New-Item -ItemType Directory -Force -Path "..\..\build\resources" | Out-Null
+          }
+          if (Test-Path $targetDir) {
+              Remove-Item -Recurse -Force $targetDir
+          }
+          Copy-Item -Path "dist\renderer" -Destination $targetDir -Recurse -Force
+
+          # Verify the copy succeeded
+          if (-not (Test-Path "..\..\build\resources\web-app\index.html")) {
+              Write-Host "ERROR: Failed to copy web app to build directory!" -ForegroundColor Red
+              exit 1
+          }
+
+          Write-Host "Web app copied to build directory successfully!" -ForegroundColor Green
+
       - name: Build the Lemonade Server Installer
         shell: PowerShell
         run: |
