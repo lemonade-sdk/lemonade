@@ -489,7 +489,7 @@ jobs:
             sd)
               $VENV_PYTHON test/server_sd.py --server-binary lemonade-server
               ;;
-            sd)
+            tts)
               $VENV_PYTHON test/server_tts.py --server-binary lemonade-server
               ;;
           esac
