@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.28)
+cmake_minimum_required(VERSION 3.10...3.28)
 
 # Use static runtime library on Windows to avoid DLL dependencies
 if(MSVC)
@@ -6,6 +6,14 @@ if(MSVC)
 endif()
 
 project(lemon_cpp VERSION 9.2.0)
+
+# Set default install prefix to /opt on Linux if not specified
+if(UNIX AND NOT APPLE AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "/opt" CACHE PATH "Install prefix" FORCE)
+endif()
+
+# Include GNUInstallDirs for standard installation directories
+include(GNUInstallDirs)
 
 # ============================================================
 # Electron source paths (used by both runtime and installers)
@@ -606,6 +614,21 @@ if(UNIX AND NOT APPLE)
     # Install resources
     install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/
         DESTINATION share/lemonade-server/resources
+    )
+
+    # Configure systemd service file with correct paths
+    configure_file(
+        ${CMAKE_SOURCE_DIR}/data/lemonade-server.service.in
+        ${CMAKE_BINARY_DIR}/lemonade-server.service
+        @ONLY
+    )
+
+    # Install systemd service and configuration files
+    install(FILES ${CMAKE_BINARY_DIR}/lemonade-server.service
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/systemd/system
+    )
+    install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.conf
+        DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/lemonade
     )
 
     # Check if Electron app is available for full package
