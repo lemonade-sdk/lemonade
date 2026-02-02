@@ -1,0 +1,27 @@
+[Unit]
+Description=Lemonade Server
+After=network-online.target
+
+[Service]
+Type=simple
+User=lemonade
+Group=lemonade
+WorkingDirectory=@CMAKE_INSTALL_FULL_LOCALSTATEDIR@/lib/lemonade
+EnvironmentFile=@CMAKE_INSTALL_FULL_SYSCONFDIR@/lemonade/lemonade.conf
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/lemonade-server serve
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGINT
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+ReadWritePaths=@CMAKE_INSTALL_FULL_LOCALSTATEDIR@/lib/lemonade
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target
