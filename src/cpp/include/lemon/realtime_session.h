@@ -1,0 +1,119 @@
+#pragma once
+
+#include <string>
+#include <memory>
+#include <unordered_map>
+#include <mutex>
+#include <functional>
+#include <nlohmann/json.hpp>
+#include "streaming_audio_buffer.h"
+#include "vad.h"
+
+namespace lemon {
+
+using json = nlohmann::json;
+
+// Forward declaration
+class Router;
+
+/**
+ * State for a single realtime transcription session.
+ */
+struct RealtimeSession {
+    std::string session_id;
+    std::string model;
+    StreamingAudioBuffer audio_buffer;
+    SimpleVAD vad;
+    bool session_active = true;
+
+    // Callback to send messages back to the WebSocket client
+    std::function<void(const json&)> send_message;
+
+    // Timestamps for audio tracking
+    int64_t audio_start_ms = 0;  // Start of current speech segment
+
+    RealtimeSession(const std::string& id)
+        : session_id(id), vad(SimpleVAD::Config{}) {}
+};
+
+/**
+ * Manages realtime transcription sessions.
+ * Handles audio buffering, VAD, and transcription routing.
+ */
+class RealtimeSessionManager {
+public:
+    explicit RealtimeSessionManager(Router* router);
+    ~RealtimeSessionManager();
+
+    // Non-copyable
+    RealtimeSessionManager(const RealtimeSessionManager&) = delete;
+    RealtimeSessionManager& operator=(const RealtimeSessionManager&) = delete;
+
+    /**
+     * Create a new transcription session.
+     * @param send_callback Function to send messages back to WebSocket client
+     * @param config Initial session configuration
+     * @return Session ID
+     */
+    std::string create_session(
+        std::function<void(const json&)> send_callback,
+        const json& config = json::object()
+    );
+
+    /**
+     * Update session configuration.
+     * @param session_id Session to update
+     * @param config New configuration (model, VAD settings, etc.)
+     */
+    void update_session(const std::string& session_id, const json& config);
+
+    /**
+     * Append audio data to a session.
+     * @param session_id Session to append to
+     * @param base64_audio Base64-encoded PCM16 audio
+     */
+    void append_audio(const std::string& session_id, const std::string& base64_audio);
+
+    /**
+     * Commit the current audio buffer (force transcription).
+     * @param session_id Session to commit
+     */
+    void commit_audio(const std::string& session_id);
+
+    /**
+     * Clear the audio buffer without transcribing.
+     * @param session_id Session to clear
+     */
+    void clear_audio(const std::string& session_id);
+
+    /**
+     * Close and cleanup a session.
+     * @param session_id Session to close
+     */
+    void close_session(const std::string& session_id);
+
+    /**
+     * Check if a session exists.
+     */
+    bool session_exists(const std::string& session_id) const;
+
+private:
+    Router* router_;
+    std::unordered_map<std::string, std::unique_ptr<RealtimeSession>> sessions_;
+    mutable std::mutex sessions_mutex_;
+
+    // Generate unique session ID
+    static std::string generate_session_id();
+
+    // Perform transcription and send result
+    void transcribe_and_send(RealtimeSession* session);
+
+    // Process VAD for a session
+    void process_vad(RealtimeSession* session);
+
+    // Get session by ID (returns nullptr if not found)
+    RealtimeSession* get_session(const std::string& session_id);
+    const RealtimeSession* get_session(const std::string& session_id) const;
+};
+
+} // namespace lemon

@@ -5,6 +5,7 @@
 #include "lemon/streaming_proxy.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
+#include "lemon/websocket_server.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -91,6 +92,10 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
 
     setup_routes(*http_server_);
     setup_routes(*http_server_v6_);
+
+    // Initialize WebSocket server on port + 100 (e.g., 8100 for realtime transcription)
+    // Note: port + 1 conflicts with backend subprocess ports (find_free_port starts at 8001)
+    websocket_server_ = std::make_unique<WebSocketServer>(port_ + 100, router_.get());
 }
 
 Server::~Server() {
@@ -503,6 +508,16 @@ void Server::run() {
     std::string ipv6 = resolve_host_to_ip(AF_INET6, host_);
 
     running_ = true;
+
+    // Start WebSocket server for realtime transcription
+    if (websocket_server_) {
+        if (websocket_server_->start()) {
+            std::cout << "[Server] WebSocket server started on port " << (port_ + 100) << std::endl;
+        } else {
+            std::cerr << "[Server] Warning: Failed to start WebSocket server" << std::endl;
+        }
+    }
+
     if (!ipv4.empty()) {
         // setup ipv4 thread
         setup_http_logger(*http_server_);
@@ -531,6 +546,12 @@ void Server::stop() {
         http_server_v6_->stop();
         http_server_->stop();
         running_ = false;
+
+        // Stop WebSocket server
+        if (websocket_server_) {
+            std::cout << "[Server] Stopping WebSocket server..." << std::endl;
+            websocket_server_->stop();
+        }
 
         // Explicitly clean up router (unload models, stop backend servers)
         if (router_) {
