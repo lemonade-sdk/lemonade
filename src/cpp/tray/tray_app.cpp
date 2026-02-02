@@ -560,7 +560,7 @@ bool TrayApp::find_server_binary() {
 #ifdef _WIN32
     search_paths.push_back("C:/Program Files/Lemonade/" + binary_name);
 #else
-    search_paths.push_back("/usr/local/bin/" + binary_name);
+    search_paths.push_back("/opt/bin/" + binary_name);
     search_paths.push_back("/usr/bin/" + binary_name);
 #endif
 
@@ -2025,7 +2025,7 @@ bool TrayApp::find_electron_app() {
     // The Electron app has exactly two possible locations:
     // 1. Production (WIX installer): ../app/ relative to bin/ directory
     // 2. Development: app/<platform>-unpacked/ relative to build directory
-    // 3. Linux production: /usr/local/share/lemonade-server/app/lemonade
+    // 3. Linux production: /opt/share/lemonade-server/app/lemonade
 
 #ifdef _WIN32
     constexpr const char* exe_name = "Lemonade.exe";
@@ -2040,9 +2040,9 @@ bool TrayApp::find_electron_app() {
 
 #if defined(__linux__)
     // On Linux, check the production installation path first
-    // If the executable is in /usr/local/bin, the app is in /usr/local/share/lemonade-server/app/
-    if (exe_dir == "/usr/local/bin") {
-        fs::path linux_production_path = fs::path("/usr/local/share/lemonade-server/app") / exe_name;
+    // If the executable is in /opt/bin, the app is in /opt/share/lemonade-server/app/
+    if (exe_dir == "/opt/bin") {
+        fs::path linux_production_path = fs::path("/opt/share/lemonade-server/app") / exe_name;
         if (fs::exists(linux_production_path)) {
             electron_app_path_ = fs::canonical(linux_production_path).string();
             std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
