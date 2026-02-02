@@ -2019,7 +2019,7 @@ const sendMessage = async () => {
                       onClick={(e) => message.role === 'user' && !isLoading && handleEditMessage(index, e)}
                       style={{ cursor: message.role === 'user' && !isLoading ? 'pointer' : 'default' }}
                     >
-                      {renderMessageContent(message.content, message.thinking, index, !(isLoading && index === messages.length - 1 && message.role === 'assistant'))}
+                      {renderMessageContent(message.content, message.thinking, index, message.role === 'assistant')}
                     </div>
                   )}
                 </div>
