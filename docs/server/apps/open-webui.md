@@ -164,6 +164,47 @@ Smaller LLMs can produce simple pages with tasteful styling and basic interactiv
       <img src="https://github.com/lemonade-sdk/assets/blob/main/webui/3d_rendering.png?raw=true" alt="3D rendering" width="600"/>
     </div>
 
+### Image Generation
+
+Open WebUI supports [image generation](https://docs.openwebui.com/features/image-generation-and-editing/usage/) using Stable Diffusion [models](https://lemonade-server.ai/docs/server/server_models/#image-generation-stable-diffusion-cpp) through Lemonade Server.
+
+**Configuring Image Generation**
+
+1. Navigate to Admin > Settings > Images in Open WebUI to configure image generation:
+    1. Toggle `Image Generation` on.
+    2. Choose `Standard (Open AI)` as the Image Generation Engine.
+    3. Toggle `Prompt Generation` on.
+    4. For `OpenAI-API-Basis-URL`, fill in `http://localhost:8000/api/v1` (unless you're using a different port).
+    5. Add a character like `-` for `OpenAI-API-Key`.
+    6. If you want to add more parameters, add them to the text field as JSON. For example: `{ "steps": 4, "cfg_scale": 1 }`. See available parameters at [Image Generation (Stable Diffusion CPP)](https://lemonade-server.ai/docs/server/server_models/#image-generation-stable-diffusion-cpp).
+    7. Add your model name to `Model`, e.g., `SDXL-Turbo`.
+    8. Click `Save`.
+
+**Allow Image Generation for Model**
+
+Enable Image Generation as a capability for your model:
+    1. Go to Admin > Settings > Models and choose your model.
+    2. Turn on `Image Generation`. If you want start chat always with image generation, also toggle the default option.
+
+**Option 1: Using Image Generation Switch**
+
+To generate an image:
+    1. Toggle the `Image Generation` switch in the chat on.
+    2. Enter your image generation prompt.
+    3. Click `Send`.
+
+**Option 2: Native Tool-Based Generation (Agentic)**
+
+This mode uses tool calling for image generation and is recommended for high-quality models with tool calling capabilities. Normally the models will alter and improve your prompt.
+
+1. Configure your model for native tool calling:
+    1. Go to Admin > Settings > Models and choose your model.
+    2. Go to `Advanced Parameters` and toggle `Function Calling` to `Native`.
+    
+    > Note: Open WebUI recommends using native mode only for high-quality models. See [Tool Calling Modes](https://docs.openwebui.com/features/plugin/tools/#tool-calling-modes-default-vs-native) for more information. (try out >30B models like GPT-OSS-120B, GLM-4.7-Flash or Qwen-3-Next-80B-A3B)
+
+2. The LLM will automatically call the image generation tool when appropriate based on your prompts.
+
 ## Conclusion
 
 These are just a few of our favorite ways to try out LLMs in Open WebUI. There are a lot more features to explore, such as voice interaction and chatting with documents, so be sure to check out the [Open WebUI documentation](https://docs.openwebui.com/) and YouTube content.
