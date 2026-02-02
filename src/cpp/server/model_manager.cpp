@@ -1476,6 +1476,16 @@ void ModelManager::download_model(const std::string& model_name,
     bool model_registered = model_exists(model_name);
 
     if (!model_registered) {
+        // First, check if the model exists but was filtered out (unsupported recipe)
+        if (model_exists_unfiltered(model_name)) {
+            // Model exists in registry but is not available on this system
+            std::string filter_reason = get_model_filter_reason(model_name);
+            throw std::runtime_error(
+                "Model '" + model_name + "' is not available on this system. " +
+                filter_reason
+            );
+        }
+
         // Model not in registry - this must be a user model registration
         // Validate it has the "user." prefix
         if (model_name.substr(0, 5) != "user.") {
