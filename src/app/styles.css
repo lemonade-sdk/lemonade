@@ -2241,7 +2241,10 @@ footer {
 
 .code-block-wrapper pre {
     margin: 0;
+    display: flex;
+    align-items: center;
     padding-right: 3rem;
+    min-height: 60px;
 }
 
 .code-copy-button {
