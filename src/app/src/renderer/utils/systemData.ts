@@ -22,6 +22,7 @@ interface Device {
 
 interface GPUDevice extends Device {
   vram_gb: number;
+  virtual_mem_gb?: number;
 }
 
 interface CPUInfo extends Device {

@@ -458,6 +458,86 @@ ipcMain.handle('get-system-stats', async () => {
   };
 });
 
+ipcMain.handle('get-system-info', async () => {
+  try {
+    let serverUrl = 'http://localhost:8000';
+
+    // Use explicit server URL if configured
+    if (configuredServerBaseUrl) {
+      serverUrl = configuredServerBaseUrl;
+    } else if (cachedServerPort) {
+      serverUrl = `http://localhost:${cachedServerPort}`;
+    }
+
+    const response = await fetch(`${serverUrl}/api/v1/system-info`, { timeout: 3000 });
+    if (response.ok) {
+      const data = await response.json();
+      let maxGttGb = 0;
+      let maxVramGb = 0;
+
+      const considerAmdGpu = (gpu) => {
+        if (gpu && typeof gpu.virtual_mem_gb === 'number' && isFinite(gpu.virtual_mem_gb)) {
+          maxGttGb = Math.max(maxGttGb, gpu.virtual_mem_gb);
+        }
+        if (gpu && typeof gpu.vram_gb === 'number' && isFinite(gpu.vram_gb)) {
+          maxVramGb = Math.max(maxVramGb, gpu.vram_gb);
+        }
+      };
+
+      if (data.devices?.amd_igpu) {
+        considerAmdGpu(data.devices.amd_igpu);
+      }
+      if (Array.isArray(data.devices?.amd_dgpu)) {
+        data.devices.amd_dgpu.forEach(considerAmdGpu);
+      }
+
+      // Transform server response to match the About window format
+      const systemInfo = {
+        system: 'Unknown',
+        os: data['OS Version'] || 'Unknown',
+        cpu: data['Processor'] || 'Unknown',
+        gpus: [],
+        gtt_gb: maxGttGb > 0 ? `${maxGttGb} GB` : undefined,
+        vram_gb: maxVramGb > 0 ? `${maxVramGb} GB` : undefined,
+      };
+
+      // Extract GPU information from devices
+      if (data.devices) {
+        if (data.devices.amd_igpu?.name) {
+          systemInfo.gpus.push(data.devices.amd_igpu.name);
+        }
+        if (data.devices.nvidia_igpu?.name) {
+          systemInfo.gpus.push(data.devices.nvidia_igpu.name);
+        }
+        if (Array.isArray(data.devices.amd_dgpu)) {
+          data.devices.amd_dgpu.forEach(gpu => {
+            if (gpu.name) systemInfo.gpus.push(gpu.name);
+          });
+        }
+        if (Array.isArray(data.devices.nvidia_dgpu)) {
+          data.devices.nvidia_dgpu.forEach(gpu => {
+            if (gpu.name) systemInfo.gpus.push(gpu.name);
+          });
+        }
+      }
+
+      return systemInfo;
+    }
+  } catch (error) {
+    console.error('Failed to fetch system info from server:', error);
+  }
+
+  // Return default if server is unavailable
+  return {
+    system: 'Unknown',
+    os: 'Unknown',
+    cpu: 'Unknown',
+    gpus: [],
+    gtt_gb: 'Unknown',
+    vram_gb: 'Unknown',
+  };
+});
+
 function updateWindowMinWidth(requestedWidth) {
   if (!mainWindow || typeof requestedWidth !== 'number' || !isFinite(requestedWidth)) {
     return;

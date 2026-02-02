@@ -1,17 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { fetchSystemInfoData } from './utils/systemData';
 
 interface AboutModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+interface SystemInfo {
+  system: string;
+  os: string;
+  cpu: string;
+  gpus: string[];
+  gtt_gb?: string;
+  vram_gb?: string;
+}
+
 const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
   const [version, setVersion] = useState<string>('Loading...');
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [isLoadingInfo, setIsLoadingInfo] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isOpen && window.api?.getVersion) {
       setVersion('Loading...');
+      setIsLoadingInfo(true);
 
       // Retry logic to handle backend startup delay
       const fetchVersionWithRetry = async (retries = 3, delay = 1000) => {
@@ -28,7 +41,61 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
         setVersion('Unknown (Backend not running)');
       };
 
+      const fetchSystemInfo = async () => {
+        try {
+          if (window.api?.getSystemInfo) {
+            const info = await window.api.getSystemInfo();
+            console.log('SystemInfo received in AboutModal:', info);
+            setSystemInfo(info);
+            return;
+          }
+
+          const { info } = await fetchSystemInfoData();
+          if (!info) {
+            return;
+          }
+
+          const gpus: string[] = [];
+          let maxGttGb = 0;
+          let maxVramGb = 0;
+
+          const considerAmdGpu = (gpu?: { name?: string; virtual_mem_gb?: number; vram_gb?: number }) => {
+            if (!gpu) return;
+            if (gpu.name) gpus.push(gpu.name);
+            if (typeof gpu.virtual_mem_gb === 'number' && isFinite(gpu.virtual_mem_gb)) {
+              maxGttGb = Math.max(maxGttGb, gpu.virtual_mem_gb);
+            }
+            if (typeof gpu.vram_gb === 'number' && isFinite(gpu.vram_gb)) {
+              maxVramGb = Math.max(maxVramGb, gpu.vram_gb);
+            }
+          };
+
+          considerAmdGpu(info.devices?.amd_igpu);
+          info.devices?.amd_dgpu?.forEach(considerAmdGpu);
+
+          info.devices?.nvidia_dgpu?.forEach((gpu) => {
+            if (gpu?.name) gpus.push(gpu.name);
+          });
+
+          const normalized: SystemInfo = {
+            system: 'Unknown',
+            os: info.os_version || 'Unknown',
+            cpu: info.processor || 'Unknown',
+            gpus,
+            gtt_gb: maxGttGb > 0 ? `${maxGttGb} GB` : 'Unknown',
+            vram_gb: maxVramGb > 0 ? `${maxVramGb} GB` : 'Unknown',
+          };
+
+          setSystemInfo(normalized);
+        } catch (error) {
+          console.error('Failed to fetch system info:', error);
+        } finally {
+          setIsLoadingInfo(false);
+        }
+      };
+
       fetchVersionWithRetry();
+      fetchSystemInfo();
     }
   }, [isOpen]);
 
@@ -77,6 +144,49 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
           <span>Version</span>
           <span>{version}</span>
         </div>
+
+        {!isLoadingInfo && systemInfo && (
+          <>
+            {systemInfo.system && systemInfo.system !== 'Unknown' && (
+              <div className="about-popover-info-row">
+                <span className="about-popover-info-label">System</span>
+                <span className="about-popover-info-value">{systemInfo.system}</span>
+              </div>
+            )}
+            {systemInfo.os && systemInfo.os !== 'Unknown' && (
+              <div className="about-popover-info-row">
+                <span className="about-popover-info-label">OS</span>
+                <span className="about-popover-info-value">{systemInfo.os}</span>
+              </div>
+            )}
+            {systemInfo.cpu && systemInfo.cpu !== 'Unknown' && (
+              <div className="about-popover-info-row">
+                <span className="about-popover-info-label">CPU</span>
+                <span className="about-popover-info-value">{systemInfo.cpu}</span>
+              </div>
+            )}
+            {systemInfo.gpus.length > 0 && (
+              <div className="about-popover-info-row">
+                <span className="about-popover-info-label">GPU{systemInfo.gpus.length > 1 ? 's' : ''}</span>
+                <span className="about-popover-info-value">
+                  {systemInfo.gpus.join(', ')}
+                </span>
+              </div>
+            )}
+            {systemInfo.gtt_gb && systemInfo.gtt_gb !== 'Unknown' && (
+              <div className="about-popover-info-row">
+                <span className="about-popover-info-label">Shared GPU memory</span>
+                <span className="about-popover-info-value">{systemInfo.gtt_gb}</span>
+              </div>
+            )}
+            {systemInfo.vram_gb && systemInfo.vram_gb !== 'Unknown' && (
+              <div className="about-popover-info-row">
+                <span className="about-popover-info-label">Dedicated GPU memory</span>
+                <span className="about-popover-info-value">{systemInfo.vram_gb}</span>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
