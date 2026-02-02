@@ -8,7 +8,7 @@
  */
 
 type PortChangeListener = (port: number) => void;
-type UrlChangeListener = (url: string) => void;
+type UrlChangeListener = (url: string, apiKey: string) => void;
 
 class ServerConfig {
   private port: number = 8000;
@@ -121,6 +121,16 @@ class ServerConfig {
       return this.explicitBaseUrl;
     }
     return `http://localhost:${this.port}`;
+  }
+
+  /**
+   * Get the server API key
+   */
+  getAPIKey(): string {
+    if (this.apiKey) {
+      return this.apiKey;
+    }
+    return '';
   }
 
   /**
@@ -239,9 +249,11 @@ class ServerConfig {
 
   private notifyUrlListeners() {
     const url = this.getServerBaseUrl();
+    const apiKey = this.getAPIKey();
+    
     this.urlListeners.forEach((listener) => {
       try {
-        listener(url);
+        listener(url, apiKey);
       } catch (error) {
         console.error('Error in URL change listener:', error);
       }
@@ -299,6 +311,7 @@ export const serverConfig = new ServerConfig();
 // Export convenience functions
 export const getApiBaseUrl = () => serverConfig.getApiBaseUrl();
 export const getServerBaseUrl = () => serverConfig.getServerBaseUrl();
+export const getAPIKey = () => serverConfig.getAPIKey();
 export const getServerPort = () => serverConfig.getPort();
 export const discoverServerPort = () => serverConfig.discoverPort();
 export const isRemoteServer = () => serverConfig.isRemoteServer();
