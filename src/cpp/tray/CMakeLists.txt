@@ -204,6 +204,18 @@ install(TARGETS lemonade-server
     RUNTIME DESTINATION bin
 )
 
+# Create symlink in standard bin path only if not installing to /usr
+if(UNIX AND NOT APPLE AND NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+    install(CODE "
+        file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+                ${CMAKE_INSTALL_PREFIX}/bin/lemonade-server
+                \"\$ENV{DESTDIR}/usr/bin/lemonade-server\"
+        )
+    ")
+endif()
+
 # Note: Icon resources are copied by parent CMakeLists.txt
 
 # Print configuration summary
