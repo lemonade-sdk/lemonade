@@ -169,12 +169,9 @@ The Lemonade Desktop App provides a graphical interface for chatting with models
 ```bash
 # Launch the app (connects to local server automatically)
 lemonade-app
-
-# Launch with a specific server URL
-lemonade-app --base-url http://192.168.0.100:8000
 ```
 
-By default, the app connects to a server running on `localhost` and automatically discovers the port. To connect to a remote server, use the `--base-url` option.
+By default, the app connects to a server running on `localhost` and automatically discovers the port. To connect to a remote server, change the app settings.
 
 ### Remote Server Connection
 
@@ -186,20 +183,12 @@ To connect the app to a server running on a different machine:
    ```
    > **Note:** Using `--host 0.0.0.0` allows connections from other machines on the network. Only do this on trusted networks. You can use `LEMONADE_API_KEY` (see above) to manage access on your network.
 
-2. **Launch the app** on the client machine with the `--base-url` flag:
+2. **Launch the app** on the client machine and configure the endpoint through the UI:
    ```bash
-   lemonade-app --base-url http://192.168.0.100:8000
+   lemonade-app
    ```
-   Replace `192.168.0.100` with the IP address of the machine running the server.
 
-Alternatively, you can set the `LEMONADE_APP_BASE_URL` environment variable.
-
-| Option / Environment Variable | Description |
-|-------------------------------|-------------|
-| `--base-url URL` | Connect the app to a server at the specified URL (e.g., `http://192.168.0.100:8000`) |
-| `LEMONADE_APP_BASE_URL` | Environment variable alternative to `--base-url`. The command-line flag takes precedence if both are set. |
-
-When no `--base-url` is provided, the app automatically discovers and connects to a local server.
+The app automatically discovers and connects to a local server unless an endpoint is explicitly configured in the UI. 
 
 ## Next Steps
 
