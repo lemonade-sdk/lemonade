@@ -11,6 +11,7 @@ Lemonade Server currently supports these backends:
 | [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM)    | `.q4nx`      | Uses FLM's `flm serve` backend. More details [here](#fastflowlm-support).                    |
 | [whisper.cpp](https://github.com/ggerganov/whisper.cpp) | `.bin` | Uses whisper.cpp's `whisper-server` backend for audio transcription. Models: Whisper-Tiny, Whisper-Base, Whisper-Small. |
 | [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) | `.safetensors` | Uses sd.cpp's `sd-cli` backend for image generation. Models: SD-Turbo, SDXL-Turbo, etc. |
+| [Kokoros](https://github.com/lucasjinreal/Kokoros) | `.onnx` | Uses Kokoro's `koko` backend for image generation. Models: kokoro-v1 |
 
 
 ## Endpoints Overview
@@ -25,6 +26,7 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/embeddings` - Embeddings (text -> vector representations)
 - POST `/api/v1/responses` - Chat Completions (prompt|messages -> event)
 - POST `/api/v1/audio/transcriptions` - Audio Transcription (audio -> text)
+- POST `/api/v1/audio/speech` - Text to speech (text -> audio)
 - POST `/api/v1/images/generations` - Image Generation (prompt -> image)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
