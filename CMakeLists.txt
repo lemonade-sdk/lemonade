@@ -653,6 +653,46 @@ if(UNIX AND NOT APPLE)
             PATTERN "*.so" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
         )
 
+        if (NOT WIN32 AND NOT APPLE)
+            # Install .desktop file for electron app
+            install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-app.desktop
+                DESTINATION share/applications
+            )
+            # Create symlink in standard applications path only if not installing to /usr
+            if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+                install(CODE "
+                    file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/applications\")
+                    execute_process(
+                        COMMAND ${CMAKE_COMMAND} -E create_symlink
+                            ${CMAKE_INSTALL_PREFIX}/share/applications/lemonade-app.desktop
+                            \"\$ENV{DESTDIR}/usr/share/applications/lemonade-app.desktop\"
+                    )
+                ")
+            endif()
+            install(FILES ${CMAKE_SOURCE_DIR}/src/app/assets/logo.svg
+                DESTINATION share/pixmaps
+                RENAME lemonade-app.svg
+            )
+            # Create symlink in standard bin path only if not installing to /usr
+            if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+                install(CODE "
+                    file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
+                    execute_process(
+                        COMMAND ${CMAKE_COMMAND} -E create_symlink
+                            \"\${CMAKE_INSTALL_PREFIX}/share/lemonade-server/app/lemonade\"
+                            \"\$ENV{DESTDIR}/usr/bin/lemonade\"
+                    )
+                ")
+            else()
+                install(CODE "
+                    file(CREATE_LINK
+                        \"\${CMAKE_INSTALL_PREFIX}/share/lemonade-server/app/lemonade\"
+                        \"\${CMAKE_INSTALL_PREFIX}/bin/lemonade\"
+                        SYMBOLIC)
+                ")
+            endif()
+        endif()
+
         # Post-install script for full package
         # Note: CPack requires the script to be named 'postinst' exactly
         # We copy postinst-full to a temporary postinst file for CPack
