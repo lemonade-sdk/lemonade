@@ -181,6 +181,80 @@ msiexec /i lemonade.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemona
 - If installation fails silently, check that you're running as Administrator
 - Add `/L*V install.log` to generate a debug log file
 
+## Linux Installation
+
+### Debian/Ubuntu Package
+
+The Debian package installer handles all system configuration automatically, including setting up a systemd service for managing the Lemonade Server.
+
+If you would prefer to manage the lifecycle of the server process manually, the service can be disabled and manually run as well.
+
+### Systemd Service Management
+
+When Lemonade Server is installed via the Debian package, it registers a systemd service called `lemonade-server` that allows you to manage the server process using standard systemd commands.
+
+**Service Features:**
+
+- **Automatic restart:** The service automatically restarts if the server crashes
+- **User isolation:** Runs under the unprivileged `lemonade` user for security
+- **GPU access:** The service is configured with proper group membership to access GPU/NPU hardware via the `render` group
+- **Security hardening:** Includes systemd security options like `ProtectSystem=full`, `ProtectHome=yes`, and `NoNewPrivileges=yes`
+- **Boot integration:** Starts automatically on system boot (if enabled)
+
+**Common Commands:**
+
+```bash
+# Start the service
+sudo systemctl start lemonade-server
+
+# Stop the service
+sudo systemctl stop lemonade-server
+
+# Restart the service
+sudo systemctl restart lemonade-server
+
+# Check service status
+sudo systemctl status lemonade-server
+
+# Enable automatic startup on boot
+sudo systemctl enable lemonade-server
+
+# Disable automatic startup on boot
+sudo systemctl disable lemonade-server
+
+# View service logs
+sudo journalctl -u lemonade-server
+
+# View recent logs (follow mode)
+sudo journalctl -u lemonade-server -f
+```
+
+**Configuration:**
+
+The Lemonade Server systemd service is configured to read settings from `/etc/lemonade/lemonade.conf`. Environment variables defined in this file are passed to the server process. Edit this file to customize server behavior:
+
+```bash
+sudo nano /etc/lemonade/lemonade.conf
+```
+
+After making changes to the configuration file, restart the service for changes to take effect:
+
+```bash
+sudo systemctl restart lemonade-server
+```
+
+**Service File Location:**
+
+The systemd service file is located at `/etc/systemd/system/lemonade-server.service`. This file should not be edited directly as it may be overwritten during package updates. Instead, use the configuration file (`/etc/lemonade/lemonade.conf`) to customize server behavior.
+
+If you need to make persistent changes to the service file, use systemd's drop-in override mechanism:
+
+```bash
+sudo systemctl edit lemonade-server
+```
+
+This creates an override file that takes precedence over the original service file and persists across updates.
+
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->
