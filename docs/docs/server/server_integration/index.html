@@ -928,6 +928,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#linux-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Linux Installation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Linux Installation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#debianubuntu-package" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Debian/Ubuntu Package
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#systemd-service-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Systemd Service Management
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1155,6 +1194,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#linux-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Linux Installation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Linux Installation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#debianubuntu-package" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Debian/Ubuntu Package
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#systemd-service-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Systemd Service Management
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1301,6 +1379,58 @@ msiexec<span class="w"> </span>/i<span class="w"> </span>lemonade.msi<span class
 <p><strong>Troubleshooting:</strong>
 - If installation fails silently, check that you're running as Administrator
 - Add <code>/L*V install.log</code> to generate a debug log file</p>
+<h2 id="linux-installation">Linux Installation</h2>
+<h3 id="debianubuntu-package">Debian/Ubuntu Package</h3>
+<p>The Debian package installer handles all system configuration automatically, including setting up a systemd service for managing the Lemonade Server.</p>
+<p>If you would prefer to manage the lifecycle of the server process manually, the service can be disabled and manually run as well.</p>
+<h3 id="systemd-service-management">Systemd Service Management</h3>
+<p>When Lemonade Server is installed via the Debian package, it registers a systemd service called <code>lemonade-server</code> that allows you to manage the server process using standard systemd commands.</p>
+<p><strong>Service Features:</strong></p>
+<ul>
+<li><strong>Automatic restart:</strong> The service automatically restarts if the server crashes</li>
+<li><strong>User isolation:</strong> Runs under the unprivileged <code>lemonade</code> user for security</li>
+<li><strong>GPU access:</strong> The service is configured with proper group membership to access GPU/NPU hardware via the <code>render</code> group</li>
+<li><strong>Security hardening:</strong> Includes systemd security options like <code>ProtectSystem=full</code>, <code>ProtectHome=yes</code>, and <code>NoNewPrivileges=yes</code></li>
+<li><strong>Boot integration:</strong> Starts automatically on system boot (if enabled)</li>
+</ul>
+<p><strong>Common Commands:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Start the service</span>
+sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>lemonade-server
+
+<span class="c1"># Stop the service</span>
+sudo<span class="w"> </span>systemctl<span class="w"> </span>stop<span class="w"> </span>lemonade-server
+
+<span class="c1"># Restart the service</span>
+sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>lemonade-server
+
+<span class="c1"># Check service status</span>
+sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="w"> </span>lemonade-server
+
+<span class="c1"># Enable automatic startup on boot</span>
+sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>lemonade-server
+
+<span class="c1"># Disable automatic startup on boot</span>
+sudo<span class="w"> </span>systemctl<span class="w"> </span>disable<span class="w"> </span>lemonade-server
+
+<span class="c1"># View service logs</span>
+sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w"> </span>lemonade-server
+
+<span class="c1"># View recent logs (follow mode)</span>
+sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w"> </span>lemonade-server<span class="w"> </span>-f
+</code></pre></div>
+<p><strong>Configuration:</strong></p>
+<p>The Lemonade Server systemd service is configured to read settings from <code>/etc/lemonade/lemonade.conf</code>. Environment variables defined in this file are passed to the server process. Edit this file to customize server behavior:</p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>nano<span class="w"> </span>/etc/lemonade/lemonade.conf
+</code></pre></div>
+<p>After making changes to the configuration file, restart the service for changes to take effect:</p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>lemonade-server
+</code></pre></div>
+<p><strong>Service File Location:</strong></p>
+<p>The systemd service file is located at <code>/etc/systemd/system/lemonade-server.service</code>. This file should not be edited directly as it may be overwritten during package updates. Instead, use the configuration file (<code>/etc/lemonade/lemonade.conf</code>) to customize server behavior.</p>
+<p>If you need to make persistent changes to the service file, use systemd's drop-in override mechanism:</p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>edit<span class="w"> </span>lemonade-server
+</code></pre></div>
+<p>This creates an override file that takes precedence over the original service file and persists across updates.</p>
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->
 
