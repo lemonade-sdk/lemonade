@@ -32,6 +32,10 @@
 #include <sys/file.h>  // for flock
 #include <fcntl.h>     // for open
 #include <cerrno>      // for errno
+#ifdef HAVE_SYSTEMD
+#include <systemd/sd-bus.h>
+#include <systemd/sd-daemon.h>
+#endif
 #endif
 
 namespace fs = std::filesystem;
@@ -56,6 +60,169 @@ static bool is_local_path(const std::string& path) {
 
     return false;
 }
+
+#if !defined(_WIN32)
+// Helper: Check if systemd is running and lemonade-server.service is active
+static bool is_systemd_service_active(const char* unit_name) {
+#ifdef HAVE_SYSTEMD
+    if (!unit_name || unit_name[0] == '\0') {
+        return false;
+    }
+
+    if (sd_booted() <= 0) {
+        return false;
+    }
+
+    sd_bus* bus = nullptr;
+    sd_bus_message* reply = nullptr;
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+
+    int r = sd_bus_open_system(&bus);
+    if (r < 0 || !bus) {
+        sd_bus_error_free(&error);
+        return false;
+    }
+
+    r = sd_bus_call_method(
+        bus,
+        "org.freedesktop.systemd1",
+        "/org/freedesktop/systemd1",
+        "org.freedesktop.systemd1.Manager",
+        "GetUnit",
+        &error,
+        &reply,
+        "s",
+        unit_name
+    );
+
+    if (r < 0 || !reply) {
+        sd_bus_error_free(&error);
+        sd_bus_unref(bus);
+        return false;
+    }
+
+    const char* unit_path = nullptr;
+    r = sd_bus_message_read(reply, "o", &unit_path);
+    sd_bus_message_unref(reply);
+    reply = nullptr;
+
+    if (r < 0 || !unit_path) {
+        sd_bus_error_free(&error);
+        sd_bus_unref(bus);
+        return false;
+    }
+
+    char* active_state = nullptr;
+    r = sd_bus_get_property_string(
+        bus,
+        "org.freedesktop.systemd1",
+        unit_path,
+        "org.freedesktop.systemd1.Unit",
+        "ActiveState",
+        &error,
+        &active_state
+    );
+
+    if (r < 0 || !active_state) {
+        sd_bus_error_free(&error);
+        sd_bus_unref(bus);
+        return false;
+    }
+
+    bool is_active =
+        (strcmp(active_state, "active") == 0) ||
+        (strcmp(active_state, "activating") == 0) ||
+        (strcmp(active_state, "reloading") == 0);
+
+    free(active_state);
+    sd_bus_error_free(&error);
+    sd_bus_unref(bus);
+
+    return is_active;
+#else
+    (void)unit_name;
+    return false;
+#endif
+}
+
+// Helper: Get systemd service MainPID (returns 0 if unavailable)
+static int get_systemd_service_main_pid(const char* unit_name) {
+#ifdef HAVE_SYSTEMD
+    if (!unit_name || unit_name[0] == '\0') {
+        return 0;
+    }
+
+    if (sd_booted() <= 0) {
+        return 0;
+    }
+
+    sd_bus* bus = nullptr;
+    sd_bus_message* reply = nullptr;
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+
+    int r = sd_bus_open_system(&bus);
+    if (r < 0 || !bus) {
+        sd_bus_error_free(&error);
+        return 0;
+    }
+
+    r = sd_bus_call_method(
+        bus,
+        "org.freedesktop.systemd1",
+        "/org/freedesktop/systemd1",
+        "org.freedesktop.systemd1.Manager",
+        "GetUnit",
+        &error,
+        &reply,
+        "s",
+        unit_name
+    );
+
+    if (r < 0 || !reply) {
+        sd_bus_error_free(&error);
+        sd_bus_unref(bus);
+        return 0;
+    }
+
+    const char* unit_path = nullptr;
+    r = sd_bus_message_read(reply, "o", &unit_path);
+    sd_bus_message_unref(reply);
+    reply = nullptr;
+
+    if (r < 0 || !unit_path) {
+        sd_bus_error_free(&error);
+        sd_bus_unref(bus);
+        return 0;
+    }
+
+    unsigned int main_pid = 0;
+    r = sd_bus_get_property_trivial(
+        bus,
+        "org.freedesktop.systemd1",
+        unit_path,
+        "org.freedesktop.systemd1.Service",
+        "MainPID",
+        &error,
+        'u',
+        &main_pid
+    );
+
+    if (r < 0) {
+        sd_bus_error_free(&error);
+        sd_bus_unref(bus);
+        return 0;
+    }
+
+    sd_bus_error_free(&error);
+    sd_bus_unref(bus);
+
+    return static_cast<int>(main_pid);
+#else
+    (void)unit_name;
+    return 0;
+#endif
+}
+#endif
 
 // Helper macro for debug logging
 #define DEBUG_LOG(app, msg) \
@@ -647,6 +814,13 @@ std::pair<int, int> TrayApp::get_server_info() {
         }
     }
 #else
+    if (is_systemd_service_active("lemonade-server.service")) {
+        int main_pid = get_systemd_service_main_pid("lemonade-server.service");
+        if (main_pid > 0) {
+            return {main_pid, server_config_.port};
+        }
+    }
+
     // Unix: Read from PID file
     std::ifstream pid_file("/tmp/lemonade-router.pid");
     if (pid_file.is_open()) {

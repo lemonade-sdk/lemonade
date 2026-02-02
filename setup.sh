@@ -122,7 +122,7 @@ if command_exists pkg-config; then
     print_success "pkg-config is installed"
 
     # Check for required libraries using pkg-config
-    libs_to_check=("libcurl" "openssl" "zlib")
+    libs_to_check=("libcurl" "openssl" "zlib" "libsystemd")
     missing_libs=()
 
     for lib in "${libs_to_check[@]}"; do
@@ -137,11 +137,11 @@ if command_exists pkg-config; then
     if [ ${#missing_libs[@]} -gt 0 ]; then
         if [ "$OS" = "linux" ]; then
             if command_exists apt; then
-                missing_packages+=("libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev")
+                missing_packages+=("libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev")
             elif command_exists pacman; then
-                missing_packages+=("curl" "openssl" "zlib")
+                missing_packages+=("curl" "openssl" "zlib" "systemd")
             elif command_exists dnf; then
-                missing_packages+=("libcurl-devel" "openssl-devel" "zlib-devel")
+                missing_packages+=("libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel")
             fi
         elif [ "$OS" = "macos" ]; then
             # macOS typically has these via Xcode Command Line Tools
@@ -159,11 +159,11 @@ else
     print_warning "pkg-config not found, assuming libraries need to be installed"
     if [ "$OS" = "linux" ]; then
         if command_exists apt; then
-            missing_packages+=("pkg-config" "libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev")
+            missing_packages+=("pkg-config" "libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev")
         elif command_exists pacman; then
-            missing_packages+=("pkgconf" "curl" "openssl" "zlib")
+            missing_packages+=("pkgconf" "curl" "openssl" "zlib" "systemd")
         elif command_exists dnf; then
-            missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel")
+            missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel")
         fi
     elif [ "$OS" = "macos" ]; then
         missing_packages+=("pkg-config" "curl" "openssl" "zlib")
