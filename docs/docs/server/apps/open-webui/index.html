@@ -707,6 +707,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#image-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Image Generation
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1071,6 +1082,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#image-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Image Generation
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1283,6 +1305,48 @@ title="YouTube video player" frameborder="0" allowfullscreen></iframe>
   <br><em>3D rendering</em></br>
   <img src="https://github.com/lemonade-sdk/assets/blob/main/webui/3d_rendering.png?raw=true" alt="3D rendering" width="600"/>
 </div></p>
+</li>
+</ol>
+<h3 id="image-generation">Image Generation</h3>
+<p>Open WebUI supports <a href="https://docs.openwebui.com/features/image-generation-and-editing/usage/">image generation</a> using Stable Diffusion <a href="https://lemonade-server.ai/docs/server/server_models/#image-generation-stable-diffusion-cpp">models</a> through Lemonade Server.</p>
+<p><strong>Configuring Image Generation</strong></p>
+<ol>
+<li>Navigate to Admin &gt; Settings &gt; Images in Open WebUI to configure image generation:<ol>
+<li>Toggle <code>Image Generation</code> on.</li>
+<li>Choose <code>Standard (Open AI)</code> as the Image Generation Engine.</li>
+<li>Toggle <code>Prompt Generation</code> on.</li>
+<li>For <code>OpenAI-API-Basis-URL</code>, fill in <code>http://localhost:8000/api/v1</code> (unless you're using a different port).</li>
+<li>Add a character like <code>-</code> for <code>OpenAI-API-Key</code>.</li>
+<li>If you want to add more parameters, add them to the text field as JSON. For example: <code>{ "steps": 4, "cfg_scale": 1 }</code>. See available parameters at <a href="https://lemonade-server.ai/docs/server/server_models/#image-generation-stable-diffusion-cpp">Image Generation (Stable Diffusion CPP)</a>.</li>
+<li>Add your model name to <code>Model</code>, e.g., <code>SDXL-Turbo</code>.</li>
+<li>Click <code>Save</code>.</li>
+</ol>
+</li>
+</ol>
+<p><strong>Allow Image Generation for Model</strong></p>
+<p>Enable Image Generation as a capability for your model:
+    1. Go to Admin &gt; Settings &gt; Models and choose your model.
+    2. Turn on <code>Image Generation</code>. If you want start chat always with image generation, also toggle the default option.</p>
+<p><strong>Option 1: Using Image Generation Switch</strong></p>
+<p>To generate an image:
+    1. Toggle the <code>Image Generation</code> switch in the chat on.
+    2. Enter your image generation prompt.
+    3. Click <code>Send</code>.</p>
+<p><strong>Option 2: Native Tool-Based Generation (Agentic)</strong></p>
+<p>This mode uses tool calling for image generation and is recommended for high-quality models with tool calling capabilities. Normally the models will alter and improve your prompt.</p>
+<ol>
+<li>
+<p>Configure your model for native tool calling:</p>
+<ol>
+<li>Go to Admin &gt; Settings &gt; Models and choose your model.</li>
+<li>Go to <code>Advanced Parameters</code> and toggle <code>Function Calling</code> to <code>Native</code>.</li>
+</ol>
+<blockquote>
+<p>Note: Open WebUI recommends using native mode only for high-quality models. See <a href="https://docs.openwebui.com/features/plugin/tools/#tool-calling-modes-default-vs-native">Tool Calling Modes</a> for more information. (try out &gt;30B models like GPT-OSS-120B, GLM-4.7-Flash or Qwen-3-Next-80B-A3B)</p>
+</blockquote>
+</li>
+<li>
+<p>The LLM will automatically call the image generation tool when appropriate based on your prompts.</p>
 </li>
 </ol>
 <h2 id="conclusion">Conclusion</h2>
