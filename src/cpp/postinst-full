@@ -2,18 +2,17 @@
 
 # Post-install script for the full Lemonade package (with Electron app)
 
-INSTALL_DIR="/usr/local/share/lemonade-server"
-LLAMA_DIR="${INSTALL_DIR}/llama"
-APP_DIR="${INSTALL_DIR}/app"
-
-# Create llama directory if it doesn't exist and make it writable
-mkdir -p "$LLAMA_DIR"
-chmod 777 "$LLAMA_DIR"
-
-# Make the Electron app executable
-if [ -f "$APP_DIR/lemonade" ]; then
-    chmod +x "$APP_DIR/lemonade"
+# Create the lemonade user and group if they don't exist
+if ! getent group lemonade > /dev/null; then
+    groupadd lemonade
 fi
+
+if ! getent passwd lemonade > /dev/null; then
+    useradd -m -r -g lemonade -d /opt/var/lib/lemonade -s /usr/sbin/nologin lemonade
+fi
+
+# Add lemonade user to render group for GPU access
+usermod -a -G render lemonade
 
 # Fix chrome-sandbox permissions (required for Electron/Chromium sandbox)
 # The chrome-sandbox binary must be owned by root and have SUID bit set
@@ -37,6 +36,24 @@ BIN_DIR="/usr/local/bin"
 if [ -f "$APP_DIR/lemonade" ] && [ -d "$BIN_DIR" ]; then
     ln -sf "$APP_DIR/lemonade" "$BIN_DIR/lemonade-app"
     echo "Created lemonade-app symlink in $BIN_DIR"
+fi
+
+# Set up the service
+if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-deconfigure" ] || [ "$1" = "abort-remove" ] ; then
+        if deb-systemd-helper --quiet was-enabled 'lemonade-server.service'; then
+                deb-systemd-helper enable 'lemonade-server.service' >/dev/null || true
+        else
+                deb-systemd-helper update-state 'lemonade-server.service' >/dev/null || true
+        fi
+        if [ -d /run/systemd/system ]; then
+                systemctl --system daemon-reload >/dev/null || true
+                if [ -n "$2" ]; then
+                        _dh_action=restart
+                else
+                        _dh_action=start
+                fi
+                deb-systemd-invoke $_dh_action 'lemonade-server.service' >/dev/null || true
+        fi
 fi
 
 exit 0
