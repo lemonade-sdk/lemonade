@@ -303,46 +303,26 @@ void WhisperServer::install(const std::string& backend) {
     }
 }
 
-// Helper to determine NPU compiled cache info based on model checkpoint
-static std::pair<std::string, std::string> get_npu_cache_info(const std::string& checkpoint) {
-    // Map model checkpoints to their corresponding NPU cache repo and .rai filename
-    // Returns: {huggingface_repo, rai_filename}
+// Helper to determine NPU compiled cache info based on model info from server_models.json
+static std::pair<std::string, std::string> get_npu_cache_info(const ModelInfo& model_info) {
     
-    // Extract the model filename from checkpoint (e.g., "ggerganov/whisper.cpp:ggml-small.bin" -> "ggml-small.bin")
-    std::string model_filename;
-    size_t colon_pos = checkpoint.find(':');
-    if (colon_pos != std::string::npos) {
-        model_filename = checkpoint.substr(colon_pos + 1);
-    } else {
-        model_filename = checkpoint;
+    if (!model_info.npu_cache_repo.empty() && !model_info.npu_cache_filename.empty()) {
+        std::cout << "[WhisperServer] Using NPU cache from server_models.json: "
+                  << model_info.npu_cache_repo << " / " << model_info.npu_cache_filename << std::endl;
+        return {model_info.npu_cache_repo, model_info.npu_cache_filename};
     }
     
-    // Map common whisper models to their NPU cache repositories using more specific matching to avoid accidental overlaps
-    if (model_filename.find("ggml-small.bin") != std::string::npos) {
-        return {"amd/whisper-small-onnx-npu", "ggml-small-encoder-vitisai.rai"};
-    } else if (model_filename.find("ggml-large-v3-turbo.bin") != std::string::npos ||
-               model_filename.find("ggml-large_v3_turbo.bin") != std::string::npos) {
-        return {"amd/whisper-large-turbo-onnx-npu", "ggml-large-v3-turbo-encoder-vitisai.rai"};
-    } else if (model_filename.find("ggml-large-v3.bin") != std::string::npos ||
-               model_filename.find("ggml-large_v3.bin") != std::string::npos) {
-        return {"amd/whisper-large-v3-onnx-npu", "ggml-large-v3-encoder-vitisai.rai"};
-    } else if (model_filename.find("ggml-medium.bin") != std::string::npos) {
-        return {"amd/whisper-medium-onnx-npu", "ggml-medium-encoder-vitisai.rai"};
-    } else if (model_filename.find("ggml-base.bin") != std::string::npos) {
-        return {"amd/whisper-base-onnx-npu", "ggml-base-encoder-vitisai.rai"};
-    } else if (model_filename.find("ggml-tiny.bin") != std::string::npos) {
-        return {"amd/whisper-tiny-onnx-npu", "ggml-tiny-encoder-vitisai.rai"};
-    }
-    
-    // Return empty if no NPU cache available for this model
+    // No NPU cache configured for this model in server_models.json
+    std::cout << "[WhisperServer] No NPU cache configured for model: " << model_info.model_name << std::endl;
     return {"", ""};
 }
 
 // Helper to download NPU compiled cache (.rai file) for a given ggml .bin model
 void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
-                                                 const std::string& checkpoint,
-                                                 bool do_not_upgrade) {
-    auto [cache_repo, cache_filename] = get_npu_cache_info(checkpoint);
+                                                const std::string& checkpoint,
+                                                const ModelInfo& model_info,
+                                                bool do_not_upgrade) {
+    auto [cache_repo, cache_filename] = get_npu_cache_info(model_info);
     
     if (cache_repo.empty() || cache_filename.empty()) {
         std::cout << "[WhisperServer] No NPU compiled cache available for this model" << std::endl;
@@ -457,7 +437,7 @@ void WhisperServer::load(const std::string& model_name,
 
     // For NPU backend, download the compiled cache (.rai file). This is a must-have for NPU backend.
     if (whispercpp_backend == "npu") {
-        download_npu_compiled_cache(model_path, model_info.checkpoint, do_not_upgrade);
+        download_npu_compiled_cache(model_path, model_info.checkpoint, model_info, do_not_upgrade);
     }
 
     // Get whisper-server executable path

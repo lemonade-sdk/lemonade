@@ -45,6 +45,7 @@ private:
     // NPU compiled cache handling
     void download_npu_compiled_cache(const std::string& model_path,
                                       const std::string& checkpoint,
+                                      const ModelInfo& model_info,
                                       bool do_not_upgrade);
 
     // Audio file handling
