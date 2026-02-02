@@ -591,8 +591,9 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
         // Find matching devices on this system and track failures for error reporting
         json matching_devices = json::array();
-        std::vector<std::string> missing_device_types;      // Device types not present at all
-        std::vector<std::pair<std::string, std::set<std::string>>> wrong_family;  // Device present but wrong family
+        // Track missing devices with their required families for error messages
+        std::vector<std::pair<std::string, std::set<std::string>>> missing_devices;  // Device types not present
+        std::vector<std::pair<std::string, std::set<std::string>>> wrong_family;     // Device present but wrong family
 
         for (const auto& [required_device_type, required_families] : def.devices) {
             bool device_type_found = false;
@@ -609,7 +610,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
             }
 
             if (!device_type_found) {
-                missing_device_types.push_back(required_device_type);
+                missing_devices.push_back({required_device_type, required_families});
             } else if (!family_matched) {
                 wrong_family.push_back({required_device_type, required_families});
             }
@@ -637,9 +638,16 @@ json SystemInfo::build_recipes_info(const json& devices) {
         if (!supported) {
             std::string error;
 
-            if (!missing_device_types.empty()) {
-                // Device type not present
-                error = "Requires " + get_device_type_name(missing_device_types[0]);
+            if (!missing_devices.empty()) {
+                // Device type not present - include required family if specified
+                const auto& [device_type, required_families] = missing_devices[0];
+                if (!required_families.empty()) {
+                    // Show specific family requirement (e.g., "Requires XDNA2 NPU")
+                    error = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
+                } else {
+                    // No specific family required (e.g., "Requires CPU")
+                    error = "Requires " + get_device_type_name(device_type);
+                }
             } else if (!wrong_family.empty()) {
                 // Device present but wrong family - show required families
                 const auto& [device_type, required_families] = wrong_family[0];

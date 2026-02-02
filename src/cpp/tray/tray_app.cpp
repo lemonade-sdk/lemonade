@@ -1125,13 +1125,14 @@ int TrayApp::execute_recipes_command() {
                 std::string recipe_col = first_backend ? status.name : "";
 
                 // Determine status string
+                // Check supported first - unsupported takes precedence even if installed
                 std::string status_str;
-                if (backend.available) {
-                    status_str = "installed";
-                } else if (backend.supported) {
-                    status_str = "supported";
-                } else {
+                if (!backend.supported) {
                     status_str = "unsupported";
+                } else if (backend.available) {
+                    status_str = "installed";
+                } else {
+                    status_str = "supported";
                 }
 
                 // Version or error (concise)
