@@ -488,6 +488,121 @@ main {
     color: #fff;
 }
 
+/* Marketplace iframe */
+.marketplace-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #000000;
+}
+
+.marketplace-iframe.loading {
+    opacity: 0;
+}
+
+/* Marketplace Loading State */
+.marketplace-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+    color: #888;
+    gap: 16px;
+}
+
+.marketplace-loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid #333;
+    border-top-color: #ffc832;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes marketplace-spin {
+    to { transform: rotate(360deg); }
+}
+
+.marketplace-loading p {
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+/* Marketplace Offline State */
+.marketplace-offline {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+    padding: 40px;
+    text-align: center;
+    background: radial-gradient(ellipse at 50% 0%, rgba(50, 50, 50, 0.3) 0%, transparent 60%);
+}
+
+.offline-icon {
+    font-size: 3rem;
+    margin-bottom: 16px;
+    opacity: 0.8;
+}
+
+.marketplace-offline h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #ffffff;
+    margin: 0 0 12px 0;
+}
+
+.offline-message {
+    font-size: 0.9rem;
+    color: #888;
+    margin: 0 0 24px 0;
+    max-width: 300px;
+    line-height: 1.5;
+}
+
+.offline-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.offline-btn {
+    padding: 10px 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+}
+
+.offline-btn.primary {
+    background: #ffc832;
+    color: #000000;
+}
+
+.offline-btn.primary:hover {
+    background: #e6b800;
+    transform: translateY(-2px);
+}
+
+.offline-btn.secondary {
+    background: transparent;
+    border: 1px solid #333;
+    color: #888;
+}
+
+.offline-btn.secondary:hover {
+    background: #1a1a1a;
+    color: #fff;
+    border-color: #555;
+}
+
 .status-section {
     margin: 10px 0;
 }

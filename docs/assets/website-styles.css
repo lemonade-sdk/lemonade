@@ -601,6 +601,29 @@ body.install-options {
   transform: scale(1.05);
 }
 
+.partner-apps-link {
+  margin-top: var(--spacing-lg);
+  text-align: center;
+}
+
+.view-all-link {
+  display: inline-block;
+  color: var(--accent-gold);
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  padding: 10px 20px;
+  border: 2px solid var(--accent-gold);
+  border-radius: var(--radius-lg);
+  transition: var(--transition-medium);
+}
+
+.view-all-link:hover {
+  background: var(--accent-gold);
+  color: var(--text-primary);
+  transform: translateY(-2px);
+}
+
 /* Video Section */
 .video-section {
   margin: var(--spacing-xxl) auto var(--spacing-xl) auto;

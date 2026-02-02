@@ -1,5 +1,7 @@
 # Lemonade Server Examples
 
+> **📢 Looking for the App Marketplace?** This page has moved! Visit the new [App Marketplace](https://lemonade-server.ai/marketplace) for a comprehensive list of apps that work with Lemonade.
+
 Many applications today utilize OpenAI models like ChatGPT through APIs such as:
 
 `POST https://api.openai.com/v1/chat/completions`
