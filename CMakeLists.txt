@@ -579,8 +579,9 @@ if(UNIX AND NOT APPLE)
 
     # Installation paths - use ~/.local for user install (no sudo needed)
     # Set via environment: cmake -DCPACK_PACKAGING_INSTALL_PREFIX=$HOME/.local ..
+    # Default to /opt to match the install prefix used by the project.
     if(NOT DEFINED CPACK_PACKAGING_INSTALL_PREFIX)
-        set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
+        set(CPACK_PACKAGING_INSTALL_PREFIX "/opt")
     endif()
 
     # Only install our executables (not curl/development files)
