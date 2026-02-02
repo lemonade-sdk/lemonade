@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { exec } = require('child_process');
+const strict = require('assert/strict');
 
 const DEFAULT_MIN_WIDTH = 400;
 const DEFAULT_MIN_HEIGHT = 600;
@@ -11,16 +12,24 @@ const MIN_ZOOM_LEVEL = -2;
 const MAX_ZOOM_LEVEL = 3;
 const ZOOM_STEP = 0.2;
 
+const BASE_SETTING_VALUES = {
+  temperature: 0.7,
+  topK: 40,
+  topP: 0.9,
+  repeatPenalty: 1.1,
+  enableThinking: true,
+  collapseThinkingByDefault: false,
+  baseURL: '',
+  apiKey: '',
+};
+
 let mainWindow;
 let currentMinWidth = DEFAULT_MIN_WIDTH;
 const SETTINGS_FILE_NAME = 'app_settings.json';
 const SETTINGS_UPDATED_CHANNEL = 'settings-updated';
 const SERVER_PORT_UPDATED_CHANNEL = 'server-port-updated';
+const CONNECTION_SETTINGS_UPDATED_CHANNEL = 'connection-settings-updated'
 let cachedServerPort = 8000; // Default port
-
-// Remote server support: explicit base URL from --base-url arg or LEMONADE_APP_BASE_URL env var
-// When set, this takes precedence over localhost + port discovery
-let configuredServerBaseUrl = null;
 
 /**
  * Parse and normalize a server base URL.
@@ -56,79 +65,24 @@ const normalizeServerUrl = (url) => {
   }
 };
 
-/**
- * Parse command line arguments for --base-url
- */
-const parseBaseUrlArg = () => {
-  const args = process.argv.slice(1); // Skip the electron executable
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--base-url' && args[i + 1]) {
-      return args[i + 1];
-    }
-    // Also support --base-url=value format
-    if (args[i].startsWith('--base-url=')) {
-      return args[i].substring('--base-url='.length);
-    }
-  }
-  return null;
-};
-
-/**
- * Initialize server base URL from command line or environment variable.
- * Precedence: --base-url > LEMONADE_APP_BASE_URL > null (fallback to localhost discovery)
- */
-const initializeServerBaseUrl = () => {
-  // Check command line argument first (highest priority)
-  const argUrl = parseBaseUrlArg();
-  if (argUrl) {
-    const normalized = normalizeServerUrl(argUrl);
-    if (normalized) {
-      console.log('Using server base URL from --base-url:', normalized);
-      configuredServerBaseUrl = normalized;
-      return;
-    }
-  }
-
-  // Check environment variable (second priority)
-  const envUrl = process.env.LEMONADE_APP_BASE_URL;
-  if (envUrl) {
-    const normalized = normalizeServerUrl(envUrl);
-    if (normalized) {
-      console.log('Using server base URL from LEMONADE_APP_BASE_URL:', normalized);
-      configuredServerBaseUrl = normalized;
-      return;
-    }
-  }
-
-  // No explicit URL configured - will use localhost + port discovery
-  console.log('No explicit server URL configured, will use localhost with port discovery');
-  configuredServerBaseUrl = null;
-};
-
-// Initialize on startup
-initializeServerBaseUrl();
-const BASE_APP_SETTING_VALUES = Object.freeze({
-  temperature: 0.7,
-  topK: 40,
-  topP: 0.9,
-  repeatPenalty: 1.1,
-  enableThinking: true,
-  collapseThinkingByDefault: false,
-});
 const DEFAULT_APP_SETTINGS = Object.freeze({
-  temperature: { value: BASE_APP_SETTING_VALUES.temperature, useDefault: true },
-  topK: { value: BASE_APP_SETTING_VALUES.topK, useDefault: true },
-  topP: { value: BASE_APP_SETTING_VALUES.topP, useDefault: true },
-  repeatPenalty: { value: BASE_APP_SETTING_VALUES.repeatPenalty, useDefault: true },
-  enableThinking: { value: BASE_APP_SETTING_VALUES.enableThinking, useDefault: true },
-  collapseThinkingByDefault: { value: BASE_APP_SETTING_VALUES.collapseThinkingByDefault, useDefault: true },
+  temperature: { value: BASE_SETTING_VALUES.temperature, useDefault: true },
+  topK: { value: BASE_SETTING_VALUES.topK, useDefault: true },
+  topP: { value: BASE_SETTING_VALUES.topP, useDefault: true },
+  repeatPenalty: { value: BASE_SETTING_VALUES.repeatPenalty, useDefault: true },
+  enableThinking: { value: BASE_SETTING_VALUES.enableThinking, useDefault: true },
+  collapseThinkingByDefault: { value: BASE_SETTING_VALUES.collapseThinkingByDefault, useDefault: true },
+  baseURL: { value: BASE_SETTING_VALUES.baseURL, useDefault: true },
+  apiKey: { value: BASE_SETTING_VALUES.apiKey, useDefault: true },
 });
+
 const NUMERIC_APP_SETTING_LIMITS = Object.freeze({
   temperature: { min: 0, max: 2 },
   topK: { min: 1, max: 100 },
   topP: { min: 0, max: 1 },
   repeatPenalty: { min: 1, max: 2 },
 });
+
 const NUMERIC_APP_SETTING_KEYS = ['temperature', 'topK', 'topP', 'repeatPenalty'];
 
 const getHomeDirectory = () => {
@@ -178,6 +132,8 @@ const createDefaultAppSettings = () => ({
   repeatPenalty: { ...DEFAULT_APP_SETTINGS.repeatPenalty },
   enableThinking: { ...DEFAULT_APP_SETTINGS.enableThinking },
   collapseThinkingByDefault: { ...DEFAULT_APP_SETTINGS.collapseThinkingByDefault },
+  baseURL: { ...DEFAULT_APP_SETTINGS.baseURL},
+  apiKey: { ...DEFAULT_APP_SETTINGS.apiKey},
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
 });
 
@@ -244,6 +200,38 @@ const sanitizeAppSettings = (incoming = {}) => {
     };
   }
 
+  const rawBaseURL = incoming.baseURL;
+  if (rawBaseURL && typeof rawBaseURL === 'object') {
+    const useDefault =
+      typeof rawBaseURL.useDefault === 'boolean'
+        ? rawBaseURL.useDefault
+        : sanitized.baseURL.useDefault;
+    sanitized.baseURL = {
+      value: useDefault
+        ? sanitized.baseURL.value
+        : typeof rawBaseURL.value === 'string'
+          ? rawBaseURL.value
+          : sanitized.baseURL.value,
+      useDefault,
+    };
+  }
+
+  const rawApiKey = incoming.apiKey;
+  if (rawApiKey && typeof rawApiKey === 'object') {
+    const useDefault =
+      typeof rawApiKey.useDefault === 'boolean'
+        ? rawApiKey.useDefault
+        : sanitized.apiKey.useDefault;
+    sanitized.apiKey = {
+      value: useDefault
+        ? sanitized.apiKey.value
+        : typeof rawApiKey.value === 'string'
+          ? rawApiKey.value
+          : sanitized.apiKey.value,
+      useDefault,
+    };
+  }
+
   // Sanitize layout settings
   const rawLayout = incoming.layout;
   if (rawLayout && typeof rawLayout === 'object') {
@@ -298,9 +286,33 @@ const writeAppSettingsFile = async (settings) => {
   return sanitized;
 };
 
+/**
+ * Get base URL from Settings file.
+ * 
+ */
+const getBaseURLFromConfig = async () => {
+  const settings = await readAppSettingsFile();  
+  const defaultBaseUrl = settings.baseURL.value;
+
+  if (defaultBaseUrl) {
+    const normalized = normalizeServerUrl(defaultBaseUrl);
+    if (normalized) {
+       return normalized;
+    } 
+
+    return null;
+  }
+};
+
 const broadcastSettingsUpdated = (settings) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(SETTINGS_UPDATED_CHANNEL, settings);
+  }
+};
+
+const broadcastConnectionSettingsUpdated = (baseURL, apiKey) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(CONNECTION_SETTINGS_UPDATED_CHANNEL, baseURL, apiKey);
   }
 };
 
@@ -309,6 +321,25 @@ const broadcastServerPortUpdated = (port) => {
     mainWindow.webContents.send(SERVER_PORT_UPDATED_CHANNEL, port);
   }
 };
+
+const fetchWithApiKey = async (entpoint) => {
+  let serverUrl = await getBaseURLFromConfig();
+  let apiKey = (await readAppSettingsFile()).apiKey.value;
+  
+  if (!serverUrl) {
+    serverUrl = cachedServerPort ? 'http://localhost:8000' : `http://localhost:${cachedServerPort}`;
+  }
+  
+  const options = {timeout: 3000};
+  
+  if(apiKey != null && apiKey != '') {
+    options.headers = {
+      Authorization: `Bearer ${apiKey}`,
+    }
+  } 
+
+  return await fetch(`${serverUrl}${entpoint}`, options);
+}
 
 const discoverServerPort = () => {
   return new Promise((resolve) => {
@@ -356,61 +387,43 @@ const discoverServerPort = () => {
   });
 };
 
-ipcMain.handle('get-app-settings', async () => {
-  return readAppSettingsFile();
+// Returns the configured server base URL, or null if using localhost discovery
+ipcMain.handle('get-server-base-url', async () => { 
+  return await getBaseURLFromConfig();
 });
 
-// Returns the configured server base URL, or null if using localhost discovery
-ipcMain.handle('get-server-base-url', async () => {
-  return configuredServerBaseUrl;
+ipcMain.handle('get-server-api-key', async () => { 
+  return (await readAppSettingsFile()).apiKey.value;
+});
+
+ipcMain.handle('get-app-settings', async () => {
+  return readAppSettingsFile();
 });
 
 ipcMain.handle('save-app-settings', async (_event, payload) => {
   const sanitized = await writeAppSettingsFile(payload);
   broadcastSettingsUpdated(sanitized);
+  broadcastConnectionSettingsUpdated(sanitized.baseURL.value, sanitized.apiKey.value);
   return sanitized;
 });
 
 ipcMain.handle('get-version', async () => {
   try {
-    const http = require('http');
-    const https = require('https');
-
-    // Use configured base URL or fall back to localhost with cached port
-    const baseUrl = configuredServerBaseUrl || `http://localhost:${cachedServerPort}`;
-    const healthUrl = `${baseUrl}/api/v1/health`;
-    const isHttps = healthUrl.startsWith('https://');
-    const httpModule = isHttps ? https : http;
-
-    return new Promise((resolve, reject) => {
-      const req = httpModule.get(healthUrl, (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            resolve(parsed.version || 'Unknown');
-          } catch (e) {
-            resolve('Unknown');
-          }
-        });
-      });
-      req.on('error', () => resolve('Unknown'));
-      req.setTimeout(2000, () => {
-        req.destroy();
-        resolve('Unknown');
-      });
-    });
-  } catch (error) {
+    const response = await fetchWithApiKey('/api/v1/health');
+    if(response.ok) {
+      const data = await response.json();
+      return data.version || 'Unknown';
+    }
+  } catch(error) {
+    console.error('Failed to fetch version from server:', error);
     return 'Unknown';
   }
 });
 
 ipcMain.handle('discover-server-port', async () => {
-  // Skip port discovery if an explicit server URL is configured
-  // (port discovery only works for local servers)
-  if (configuredServerBaseUrl) {
-    console.log('Port discovery skipped - using explicit server URL:', configuredServerBaseUrl);
+  let baseURL = getBaseURLFromConfig();
+  if (baseURL) {
+    console.log('Port discovery skipped - using explicit server URL:', baseURL);
     return null;
   }
 
@@ -425,17 +438,8 @@ ipcMain.handle('get-server-port', async () => {
 });
 
 ipcMain.handle('get-system-stats', async () => {
-  try {
-    let serverUrl = 'http://localhost:8000';
-
-    // Use explicit server URL if configured
-    if (configuredServerBaseUrl) {
-      serverUrl = configuredServerBaseUrl;
-    } else if (cachedServerPort) {
-      serverUrl = `http://localhost:${cachedServerPort}`;
-    }
-
-    const response = await fetch(`${serverUrl}/api/v1/system-stats`, { timeout: 2000 });
+  try {  
+    const response = await fetchWithApiKey('/api/v1/system-stats');
     if (response.ok) {
       const data = await response.json();
       return {
@@ -460,16 +464,7 @@ ipcMain.handle('get-system-stats', async () => {
 
 ipcMain.handle('get-system-info', async () => {
   try {
-    let serverUrl = 'http://localhost:8000';
-
-    // Use explicit server URL if configured
-    if (configuredServerBaseUrl) {
-      serverUrl = configuredServerBaseUrl;
-    } else if (cachedServerPort) {
-      serverUrl = `http://localhost:${cachedServerPort}`;
-    }
-
-    const response = await fetch(`${serverUrl}/api/v1/system-info`, { timeout: 3000 });
+    const response = await fetchWithApiKey('/api/v1/system-info');
     if (response.ok) {
       const data = await response.json();
       let maxGttGb = 0;

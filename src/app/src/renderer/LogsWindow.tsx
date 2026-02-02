@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { getServerBaseUrl, onServerUrlChange, serverConfig } from './utils/serverConfig';
+import { getAPIKey, getServerBaseUrl, onServerUrlChange, serverConfig } from './utils/serverConfig';
+import {EventSource} from 'eventsource';
 
 interface LogsWindowProps {
   isVisible: boolean;
@@ -15,21 +16,24 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [serverUrl, setServerUrl] = useState<string>('');
+  const [apiKey, setAPIKey] = useState<string>('');
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Wait for serverConfig to initialize and get the correct URL
   useEffect(() => {
     serverConfig.waitForInit().then(() => {
       setServerUrl(getServerBaseUrl());
+      setAPIKey(getAPIKey());
       setIsInitialized(true);
     });
   }, []);
 
   // Listen for URL changes (covers both port changes and explicit URL updates)
   useEffect(() => {
-    const unsubscribe = onServerUrlChange((newUrl: string) => {
+    const unsubscribe = onServerUrlChange((newUrl: string, newAPIKey: string) => {
       console.log('Server URL changed, updating logs URL:', newUrl);
       setServerUrl(newUrl);
+      setAPIKey(newAPIKey);
     });
 
     return () => {
@@ -84,7 +88,17 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
           eventSourceRef.current.close();
         }
 
-        const eventSource = new EventSource(`${serverUrl}/api/v1/logs/stream`);
+        const options = apiKey ? {
+            fetch: (input: string | URL | Request, init: RequestInit) =>
+              fetch(input, {
+                ...init,
+                headers: {
+                  ...init.headers,
+                  Authorization: `Bearer ${apiKey}`,
+                },
+            })} : {};
+
+        const eventSource = new EventSource(`${serverUrl}/api/v1/logs/stream`, options)
         eventSourceRef.current = eventSource;
 
         eventSource.onopen = () => {
@@ -144,7 +158,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
         reconnectTimeoutRef.current = null;
       }
     };
-  }, [isVisible, serverUrl, isInitialized]);
+  }, [isVisible, serverUrl, apiKey, isInitialized]);
 
   const handleClearLogs = () => {
     setLogs([]);

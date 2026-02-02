@@ -115,7 +115,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }));
   };
 
-  const handleResetField = (key: NumericSettingKey | 'enableThinking' | 'collapseThinkingByDefault') => {
+  const handleTextInputChange = (key: 'baseURL' | 'apiKey', value: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      [key]: {
+        value,
+        useDefault: false,
+      },
+    }));
+  };
+
+  const handleResetField = (key: NumericSettingKey | 'enableThinking' | 'collapseThinkingByDefault' | 'baseURL' | 'apiKey') => {
     setSettings((prev) => {
       if (key === 'enableThinking') {
         return {
@@ -188,6 +198,33 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           <div className="settings-loading">Loading settings…</div>
         ) : (
           <div className="settings-content">
+            <div className="settings-category-header">
+              <h3>Connection</h3>
+            </div>
+            <div className={`settings-section ${settings.baseURL.useDefault ? "settings-section-default" : ""}`}>
+              <div className="settings-label-row">
+                <label className="settings-label">
+                  <span className="settings-label-text">Base URL</span>
+                  <span className="settings-description">Connect the app to a server at the specified URL.</span>
+                </label>
+                <button type="button" className="settings-field-reset" onClick={() => handleResetField('baseURL')} disabled={settings.baseURL.useDefault}>
+                  Reset
+                </button>
+              </div>
+              <input type="text" value={settings["baseURL"].value} placeholder="http://localhost:8000/" onChange={(e) => handleTextInputChange('baseURL', e.target.value)} className="settings-text-input"/>
+            </div>
+            <div className={`settings-section ${settings.apiKey.useDefault ? "settings-section-default" : ""}`}>
+              <div className="settings-label-row">
+                <label className="settings-label">
+                  <span className="settings-label-text">API Key</span>
+                  <span className="settings-description">If present, API Key will be required to execute any request.</span>
+                </label>
+                <button type="button" className="settings-field-reset" onClick={() => handleResetField('apiKey')} disabled={settings.apiKey.useDefault}>
+                  Reset
+                </button>
+              </div>
+              <input type="text" value={settings['apiKey'].value} onChange={(e) => handleTextInputChange('apiKey', e.target.value)} className="settings-text-input"/>
+            </div>
             <div className="settings-category-header">
               <h3>LLM Chat</h3>
             </div>

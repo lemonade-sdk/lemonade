@@ -2081,14 +2081,14 @@ void TrayApp::launch_electron_app() {
         }
     }
 
-    // Launch the .exe with --base-url argument
+    // Launch the .exe with
     STARTUPINFOA si = {};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
 
-    // Build command line: "path\to\Lemonade.exe" --base-url http://host:port
+    // Build command line: "path\to\Lemonade.exe"
     // Note: CreateProcessA modifies the command line buffer, so we need a mutable copy
-    std::string cmd_line = "\"" + electron_app_path_ + "\" --base-url " + base_url;
+    std::string cmd_line = "\"" + electron_app_path_ + "\"";
     std::vector<char> cmd_line_buf(cmd_line.begin(), cmd_line.end());
     cmd_line_buf.push_back('\0');
 
@@ -2141,7 +2141,7 @@ void TrayApp::launch_electron_app() {
 
     // macOS: Use 'open' command to launch the .app with --args to pass arguments
     // Note: 'open' doesn't give us the PID directly, so we'll need to find it
-    std::string cmd = "open \"" + electron_app_path_ + "\" --args --base-url " + base_url;
+    std::string cmd = "open \"" + electron_app_path_ + "\"";
     int result = system(cmd.c_str());
     if (result == 0) {
         std::cout << "Launched Electron app" << std::endl;
@@ -2178,9 +2178,8 @@ void TrayApp::launch_electron_app() {
     // Linux: Launch the binary directly using fork/exec for proper PID tracking
     pid_t pid = fork();
     if (pid == 0) {
-        // Child process: execute the Electron app with --base-url argument
-        execl(electron_app_path_.c_str(), electron_app_path_.c_str(),
-              "--base-url", base_url.c_str(), nullptr);
+        // Child process: execute the Electron app
+        execl(electron_app_path_.c_str(), electron_app_path_.c_str(), nullptr);
         // If execl returns, it failed
         std::cerr << "Failed to execute Electron app: " << strerror(errno) << std::endl;
         _exit(1);

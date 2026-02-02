@@ -2977,7 +2977,7 @@ footer {
     transform: scale(1.1);
 }
 
-.settings-number-input {
+.settings-number-input, .settings-text-input {
     width: 60px;
     padding: 5px 8px;
     background: #0a0a0a;
@@ -2989,10 +2989,15 @@ footer {
     transition: all 0.2s ease;
 }
 
-.settings-number-input:focus {
+.settings-number-input:focus, .settings-text-input:focus {
     outline: none;
     border-color: #555;
     background: #1a1a1a;
+}
+
+.settings-text-input {
+    width: 100%;
+    text-align: left;
 }
 
 .settings-checkbox-label {

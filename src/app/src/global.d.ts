@@ -42,9 +42,11 @@ declare global {
       getVersion?: () => Promise<string>;
       discoverServerPort?: () => Promise<number | null>;
       getServerPort?: () => Promise<number>;
-      // Returns the configured server base URL (from --base-url or LEMONADE_APP_BASE_URL), or null if using localhost discovery
+      // Returns the configured server base URL or null if using localhost discovery
       getServerBaseUrl?: () => Promise<string | null>;
+      getServerAPIKey?: () => Promise<string | null>;
       onServerPortUpdated?: (callback: (port: number) => void) => void | (() => void);
+      onConnectionSettingsUpdated?: (callback: (baseURL: string, apiKey: string) => void) => void | (() => void);
       getSystemStats?: () => Promise<{ cpu_percent: number | null; memory_gb: number; gpu_percent: number | null; vram_gb: number | null }>;
       getSystemInfo?: () => Promise<{ system: string; os: string; cpu: string; gpus: string[]; gtt_gb?: string; vram_gb?: string }>;
     };
