@@ -199,7 +199,7 @@ This mode uses tool calling for image generation and is recommended for high-qua
 
 1. Configure your model for native tool calling:
     1. Go to Admin > Settings > Models and choose your model.
-    2. Go to `Advanced Parameters` and toggle `Standard` to `Native`.
+    2. Go to `Advanced Parameters` and toggle `Function Calling` to `Native`.
     
     > Note: Open WebUI recommends using native mode only for high-quality models. See [Tool Calling Modes](https://docs.openwebui.com/features/plugin/tools/#tool-calling-modes-default-vs-native) for more information. (try out >30B models like GPT-OSS-120B, GLM-4.7-Flash or Qwen-3-Next-80B-A3B)
 
