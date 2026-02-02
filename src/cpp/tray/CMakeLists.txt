@@ -201,6 +201,17 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(lemonade-server PRIVATE
         Threads::Threads
     )
+
+    # Optional: systemd detection for service status
+    find_package(PkgConfig QUIET)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(SYSTEMD QUIET libsystemd)
+        if(SYSTEMD_FOUND)
+            target_include_directories(lemonade-server PRIVATE ${SYSTEMD_INCLUDE_DIRS})
+            target_link_libraries(lemonade-server PRIVATE ${SYSTEMD_LIBRARIES})
+            target_compile_definitions(lemonade-server PRIVATE HAVE_SYSTEMD)
+        endif()
+    endif()
 endif()
 
 # Install target
