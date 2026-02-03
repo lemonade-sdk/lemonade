@@ -32,6 +32,12 @@ else()
     set(ELECTRON_EXE_NAME "lemonade")
 endif()
 
+# ============================================================
+# Web App source paths
+# ============================================================
+get_filename_component(WEB_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/web-app" ABSOLUTE)
+set(WEB_APP_BUILD_DIR "${CMAKE_BINARY_DIR}/resources/web-app")
+
 # C++ Standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -55,7 +61,6 @@ if(PkgConfig_FOUND)
 endif()
 find_path(CLI11_INCLUDE_DIRS "CLI/CLI.hpp")
 find_path(HTTPLIB_INCLUDE_DIRS "httplib.h")
-
 # Verify CLI11 version if found
 if(CLI11_INCLUDE_DIRS)
     if(EXISTS "${CLI11_INCLUDE_DIRS}/CLI/Version.hpp")
@@ -312,29 +317,89 @@ if(WIN32)
         set(WIX_ELECTRON_FRAGMENT "${CMAKE_CURRENT_BINARY_DIR}/installer/ElectronAppFragment.wxs")
         file(TO_NATIVE_PATH "${WIX_ELECTRON_FRAGMENT}" WIX_ELECTRON_FRAGMENT_NATIVE)
 
-        # Minimal installer (server only)
-        add_custom_target(wix_installer_minimal
-            COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (server only)..."
-            COMMAND ${WIX_EXECUTABLE} build
-                -arch x64
-                -ext WixToolset.UI.wixext
-                -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
-                -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
-                -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
-                -d IncludeElectron=0
-                -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
-                "${WIX_PRODUCT_WXS_NATIVE}"
-            COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
-            DEPENDS ${EXECUTABLE_NAME}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-            COMMENT "Building WiX MSI installer (server only)"
-        )
+        # Web app fragment paths
+        file(TO_NATIVE_PATH "${WEB_APP_BUILD_DIR}" WIX_WEBAPP_SOURCE_NATIVE)
+        set(WIX_WEBAPP_FRAGMENT "${CMAKE_CURRENT_BINARY_DIR}/installer/WebAppFragment.wxs")
+        file(TO_NATIVE_PATH "${WIX_WEBAPP_FRAGMENT}" WIX_WEBAPP_FRAGMENT_NATIVE)
+
+        # Minimal installer (server only, optionally with web-app if built)
+        if(Python3_FOUND)
+            add_custom_target(wix_installer_minimal
+                COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (server only)..."
+                # Generate web-app fragment if web-app directory exists
+                COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
+                    --source "${WEB_APP_BUILD_DIR}"
+                    --output "${WIX_WEBAPP_FRAGMENT}"
+                    --component-group "WebAppComponents"
+                    --root-id "WebAppDir"
+                    --path-variable "WebAppSourceDir"
+                    || ${CMAKE_COMMAND} -E echo "Web-app fragment generation skipped (web-app not built)"
+                COMMAND ${WIX_EXECUTABLE} build
+                    -arch x64
+                    -ext WixToolset.UI.wixext
+                    -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                    -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
+                    -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
+                    -d IncludeElectron=0
+                    -d IncludeWebApp=1
+                    -d WebAppSourceDir="${WIX_WEBAPP_SOURCE_NATIVE}"
+                    -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
+                    "${WIX_PRODUCT_WXS_NATIVE}"
+                    "${WIX_WEBAPP_FRAGMENT_NATIVE}"
+                    || ${WIX_EXECUTABLE} build
+                        -arch x64
+                        -ext WixToolset.UI.wixext
+                        -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                        -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
+                        -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
+                        -d IncludeElectron=0
+                        -d IncludeWebApp=0
+                        -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
+                        "${WIX_PRODUCT_WXS_NATIVE}"
+                COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
+                DEPENDS ${EXECUTABLE_NAME}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                COMMENT "Building WiX MSI installer (server only)"
+            )
+        else()
+            add_custom_target(wix_installer_minimal
+                COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (server only, no web-app)..."
+                COMMAND ${WIX_EXECUTABLE} build
+                    -arch x64
+                    -ext WixToolset.UI.wixext
+                    -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                    -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
+                    -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
+                    -d IncludeElectron=0
+                    -d IncludeWebApp=0
+                    -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
+                    "${WIX_PRODUCT_WXS_NATIVE}"
+                COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
+                DEPENDS ${EXECUTABLE_NAME}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                COMMENT "Building WiX MSI installer (server only)"
+            )
+        endif()
 
         set(WIX_INSTALLER_TARGETS wix_installer_minimal)
+
+        # Add web-app dependency to minimal installer if target exists
+        if(TARGET web-app)
+            add_dependencies(wix_installer_minimal web-app)
+        endif()
 
         if(Python3_FOUND)
             add_custom_target(wix_installer_full
                 COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (with Electron app)..."
+                # Generate web-app fragment
+                COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
+                    --source "${WEB_APP_BUILD_DIR}"
+                    --output "${WIX_WEBAPP_FRAGMENT}"
+                    --component-group "WebAppComponents"
+                    --root-id "WebAppDir"
+                    --path-variable "WebAppSourceDir"
+                    || ${CMAKE_COMMAND} -E echo "Warning: Web-app fragment generation failed"
+                # Generate Electron app fragment
                 COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
                     --source "${ELECTRON_APP_UNPACKED_DIR}"
                     --output "${WIX_ELECTRON_FRAGMENT}"
@@ -348,10 +413,25 @@ if(WIN32)
                     -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
                     -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
                     -d IncludeElectron=1
+                    -d IncludeWebApp=1
                     -d ElectronSourceDir="${WIX_ELECTRON_SOURCE_NATIVE}"
+                    -d WebAppSourceDir="${WIX_WEBAPP_SOURCE_NATIVE}"
                     -out "${WIX_FULL_OUTPUT_NATIVE}"
                     "${WIX_PRODUCT_WXS_NATIVE}"
                     "${WIX_ELECTRON_FRAGMENT_NATIVE}"
+                    "${WIX_WEBAPP_FRAGMENT_NATIVE}"
+                    || ${WIX_EXECUTABLE} build
+                        -arch x64
+                        -ext WixToolset.UI.wixext
+                        -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                        -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
+                        -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
+                        -d IncludeElectron=1
+                        -d IncludeWebApp=0
+                        -d ElectronSourceDir="${WIX_ELECTRON_SOURCE_NATIVE}"
+                        -out "${WIX_FULL_OUTPUT_NATIVE}"
+                        "${WIX_PRODUCT_WXS_NATIVE}"
+                        "${WIX_ELECTRON_FRAGMENT_NATIVE}"
                 COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade.msi"
                 DEPENDS ${EXECUTABLE_NAME}
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -360,6 +440,10 @@ if(WIN32)
 
             if(TARGET electron-app)
                 add_dependencies(wix_installer_full electron-app)
+            endif()
+
+            if(TARGET web-app)
+                add_dependencies(wix_installer_full web-app)
             endif()
 
             list(APPEND WIX_INSTALLER_TARGETS wix_installer_full)
@@ -530,7 +614,7 @@ else()
     find_program(NPM_EXECUTABLE npm)
 endif()
 
-# Custom target to build the Electron app
+# Custom target to build the Electron app (must be called manually)
 if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
     if(WIN32)
         set(ELECTRON_BUILD_TARGET "build:win")
@@ -573,6 +657,124 @@ else()
     message(STATUS "Install Node.js to enable: https://nodejs.org/")
 endif()
 
+# ============================================================
+# Web App Integration (Cross-Platform)
+# ============================================================
+
+# On Windows, disable automatic build by default (can be enabled with -DBUILD_WEB_APP=ON)
+# On other platforms, enable automatic build by default (can be disabled with -DBUILD_WEB_APP=OFF)
+if(WIN32)
+    option(BUILD_WEB_APP "Build the Web app automatically" OFF)
+else()
+    option(BUILD_WEB_APP "Build the Web app automatically" ON)
+endif()
+
+# Custom target to build the Web app with proper dependency tracking
+if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
+    # Create a stamp file to track build state
+    set(WEB_APP_STAMP "${CMAKE_CURRENT_BINARY_DIR}/web-app.stamp")
+    set(WEB_APP_BUILD_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/web-app-src")
+
+    # Get all source files in src/web-app (excluding node_modules and dist)
+    file(GLOB_RECURSE WEB_APP_SOURCES
+        CONFIGURE_DEPENDS
+        "${WEB_APP_SOURCE_DIR}/src/*"
+        "${WEB_APP_SOURCE_DIR}/*.json"
+        "${WEB_APP_SOURCE_DIR}/*.js"
+        "${WEB_APP_SOURCE_DIR}/*.ts"
+        "${WEB_APP_SOURCE_DIR}/*.tsx"
+        "${WEB_APP_SOURCE_DIR}/*.css"
+    )
+
+    # Add custom command to build web app (only runs if sources change)
+    add_custom_command(
+        OUTPUT ${WEB_APP_STAMP}
+        COMMAND ${CMAKE_COMMAND}
+            -DWEB_APP_SOURCE_DIR=${WEB_APP_SOURCE_DIR}
+            -DWEB_APP_BUILD_SOURCE_DIR=${WEB_APP_BUILD_SOURCE_DIR}
+            -DWEB_APP_BUILD_DIR=${WEB_APP_BUILD_DIR}
+            -DNPM_EXECUTABLE=${NPM_EXECUTABLE}
+            -DWEB_APP_STAMP=${WEB_APP_STAMP}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/src/web-app/BuildWebApp.cmake
+        DEPENDS ${WEB_APP_SOURCES}
+        COMMENT "Building Web app with npm"
+    )
+
+    # Add custom target that depends on the stamp file
+    add_custom_target(web-app ALL DEPENDS ${WEB_APP_STAMP})
+
+    message(STATUS "Web app will be built automatically (disable with -DBUILD_WEB_APP=OFF)")
+
+    if (NOT WIN32 AND NOT APPLE AND NOT BUILD_ELECTRON_APP)
+        # Install .desktop file for web app
+        install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-web-app.desktop
+            DESTINATION share/applications
+        )
+        # Create symlink in standard applications path only if not installing to /usr
+        if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+            install(CODE "
+                file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/applications\")
+                execute_process(
+                    COMMAND ${CMAKE_COMMAND} -E create_symlink
+                        ${CMAKE_INSTALL_PREFIX}/share/applications/lemonade-web-app.desktop
+                        \"\$ENV{DESTDIR}/usr/share/applications/lemonade-web-app.desktop\"
+                )
+            ")
+        endif()
+        install(FILES ${CMAKE_SOURCE_DIR}/src/web-app/assets/logo.svg
+            DESTINATION share/pixmaps
+            RENAME lemonade-app.svg
+        )
+        # Create symlink in standard pixmaps path only if not installing to /usr
+        if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+            install(CODE "
+                file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/pixmaps\")
+                execute_process(
+                    COMMAND ${CMAKE_COMMAND} -E create_symlink
+                        ${CMAKE_INSTALL_PREFIX}/share/pixmaps/lemonade-app.svg
+                        \"\$ENV{DESTDIR}/usr/share/pixmaps/lemonade-app.svg\"
+                )
+            ")
+        endif()
+        # Install launch script for web app
+        install(FILES ${CMAKE_SOURCE_DIR}/data/launch-lemonade-web-app.sh
+            DESTINATION bin
+            RENAME lemonade-web-app
+            PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+        )
+        # Create symlink in standard bin path only if not installing to /usr
+        if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+            install(CODE "
+                file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
+                execute_process(
+                    COMMAND ${CMAKE_COMMAND} -E create_symlink
+                        ${CMAKE_INSTALL_PREFIX}/bin/lemonade-web-app
+                        \"\$ENV{DESTDIR}/usr/bin/lemonade-web-app\"
+                )
+            ")
+        endif()
+    endif()
+else()
+    if(NOT NODE_EXECUTABLE OR NOT NPM_EXECUTABLE)
+        message(STATUS "Node.js or npm not found - Web app build target disabled")
+    else()
+        message(STATUS "Web app automatic build disabled (enable with -DBUILD_WEB_APP=ON)")
+    endif()
+endif()
+
+# Add manual web-app target for platforms where automatic build is disabled
+if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND NOT BUILD_WEB_APP)
+    add_custom_target(web-app
+        COMMAND ${CMAKE_COMMAND} -E echo "Building Web app..."
+        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} install
+        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} run build
+        COMMENT "Building Web app with npm"
+        WORKING_DIRECTORY "${WEB_APP_SOURCE_DIR}"
+        VERBATIM
+    )
+    message(STATUS "Web app can be built manually with: cmake --build . --target web-app")
+endif()
+
 # Add tray application subdirectory
 add_subdirectory(src/cpp/tray)
 
@@ -608,7 +810,7 @@ if(UNIX AND NOT APPLE)
         RUNTIME DESTINATION bin
     )
 
-    # Install resources
+    # Install resources (all files including KaTeX fonts)
     install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/
         DESTINATION share/lemonade-server/resources
     )
@@ -640,6 +842,55 @@ if(UNIX AND NOT APPLE)
         DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/lemonade
     )
 
+    # Create symlinks for KaTeX fonts if they exist on the system
+    # Check if fonts-katex package fonts are available
+    set(KATEX_FONTS_DIR "/usr/share/fonts/truetype/katex")
+    if(EXISTS "${KATEX_FONTS_DIR}")
+        message(STATUS "KaTeX fonts found at ${KATEX_FONTS_DIR}, creating symlinks")
+
+        # Ensure web-app directory exists in build directory
+        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/resources/web-app")
+
+        set(KATEX_FONTS
+            "KaTeX_AMS-Regular.ttf" "KaTeX_AMS-Regular.woff" "KaTeX_AMS-Regular.woff2"
+            "KaTeX_Caligraphic-Bold.ttf" "KaTeX_Caligraphic-Bold.woff" "KaTeX_Caligraphic-Bold.woff2"
+            "KaTeX_Caligraphic-Regular.ttf" "KaTeX_Caligraphic-Regular.woff" "KaTeX_Caligraphic-Regular.woff2"
+            "KaTeX_Fraktur-Bold.ttf" "KaTeX_Fraktur-Bold.woff" "KaTeX_Fraktur-Bold.woff2"
+            "KaTeX_Fraktur-Regular.ttf" "KaTeX_Fraktur-Regular.woff" "KaTeX_Fraktur-Regular.woff2"
+            "KaTeX_Main-Bold.ttf" "KaTeX_Main-Bold.woff" "KaTeX_Main-Bold.woff2"
+            "KaTeX_Main-BoldItalic.ttf" "KaTeX_Main-BoldItalic.woff" "KaTeX_Main-BoldItalic.woff2"
+            "KaTeX_Main-Italic.ttf" "KaTeX_Main-Italic.woff" "KaTeX_Main-Italic.woff2"
+            "KaTeX_Main-Regular.ttf" "KaTeX_Main-Regular.woff" "KaTeX_Main-Regular.woff2"
+            "KaTeX_Math-BoldItalic.ttf" "KaTeX_Math-BoldItalic.woff" "KaTeX_Math-BoldItalic.woff2"
+            "KaTeX_Math-Italic.ttf" "KaTeX_Math-Italic.woff" "KaTeX_Math-Italic.woff2"
+            "KaTeX_SansSerif-Bold.ttf" "KaTeX_SansSerif-Bold.woff" "KaTeX_SansSerif-Bold.woff2"
+            "KaTeX_SansSerif-Italic.ttf" "KaTeX_SansSerif-Italic.woff" "KaTeX_SansSerif-Italic.woff2"
+            "KaTeX_SansSerif-Regular.ttf" "KaTeX_SansSerif-Regular.woff" "KaTeX_SansSerif-Regular.woff2"
+            "KaTeX_Script-Regular.ttf" "KaTeX_Script-Regular.woff" "KaTeX_Script-Regular.woff2"
+            "KaTeX_Size1-Regular.ttf" "KaTeX_Size1-Regular.woff" "KaTeX_Size1-Regular.woff2"
+            "KaTeX_Size2-Regular.ttf" "KaTeX_Size2-Regular.woff" "KaTeX_Size2-Regular.woff2"
+            "KaTeX_Size3-Regular.ttf" "KaTeX_Size3-Regular.woff" "KaTeX_Size3-Regular.woff2"
+            "KaTeX_Size4-Regular.ttf" "KaTeX_Size4-Regular.woff" "KaTeX_Size4-Regular.woff2"
+            "KaTeX_Typewriter-Regular.ttf" "KaTeX_Typewriter-Regular.woff" "KaTeX_Typewriter-Regular.woff2"
+        )
+
+        foreach(font ${KATEX_FONTS})
+            set(FONT_LINK "${CMAKE_BINARY_DIR}/resources/web-app/${font}")
+            set(FONT_TARGET "${KATEX_FONTS_DIR}/${font}")
+            # Only create symlink if the target font exists
+            if(EXISTS "${FONT_TARGET}")
+                # Remove existing file/symlink if present
+                if(EXISTS "${FONT_LINK}" OR IS_SYMLINK "${FONT_LINK}")
+                    file(REMOVE "${FONT_LINK}")
+                endif()
+                # Create symlink in build directory
+                file(CREATE_LINK "${FONT_TARGET}" "${FONT_LINK}" SYMBOLIC)
+            endif()
+        endforeach()
+    else()
+        message(STATUS "KaTeX fonts not found at ${KATEX_FONTS_DIR}, using bundled fonts")
+    endif()
+
     # Check if Electron app is available for full package
     option(BUILD_ELECTRON_APP "Build and include Electron app in deb package" OFF)
 
@@ -661,7 +912,7 @@ if(UNIX AND NOT APPLE)
 
         # Full package name
         set(CPACK_PACKAGE_NAME "lemonade")
-        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libsecret-1-0, libasound2t64")
+        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libsecret-1-0, libasound2t64, fonts-katex")
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
 
         # Install Electron app
@@ -707,6 +958,17 @@ if(UNIX AND NOT APPLE)
                 DESTINATION share/pixmaps
                 RENAME lemonade-app.svg
             )
+            # Create symlink in standard pixmaps path only if not installing to /usr
+            if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+                install(CODE "
+                    file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/pixmaps\")
+                    execute_process(
+                        COMMAND ${CMAKE_COMMAND} -E create_symlink
+                            ${CMAKE_INSTALL_PREFIX}/share/pixmaps/lemonade-app.svg
+                            \"\$ENV{DESTDIR}/usr/share/pixmaps/lemonade-app.svg\"
+                    )
+                ")
+            endif()
             # Create symlink in standard bin path only if not installing to /usr
             if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
                 install(CODE "
@@ -730,7 +992,7 @@ if(UNIX AND NOT APPLE)
     else()
         # Minimal package (server only)
         set(CPACK_PACKAGE_NAME "lemonade-server-minimal")
-        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip")
+        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, fonts-katex")
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
 
         if(BUILD_ELECTRON_APP)
