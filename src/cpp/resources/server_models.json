@@ -310,6 +310,13 @@
         "labels": ["coding","tool-calling","hot"],
         "size": 18.6
     },
+    "Qwen3-Coder-Next-GGUF": {
+        "checkpoint": "unsloth/Qwen3-Coder-Next-GGUF:Qwen3-Coder-Next-MXFP4_MOE.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["coding","tool-calling","hot"],
+        "size": 43.7
+    },
     "Nemotron-3-Nano-30B-A3B-GGUF": {
         "checkpoint": "unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
