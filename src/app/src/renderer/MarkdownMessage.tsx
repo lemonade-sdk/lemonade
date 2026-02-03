@@ -80,7 +80,10 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       wrapper.appendChild(pre);
     });
 
-    return tempContainer.innerHTML;
+    const result = tempContainer.innerHTML;
+    // Clean up tempContainer to help GC
+    tempContainer.innerHTML = '';
+    return result;
   }, [content, md, isComplete]);
 
   useEffect(() => {
@@ -122,8 +125,11 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
         }
         
         copyTimeoutIdRef.current = setTimeout(() => {
-          button.innerHTML = COPY_ICON_SVG;
-          button.classList.remove('copied');
+          // Check if button still exists in DOM before modifying
+          if (button.isConnected) {
+            button.innerHTML = COPY_ICON_SVG;
+            button.classList.remove('copied');
+          }
           copyTimeoutIdRef.current = null;
         }, 2000);
       } catch (err) {
