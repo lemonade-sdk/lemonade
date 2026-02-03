@@ -27,7 +27,8 @@ public:
         SpeechEnd       // Speech ended (trigger transcription)
     };
 
-    explicit SimpleVAD(const Config& config = Config{});
+    SimpleVAD();
+    explicit SimpleVAD(const Config& config);
     ~SimpleVAD() = default;
 
     /**

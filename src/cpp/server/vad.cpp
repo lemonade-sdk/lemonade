@@ -5,6 +5,10 @@
 
 namespace lemon {
 
+SimpleVAD::SimpleVAD()
+    : config_() {
+}
+
 SimpleVAD::SimpleVAD(const Config& config)
     : config_(config) {
 }
