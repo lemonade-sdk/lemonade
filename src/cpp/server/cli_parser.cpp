@@ -51,6 +51,12 @@ static void add_serve_options(CLI::App* serve, ServerConfig& config, std::vector
         ->type_name("PATH")
         ->default_val(config.extra_models_dir);
 
+    serve->add_flag("--no-broadcast", config.no_broadcast,
+                   "Disable UDP broadcasting on private networks")
+        ->envname("LEMONADE_NO_BROADCAST")
+        ->expected(0, 1)
+        ->default_val(config.no_broadcast);
+
     // Multi-model support: Max loaded models
     // Use a member vector to capture 1, 3, 4, or 5 values (2 is not allowed)
     serve->add_option("--max-loaded-models", max_models_vec,

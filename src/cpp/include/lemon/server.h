@@ -28,7 +28,8 @@ public:
            int max_reranking_models,
            int max_audio_models,
            int max_image_models,
-           const std::string& extra_models_dir);
+           const std::string& extra_models_dir,
+           bool no_broadcast);
 
     ~Server();
 
@@ -110,6 +111,7 @@ private:
     std::string log_level_;
     json default_options_;
     std::string log_file_path_;
+    bool no_broadcast_;
 
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;

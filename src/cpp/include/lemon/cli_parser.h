@@ -15,6 +15,7 @@ struct ServerConfig {
     std::string log_level = "info";
     json recipe_options = json::object();
     std::string extra_models_dir = "";  // Secondary directory for GGUF model discovery
+    bool no_broadcast = false;  // Disable UDP broadcasting on private networks
 
     // Multi-model support: Max loaded models by type
     int max_llm_models = 1;
