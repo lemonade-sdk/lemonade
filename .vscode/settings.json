@@ -1,5 +1,28 @@
 {
     "cmake.sourceDirectory": "/workspaces/lemonade",
+    "files.watcherExclude": {
+        "**/dist-app/**": true,
+        "**/build/**": true,
+        "**/node_modules/**": true,
+        "**/*.asar": true,
+        "**/win-unpacked/**": true,
+        "**/linux-unpacked/**": true,
+        "**/mac/**": true
+    },
+    "search.exclude": {
+        "**/dist-app/**": true,
+        "**/build/**": true,
+        "**/node_modules/**": true
+    },
+    "cursor.exclude": {
+        "**/dist-app/**": true,
+        "**/build/**": true,
+        "**/node_modules/**": true,
+        "**/*.asar": true,
+        "**/win-unpacked/**": true,
+        "**/linux-unpacked/**": true,
+        "**/mac/**": true
+    },
     "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
     "C_Cpp.intelliSenseEngine": "Default",
     "C_Cpp.default.intelliSenseMode": "linux-clang-x64",
@@ -83,5 +106,5 @@
         "typeinfo": "cpp",
         "valarray": "cpp",
         "variant": "cpp"
-    }
+    },
 }

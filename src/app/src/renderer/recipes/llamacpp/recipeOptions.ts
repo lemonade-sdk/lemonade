@@ -133,7 +133,7 @@ type DefaultOptionValues =
 
 export const DEFAULT_OPTION_VALUES: DefaultOptionValues = {
   ctxSize: 4096,
-  llamacppBackend: "rocm",
+  llamacppBackend: "",  // Empty string means "auto (server default)"
   llamacppArgs: "",
   saveOptions: true,
 };

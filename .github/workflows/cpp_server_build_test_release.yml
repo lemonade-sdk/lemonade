@@ -165,44 +165,18 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "Building Electron app..." -ForegroundColor Cyan
+          Write-Host "Building Electron app via CMake target..." -ForegroundColor Cyan
 
-          cd src\app
-
-          # Install dependencies
-          Write-Host "Installing npm dependencies..." -ForegroundColor Yellow
-          npm install
-          if ($LASTEXITCODE -ne 0) {
-              Write-Host "ERROR: npm install failed!" -ForegroundColor Red
-              exit $LASTEXITCODE
-          }
-
-          # Build the Electron app for Windows
-          Write-Host "Building Electron app for Windows..." -ForegroundColor Yellow
-          npm run build:win
+          # Build using CMake electron-app target (single source of truth)
+          cmake --build --preset windows --target electron-app
           if ($LASTEXITCODE -ne 0) {
               Write-Host "ERROR: Electron app build failed!" -ForegroundColor Red
               exit $LASTEXITCODE
           }
 
           # Verify the build output exists
-          if (-not (Test-Path "dist-app\win-unpacked\Lemonade.exe")) {
+          if (-not (Test-Path "build\app\win-unpacked\Lemonade.exe")) {
               Write-Host "ERROR: Electron app executable not found!" -ForegroundColor Red
-              exit 1
-          }
-
-          # Move output to build directory where CMake expects it
-          Write-Host "Moving Electron app to build directory..." -ForegroundColor Yellow
-          $targetDir = "..\..\build\app"
-          if (Test-Path $targetDir) {
-              Remove-Item -Recurse -Force $targetDir
-          }
-          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
-          Move-Item -Path "dist-app\*" -Destination $targetDir -Force
-
-          # Verify the final output exists
-          if (-not (Test-Path "..\..\build\app\win-unpacked\Lemonade.exe")) {
-              Write-Host "ERROR: Electron app not found in final location!" -ForegroundColor Red
               exit 1
           }
 

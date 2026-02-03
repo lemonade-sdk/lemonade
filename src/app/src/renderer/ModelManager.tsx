@@ -76,7 +76,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         setLoadedModels(new Set());
       }
     } catch (error) {
-      setLoadedModels(new Set());  
+      setLoadedModels(new Set());
       console.error('Failed to fetch current loaded model:', error);
     }
   }, []);
@@ -561,7 +561,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
           modelData = {
             ...modelData,
             ctx_size: options.ctxSize.value,
-            // llamacpp_backend: options.llamacppBackend.value,
+            llamacpp_backend: options.llamacppBackend.value,
             llamacpp_args: options.llamacppArgs.value,
             save_options: options.saveOptions.value
           }

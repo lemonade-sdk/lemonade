@@ -10,6 +10,18 @@ import { ModelInfo } from "./utils/modelData";
 import { useSystem } from "./hooks/useSystem";
 import { OgaRecipies } from "./recipes/onnx/recipeOptions";
 
+// Display names for backend options
+const BACKEND_DISPLAY_NAMES: Record<string, string> = {
+  cpu: "CPU",
+  rocm: "ROCm",
+  vulkan: "Vulkan",
+  metal: "Metal",
+};
+
+const getBackendDisplayName = (backend: string): string => {
+  return BACKEND_DISPLAY_NAMES[backend] ?? backend;
+};
+
 interface SettingsModalProps {
   isOpen: boolean;
   onSubmit: (modelName: string, options: RecipeOptions) => void;
@@ -18,7 +30,7 @@ interface SettingsModalProps {
 }
 
 const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onSubmit, model }) => {
-  const { supportedEngines } = useSystem();
+  const { supportedRecipes } = useSystem();
   const [modelInfo, setModelInfo] = useState<ModelInfo>();
   const [modelName, setModelName] = useState("");
   const [modelUrl, setModelUrl] = useState<string>("");
@@ -323,20 +335,24 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
               />
             </div>
 
-            {/*<div className="form-section">
-              <label className="form-label" title="Select llamacpp backend to use for this model">llamacpp
-                backend</label>
-              <select
-                className="form-input form-select"
-                value={options.llamacppBackend.value}
-                onChange={(e) => handleStringChange('llamacppBackend', e.target.value)}
-              >
-                <option value="">Select a llamacpp backend...</option>
-                {supportedEngines.filter(engine => engine !== 'OGA').map((engine) => {
-                  return (<option key={engine.toLowerCase()} value={engine.toLowerCase()}>{engine}</option>)
-                })}
-              </select>
-            </div>*/}
+            {/* Show backend selector only if the model's recipe has multiple backends */}
+            {modelInfo?.recipe && (supportedRecipes[modelInfo.recipe]?.length ?? 0) > 1 && (
+              <div className="form-section">
+                <label className="form-label" title="Select backend to use for this model">
+                  backend
+                </label>
+                <select
+                  className="form-input form-select"
+                  value={options.llamacppBackend.value}
+                  onChange={(e) => handleStringChange('llamacppBackend', e.target.value)}
+                >
+                  <option value="">Auto</option>
+                  {(supportedRecipes[modelInfo.recipe] ?? []).map((backend) => (
+                    <option key={backend} value={backend}>{getBackendDisplayName(backend)}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="form-section">
               <label className="form-label" title="llamacpp arguments">llamacpp arguments</label>
