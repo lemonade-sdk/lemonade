@@ -14,6 +14,6 @@
     "min_npu_driver": "32.0.203.304"
   },
   "kokoro": {
-    "cpu": "b11"
+    "cpu": "b14"
   }
 }
