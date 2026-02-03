@@ -390,13 +390,6 @@ void Server::setup_static_files(httplib::Server &web_server) {
             std::string html((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
             file.close();
 
-            // No base tag needed for root path serving
-            // std::string base_tag = "<base href=\"/web-app/\">";
-            // size_t head_start_pos = html.find("<head>");
-            // if (head_start_pos != std::string::npos) {
-            //     html.insert(head_start_pos + 6, base_tag);
-            // }
-
             // Inject mock API for web compatibility with Electron app code
             std::string mock_api = R"(
 <script>
@@ -789,7 +782,7 @@ void Server::run() {
             http_server_v6_->listen_after_bind();
         });
     }
-    
+
     //For now we will use getLocalHostname to get the machines hostname.
     //This allows external devices to not have to do a rDNS lookup.
     bool RFC1918_IP = udp_beacon_.isRFC1918(ipv4);
