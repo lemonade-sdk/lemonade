@@ -1476,10 +1476,7 @@ cpack
 - Includes postinst script that creates writable <code>/opt/share/lemonade-server/llama/</code> directory</p>
 <p><strong>Installation:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Replace &lt;VERSION&gt; with the actual version (e.g., 9.0.0)</span>
-sudo<span class="w"> </span>dpkg<span class="w"> </span>-i<span class="w"> </span>lemonade-server-minimal_&lt;VERSION&gt;_amd64.deb
-
-<span class="c1"># If dependencies are missing:</span>
-sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>-f
+sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>./lemonade-server-minimal_&lt;VERSION&gt;_amd64.deb
 </code></pre></div>
 <p><strong>Uninstallation:</strong></p>
 <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>dpkg<span class="w"> </span>-r<span class="w"> </span>lemonade-server
