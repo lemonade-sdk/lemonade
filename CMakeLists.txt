@@ -520,16 +520,26 @@ add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
 
 # Find Node.js and npm for building the Electron app
 find_program(NODE_EXECUTABLE node)
-find_program(NPM_EXECUTABLE npm)
+# On Windows, npm is a batch file (npm.cmd), so we need to find it explicitly
+# or invoke it through cmd.exe to avoid MSBuild custom build step issues
+if(WIN32)
+    find_program(NPM_EXECUTABLE npm.cmd)
+else()
+    find_program(NPM_EXECUTABLE npm)
+endif()
 
 # Custom target to build the Electron app
 if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
     if(WIN32)
         set(ELECTRON_BUILD_TARGET "build:win")
+        # On Windows, wrap npm calls with cmd /c to handle batch file execution properly
+        set(NPM_COMMAND cmd /c "${NPM_EXECUTABLE}")
     elseif(APPLE)
         set(ELECTRON_BUILD_TARGET "build:mac")
+        set(NPM_COMMAND "${NPM_EXECUTABLE}")
     else()
         set(ELECTRON_BUILD_TARGET "build:linux")
+        set(NPM_COMMAND "${NPM_EXECUTABLE}")
     endif()
 
     set(ELECTRON_BUILD_SOURCE_DIR "${CMAKE_BINARY_DIR}/app-src")
@@ -540,12 +550,11 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
         COMMAND ${CMAKE_COMMAND} -E make_directory "${ELECTRON_BUILD_SOURCE_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${ELECTRON_APP_SOURCE_DIR}" "${ELECTRON_BUILD_SOURCE_DIR}"
         COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies (clean install)..."
-        COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_BUILD_SOURCE_DIR}" ${NPM_EXECUTABLE} ci
+        COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci
         COMMAND ${CMAKE_COMMAND} -E echo "Building Electron app for current platform..."
-        COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_BUILD_SOURCE_DIR}" ${NPM_EXECUTABLE} run ${ELECTRON_BUILD_TARGET} -- --config.directories.output=${ELECTRON_APP_BUILD_DIR}
+        COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_BUILD_SOURCE_DIR}" ${NPM_COMMAND} run ${ELECTRON_BUILD_TARGET} -- --config.directories.output=${ELECTRON_APP_BUILD_DIR}
         COMMENT "Building Electron app with npm"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-        VERBATIM
     )
 
     message(STATUS "Node.js found: ${NODE_EXECUTABLE}")
