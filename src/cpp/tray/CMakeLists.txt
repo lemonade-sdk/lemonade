@@ -139,6 +139,11 @@ endif()
 
 target_compile_definitions(lemonade-server PRIVATE LEMONADE_TRAY)
 
+# Enable ARC (Automatic Reference Counting) for macOS Objective-C++ files
+if(APPLE)
+    target_compile_options(lemonade-server PRIVATE -fobjc-arc)
+endif()
+
 # Set output directory to build root for all platforms
 # Windows uses Debug/Release subdirectories (multi-config generator)
 # Linux/Mac go directly to CMAKE_BINARY_DIR (single-config generator)
