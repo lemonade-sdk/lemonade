@@ -405,7 +405,8 @@ src/cpp/
 │       ├── http_client.h       # HTTP client
 │       ├── json_utils.h        # JSON utilities
 │       ├── process_manager.h   # Process management
-│       └── path_utils.h        # Path utilities
+│       |── path_utils.h        # Path utilities
+|       |── network_beacon.h    # Helps broadcast a beacon on port 8000 to network multicast
 │
 └── tray/                       # System tray application
     ├── CMakeLists.txt          # Tray-specific build config
@@ -499,6 +500,13 @@ The client automatically:
   - Avoids port scanning, finds exact server PID and port instantly
   - Validated on read (checks if process is still alive)
   - Automatically cleaned up on graceful shutdown
+
+**Network Beacon based broadcasting:**
+- Uses port 8000 to broadcast to the network that it exists
+- Clients can read the json broadcast message to add server to server picker.
+- Uses machine hostname as broadcast name.
+- The custom flag --no-broadcast is available in the command line to disable.
+- Auto protection, doesnt broadcast on non RFC1918 Networks.
 
 ### Dependencies
 
