@@ -523,7 +523,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        test_type: [cli, endpoints]
+        test_type: [cli, endpoints, system-info]
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -591,10 +591,15 @@ jobs:
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --ephemeral
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --listen-all
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --api-key
-          else
+          elif [ "${{ matrix.test_type }}" = "endpoints" ]; then
               echo "Running endpoint tests..."
               $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY"
               $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY" --server-per-test
+          elif [ "${{ matrix.test_type }}" = "system-info" ]; then
+              echo "Running system-info mock hardware tests..."
+              # Unset LEMONADE_CI_MODE so the server uses mock cache files
+              unset LEMONADE_CI_MODE
+              $VENV_PYTHON test/server_system_info.py --server-binary "$SERVER_BINARY"
           fi
 
           echo "${{ matrix.test_type }} tests PASSED!"
