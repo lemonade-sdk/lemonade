@@ -505,6 +505,8 @@ The client automatically:
 - Uses port 8000 to broadcast to the network that it exists
 - Clients can read the json broadcast message to add server to server picker.
 - Uses machine hostname as broadcast name.
+- The custom flag --no-broadcast is available in the command line to disable.
+- Auto protection, doesnt broadcast on non RFC1918 Networks.
 
 ### Dependencies
 
