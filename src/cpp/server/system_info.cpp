@@ -1,7 +1,6 @@
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include "lemon/utils/path_utils.h"
-#include "lemon/backends/ryzenaiserver.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -10,6 +9,9 @@
 #include <regex>
 #include <algorithm>
 #include <cctype>
+#include <set>
+#include <map>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -47,6 +49,272 @@ const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
     {"gfx1102", "gfx110X"},
     {"gfx1103", "gfx110X"},
 };
+
+// ============================================================================
+// Recipe/Backend definition table - single source of truth for support matrix
+// ============================================================================
+
+// Device constraints: device_type -> set of allowed families (empty = all families)
+using DeviceConstraints = std::map<std::string, std::set<std::string>>;
+
+struct RecipeBackendDef {
+    std::string recipe;
+    std::string backend;
+    std::set<std::string> supported_os;
+    DeviceConstraints devices;
+};
+
+// Recipe definitions table - single source of truth for all recipe/backend support
+// Format: {recipe, backend, {supported_os}, {{device_type, {allowed_families}}}}
+//
+// IMPORTANT: Backend order matters! For recipes with multiple backends (e.g., llamacpp),
+// the order in this table defines the preference order. First listed = most preferred.
+// Example: vulkan is listed before cpu, so vulkan is preferred over cpu.
+//
+// Empty family set {} means "all families of that device type"
+static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
+    // llamacpp with multiple backends (order = preference: vulkan > rocm > metal > cpu)
+    {"llamacpp", "vulkan", {"windows", "linux"}, {
+        {"cpu", {"x86_64"}},
+        {"amd_igpu", {}},      // all iGPU families
+        {"amd_dgpu", {}},      // all dGPU families
+    }},
+    {"llamacpp", "rocm", {"windows", "linux"}, {
+        {"amd_igpu", {"gfx1150", "gfx1151"}},                      // STX Point/Halo iGPUs
+        {"amd_dgpu", {"gfx110X", "gfx120X"}},                      // RDNA3/RDNA4 dGPUs
+    }},
+    {"llamacpp", "metal", {"macos"}, {
+        {"cpu", {}},           // Apple Silicon
+    }},
+    {"llamacpp", "cpu", {"windows", "linux"}, {
+        {"cpu", {"x86_64"}},
+    }},
+
+    // whisper.cpp - Windows x86_64 only
+    {"whispercpp", "default", {"windows"}, {
+        {"cpu", {"x86_64"}},
+    }},
+
+    // stable-diffusion.cpp - Windows/Linux x86_64
+    {"sd-cpp", "default", {"windows", "linux"}, {
+        {"cpu", {"x86_64"}},
+    }},
+
+    // FLM - Windows NPU (XDNA2)
+    {"flm", "default", {"windows"}, {
+        {"npu", {"XDNA2"}},
+    }},
+
+    // OGA recipes - Windows NPU (XDNA2)
+    {"oga-npu", "default", {"windows"}, {
+        {"npu", {"XDNA2"}},
+    }},
+    {"oga-hybrid", "default", {"windows"}, {
+        {"npu", {"XDNA2"}},
+    }},
+    {"oga-cpu", "default", {"windows"}, {
+        {"npu", {"XDNA2"}},
+    }},
+};
+
+// ============================================================================
+// Device family to human-readable name mapping
+// ============================================================================
+
+// Maps device family codes to human-readable descriptions
+// Format: {family_code, human_readable_name}
+static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
+    // CPU architectures
+    {"x86_64", "x86-64 processors"},
+    {"arm64", "ARM64 processors"},
+
+    // AMD iGPU/dGPU architectures (ROCm)
+    {"gfx1150", "Radeon 880M/890M (Strix Point)"},
+    {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
+    {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
+    {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
+
+    // NPU architectures
+    {"XDNA2", "AMD Ryzen AI 300/400 series or Z2 Extreme NPU"},
+};
+
+// Maps device types to human-readable names (for error messages)
+static const std::map<std::string, std::string> DEVICE_TYPE_NAMES = {
+    {"cpu", "CPU"},
+    {"amd_igpu", "AMD iGPU"},
+    {"amd_dgpu", "AMD dGPU"},
+    {"npu", "NPU"},
+    {"nvidia_dgpu", "NVIDIA GPU"},
+};
+
+// Get human-readable name for a device family (e.g., "gfx1150" -> "Radeon 880M/890M")
+static std::string get_family_name(const std::string& family) {
+    auto it = DEVICE_FAMILY_NAMES.find(family);
+    return it != DEVICE_FAMILY_NAMES.end() ? it->second : family;
+}
+
+// Get human-readable name for a device type (e.g., "amd_igpu" -> "AMD iGPU")
+static std::string get_device_type_name(const std::string& device_type) {
+    auto it = DEVICE_TYPE_NAMES.find(device_type);
+    return it != DEVICE_TYPE_NAMES.end() ? it->second : device_type;
+}
+
+// Generate a human-readable error message for unsupported backend
+// Uses RECIPE_DEFS and DEVICE_FAMILY_NAMES to build a descriptive message
+std::string SystemInfo::get_unsupported_backend_error(const std::string& recipe, const std::string& backend) {
+    std::string error;
+
+    // Find the recipe/backend in RECIPE_DEFS
+    for (const auto& def : RECIPE_DEFS) {
+        if (def.recipe == recipe && def.backend == backend) {
+            // Collect all required family names
+            std::vector<std::string> family_names;
+            for (const auto& [device_type, families] : def.devices) {
+                for (const auto& f : families) {
+                    family_names.push_back(get_family_name(f));
+                }
+            }
+
+            // Build error message
+            error = "No compatible device detected for " + recipe;
+            if (backend != "default") {
+                error += " (" + backend + " backend)";
+            }
+            if (!family_names.empty()) {
+                error += ". Requires: ";
+                for (size_t i = 0; i < family_names.size(); i++) {
+                    if (i > 0) error += ", ";
+                    error += family_names[i];
+                }
+            }
+            error += ".";
+            break;
+        }
+    }
+
+    if (error.empty()) {
+        error = "Unsupported recipe/backend combination: " + recipe + "/" + backend;
+    }
+
+    return error;
+}
+
+// Detected device with its family
+struct DetectedDevice {
+    std::string type;      // "cpu", "amd_igpu", "amd_dgpu", "npu"
+    std::string name;      // Full device name
+    std::string family;    // "x86_64", "gfx1150", "XDNA2", etc.
+    bool present;
+};
+
+// Get current OS identifier
+static std::string get_current_os() {
+    #ifdef _WIN32
+    return "windows";
+    #elif defined(__APPLE__)
+    return "macos";
+    #else
+    return "linux";
+    #endif
+}
+
+// Forward declarations for helper functions used in device detection
+std::string identify_rocm_arch_from_name(const std::string& device_name);
+std::string identify_npu_arch(const std::string& processor_name);
+
+// Get device family from device name
+// cpu_name is required for NPU detection (pass empty string for other device types)
+static std::string get_device_family(const std::string& device_type, const std::string& device_name,
+                                      const std::string& cpu_name) {
+    if (device_type == "cpu") {
+        #if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
+        return "x86_64";
+        #elif defined(__aarch64__) || defined(_M_ARM64)
+        return "arm64";
+        #else
+        return "unknown";
+        #endif
+    }
+
+    if (device_type == "amd_igpu" || device_type == "amd_dgpu") {
+        return identify_rocm_arch_from_name(device_name);
+    }
+
+    if (device_type == "npu") {
+        // Use the processor name to identify NPU architecture
+        // The device_name for NPU is typically "AMD NPU" which isn't useful,
+        // so we need the processor name (always available from cached devices)
+        return identify_npu_arch(cpu_name);
+    }
+
+    return "";
+}
+
+// Check if device matches constraints (empty constraint set = all families allowed)
+static bool device_matches_constraint(const std::string& device_family,
+                                       const std::set<std::string>& allowed_families) {
+    if (allowed_families.empty()) {
+        return true;  // Empty = all families allowed
+    }
+    return allowed_families.count(device_family) > 0;
+}
+
+// Generic installation check
+static bool is_recipe_installed(const std::string& recipe, const std::string& backend) {
+    if (recipe == "llamacpp") {
+        return SystemInfo::is_llamacpp_installed(backend);
+    }
+    if (recipe == "whispercpp") {
+        return SystemInfo::is_whispercpp_installed();
+    }
+    if (recipe == "sd-cpp") {
+        return SystemInfo::is_sdcpp_installed();
+    }
+    if (recipe == "flm") {
+        // Check if FLM is installed
+        #ifdef _WIN32
+        for (const auto& path : {"C:\\Program Files\\AMD\\FLM\\flm.exe",
+                                  "C:\\Program Files (x86)\\AMD\\FLM\\flm.exe"}) {
+            if (fs::exists(path)) {
+                return true;
+            }
+        }
+        // Check PATH for non-standard installations
+        FILE* pipe = _popen("where flm 2>NUL", "r");
+        if (pipe) {
+            char buffer[256];
+            bool found = (fgets(buffer, sizeof(buffer), pipe) != nullptr);
+            _pclose(pipe);
+            return found;
+        }
+        #endif
+        return false;
+    }
+    if (recipe.find("oga") == 0) {  // oga-npu, oga-hybrid, oga-cpu
+        return SystemInfo::is_ryzenai_serve_available();
+    }
+    return false;
+}
+
+// Generic version check
+static std::string get_recipe_version(const std::string& recipe, const std::string& backend) {
+    if (recipe == "llamacpp") {
+        return SystemInfo::get_llamacpp_version(backend);
+    }
+    if (recipe == "whispercpp") {
+        return SystemInfo::get_whispercpp_version();
+    }
+    if (recipe == "sd-cpp") {
+        return SystemInfo::get_sdcpp_version();
+    }
+    if (recipe == "flm") {
+        return SystemInfo::get_flm_version();
+    }
+    if (recipe.find("oga") == 0) {  // oga-npu, oga-hybrid, oga-cpu
+        return SystemInfo::get_oga_version();
+    }
+    return "";
+}
 
 // ============================================================================
 // SystemInfo base class implementation
@@ -207,94 +475,302 @@ std::string SystemInfo::get_os_version() {
     #endif
 }
 
-std::vector<std::string> SystemInfo::get_python_packages() {
-    // Not applicable for C++ implementation
-    return {"not-applicable"};
-}
+json SystemInfo::build_recipes_info(const json& devices) {
+    json recipes;
 
-json SystemInfo::detect_inference_engines(const std::string& device_type, const std::string& device_name) {
-    json engines;
+    // Get current OS
+    std::string current_os = get_current_os();
 
-    // llamacpp-vulkan: Available for CPU, AMD iGPU, AMD dGPU, NVIDIA dGPU (NOT NPU)
-    if (device_type == "cpu" || device_type == "amd_igpu" ||
-        device_type == "amd_dgpu" || device_type == "nvidia_dgpu") {
+    std::vector<DetectedDevice> detected_devices;
 
-        bool device_supported = (device_type == "cpu") || check_vulkan_support();
+    // Get CPU name for NPU family detection
+    std::string cpu_name;
+    if (devices.contains("cpu")) {
+        cpu_name = devices["cpu"].value("name", "");
+    }
 
-        if (!device_supported) {
-            engines["llamacpp-vulkan"] = {{"available", false}, {"error", "vulkan not available"}};
-        } else if (!is_llamacpp_installed("vulkan")) {
-            engines["llamacpp-vulkan"] = {{"available", false}, {"error", "vulkan binaries not installed"}};
-        } else {
-            engines["llamacpp-vulkan"] = {
-                {"available", true},
-                {"version", get_llamacpp_version("vulkan")},
-                {"backend", "vulkan"}
-            };
+    // Build detected_devices from devices JSON
+    // CPU is always present
+    if (devices.contains("cpu")) {
+        const auto& cpu = devices["cpu"];
+        std::string name = cpu.value("name", "CPU");
+        detected_devices.push_back({"cpu", name, get_device_family("cpu", "", ""), true});
+    } else {
+        detected_devices.push_back({"cpu", "CPU", get_device_family("cpu", "", ""), true});
+    }
+
+    // AMD iGPU
+    if (devices.contains("amd_igpu")) {
+        const auto& igpu = devices["amd_igpu"];
+        if (igpu.value("available", false)) {
+            std::string name = igpu.value("name", "");
+            if (!name.empty()) {
+                detected_devices.push_back({
+                    "amd_igpu",
+                    name,
+                    get_device_family("amd_igpu", name, ""),
+                    true
+                });
+            }
         }
     }
 
-    // llamacpp-rocm: Available for AMD iGPU and AMD dGPU only
-    if (device_type == "amd_igpu" || device_type == "amd_dgpu") {
-        bool device_supported = check_rocm_support(device_name);
-
-        if (!device_supported) {
-            engines["llamacpp-rocm"] = {{"available", false}, {"error", "rocm not available"}};
-        } else if (!is_llamacpp_installed("rocm")) {
-            engines["llamacpp-rocm"] = {{"available", false}, {"error", "rocm binaries not installed"}};
-        } else {
-            engines["llamacpp-rocm"] = {
-                {"available", true},
-                {"version", get_llamacpp_version("rocm")},
-                {"backend", "rocm"}
-            };
+    // AMD dGPUs
+    if (devices.contains("amd_dgpu") && devices["amd_dgpu"].is_array()) {
+        for (const auto& gpu : devices["amd_dgpu"]) {
+            if (gpu.value("available", false)) {
+                std::string name = gpu.value("name", "");
+                if (!name.empty()) {
+                    detected_devices.push_back({
+                        "amd_dgpu",
+                        name,
+                        get_device_family("amd_dgpu", name, ""),
+                        true
+                    });
+                }
+            }
         }
     }
 
-    // FLM: Only available for NPU (Windows only)
-    if (device_type == "npu") {
-        #ifdef _WIN32
-        bool flm_available = false;
+    // NPU - use CPU name for family detection
+    if (devices.contains("npu")) {
+        const auto& npu = devices["npu"];
+        if (npu.value("available", false)) {
+            std::string name = npu.value("name", "");
+            detected_devices.push_back({
+                "npu",
+                name,
+                get_device_family("npu", name, cpu_name),
+                true
+            });
+        }
+    }
 
-        // Check common Windows locations
-        for (const auto& path : {"C:\\Program Files\\AMD\\FLM\\flm.exe",
-                                  "C:\\Program Files (x86)\\AMD\\FLM\\flm.exe"}) {
-            if (fs::exists(path)) {
-                flm_available = true;
-                break;
+    // Build recipes from the definition table
+    for (const auto& def : RECIPE_DEFS) {
+        // Skip if not supported on current OS
+        if (def.supported_os.count(current_os) == 0) {
+            // Helper to format OS name nicely
+            auto format_os_name = [](const std::string& os) -> std::string {
+                if (os == "macos") return "macOS";
+                if (os == "windows") return "Windows";
+                if (os == "linux") return "Linux";
+                // Fallback: capitalize first letter
+                std::string result = os;
+                if (!result.empty()) result[0] = std::toupper(result[0]);
+                return result;
+            };
+
+            // Generate concise OS requirement message
+            std::string required_os;
+            if (def.supported_os.size() == 1) {
+                required_os = format_os_name(*def.supported_os.begin());
+            } else {
+                for (const auto& os : def.supported_os) {
+                    if (!required_os.empty()) required_os += "/";
+                    required_os += format_os_name(os);
+                }
+            }
+
+            // Still add the recipe but mark as not supported
+            json backend = {
+                {"devices", json::array()},
+                {"supported", false},
+                {"available", false},
+                {"error", "Requires " + required_os}
+            };
+
+            // Add to the appropriate recipe/backend structure
+            if (recipes.contains(def.recipe)) {
+                recipes[def.recipe]["backends"][def.backend] = backend;
+            } else {
+                recipes[def.recipe] = {{"backends", {{def.backend, backend}}}};
+            }
+            continue;
+        }
+
+        // Find matching devices on this system and track failures for error reporting
+        json matching_devices = json::array();
+        // Track missing devices with their required families for error messages
+        std::vector<std::pair<std::string, std::set<std::string>>> missing_devices;  // Device types not present
+        std::vector<std::pair<std::string, std::set<std::string>>> wrong_family;     // Device present but wrong family
+
+        for (const auto& [required_device_type, required_families] : def.devices) {
+            bool device_type_found = false;
+            bool family_matched = false;
+
+            for (const auto& detected : detected_devices) {
+                if (detected.type == required_device_type) {
+                    device_type_found = true;
+                    if (device_matches_constraint(detected.family, required_families)) {
+                        matching_devices.push_back(detected.type);
+                        family_matched = true;
+                    }
+                }
+            }
+
+            if (!device_type_found) {
+                missing_devices.push_back({required_device_type, required_families});
+            } else if (!family_matched) {
+                wrong_family.push_back({required_device_type, required_families});
             }
         }
 
-        // Check if flm is in PATH
-        if (!flm_available) {
-            FILE* pipe = _popen("where flm 2>NUL", "r");
-            if (pipe) {
-                char buffer[256];
-                flm_available = (fgets(buffer, sizeof(buffer), pipe) != nullptr);
-                _pclose(pipe);
+        // Remove duplicates (e.g., multiple dGPUs of same type)
+        std::set<std::string> unique_devices;
+        json unique_matching = json::array();
+        for (const auto& dev : matching_devices) {
+            if (unique_devices.insert(dev.get<std::string>()).second) {
+                unique_matching.push_back(dev);
             }
         }
 
-        engines["flm"] = {
-            {"available", flm_available},
-            {"version", flm_available ? get_flm_version() : "unknown"}
+        bool supported = !unique_matching.empty();
+        bool available = is_recipe_installed(def.recipe, def.backend);
+
+        json backend = {
+            {"devices", unique_matching},
+            {"supported", supported},
+            {"available", available}
         };
-        #endif
 
-        // OGA (RyzenAI-Server)
-        engines["oga"] = {{"available", is_ryzenai_serve_available()}};
+        // Generate concise error message based on what failed
+        if (!supported) {
+            std::string error;
+
+            if (!missing_devices.empty()) {
+                // Device type not present - include required family if specified
+                const auto& [device_type, required_families] = missing_devices[0];
+                if (!required_families.empty()) {
+                    // Show specific family requirement (e.g., "Requires XDNA2 NPU")
+                    error = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
+                } else {
+                    // No specific family required (e.g., "Requires CPU")
+                    error = "Requires " + get_device_type_name(device_type);
+                }
+            } else if (!wrong_family.empty()) {
+                // Device present but wrong family - show required families
+                const auto& [device_type, required_families] = wrong_family[0];
+                if (!required_families.empty()) {
+                    // Use first required family name for concise message
+                    error = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
+                } else {
+                    error = "Incompatible " + get_device_type_name(device_type);
+                }
+            } else {
+                error = "No compatible device";
+            }
+
+            backend["error"] = error;
+        } else if (available) {
+            // Add version if installed
+            std::string version = get_recipe_version(def.recipe, def.backend);
+            if (!version.empty() && version != "unknown") {
+                backend["version"] = version;
+            }
+        }
+
+        // Add to the appropriate recipe/backend structure
+        if (recipes.contains(def.recipe)) {
+            recipes[def.recipe]["backends"][def.backend] = backend;
+        } else {
+            recipes[def.recipe] = {{"backends", {{def.backend, backend}}}};
+        }
     }
 
-    return engines;
+    return recipes;
 }
 
-std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
-    // Try to find version.txt in the llamacpp directory for specific backend
-    // Location: {cache_dir}/bin/llama/{backend}/version.txt
+SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std::string& recipe) {
+    SupportedBackendsResult result;
+    json system_info = SystemInfoCache::get_system_info_with_cache();
 
-    fs::path bin_dir = utils::get_downloaded_bin_dir();
-    fs::path version_file = bin_dir / "llama" / backend / "version.txt";
+    if (!system_info.contains("recipes") || !system_info["recipes"].contains(recipe)) {
+        result.not_supported_error = "Recipe '" + recipe + "' not found";
+        return result;
+    }
 
+    const auto& recipe_info = system_info["recipes"][recipe];
+    if (!recipe_info.contains("backends")) {
+        result.not_supported_error = "No backends found for recipe '" + recipe + "'";
+        return result;
+    }
+
+    // Collect supported backends and capture first error (in preference order from RECIPE_DEFS)
+    for (const auto& def : RECIPE_DEFS) {
+        if (def.recipe == recipe) {
+            if (recipe_info["backends"].contains(def.backend)) {
+                const auto& backend = recipe_info["backends"][def.backend];
+                if (backend.value("supported", false)) {
+                    result.backends.push_back(def.backend);
+                } else if (result.not_supported_error.empty() && backend.contains("error")) {
+                    // Capture first error encountered (in preference order)
+                    result.not_supported_error = backend["error"].get<std::string>();
+                }
+            }
+        }
+    }
+
+    // If no backends supported and no specific error, provide generic message
+    if (result.backends.empty() && result.not_supported_error.empty()) {
+        result.not_supported_error = "No supported backend found for recipe '" + recipe + "'";
+    }
+
+    return result;
+}
+
+std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
+    auto result = get_supported_backends(recipe);
+    return result.backends.empty() ? result.not_supported_error : "";
+}
+
+std::vector<SystemInfo::RecipeStatus> SystemInfo::get_all_recipe_statuses() {
+    std::vector<RecipeStatus> statuses;
+    json system_info = SystemInfoCache::get_system_info_with_cache();
+
+    if (!system_info.contains("recipes") || !system_info["recipes"].is_object()) {
+        return statuses;
+    }
+
+    const auto& recipes = system_info["recipes"];
+    for (auto& [recipe_name, recipe_info] : recipes.items()) {
+        bool any_supported = false;
+        bool any_available = false;
+        std::string first_error;
+        std::vector<BackendStatus> backends;
+
+        if (recipe_info.contains("backends") && recipe_info["backends"].is_object()) {
+            // Iterate in preference order (from RECIPE_DEFS table)
+            for (const auto& def : RECIPE_DEFS) {
+                if (def.recipe != recipe_name) continue;
+
+                if (!recipe_info["backends"].contains(def.backend)) continue;
+
+                const auto& backend_info = recipe_info["backends"][def.backend];
+                bool supported = backend_info.value("supported", false);
+                bool available = backend_info.value("available", false);
+                std::string version = backend_info.value("version", "");
+                std::string error = backend_info.value("error", "");
+
+                if (supported) any_supported = true;
+                if (available) any_available = true;
+
+                if (!supported && first_error.empty() && !error.empty()) {
+                    first_error = error;
+                }
+
+                backends.push_back({def.backend, supported, available, version, error});
+            }
+        }
+
+        statuses.push_back({recipe_name, any_supported, any_available, first_error, backends});
+    }
+
+    return statuses;
+}
+
+// Helper to read version from a version.txt file
+static std::string read_version_file(const fs::path& version_file) {
     if (fs::exists(version_file)) {
         std::ifstream file(version_file);
         if (file.is_open()) {
@@ -309,8 +785,27 @@ std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
             }
         }
     }
-
     return "unknown";
+}
+
+std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    return read_version_file(bin_dir / "llama" / backend / "version.txt");
+}
+
+std::string SystemInfo::get_whispercpp_version() {
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    return read_version_file(bin_dir / "whisper" / "version.txt");
+}
+
+std::string SystemInfo::get_sdcpp_version() {
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    return read_version_file(bin_dir / "sd-cpp" / "version.txt");
+}
+
+std::string SystemInfo::get_oga_version() {
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    return read_version_file(bin_dir / "ryzenai-server" / "version.txt");
 }
 
 bool SystemInfo::is_llamacpp_installed(const std::string& backend) {
@@ -334,47 +829,51 @@ bool SystemInfo::is_llamacpp_installed(const std::string& backend) {
 #endif
 }
 
-bool SystemInfo::check_vulkan_support() {
-    // Check if Vulkan is available
-    #ifdef _WIN32
-    // Check for Vulkan DLL on Windows
-    if (fs::exists("C:\\Windows\\System32\\vulkan-1.dll") ||
-        fs::exists("C:\\Windows\\SysWOW64\\vulkan-1.dll")) {
-        return true;
-    }
-    #else
-    // Check for Vulkan libraries on Linux
-    std::vector<std::string> vulkan_lib_paths = {
-        "/usr/lib/x86_64-linux-gnu/libvulkan.so.1",
-        "/usr/lib/libvulkan.so.1",
-        "/lib/x86_64-linux-gnu/libvulkan.so.1"
-    };
-    for (const auto& path : vulkan_lib_paths) {
-        if (fs::exists(path)) {
-            return true;
+bool SystemInfo::is_whispercpp_installed() {
+    // Check if whisper-server executable exists
+    // Location: {cache_dir}/bin/whisper/
+
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    fs::path install_dir = bin_dir / "whisper";
+
+#ifdef _WIN32
+    std::vector<std::string> exe_names = {"whisper-server.exe", "server.exe"};
+#else
+    std::vector<std::string> exe_names = {"whisper-server", "server"};
+#endif
+    std::vector<std::string> subdirs = {"Release", "bin", ""};
+
+    for (const auto& subdir : subdirs) {
+        for (const auto& exe_name : exe_names) {
+            fs::path exe_path;
+            if (subdir.empty()) {
+                exe_path = install_dir / exe_name;
+            } else {
+                exe_path = install_dir / subdir / exe_name;
+            }
+            if (fs::exists(exe_path)) {
+                return true;
+            }
         }
-    }
-    #endif
-
-    // Try vulkaninfo command
-    #ifdef _WIN32
-    FILE* pipe = _popen("vulkaninfo --summary 2>NUL", "r");
-    #else
-    FILE* pipe = popen("vulkaninfo --summary 2>/dev/null", "r");
-    #endif
-
-    if (pipe) {
-        char buffer[128];
-        bool has_output = (fgets(buffer, sizeof(buffer), pipe) != nullptr);
-        #ifdef _WIN32
-        _pclose(pipe);
-        #else
-        pclose(pipe);
-        #endif
-        return has_output;
     }
 
     return false;
+}
+
+bool SystemInfo::is_sdcpp_installed() {
+    // Check if sd-server executable exists
+    // Location: {cache_dir}/bin/sd-cpp/
+
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    fs::path install_dir = bin_dir / "sd-cpp";
+
+#ifdef _WIN32
+    fs::path exe_path = install_dir / "sd-server.exe";
+#else
+    fs::path exe_path = install_dir / "sd-server";
+#endif
+
+    return fs::exists(exe_path);
 }
 
 // Helper to identify ROCm architecture from GPU name
@@ -449,11 +948,66 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     return "";
 }
 
-bool SystemInfo::check_rocm_support(const std::string& device_name) {
-    // Check if device supports ROCm by attempting to identify the architecture
-    // This matches the Python implementation which uses identify_rocm_arch_from_name
-    std::string arch = identify_rocm_arch_from_name(device_name);
-    return !arch.empty();
+// Identify NPU architecture from processor name
+// Returns the NPU family (e.g., "XDNA2") or empty string if not an NPU-capable processor
+// This is the single source of truth for NPU family detection
+std::string identify_npu_arch(const std::string& processor_name) {
+    std::string processor_lower = processor_name;
+    std::transform(processor_lower.begin(), processor_lower.end(), processor_lower.begin(), ::tolower);
+
+    // Must be a Ryzen AI processor
+    if (processor_lower.find("ryzen ai") == std::string::npos) {
+        return "";
+    }
+
+    // XDNA2 architecture: Ryzen AI 300-series, 400-series, Z2 series
+    // Pattern: "ryzen ai" followed by 3xx, 4xx, or Z2
+    // Examples:
+    //   - AMD Ryzen AI 9 HX 375
+    //   - AMD Ryzen AI 9 365
+    //   - AMD Ryzen AI 7 350
+    //   - AMD Ryzen AI Max+ 395 (400-series when available)
+    //   - AMD Ryzen AI Z2 Extreme
+    std::regex xdna2_pattern(R"(ryzen ai.*((\b[34]\d{2}\b)|(\bz2\b)))", std::regex::icase);
+    if (std::regex_search(processor_lower, xdna2_pattern)) {
+        return "XDNA2";
+    }
+
+    // Future: Add XDNA3, XDNA4, etc. as new architectures are released
+
+    return "";
+}
+
+std::string SystemInfo::get_rocm_arch() {
+    // Returns the ROCm architecture for the best available AMD GPU on this system
+    // Checks iGPU first, then dGPUs. Returns empty string if no compatible GPU found.
+    try {
+        auto system_info = create_system_info();
+
+        // Check iGPU first
+        auto igpu = system_info->get_amd_igpu_device();
+        if (igpu.available && !igpu.name.empty()) {
+            std::string arch = identify_rocm_arch_from_name(igpu.name);
+            if (!arch.empty()) {
+                return arch;
+            }
+        }
+
+        // Check dGPUs
+        auto dgpus = system_info->get_amd_dgpu_devices();
+        for (const auto& gpu : dgpus) {
+            if (gpu.available && !gpu.name.empty()) {
+                std::string arch = identify_rocm_arch_from_name(gpu.name);
+                if (!arch.empty()) {
+                    return arch;
+                }
+            }
+        }
+    } catch (...) {
+        // Detection failed
+    }
+
+    return "";  // No supported architecture found
 }
 
 std::string SystemInfo::get_flm_version() {
@@ -487,7 +1041,21 @@ std::string SystemInfo::get_flm_version() {
 }
 
 bool SystemInfo::is_ryzenai_serve_available() {
-    return RyzenAIServer::is_available();
+    // Inline the check to avoid dependency on RyzenAIServer class
+    // 1. Check for custom binary via environment variable
+    const char* ryzenai_bin_env = std::getenv("LEMONADE_RYZENAI_SERVER_BIN");
+    if (ryzenai_bin_env && fs::exists(ryzenai_bin_env)) {
+        return true;
+    }
+
+    // 2. Check in install directory (where download_and_install() places it)
+    fs::path install_dir = fs::path(utils::get_downloaded_bin_dir()) / "ryzenai-server";
+    #ifdef _WIN32
+    fs::path exe_path = install_dir / "ryzenai-server.exe";
+    #else
+    fs::path exe_path = install_dir / "ryzenai-server";
+    #endif
+    return fs::exists(exe_path);
 }
 
 // ============================================================================
@@ -532,9 +1100,6 @@ CPUInfo WindowsSystemInfo::get_cpu_device() {
         cpu.threads = wmi::get_property_int(pObj, L"NumberOfLogicalProcessors");
         cpu.max_clock_speed_mhz = wmi::get_property_int(pObj, L"MaxClockSpeed");
         cpu.available = true;
-
-        // Detect inference engines for CPU
-        cpu.inference_engines = detect_inference_engines("cpu", cpu.name);
     });
 
     if (!cpu.available) {
@@ -607,9 +1172,6 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_dgpu_devices() {
                     gpu.vram_gb = adapter_ram / (1024.0 * 1024.0 * 1024.0);
                 }
 
-                // Detect inference engines
-                gpu.inference_engines = detect_inference_engines("nvidia_dgpu", name);
-
                 gpus.push_back(gpu);
             }
         }
@@ -626,8 +1188,8 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_dgpu_devices() {
 }
 
 bool WindowsSystemInfo::is_supported_ryzen_ai_processor() {
-    // Check if the processor is a supported Ryzen AI processor (300-series)
-    // This matches the logic in Python's check_ryzen_ai_processor() function
+    // Check if the processor has a supported NPU architecture
+    // Uses identify_npu_arch() as the single source of truth
 
     wmi::WMIConnection wmi;
     if (!wmi.is_valid()) {
@@ -646,16 +1208,9 @@ bool WindowsSystemInfo::is_supported_ryzen_ai_processor() {
         return false;
     }
 
-    // Convert to lowercase for case-insensitive matching
-    std::string processor_lower = processor_name;
-    std::transform(processor_lower.begin(), processor_lower.end(), processor_lower.begin(), ::tolower);
-
-    // Check for Ryzen AI 300/400-series pattern: "ryzen ai" followed by a 3-digit number starting with 3 or 4
-    // Also matches Ryzen AI Z2 series (e.g., "Ryzen AI Z2 Extreme")
-    // Pattern: ryzen ai.*((\b[34]\d{2}\b)|(\bz2\b))
-    std::regex pattern(R"(ryzen ai.*((\b[34]\d{2}\b)|(\bz2\b)))", std::regex::icase);
-
-    return std::regex_search(processor_lower, pattern);
+    // Use identify_npu_arch as the single source of truth for NPU support
+    std::string npu_arch = identify_npu_arch(processor_name);
+    return !npu_arch.empty();
 }
 
 NPUInfo WindowsSystemInfo::get_npu_device() {
@@ -674,9 +1229,6 @@ NPUInfo WindowsSystemInfo::get_npu_device() {
     if (!driver_version.empty()) {
         npu.power_mode = get_npu_power_mode();
         npu.available = true;
-
-        // Detect inference engines
-        npu.inference_engines = detect_inference_engines("npu", "AMD NPU");
     } else {
         npu.error = "No NPU device found";
     }
@@ -744,10 +1296,6 @@ std::vector<GPUInfo> WindowsSystemInfo::detect_amd_gpus(const std::string& gpu_t
                         gpu.vram_gb = vram_gb;
                     }
                 }
-
-                // Detect inference engines
-                std::string device_type = is_integrated ? "amd_igpu" : "amd_dgpu";
-                gpu.inference_engines = detect_inference_engines(device_type, name);
 
                 gpus.push_back(gpu);
             }
@@ -1162,9 +1710,6 @@ CPUInfo LinuxSystemInfo::get_cpu_device() {
         return cpu;
     }
 
-    // Detect inference engines
-    cpu.inference_engines = detect_inference_engines("cpu", cpu.name);
-
     return cpu;
 }
 
@@ -1249,9 +1794,6 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_dgpu_devices() {
                     gpu.vram_gb = vram;
                 }
 
-                // Detect inference engines
-                gpu.inference_engines = detect_inference_engines("nvidia_dgpu", name);
-
                 gpus.push_back(gpu);
             }
         }
@@ -1331,10 +1873,6 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
         // Get VRAM and GTT for GPUs
         gpu.vram_gb = get_amd_vram(drm_render_minor);
         gpu.virtual_gb = get_amd_gtt(drm_render_minor);
-
-        // Detect inference engines
-        std::string device_type = is_integrated ? "amd_igpu" : "amd_dgpu";
-        gpu.inference_engines = detect_inference_engines(device_type, gfx_target_version);
 
         gpus.push_back(gpu);
     }
@@ -1739,7 +2277,17 @@ void SystemInfoCache::clear() {
     }
 }
 
-json SystemInfoCache::get_system_info_with_cache(bool verbose) {
+json SystemInfoCache::get_system_info_with_cache() {
+    // In-memory static cache to avoid repeated disk reads and message printing
+    // within the same process lifetime
+    static json cached_result;
+    static bool result_computed = false;
+
+    // Return cached result if available
+    if (result_computed) {
+        return cached_result;
+    }
+
     json system_info;
 
     // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
@@ -1753,7 +2301,6 @@ json SystemInfoCache::get_system_info_with_cache(bool verbose) {
         auto sys_info = create_system_info();
 
         if (!cached_data.empty()) {
-            std::cout << "[Server] Using cached hardware info" << std::endl;
             system_info = cached_data;
         } else {
             // Provide friendly message about why we're detecting hardware
@@ -1763,7 +2310,7 @@ json SystemInfoCache::get_system_info_with_cache(bool verbose) {
                 std::cout << "[Server] Collecting system info" << std::endl;
             }
 
-            // Get system info (OS, Processor, Memory, etc.)
+            // Get system info (OS, Processor, Memory, OEM System, BIOS, etc.)
             try {
                 system_info = sys_info->get_system_info_dict();
             } catch (...) {
@@ -1773,7 +2320,7 @@ json SystemInfoCache::get_system_info_with_cache(bool verbose) {
             // Get device information - handles its own exceptions internally
             system_info["devices"] = sys_info->get_device_dict();
 
-            // Save to cache (without inference_engines which are always fresh)
+            // Save to cache (without recipes which are always fresh)
             try {
                 cache.save_hardware_info(system_info);
             } catch (...) {
@@ -1781,47 +2328,8 @@ json SystemInfoCache::get_system_info_with_cache(bool verbose) {
             }
         }
 
-        // Add inference engines (always fresh, never cached)
-        if (system_info.contains("devices")) {
-            auto& devices = system_info["devices"];
-
-            // Helper to safely add inference engines
-            auto add_engines = [&](const std::string& key, const std::string& device_type) {
-                if (devices.contains(key) && devices[key].contains("name")) {
-                    std::string name = devices[key]["name"];
-                    devices[key]["inference_engines"] = sys_info->detect_inference_engines(device_type, name);
-                }
-            };
-
-            add_engines("cpu", "cpu");
-            add_engines("amd_igpu", "amd_igpu");
-            add_engines("npu", "npu");
-
-            // Handle GPU arrays
-            for (const auto& gpu_type : {"amd_dgpu", "nvidia_dgpu"}) {
-                if (devices.contains(gpu_type) && devices[gpu_type].is_array()) {
-                    for (auto& gpu : devices[gpu_type]) {
-                        if (gpu.contains("name") && !gpu["name"].get<std::string>().empty()) {
-                            gpu["inference_engines"] = sys_info->detect_inference_engines(gpu_type, gpu["name"]);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Filter for non-verbose mode
-        if (!verbose) {
-            std::vector<std::string> essential_keys = {"OS Version", "Processor", "Physical Memory", "devices"};
-            json filtered_info;
-            for (const auto& key : essential_keys) {
-                if (system_info.contains(key)) {
-                    filtered_info[key] = system_info[key];
-                }
-            }
-            system_info = filtered_info;
-        } else {
-            system_info["Python Packages"] = SystemInfo::get_python_packages();
-        }
+        // Add recipes section (always fresh, never cached)
+        system_info["recipes"] = sys_info->build_recipes_info(system_info["devices"]);
 
     } catch (const std::exception& e) {
         // Catastrophic failure - return minimal info but don't crash
@@ -1839,6 +2347,10 @@ json SystemInfoCache::get_system_info_with_cache(bool verbose) {
             {"devices", json::object()}
         };
     }
+
+    // Store in static cache for future calls
+    cached_result = system_info;
+    result_computed = true;
 
     return system_info;
 }

@@ -23,6 +23,7 @@ if(WIN32)
         user32
         shell32
         ole32
+        oleaut32
         comctl32
     )
 
@@ -69,6 +70,9 @@ set(COMMON_SOURCES
     server_manager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/cli_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/recipe_options.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server/system_info.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/path_utils.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/wmi_helper.cpp
     platform/tray_factory.cpp
 )
 

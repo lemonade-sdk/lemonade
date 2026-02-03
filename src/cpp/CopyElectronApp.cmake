@@ -1,5 +1,7 @@
 # Cross-platform script to copy Electron app files
 # This script is executed via cmake -P by the post-build step
+# Note: The Electron app is now built directly in build/electron-dist/,
+# but this script still copies it to the final executable directory for convenience
 
 # Check if the Electron app directory exists
 if(EXISTS "${ELECTRON_APP_UNPACKED_DIR}")
@@ -89,6 +91,6 @@ if(EXISTS "${ELECTRON_APP_UNPACKED_DIR}")
 else()
     message(STATUS "Electron app not found (this is optional).")
     message(STATUS "To build the Electron app, run:")
-    message(STATUS "  cmake --build . --target electron-app")
+    message(STATUS "  cmake --build --preset default --target electron-app")
     message(STATUS "Or manually: cd src/app && npm run build")
 endif()
