@@ -2302,6 +2302,7 @@ bool TrayApp::find_electron_app() {
 #endif
 
     // Check production path first (most common case)
+    // WiX installer puts binaries in bin/ and app in app/, so ../app/ from bin/
     fs::path production_path = exe_dir / ".." / "app" / exe_name;
     if (fs::exists(production_path)) {
         electron_app_path_ = fs::canonical(production_path).string();
@@ -2310,7 +2311,9 @@ bool TrayApp::find_electron_app() {
     }
 
     // Check development path (app/<platform>-unpacked/ in build directory)
-    fs::path dev_path = exe_dir / "app" / unpacked_dir / exe_name;
+    // CMake builds to build/Release/ on Windows, electron app to build/app/
+    // So we need ../app/<platform>-unpacked/ from build/Release/
+    fs::path dev_path = exe_dir / ".." / "app" / unpacked_dir / exe_name;
     if (fs::exists(dev_path)) {
         electron_app_path_ = fs::canonical(dev_path).string();
         std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;

@@ -102,17 +102,30 @@ cmake --build --preset windows
 
 The tray menu's "Open app" option and the `lemonade-server run` command can launch the Electron desktop app. To include it in your build:
 
-```bash
-# Build the Electron app using CMake (requires Node.js 20+)
-cmake --build build --target electron-app
+Build the Electron app using CMake (requires Node.js 20+):
 
-# This will:
-# 1. Copy src/app to build/app-src (keeps source tree clean)
-# 2. Run npm install in build/app-src
-# 3. Build to build/app/win-unpacked/ (or similar)
+**Linux**
+```bash
+cmake --build --preset default --target electron-app
 ```
 
-The tray app looks for `Lemonade.exe` in the same directory as the executable (development) or in `../app/` (installed). If not found, the "Open app" option is hidden but everything else works.
+**Windows**
+```powershell
+cmake --build --preset windows --target electron-app
+```
+
+This will:
+1. Copy src/app to build/app-src (keeps source tree clean)
+2. Run npm install in build/app-src
+3. Build to build/app/linux-unpacked/ (Linux) or build/app/win-unpacked/ (Windows)
+
+The tray app searches for the Electron app in these locations:
+- **Windows installed**: `../app/Lemonade.exe` (relative to bin/ directory)
+- **Windows development**: `../app/win-unpacked/Lemonade.exe` (from build/Release/)
+- **Linux installed**: `/usr/local/share/lemonade-server/app/lemonade`
+- **Linux development**: `../app/linux-unpacked/lemonade` (from build/)
+
+If not found, the "Open app" menu option is hidden but everything else works.
 
 ### Platform-Specific Notes
 
