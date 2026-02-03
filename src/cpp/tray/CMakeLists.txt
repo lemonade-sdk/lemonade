@@ -38,11 +38,13 @@ elseif(APPLE)
     find_library(COCOA_LIBRARY Cocoa REQUIRED)
     find_library(FOUNDATION_LIBRARY Foundation REQUIRED)
     find_library(USERNOTIFICATIONS_LIBRARY UserNotifications REQUIRED)
+    find_library(METAL_LIBRARY Metal REQUIRED)
 
     set(PLATFORM_LIBS
         ${COCOA_LIBRARY}
         ${FOUNDATION_LIBRARY}
         ${USERNOTIFICATIONS_LIBRARY}
+        ${METAL_LIBRARY}
     )
 
     # Enable Objective-C++ compilation
@@ -82,11 +84,13 @@ set(COMMON_SOURCES
 if(APPLE)
     list(APPEND COMMON_SOURCES
         LemonadeServiceManager.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/../server/macos_system_info.mm
     )
 
     # Enable Objective-C++ compilation for macOS files
     set_source_files_properties(
         LemonadeServiceManager.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/../server/macos_system_info.mm
         PROPERTIES
         COMPILE_FLAGS "-x objective-c++"
     )

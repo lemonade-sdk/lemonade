@@ -7,6 +7,11 @@ endif()
 
 project(lemon_cpp VERSION 9.2.0)
 
+# Enable Objective-C++ for macOS Metal support
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
+
 # Prevent finding Homebrew libraries on macOS to use system ones
 if(APPLE)
     set(CMAKE_IGNORE_PATH "/opt/homebrew/lib" "/opt/homebrew/include")
@@ -460,6 +465,7 @@ set(SOURCES
 # Add platform-specific source files
 if(APPLE)
     list(APPEND SOURCES src/cpp/server/macos_system_info.mm)
+    set_source_files_properties(src/cpp/server/macos_system_info.mm PROPERTIES LANGUAGE OBJCXX)
 endif()
 
 # Add version resource file on Windows
@@ -769,7 +775,7 @@ if(APPLE)
     set(CPACK_COMPONENT_APPLICATIONS_IS_ABSOLUTE ON)
 
     # license file extension for CPack
-    configure_file("${CMAKE_SOURCE_DIR}/../../LICENSE" "${CMAKE_BINARY_DIR}/LICENSE.txt" COPYONLY)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${CMAKE_BINARY_DIR}/LICENSE.txt" COPYONLY)
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_BINARY_DIR}/LICENSE.txt")
 
     set(CPACK_POSTFLIGHT_SERVICES_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst-full-mac")
