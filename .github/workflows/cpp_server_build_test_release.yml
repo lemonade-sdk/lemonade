@@ -345,6 +345,10 @@ jobs:
           - name: stable-diffusion
             test_type: sd
             runner: [rai300_400, Windows]
+          # Text to speech
+          - name: text-to-speech
+            test_type: tts
+            runner: [rai300_400, Windows]
     env:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
@@ -401,6 +405,9 @@ jobs:
               "sd" {
                   & $venvPython test/server_sd.py --server-binary $serverExe
               }
+              "tts" {
+                  & $venvPython test/server_tts.py --server-binary $serverExe
+              }
           }
 
           if ($LASTEXITCODE -ne 0) {
@@ -434,6 +441,10 @@ jobs:
           # Stable Diffusion
           - name: stable-diffusion
             test_type: sd
+            runner: [rai300_400, Linux]
+          # Text to speech
+          - name: text-to-speech
+            test_type: tts
             runner: [rai300_400, Linux]
     env:
       LEMONADE_CI_MODE: "True"
@@ -477,6 +488,9 @@ jobs:
               ;;
             sd)
               $VENV_PYTHON test/server_sd.py --server-binary lemonade-server
+              ;;
+            tts)
+              $VENV_PYTHON test/server_tts.py --server-binary lemonade-server
               ;;
           esac
 

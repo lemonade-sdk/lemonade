@@ -95,6 +95,11 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"cpu", {"x86_64"}},
     }},
 
+    // kokoro - Windows/Linux x86_64
+    {"kokoro", "cpu", {"windows", "linux"}, {
+        {"cpu", {"x86_64"}},
+    }},
+
     // stable-diffusion.cpp - Windows/Linux x86_64
     {"sd-cpp", "default", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
@@ -267,6 +272,9 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
     if (recipe == "whispercpp") {
         return SystemInfo::is_whispercpp_installed();
     }
+    if (recipe == "kokoro") {
+        return SystemInfo::is_kokoro_installed(backend);
+    }
     if (recipe == "sd-cpp") {
         return SystemInfo::is_sdcpp_installed();
     }
@@ -303,6 +311,9 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
     }
     if (recipe == "whispercpp") {
         return SystemInfo::get_whispercpp_version();
+    }
+    if (recipe == "kokoro") {
+        return SystemInfo::get_kokoro_version(backend);
     }
     if (recipe == "sd-cpp") {
         return SystemInfo::get_sdcpp_version();
@@ -798,6 +809,11 @@ std::string SystemInfo::get_whispercpp_version() {
     return read_version_file(bin_dir / "whisper" / "version.txt");
 }
 
+std::string SystemInfo::get_kokoro_version(const std::string& backend) {
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    return read_version_file(bin_dir / "kokoro" / backend / "version.txt");
+}
+
 std::string SystemInfo::get_sdcpp_version() {
     fs::path bin_dir = utils::get_downloaded_bin_dir();
     return read_version_file(bin_dir / "sd-cpp" / "version.txt");
@@ -850,6 +866,36 @@ bool SystemInfo::is_whispercpp_installed() {
                 exe_path = install_dir / exe_name;
             } else {
                 exe_path = install_dir / subdir / exe_name;
+            }
+            if (fs::exists(exe_path)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool SystemInfo::is_kokoro_installed(const std::string& backend) {
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    fs::path install_dir = bin_dir / "kokoro" / backend;
+
+    // Look for kokoros executable
+#ifdef _WIN32
+    std::vector<std::string> exe_names = {"koko.exe"};
+    std::vector<std::string> subdirs = {"kokoros-windows-x86_64", "windows-x86_64", ""};
+#else
+    std::vector<std::string> exe_names = {"koko"};
+    std::vector<std::string> subdirs = {"kokoros-linux-x86_64", "linux-x86_64", ""};
+#endif
+
+    for (const auto& subdir : subdirs) {
+        for (const auto& exe_name : exe_names) {
+            fs::path exe_path;
+            if (subdir.empty()) {
+                exe_path = fs::path(install_dir) / exe_name;
+            } else {
+                exe_path = fs::path(install_dir) / subdir / exe_name;
             }
             if (fs::exists(exe_path)) {
                 return true;

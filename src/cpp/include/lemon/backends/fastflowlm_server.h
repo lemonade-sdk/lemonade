@@ -42,7 +42,8 @@ public:
     // Override to transform model name to checkpoint for FLM
     void forward_streaming_request(const std::string& endpoint,
                                    const std::string& request_body,
-                                   httplib::DataSink& sink) override;
+                                   httplib::DataSink& sink,
+                                   bool sse = true) override;
 
 private:
     // Existing methods

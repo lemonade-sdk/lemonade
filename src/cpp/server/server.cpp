@@ -38,6 +38,15 @@ namespace fs = std::filesystem;
 
 namespace lemon {
 
+static const json MIME_TYPES = {
+    {"mp3",  "audio/mpeg"},
+    {"opus", "audio/opus"},
+    {"aac",  "audio/aac"},
+    {"flac", "audio/flac"},
+    {"wav",  "audio/wav"},
+    {"pcm",  "audio/l16;rate=24000;endianness=little-endian"}
+};
+
 Server::Server(int port, const std::string& host, const std::string& log_level,
                const json& default_options, int max_llm_models,
                int max_embedding_models, int max_reranking_models, int max_audio_models,
@@ -200,6 +209,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Audio endpoints (OpenAI /v1/audio/* compatible)
     register_post("audio/transcriptions", [this](const httplib::Request& req, httplib::Response& res) {
         handle_audio_transcriptions(req, res);
+    });
+
+    // Speech
+    register_post("audio/speech", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_audio_speech(req, res);
     });
 
     // Image endpoints (OpenAI /v1/images/* compatible)
@@ -1433,6 +1447,117 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
 
     } catch (const std::exception& e) {
         std::cerr << "[Server] ERROR in handle_audio_transcriptions: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "internal_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_audio_speech(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+
+        // Handle model loading
+        if (request_json.contains("model")) {
+            std::string requested_model = request_json["model"];
+            try {
+                auto_load_model_if_needed(requested_model);
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Failed to load text-to-speech model: " << e.what() << std::endl;
+                auto error_response = create_model_error(requested_model, e.what());
+                std::string error_code = error_response["error"]["code"].get<std::string>();
+                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+                res.set_content(error_response.dump(), "application/json");
+                return;
+            }
+        } else {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'model' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        if (!request_json.contains("input")) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'input' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        bool is_streaming = (request_json.contains("stream") && request_json["stream"].get<bool>());
+
+        if (request_json.contains("stream_format")) {
+            is_streaming = true;
+            if (request_json["stream_format"] != "audio") {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Only pcm audio streaming format is supported"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+        }
+
+        std::string mime_type;
+        if (is_streaming) {
+            mime_type = MIME_TYPES["pcm"];
+        } else if (request_json.contains("response_format")) {
+            if (MIME_TYPES.contains(request_json["response_format"])) {
+                mime_type = MIME_TYPES[request_json["response_format"]];
+            } else {
+                nlohmann::json error = {{"error", {
+                    {"message", "Unsupported audio format requested"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+        } else {
+            mime_type = MIME_TYPES["mp3"];
+        }
+
+        // Log the HTTP request
+        std::cout << "[Server] POST /api/v1/audio/speech" << std::endl;
+
+        res.set_header("Content-Type", mime_type);
+
+        auto audio_source = [this, request_json](size_t offset, httplib::DataSink& sink) {
+            // For chunked responses, offset tracks bytes sent so far
+            // We only want to stream once when offset is 0
+            if (offset > 0) {
+                return false; // We're done after the first call
+            }
+
+            // Use unified Router path for streaming
+            router_->audio_speech(request_json, sink);
+
+            return false;
+        };
+
+        if (is_streaming) {
+            res.set_header("Cache-Control", "no-cache");
+            res.set_header("Connection", "keep-alive");
+            res.set_header("X-Accel-Buffering", "no"); // Disable nginx buffering
+
+            // Use cpp-httplib's chunked content provider for streaming
+            res.set_chunked_content_provider(mime_type, audio_source);
+        } else {
+            res.set_content_provider(mime_type, audio_source);
+        }
+
+        return;
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_audio_speech: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", {
             {"message", e.what()},
