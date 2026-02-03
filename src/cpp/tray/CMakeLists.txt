@@ -201,12 +201,35 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(lemonade-server PRIVATE
         Threads::Threads
     )
+
+    # Optional: systemd detection for service status
+    find_package(PkgConfig QUIET)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(SYSTEMD QUIET libsystemd)
+        if(SYSTEMD_FOUND)
+            target_include_directories(lemonade-server PRIVATE ${SYSTEMD_INCLUDE_DIRS})
+            target_link_libraries(lemonade-server PRIVATE ${SYSTEMD_LIBRARIES})
+            target_compile_definitions(lemonade-server PRIVATE HAVE_SYSTEMD)
+        endif()
+    endif()
 endif()
 
 # Install target
 install(TARGETS lemonade-server
     RUNTIME DESTINATION bin
 )
+
+# Create symlink in standard bin path only if not installing to /usr
+if(UNIX AND NOT APPLE AND NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+    install(CODE "
+        file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+                ${CMAKE_INSTALL_PREFIX}/bin/lemonade-server
+                \"\$ENV{DESTDIR}/usr/bin/lemonade-server\"
+        )
+    ")
+endif()
 
 # Note: Icon resources are copied by parent CMakeLists.txt
 

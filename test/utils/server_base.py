@@ -126,6 +126,44 @@ def get_server_binary():
     return _config["server_binary"]
 
 
+def _stop_server_via_systemd():
+    """
+    Attempt to stop the server via systemctl on Linux.
+
+    Returns:
+        True if successfully stopped via systemd, False otherwise
+    """
+    if not sys.platform.startswith("linux"):
+        return False
+
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-active", "lemonade-server"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0:  # Service is active
+            print("Stopping lemonade-server via systemctl...")
+            stop_result = subprocess.run(
+                ["sudo", "systemctl", "stop", "lemonade-server"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if stop_result.returncode == 0:
+                print("Successfully stopped lemonade-server via systemctl")
+                return True
+            else:
+                print(f"Warning: systemctl stop failed: {stop_result.stderr}")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"Systemd check failed ({e}), trying fallback...")
+
+    return False
+
+
 def stop_lemonade():
     """Kill the lemonade server and stop the model."""
     print("\n=== Stopping Lemonade ===")
@@ -135,6 +173,11 @@ def stop_lemonade():
         print("No server binary configured, skipping stop")
         return
 
+    # Try systemd first on Linux
+    if _stop_server_via_systemd():
+        return
+
+    # Try CLI stop command as fallback
     try:
         result = subprocess.run(
             [server_binary, "stop"],

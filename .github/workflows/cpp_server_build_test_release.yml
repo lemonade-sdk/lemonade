@@ -533,11 +533,26 @@ jobs:
       - uses: actions/checkout@v4
 
       # ---- Linux Setup ----
+      - name: Download .deb package
+        if: runner.os == 'Linux'
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-server-deb
+          path: .
+
       - name: Install Lemonade Server (.deb)
         if: runner.os == 'Linux'
-        uses: ./.github/actions/install-lemonade-server-deb
-        with:
-          version: ${{ env.LEMONADE_VERSION }}
+        shell: bash
+        run: |
+          DEB_FILE="lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb"
+          echo "Installing .deb package: $DEB_FILE"
+          sudo dpkg -i "$DEB_FILE"
+
+          # Verify binaries installed
+          lemonade-server --version
+
+          # Verify the systemd service started automatically
+          sudo systemctl status lemonade-server
 
       - name: Set environment (Linux)
         if: runner.os == 'Linux'
@@ -578,6 +593,14 @@ jobs:
           requirements-file: 'test/requirements.txt'
 
       # ---- Run Tests ----
+      - name: Stop systemd service before tests (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          echo "Stopping lemonade-server systemd service..."
+          sudo systemctl stop lemonade-server || true
+          sudo systemctl status lemonade-server || true
+
       - name: Run ${{ matrix.test_type }} tests
         shell: bash
         env:
