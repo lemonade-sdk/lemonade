@@ -4,14 +4,43 @@ Interactive demos that work with Lemonade Server.
 
 ## Available Demos
 
+### Audio Transcription
+- **realtime_transcription.py**: Stream microphone audio for real-time transcription (+ test mode for WAV files)
+
+### LLM Demos
 - **llm-debate.html**: A debate arena where multiple LLMs can debate each other on any topic
 - **multi-model-tester.html**: Test prompts across multiple models side-by-side
+
+### Image Generation
+- **api_image_generation.py**: Generate images using the Stable Diffusion API
 
 ## Setup
 
 1. Install Lemonade Server from the [latest release](https://github.com/lemonade-sdk/lemonade/releases/latest)
 2. Start the server: `lemonade-server serve`
-3. Open the HTML file in your web browser
+3. Pull a model if needed (e.g., `lemonade-server-dev pull Whisper-Tiny`)
+
+## Running the Examples
+
+### Realtime Transcription (Python)
+
+```bash
+# Install dependencies
+pip install websockets pyaudio
+
+# Stream from microphone (primary use case)
+python realtime_transcription.py --mic
+
+# Use a different model
+python realtime_transcription.py --mic --model Whisper-Small
+
+# Test mode: simulate streaming with a WAV file
+python realtime_transcription.py --file audio.wav
+```
+
+### LLM Demos
+
+Open the HTML files directly in your browser.
 
 See [debate-arena.md](debate-arena.md) for detailed instructions on the debate demo.
 
