@@ -76,6 +76,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         setLoadedModels(new Set());
       }
     } catch (error) {
+      setLoadedModels(new Set());  
       console.error('Failed to fetch current loaded model:', error);
     }
   }, []);

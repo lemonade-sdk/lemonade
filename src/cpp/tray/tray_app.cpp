@@ -1,6 +1,7 @@
 #include "lemon_tray/tray_app.h"
 #include "lemon_tray/platform/windows_tray.h"  // For set_menu_update_callback
 #include <lemon/single_instance.h>
+#include <lemon/system_info.h>
 #include <lemon/version.h>
 #include <httplib.h>
 #include <iostream>
@@ -304,6 +305,8 @@ int TrayApp::run() {
         return execute_status_command();
     } else if (tray_config_.command == "stop") {
         return execute_stop_command();
+    } else if (tray_config_.command == "recipes") {
+        return execute_recipes_command();
     } else if (tray_config_.command == "serve" || tray_config_.command == "run") {
         // Check for single instance - only for 'serve' and 'run' commands
         // Other commands (status, list, pull, delete, stop) can run alongside a server
@@ -1094,6 +1097,66 @@ int TrayApp::execute_status_command() {
         std::cout << "Server is not running" << std::endl;
         return 1;
     }
+}
+
+// Command: recipes
+int TrayApp::execute_recipes_command() {
+    auto statuses = lemon::SystemInfo::get_all_recipe_statuses();
+
+    // Print table header
+    std::cout << std::left << std::setw(20) << "Recipe"
+              << std::setw(12) << "Backend"
+              << std::setw(14) << "Status"
+              << "Version/Error" << std::endl;
+    std::cout << std::string(75, '-') << std::endl;
+
+    for (const auto& status : statuses) {
+        bool first_backend = true;
+
+        if (status.backends.empty()) {
+            // Recipe with no backends (shouldn't happen, but handle gracefully)
+            std::cout << std::left << std::setw(20) << status.name
+                      << std::setw(12) << "-"
+                      << std::setw(14) << (status.supported ? "supported" : "unsupported")
+                      << "-" << std::endl;
+        } else {
+            for (const auto& backend : status.backends) {
+                // Recipe name only on first line
+                std::string recipe_col = first_backend ? status.name : "";
+
+                // Determine status string
+                // Check supported first - unsupported takes precedence even if installed
+                std::string status_str;
+                if (!backend.supported) {
+                    status_str = "unsupported";
+                } else if (backend.available) {
+                    status_str = "installed";
+                } else {
+                    status_str = "supported";
+                }
+
+                // Version or error (concise)
+                std::string info_col;
+                if (!backend.version.empty() && backend.version != "unknown") {
+                    info_col = backend.version;
+                } else if (!backend.supported && !backend.error.empty()) {
+                    info_col = backend.error;
+                } else {
+                    info_col = "-";
+                }
+
+                std::cout << std::left << std::setw(20) << recipe_col
+                          << std::setw(12) << backend.name
+                          << std::setw(14) << status_str
+                          << info_col << std::endl;
+
+                first_backend = false;
+            }
+        }
+    }
+
+    std::cout << std::string(75, '-') << std::endl;
+    return 0;
 }
 
 // Command: stop
@@ -2081,14 +2144,14 @@ void TrayApp::launch_electron_app() {
         }
     }
 
-    // Launch the .exe with --base-url argument
+    // Launch the .exe with
     STARTUPINFOA si = {};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
 
-    // Build command line: "path\to\Lemonade.exe" --base-url http://host:port
+    // Build command line: "path\to\Lemonade.exe"
     // Note: CreateProcessA modifies the command line buffer, so we need a mutable copy
-    std::string cmd_line = "\"" + electron_app_path_ + "\" --base-url " + base_url;
+    std::string cmd_line = "\"" + electron_app_path_ + "\"";
     std::vector<char> cmd_line_buf(cmd_line.begin(), cmd_line.end());
     cmd_line_buf.push_back('\0');
 
@@ -2141,7 +2204,7 @@ void TrayApp::launch_electron_app() {
 
     // macOS: Use 'open' command to launch the .app with --args to pass arguments
     // Note: 'open' doesn't give us the PID directly, so we'll need to find it
-    std::string cmd = "open \"" + electron_app_path_ + "\" --args --base-url " + base_url;
+    std::string cmd = "open \"" + electron_app_path_ + "\"";
     int result = system(cmd.c_str());
     if (result == 0) {
         std::cout << "Launched Electron app" << std::endl;
@@ -2178,9 +2241,8 @@ void TrayApp::launch_electron_app() {
     // Linux: Launch the binary directly using fork/exec for proper PID tracking
     pid_t pid = fork();
     if (pid == 0) {
-        // Child process: execute the Electron app with --base-url argument
-        execl(electron_app_path_.c_str(), electron_app_path_.c_str(),
-              "--base-url", base_url.c_str(), nullptr);
+        // Child process: execute the Electron app
+        execl(electron_app_path_.c_str(), electron_app_path_.c_str(), nullptr);
         // If execl returns, it failed
         std::cerr << "Failed to execute Electron app: " << strerror(errno) << std::endl;
         _exit(1);
