@@ -10,6 +10,18 @@ import { ModelInfo } from "./utils/modelData";
 import { useSystem } from "./hooks/useSystem";
 import { OgaRecipies } from "./recipes/onnx/recipeOptions";
 
+// Display names for backend options
+const BACKEND_DISPLAY_NAMES: Record<string, string> = {
+  cpu: "CPU",
+  rocm: "ROCm",
+  vulkan: "Vulkan",
+  metal: "Metal",
+};
+
+const getBackendDisplayName = (backend: string): string => {
+  return BACKEND_DISPLAY_NAMES[backend] ?? backend;
+};
+
 interface SettingsModalProps {
   isOpen: boolean;
   onSubmit: (modelName: string, options: RecipeOptions) => void;
@@ -334,9 +346,9 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
                   value={options.llamacppBackend.value}
                   onChange={(e) => handleStringChange('llamacppBackend', e.target.value)}
                 >
-                  <option value="">auto (server default)</option>
+                  <option value="">Auto</option>
                   {(supportedRecipes[modelInfo.recipe] ?? []).map((backend) => (
-                    <option key={backend} value={backend}>{backend}</option>
+                    <option key={backend} value={backend}>{getBackendDisplayName(backend)}</option>
                   ))}
                 </select>
               </div>
