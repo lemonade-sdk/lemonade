@@ -19,7 +19,7 @@ if [ "$(echo "${LEMONADE_PREFER_CHROMIUM:-true}" | tr '[:upper:]' '[:lower:]')" 
     if command -v google-chrome &> /dev/null; then
         google-chrome --app="$URL"
     elif command -v microsoft-edge-stable &> /dev/null; then
-        google-chrome --app="$URL"
+        microsoft-edge-stable --app="$URL"
     elif command -v chromium &> /dev/null; then
         chromium --app="$URL"
     elif command -v chromium-browser &> /dev/null; then
