@@ -152,7 +152,7 @@ void KokoroServer::install(const std::string& backend) {
         if (!backends::BackendUtils::extract_archive(zip_path, install_dir, "KokoroServer")) {
             fs::remove(zip_path);
             fs::remove_all(install_dir);
-            throw std::runtime_error("Failed to extract whisper-server archive");
+            throw std::runtime_error("Failed to extract kokoros archive");
         }
 
         // Verify extraction
@@ -273,7 +273,7 @@ bool KokoroServer::wait_for_ready(int timeout_seconds) {
 void KokoroServer::load(const std::string& model_name, const ModelInfo& model_info, const RecipeOptions& options, bool do_not_upgrade) {
     std::cout << "[KokoroServer] Loading model: " << model_name << std::endl;
 
-    // Install whisper-server if needed
+    // Install kokoros if needed
     install("cpu");
 
     // Use pre-resolved model path
@@ -421,12 +421,12 @@ std::string KokoroServer::get_kokoro_server_path() {
 }
 
 std::string KokoroServer::find_executable_in_install_dir(const std::string& install_dir) {
-    // Look for whisper-server executable
+    // Look for kokoros executable
 #ifdef _WIN32
     std::vector<std::string> exe_names = {"koko.exe"};
     std::vector<std::string> subdirs = {"kokoros-windows-x86_64", "windows-x86_64", ""};
 #else
-    std::vector<std::string> exe_names = {"koko", ""};
+    std::vector<std::string> exe_names = {"koko"};
     std::vector<std::string> subdirs = {"kokoros-linux-x86_64", "linux-x86_64", ""};
 #endif
 

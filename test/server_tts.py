@@ -156,6 +156,37 @@ class TextToSpeechTests(ServerTestBase):
 
         print(f"[OK] Speech generation successful")
 
+    def test_006_tts_speed(self):
+        """Test voice selection with Kokoro."""
+        payload = {
+            "model": TTS_MODEL,
+            "input": "Lemonade can speak",
+            "speed": 0.75,
+            "response_format": "wav",
+        }
+
+        print(f"[INFO] Sending speech generation request with model {TTS_MODEL}")
+
+        response = requests.post(
+            f"{self.base_url}/audio/speech",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Speech generation failed with status {response.status_code}: {response.text}",
+        )
+
+        # WAV files start with specific magic bytes
+        self.assertTrue(
+            response.content[:4] == b"RIFF",
+            "Decoded data should be a valid WAV file",
+        )
+
+        print(f"[OK] Speech generation successful")
+
 
 if __name__ == "__main__":
     run_server_tests(TextToSpeechTests, "TTS TESTS")

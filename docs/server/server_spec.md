@@ -11,7 +11,7 @@ Lemonade Server currently supports these backends:
 | [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM)    | `.q4nx`      | Uses FLM's `flm serve` backend. More details [here](#fastflowlm-support).                    |
 | [whisper.cpp](https://github.com/ggerganov/whisper.cpp) | `.bin` | Uses whisper.cpp's `whisper-server` backend for audio transcription. Models: Whisper-Tiny, Whisper-Base, Whisper-Small. |
 | [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) | `.safetensors` | Uses sd.cpp's `sd-cli` backend for image generation. Models: SD-Turbo, SDXL-Turbo, etc. |
-| [Kokoros](https://github.com/lucasjinreal/Kokoros) | `.onnx` | Uses Kokoro's `koko` backend for image generation. Models: kokoro-v1 |
+| [Kokoros](https://github.com/lucasjinreal/Kokoros) | `.onnx` | Uses Kokoro's `koko` backend for speech generation. Models: kokoro-v1 |
 
 
 ## Endpoints Overview
@@ -625,24 +625,43 @@ Image Generation API. You provide a text prompt and receive a generated image. T
           }'
     ```
 
+### `POST /api/v1/audio/speech` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Speech Generation API. You provide a text input and receive an audio file. This API uses [Kokoros](https://github.com/lucasjinreal/Kokoros) as the backend.
+
+> **Note:** The model to use is called `kokoro-v1`. No other model is supported at the moment.
+>
+> **Limitations:** Only `mp3`, `wav`, `opus`, and `pcm` are supported. Streaming is supported in `audio` (`pcm`) mode.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `input` | Yes | The text description of the image to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model to use (e.g., `kokoro-v1`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `speed` | No | Speaking speed. Default: `1.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `voice` | No | The voice to use. All OpenAI-defined voices can be used (`alloy`, `ash`, ...), as well as those defined by the kokoro model (`af_sky`, `am_echo`, ...). Default: `shimmer` | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `response_format` | No | Format of the response. `mp3`, `wav`, `opus`, and `pcm` are supported. Default: `mp3`| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `stream_format` | No | If set, the response will be streamed. Only `audio` is supported, which will output `pcm` audio. Default: not set| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+#### Example request
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/audio/speech \
+      -H "Content-Type: application/json" \
+      -d '{
+            "model": "kokoro-v1",
+            "prompt": "Lemonade can speak!",
+            "speed": 1.0,
+            "steps": 4,
+            "response_format": "mp3"
+          }'
+    ```
+
 #### Response format
 
-```json
-{
-  "created": 1742927481,
-  "data": [
-    {
-      "b64_json": "/9j/4AAQSkZJRgABAQAAAQABAAD..."
-    }
-  ]
-}
-```
-
-**Field Descriptions:**
-
-- `created` - Unix timestamp when the image was generated
-- `data` - Array of generated images
-  - `b64_json` - Base64-encoded PNG image data
+The generated audio file is returned as-is.
 
 
 ### `GET /api/v1/models` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
