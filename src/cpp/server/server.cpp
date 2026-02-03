@@ -1521,8 +1521,6 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             // Use unified Router path for streaming
             router_->audio_speech(request_json, sink);
 
-            // Explicitly signal we're done - this ensures proper chunked encoding termination
-            sink.done();
             return false;
         };
 
