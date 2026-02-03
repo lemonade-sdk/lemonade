@@ -8,10 +8,12 @@ image generation with stable-diffusion.cpp via the lemonade-server API.
 Requirements:
 - AMD GPU with ROCm support (e.g., Radeon 8060S)
 - lemonade-server running with ROCm backend:
+  
+  Via environment variable:
   $env:LEMONADE_SDCPP = "rocm"
   lemonade-server serve
   
-  Or via CLI flag:
+  Or via CLI flag (recommended):
   lemonade-server serve --sdcpp rocm
 
 Model:
@@ -31,7 +33,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # Configuration
 API_BASE = os.getenv("LEMONADE_API_BASE", "http://localhost:8000/api/v1")
-MODEL = "SD-Turbo"  # Fast 1-step diffusion model
+
+# All available SD models to test
+SD_MODELS = [
+    {"name": "SD-1.5", "steps": 20, "cfg_scale": 7.0},
+    {"name": "SD-Turbo", "steps": 4, "cfg_scale": 1.0},
+    {"name": "SDXL-Base-1.0", "steps": 20, "cfg_scale": 7.0},
+    {"name": "SDXL-Turbo", "steps": 4, "cfg_scale": 1.0},
+]
 
 def check_server():
     """Check if lemonade-server is running and responsive"""
@@ -53,12 +62,15 @@ def check_server():
         return False
 
 def load_model(model_name):
-    """Load the specified SD model"""
-    print(f"\nLoading model: {model_name}")
+    """Load the specified SD model with ROCm backend"""
+    print(f"\nLoading model: {model_name} with ROCm backend")
     try:
         response = requests.post(
             f"{API_BASE}/load",
-            json={"model_name": model_name},
+            json={
+                "model_name": model_name,
+                "sd-cpp_backend": "rocm"  # Explicitly request ROCm backend
+            },
             timeout=300  # Model download can take time
         )
         
@@ -74,17 +86,18 @@ def load_model(model_name):
         print(f"✗ Error loading model: {e}")
         return False
 
-def generate_image(prompt, output_path="generated_rocm.png", steps=1, cfg_scale=1.0):
+def generate_image(model_name, prompt, output_path, steps, cfg_scale):
     """
     Generate an image using the ROCm-accelerated backend
     
     Args:
+        model_name: The SD model to use
         prompt: Text description of the image to generate
         output_path: Where to save the generated image
-        steps: Number of diffusion steps (1-4 for SD-Turbo)
-        cfg_scale: Guidance scale (1.0 recommended for SD-Turbo)
+        steps: Number of diffusion steps
+        cfg_scale: Guidance scale
     """
-    print(f"\nGenerating image with ROCm GPU backend...")
+    print(f"\nGenerating image with {model_name}...")
     print(f"Prompt: {prompt}")
     print(f"Steps: {steps}, CFG Scale: {cfg_scale}")
     
@@ -94,7 +107,7 @@ def generate_image(prompt, output_path="generated_rocm.png", steps=1, cfg_scale=
         response = requests.post(
             f"{API_BASE}/images/generations",
             json={
-                "model": MODEL,
+                "model": model_name,
                 "prompt": prompt,
                 "n": 1,
                 "size": "512x512",
@@ -103,7 +116,7 @@ def generate_image(prompt, output_path="generated_rocm.png", steps=1, cfg_scale=
                 "steps": steps,
                 "cfg_scale": cfg_scale
             },
-            timeout=60
+            timeout=120
         )
         
         elapsed = time.time() - start_time
@@ -147,34 +160,41 @@ def main():
     """Main example workflow"""
     print("=" * 70)
     print("ROCm GPU Image Generation Example")
-    print("Using lemonade-server with AMD GPU acceleration")
+    print("Testing all SD models with AMD GPU acceleration")
     print("=" * 70)
     
     # Step 1: Check server
     if not check_server():
         return 1
     
-    # Step 2: Load SD-Turbo model
-    if not load_model(MODEL):
-        return 1
+    # Test prompt
+    prompt = "A majestic dragon breathing fire over a medieval castle"
     
-    # Step 3: Generate test images
-    test_prompts = [
-        ("A majestic dragon breathing fire", "dragon_rocm.png", 4, 1.0),
-        ("A peaceful zen garden with cherry blossoms", "garden_rocm.png", 4, 1.0),
-        ("A futuristic city at night with neon lights", "city_rocm.png", 4, 1.0)
-    ]
-    
+    # Step 2: Test each model
     success_count = 0
-    for prompt, filename, steps, cfg in test_prompts:
-        if generate_image(prompt, filename, steps, cfg):
+    for model_config in SD_MODELS:
+        model_name = model_config["name"]
+        steps = model_config["steps"]
+        cfg_scale = model_config["cfg_scale"]
+        
+        print(f"\n{'='*70}")
+        print(f"Testing model: {model_name}")
+        print("="*70)
+        
+        # Load the model
+        if not load_model(model_name):
+            print(f"Skipping {model_name} - failed to load")
+            continue
+        
+        # Generate image
+        output_file = f"{model_name.lower().replace('-', '_').replace('.', '_')}_rocm.png"
+        if generate_image(model_name, prompt, output_file, steps, cfg_scale):
             success_count += 1
-        print()  # Blank line between generations
     
     # Summary
-    print("=" * 70)
-    print(f"Generated {success_count}/{len(test_prompts)} images successfully")
-    print("=" * 70)
+    print(f"\n{'='*70}")
+    print(f"Results: {success_count}/{len(SD_MODELS)} models tested successfully")
+    print("="*70)
     
     return 0 if success_count > 0 else 1
 

@@ -5,6 +5,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/error_types.h"
+#include "lemon/system_info.h"
 #include <httplib.h>
 #include <iostream>
 #include <filesystem>
@@ -180,6 +181,16 @@ void SDServer::install(const std::string& /* backend */) {
     if (backend_ == "rocm") {
         // ADDED: ROCm GPU build download support
         // Downloads HIP/ROCm-enabled binaries for AMD GPUs (e.g., Radeon 8060S)
+        
+        // Validate ROCm architecture support
+        std::string target_arch = lemon::SystemInfo::get_rocm_arch();
+        if (target_arch.empty()) {
+            throw std::runtime_error(
+                lemon::SystemInfo::get_unsupported_backend_error("sd-cpp", "rocm")
+            );
+        }
+        
+        
 #ifdef _WIN32
         filename = "sd-" + short_version + "-bin-win-rocm-x64.zip";
 #elif defined(__linux__)
