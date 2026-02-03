@@ -41,9 +41,9 @@ namespace lemon {
 Server::Server(int port, const std::string& host, const std::string& log_level,
                const json& default_options, int max_llm_models,
                int max_embedding_models, int max_reranking_models, int max_audio_models,
-               int max_image_models, const std::string& extra_models_dir)
+               int max_image_models, const std::string& extra_models_dir, bool no_broadcast)
     : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
-      running_(false) {
+      no_broadcast_(no_broadcast), running_(false), udp_beacon_() {
 
     // Detect log file path (same location as tray uses)
     // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
@@ -519,6 +519,29 @@ void Server::run() {
             http_server_v6_->listen_after_bind();
         });
     }
+    
+    //For now we will use getLocalHostname to get the machines hostname.
+    //This allows external devices to not have to do a rDNS lookup.
+    bool RFC1918_IP = udp_beacon_.isRFC1918(ipv4);
+    if(RFC1918_IP && !no_broadcast_) {
+        udp_beacon_.startBroadcasting(
+            8000, //Broadcast port best to not make it adjustable, so clients dont have to scan.
+            udp_beacon_.buildStandardPayloadPattern
+            (
+                udp_beacon_.getLocalHostname(),
+                "http://" + ipv4 + ":" + std::to_string(port_) + "/api/v1/"
+            ),
+            2
+        );
+    }
+    else if (RFC1918_IP && no_broadcast_) {
+        std::cout << "[Server] [Net Broadcast] Broadcasting disabled by --no-broadcast option" << std::endl;
+    }
+    else {
+        std::cout << "[Server] [Net Broadcast] Unable to broadcast my existance please use a RFC1918 IPv4," << std::endl
+                    << "[Server] [Net Broadcast] or hostname that resolves to RFC1918 IPv4." << std::endl;
+    }
+
     if(http_v4_thread_.joinable())
         http_v4_thread_.join();
     if(http_v6_thread_.joinable())
@@ -528,6 +551,7 @@ void Server::run() {
 void Server::stop() {
     if (running_) {
         std::cout << "[Server] Stopping HTTP server..." << std::endl;
+        udp_beacon_.stopBroadcasting();
         http_server_v6_->stop();
         http_server_->stop();
         running_ = false;
@@ -938,8 +962,6 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         // Use unified Router path for streaming
                         router_->chat_completion_stream(request_body, sink);
 
-                        // Explicitly signal we're done - this ensures proper chunked encoding termination
-                        sink.done();
                         return false;
                     }
                 );
@@ -1125,8 +1147,6 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                         // Use unified Router path for streaming
                         router_->completion_stream(request_body, sink);
 
-                        // Explicitly signal we're done - this ensures proper chunked encoding termination
-                        sink.done();
                         return false;
                     }
                 );
@@ -1539,8 +1559,6 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                         // Use unified Router path for streaming
                         router_->responses_stream(request_body, sink);
 
-                        // Explicitly signal we're done - this ensures proper chunked encoding termination
-                        sink.done();
                         return false;
                     }
                 );
