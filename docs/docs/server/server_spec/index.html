@@ -1687,17 +1687,6 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#parameters_15" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Parameters
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#example-request_11" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2767,17 +2756,6 @@
   
     <nav class="md-nav" aria-label="GET /api/v1/system-info">
       <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#parameters_15" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Parameters
-      
-    </span>
-  </a>
-  
-</li>
         
           <li class="md-nav__item">
   <a href="#example-request_11" class="md-nav__link">
@@ -4301,46 +4279,18 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 </ul>
 <h3 id="get-apiv1system-info"><code>GET /api/v1/system-info</code> <sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></h3>
 <p>System information endpoint that provides complete hardware details and device enumeration.</p>
-<h4 id="parameters_15">Parameters</h4>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Required</th>
-<th>Description</th>
-<th>Status</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>verbose</code></td>
-<td>No</td>
-<td>Include detailed system information. When <code>false</code> (default), returns essential information (OS, processor, memory, devices). When <code>true</code>, includes additional details like Python packages and extended system information.</td>
-<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
-</tr>
-</tbody>
-</table>
 <h4 id="example-request_11">Example request</h4>
-<div class="tabbed-set tabbed-alternate" data-tabs="10:2"><input checked="checked" id="__tabbed_10_1" name="__tabbed_10" type="radio" /><input id="__tabbed_10_2" name="__tabbed_10" type="radio" /><div class="tabbed-labels"><label for="__tabbed_10_1">Basic system information</label><label for="__tabbed_10_2">Detailed system information</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">&quot;http://localhost:8000/api/v1/system-info&quot;</span>
 </code></pre></div>
-</div>
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">&quot;http://localhost:8000/api/v1/system-info?verbose=true&quot;</span>
-</code></pre></div>
-</div>
-</div>
-</div>
 <h4 id="response-format_13">Response format</h4>
-<div class="tabbed-set tabbed-alternate" data-tabs="11:1"><input checked="checked" id="__tabbed_11_1" name="__tabbed_11" type="radio" /><div class="tabbed-labels"><label for="__tabbed_11_1">Basic response (verbose=false)</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;OS Version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Windows-10-10.0.26100-SP0&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;Processor&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AMD Ryzen AI 9 HX 375 w/ Radeon 890M&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;Physical Memory&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;32.0 GB&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;OEM System&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ASUS Zenbook S 16&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;BIOS Version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1.0.0&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;CPU Max Clock&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;5100 MHz&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;Windows Power Setting&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Balanced&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">&quot;cpu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AMD Ryzen AI 9 HX 375 w/ Radeon 890M&quot;</span><span class="p">,</span>
@@ -4350,23 +4300,138 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="nt">&quot;amd_igpu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AMD Radeon(TM) 890M Graphics&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;memory_mb&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;driver_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">32.0.12010.10001</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;vram_gb&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.5</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="nt">&quot;amd_dgpu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
 <span class="w">    </span><span class="nt">&quot;npu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AMD NPU&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;driver_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;32.0.203.257&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;power_mode&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Default&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;recipes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;backends&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;vulkan&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;amd_igpu&quot;</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">&quot;supported&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;b7869&quot;</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="nt">&quot;rocm&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;amd_igpu&quot;</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">&quot;supported&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="nt">&quot;metal&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">          </span><span class="nt">&quot;supported&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Requires macOS&quot;</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="nt">&quot;cpu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;cpu&quot;</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">&quot;supported&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;whispercpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;backends&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;cpu&quot;</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">&quot;supported&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;sd-cpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;backends&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;cpu&quot;</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">&quot;supported&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;flm&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;backends&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;npu&quot;</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">&quot;supported&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1.2.0&quot;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;oga-npu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;backends&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;npu&quot;</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">&quot;supported&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;oga-hybrid&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;backends&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;npu&quot;</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">&quot;supported&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;oga-cpu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;backends&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;cpu&quot;</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">&quot;supported&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
-</div>
-</div>
-</div>
+<p><strong>Field Descriptions:</strong></p>
+<ul>
+<li><strong>System fields:</strong></li>
+<li><code>OS Version</code> - Operating system name and version</li>
+<li><code>Processor</code> - CPU model name</li>
+<li><code>Physical Memory</code> - Total RAM</li>
+<li><code>OEM System</code> - System/laptop model name (Windows only)</li>
+<li><code>BIOS Version</code> - BIOS information (Windows only)</li>
+<li><code>CPU Max Clock</code> - Maximum CPU clock speed (Windows only)</li>
+<li>
+<p><code>Windows Power Setting</code> - Current power plan (Windows only)</p>
+</li>
+<li>
+<p><code>devices</code> - Hardware devices detected on the system (no software/support information)</p>
+</li>
+<li><code>cpu</code> - CPU information (name, cores, threads)</li>
+<li><code>amd_igpu</code> - AMD integrated GPU (if present)</li>
+<li><code>amd_dgpu</code> - Array of AMD discrete GPUs (if present)</li>
+<li><code>nvidia_dgpu</code> - Array of NVIDIA discrete GPUs (if present)</li>
+<li>
+<p><code>npu</code> - NPU device (if present)</p>
+</li>
+<li>
+<p><code>recipes</code> - Software recipes and their backend support status</p>
+</li>
+<li>Each recipe (e.g., <code>llamacpp</code>, <code>whispercpp</code>, <code>flm</code>) contains:<ul>
+<li><code>backends</code> - Available backends for this recipe</li>
+<li>Each backend contains:<ul>
+<li><code>devices</code> - List of devices <strong>on this system</strong> that support this backend (empty if not supported)</li>
+<li><code>supported</code> - Whether installation is possible on this system</li>
+<li><code>available</code> - Whether the backend is currently installed</li>
+<li><code>version</code> - Installed version (if available)</li>
+<li><code>error</code> - Reason why not supported (if applicable)</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
 <h1 id="debugging">Debugging</h1>
 <p>To help debug the Lemonade server, you can use the <code>--log-level</code> parameter to control the verbosity of logging information. The server supports multiple logging levels that provide increasing amounts of detail about server operations.</p>
 <div class="highlight"><pre><span></span><code>lemonade-server serve --log-level [level]
