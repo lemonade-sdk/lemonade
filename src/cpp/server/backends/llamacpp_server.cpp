@@ -201,38 +201,6 @@ LlamaCppServer::~LlamaCppServer() {
     unload();
 }
 
-// Helper to identify ROCm architecture from system
-static std::string identify_rocm_arch() {
-    // Try to detect GPU architecture, default to gfx110X on any failure
-    try {
-        auto system_info = lemon::create_system_info();
-
-        // Check iGPU first
-        auto igpu = system_info->get_amd_igpu_device();
-        if (igpu.available && !igpu.name.empty()) {
-            std::string arch = identify_rocm_arch_from_name(igpu.name);
-            if (!arch.empty()) {
-                return arch;
-            }
-        }
-
-        // Check dGPUs
-        auto dgpus = system_info->get_amd_dgpu_devices();
-        for (const auto& gpu : dgpus) {
-            if (gpu.available && !gpu.name.empty()) {
-                std::string arch = identify_rocm_arch_from_name(gpu.name);
-                if (!arch.empty()) {
-                    return arch;
-                }
-            }
-        }
-    } catch (...) {
-        // Detection failed - use default
-    }
-
-    return "gfx110X";  // Default architecture
-}
-
 // Helper to get the install directory for llama-server binaries
 // Policy: Put in llama/{backend}/ next to the executable
 static std::string get_install_directory(const std::string& backend) {
@@ -292,7 +260,13 @@ void LlamaCppServer::install(const std::string& backend) {
         if (backend == "rocm") {
             // ROCm support from lemonade-sdk/llamacpp-rocm
             repo = "lemonade-sdk/llamacpp-rocm";
-            std::string target_arch = identify_rocm_arch();
+            std::string target_arch = lemon::SystemInfo::get_rocm_arch();
+
+            if (target_arch.empty()) {
+                throw std::runtime_error(
+                    lemon::SystemInfo::get_unsupported_backend_error("llamacpp", "rocm")
+                );
+            }
 
 #ifdef _WIN32
             filename = "llama-" + expected_version + "-windows-rocm-" + target_arch + "-x64.zip";
@@ -629,7 +603,7 @@ void LlamaCppServer::load(const std::string& model_name,
     // For ROCm on Windows with gfx1151, set OCL_SET_SVMSIZE
     // This is a patch to enable loading larger models
     if (llamacpp_backend == "rocm") {
-        std::string arch = identify_rocm_arch();
+        std::string arch = lemon::SystemInfo::get_rocm_arch();
         if (arch == "gfx1151") {
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
             std::cout << "[LlamaCpp] Setting OCL_SET_SVM_SIZE=262144 for gfx1151 (enables loading larger models)" << std::endl;
