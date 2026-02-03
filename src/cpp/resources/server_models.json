@@ -757,5 +757,12 @@
             "width": 1024,
             "height": 1024
         }
+    },
+    "kokoro-v1": {
+        "checkpoint": "mikkoph/kokoro-onnx",
+        "recipe": "kokoro",
+        "suggested": false,
+        "labels": ["audio", "speech"],
+        "size": 0.34
     }
 }

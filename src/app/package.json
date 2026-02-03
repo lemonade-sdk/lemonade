@@ -43,6 +43,7 @@
   "dependencies": {
     "@types/markdown-it": "^14.1.2",
     "axios": "^1.6.2",
+    "eventsource": "^4.1.0",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.25",
     "markdown-it": "^14.1.0",

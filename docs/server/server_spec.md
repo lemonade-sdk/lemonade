@@ -11,6 +11,7 @@ Lemonade Server currently supports these backends:
 | [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM)    | `.q4nx`      | Uses FLM's `flm serve` backend. More details [here](#fastflowlm-support).                    |
 | [whisper.cpp](https://github.com/ggerganov/whisper.cpp) | `.bin` | Uses whisper.cpp's `whisper-server` backend for audio transcription. Models: Whisper-Tiny, Whisper-Base, Whisper-Small. |
 | [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) | `.safetensors` | Uses sd.cpp's `sd-cli` backend for image generation. Models: SD-Turbo, SDXL-Turbo, etc. |
+| [Kokoros](https://github.com/lucasjinreal/Kokoros) | `.onnx` | Uses Kokoro's `koko` backend for speech generation. Models: kokoro-v1 |
 
 
 ## Endpoints Overview
@@ -25,6 +26,7 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/embeddings` - Embeddings (text -> vector representations)
 - POST `/api/v1/responses` - Chat Completions (prompt|messages -> event)
 - POST `/api/v1/audio/transcriptions` - Audio Transcription (audio -> text)
+- POST `/api/v1/audio/speech` - Text to speech (text -> audio)
 - POST `/api/v1/images/generations` - Image Generation (prompt -> image)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
@@ -623,24 +625,43 @@ Image Generation API. You provide a text prompt and receive a generated image. T
           }'
     ```
 
+### `POST /api/v1/audio/speech` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Speech Generation API. You provide a text input and receive an audio file. This API uses [Kokoros](https://github.com/lucasjinreal/Kokoros) as the backend.
+
+> **Note:** The model to use is called `kokoro-v1`. No other model is supported at the moment.
+>
+> **Limitations:** Only `mp3`, `wav`, `opus`, and `pcm` are supported. Streaming is supported in `audio` (`pcm`) mode.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `input` | Yes | The text to speak. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model to use (e.g., `kokoro-v1`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `speed` | No | Speaking speed. Default: `1.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `voice` | No | The voice to use. All OpenAI-defined voices can be used (`alloy`, `ash`, ...), as well as those defined by the kokoro model (`af_sky`, `am_echo`, ...). Default: `shimmer` | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `response_format` | No | Format of the response. `mp3`, `wav`, `opus`, and `pcm` are supported. Default: `mp3`| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `stream_format` | No | If set, the response will be streamed. Only `audio` is supported, which will output `pcm` audio. Default: not set| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+#### Example request
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/audio/speech \
+      -H "Content-Type: application/json" \
+      -d '{
+            "model": "kokoro-v1",
+            "input": "Lemonade can speak!",
+            "speed": 1.0,
+            "steps": 4,
+            "response_format": "mp3"
+          }'
+    ```
+
 #### Response format
 
-```json
-{
-  "created": 1742927481,
-  "data": [
-    {
-      "b64_json": "/9j/4AAQSkZJRgABAQAAAQABAAD..."
-    }
-  ]
-}
-```
-
-**Field Descriptions:**
-
-- `created` - Unix timestamp when the image was generated
-- `data` - Array of generated images
-  - `b64_json` - Base64-encoded PNG image data
+The generated audio file is returned as-is.
 
 
 ### `GET /api/v1/models` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -1184,58 +1205,154 @@ curl http://localhost:8000/api/v1/stats
 
 System information endpoint that provides complete hardware details and device enumeration.
 
-#### Parameters
-
-| Parameter | Required | Description | Status |
-|-----------|----------|-------------|--------|
-| `verbose` | No | Include detailed system information. When `false` (default), returns essential information (OS, processor, memory, devices). When `true`, includes additional details like Python packages and extended system information. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
 #### Example request
 
-=== "Basic system information"
-
-    ```bash
-    curl "http://localhost:8000/api/v1/system-info"
-    ```
-
-=== "Detailed system information"
-
-    ```bash
-    curl "http://localhost:8000/api/v1/system-info?verbose=true"
-    ```
+```bash
+curl "http://localhost:8000/api/v1/system-info"
+```
 
 #### Response format
 
-=== "Basic response (verbose=false)"
-
-    ```json
-    {
-      "OS Version": "Windows-10-10.0.26100-SP0",
-      "Processor": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
-      "Physical Memory": "32.0 GB",
-      "devices": {
+```json
+{
+  "OS Version": "Windows-10-10.0.26100-SP0",
+  "Processor": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
+  "Physical Memory": "32.0 GB",
+  "OEM System": "ASUS Zenbook S 16",
+  "BIOS Version": "1.0.0",
+  "CPU Max Clock": "5100 MHz",
+  "Windows Power Setting": "Balanced",
+  "devices": {
+    "cpu": {
+      "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
+      "cores": 12,
+      "threads": 24,
+      "available": true
+    },
+    "amd_igpu": {
+      "name": "AMD Radeon(TM) 890M Graphics",
+      "vram_gb": 0.5,
+      "available": true
+    },
+    "amd_dgpu": [],
+    "npu": {
+      "name": "AMD NPU",
+      "power_mode": "Default",
+      "available": true
+    }
+  },
+  "recipes": {
+    "llamacpp": {
+      "backends": {
+        "vulkan": {
+          "devices": ["cpu", "amd_igpu"],
+          "supported": true,
+          "available": true,
+          "version": "b7869"
+        },
+        "rocm": {
+          "devices": ["amd_igpu"],
+          "supported": true,
+          "available": false
+        },
+        "metal": {
+          "devices": [],
+          "supported": false,
+          "error": "Requires macOS"
+        },
         "cpu": {
-          "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
-          "cores": 12,
-          "threads": 24,
+          "devices": ["cpu"],
+          "supported": true,
+          "available": false
+        }
+      }
+    },
+    "whispercpp": {
+      "backends": {
+        "default": {
+          "devices": ["cpu"],
+          "supported": true,
+          "available": false
+        }
+      }
+    },
+    "sd-cpp": {
+      "backends": {
+        "default": {
+          "devices": ["cpu"],
+          "supported": true,
+          "available": false
+        }
+      }
+    },
+    "flm": {
+      "backends": {
+        "default": {
+          "devices": ["npu"],
+          "supported": true,
+          "available": true,
+          "version": "1.2.0"
+        }
+      }
+    },
+    "oga-npu": {
+      "backends": {
+        "default": {
+          "devices": ["npu"],
+          "supported": true,
           "available": true
-        },
-        "amd_igpu": {
-          "name": "AMD Radeon(TM) 890M Graphics",
-          "memory_mb": 512,
-          "driver_version": 32.0.12010.10001,
+        }
+      }
+    },
+    "oga-hybrid": {
+      "backends": {
+        "default": {
+          "devices": ["npu"],
+          "supported": true,
           "available": true
-        },
-        "amd_dgpu": [],
-        "npu": {
-          "name": "AMD NPU",
-          "driver_version": "32.0.203.257",
-          "power_mode": "Default",
+        }
+      }
+    },
+    "oga-cpu": {
+      "backends": {
+        "default": {
+          "devices": ["cpu"],
+          "supported": true,
           "available": true
         }
       }
     }
-    ```
+  }
+}
+```
+
+**Field Descriptions:**
+
+- **System fields:**
+  - `OS Version` - Operating system name and version
+  - `Processor` - CPU model name
+  - `Physical Memory` - Total RAM
+  - `OEM System` - System/laptop model name (Windows only)
+  - `BIOS Version` - BIOS information (Windows only)
+  - `CPU Max Clock` - Maximum CPU clock speed (Windows only)
+  - `Windows Power Setting` - Current power plan (Windows only)
+
+- `devices` - Hardware devices detected on the system (no software/support information)
+  - `cpu` - CPU information (name, cores, threads)
+  - `amd_igpu` - AMD integrated GPU (if present)
+  - `amd_dgpu` - Array of AMD discrete GPUs (if present)
+  - `nvidia_dgpu` - Array of NVIDIA discrete GPUs (if present)
+  - `npu` - NPU device (if present)
+
+- `recipes` - Software recipes and their backend support status
+  - Each recipe (e.g., `llamacpp`, `whispercpp`, `flm`) contains:
+    - `backends` - Available backends for this recipe
+      - Each backend contains:
+        - `devices` - List of devices **on this system** that support this backend (empty if not supported)
+        - `supported` - Whether installation is possible on this system
+        - `available` - Whether the backend is currently installed
+        - `version` - Installed version (if available)
+        - `error` - Reason why not supported (if applicable)
 
 # Debugging
 

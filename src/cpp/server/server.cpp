@@ -30,16 +30,29 @@
     #include <unistd.h>
 #endif
 
+#ifdef __APPLE__
+    #include <sys/sysctl.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace lemon {
 
+static const json MIME_TYPES = {
+    {"mp3",  "audio/mpeg"},
+    {"opus", "audio/opus"},
+    {"aac",  "audio/aac"},
+    {"flac", "audio/flac"},
+    {"wav",  "audio/wav"},
+    {"pcm",  "audio/l16;rate=24000;endianness=little-endian"}
+};
+
 Server::Server(int port, const std::string& host, const std::string& log_level,
                const json& default_options, int max_llm_models,
                int max_embedding_models, int max_reranking_models, int max_audio_models,
-               int max_image_models, const std::string& extra_models_dir)
+               int max_image_models, const std::string& extra_models_dir, bool no_broadcast)
     : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
-      running_(false) {
+      no_broadcast_(no_broadcast), running_(false), udp_beacon_() {
 
     // Detect log file path (same location as tray uses)
     // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
@@ -198,6 +211,11 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_audio_transcriptions(req, res);
     });
 
+    // Speech
+    register_post("audio/speech", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_audio_speech(req, res);
+    });
+
     // Image endpoints (OpenAI /v1/images/* compatible)
     register_post("images/generations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_image_generations(req, res);
@@ -236,6 +254,10 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     register_get("system-info", [this](const httplib::Request& req, httplib::Response& res) {
         handle_system_info(req, res);
+    });
+
+    register_get("system-stats", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_system_stats(req, res);
     });
 
     register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
@@ -511,6 +533,29 @@ void Server::run() {
             http_server_v6_->listen_after_bind();
         });
     }
+    
+    //For now we will use getLocalHostname to get the machines hostname.
+    //This allows external devices to not have to do a rDNS lookup.
+    bool RFC1918_IP = udp_beacon_.isRFC1918(ipv4);
+    if(RFC1918_IP && !no_broadcast_) {
+        udp_beacon_.startBroadcasting(
+            8000, //Broadcast port best to not make it adjustable, so clients dont have to scan.
+            udp_beacon_.buildStandardPayloadPattern
+            (
+                udp_beacon_.getLocalHostname(),
+                "http://" + ipv4 + ":" + std::to_string(port_) + "/api/v1/"
+            ),
+            2
+        );
+    }
+    else if (RFC1918_IP && no_broadcast_) {
+        std::cout << "[Server] [Net Broadcast] Broadcasting disabled by --no-broadcast option" << std::endl;
+    }
+    else {
+        std::cout << "[Server] [Net Broadcast] Unable to broadcast my existance please use a RFC1918 IPv4," << std::endl
+                    << "[Server] [Net Broadcast] or hostname that resolves to RFC1918 IPv4." << std::endl;
+    }
+
     if(http_v4_thread_.joinable())
         http_v4_thread_.join();
     if(http_v6_thread_.joinable())
@@ -520,6 +565,7 @@ void Server::run() {
 void Server::stop() {
     if (running_) {
         std::cout << "[Server] Stopping HTTP server..." << std::endl;
+        udp_beacon_.stopBroadcasting();
         http_server_v6_->stop();
         http_server_->stop();
         running_ = false;
@@ -930,8 +976,6 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         // Use unified Router path for streaming
                         router_->chat_completion_stream(request_body, sink);
 
-                        // Explicitly signal we're done - this ensures proper chunked encoding termination
-                        sink.done();
                         return false;
                     }
                 );
@@ -1117,8 +1161,6 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                         // Use unified Router path for streaming
                         router_->completion_stream(request_body, sink);
 
-                        // Explicitly signal we're done - this ensures proper chunked encoding termination
-                        sink.done();
                         return false;
                     }
                 );
@@ -1414,6 +1456,117 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
     }
 }
 
+void Server::handle_audio_speech(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+
+        // Handle model loading
+        if (request_json.contains("model")) {
+            std::string requested_model = request_json["model"];
+            try {
+                auto_load_model_if_needed(requested_model);
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Failed to load text-to-speech model: " << e.what() << std::endl;
+                auto error_response = create_model_error(requested_model, e.what());
+                std::string error_code = error_response["error"]["code"].get<std::string>();
+                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+                res.set_content(error_response.dump(), "application/json");
+                return;
+            }
+        } else {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'model' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        if (!request_json.contains("input")) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'input' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        bool is_streaming = (request_json.contains("stream") && request_json["stream"].get<bool>());
+
+        if (request_json.contains("stream_format")) {
+            is_streaming = true;
+            if (request_json["stream_format"] != "audio") {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Only pcm audio streaming format is supported"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+        }
+
+        std::string mime_type;
+        if (is_streaming) {
+            mime_type = MIME_TYPES["pcm"];
+        } else if (request_json.contains("response_format")) {
+            if (MIME_TYPES.contains(request_json["response_format"])) {
+                mime_type = MIME_TYPES[request_json["response_format"]];
+            } else {
+                nlohmann::json error = {{"error", {
+                    {"message", "Unsupported audio format requested"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+        } else {
+            mime_type = MIME_TYPES["mp3"];
+        }
+
+        // Log the HTTP request
+        std::cout << "[Server] POST /api/v1/audio/speech" << std::endl;
+
+        res.set_header("Content-Type", mime_type);
+
+        auto audio_source = [this, request_json](size_t offset, httplib::DataSink& sink) {
+            // For chunked responses, offset tracks bytes sent so far
+            // We only want to stream once when offset is 0
+            if (offset > 0) {
+                return false; // We're done after the first call
+            }
+
+            // Use unified Router path for streaming
+            router_->audio_speech(request_json, sink);
+
+            return false;
+        };
+
+        if (is_streaming) {
+            res.set_header("Cache-Control", "no-cache");
+            res.set_header("Connection", "keep-alive");
+            res.set_header("X-Accel-Buffering", "no"); // Disable nginx buffering
+
+            // Use cpp-httplib's chunked content provider for streaming
+            res.set_chunked_content_provider(mime_type, audio_source);
+        } else {
+            res.set_content_provider(mime_type, audio_source);
+        }
+
+        return;
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_audio_speech: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "internal_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
 void Server::handle_image_generations(const httplib::Request& req, httplib::Response& res) {
     try {
         std::cout << "[Server] POST /api/v1/images/generations" << std::endl;
@@ -1531,8 +1684,6 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                         // Use unified Router path for streaming
                         router_->responses_stream(request_body, sink);
 
-                        // Explicitly signal we're done - this ensures proper chunked encoding termination
-                        sink.done();
                         return false;
                     }
                 );
@@ -2097,17 +2248,290 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         return;
     }
 
-    // Get verbose parameter from query string (default to false)
-    bool verbose = false;
-    if (req.has_param("verbose")) {
-        std::string verbose_param = req.get_param_value("verbose");
-        std::transform(verbose_param.begin(), verbose_param.end(), verbose_param.begin(), ::tolower);
-        verbose = (verbose_param == "true" || verbose_param == "1");
+    // Get system info - this function handles all errors internally and never throws
+    nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache();
+    res.set_content(system_info.dump(), "application/json");
+}
+
+// Helper: Get CPU usage percentage
+double Server::get_cpu_usage() {
+#ifdef __linux__
+    // Linux: Parse /proc/stat for system-wide CPU usage
+    std::lock_guard<std::mutex> lock(cpu_stats_mutex_);
+
+    std::ifstream stat_file("/proc/stat");
+    if (!stat_file.is_open()) {
+        return -1.0;
     }
 
-    // Get system info - this function handles all errors internally and never throws
-    nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache(verbose);
-    res.set_content(system_info.dump(), "application/json");
+    std::string line;
+    std::getline(stat_file, line);
+    stat_file.close();
+
+    // Parse: "cpu  user nice system idle iowait irq softirq steal"
+    std::istringstream iss(line);
+    std::string cpu_label;
+    uint64_t user, nice, system, idle, iowait, irq, softirq, steal;
+
+    iss >> cpu_label >> user >> nice >> system >> idle >> iowait >> irq >> softirq >> steal;
+
+    uint64_t total_idle = idle + iowait;
+    uint64_t total_active = user + nice + system + irq + softirq + steal;
+    uint64_t total = total_idle + total_active;
+
+    if (last_cpu_stats_.total > 0) {
+        uint64_t idle_diff = total_idle - last_cpu_stats_.total_idle;
+        uint64_t total_diff = total - last_cpu_stats_.total;
+
+        last_cpu_stats_.total_idle = total_idle;
+        last_cpu_stats_.total = total;
+
+        if (total_diff > 0) {
+            return ((total_diff - idle_diff) * 100.0) / total_diff;
+        }
+    }
+
+    last_cpu_stats_.total_idle = total_idle;
+    last_cpu_stats_.total = total;
+    return 0.0; // First call, no delta yet
+
+#elif defined(_WIN32)
+    // Windows: Use GetSystemTimes for system-wide CPU usage
+    std::lock_guard<std::mutex> lock(cpu_stats_mutex_);
+
+    FILETIME idle_time, kernel_time, user_time;
+    if (!GetSystemTimes(&idle_time, &kernel_time, &user_time)) {
+        return -1.0;
+    }
+
+    // Convert FILETIME to uint64_t (100-nanosecond intervals)
+    auto filetime_to_uint64 = [](const FILETIME& ft) -> uint64_t {
+        return (static_cast<uint64_t>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
+    };
+
+    uint64_t idle = filetime_to_uint64(idle_time);
+    uint64_t kernel = filetime_to_uint64(kernel_time); // Includes idle time
+    uint64_t user = filetime_to_uint64(user_time);
+
+    // Kernel time includes idle time, so subtract it to get actual kernel time
+    uint64_t total = kernel + user;
+    uint64_t total_idle = idle;
+
+    if (last_cpu_stats_.total > 0) {
+        uint64_t idle_diff = total_idle - last_cpu_stats_.total_idle;
+        uint64_t total_diff = total - last_cpu_stats_.total;
+
+        last_cpu_stats_.total_idle = total_idle;
+        last_cpu_stats_.total = total;
+
+        if (total_diff > 0) {
+            return ((total_diff - idle_diff) * 100.0) / total_diff;
+        }
+    }
+
+    last_cpu_stats_.total_idle = total_idle;
+    last_cpu_stats_.total = total;
+    return 0.0; // First call, no delta yet
+
+#elif defined(__APPLE__)
+    // macOS: Could use host_processor_info or top command
+    return -1.0; // Not implemented yet
+
+#else
+    return -1.0;
+#endif
+}
+
+// Helper: Get GPU usage percentage (AMD GPUs on Linux)
+double Server::get_gpu_usage() {
+#ifdef __linux__
+    // Linux: Read from AMD sysfs (gpu_busy_percent)
+    // Check all GPUs and return the highest utilization
+    try {
+        std::string drm_path = "/sys/class/drm";
+
+        if (!fs::exists(drm_path)) {
+            return -1.0;
+        }
+
+        double highest_usage = -1.0;
+
+        for (const auto& entry : fs::directory_iterator(drm_path)) {
+            std::string card_name = entry.path().filename().string();
+            if (card_name.find("card") != 0 || card_name.find("-") != std::string::npos) {
+                continue;
+            }
+
+            std::string busy_path = entry.path().string() + "/device/gpu_busy_percent";
+            std::ifstream busy_file(busy_path);
+            if (busy_file.is_open()) {
+                double usage;
+                busy_file >> usage;
+                busy_file.close();
+                if (usage > highest_usage) {
+                    highest_usage = usage;
+                }
+            }
+        }
+
+        return highest_usage;
+    } catch (...) {
+        return -1.0;
+    }
+
+#else
+    // GPU usage monitoring not implemented for Windows/macOS
+    return -1.0;
+#endif
+}
+
+// Helper: Get VRAM/GTT usage in GB (AMD GPUs on Linux)
+double Server::get_vram_usage() {
+#ifdef __linux__
+    // Linux: Read from AMD sysfs
+    // For dGPU: return VRAM used
+    // For APU: return VRAM + GTT used
+    // On multi-GPU systems, return memory from GPU with highest utilization
+    try {
+        std::string drm_path = "/sys/class/drm";
+
+        if (!fs::exists(drm_path)) {
+            return -1.0;
+        }
+
+        double highest_usage = -1.0;
+        std::string highest_card;
+        double highest_card_memory = 0.0;
+
+        for (const auto& entry : fs::directory_iterator(drm_path)) {
+            std::string card_name = entry.path().filename().string();
+            if (card_name.find("card") != 0 || card_name.find("-") != std::string::npos) {
+                continue;
+            }
+
+            std::string device_path = entry.path().string() + "/device";
+
+            // Read GPU utilization to find the most active GPU
+            double gpu_usage = 0.0;
+            std::ifstream busy_file(device_path + "/gpu_busy_percent");
+            if (busy_file.is_open()) {
+                busy_file >> gpu_usage;
+                busy_file.close();
+            }
+
+            // Check if this is a dGPU (has board_info) or APU (no board_info)
+            bool is_dgpu = fs::exists(device_path + "/board_info");
+
+            // Read VRAM used
+            uint64_t vram_used = 0;
+            std::ifstream vram_file(device_path + "/mem_info_vram_used");
+            if (vram_file.is_open()) {
+                vram_file >> vram_used;
+                vram_file.close();
+            }
+
+            // Read GTT used
+            uint64_t gtt_used = 0;
+            std::ifstream gtt_file(device_path + "/mem_info_gtt_used");
+            if (gtt_file.is_open()) {
+                gtt_file >> gtt_used;
+                gtt_file.close();
+            }
+
+            // Skip if no memory info found
+            if (vram_used == 0 && gtt_used == 0) {
+                continue;
+            }
+
+            // Calculate memory for this card
+            uint64_t card_memory = is_dgpu ? vram_used : (vram_used + gtt_used);
+
+            // Track the GPU with highest utilization
+            if (gpu_usage > highest_usage || highest_usage < 0) {
+                highest_usage = gpu_usage;
+                highest_card = card_name;
+                highest_card_memory = card_memory / (1024.0 * 1024.0 * 1024.0); // Convert to GB
+            }
+        }
+
+        return highest_card_memory > 0 ? highest_card_memory : -1.0;
+    } catch (...) {
+        return -1.0;
+    }
+
+#else
+    // VRAM monitoring not implemented for Windows/macOS
+    return -1.0;
+#endif
+}
+
+void Server::handle_system_stats(const httplib::Request& req, httplib::Response& res) {
+    // For HEAD requests, just return 200 OK without processing
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+
+    nlohmann::json stats;
+
+    // CPU usage
+    double cpu_percent = get_cpu_usage();
+    stats["cpu_percent"] = (cpu_percent >= 0) ? nlohmann::json(cpu_percent) : nlohmann::json();
+
+    // Get memory info
+#ifdef _WIN32
+    MEMORYSTATUSEX memInfo;
+    memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+    if (GlobalMemoryStatusEx(&memInfo)) {
+        double used_gb = (memInfo.ullTotalPhys - memInfo.ullAvailPhys) / (1024.0 * 1024.0 * 1024.0);
+        stats["memory_gb"] = std::round(used_gb * 10.0) / 10.0;
+    } else {
+        stats["memory_gb"] = 0;
+    }
+#elif defined(__linux__)
+    // Linux: Read /proc/meminfo
+    std::ifstream meminfo("/proc/meminfo");
+    if (meminfo.is_open()) {
+        std::string line;
+        long long total_kb = 0, available_kb = 0;
+        while (std::getline(meminfo, line)) {
+            if (line.find("MemTotal:") == 0) {
+                sscanf(line.c_str(), "MemTotal: %lld kB", &total_kb);
+            } else if (line.find("MemAvailable:") == 0) {
+                sscanf(line.c_str(), "MemAvailable: %lld kB", &available_kb);
+                break;
+            }
+        }
+        meminfo.close();
+        double used_gb = (total_kb - available_kb) / (1024.0 * 1024.0);
+        stats["memory_gb"] = std::round(used_gb * 10.0) / 10.0;
+    } else {
+        stats["memory_gb"] = 0;
+    }
+#elif defined(__APPLE__)
+    // macOS: Get memory info
+    int64_t physical_memory = 0;
+    size_t length = sizeof(physical_memory);
+    if (sysctlbyname("hw.memsize", &physical_memory, &length, nullptr, 0) == 0) {
+        // For now, just report total memory since getting free memory is complex on macOS
+        double total_gb = physical_memory / (1024.0 * 1024.0 * 1024.0);
+        stats["memory_gb"] = std::round(total_gb * 10.0) / 10.0;
+    } else {
+        stats["memory_gb"] = 0;
+    }
+#else
+    stats["memory_gb"] = 0;
+#endif
+
+    // GPU usage
+    double gpu_percent = get_gpu_usage();
+    stats["gpu_percent"] = (gpu_percent >= 0) ? nlohmann::json(gpu_percent) : nlohmann::json();
+
+    // VRAM usage
+    double vram_gb = get_vram_usage();
+    stats["vram_gb"] = (vram_gb >= 0) ? nlohmann::json(vram_gb) : nlohmann::json();
+
+    res.set_content(stats.dump(), "application/json");
 }
 
 void Server::handle_log_level(const httplib::Request& req, httplib::Response& res) {

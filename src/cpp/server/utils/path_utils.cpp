@@ -66,6 +66,7 @@ std::string get_resource_path(const std::string& relative_path) {
     std::vector<std::string> install_prefixes = {
         "/Library/Application Support/Lemonade",  // macOS system install location
         "/usr/local/share/lemonade-server",
+        "/opt/share/lemonade-server",
         "/usr/share/lemonade-server"
     };
 

@@ -2233,6 +2233,49 @@ footer {
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
 }
 
+/* Code block wrapper with copy button */
+.code-block-wrapper {
+    position: relative;
+    margin: 0.8em 0;
+}
+
+.code-block-wrapper pre {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    padding-right: 3rem;
+    min-height: 60px;
+}
+
+.code-copy-button {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: #2a2a2a;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 3px;
+    cursor: pointer;
+    color: #aaa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease, color 0.2s ease;
+    z-index: 100;
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.code-copy-button:hover {
+    background: #3a3a3a;
+    color: #fff;
+}
+
+.code-copy-button.copied {
+    color: #4caf50;
+    border-color: #4caf50;
+}
+
 /* Inline code */
 .chat-message code.inline-code,
 .chat-message :not(pre) > code,
@@ -2977,7 +3020,7 @@ footer {
     transform: scale(1.1);
 }
 
-.settings-number-input {
+.settings-number-input, .settings-text-input {
     width: 60px;
     padding: 5px 8px;
     background: #0a0a0a;
@@ -2989,10 +3032,15 @@ footer {
     transition: all 0.2s ease;
 }
 
-.settings-number-input:focus {
+.settings-number-input:focus, .settings-text-input:focus {
     outline: none;
     border-color: #555;
     background: #1a1a1a;
+}
+
+.settings-text-input {
+    width: 100%;
+    text-align: left;
 }
 
 .settings-checkbox-label {
@@ -3191,6 +3239,32 @@ footer {
     font-size: 0.65rem;
     color: #9f9f9f;
     text-transform: uppercase;
+}
+
+.about-popover-info-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid #2b2b2b;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-top: 10px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.75rem;
+}
+
+.about-popover-info-label {
+    letter-spacing: 0.08em;
+    font-size: 0.65rem;
+    color: #9f9f9f;
+    text-transform: uppercase;
+}
+
+.about-popover-info-value {
+    color: #ffffff;
+    word-break: break-word;
+    line-height: 1.3;
 }
 
 /* Toast Notification Styles */
@@ -4508,4 +4582,3 @@ footer {
     color: #888;
     font-variant-numeric: tabular-nums;
 }
-
