@@ -464,6 +464,9 @@ int TrayApp::run() {
     DEBUG_LOG(this, "TrayApp::run() starting...");
     DEBUG_LOG(this, "Command: " << tray_config_.command);
 
+    bool server_already_running = false;
+    bool run_command_already_executed = false;
+
     // Find server binary automatically (needed for most commands)
     if (server_binary_.empty()) {
         DEBUG_LOG(this, "Searching for server binary...");
@@ -494,64 +497,68 @@ int TrayApp::run() {
     } else if (tray_config_.command == "recipes") {
         return execute_recipes_command();
     } else if (tray_config_.command == "serve" || tray_config_.command == "run") {
-#ifndef _WIN32
-        if (tray_config_.command == "run" &&
-            is_systemd_service_active_other_process("lemonade-server.service")) {
-            std::cout << "Lemonade Server is managed by systemd. Connecting to it..." << std::endl;
+        auto connect_to_running_server = [this, &server_already_running, &run_command_already_executed](const char* context) -> int {
+            std::cout << "Lemonade Server is " << context << " already running. Connecting to it..." << std::endl;
 
             auto [pid, running_port] = get_server_info();
             (void)pid;
             if (running_port == 0) {
-                std::cerr << "Error: Could not connect to systemd-managed server" << std::endl;
+                std::cerr << "Error: Could not connect to running server" << std::endl;
                 return 1;
             }
 
             server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
             server_config_.port = running_port;
 
+            server_already_running = true;
+
             if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
                 server_config_.host = "localhost";
             }
 
-            return execute_run_command();
+            if (tray_config_.command == "run") {
+                int result = execute_run_command();
+                if (result != 0) {
+                    return result;
+                }
+                run_command_already_executed = true;
+            }
+
+            return 0;
+        };
+
+#ifdef HAVE_SYSTEMD
+        if (tray_config_.command == "run" &&
+            is_systemd_service_active_other_process("lemonade-server.service")) {
+            int result = connect_to_running_server("managed by systemd and");
+            if (result != 0) {
+                return result;
+            }
+            // Continue to tray initialization below
         }
 #endif
+
         // Check for single instance - only for 'serve' and 'run' commands
         // Other commands (status, list, pull, delete, stop) can run alongside a server
         if (lemon::SingleInstance::IsAnotherInstanceRunning("Server")) {
             // If 'run' command and server is already running, connect to it and execute the run command
             if (tray_config_.command == "run") {
-                std::cout << "Lemonade Server is already running. Connecting to it..." << std::endl;
-
-                // Get the running server's info
-                auto [pid, running_port] = get_server_info();
-                if (running_port == 0) {
-                    std::cerr << "Error: Could not connect to running server" << std::endl;
-                    return 1;
+                int result = connect_to_running_server("");
+                if (result != 0) {
+                    return result;
                 }
-
-                // Create server manager to communicate with running server
-                server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
-                server_config_.port = running_port;  // Update config to match running server
-
-                // Use localhost to connect (works regardless of what the server is bound to)
-                if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
-                    server_config_.host = "localhost";
-                }
-
-                // Execute the run command (load model)
-                return execute_run_command();
-            }
-
-            // For 'serve' command, don't allow duplicate servers
+                // Continue to tray initialization below
+            } else {
+                // For 'serve' command, don't allow duplicate servers
 #ifdef _WIN32
-            show_simple_notification("Server Already Running", "Lemonade Server is already running");
+                show_simple_notification("Server Already Running", "Lemonade Server is already running");
 #endif
-            std::cerr << "Error: Another instance of lemonade-server serve is already running.\n"
-                      << "Only one persistent server can run at a time.\n\n"
-                      << "To check server status: lemonade-server status\n"
-                      << "To stop the server: lemonade-server stop\n" << std::endl;
-            return 1;
+                std::cerr << "Error: Another instance of lemonade-server serve is already running.\n"
+                          << "Only one persistent server can run at a time.\n\n"
+                          << "To check server status: lemonade-server status\n"
+                          << "To stop the server: lemonade-server stop\n" << std::endl;
+                return 1;
+            }
         }
         // Continue to server initialization below
     } else {
@@ -559,27 +566,29 @@ int TrayApp::run() {
         return 1;
     }
 
-    // Create server manager
-    DEBUG_LOG(this, "Creating server manager...");
-    server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
+    if (!server_already_running) {
+        // Create server manager
+        DEBUG_LOG(this, "Creating server manager...");
+        server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
 
-    // Start server
-    DEBUG_LOG(this, "Starting server...");
-    if (!start_server()) {
-        std::cerr << "Error: Failed to start server" << std::endl;
-        return 1;
+        // Start server
+        DEBUG_LOG(this, "Starting server...");
+        if (!start_server()) {
+            std::cerr << "Error: Failed to start server" << std::endl;
+            return 1;
+        }
+
+        DEBUG_LOG(this, "Server started successfully!");
+        if (tray_config_.command == "serve" && tray_config_.save_options) {
+            tray_config_.save_options = false;
+            std::cerr << "Warning: Argument --save-options only available for the run command. Ignoring.\n";
+        }
+
+        process_owns_server_ = true;
     }
-
-    DEBUG_LOG(this, "Server started successfully!");
-    if (tray_config_.command == "serve" && tray_config_.save_options) {
-        tray_config_.save_options = false;
-        std::cerr << "Warning: Argument --save-options only available for the run command. Ignoring.\n";
-    }
-
-    process_owns_server_ = true;
 
     // If this is the 'run' command, load the model and run electron app
-    if (tray_config_.command == "run") {
+    if (tray_config_.command == "run" && !run_command_already_executed) {
         int result = execute_run_command();
         if (result != 0) {
             return result;
@@ -592,12 +601,18 @@ int TrayApp::run() {
 
 #ifdef _WIN32
         // Windows: simple sleep loop (signal handler handles Ctrl+C via console_ctrl_handler)
-        while (server_manager_->is_server_running()) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (server_already_running) {
+            while (!should_exit_) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+        } else {
+            while (server_manager_->is_server_running()) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
         }
 #else
         // Linux: monitor signal pipe using select() for proper signal handling
-        while (server_manager_->is_server_running()) {
+        while (server_already_running || server_manager_->is_server_running()) {
             fd_set readfds;
             FD_ZERO(&readfds);
             FD_SET(signal_pipe_[0], &readfds);
@@ -615,6 +630,10 @@ int TrayApp::run() {
 
                 // Now we're safely in the main thread - call shutdown properly
                 shutdown();
+                break;
+            }
+
+            if (!server_already_running && !server_manager_->is_server_running()) {
                 break;
             }
             // Timeout or error - just continue checking if server is still running
@@ -1287,8 +1306,14 @@ int TrayApp::execute_run_command() {
     if (server_manager_->load_model(tray_config_.model, server_config_.recipe_options, tray_config_.save_options)) {
         std::cout << "Model loaded successfully!" << std::endl;
 
-        // Launch the Electron app only if we are not terminating immediately
-        if (process_owns_server_) {
+        // Launch the Electron app
+        bool should_launch_app = process_owns_server_;
+#ifdef HAVE_SYSTEMD
+        if (!should_launch_app && is_systemd_service_active("lemonade-server.service")) {
+            should_launch_app = true;
+        }
+#endif
+        if (should_launch_app) {
             std::cout << "Launching Lemonade app..." << std::endl;
             launch_electron_app();
         }
