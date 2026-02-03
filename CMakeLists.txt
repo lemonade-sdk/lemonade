@@ -566,6 +566,7 @@ add_subdirectory(src/cpp/tray)
 # ============================================================
 if(UNIX AND NOT APPLE)
     set(CPACK_GENERATOR "DEB")
+    set(CPACK_SET_DESTDIR ON)
     set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
     set(CPACK_PACKAGE_VENDOR "Lemonade")
     set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
@@ -580,8 +581,9 @@ if(UNIX AND NOT APPLE)
 
     # Installation paths - use ~/.local for user install (no sudo needed)
     # Set via environment: cmake -DCPACK_PACKAGING_INSTALL_PREFIX=$HOME/.local ..
+    # Default to /opt to match the install prefix used by the project.
     if(NOT DEFINED CPACK_PACKAGING_INSTALL_PREFIX)
-        set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
+        set(CPACK_PACKAGING_INSTALL_PREFIX "/opt")
     endif()
 
     # Only install our executables (not curl/development files)
@@ -606,6 +608,18 @@ if(UNIX AND NOT APPLE)
     install(FILES ${CMAKE_BINARY_DIR}/lemonade-server.service
         DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/systemd/system
     )
+    # Create symlink in standard systemd search path only if not installing to /usr
+    # (if prefix is /usr, the service is already in the standard location)
+    if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+        install(CODE "
+            file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/lib/systemd/system\")
+            execute_process(
+                COMMAND ${CMAKE_COMMAND} -E create_symlink
+                    ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/systemd/system/lemonade-server.service
+                    \"\$ENV{DESTDIR}/usr/lib/systemd/system/lemonade-server.service\"
+            )
+        ")
+    endif()
     install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.conf
         DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/lemonade
     )
@@ -641,26 +655,75 @@ if(UNIX AND NOT APPLE)
             PATTERN "*.so" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
         )
 
-        # Post-install script for full package
-        # Note: CPack requires the script to be named 'postinst' exactly
-        # We copy postinst-full to a temporary postinst file for CPack
-        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst-full"
-                       "${CMAKE_CURRENT_BINARY_DIR}/postinst" COPYONLY)
-        set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_BINARY_DIR}/postinst")
+        if (NOT WIN32 AND NOT APPLE)
+            if (EXISTS "${ELECTRON_APP_UNPACKED_DIR}/chrome-sandbox")
+                install(FILES "${ELECTRON_APP_UNPACKED_DIR}/chrome-sandbox"
+                    DESTINATION share/lemonade-server/app
+                    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE SETUID
+                )
+            endif()
+
+            if (EXISTS "${ELECTRON_APP_UNPACKED_DIR}/chrome_crashpad_handler")
+                install(FILES "${ELECTRON_APP_UNPACKED_DIR}/chrome_crashpad_handler"
+                    DESTINATION share/lemonade-server/app
+                    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+                )
+            endif()
+        endif()
+
+        if (NOT WIN32 AND NOT APPLE)
+            # Install .desktop file for electron app
+            install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-app.desktop
+                DESTINATION share/applications
+            )
+            # Create symlink in standard applications path only if not installing to /usr
+            if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+                install(CODE "
+                    file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/applications\")
+                    execute_process(
+                        COMMAND ${CMAKE_COMMAND} -E create_symlink
+                            ${CMAKE_INSTALL_PREFIX}/share/applications/lemonade-app.desktop
+                            \"\$ENV{DESTDIR}/usr/share/applications/lemonade-app.desktop\"
+                    )
+                ")
+            endif()
+            install(FILES ${CMAKE_SOURCE_DIR}/src/app/assets/logo.svg
+                DESTINATION share/pixmaps
+                RENAME lemonade-app.svg
+            )
+            # Create symlink in standard bin path only if not installing to /usr
+            if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+                install(CODE "
+                    file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
+                    execute_process(
+                        COMMAND ${CMAKE_COMMAND} -E create_symlink
+                            \"\${CMAKE_INSTALL_PREFIX}/share/lemonade-server/app/lemonade\"
+                            \"\$ENV{DESTDIR}/usr/bin/lemonade-app\"
+                    )
+                ")
+            else()
+                install(CODE "
+                    file(CREATE_LINK
+                        \"\${CMAKE_INSTALL_PREFIX}/share/lemonade-server/app/lemonade\"
+                        \"\${CMAKE_INSTALL_PREFIX}/bin/lemonade-app\"
+                        SYMBOLIC)
+                ")
+            endif()
+        endif()
+
     else()
         # Minimal package (server only)
         set(CPACK_PACKAGE_NAME "lemonade-server-minimal")
         set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip")
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
 
-        # Post-install script for minimal package
-        set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst")
-
         if(BUILD_ELECTRON_APP)
             message(WARNING "BUILD_ELECTRON_APP is ON but Electron app not found at ${ELECTRON_APP_UNPACKED_DIR}")
             message(WARNING "Building minimal deb package instead")
         endif()
     endif()
+    # Post-install script for debian package
+    set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst")
 
     # RPM specific variables defined within
     include(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/CPackRPM.cmake)

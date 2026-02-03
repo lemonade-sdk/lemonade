@@ -131,7 +131,7 @@ The tray app looks for `Lemonade.exe` in the same directory as the executable (d
 - PID file system (`/tmp/lemonade-router.pid`) for reliable process management
 - Proper graceful shutdown - all child processes cleaned up correctly
 - File locations:
-  - Installed binaries: `/usr/local/bin/`
+  - Installed binaries: `/opt/bin`
   - Downloaded backends (llama-server, ryzenai-server): `~/.cache/lemonade/bin/`
   - Model downloads: `~/.cache/huggingface/` (follows HF conventions)
 
@@ -198,12 +198,12 @@ cpack
 **Package Output:**
 
 Creates `lemonade-server-minimal_<VERSION>_amd64.deb` (e.g., `lemonade-server-minimal_9.0.3_amd64.deb`) which:
-- Installs to `/usr/local/bin/` (executables)
-- Installs resources to `/usr/local/share/lemonade-server/`
-- Creates desktop entry in `/usr/local/share/applications/`
+- Installs to `/opt/bin/` (executables)
+- Installs resources to `/opt/share/lemonade-server/`
+- Creates desktop entry in `/opt/share/applications/`
 - Declares dependencies: libcurl4, libssl3, libz1
 - Package size: ~2.2 MB (clean, runtime-only package)
-- Includes postinst script that creates writable `/usr/local/share/lemonade-server/llama/` directory
+- Includes postinst script that creates writable `/opt/share/lemonade-server/llama/` directory
 
 **Installation:**
 
