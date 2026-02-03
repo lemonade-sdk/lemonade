@@ -681,14 +681,14 @@ if(UNIX AND NOT APPLE)
                     execute_process(
                         COMMAND ${CMAKE_COMMAND} -E create_symlink
                             \"\${CMAKE_INSTALL_PREFIX}/share/lemonade-server/app/lemonade\"
-                            \"\$ENV{DESTDIR}/usr/bin/lemonade\"
+                            \"\$ENV{DESTDIR}/usr/bin/lemonade-app\"
                     )
                 ")
             else()
                 install(CODE "
                     file(CREATE_LINK
                         \"\${CMAKE_INSTALL_PREFIX}/share/lemonade-server/app/lemonade\"
-                        \"\${CMAKE_INSTALL_PREFIX}/bin/lemonade\"
+                        \"\${CMAKE_INSTALL_PREFIX}/bin/lemonade-app\"
                         SYMBOLIC)
                 ")
             endif()
