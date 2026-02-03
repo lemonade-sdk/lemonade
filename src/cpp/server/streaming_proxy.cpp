@@ -69,6 +69,42 @@ void StreamingProxy::forward_sse_stream(
     }
 }
 
+void StreamingProxy::forward_byte_stream(
+    const std::string& backend_url,
+    const std::string& request_body,
+    httplib::DataSink& sink,
+    long timeout_seconds) {
+
+    bool stream_error = false;
+
+    // Use HttpClient to stream from backend
+    auto result = utils::HttpClient::post_stream(
+        backend_url,
+        request_body,
+        [&sink](const char* data, size_t length) {
+            // Forward chunk to client immediately
+            if (!sink.write(data, length)) {
+                return false; // Client disconnected
+            }
+
+            return true; // Continue streaming
+        },
+        {}, // Empty headers map
+        timeout_seconds
+    );
+
+    if (result.status_code != 200) {
+        stream_error = true;
+        std::cerr << "[StreamingProxy] Backend returned error: " << result.status_code << std::endl;
+    }
+
+    if (!stream_error) {
+        // Explicitly flush and signal completion
+        sink.done();
+        std::cout << "[Server] Streaming completed - 200 OK" << std::endl;
+    }
+}
+
 StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string& buffer) {
     TelemetryData telemetry;
 

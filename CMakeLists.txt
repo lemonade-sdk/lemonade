@@ -408,6 +408,7 @@ set(SOURCES
     src/cpp/server/backends/fastflowlm_server.cpp
     src/cpp/server/backends/ryzenaiserver.cpp
     src/cpp/server/backends/whisper_server.cpp
+    src/cpp/server/backends/kokoro_server.cpp
     src/cpp/server/backends/sd_server.cpp
     src/cpp/server/backends/backend_utils.cpp
 )
