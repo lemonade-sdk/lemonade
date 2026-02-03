@@ -1,6 +1,7 @@
 #include "lemon_tray/tray_app.h"
 #include "lemon_tray/platform/windows_tray.h"  // For set_menu_update_callback
 #include <lemon/single_instance.h>
+#include <lemon/system_info.h>
 #include <lemon/version.h>
 #include <httplib.h>
 #include <iostream>
@@ -304,6 +305,8 @@ int TrayApp::run() {
         return execute_status_command();
     } else if (tray_config_.command == "stop") {
         return execute_stop_command();
+    } else if (tray_config_.command == "recipes") {
+        return execute_recipes_command();
     } else if (tray_config_.command == "serve" || tray_config_.command == "run") {
         // Check for single instance - only for 'serve' and 'run' commands
         // Other commands (status, list, pull, delete, stop) can run alongside a server
@@ -1094,6 +1097,66 @@ int TrayApp::execute_status_command() {
         std::cout << "Server is not running" << std::endl;
         return 1;
     }
+}
+
+// Command: recipes
+int TrayApp::execute_recipes_command() {
+    auto statuses = lemon::SystemInfo::get_all_recipe_statuses();
+
+    // Print table header
+    std::cout << std::left << std::setw(20) << "Recipe"
+              << std::setw(12) << "Backend"
+              << std::setw(14) << "Status"
+              << "Version/Error" << std::endl;
+    std::cout << std::string(75, '-') << std::endl;
+
+    for (const auto& status : statuses) {
+        bool first_backend = true;
+
+        if (status.backends.empty()) {
+            // Recipe with no backends (shouldn't happen, but handle gracefully)
+            std::cout << std::left << std::setw(20) << status.name
+                      << std::setw(12) << "-"
+                      << std::setw(14) << (status.supported ? "supported" : "unsupported")
+                      << "-" << std::endl;
+        } else {
+            for (const auto& backend : status.backends) {
+                // Recipe name only on first line
+                std::string recipe_col = first_backend ? status.name : "";
+
+                // Determine status string
+                // Check supported first - unsupported takes precedence even if installed
+                std::string status_str;
+                if (!backend.supported) {
+                    status_str = "unsupported";
+                } else if (backend.available) {
+                    status_str = "installed";
+                } else {
+                    status_str = "supported";
+                }
+
+                // Version or error (concise)
+                std::string info_col;
+                if (!backend.version.empty() && backend.version != "unknown") {
+                    info_col = backend.version;
+                } else if (!backend.supported && !backend.error.empty()) {
+                    info_col = backend.error;
+                } else {
+                    info_col = "-";
+                }
+
+                std::cout << std::left << std::setw(20) << recipe_col
+                          << std::setw(12) << backend.name
+                          << std::setw(14) << status_str
+                          << info_col << std::endl;
+
+                first_backend = false;
+            }
+        }
+    }
+
+    std::cout << std::string(75, '-') << std::endl;
+    return 0;
 }
 
 // Command: stop

@@ -642,7 +642,13 @@ class EndpointTests(ServerTestBase):
         self.assertIsInstance(data, dict)
 
         # Check required top-level keys per server_spec.md
-        required_keys = ["OS Version", "Processor", "Physical Memory", "devices"]
+        required_keys = [
+            "OS Version",
+            "Processor",
+            "Physical Memory",
+            "devices",
+            "recipes",
+        ]
         for key in required_keys:
             self.assertIn(key, data, f"Missing required key: {key}")
 
@@ -660,30 +666,88 @@ class EndpointTests(ServerTestBase):
         self.assertIn("name", cpu)
         self.assertIn("available", cpu)
 
-        print(f"[OK] /system-info: OS={data['OS Version'][:30]}...")
+        # Verify recipes structure per server_spec.md
+        recipes = data["recipes"]
+        self.assertIsInstance(recipes, dict)
 
-    def test_019_system_info_verbose(self):
-        """Test the /system-info endpoint with verbose flag includes extra details."""
-        response = requests.get(
-            f"{self.base_url}/system-info?verbose=true", timeout=TIMEOUT_DEFAULT
+        # Should contain known recipes
+        known_recipes = [
+            "llamacpp",
+            "whispercpp",
+            "sd-cpp",
+            "flm",
+            "oga-npu",
+            "oga-hybrid",
+            "oga-cpu",
+        ]
+        for recipe in known_recipes:
+            self.assertIn(recipe, recipes, f"Missing recipe: {recipe}")
+
+        # Each recipe should have backends
+        for recipe_name, recipe_data in recipes.items():
+            self.assertIn(
+                "backends", recipe_data, f"Recipe {recipe_name} missing 'backends'"
+            )
+            backends = recipe_data["backends"]
+            self.assertIsInstance(
+                backends, dict, f"Recipe {recipe_name} backends should be dict"
+            )
+
+            # Each backend should have required fields
+            for backend_name, backend_data in backends.items():
+                self.assertIn(
+                    "devices",
+                    backend_data,
+                    f"Backend {recipe_name}/{backend_name} missing 'devices'",
+                )
+                self.assertIn(
+                    "supported",
+                    backend_data,
+                    f"Backend {recipe_name}/{backend_name} missing 'supported'",
+                )
+                self.assertIn(
+                    "available",
+                    backend_data,
+                    f"Backend {recipe_name}/{backend_name} missing 'available'",
+                )
+                self.assertIsInstance(
+                    backend_data["devices"],
+                    list,
+                    f"Backend {recipe_name}/{backend_name} devices should be list",
+                )
+                self.assertIsInstance(
+                    backend_data["supported"],
+                    bool,
+                    f"Backend {recipe_name}/{backend_name} supported should be bool",
+                )
+                self.assertIsInstance(
+                    backend_data["available"],
+                    bool,
+                    f"Backend {recipe_name}/{backend_name} available should be bool",
+                )
+
+                # If not supported, should have error field
+                if not backend_data["supported"]:
+                    self.assertIn(
+                        "error",
+                        backend_data,
+                        f"Unsupported backend {recipe_name}/{backend_name} missing 'error'",
+                    )
+
+                # If available, may have version field (optional)
+                # version is optional, so we just check it's a string if present
+                if "version" in backend_data:
+                    self.assertIsInstance(
+                        backend_data["version"],
+                        str,
+                        f"Backend {recipe_name}/{backend_name} version should be string",
+                    )
+
+        print(
+            f"[OK] /system-info: OS={data['OS Version'][:30]}..., recipes={len(recipes)}"
         )
-        self.assertEqual(response.status_code, 200)
 
-        data = response.json()
-        self.assertIsInstance(data, dict)
-
-        # Check that Python Packages is present in verbose mode
-        self.assertIn(
-            "Python Packages",
-            data,
-            "Python Packages should be present in verbose mode",
-        )
-        packages = data["Python Packages"]
-        self.assertIsInstance(packages, list)
-
-        print(f"[OK] /system-info verbose: {len(packages)} packages listed")
-
-    def test_020_stats_endpoint(self):
+    def test_019_stats_endpoint(self):
         """Test the /stats endpoint returns performance metrics."""
         # First, make an inference request to populate stats
         requests.post(

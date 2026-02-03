@@ -1165,7 +1165,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 #endif
 
     // Get hardware info once (this will print the message)
-    json system_info = SystemInfoCache::get_system_info_with_cache(false);
+    json system_info = SystemInfoCache::get_system_info_with_cache();
     json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
 
     // Check backend availability (passing hardware info)
@@ -1236,30 +1236,11 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         bool filter_out = false;
         std::string filter_reason;
 
-        // Filter FLM models based on NPU availability
-        if (recipe == "flm") {
-            if (!flm_available) {
-                filter_out = true;
-                filter_reason = "NPU models require AMD Ryzen AI 300- and 400-series processors with XDNA2 NPUs running Windows 11. "
-                               "Detected processor: " + processor + ". "
-                               "Detected operating system: " + os_version + ".";
-            }
-        }
-
-        // Filter OGA models based on NPU availability
-        if (recipe == "oga-npu" || recipe == "oga-hybrid") {
-            if (!oga_available) {
-                filter_out = true;
-                filter_reason = "NPU models require AMD Ryzen AI 300- and 400-series processors with XDNA2 NPUs running Windows 11. "
-                               "Detected processor: " + processor + ". "
-                               "Detected operating system: " + os_version + ".";
-            }
-        }
-
-        // OGA-CPU models
-        if (recipe == "oga-cpu" && !oga_available) {
+        // Check recipe support using the centralized system_info recipes structure
+        std::string unsupported_reason = SystemInfo::check_recipe_supported(recipe);
+        if (!unsupported_reason.empty()) {
             filter_out = true;
-            filter_reason = "OGA-CPU models require AMD Ryzen AI 300- and 400-series processors running Windows 11. "
+            filter_reason = unsupported_reason + " "
                            "Detected processor: " + processor + ". "
                            "Detected operating system: " + os_version + ".";
         }
@@ -1495,6 +1476,16 @@ void ModelManager::download_model(const std::string& model_name,
     bool model_registered = model_exists(model_name);
 
     if (!model_registered) {
+        // First, check if the model exists but was filtered out (unsupported recipe)
+        if (model_exists_unfiltered(model_name)) {
+            // Model exists in registry but is not available on this system
+            std::string filter_reason = get_model_filter_reason(model_name);
+            throw std::runtime_error(
+                "Model '" + model_name + "' is not available on this system. " +
+                filter_reason
+            );
+        }
+
         // Model not in registry - this must be a user model registration
         // Validate it has the "user." prefix
         if (model_name.substr(0, 5) != "user.") {
@@ -1558,6 +1549,15 @@ void ModelManager::download_model(const std::string& model_name,
     if (colon_pos != std::string::npos) {
         repo_id = actual_checkpoint.substr(0, colon_pos);
         variant = actual_checkpoint.substr(colon_pos + 1);
+    }
+
+    // Check if this recipe is supported on the current system
+    std::string unsupported_reason = SystemInfo::check_recipe_supported(actual_recipe);
+    if (!unsupported_reason.empty()) {
+        throw std::runtime_error(
+            "Model '" + model_name + "' cannot be used on this system (recipe: " + actual_recipe + "): " +
+            unsupported_reason
+        );
     }
 
     std::cout << "Downloading model: " << repo_id;

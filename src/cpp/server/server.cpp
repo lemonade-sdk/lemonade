@@ -2105,16 +2105,8 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         return;
     }
 
-    // Get verbose parameter from query string (default to false)
-    bool verbose = false;
-    if (req.has_param("verbose")) {
-        std::string verbose_param = req.get_param_value("verbose");
-        std::transform(verbose_param.begin(), verbose_param.end(), verbose_param.begin(), ::tolower);
-        verbose = (verbose_param == "true" || verbose_param == "1");
-    }
-
     // Get system info - this function handles all errors internally and never throws
-    nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache(verbose);
+    nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache();
     res.set_content(system_info.dump(), "application/json");
 }
 
