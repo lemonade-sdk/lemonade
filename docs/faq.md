@@ -215,9 +215,9 @@
       ```bash
       lemonade-server serve --host 0.0.0.0 --port 8000
       ```
-   2. On the client machine, launch the app pointing to the server's IP:
+   2. On the client machine, launch the app and configure the endpoint through the UI:
       ```bash
-      lemonade-app --base-url http://SERVER_IP:8000
+      lemonade-app
       ```
 
    For detailed instructions and security considerations, see [Remote Server Connection](./lemonade-server-cli.md#remote-server-connection).
