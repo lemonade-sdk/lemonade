@@ -593,6 +593,14 @@ jobs:
           requirements-file: 'test/requirements.txt'
 
       # ---- Run Tests ----
+      - name: Stop systemd service before tests (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          echo "Stopping lemonade-server systemd service..."
+          sudo systemctl stop lemonade-server || true
+          sudo systemctl status lemonade-server || true
+
       - name: Run ${{ matrix.test_type }} tests
         shell: bash
         env:
