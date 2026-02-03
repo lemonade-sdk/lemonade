@@ -598,7 +598,7 @@ jobs:
         run: |
           DEB_FILE="lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb"
           echo "Installing .deb package: $DEB_FILE"
-          sudo dpkg -i "$DEB_FILE"
+          sudo apt install ./"$DEB_FILE"
 
           # Verify binaries installed
           lemonade-server --version
