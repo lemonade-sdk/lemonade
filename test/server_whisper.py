@@ -223,8 +223,11 @@ class WhisperTests(ServerTestBase):
 
         return struct.pack(f"<{len(samples)}h", *samples)
 
-    async def test_005_realtime_websocket_connect(self):
+    def test_005_realtime_websocket_connect(self):
         """Test WebSocket connection and session creation."""
+        asyncio.run(self._test_005_realtime_websocket_connect())
+
+    async def _test_005_realtime_websocket_connect(self):
         ws_url = f"ws://localhost:{WS_PORT}/api/v1/realtime?intent=transcription"
 
         print(f"[INFO] Connecting to WebSocket at {ws_url}")
@@ -262,8 +265,11 @@ class WhisperTests(ServerTestBase):
 
         print("[OK] WebSocket connection lifecycle passed")
 
-    async def test_006_realtime_websocket_transcription(self):
+    def test_006_realtime_websocket_transcription(self):
         """Test full realtime transcription: send audio chunks, receive transcript."""
+        asyncio.run(self._test_006_realtime_websocket_transcription())
+
+    async def _test_006_realtime_websocket_transcription(self):
         self.assertIsNotNone(
             self._test_audio_path, "Test audio file not downloaded"
         )

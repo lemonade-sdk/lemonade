@@ -87,9 +87,14 @@ export function useAudioCapture(
         onAudioChunk(base64);
       };
 
-      // Connect: source -> processor -> destination
+      // Connect: source -> processor -> mute -> destination
+      // ScriptProcessorNode must be connected to destination to function,
+      // but a zero-gain node prevents mic audio from playing through speakers
       source.connect(processor);
-      processor.connect(audioContext.destination);
+      const muteNode = audioContext.createGain();
+      muteNode.gain.value = 0;
+      processor.connect(muteNode);
+      muteNode.connect(audioContext.destination);
 
       setIsRecording(true);
     } catch (err) {

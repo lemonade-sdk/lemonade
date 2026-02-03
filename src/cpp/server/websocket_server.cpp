@@ -251,10 +251,15 @@ std::unordered_map<std::string, std::string> WebSocketServer::parse_query_params
 }
 
 void WebSocketServer::send_json(const std::string& connection_id, const json& msg) {
-    std::lock_guard<std::mutex> lock(connections_mutex_);
-    auto it = connection_websockets_.find(connection_id);
-    if (it != connection_websockets_.end() && it->second != nullptr) {
-        it->second->send(msg.dump());
+    try {
+        std::lock_guard<std::mutex> lock(connections_mutex_);
+        auto it = connection_websockets_.find(connection_id);
+        if (it != connection_websockets_.end() && it->second != nullptr) {
+            it->second->send(msg.dump());
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[WebSocket] Error sending message to " << connection_id
+                  << ": " << e.what() << std::endl;
     }
 }
 

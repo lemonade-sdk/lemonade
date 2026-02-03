@@ -24,6 +24,15 @@ RealtimeSessionManager::RealtimeSessionManager(Router* router)
 }
 
 RealtimeSessionManager::~RealtimeSessionManager() {
+    // Wait for pending transcriptions to complete
+    {
+        std::lock_guard<std::mutex> lock(transcriptions_mutex_);
+        for (auto& f : pending_transcriptions_) {
+            if (f.valid()) f.wait();
+        }
+        pending_transcriptions_.clear();
+    }
+
     // Close all sessions
     std::lock_guard<std::mutex> lock(sessions_mutex_);
     sessions_.clear();
@@ -51,7 +60,7 @@ std::string RealtimeSessionManager::create_session(
 ) {
     std::string session_id = generate_session_id();
 
-    auto session = std::make_unique<RealtimeSession>(session_id);
+    auto session = std::make_shared<RealtimeSession>(session_id);
     session->send_message = std::move(send_callback);
 
     // Apply initial configuration
@@ -91,7 +100,7 @@ std::string RealtimeSessionManager::create_session(
     };
 
     // Get the session and send
-    RealtimeSession* sess = get_session(session_id);
+    auto sess = get_session(session_id);
     if (sess && sess->send_message) {
         sess->send_message(created_msg);
     }
@@ -100,7 +109,7 @@ std::string RealtimeSessionManager::create_session(
 }
 
 void RealtimeSessionManager::update_session(const std::string& session_id, const json& config) {
-    RealtimeSession* session = get_session(session_id);
+    auto session = get_session(session_id);
     if (!session) {
         return;
     }
@@ -140,7 +149,7 @@ void RealtimeSessionManager::update_session(const std::string& session_id, const
 }
 
 void RealtimeSessionManager::append_audio(const std::string& session_id, const std::string& base64_audio) {
-    RealtimeSession* session = get_session(session_id);
+    auto session = get_session(session_id);
     if (!session || !session->session_active) {
         return;
     }
@@ -159,7 +168,7 @@ void RealtimeSessionManager::append_audio(const std::string& session_id, const s
     process_vad(session);
 }
 
-void RealtimeSessionManager::process_vad(RealtimeSession* session) {
+void RealtimeSessionManager::process_vad(std::shared_ptr<RealtimeSession> session) {
     // Get recent audio for VAD processing (last 100ms)
     auto recent_audio = session->audio_buffer.get_recent_samples(100);
     if (recent_audio.empty()) {
@@ -219,7 +228,7 @@ void RealtimeSessionManager::process_vad(RealtimeSession* session) {
 }
 
 void RealtimeSessionManager::commit_audio(const std::string& session_id) {
-    RealtimeSession* session = get_session(session_id);
+    auto session = get_session(session_id);
     if (!session || session->audio_buffer.empty()) {
         return;
     }
@@ -237,7 +246,7 @@ void RealtimeSessionManager::commit_audio(const std::string& session_id) {
 }
 
 void RealtimeSessionManager::clear_audio(const std::string& session_id) {
-    RealtimeSession* session = get_session(session_id);
+    auto session = get_session(session_id);
     if (!session) {
         return;
     }
@@ -253,21 +262,48 @@ void RealtimeSessionManager::clear_audio(const std::string& session_id) {
     }
 }
 
-void RealtimeSessionManager::transcribe_and_send(RealtimeSession* session) {
+void RealtimeSessionManager::transcribe_and_send(std::shared_ptr<RealtimeSession> session) {
     if (!session || session->audio_buffer.empty()) {
         return;
     }
 
-    try {
-        // Get WAV data (padded to minimum 0.5s to avoid Whisper errors on very short audio)
-        auto wav_data = session->audio_buffer.get_wav_padded(500);
+    // Snapshot WAV data and clear buffer on the callback thread (no data race)
+    auto wav_data = session->audio_buffer.get_wav_padded(500);
+    std::string model = session->model;
+    session->audio_buffer.clear();
+    session->vad.reset();
 
+    // Dispatch transcription to worker thread so it doesn't block the WebSocket callback
+    auto future = std::async(std::launch::async,
+        [this, session, wav_data = std::move(wav_data), model = std::move(model)]() {
+            transcribe_wav(session, wav_data, model);
+        });
+
+    // Track future for clean shutdown
+    {
+        std::lock_guard<std::mutex> lock(transcriptions_mutex_);
+        // Remove completed futures
+        pending_transcriptions_.erase(
+            std::remove_if(pending_transcriptions_.begin(), pending_transcriptions_.end(),
+                [](const std::future<void>& f) {
+                    return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+                }),
+            pending_transcriptions_.end()
+        );
+        pending_transcriptions_.push_back(std::move(future));
+    }
+}
+
+void RealtimeSessionManager::transcribe_wav(
+    std::shared_ptr<RealtimeSession> session,
+    std::vector<uint8_t> wav_data, std::string model) {
+    try {
         // Convert WAV bytes to a string for the router (expects file_data as string)
         std::string file_data(reinterpret_cast<const char*>(wav_data.data()), wav_data.size());
 
         // Build transcription request
         json request = {
-            {"model", session->model},
+            {"model", model},
             {"file_data", file_data},
             {"filename", "realtime_audio.wav"}
         };
@@ -277,8 +313,8 @@ void RealtimeSessionManager::transcribe_and_send(RealtimeSession* session) {
         json response = router_->audio_transcriptions(request);
         std::cout << "[RealtimeSession] Whisper response: " << response.dump() << std::endl;
 
-        // Send transcription result
-        if (session->send_message) {
+        // Send transcription result if session is still active
+        if (session->send_message && session->session_active.load()) {
             std::string transcript;
             if (response.contains("text")) {
                 transcript = response["text"].get<std::string>();
@@ -293,14 +329,10 @@ void RealtimeSessionManager::transcribe_and_send(RealtimeSession* session) {
             session->send_message(msg);
         }
 
-        // Clear the buffer after successful transcription
-        session->audio_buffer.clear();
-        session->vad.reset();
-
     } catch (const std::exception& e) {
         std::cerr << "[RealtimeSession] Transcription error: " << e.what() << std::endl;
 
-        if (session->send_message) {
+        if (session->send_message && session->session_active.load()) {
             json error_msg = {
                 {"type", "error"},
                 {"error", {
@@ -328,22 +360,12 @@ bool RealtimeSessionManager::session_exists(const std::string& session_id) const
     return sessions_.find(session_id) != sessions_.end();
 }
 
-RealtimeSession* RealtimeSessionManager::get_session(const std::string& session_id) {
+std::shared_ptr<RealtimeSession> RealtimeSessionManager::get_session(const std::string& session_id) {
     std::lock_guard<std::mutex> lock(sessions_mutex_);
 
     auto it = sessions_.find(session_id);
     if (it != sessions_.end()) {
-        return it->second.get();
-    }
-    return nullptr;
-}
-
-const RealtimeSession* RealtimeSessionManager::get_session(const std::string& session_id) const {
-    std::lock_guard<std::mutex> lock(sessions_mutex_);
-
-    auto it = sessions_.find(session_id);
-    if (it != sessions_.end()) {
-        return it->second.get();
+        return it->second;
     }
     return nullptr;
 }

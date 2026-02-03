@@ -23,6 +23,7 @@ export class TranscriptionWebSocket {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 3;
   private isClosing = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     serverUrl: string,
@@ -104,7 +105,7 @@ export class TranscriptionWebSocket {
           console.log(
             `[TranscriptionWebSocket] Reconnecting (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`
           );
-          setTimeout(() => this.connect(wsUrl), 1000 * this.reconnectAttempts);
+          this.reconnectTimer = setTimeout(() => this.connect(wsUrl), 1000 * this.reconnectAttempts);
         }
       };
     } catch (error) {
@@ -223,6 +224,10 @@ export class TranscriptionWebSocket {
    */
   close() {
     this.isClosing = true;
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.ws) {
       this.ws.close();
       this.ws = null;

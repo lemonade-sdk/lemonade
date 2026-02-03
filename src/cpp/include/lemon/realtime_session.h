@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <mutex>
 #include <functional>
+#include <future>
+#include <atomic>
 #include <nlohmann/json.hpp>
 #include "streaming_audio_buffer.h"
 #include "vad.h"
@@ -24,7 +26,7 @@ struct RealtimeSession {
     std::string model;
     StreamingAudioBuffer audio_buffer;
     SimpleVAD vad;
-    bool session_active = true;
+    std::atomic<bool> session_active{true};
 
     // Callback to send messages back to the WebSocket client
     std::function<void(const json&)> send_message;
@@ -99,21 +101,28 @@ public:
 
 private:
     Router* router_;
-    std::unordered_map<std::string, std::unique_ptr<RealtimeSession>> sessions_;
+    std::unordered_map<std::string, std::shared_ptr<RealtimeSession>> sessions_;
     mutable std::mutex sessions_mutex_;
+
+    // Pending transcription futures for clean shutdown
+    std::vector<std::future<void>> pending_transcriptions_;
+    std::mutex transcriptions_mutex_;
 
     // Generate unique session ID
     static std::string generate_session_id();
 
-    // Perform transcription and send result
-    void transcribe_and_send(RealtimeSession* session);
+    // Snapshot audio buffer and dispatch transcription to worker thread
+    void transcribe_and_send(std::shared_ptr<RealtimeSession> session);
+
+    // Run Whisper transcription (executes on worker thread)
+    void transcribe_wav(std::shared_ptr<RealtimeSession> session,
+                        std::vector<uint8_t> wav_data, std::string model);
 
     // Process VAD for a session
-    void process_vad(RealtimeSession* session);
+    void process_vad(std::shared_ptr<RealtimeSession> session);
 
     // Get session by ID (returns nullptr if not found)
-    RealtimeSession* get_session(const std::string& session_id);
-    const RealtimeSession* get_session(const std::string& session_id) const;
+    std::shared_ptr<RealtimeSession> get_session(const std::string& session_id);
 };
 
 } // namespace lemon
