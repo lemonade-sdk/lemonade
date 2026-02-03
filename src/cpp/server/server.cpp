@@ -938,8 +938,6 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         // Use unified Router path for streaming
                         router_->chat_completion_stream(request_body, sink);
 
-                        // Explicitly signal we're done - this ensures proper chunked encoding termination
-                        sink.done();
                         return false;
                     }
                 );
@@ -1125,8 +1123,6 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                         // Use unified Router path for streaming
                         router_->completion_stream(request_body, sink);
 
-                        // Explicitly signal we're done - this ensures proper chunked encoding termination
-                        sink.done();
                         return false;
                     }
                 );
@@ -1539,8 +1535,6 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                         // Use unified Router path for streaming
                         router_->responses_stream(request_body, sink);
 
-                        // Explicitly signal we're done - this ensures proper chunked encoding termination
-                        sink.done();
                         return false;
                     }
                 );
