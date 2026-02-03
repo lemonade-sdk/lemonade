@@ -2233,6 +2233,49 @@ footer {
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
 }
 
+/* Code block wrapper with copy button */
+.code-block-wrapper {
+    position: relative;
+    margin: 0.8em 0;
+}
+
+.code-block-wrapper pre {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    padding-right: 3rem;
+    min-height: 60px;
+}
+
+.code-copy-button {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: #2a2a2a;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 3px;
+    cursor: pointer;
+    color: #aaa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease, color 0.2s ease;
+    z-index: 100;
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.code-copy-button:hover {
+    background: #3a3a3a;
+    color: #fff;
+}
+
+.code-copy-button.copied {
+    color: #4caf50;
+    border-color: #4caf50;
+}
+
 /* Inline code */
 .chat-message code.inline-code,
 .chat-message :not(pre) > code,
