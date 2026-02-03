@@ -182,6 +182,58 @@ jobs:
 
           Write-Host "Electron app build successful!" -ForegroundColor Green
 
+      - name: Build Web App
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Write-Host "Building Web app..." -ForegroundColor Cyan
+
+          cd src\web-app
+
+          # Install dependencies
+          Write-Host "Installing npm dependencies..." -ForegroundColor Yellow
+          npm install
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "ERROR: npm install failed!" -ForegroundColor Red
+              exit $LASTEXITCODE
+          }
+
+          # Build the Web app
+          Write-Host "Building Web app..." -ForegroundColor Yellow
+          npm run build
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "ERROR: Web app build failed!" -ForegroundColor Red
+              exit $LASTEXITCODE
+          }
+
+          # Verify the build output exists
+          if (-not (Test-Path "dist\renderer\index.html")) {
+              Write-Host "ERROR: Web app build output not found!" -ForegroundColor Red
+              exit 1
+          }
+
+          Write-Host "Web app build successful!" -ForegroundColor Green
+
+          # Copy web app output to the location expected by CMake/WiX installer
+          Write-Host "Copying web app to build\resources\web-app..." -ForegroundColor Yellow
+          $targetDir = "..\..\build\resources\web-app"
+          if (-not (Test-Path "..\..\build\resources")) {
+              New-Item -ItemType Directory -Force -Path "..\..\build\resources" | Out-Null
+          }
+          if (Test-Path $targetDir) {
+              Remove-Item -Recurse -Force $targetDir
+          }
+          Copy-Item -Path "dist\renderer" -Destination $targetDir -Recurse -Force
+
+          # Verify the copy succeeded
+          if (-not (Test-Path "..\..\build\resources\web-app\index.html")) {
+              Write-Host "ERROR: Failed to copy web app to build directory!" -ForegroundColor Red
+              exit 1
+          }
+
+          Write-Host "Web app copied to build directory successfully!" -ForegroundColor Green
+
       - name: Build the Lemonade Server Installer
         shell: PowerShell
         run: |
@@ -534,7 +586,7 @@ jobs:
         run: |
           DEB_FILE="lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb"
           echo "Installing .deb package: $DEB_FILE"
-          sudo dpkg -i "$DEB_FILE"
+          sudo apt install ./"$DEB_FILE"
 
           # Verify binaries installed
           lemonade-server --version

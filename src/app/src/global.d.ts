@@ -27,6 +27,7 @@ declare module 'markdown-it-texmath' {
 declare global {
   interface Window {
     api: {
+      isWebApp?: boolean;  // Explicit flag to indicate web mode (vs Electron)
       platform: string;
       minimizeWindow: () => void;
       maximizeWindow: () => void;

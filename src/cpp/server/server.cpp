@@ -371,32 +371,295 @@ void Server::setup_static_files(httplib::Server &web_server) {
         res.set_content(html_template, "text/html");
     };
 
-    // Root path - serve index.html
-    web_server.Get("/", serve_index_html);
+    // Keep status page at /status endpoint
+    web_server.Get("/status", serve_index_html);
 
-    // Also serve index.html at /api/v1
+    // Also serve index.html at /api/v1 for compatibility
     web_server.Get("/api/v1", serve_index_html);
 
-    // Serve favicon.ico from root as expected by most browsers
-    web_server.Get("/favicon.ico", [static_dir](const httplib::Request& req, httplib::Response& res) {
-        std::ifstream ifs(static_dir + "/favicon.ico", std::ios::binary);
-        if (ifs) {
-            // Read favicon bytes to string to pass to response
-            std::string content((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
-            res.set_content(content, "image/x-icon");
-            res.status = 200;
-        } else {
-            res.set_content("Favicon not found.", "text/plain");
-            res.status = 404;
-        }
-    });
-
-    // Mount static files directory for other files (CSS, JS, images)
+    // Mount static files directory for status page assets (CSS, JS, images)
     if (!web_server.set_mount_point("/static", static_dir)) {
         std::cerr << "[Server WARNING] Could not mount static files from: " << static_dir << std::endl;
-        std::cerr << "[Server] Web UI assets will not be available" << std::endl;
+        std::cerr << "[Server] Status page assets will not be available" << std::endl;
     } else {
         std::cout << "[Server] Static files mounted from: " << static_dir << std::endl;
+    }
+
+    // Web app UI endpoint - serve the React web app at root
+    std::string web_app_dir = utils::get_resource_path("resources/web-app");
+
+    // Check if web app directory exists
+    if (fs::exists(web_app_dir) && fs::is_directory(web_app_dir)) {
+        // Create a handler for serving web app index.html for SPA routing
+        auto serve_web_app_html = [web_app_dir](const httplib::Request&, httplib::Response& res) {
+            std::string index_path = web_app_dir + "/index.html";
+            std::ifstream file(index_path);
+
+            if (!file.is_open()) {
+                res.status = 404;
+                res.set_content("{\"error\": \"Web app not found\"}", "application/json");
+                return;
+            }
+
+            std::string html((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            file.close();
+
+            // Inject mock API for web compatibility with Electron app code
+            std::string mock_api = R"(
+<script>
+// Mock Electron API for web compatibility
+window.api = {
+    isWebApp: true,  // Explicit flag to indicate web mode
+    platform: navigator.platform || 'web',
+    minimizeWindow: () => {},
+    maximizeWindow: () => {},
+    closeWindow: () => {},
+    openExternal: (url) => window.open(url, '_blank'),
+    onMaximizeChange: () => {},
+    updateMinWidth: () => {},
+    zoomIn: () => document.body.style.zoom = (parseFloat(document.body.style.zoom || '1') + 0.1).toString(),
+    zoomOut: () => document.body.style.zoom = (parseFloat(document.body.style.zoom || '1') - 0.1).toString(),
+    getSettings: async () => {
+        const saved = localStorage.getItem('lemonade-settings');
+        if (saved) return JSON.parse(saved);
+        // Return defaults matching DEFAULT_LAYOUT_SETTINGS from appSettings.ts
+        return {
+            layout: {
+                isChatVisible: true,
+                isModelManagerVisible: true,
+                isCenterPanelVisible: true,
+                isLogsVisible: false,
+                modelManagerWidth: 280,
+                chatWidth: 350,
+                logsHeight: 200
+            },
+            theme: 'dark',
+            apiUrl: window.location.origin
+        };
+    },
+    saveSettings: async (settings) => {
+        localStorage.setItem('lemonade-settings', JSON.stringify(settings));
+        return settings;
+    },
+    onSettingsUpdated: () => {},
+    getServerPort: () => parseInt(window.location.port) || 8000,
+    onServerPortUpdated: () => {},
+    getVersion: async () => {
+        try {
+            const response = await fetch('/api/v1/health');
+            if (response.ok) {
+                const data = await response.json();
+                return data.version || 'Unknown';
+            }
+        } catch (e) {
+            console.warn('Failed to fetch version:', e);
+        }
+        return 'Unknown';
+    },
+    downloadModel: () => console.log('Model downloads not available in web mode'),
+    onDownloadProgress: () => {},
+    getDownloads: async () => [],
+    pauseDownload: () => {},
+    resumeDownload: () => {},
+    cancelDownload: () => {},
+    restartApp: () => window.location.reload(),
+    getSystemStats: async () => {
+        try {
+            const response = await fetch('/api/v1/system-stats');
+            if (response.ok) {
+                return await response.json();
+            }
+        } catch (e) {
+            console.warn('Failed to fetch system stats:', e);
+        }
+        return { cpu_percent: null, memory_gb: 0, gpu_percent: null, vram_gb: null };
+    },
+    getSystemInfo: async () => {
+        try {
+            const response = await fetch('/api/v1/system-info');
+            if (response.ok) {
+                const data = await response.json();
+                let maxGttGb = 0;
+                let maxVramGb = 0;
+
+                const considerAmdGpu = (gpu) => {
+                    if (gpu && typeof gpu.virtual_mem_gb === 'number' && isFinite(gpu.virtual_mem_gb)) {
+                        maxGttGb = Math.max(maxGttGb, gpu.virtual_mem_gb);
+                    }
+                    if (gpu && typeof gpu.vram_gb === 'number' && isFinite(gpu.vram_gb)) {
+                        maxVramGb = Math.max(maxVramGb, gpu.vram_gb);
+                    }
+                };
+
+                if (data.devices?.amd_igpu) {
+                    considerAmdGpu(data.devices.amd_igpu);
+                }
+                if (Array.isArray(data.devices?.amd_dgpu)) {
+                    data.devices.amd_dgpu.forEach(considerAmdGpu);
+                }
+
+                // Transform server response to match the About window format
+                const systemInfo = {
+                    system: 'Unknown',
+                    os: data['OS Version'] || 'Unknown',
+                    cpu: data['Processor'] || 'Unknown',
+                    gpus: [],
+                    gtt_gb: maxGttGb > 0 ? `${maxGttGb} GB` : undefined,
+                    vram_gb: maxVramGb > 0 ? `${maxVramGb} GB` : undefined,
+                };
+
+                // Extract GPU information from devices
+                if (data.devices) {
+                    if (data.devices.amd_igpu?.name) {
+                        systemInfo.gpus.push(data.devices.amd_igpu.name);
+                    }
+                    if (data.devices.nvidia_igpu?.name) {
+                        systemInfo.gpus.push(data.devices.nvidia_igpu.name);
+                    }
+                    if (Array.isArray(data.devices.amd_dgpu)) {
+                        data.devices.amd_dgpu.forEach(gpu => {
+                            if (gpu.name) systemInfo.gpus.push(gpu.name);
+                        });
+                    }
+                    if (Array.isArray(data.devices.nvidia_dgpu)) {
+                        data.devices.nvidia_dgpu.forEach(gpu => {
+                            if (gpu.name) systemInfo.gpus.push(gpu.name);
+                        });
+                    }
+                }
+
+                return systemInfo;
+            }
+        } catch (e) {
+            console.warn('Failed to fetch system info:', e);
+        }
+        return { system: 'Unknown', os: 'Unknown', cpu: 'Unknown', gpus: [], gtt_gb: undefined, vram_gb: undefined };
+    }
+};
+</script>
+)";
+
+            // Insert mock API before the closing </head> tag
+            size_t head_end_pos = html.find("</head>");
+            if (head_end_pos != std::string::npos) {
+                html.insert(head_end_pos, mock_api);
+            }
+
+            // Set no-cache headers
+            res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
+            res.set_header("Pragma", "no-cache");
+            res.set_header("Expires", "0");
+            res.set_content(html, "text/html");
+        };
+
+        // Serve the web app's index.html at root and for SPA routes
+        web_server.Get("/", serve_web_app_html);
+
+        // Also serve at /web-app for backwards compatibility
+        web_server.Get("/web-app/?", serve_web_app_html);
+
+        // Serve all static assets from the web app directory (JS, CSS, fonts, assets, etc.)
+        // Handle both root-level assets and /web-app/ prefixed paths for backwards compatibility
+        auto serve_web_app_asset = [web_app_dir](const httplib::Request& req, httplib::Response& res, const std::string& file_path) {
+            std::string full_path = web_app_dir + "/" + file_path;
+
+            // Serve the file
+            std::ifstream file(full_path, std::ios::binary);
+            if (!file.is_open()) {
+                res.status = 404;
+                res.set_content("File not found", "text/plain");
+                return;
+            }
+
+            // Read file content
+            std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            file.close();
+
+            // Determine content type based on extension
+            std::string content_type = "application/octet-stream";
+            size_t dot_pos = file_path.rfind('.');
+            if (dot_pos != std::string::npos) {
+                std::string ext = file_path.substr(dot_pos);
+                if (ext == ".js") content_type = "text/javascript";
+                else if (ext == ".css") content_type = "text/css";
+                else if (ext == ".html") content_type = "text/html";
+                else if (ext == ".woff") content_type = "font/woff";
+                else if (ext == ".woff2") content_type = "font/woff2";
+                else if (ext == ".ttf") content_type = "font/ttf";
+                else if (ext == ".svg") content_type = "image/svg+xml";
+                else if (ext == ".png") content_type = "image/png";
+                else if (ext == ".jpg" || ext == ".jpeg") content_type = "image/jpeg";
+                else if (ext == ".json") content_type = "application/json";
+                else if (ext == ".ico") content_type = "image/x-icon";
+            }
+
+            res.set_content(content, content_type);
+        };
+
+        // Serve favicon from web-app directory at root
+        web_server.Get("/favicon.ico", [serve_web_app_asset](const httplib::Request& req, httplib::Response& res) {
+            serve_web_app_asset(req, res, "favicon.ico");
+        });
+
+        // Serve web app assets from root (for files like renderer.bundle.js, fonts, etc.)
+        web_server.Get(R"(/([^/]+\.(js|css|woff|woff2|ttf|svg|png|jpg|jpeg|json|ico)))",
+                      [serve_web_app_asset](const httplib::Request& req, httplib::Response& res) {
+            std::string file_path = req.matches[1].str();
+            serve_web_app_asset(req, res, file_path);
+        });
+
+        // Keep /web-app/ prefix routes for backwards compatibility
+        web_server.Get(R"(/web-app/(.+))", [serve_web_app_asset](const httplib::Request& req, httplib::Response& res) {
+            std::string file_path = req.matches[1].str();
+            serve_web_app_asset(req, res, file_path);
+        });
+
+        std::cout << "[Server] Web app UI available at root (/) from: " << web_app_dir << std::endl;
+
+        // SPA fallback: serve index.html for any unmatched GET routes that don't start with /api, /static, or /live
+        // This enables client-side routing
+        web_server.Get(R"(^(?!/api|/static|/live|/status|/internal).*)",
+                      [serve_web_app_html](const httplib::Request& req, httplib::Response& res) {
+            // Only serve index.html if the path doesn't look like a file with extension
+            std::string path = req.path;
+            size_t last_slash = path.rfind('/');
+            std::string last_segment = (last_slash != std::string::npos) ? path.substr(last_slash + 1) : path;
+
+            // If the last segment has an extension and it's not .html, let it 404
+            // (This helps catch missing assets more clearly)
+            size_t dot_pos = last_segment.rfind('.');
+            if (dot_pos != std::string::npos) {
+                std::string ext = last_segment.substr(dot_pos);
+                if (ext != ".html" && ext != ".htm") {
+                    // File with extension not found, return 404
+                    res.status = 404;
+                    return;
+                }
+            }
+
+            // Otherwise, serve the SPA index.html for client-side routing
+            serve_web_app_html(req, res);
+        });
+    } else {
+        // Fallback to static page when web-app is not compiled
+        std::cout << "[Server] Web app directory not found at: " << web_app_dir << std::endl;
+        std::cout << "[Server] Falling back to static status page at root" << std::endl;
+
+        // Serve the static status page at root instead
+        web_server.Get("/", serve_index_html);
+
+        // Serve favicon from static directory
+        web_server.Get("/favicon.ico", [static_dir](const httplib::Request& req, httplib::Response& res) {
+            std::ifstream ifs(static_dir + "/favicon.ico", std::ios::binary);
+            if (ifs) {
+                std::string content((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
+                res.set_content(content, "image/x-icon");
+                res.status = 200;
+            } else {
+                res.set_content("Favicon not found.", "text/plain");
+                res.status = 404;
+            }
+        });
     }
 
     // Override default headers for static files to include no-cache
@@ -533,7 +796,7 @@ void Server::run() {
             http_server_v6_->listen_after_bind();
         });
     }
-    
+
     //For now we will use getLocalHostname to get the machines hostname.
     //This allows external devices to not have to do a rDNS lookup.
     bool RFC1918_IP = udp_beacon_.isRFC1918(ipv4);

@@ -222,10 +222,7 @@ Creates `lemonade-server-minimal_<VERSION>_amd64.deb` (e.g., `lemonade-server-mi
 
 ```bash
 # Replace <VERSION> with the actual version (e.g., 9.0.0)
-sudo dpkg -i lemonade-server-minimal_<VERSION>_amd64.deb
-
-# If dependencies are missing:
-sudo apt-get install -f
+sudo apt install ./lemonade-server-minimal_<VERSION>_amd64.deb
 ```
 
 **Uninstallation:**

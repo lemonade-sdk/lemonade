@@ -196,6 +196,20 @@ if command_exists node && ! command_exists npm; then
     missing_packages+=("npm")
 fi
 
+# Check for KaTeX fonts (optional but recommended for packaging)
+print_info "Checking KaTeX fonts installation..."
+if [ "$OS" = "linux" ]; then
+    KATEX_FONTS_DIR="/usr/share/fonts/truetype/katex"
+    if [ -d "$KATEX_FONTS_DIR" ]; then
+        print_success "KaTeX fonts are already installed"
+    else
+        print_warning "KaTeX fonts not found (optional, enables symlinks in packages)"
+        if command_exists apt; then
+            missing_packages+=("fonts-katex")
+        fi
+    fi
+fi
+
 echo ""
 
 # If there are missing packages, prompt for installation

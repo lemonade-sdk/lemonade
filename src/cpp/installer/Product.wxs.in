@@ -139,6 +139,7 @@
         <Directory Id="BinDir" Name="bin">
           <Directory Id="ResourcesDir" Name="resources">
             <Directory Id="StaticDir" Name="static" />
+            <Directory Id="WebAppDir" Name="web-app" />
           </Directory>
         </Directory>
 <?if $(var.IncludeElectron) = 1 ?>
@@ -265,6 +266,9 @@
     <Feature Id="Complete" Level="1">
       <ComponentGroupRef Id="ExecutableComponents" />
       <ComponentGroupRef Id="ResourceComponents" />
+<?if $(var.IncludeWebApp) = 1 ?>
+      <ComponentGroupRef Id="WebAppComponents" />
+<?endif?>
 <?if $(var.IncludeElectron) = 1 ?>
       <ComponentGroupRef Id="ElectronAppComponents" />
 <?endif?>
