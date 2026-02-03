@@ -111,6 +111,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const audioLevelRef = useRef(0);
   const wsClientRef = useRef<TranscriptionWebSocket | null>(null);
   const isLiveRecordingRef = useRef(false);
+  const isSpeakingRef = useRef(false);
+  const liveTranscriptRef = useRef('');
 
   // Image generation model state
   const [imagePrompt, setImagePrompt] = useState('');
@@ -1314,10 +1316,15 @@ const sendMessage = async () => {
     if (!trimmedText) return;
 
     if (isLiveRecordingRef.current) {
-      // During recording: accumulate in live transcript
-      setLiveTranscript(prev => prev ? `${prev} ${trimmedText}` : trimmedText);
+      // During recording: accumulate in live transcript and keep ref in sync
+      setLiveTranscript(prev => {
+        const next = prev ? `${prev} ${trimmedText}` : trimmedText;
+        liveTranscriptRef.current = next;
+        return next;
+      });
     } else {
-      // After stop: append to the last history entry (from the commit response)
+      // After stop: this is a late-arriving commit response.
+      // Append to the last "Live Recording" history entry instead of creating a new one.
       setTranscriptionHistory(h => {
         if (h.length > 0 && h[h.length - 1].filename === 'Live Recording') {
           const updated = [...h];
@@ -1333,6 +1340,7 @@ const sendMessage = async () => {
   }, []);
 
   const handleSpeechEvent = useCallback((event: 'started' | 'stopped') => {
+    isSpeakingRef.current = event === 'started';
     setIsSpeaking(event === 'started');
   }, []);
 
@@ -1340,6 +1348,7 @@ const sendMessage = async () => {
   const handleMicStart = useCallback(async () => {
     setLiveError(null);
     setLiveTranscript('');
+    liveTranscriptRef.current = '';
 
     const serverUrl = getServerBaseUrl();
     wsClientRef.current = new TranscriptionWebSocket(serverUrl, selectedModel, {
@@ -1363,20 +1372,33 @@ const sendMessage = async () => {
     stopRecording();
     isLiveRecordingRef.current = false;
 
-    // Push accumulated transcript to history immediately
-    setLiveTranscript(prev => {
-      if (prev.trim()) {
-        setTranscriptionHistory(h => [...h, { filename: 'Live Recording', text: prev.trim() }]);
-      }
-      return '';
-    });
+    // Read accumulated transcript from the ref (synchronous, no closure staleness)
+    // and push to history as a single direct setState call (no nesting).
+    const accumulated = liveTranscriptRef.current.trim();
+    if (accumulated) {
+      setTranscriptionHistory(h => [...h, { filename: 'Live Recording', text: accumulated }]);
+    }
+    liveTranscriptRef.current = '';
+    setLiveTranscript('');
 
     if (wsClientRef.current) {
-      wsClientRef.current.commitAudio();
+      // Only commit (trigger transcription) if user was mid-speech when they
+      // pressed stop. Otherwise clear the buffer — any trailing silence/noise
+      // would cause Whisper to hallucinate fragments on the padded audio.
+      if (isSpeakingRef.current) {
+        wsClientRef.current.commitAudio();
+      } else {
+        wsClientRef.current.clearAudio();
+      }
+      // Capture the WS instance and detach from the ref immediately.
+      // Without this, the delayed close reads wsClientRef.current which may
+      // already point to a NEW session's WebSocket, killing it and causing
+      // every other recording session to silently fail.
+      const wsToClose = wsClientRef.current;
+      wsClientRef.current = null;
+      setIsLiveConnected(false);
       setTimeout(() => {
-        wsClientRef.current?.close();
-        wsClientRef.current = null;
-        setIsLiveConnected(false);
+        wsToClose.close();
       }, 3000);
     }
 

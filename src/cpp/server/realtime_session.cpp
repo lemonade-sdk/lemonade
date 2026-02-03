@@ -259,8 +259,8 @@ void RealtimeSessionManager::transcribe_and_send(RealtimeSession* session) {
     }
 
     try {
-        // Get WAV data (padded to minimum 1.25s to prevent Whisper hallucinations)
-        auto wav_data = session->audio_buffer.get_wav_padded(1250);
+        // Get WAV data (padded to minimum 0.5s to avoid Whisper errors on very short audio)
+        auto wav_data = session->audio_buffer.get_wav_padded(500);
 
         // Convert WAV bytes to a string for the router (expects file_data as string)
         std::string file_data(reinterpret_cast<const char*>(wav_data.data()), wav_data.size());

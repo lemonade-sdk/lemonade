@@ -15,10 +15,10 @@ public:
         float energy_threshold = 0.01f;     // RMS threshold for speech detection
         float freq_threshold = 100.0f;      // Minimum frequency for speech (unused for now)
         int min_speech_ms = 250;            // Minimum speech duration to trigger
-        int min_silence_ms = 500;           // Silence duration to end speech
+        int min_silence_ms = 800;           // Silence duration to end speech (longer = bigger chunks for Whisper)
         int sample_rate = 16000;            // Audio sample rate
         int onset_frames = 2;              // Consecutive voice frames required to confirm speech start
-        int hangover_frames = 3;           // Extra frames to continue after silence before ending speech
+        int hangover_frames = 6;           // Extra frames (~510ms) to continue after silence before ending speech
     };
 
     enum class Event {
