@@ -655,6 +655,22 @@ if(UNIX AND NOT APPLE)
         )
 
         if (NOT WIN32 AND NOT APPLE)
+            if (EXISTS "${ELECTRON_APP_UNPACKED_DIR}/chrome-sandbox")
+                install(FILES "${ELECTRON_APP_UNPACKED_DIR}/chrome-sandbox"
+                    DESTINATION share/lemonade-server/app
+                    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE SETUID
+                )
+            endif()
+
+            if (EXISTS "${ELECTRON_APP_UNPACKED_DIR}/chrome_crashpad_handler")
+                install(FILES "${ELECTRON_APP_UNPACKED_DIR}/chrome_crashpad_handler"
+                    DESTINATION share/lemonade-server/app
+                    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+                )
+            endif()
+        endif()
+
+        if (NOT WIN32 AND NOT APPLE)
             # Install .desktop file for electron app
             install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-app.desktop
                 DESTINATION share/applications
@@ -694,26 +710,19 @@ if(UNIX AND NOT APPLE)
             endif()
         endif()
 
-        # Post-install script for full package
-        # Note: CPack requires the script to be named 'postinst' exactly
-        # We copy postinst-full to a temporary postinst file for CPack
-        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst-full"
-                       "${CMAKE_CURRENT_BINARY_DIR}/postinst" COPYONLY)
-        set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_BINARY_DIR}/postinst")
     else()
         # Minimal package (server only)
         set(CPACK_PACKAGE_NAME "lemonade-server-minimal")
         set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip")
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
 
-        # Post-install script for minimal package
-        set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst")
-
         if(BUILD_ELECTRON_APP)
             message(WARNING "BUILD_ELECTRON_APP is ON but Electron app not found at ${ELECTRON_APP_UNPACKED_DIR}")
             message(WARNING "Building minimal deb package instead")
         endif()
     endif()
+    # Post-install script for debian package
+    set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst")
 
     # RPM specific variables defined within
     include(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/CPackRPM.cmake)
