@@ -148,6 +148,12 @@ CLIParser::CLIParser()
 
 int CLIParser::parse(int argc, char** argv) {
     try {
+#ifdef LEMONADE_TRAY
+        // Show help if no arguments provided
+        if (argc == 1) {
+            throw CLI::CallForHelp();
+        }
+#endif
         app_.parse(argc, argv);
 
         // Process --max-loaded-models values
