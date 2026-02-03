@@ -1414,7 +1414,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"
 - PID file system (<code>/tmp/lemonade-router.pid</code>) for reliable process management
 - Proper graceful shutdown - all child processes cleaned up correctly
 - File locations:
-  - Installed binaries: <code>/usr/local/bin/</code>
+  - Installed binaries: <code>/opt/bin</code>
   - Downloaded backends (llama-server, ryzenai-server): <code>~/.cache/lemonade/bin/</code>
   - Model downloads: <code>~/.cache/huggingface/</code> (follows HF conventions)</p>
 <p><strong>macOS:</strong>
@@ -1460,12 +1460,12 @@ cpack
 </code></pre></div>
 <p><strong>Package Output:</strong></p>
 <p>Creates <code>lemonade-server-minimal_&lt;VERSION&gt;_amd64.deb</code> (e.g., <code>lemonade-server-minimal_9.0.3_amd64.deb</code>) which:
-- Installs to <code>/usr/local/bin/</code> (executables)
-- Installs resources to <code>/usr/local/share/lemonade-server/</code>
-- Creates desktop entry in <code>/usr/local/share/applications/</code>
+- Installs to <code>/opt/bin/</code> (executables)
+- Installs resources to <code>/opt/share/lemonade-server/</code>
+- Creates desktop entry in <code>/opt/share/applications/</code>
 - Declares dependencies: libcurl4, libssl3, libz1
 - Package size: ~2.2 MB (clean, runtime-only package)
-- Includes postinst script that creates writable <code>/usr/local/share/lemonade-server/llama/</code> directory</p>
+- Includes postinst script that creates writable <code>/opt/share/lemonade-server/llama/</code> directory</p>
 <p><strong>Installation:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Replace &lt;VERSION&gt; with the actual version (e.g., 9.0.0)</span>
 sudo<span class="w"> </span>dpkg<span class="w"> </span>-i<span class="w"> </span>lemonade-server-minimal_&lt;VERSION&gt;_amd64.deb
