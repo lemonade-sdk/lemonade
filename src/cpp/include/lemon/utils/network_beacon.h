@@ -1,14 +1,15 @@
 #ifndef NETWORK_BEACON_H
 #define NETWORK_BEACON_H
 
+#include <atomic>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <thread>
-#include <mutex>
-#include <atomic>
 
 #ifdef _WIN32
     #include <winsock2.h>
+    
     typedef int socklen_t;
 #else
     typedef int SOCKET;

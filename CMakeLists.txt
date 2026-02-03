@@ -402,7 +402,6 @@ set(SOURCES
     src/cpp/server/backends/whisper_server.cpp
     src/cpp/server/backends/sd_server.cpp
     src/cpp/server/backends/backend_utils.cpp
-    
 )
 
 # Add version resource file on Windows

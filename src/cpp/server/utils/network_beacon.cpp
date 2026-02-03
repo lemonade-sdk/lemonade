@@ -2,18 +2,19 @@
 
 #include <chrono>
 #include <mutex>
-#include <thread>
-#include <stdexcept>
 #include <sstream>
+#include <stdexcept>
+#include <thread>
 
 #ifdef _WIN32
     #include <ws2tcpip.h>
     #pragma comment(lib, "ws2_32.lib")
 #else
-    #include <sys/socket.h>
-    #include <netinet/in.h>
     #include <arpa/inet.h>
+    #include <netinet/in.h>
+    #include <sys/socket.h>
     #include <unistd.h>
+
     #define closesocket close
     #define SOCKET_ERROR -1
 #endif
