@@ -652,7 +652,7 @@ Speech Generation API. You provide a text input and receive an audio file. This 
       -H "Content-Type: application/json" \
       -d '{
             "model": "kokoro-v1",
-            "prompt": "Lemonade can speak!",
+            "input": "Lemonade can speak!",
             "speed": 1.0,
             "steps": 4,
             "response_format": "mp3"
