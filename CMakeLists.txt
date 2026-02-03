@@ -544,12 +544,14 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
 
     set(ELECTRON_BUILD_SOURCE_DIR "${CMAKE_BINARY_DIR}/app-src")
 
+    # Note: On Windows, NPM_COMMAND uses 'cmd /c' wrapper to handle npm.cmd batch file
+    # Note: Avoid shell-special characters in echo messages (no parentheses, etc.)
     add_custom_target(electron-app
         COMMAND ${CMAKE_COMMAND} -E echo "Copying Electron app source to build directory..."
         COMMAND ${CMAKE_COMMAND} -E remove_directory "${ELECTRON_BUILD_SOURCE_DIR}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${ELECTRON_BUILD_SOURCE_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${ELECTRON_APP_SOURCE_DIR}" "${ELECTRON_BUILD_SOURCE_DIR}"
-        COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies (clean install)..."
+        COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies..."
         COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci
         COMMAND ${CMAKE_COMMAND} -E echo "Building Electron app for current platform..."
         COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_BUILD_SOURCE_DIR}" ${NPM_COMMAND} run ${ELECTRON_BUILD_TARGET} -- --config.directories.output=${ELECTRON_APP_BUILD_DIR}
