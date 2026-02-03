@@ -223,6 +223,25 @@ static int get_systemd_service_main_pid(const char* unit_name) {
     return 0;
 #endif
 }
+
+// Helper: Check if systemd service is active in another process (not this one)
+static bool is_systemd_service_active_other_process(const char* unit_name) {
+#ifdef HAVE_SYSTEMD
+    if (!is_systemd_service_active(unit_name)) {
+        return false;
+    }
+
+    int main_pid = get_systemd_service_main_pid(unit_name);
+    if (main_pid <= 0) {
+        return false;
+    }
+
+    return (main_pid != getpid());
+#else
+    (void)unit_name;
+    return false;
+#endif
+}
 #endif
 
 // Helper macro for debug logging
@@ -475,6 +494,28 @@ int TrayApp::run() {
     } else if (tray_config_.command == "recipes") {
         return execute_recipes_command();
     } else if (tray_config_.command == "serve" || tray_config_.command == "run") {
+#ifndef _WIN32
+        if (tray_config_.command == "run" &&
+            is_systemd_service_active_other_process("lemonade-server.service")) {
+            std::cout << "Lemonade Server is managed by systemd. Connecting to it..." << std::endl;
+
+            auto [pid, running_port] = get_server_info();
+            (void)pid;
+            if (running_port == 0) {
+                std::cerr << "Error: Could not connect to systemd-managed server" << std::endl;
+                return 1;
+            }
+
+            server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
+            server_config_.port = running_port;
+
+            if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
+                server_config_.host = "localhost";
+            }
+
+            return execute_run_command();
+        }
+#endif
         // Check for single instance - only for 'serve' and 'run' commands
         // Other commands (status, list, pull, delete, stop) can run alongside a server
         if (lemon::SingleInstance::IsAnotherInstanceRunning("Server")) {
