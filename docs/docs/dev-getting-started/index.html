@@ -1390,15 +1390,23 @@ managers and create the build directory.</p>
 </ul>
 <h3 id="building-the-electron-desktop-app-optional">Building the Electron Desktop App (Optional)</h3>
 <p>The tray menu's "Open app" option and the <code>lemonade-server run</code> command can launch the Electron desktop app. To include it in your build:</p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Build the Electron app using CMake (requires Node.js 20+)</span>
-cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"> </span>--target<span class="w"> </span>electron-app
-
-<span class="c1"># This will:</span>
-<span class="c1"># 1. Copy src/app to build/app-src (keeps source tree clean)</span>
-<span class="c1"># 2. Run npm install in build/app-src</span>
-<span class="c1"># 3. Build to build/app/win-unpacked/ (or similar)</span>
-</code></pre></div>
-<p>The tray app looks for <code>Lemonade.exe</code> in the same directory as the executable (development) or in <code>../app/</code> (installed). If not found, the "Open app" option is hidden but everything else works.</p>
+<p>Build the Electron app using CMake (requires Node.js 20+):</p>
+<p><strong>Linux</strong>
+<div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>default<span class="w"> </span>--target<span class="w"> </span>electron-app
+</code></pre></div></p>
+<p><strong>Windows</strong>
+<div class="highlight"><pre><span></span><code><span class="n">cmake</span> <span class="p">-</span><span class="n">-build</span> <span class="p">-</span><span class="n">-preset</span> <span class="n">windows</span> <span class="p">-</span><span class="n">-target</span> <span class="n">electron-app</span>
+</code></pre></div></p>
+<p>This will:
+1. Copy src/app to build/app-src (keeps source tree clean)
+2. Run npm install in build/app-src
+3. Build to build/app/linux-unpacked/ (Linux) or build/app/win-unpacked/ (Windows)</p>
+<p>The tray app searches for the Electron app in these locations:
+- <strong>Windows installed</strong>: <code>../app/Lemonade.exe</code> (relative to bin/ directory)
+- <strong>Windows development</strong>: <code>../app/win-unpacked/Lemonade.exe</code> (from build/Release/)
+- <strong>Linux installed</strong>: <code>/usr/local/share/lemonade-server/app/lemonade</code>
+- <strong>Linux development</strong>: <code>../app/linux-unpacked/lemonade</code> (from build/)</p>
+<p>If not found, the "Open app" menu option is hidden but everything else works.</p>
 <h3 id="platform-specific-notes">Platform-Specific Notes</h3>
 <p><strong>Windows:</strong>
 - The build uses static linking to minimize DLL dependencies
