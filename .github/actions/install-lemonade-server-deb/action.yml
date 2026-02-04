@@ -56,18 +56,18 @@ runs:
 
         # Copy resources to user's local share (path_utils.cpp checks here)
         mkdir -p ~/.local/share/lemonade-server
-        cp -r "$EXTRACT_PATH/usr/local/share/lemonade-server/"* ~/.local/share/lemonade-server/
+        cp -r "$EXTRACT_PATH/opt/share/lemonade-server/"* ~/.local/share/lemonade-server/
 
         # Make llama directory writable for backend downloads
-        mkdir -p "$EXTRACT_PATH/usr/local/share/lemonade-server/llama"
-        chmod 777 "$EXTRACT_PATH/usr/local/share/lemonade-server/llama"
+        mkdir -p "$EXTRACT_PATH/opt/share/lemonade-server/llama"
+        chmod 777 "$EXTRACT_PATH/opt/share/lemonade-server/llama"
 
         # Make binaries executable
-        chmod +x "$EXTRACT_PATH/usr/local/bin/lemonade-server"
-        chmod +x "$EXTRACT_PATH/usr/local/bin/lemonade-router"
+        chmod +x "$EXTRACT_PATH/opt/bin/lemonade-server"
+        chmod +x "$EXTRACT_PATH/opt/bin/lemonade-router"
 
         # Add binaries to PATH for subsequent steps
-        BIN_PATH="$(pwd)/$EXTRACT_PATH/usr/local/bin"
+        BIN_PATH="$(pwd)/$EXTRACT_PATH/opt/bin"
         echo "$BIN_PATH" >> $GITHUB_PATH
         echo "bin-path=$BIN_PATH" >> $GITHUB_OUTPUT
 
@@ -84,7 +84,7 @@ runs:
         echo "Verifying binaries..."
 
         # Test version commands
-        "$EXTRACT_PATH/usr/local/bin/lemonade-router" --version
-        "$EXTRACT_PATH/usr/local/bin/lemonade-server" --version
+        "$EXTRACT_PATH/opt/bin/lemonade-router" --version
+        "$EXTRACT_PATH/opt/bin/lemonade-server" --version
 
         echo "Binaries verified successfully!"

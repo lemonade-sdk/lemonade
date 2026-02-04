@@ -62,7 +62,7 @@ std::string get_resource_path(const std::string& relative_path) {
 #ifndef _WIN32
     // On Linux/macOS, also check standard install locations
     std::vector<std::string> install_prefixes = {
-        "/usr/local/share/lemonade-server",
+        "/opt/share/lemonade-server",
         "/usr/share/lemonade-server"
     };
 

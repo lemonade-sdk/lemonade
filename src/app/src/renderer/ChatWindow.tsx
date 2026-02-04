@@ -847,7 +847,7 @@ const sendMessage = async () => {
     });
   };
 
-  const renderMessageContent = (content: MessageContent, thinking?: string, messageIndex?: number) => {
+  const renderMessageContent = (content: MessageContent, thinking?: string, messageIndex?: number, isComplete?: boolean) => {
     return (
       <>
         {thinking && (
@@ -878,18 +878,18 @@ const sendMessage = async () => {
             </button>
             {expandedThinking.has(messageIndex!) && (
               <div className="thinking-content">
-                <MarkdownMessage content={thinking} />
+                <MarkdownMessage content={thinking} isComplete={isComplete} />
               </div>
             )}
           </div>
         )}
         {typeof content === 'string' ? (
-          <MarkdownMessage content={content} />
+          <MarkdownMessage content={content} isComplete={isComplete} />
         ) : (
           <div className="message-content-array">
             {content.map((item, index) => {
               if (item.type === 'text') {
-                return <MarkdownMessage key={index} content={item.text} />;
+                return <MarkdownMessage key={index} content={item.text} isComplete={isComplete} />;
               } else if (item.type === 'image_url') {
                 return (
                   <img
@@ -2019,7 +2019,7 @@ const sendMessage = async () => {
                       onClick={(e) => message.role === 'user' && !isLoading && handleEditMessage(index, e)}
                       style={{ cursor: message.role === 'user' && !isLoading ? 'pointer' : 'default' }}
                     >
-                      {renderMessageContent(message.content, message.thinking, index)}
+                      {renderMessageContent(message.content, message.thinking, index, message.role === 'assistant')}
                     </div>
                   )}
                 </div>

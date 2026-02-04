@@ -165,9 +165,31 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "Building Electron app..." -ForegroundColor Cyan
+          Write-Host "Building Electron app via CMake target..." -ForegroundColor Cyan
 
-          cd src\app
+          # Build using CMake electron-app target (single source of truth)
+          cmake --build --preset windows --target electron-app
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "ERROR: Electron app build failed!" -ForegroundColor Red
+              exit $LASTEXITCODE
+          }
+
+          # Verify the build output exists
+          if (-not (Test-Path "build\app\win-unpacked\Lemonade.exe")) {
+              Write-Host "ERROR: Electron app executable not found!" -ForegroundColor Red
+              exit 1
+          }
+
+          Write-Host "Electron app build successful!" -ForegroundColor Green
+
+      - name: Build Web App
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Write-Host "Building Web app..." -ForegroundColor Cyan
+
+          cd src\web-app
 
           # Install dependencies
           Write-Host "Installing npm dependencies..." -ForegroundColor Yellow
@@ -177,36 +199,40 @@ jobs:
               exit $LASTEXITCODE
           }
 
-          # Build the Electron app for Windows
-          Write-Host "Building Electron app for Windows..." -ForegroundColor Yellow
-          npm run build:win
+          # Build the Web app
+          Write-Host "Building Web app..." -ForegroundColor Yellow
+          npm run build
           if ($LASTEXITCODE -ne 0) {
-              Write-Host "ERROR: Electron app build failed!" -ForegroundColor Red
+              Write-Host "ERROR: Web app build failed!" -ForegroundColor Red
               exit $LASTEXITCODE
           }
 
           # Verify the build output exists
-          if (-not (Test-Path "dist-app\win-unpacked\Lemonade.exe")) {
-              Write-Host "ERROR: Electron app executable not found!" -ForegroundColor Red
+          if (-not (Test-Path "dist\renderer\index.html")) {
+              Write-Host "ERROR: Web app build output not found!" -ForegroundColor Red
               exit 1
           }
 
-          # Move output to build directory where CMake expects it
-          Write-Host "Moving Electron app to build directory..." -ForegroundColor Yellow
-          $targetDir = "..\..\build\app"
+          Write-Host "Web app build successful!" -ForegroundColor Green
+
+          # Copy web app output to the location expected by CMake/WiX installer
+          Write-Host "Copying web app to build\resources\web-app..." -ForegroundColor Yellow
+          $targetDir = "..\..\build\resources\web-app"
+          if (-not (Test-Path "..\..\build\resources")) {
+              New-Item -ItemType Directory -Force -Path "..\..\build\resources" | Out-Null
+          }
           if (Test-Path $targetDir) {
               Remove-Item -Recurse -Force $targetDir
           }
-          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
-          Move-Item -Path "dist-app\*" -Destination $targetDir -Force
+          Copy-Item -Path "dist\renderer" -Destination $targetDir -Recurse -Force
 
-          # Verify the final output exists
-          if (-not (Test-Path "..\..\build\app\win-unpacked\Lemonade.exe")) {
-              Write-Host "ERROR: Electron app not found in final location!" -ForegroundColor Red
+          # Verify the copy succeeded
+          if (-not (Test-Path "..\..\build\resources\web-app\index.html")) {
+              Write-Host "ERROR: Failed to copy web app to build directory!" -ForegroundColor Red
               exit 1
           }
 
-          Write-Host "Electron app build successful!" -ForegroundColor Green
+          Write-Host "Web app copied to build directory successfully!" -ForegroundColor Green
 
       - name: Build the Lemonade Server Installer
         shell: PowerShell
@@ -350,6 +376,10 @@ jobs:
           - name: stable-diffusion
             test_type: sd
             runner: [rai300_400, Windows]
+          # Text to speech
+          - name: text-to-speech
+            test_type: tts
+            runner: [rai300_400, Windows]
     env:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
@@ -410,6 +440,9 @@ jobs:
               "sd" {
                   & $venvPython test/server_sd.py --server-binary $serverExe
               }
+              "tts" {
+                  & $venvPython test/server_tts.py --server-binary $serverExe
+              }
           }
 
           if ($LASTEXITCODE -ne 0) {
@@ -443,6 +476,10 @@ jobs:
           # Stable Diffusion
           - name: stable-diffusion
             test_type: sd
+            runner: [rai300_400, Linux]
+          # Text to speech
+          - name: text-to-speech
+            test_type: tts
             runner: [rai300_400, Linux]
     env:
       LEMONADE_CI_MODE: "True"
@@ -486,6 +523,9 @@ jobs:
               ;;
             sd)
               $VENV_PYTHON test/server_sd.py --server-binary lemonade-server
+              ;;
+            tts)
+              $VENV_PYTHON test/server_tts.py --server-binary lemonade-server
               ;;
           esac
 
@@ -542,11 +582,26 @@ jobs:
       - uses: actions/checkout@v4
 
       # ---- Linux Setup ----
+      - name: Download .deb package
+        if: runner.os == 'Linux'
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-server-deb
+          path: .
+
       - name: Install Lemonade Server (.deb)
         if: runner.os == 'Linux'
-        uses: ./.github/actions/install-lemonade-server-deb
-        with:
-          version: ${{ env.LEMONADE_VERSION }}
+        shell: bash
+        run: |
+          DEB_FILE="lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb"
+          echo "Installing .deb package: $DEB_FILE"
+          sudo apt install ./"$DEB_FILE"
+
+          # Verify binaries installed
+          lemonade-server --version
+
+          # Verify the systemd service started automatically
+          sudo systemctl status lemonade-server
 
       - name: Set environment (Linux)
         if: runner.os == 'Linux'
@@ -587,6 +642,14 @@ jobs:
           requirements-file: 'test/requirements.txt'
 
       # ---- Run Tests ----
+      - name: Stop systemd service before tests (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          echo "Stopping lemonade-server systemd service..."
+          sudo systemctl stop lemonade-server || true
+          sudo systemctl status lemonade-server || true
+
       - name: Run ${{ matrix.test_type }} tests
         shell: bash
         env:
