@@ -38,9 +38,15 @@ public:
     json audio_transcriptions(const json& request) override;
 
 private:
-    std::string get_whisper_server_path();
+    std::string get_whisper_server_path(const std::string& backend);
     std::string find_executable_in_install_dir(const std::string& install_dir);
-    std::string find_external_whisper_server();
+    std::string find_external_whisper_server(const std::string& backend);
+
+    // NPU compiled cache handling
+    void download_npu_compiled_cache(const std::string& model_path,
+                                      const std::string& checkpoint,
+                                      const ModelInfo& model_info,
+                                      bool do_not_upgrade);
 
     // Audio file handling
     std::string save_audio_to_temp(const std::string& audio_data,

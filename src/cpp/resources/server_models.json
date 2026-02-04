@@ -642,42 +642,54 @@
         "recipe": "whispercpp",
         "suggested": true,
         "labels": ["audio", "transcription"],
-        "size": 0.075
+        "size": 0.075,
+        "npu_cache_repo": "amd/whisper-tiny-onnx-npu",
+        "npu_cache_filename": "ggml-tiny-encoder-vitisai.rai"
     },
     "Whisper-Base": {
         "checkpoint": "ggerganov/whisper.cpp:ggml-base.bin",
         "recipe": "whispercpp",
         "suggested": true,
         "labels": ["audio", "transcription"],
-        "size": 0.142
+        "size": 0.142,
+        "npu_cache_repo": "amd/whisper-base-onnx-npu",
+        "npu_cache_filename": "ggml-base-encoder-vitisai.rai"
     },
     "Whisper-Small": {
         "checkpoint": "ggerganov/whisper.cpp:ggml-small.bin",
         "recipe": "whispercpp",
         "suggested": true,
         "labels": ["audio", "transcription"],
-        "size": 0.466
+        "size": 0.466,
+        "npu_cache_repo": "amd/whisper-small-onnx-npu",
+        "npu_cache_filename": "ggml-small-encoder-vitisai.rai"
     },
     "Whisper-Medium": {
         "checkpoint": "ggerganov/whisper.cpp:ggml-medium.bin",
         "recipe": "whispercpp",
         "suggested": true,
         "labels": ["audio", "transcription"],
-        "size": 1.42
+        "size": 1.42,
+        "npu_cache_repo": "amd/whisper-medium-onnx-npu",
+        "npu_cache_filename": "ggml-medium-encoder-vitisai.rai"
     },
     "Whisper-Large-v3": {
         "checkpoint": "ggerganov/whisper.cpp:ggml-large-v3.bin",
         "recipe": "whispercpp",
         "suggested": true,
         "labels": ["audio", "transcription"],
-        "size": 2.87
+        "size": 2.87,
+        "npu_cache_repo": "amd/whisper-large-v3-onnx-npu",
+        "npu_cache_filename": "ggml-large-v3-encoder-vitisai.rai"
     },
     "Whisper-Large-v3-Turbo": {
         "checkpoint": "ggerganov/whisper.cpp:ggml-large-v3-turbo.bin",
         "recipe": "whispercpp",
         "suggested": true,
         "labels": ["audio", "transcription", "hot"],
-        "size": 1.55
+        "size": 1.55,
+        "npu_cache_repo": "amd/whisper-large-turbo-onnx-npu",
+        "npu_cache_filename": "ggml-large-v3-turbo-encoder-vitisai.rai"
     },
     "DeepSeek-R1-Distill-Llama-8B-FLM": {
         "checkpoint": "deepseek-r1:8b",
