@@ -893,18 +893,6 @@ if(APPLE)
     endif()
 endif()
 
-# Add manual web-app target for platforms where automatic build is disabled
-if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND NOT BUILD_WEB_APP)
-    add_custom_target(web-app
-        COMMAND ${CMAKE_COMMAND} -E echo "Building Web app..."
-        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} install
-        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} run build
-        COMMENT "Building Web app with npm"
-        WORKING_DIRECTORY "${WEB_APP_SOURCE_DIR}"
-        VERBATIM
-    )
-    message(STATUS "Web app can be built manually with: cmake --build . --target web-app")
-endif()
 # Add tray application subdirectory
 add_subdirectory(src/cpp/tray)
 
