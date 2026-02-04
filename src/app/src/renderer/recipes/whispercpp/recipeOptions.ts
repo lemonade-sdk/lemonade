@@ -1,18 +1,22 @@
 import {
   BooleanOption,
   NumericOption,
+  StringOption,
   RecipeOptions,
 } from "../recipeOptions";
 
 export type NumericOptionKey = 'ctxSize';
+export type StringOptionKey = 'whispercppBackend';
 export type BooleanOptionKey = 'saveOptions';
 
 const numericOptionKeys: NumericOptionKey[] = ['ctxSize'];
+const stringOptionKeys: StringOptionKey[] = ['whispercppBackend'];
 const booleanOptionKeys: BooleanOptionKey[] = ['saveOptions'];
 
 export interface WhisperOptions {
   recipe: 'whispercpp'
   ctxSize: NumericOption,
+  whispercppBackend: StringOption,
   saveOptions: BooleanOption
 }
 
@@ -23,12 +27,14 @@ export const NUMERIC_OPTION_LIMITS: Record<NumericOptionKey, { min: number; max:
 export const createDefaultOptions = (): RecipeOptions => ({
   recipe: 'whispercpp',
   ctxSize: {value: DEFAULT_OPTION_VALUES.ctxSize, useDefault: true},
+  whispercppBackend: {value: DEFAULT_OPTION_VALUES.whispercppBackend, useDefault: true},
   saveOptions: {value: DEFAULT_OPTION_VALUES.saveOptions, useDefault: true},
 });
 
 export const cloneOptions = (options: WhisperOptions): RecipeOptions => ({
   recipe: 'whispercpp',
   ctxSize: {...options.ctxSize},
+  whispercppBackend: {...options.whispercppBackend},
   saveOptions: {...options.saveOptions},
 });
 
@@ -71,6 +77,25 @@ export const mergeWithDefaultOptions = (incoming?: Partial<RecipeOptions>): Reci
     };
   });
 
+  stringOptionKeys.forEach((key) => {
+    const incomingWhisper = incoming as Partial<WhisperOptions>;
+    const rawOption = incomingWhisper[key];
+    if (!rawOption || typeof rawOption !== 'object') {
+      return;
+    }
+
+    const defaultsWhisper = defaults as WhisperOptions;
+    const value =
+        typeof rawOption.value === 'string'
+            ? rawOption.value
+            : defaultsWhisper[key].value;
+
+    defaultsWhisper[key] = {
+      value: value,
+      useDefault: false
+    };
+  });
+
   booleanOptionKeys.forEach((key) => {
     const rawOption = incoming[key];
     if (!rawOption || typeof rawOption !== 'object') {
@@ -93,12 +118,11 @@ export const mergeWithDefaultOptions = (incoming?: Partial<RecipeOptions>): Reci
 
 type DefaultOptionValues =
     Record<NumericOptionKey, number>
-    & Record<BooleanOptionKey, boolean>
-    & {
-  saveOptions: boolean;
-};
+    & Record<StringOptionKey, string>
+    & Record<BooleanOptionKey, boolean>;
 
 export const DEFAULT_OPTION_VALUES: DefaultOptionValues = {
   ctxSize: 4096,
+  whispercppBackend: "",  // Empty string = auto
   saveOptions: true,
 };

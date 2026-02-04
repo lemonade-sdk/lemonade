@@ -566,7 +566,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
             save_options: options.saveOptions.value
           }
         } else if (options.recipe === 'whispercpp') {
-          modelData = { ...modelData, ctx_size: options.ctxSize.value, save_options: options.saveOptions.value }
+          modelData = {
+            ...modelData,
+            whispercpp_backend: options.whispercppBackend.value,
+            save_options: options.saveOptions.value
+          }
         } else if (options.recipe === 'sd-cpp') {
           modelData = { ...modelData, ctx_size: options.ctxSize.value, save_options: options.saveOptions.value }
         } else if (options.recipe === 'flm') {
@@ -872,7 +876,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                                       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                                     </svg>
                                   </button>
-                                  {!['sd-cpp', 'whispercpp'].includes(model.info.recipe) && <button
+                                  {!['sd-cpp'].includes(model.info.recipe) && <button
                                     className="model-action-btn load-btn"
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -923,7 +927,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                                       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                                     </svg>
                                   </button>
-                                  {!['sd-cpp', 'whispercpp'].includes(model.info.recipe) && <button
+                                  {!['sd-cpp'].includes(model.info.recipe) && <button
                                     className="model-action-btn load-btn"
                                     onClick={(e) => {
                                       e.stopPropagation();

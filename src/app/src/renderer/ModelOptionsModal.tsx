@@ -65,8 +65,9 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
           setOptions(whispercpp.createDefaultOptions());
           const stored: RecipeOptions = {
             recipe: 'whispercpp',
-            ctxSize: { value: data.recipe_options.ctx_size, useDefault: true },
-            saveOptions: { value: data.recipe_options.save_options, useDefault: true },
+            ctxSize: { value: data.recipe_options?.ctx_size ?? 4096, useDefault: true },
+            whispercppBackend: { value: data.recipe_options?.whispercpp_backend ?? "", useDefault: true },
+            saveOptions: { value: data.recipe_options?.save_options ?? true, useDefault: true },
           }
 
           if (isMounted) {
@@ -220,7 +221,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     });
   };
 
-  const handleStringChange = (key: llamacpp.StringOptionKey, rawValue: string) => {
+  const handleStringChange = (key: llamacpp.StringOptionKey | whispercpp.StringOptionKey, rawValue: string) => {
     setOptions((prev) => {
       if (!prev) return prev;
 
@@ -249,18 +250,27 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     });
   };
 
-  const handleResetField = (key: llamacpp.NumericOptionKey | llamacpp.StringOptionKey | llamacpp.BooleanOptionKey | whispercpp.NumericOptionKey | whispercpp.BooleanOptionKey) => {
+  const handleResetField = (key: llamacpp.NumericOptionKey | llamacpp.StringOptionKey | llamacpp.BooleanOptionKey | whispercpp.NumericOptionKey | whispercpp.StringOptionKey | whispercpp.BooleanOptionKey) => {
     setOptions((prev) => {
       if (!prev) return prev;
       if (prev.recipe === 'llamacpp') {
         return {
           ...prev,
           [key]: {
-            value: llamacpp.DEFAULT_OPTION_VALUES[key],
+            value: llamacpp.DEFAULT_OPTION_VALUES[key as keyof typeof llamacpp.DEFAULT_OPTION_VALUES],
+            useDefault: true,
+          },
+        };
+      } else if (prev.recipe === 'whispercpp') {
+        return {
+          ...prev,
+          [key]: {
+            value: whispercpp.DEFAULT_OPTION_VALUES[key as keyof typeof whispercpp.DEFAULT_OPTION_VALUES],
             useDefault: true,
           },
         };
       }
+      return prev;
     });
   };
 
@@ -403,25 +413,25 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
               <h5>Checkpoint: {modelInfo?.checkpoint}</h5>
             </div>
 
-            <div className="form-section">
-              <label className="form-label" title="context size">context size</label>
-              <input
-                type="text"
-                value={options.ctxSize.value}
-                onChange={(e) => {
-                  if (e.target.value === 'auto' || e.target.value === '') {
-                    return;
-                  }
-                  const parsed = parseFloat(e.target.value);
-                  if (Number.isNaN(parsed)) {
-                    return;
-                  }
-                  handleNumericChange('ctxSize', parsed);
-                }}
-                className="form-input"
-                placeholder="auto"
-              />
-            </div>
+            {/* Show backend selector if the model's recipe has multiple backends */}
+            {modelInfo?.recipe && (supportedRecipes[modelInfo.recipe]?.length ?? 0) > 1 && (
+              <div className="form-section">
+                <label className="form-label" title="Select backend to use for this model">
+                  backend
+                </label>
+                <select
+                  className="form-input form-select"
+                  value={options.whispercppBackend.value}
+                  onChange={(e) => handleStringChange('whispercppBackend', e.target.value)}
+                >
+                  <option value="">Auto</option>
+                  {(supportedRecipes[modelInfo.recipe] ?? []).map((backend) => (
+                    <option key={backend} value={backend}>{getBackendDisplayName(backend)}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div
               className={`settings-section ${
                 options.saveOptions.useDefault ? 'settings-section-default' : ''

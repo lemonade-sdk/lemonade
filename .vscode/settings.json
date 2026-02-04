@@ -1,22 +1,30 @@
 {
-    "cmake.sourceDirectory": "/workspaces/lemonade",
+    "cmake.sourceDirectory": "/workspaces/lemonade/src/cpp",
     "files.watcherExclude": {
         "**/dist-app/**": true,
         "**/build/**": true,
+        "**/app-src/**": true,
         "**/node_modules/**": true,
         "**/*.asar": true,
         "**/win-unpacked/**": true,
         "**/linux-unpacked/**": true,
         "**/mac/**": true
     },
+    "files.exclude": {
+        "**/build/app-src/**": true,
+        "**/build/app/**": true,
+        "**/*.asar": true
+    },
     "search.exclude": {
         "**/dist-app/**": true,
         "**/build/**": true,
+        "**/app-src/**": true,
         "**/node_modules/**": true
     },
     "cursor.exclude": {
         "**/dist-app/**": true,
         "**/build/**": true,
+        "**/app-src/**": true,
         "**/node_modules/**": true,
         "**/*.asar": true,
         "**/win-unpacked/**": true,
