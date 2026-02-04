@@ -111,14 +111,16 @@ void WebSocketServer::stop() {
 }
 
 void WebSocketServer::handle_connection(const std::string& connection_id, ix::WebSocket* ws, const std::string& url) {
-    // Parse query parameters to check intent
+    // Parse query parameters (OpenAI SDK passes ?model=X)
     auto params = parse_query_params(url);
 
-    // Verify this is a transcription session
-    std::string intent = params.count("intent") ? params["intent"] : "";
-    if (intent != "transcription") {
-        // For now, default to transcription
-        // In the future, could support other intents
+    // Build initial session config from URL params
+    json initial_config = json::object();
+
+    // Get model from URL (OpenAI SDK compatible)
+    if (params.count("model")) {
+        initial_config["model"] = params["model"];
+        std::cout << "[WebSocket] Model from URL: " << params["model"] << std::endl;
     }
 
     // Store WebSocket pointer for this connection
@@ -133,7 +135,7 @@ void WebSocketServer::handle_connection(const std::string& connection_id, ix::We
         send_json(conn_id_copy, msg);
     };
 
-    std::string session_id = session_manager_->create_session(send_callback);
+    std::string session_id = session_manager_->create_session(send_callback, initial_config);
 
     {
         std::lock_guard<std::mutex> lock(connections_mutex_);
@@ -173,7 +175,7 @@ void WebSocketServer::handle_message(const std::string& connection_id, const std
     // Get message type
     std::string msg_type = request.value("type", "");
 
-    if (msg_type == "transcription_session.update") {
+    if (msg_type == "session.update") {
         // Update session configuration
         json session_config = request.value("session", json::object());
         session_manager_->update_session(session_id, session_config);

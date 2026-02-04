@@ -91,9 +91,9 @@ std::string RealtimeSessionManager::create_session(
         sessions_[session_id] = std::move(session);
     }
 
-    // Send session created message
+    // Send session created message (OpenAI-compatible)
     json created_msg = {
-        {"type", "transcription_session.created"},
+        {"type", "session.created"},
         {"session", {
             {"id", session_id}
         }}
@@ -135,10 +135,10 @@ void RealtimeSessionManager::update_session(const std::string& session_id, const
         session->vad.set_config(vad_config);
     }
 
-    // Send session updated message
+    // Send session updated message (OpenAI-compatible)
     if (session->send_message) {
         json updated_msg = {
-            {"type", "transcription_session.updated"},
+            {"type", "session.updated"},
             {"session", {
                 {"id", session_id},
                 {"model", session->model}

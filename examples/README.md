@@ -24,18 +24,17 @@ Interactive demos that work with Lemonade Server.
 
 ### Realtime Transcription (Python)
 
+Uses the OpenAI-compatible WebSocket API for real-time speech-to-text.
+
 ```bash
 # Install dependencies
-pip install websockets pyaudio
+pip install openai websockets pyaudio
 
-# Stream from microphone (primary use case)
+# Stream from microphone
 python realtime_transcription.py --mic
 
 # Use a different model
 python realtime_transcription.py --mic --model Whisper-Small
-
-# Test mode: simulate streaming with a WAV file
-python realtime_transcription.py --file audio.wav
 ```
 
 ### LLM Demos

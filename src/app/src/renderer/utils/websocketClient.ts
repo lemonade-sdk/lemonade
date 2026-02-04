@@ -56,11 +56,11 @@ export class TranscriptionWebSocket {
       wsUrl = wsUrl.replace(/(ws:\/\/[^\/]+)/, '$1:8100');
     }
 
-    // Add the realtime endpoint with transcription intent
+    // Add the realtime endpoint with model (OpenAI SDK compatible)
     if (!wsUrl.endsWith('/')) {
       wsUrl += '/';
     }
-    wsUrl += 'api/v1/realtime?intent=transcription';
+    wsUrl += `realtime?model=${encodeURIComponent(this.model)}`;
 
     console.log('[TranscriptionWebSocket] Final WebSocket URL:', wsUrl);
     return wsUrl;
@@ -75,9 +75,9 @@ export class TranscriptionWebSocket {
         console.log('[TranscriptionWebSocket] Connected successfully!');
         this.reconnectAttempts = 0;
 
-        // Send session update with model
+        // Send session update with model (OpenAI-compatible)
         this.sendMessage({
-          type: 'transcription_session.update',
+          type: 'session.update',
           session: { model: this.model },
         });
 
@@ -119,11 +119,11 @@ export class TranscriptionWebSocket {
       const msg: RealtimeMessage = JSON.parse(data);
 
       switch (msg.type) {
-        case 'transcription_session.created':
+        case 'session.created':
           console.log('[TranscriptionWebSocket] Session created:', msg.session);
           break;
 
-        case 'transcription_session.updated':
+        case 'session.updated':
           console.log('[TranscriptionWebSocket] Session updated:', msg.session);
           break;
 
@@ -207,7 +207,7 @@ export class TranscriptionWebSocket {
   updateModel(model: string) {
     this.model = model;
     this.sendMessage({
-      type: 'transcription_session.update',
+      type: 'session.update',
       session: { model },
     });
   }

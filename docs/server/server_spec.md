@@ -25,7 +25,7 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/embeddings` - Embeddings (text -> vector representations)
 - POST `/api/v1/responses` - Chat Completions (prompt|messages -> event)
 - POST `/api/v1/audio/transcriptions` - Audio Transcription (audio file -> text)
-- WS `/api/v1/realtime` - Realtime Audio Transcription (streaming audio -> text)
+- WS `/realtime` - Realtime Audio Transcription (streaming audio -> text, OpenAI SDK compatible)
 - POST `/api/v1/images/generations` - Image Generation (prompt -> image)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
@@ -587,29 +587,31 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 
 
 
-### `WS /api/v1/realtime` <sub>![Status](https://img.shields.io/badge/status-partial-yellow)</sub>
+### `WS /realtime` <sub>![Status](https://img.shields.io/badge/status-partial-yellow)</sub>
 
-Realtime Audio Transcription API via WebSocket. Stream audio from a microphone and receive transcriptions in real-time with Voice Activity Detection (VAD).
+Realtime Audio Transcription API via WebSocket (OpenAI SDK compatible). Stream audio from a microphone and receive transcriptions in real-time with Voice Activity Detection (VAD).
 
 > **Note:** The WebSocket server runs on HTTP port + 100 (e.g., if HTTP is on port 8000, WebSocket is on port 8100).
 >
 > **Limitations:** Only 16kHz mono PCM16 audio format is supported. Uses the same Whisper models as the HTTP transcription endpoint.
+>
+> **OpenAI SDK Compatible:** This endpoint follows the OpenAI Realtime API format. If you have existing code using OpenAI's Realtime API, you only need to change the `base_url` to point to your local Lemonade server (`ws://localhost:8100`).
 
 #### Connection
 
-Connect to the WebSocket endpoint with the `intent=transcription` query parameter:
+Connect to the WebSocket endpoint with the model name (OpenAI SDK compatible):
 
 ```
-ws://localhost:8100/api/v1/realtime?intent=transcription
+ws://localhost:8100/realtime?model=Whisper-Tiny
 ```
 
-Upon connection, the server sends a `transcription_session.created` message with a session ID.
+Upon connection, the server sends a `session.created` message with a session ID.
 
 #### Client → Server Messages
 
 | Message Type | Description |
 |--------------|-------------|
-| `transcription_session.update` | Configure the session (set model, VAD settings) |
+| `session.update` | Configure the session (set model, VAD settings) |
 | `input_audio_buffer.append` | Send audio data (base64-encoded PCM16) |
 | `input_audio_buffer.commit` | Force transcription of buffered audio |
 | `input_audio_buffer.clear` | Clear audio buffer without transcribing |
@@ -618,8 +620,8 @@ Upon connection, the server sends a `transcription_session.created` message with
 
 | Message Type | Description |
 |--------------|-------------|
-| `transcription_session.created` | Session established, contains session ID |
-| `transcription_session.updated` | Session configuration updated |
+| `session.created` | Session established, contains session ID |
+| `session.updated` | Session configuration updated |
 | `input_audio_buffer.speech_started` | VAD detected speech start |
 | `input_audio_buffer.speech_stopped` | VAD detected speech end, transcription triggered |
 | `input_audio_buffer.committed` | Audio buffer committed for transcription |
@@ -631,7 +633,7 @@ Upon connection, the server sends a `transcription_session.created` message with
 
 ```json
 {
-  "type": "transcription_session.update",
+  "type": "session.update",
   "session": {
     "model": "Whisper-Tiny"
   }
@@ -665,11 +667,11 @@ Audio should be:
 
 #### VAD Configuration
 
-VAD settings can be configured via `transcription_session.update`:
+VAD settings can be configured via `session.update`:
 
 ```json
 {
-  "type": "transcription_session.update",
+  "type": "session.update",
   "session": {
     "model": "Whisper-Tiny",
     "turn_detection": {
