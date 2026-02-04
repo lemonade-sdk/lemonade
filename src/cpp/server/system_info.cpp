@@ -867,28 +867,24 @@ bool SystemInfo::is_whispercpp_installed() {
 bool SystemInfo::is_sdcpp_installed() {
     // Check if sd-server executable exists in any backend subdirectory
     // Location: {cache_dir}/bin/sd-cpp/{backend}/
-    // Backends to check: cpu, rocm
 
     fs::path bin_dir = utils::get_downloaded_bin_dir();
     fs::path base_dir = bin_dir / "sd-cpp";
 
-    // Check both backend subdirectories
     std::vector<std::string> backends = {"cpu", "rocm"};
-    
     for (const auto& backend : backends) {
         fs::path install_dir = base_dir / backend;
-        
+
 #ifdef _WIN32
-        fs::path exe_path = install_dir / "sd-server.exe";
+    fs::path exe_path = install_dir / "sd-server.exe";
 #else
-        fs::path exe_path = install_dir / "sd-server";
+    fs::path exe_path = install_dir / "sd-server";
 #endif
-        
+
         if (fs::exists(exe_path)) {
             return true;
         }
     }
-
     return false;
 }
 

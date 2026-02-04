@@ -19,7 +19,6 @@ namespace lemon {
 namespace backends {
 
 // Helper to get stable-diffusion.cpp version from configuration
-// ADDED: Support for backend-specific versions (cpu vs rocm)
 static std::string get_sd_version(const std::string& backend = "cpu") {
     std::string config_path = utils::get_resource_path("resources/backend_versions.json");
 
@@ -60,7 +59,6 @@ static std::string get_sd_version(const std::string& backend = "cpu") {
 }
 
 // Helper to get the install directory for sd executable
-// ADDED: Include backend subdirectory to support multiple backends
 static std::string get_sd_install_dir(const std::string& backend = "cpu") {
     return (fs::path(get_downloaded_bin_dir()) / "sd-cpp" / backend).string();
 }
@@ -179,9 +177,6 @@ void SDServer::install(const std::string& /* backend */) {
     // ADDED: ROCm backend selection for AMD GPU support
     std::string filename;
     if (backend_ == "rocm") {
-        // ADDED: ROCm GPU build download support
-        // Downloads HIP/ROCm-enabled binaries for AMD GPUs (e.g., Radeon 8060S)
-        
         // Validate ROCm architecture support
         std::string target_arch = lemon::SystemInfo::get_rocm_arch();
         if (target_arch.empty()) {
@@ -190,7 +185,7 @@ void SDServer::install(const std::string& /* backend */) {
             );
         }
         
-        
+
 #ifdef _WIN32
     filename = "sd-" + short_version + "-bin-win-rocm-x64.zip";
 #elif defined(__linux__)
@@ -415,7 +410,6 @@ void SDServer::load(const std::string& model_name,
         std::cout << "[SDServer] Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
     }
 #else
-    // ADDED: ROCm Windows DLL loading support
     // ROCm builds on Windows require hipblaslt.dll, rocblas.dll, amdhip64.dll, etc.
     // These DLLs are distributed alongside sd-server.exe but need PATH to be set for loading
     if (backend_ == "rocm") {
