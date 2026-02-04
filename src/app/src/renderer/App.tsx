@@ -9,6 +9,7 @@ import DownloadManager from './DownloadManager';
 import StatusBar from './StatusBar';
 import { ModelsProvider } from './hooks/useModels';
 import { SystemProvider } from './hooks/useSystem';
+import { DEFAULT_LAYOUT_SETTINGS } from './utils/appSettings';
 import '../../styles.css';
 
 const LAYOUT_CONSTANTS = {
@@ -20,14 +21,14 @@ const LAYOUT_CONSTANTS = {
 };
 
 const App: React.FC = () => {
-  const [isChatVisible, setIsChatVisible] = useState(true);
-  const [isModelManagerVisible, setIsModelManagerVisible] = useState(true);
-  const [isCenterPanelVisible, setIsCenterPanelVisible] = useState(true);
-  const [isLogsVisible, setIsLogsVisible] = useState(false);
+  const [isChatVisible, setIsChatVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isChatVisible);
+  const [isModelManagerVisible, setIsModelManagerVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isModelManagerVisible);
+  const [isCenterPanelVisible, setIsCenterPanelVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isCenterPanelVisible);
+  const [isLogsVisible, setIsLogsVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isLogsVisible);
   const [isDownloadManagerVisible, setIsDownloadManagerVisible] = useState(false);
-  const [modelManagerWidth, setModelManagerWidth] = useState(280);
-  const [chatWidth, setChatWidth] = useState(350);
-  const [logsHeight, setLogsHeight] = useState(200);
+  const [modelManagerWidth, setModelManagerWidth] = useState(DEFAULT_LAYOUT_SETTINGS.modelManagerWidth);
+  const [chatWidth, setChatWidth] = useState(DEFAULT_LAYOUT_SETTINGS.chatWidth);
+  const [logsHeight, setLogsHeight] = useState(DEFAULT_LAYOUT_SETTINGS.logsHeight);
   const [layoutLoaded, setLayoutLoaded] = useState(false);
   const isDraggingRef = useRef<'left' | 'right' | 'bottom' | null>(null);
   const startXRef = useRef(0);

@@ -457,6 +457,19 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
         return model_cache_path;  // Return directory even if genai_config not found
     }
 
+    // For kokoro models, look for index.json directory
+    if (info.recipe == "kokoro") {
+        if (fs::exists(model_cache_path)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+                if (entry.is_regular_file() && entry.path().filename() == "index.json") {
+                    return entry.path().string();
+                }
+            }
+        }
+
+        return model_cache_path;  // Return directory even if index not found
+    }
+
     // For whispercpp, find the .bin model file
     if (info.recipe == "whispercpp") {
         if (!fs::exists(model_cache_path)) {
@@ -681,6 +694,10 @@ void ModelManager::build_cache() {
             info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
         }
 
+        // Parse NPU cache fields if present (for whispercpp models)
+        info.npu_cache_repo = JsonUtils::get_or_default<std::string>(value, "npu_cache_repo", "");
+        info.npu_cache_filename = JsonUtils::get_or_default<std::string>(value, "npu_cache_filename", "");
+
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
@@ -715,6 +732,10 @@ void ModelManager::build_cache() {
             info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
             info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
         }
+
+        // Parse NPU cache fields if present (for whispercpp models)
+        info.npu_cache_repo = JsonUtils::get_or_default<std::string>(value, "npu_cache_repo", "");
+        info.npu_cache_filename = JsonUtils::get_or_default<std::string>(value, "npu_cache_filename", "");
 
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
@@ -860,6 +881,8 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
     info.mmproj = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
+    info.npu_cache_repo = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_repo", "");
+    info.npu_cache_filename = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_filename", "");
 
     if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {
         for (const auto& label : (*model_json)["labels"]) {
@@ -1165,7 +1188,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 #endif
 
     // Get hardware info once (this will print the message)
-    json system_info = SystemInfoCache::get_system_info_with_cache(false);
+    json system_info = SystemInfoCache::get_system_info_with_cache();
     json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
 
     // Check backend availability (passing hardware info)
@@ -1236,30 +1259,11 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         bool filter_out = false;
         std::string filter_reason;
 
-        // Filter FLM models based on NPU availability
-        if (recipe == "flm") {
-            if (!flm_available) {
-                filter_out = true;
-                filter_reason = "NPU models require AMD Ryzen AI 300- and 400-series processors with XDNA2 NPUs running Windows 11. "
-                               "Detected processor: " + processor + ". "
-                               "Detected operating system: " + os_version + ".";
-            }
-        }
-
-        // Filter OGA models based on NPU availability
-        if (recipe == "oga-npu" || recipe == "oga-hybrid") {
-            if (!oga_available) {
-                filter_out = true;
-                filter_reason = "NPU models require AMD Ryzen AI 300- and 400-series processors with XDNA2 NPUs running Windows 11. "
-                               "Detected processor: " + processor + ". "
-                               "Detected operating system: " + os_version + ".";
-            }
-        }
-
-        // OGA-CPU models
-        if (recipe == "oga-cpu" && !oga_available) {
+        // Check recipe support using the centralized system_info recipes structure
+        std::string unsupported_reason = SystemInfo::check_recipe_supported(recipe);
+        if (!unsupported_reason.empty()) {
             filter_out = true;
-            filter_reason = "OGA-CPU models require AMD Ryzen AI 300- and 400-series processors running Windows 11. "
+            filter_reason = unsupported_reason + " "
                            "Detected processor: " + processor + ". "
                            "Detected operating system: " + os_version + ".";
         }
@@ -1495,6 +1499,16 @@ void ModelManager::download_model(const std::string& model_name,
     bool model_registered = model_exists(model_name);
 
     if (!model_registered) {
+        // First, check if the model exists but was filtered out (unsupported recipe)
+        if (model_exists_unfiltered(model_name)) {
+            // Model exists in registry but is not available on this system
+            std::string filter_reason = get_model_filter_reason(model_name);
+            throw std::runtime_error(
+                "Model '" + model_name + "' is not available on this system. " +
+                filter_reason
+            );
+        }
+
         // Model not in registry - this must be a user model registration
         // Validate it has the "user." prefix
         if (model_name.substr(0, 5) != "user.") {
@@ -1558,6 +1572,15 @@ void ModelManager::download_model(const std::string& model_name,
     if (colon_pos != std::string::npos) {
         repo_id = actual_checkpoint.substr(0, colon_pos);
         variant = actual_checkpoint.substr(colon_pos + 1);
+    }
+
+    // Check if this recipe is supported on the current system
+    std::string unsupported_reason = SystemInfo::check_recipe_supported(actual_recipe);
+    if (!unsupported_reason.empty()) {
+        throw std::runtime_error(
+            "Model '" + model_name + "' cannot be used on this system (recipe: " + actual_recipe + "): " +
+            unsupported_reason
+        );
     }
 
     std::cout << "Downloading model: " << repo_id;
@@ -2367,6 +2390,8 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", false);
     info.mmproj = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
+    info.npu_cache_repo = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_repo", "");
+    info.npu_cache_filename = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_filename", "");
 
     // Parse labels array
     if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {

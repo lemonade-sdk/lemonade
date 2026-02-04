@@ -3,6 +3,7 @@ export interface SystemInfo {
   physical_memory: string;
   processor: string;
   devices: Devices;
+  recipes?: Recipes;
 }
 
 interface Devices {
@@ -17,7 +18,6 @@ interface Device {
   name: string;
   available: boolean;
   error?: string;
-  inference_engines: InferenceEngines;
 }
 
 interface GPUDevice extends Device {
@@ -31,17 +31,24 @@ interface CPUInfo extends Device {
 }
 
 interface NPUInfo extends Device {
-
 }
 
-interface InferenceEngines {
-  "llamacpp-rocm"?: InferenceEngine,
-  "llamacpp-vulkan"?: InferenceEngine,
-  oga?: InferenceEngine;
+// New recipes structure from system-info endpoint
+// Fully dynamic - no hardcoded recipe or backend names
+export interface Recipes {
+  [recipeName: string]: Recipe;
 }
-interface InferenceEngine {
+
+export interface Recipe {
+  backends: {
+    [backendName: string]: BackendInfo;
+  };
+}
+
+export interface BackendInfo {
+  devices: string[];
+  supported: boolean;
   available: boolean;
-  backend?: string;
   version?: string;
   error?: string;
 }

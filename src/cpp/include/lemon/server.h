@@ -14,6 +14,7 @@
 #include "router.h"
 #include "model_manager.h"
 #include "websocket_server.h"
+#include "lemon/utils/network_beacon.h"
 
 namespace lemon {
 
@@ -28,7 +29,8 @@ public:
            int max_reranking_models,
            int max_audio_models,
            int max_image_models,
-           const std::string& extra_models_dir);
+           const std::string& extra_models_dir,
+           bool no_broadcast);
 
     ~Server();
 
@@ -88,6 +90,7 @@ private:
 
     // Audio endpoint handlers (OpenAI /v1/audio/* compatible)
     void handle_audio_transcriptions(const httplib::Request& req, httplib::Response& res);
+    void handle_audio_speech(const httplib::Request& req, httplib::Response& res);
 
     // Image endpoint handlers (OpenAI /v1/images/* compatible)
     void handle_image_generations(const httplib::Request& req, httplib::Response& res);
@@ -100,7 +103,6 @@ private:
 
     // Helper function to generate detailed model error responses (not found, not supported, load failure)
     nlohmann::json create_model_error(const std::string& requested_model, const std::string& exception_msg);
-
     // System stats helper methods
     double get_cpu_usage();
     double get_gpu_usage();
@@ -111,6 +113,7 @@ private:
     std::string log_level_;
     json default_options_;
     std::string log_file_path_;
+    bool no_broadcast_;
 
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;
@@ -126,6 +129,7 @@ private:
     bool running_;
 
     std::string api_key_;
+    NetworkBeacon udp_beacon_;
 
     // CPU usage tracking
 #if defined(__linux__) || defined(_WIN32)
