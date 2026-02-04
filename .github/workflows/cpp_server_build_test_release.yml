@@ -364,8 +364,13 @@ jobs:
             backend: ""
             runner: [rai300_400, Windows]
           # Whisper
-          - name: whisper
+          - name: whisper (cpu)
             test_type: whisper
+            backend: cpu
+            runner: [rai300_400, Windows]
+          - name: whisper (npu)
+            test_type: whisper
+            backend: npu
             runner: [rai300_400, Windows]
           # Stable Diffusion
           - name: stable-diffusion
@@ -426,7 +431,11 @@ jobs:
                   }
               }
               "whisper" {
-                  & $venvPython test/server_whisper.py --server-binary $serverExe
+                  if ("${{ matrix.backend }}") {
+                      & $venvPython test/server_whisper.py --backend ${{ matrix.backend }} --server-binary $serverExe
+                  } else {
+                      & $venvPython test/server_whisper.py --server-binary $serverExe
+                  }
               }
               "sd" {
                   & $venvPython test/server_sd.py --server-binary $serverExe

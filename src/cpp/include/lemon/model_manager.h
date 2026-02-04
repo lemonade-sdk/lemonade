@@ -58,6 +58,10 @@ struct ModelInfo {
 
     // Image generation defaults (for sd-cpp models)
     ImageDefaults image_defaults;
+
+    // NPU cache fields for whispercpp recipe with RyzenAI based NPU backend
+    std::string npu_cache_repo;      // HuggingFace repo for NPU compiled cache
+    std::string npu_cache_filename;  // Filename of .rai cache file
 };
 
 class ModelManager {
