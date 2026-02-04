@@ -15,7 +15,7 @@
   "sd-cpp": "master-471-7010bb4",
   "ryzenai-server": "v1.0.2",
   "flm": {
-    "version": "v0.9.27",
+    "version": "v0.9.31",
     "min_npu_driver": "32.0.203.304"
   },
   "kokoro": {
