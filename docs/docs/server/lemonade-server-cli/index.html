@@ -1307,6 +1307,10 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 <td>Default LlamaCpp backend (<code>vulkan</code>, <code>rocm</code>, or <code>cpu</code>)</td>
 </tr>
 <tr>
+<td><code>LEMONADE_WHISPERCPP</code></td>
+<td>Default WhisperCpp backend (<code>cpu</code> or <code>npu</code>)</td>
+</tr>
+<tr>
 <td><code>LEMONADE_CTX_SIZE</code></td>
 <td>Default context size for models</td>
 </tr>
@@ -1351,8 +1355,12 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 <td>Path to custom <code>llama-server</code> binary for CPU backend</td>
 </tr>
 <tr>
-<td><code>LEMONADE_WHISPERCPP_BIN</code></td>
-<td>Path to custom <code>whisper-server</code> binary</td>
+<td><code>LEMONADE_WHISPERCPP_CPU_BIN</code></td>
+<td>Path to custom <code>whisper-server</code> binary for CPU backend</td>
+</tr>
+<tr>
+<td><code>LEMONADE_WHISPERCPP_NPU_BIN</code></td>
+<td>Path to custom <code>whisper-server</code> binary for NPU backend</td>
 </tr>
 <tr>
 <td><code>LEMONADE_RYZENAI_SERVER_BIN</code></td>
