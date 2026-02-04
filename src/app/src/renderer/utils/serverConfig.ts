@@ -40,7 +40,7 @@ class ServerConfig {
         }
 
         if (this.apiKey != apiKey) {
-           this.setUpdatedAPIKey(apiKey); 
+           this.setUpdatedAPIKey(apiKey);
         }
       });
     }
@@ -48,6 +48,11 @@ class ServerConfig {
 
   private async initialize(): Promise<void> {
     try {
+      // Get API Key if available
+      if (typeof window !== 'undefined'&& window.api?.getServerAPIKey) {
+        this.apiKey = await window.api.getServerAPIKey();
+      }
+
       // In web app mode, use the current origin as the server base URL
       if (typeof window !== 'undefined' && window.api?.isWebApp) {
         const origin = window.location?.origin;
@@ -63,14 +68,9 @@ class ServerConfig {
       // Check if an explicit base URL was configured (--base-url or env var)
       if (typeof window !== 'undefined' && window.api?.getServerBaseUrl && window.api?.getServerAPIKey) {
         const baseUrl = await window.api.getServerBaseUrl();
-        const apiKey = await window.api.getServerAPIKey();
         if (baseUrl) {
           console.log('Using explicit server base URL:', baseUrl);
           this.explicitBaseUrl = baseUrl;
-        }
-
-        if (apiKey) {
-          this.apiKey = apiKey;
         }
 
         this.initialized = true;
@@ -263,7 +263,7 @@ class ServerConfig {
   private notifyUrlListeners() {
     const url = this.getServerBaseUrl();
     const apiKey = this.getAPIKey();
-    
+
     this.urlListeners.forEach((listener) => {
       try {
         listener(url, apiKey);
@@ -283,13 +283,13 @@ class ServerConfig {
       : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
     const options = { ...opts };
-  
+
     if(this.apiKey != null && this.apiKey != '') {
       options.headers = {
         ...options.headers,
         Authorization: `Bearer ${this.apiKey}`,
       }
-    }  
+    }
 
     try {
       const response = await fetch(fullUrl, options);
