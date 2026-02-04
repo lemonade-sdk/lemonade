@@ -12,7 +12,10 @@ Interactive demos that work with Lemonade Server.
 - **multi-model-tester.html**: Test prompts across multiple models side-by-side
 
 ### Image Generation
-- **api_image_generation.py**: Generate images using the Stable Diffusion API
+- **api_image_generation.py**: Generate images using the `images/generations` endpoint
+
+### Speech Synthesis (TTS)
+- **api_text_to_speech.py**: Generate speech from a prompt using `audio/speech` endpoint
 
 ## Setup
 
