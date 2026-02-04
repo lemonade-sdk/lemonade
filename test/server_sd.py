@@ -18,6 +18,7 @@ import requests
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
+    _config,
 )
 from utils.test_models import (
     SD_MODEL,
@@ -318,4 +319,8 @@ class StableDiffusionTests(ServerTestBase):
 
 
 if __name__ == "__main__":
-    run_server_tests(StableDiffusionTests, "STABLE DIFFUSION TESTS")
+    run_server_tests(
+        StableDiffusionTests,
+        "STABLE DIFFUSION TESTS",
+        wrapped_server="sd-cpp",
+    )
