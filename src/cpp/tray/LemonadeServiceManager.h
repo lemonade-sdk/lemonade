@@ -21,6 +21,9 @@ public:
     // Combined operations
     static void performFullQuit();
 
+    // Get launchctl output for server service (used by tray app)
+    static std::string getServerLaunchctlOutput(const std::string& subCmd);
+
 private:
     static const std::string trayServiceID;
     static const std::string serverServiceID;

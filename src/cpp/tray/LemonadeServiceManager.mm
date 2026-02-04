@@ -180,6 +180,10 @@ void LemonadeServiceManager::performFullQuit() {
     NSLog(@"[Lemonade] Full Quit Complete.");
 }
 
+std::string LemonadeServiceManager::getServerLaunchctlOutput(const std::string& subCmd) {
+    return getLaunchctlOutput(subCmd, getTargetSpecifier(serverServiceID));
+}
+
 
 /**
  Runs launchctl and returns TRUE if exit code is 0.

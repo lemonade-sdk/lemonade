@@ -141,6 +141,9 @@ CLIParser::CLIParser()
 
     // Recipes
     CLI::App* recipes = app_.add_subcommand("recipes", "List execution backends");
+
+    // Tray
+    CLI::App* tray = app_.add_subcommand("tray", "Launch tray interface for running server");
 #else
     add_serve_options(&app_, config_, max_models_vec_);
 #endif

@@ -927,8 +927,8 @@ if(APPLE)
     set(ELECTRON_BUILD_COPY "${CMAKE_BINARY_DIR}/Lemonade.app")
     add_custom_target(prepare_electron_app
         COMMAND ${CMAKE_COMMAND} -E remove_directory "${ELECTRON_BUILD_COPY}"
-        COMMAND cp -R "${ELECTRON_APP_UNPACKED_DIR}/Lemonade.app" "${CMAKE_BINARY_DIR}/"
-        COMMENT "Copying Electron App (Preserving Signature)..."
+        COMMAND cp -R "${ELECTRON_APP_BUILD_DIR}/mac-arm64/Lemonade.app" "${CMAKE_BINARY_DIR}/" || cp -R "${ELECTRON_APP_BUILD_DIR}/mac/Lemonade.app" "${CMAKE_BINARY_DIR}/" || cp -R "${ELECTRON_APP_BUILD_DIR}/Lemonade.app" "${CMAKE_BINARY_DIR}/" || echo "Warning: Could not find Lemonade.app in ${ELECTRON_APP_BUILD_DIR}"
+        COMMENT "Copying Electron App..."
         DEPENDS electron-app
     )
     
@@ -976,7 +976,7 @@ if(APPLE)
     endif()
 
     # Resources -> /Library/Application Support/Lemonade/resources
-    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/ DESTINATION "Library/Application Support/Lemonade/resources" COMPONENT Resources)
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/ DESTINATION "/Library/Application Support/Lemonade/resources" COMPONENT Resources)
 
     # App Bundle -> /Applications
     install(DIRECTORY "${ELECTRON_BUILD_COPY}"
@@ -984,10 +984,10 @@ if(APPLE)
         USE_SOURCE_PERMISSIONS
         COMPONENT Applications
     )
-    
+
     # Plists -> /Library/...
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist" DESTINATION "Library/LaunchDaemons" COMPONENT Runtime)
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.tray.plist" DESTINATION "Library/LaunchAgents" COMPONENT Runtime)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist" DESTINATION "/Library/LaunchDaemons" COMPONENT Runtime)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.tray.plist" DESTINATION "/Library/LaunchAgents" COMPONENT Runtime)
 
     # Placeholder -> /usr/local/share/lemonade-server
     file(WRITE "${CMAKE_BINARY_DIR}/.keep" "")
@@ -1009,6 +1009,7 @@ if(APPLE)
     set(CPACK_PRODUCTBUILD_BUNDLE_ID com.lemonade.server.Applications)
 
     set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
+    set(CPACK_SET_DESTDIR ON)
     set(CPACK_PACKAGE_RELOCATABLE OFF)
     set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
     set(CPACK_COMPONENT_APPLICATIONS_IS_ABSOLUTE ON)
@@ -1032,7 +1033,7 @@ if(APPLE)
     find_program(XCRUN_EXE xcrun)
     if(XCRUN_EXE)
         set(PKG_NAME "Lemonade-${PROJECT_VERSION}-Darwin.pkg")
-        add_custom_target(notarize_package
+        add_custom_target(notarize
             COMMAND ${CMAKE_COMMAND} -E echo "Submitting ${PKG_NAME} for notarization..."
             COMMAND ${XCRUN_EXE} notarytool submit "${CMAKE_BINARY_DIR}/${PKG_NAME}" --keychain-profile "AC_PASSWORD" --wait --verbose
             COMMAND ${CMAKE_COMMAND} -E echo "Stapling ticket to ${PKG_NAME}..."
@@ -1041,7 +1042,7 @@ if(APPLE)
             COMMENT "Notarizing and Stapling macOS package..."
             VERBATIM
         )
-        add_dependencies(notarize_package package-macos)
+        add_dependencies(notarize package-macos)
     endif()
 endif()
 

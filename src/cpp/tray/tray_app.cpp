@@ -593,25 +593,21 @@ int TrayApp::run() {
 #ifdef __APPLE__
         // macOS: Tray mode - show tray, starting server service if necessary
         // Check if server service is already running
-        bool server_running = LemonadeServiceManager::isServerActive();
-        if (server_running) {
+        if (lemon::SingleInstance::IsAnotherInstanceRunning("Server") || LemonadeServiceManager::isServerActive()) {
             // Server is already running - get its port and connect
             auto [pid, running_port] = get_server_info();
+            bool server_was_running = (running_port != 0);
+
             if (running_port != 0) {
                 std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
-
                 // Create server manager to communicate with running server
-                server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
-                server_config_.port = running_port;  // Update config to match running server
-
                 // Use localhost to connect (works regardless of what the server is bound to)
                 if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
                     server_config_.host = "localhost";
                 }
-
-                // Continue to tray initialization below (skip server startup)
+                server_manager_ = std::make_unique<ServerManager>(server_config_.host, port);
             } else {
-                std::cerr << "Error: Server service is active but no port found" << std::endl;
+                std::cerr << "Error: Server service is active but no port found: " << running_port << std::endl;
                 return 1;
             }
         } else {
