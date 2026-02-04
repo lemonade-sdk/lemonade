@@ -1,8 +1,8 @@
 name: 'Build Linux .deb Package'
-description: 'Build Lemonade .deb package for Linux (minimal or full with Electron)'
+description: 'Build Lemonade .deb package for Linux'
 inputs:
   include-electron:
-    description: 'Whether to include the Electron app (full build)'
+    description: 'Whether to include the Electron app'
     required: false
     default: 'false'
 outputs:
@@ -74,23 +74,12 @@ runs:
       run: |
         set -e
 
+        DEB_FILE="lemonade_${LEMONADE_VERSION}_amd64.deb"
+
         cd build
 
         echo "Creating .deb package with CPack..."
         cpack -G DEB -V
-
-        # List generated files
-        echo "Files in build directory:"
-        ls -lh *.deb 2>/dev/null || echo "No .deb files found in current directory"
-
-        # Determine expected package name based on build type
-        if [ "${{ inputs.include-electron }}" == "true" ]; then
-            DEB_FILE="lemonade_${LEMONADE_VERSION}_amd64.deb"
-            PACKAGE_TYPE="full"
-        else
-            DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
-            PACKAGE_TYPE="minimal"
-        fi
 
         echo "Looking for: $DEB_FILE"
 
@@ -100,9 +89,6 @@ runs:
             ls -lR .
             exit 1
         fi
-
-        echo ".deb package ($PACKAGE_TYPE) created successfully!"
-        ls -lh "$DEB_FILE"
 
         # Show package info
         echo "Package information:"
