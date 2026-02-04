@@ -4183,6 +4183,7 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <tr>
 <th>Parameter</th>
 <th>Required</th>
+<th>Applies to</th>
 <th>Description</th>
 </tr>
 </thead>
@@ -4190,27 +4191,62 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <tr>
 <td><code>model_name</code></td>
 <td>Yes</td>
+<td>All</td>
 <td><a href="../server_models/">Lemonade Server model name</a> to load.</td>
-</tr>
-<tr>
-<td><code>ctx_size</code></td>
-<td>No</td>
-<td>Context size for the model. Overrides the default value for this model.</td>
-</tr>
-<tr>
-<td><code>llamacpp_backend</code></td>
-<td>No</td>
-<td>LlamaCpp backend to use (<code>vulkan</code>, <code>rocm</code>, <code>metal</code> or <code>cpu</code>). Only applies to llamacpp models.</td>
-</tr>
-<tr>
-<td><code>llamacpp_args</code></td>
-<td>No</td>
-<td>Custom arguments to pass to llama-server. The following are NOT allowed: <code>-m</code>, <code>--port</code>, <code>--ctx-size</code>, <code>-ngl</code>.</td>
 </tr>
 <tr>
 <td><code>save_options</code></td>
 <td>No</td>
-<td>Boolean. If true, saves <code>ctx_size</code>, <code>llamacpp_backend</code> and <code>llamacpp_args</code> to the <code>recipe_options.json</code> file. Any previously stored value for <code>model_name</code> is replaced with the parameters of this request.</td>
+<td>All</td>
+<td>Boolean. If true, saves recipe options to <code>recipe_options.json</code>. Any previously stored value for <code>model_name</code> is replaced.</td>
+</tr>
+<tr>
+<td><code>ctx_size</code></td>
+<td>No</td>
+<td>llamacpp, flm, oga-*</td>
+<td>Context size for the model. Overrides the default value.</td>
+</tr>
+<tr>
+<td><code>llamacpp_backend</code></td>
+<td>No</td>
+<td>llamacpp</td>
+<td>LlamaCpp backend to use (<code>vulkan</code>, <code>rocm</code>, <code>metal</code> or <code>cpu</code>).</td>
+</tr>
+<tr>
+<td><code>llamacpp_args</code></td>
+<td>No</td>
+<td>llamacpp</td>
+<td>Custom arguments to pass to llama-server. The following are NOT allowed: <code>-m</code>, <code>--port</code>, <code>--ctx-size</code>, <code>-ngl</code>.</td>
+</tr>
+<tr>
+<td><code>whispercpp_backend</code></td>
+<td>No</td>
+<td>whispercpp</td>
+<td>WhisperCpp backend to use (<code>npu</code> or <code>cpu</code>). Default is <code>npu</code> if supported.</td>
+</tr>
+<tr>
+<td><code>steps</code></td>
+<td>No</td>
+<td>sd-cpp</td>
+<td>Number of inference steps for image generation. Default: 20.</td>
+</tr>
+<tr>
+<td><code>cfg_scale</code></td>
+<td>No</td>
+<td>sd-cpp</td>
+<td>Classifier-free guidance scale for image generation. Default: 7.0.</td>
+</tr>
+<tr>
+<td><code>width</code></td>
+<td>No</td>
+<td>sd-cpp</td>
+<td>Image width in pixels. Default: 512.</td>
+</tr>
+<tr>
+<td><code>height</code></td>
+<td>No</td>
+<td>sd-cpp</td>
+<td>Image height in pixels. Default: 512.</td>
 </tr>
 </tbody>
 </table>
@@ -4221,7 +4257,7 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 3. Values set via <code>lemonade-server</code> CLI arguments or environment variables
 4. Default hardcoded values in <code>lemonade-router</code> (lowest priority)</p>
 <h4 id="per-model-options">Per-model options</h4>
-<p>You can configure a default <code>ctx_size</code>, <code>llamacpp_backend</code> and <code>llamacpp_args</code> on a per-model basis. To achieve this, Lemonade manages a file called <code>recipe_options.json</code> in the user's Lemonade cache (default: <code>~/.cache/lemonade</code>). An example <code>recipe_options.json</code> file follows:</p>
+<p>You can configure recipe-specific options on a per-model basis. Lemonade manages a file called <code>recipe_options.json</code> in the user's Lemonade cache (default: <code>~/.cache/lemonade</code>). The available options depend on the model's recipe:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;user.Qwen2.5-Coder-1.5B-Instruct&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">&quot;ctx_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">16384</span><span class="p">,</span>
@@ -4230,6 +4266,9 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <span class="w">  </span><span class="p">},</span>
 <span class="w">  </span><span class="nt">&quot;Qwen3-Coder-30B-A3B-Instruct-GGUF&quot;</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">&quot;llamacpp_backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rocm&quot;</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;whisper-large-v3-turbo-q8_0.bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;whispercpp_backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npu&quot;</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -4261,6 +4300,25 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <span class="s1">    &quot;llamacpp_backend&quot;: &quot;vulkan&quot;,</span>
 <span class="s1">    &quot;llamacpp_args&quot;: &quot;--no-context-shift --no-mmap&quot;,</span>
 <span class="s1">    &quot;save_options&quot;: true</span>
+<span class="s1">  }&#39;</span>
+</code></pre></div>
+<p>Load a Whisper model with NPU backend:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/api/v1/load<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">    &quot;model_name&quot;: &quot;whisper-large-v3-turbo-q8_0.bin&quot;,</span>
+<span class="s1">    &quot;whispercpp_backend&quot;: &quot;npu&quot;</span>
+<span class="s1">  }&#39;</span>
+</code></pre></div>
+<p>Load an image generation model with custom settings:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/api/v1/load<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">    &quot;model_name&quot;: &quot;sd-turbo&quot;,</span>
+<span class="s1">    &quot;steps&quot;: 4,</span>
+<span class="s1">    &quot;cfg_scale&quot;: 1.0,</span>
+<span class="s1">    &quot;width&quot;: 512,</span>
+<span class="s1">    &quot;height&quot;: 512</span>
 <span class="s1">  }&#39;</span>
 </code></pre></div>
 <h4 id="response-format_9">Response format</h4>
