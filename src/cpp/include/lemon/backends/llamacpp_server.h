@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../wrapped_server.h"
+#include "backend_utils.h"
 #include <string>
 
 namespace lemon {
@@ -8,6 +9,8 @@ namespace backends {
 
 class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer {
 public:
+    static const BackendSpec SPEC;
+
     LlamaCppServer(const std::string& log_level = "info",
                    ModelManager* model_manager = nullptr);
 
@@ -36,11 +39,6 @@ public:
 
     // IRerankingServer implementation
     json reranking(const json& request) override;
-
-private:
-    std::string get_llama_server_path(const std::string& backend);
-    std::string find_executable_in_install_dir(const std::string& install_dir);
-    std::string find_external_llama_server(const std::string& backend);
 };
 
 } // namespace backends
