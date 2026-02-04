@@ -457,6 +457,19 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
         return model_cache_path;  // Return directory even if genai_config not found
     }
 
+    // For kokoro models, look for index.json directory
+    if (info.recipe == "kokoro") {
+        if (fs::exists(model_cache_path)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+                if (entry.is_regular_file() && entry.path().filename() == "index.json") {
+                    return entry.path().string();
+                }
+            }
+        }
+
+        return model_cache_path;  // Return directory even if index not found
+    }
+
     // For whispercpp, find the .bin model file
     if (info.recipe == "whispercpp") {
         if (!fs::exists(model_cache_path)) {
@@ -681,6 +694,10 @@ void ModelManager::build_cache() {
             info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
         }
 
+        // Parse NPU cache fields if present (for whispercpp models)
+        info.npu_cache_repo = JsonUtils::get_or_default<std::string>(value, "npu_cache_repo", "");
+        info.npu_cache_filename = JsonUtils::get_or_default<std::string>(value, "npu_cache_filename", "");
+
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
@@ -715,6 +732,10 @@ void ModelManager::build_cache() {
             info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
             info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
         }
+
+        // Parse NPU cache fields if present (for whispercpp models)
+        info.npu_cache_repo = JsonUtils::get_or_default<std::string>(value, "npu_cache_repo", "");
+        info.npu_cache_filename = JsonUtils::get_or_default<std::string>(value, "npu_cache_filename", "");
 
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
@@ -860,6 +881,8 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
     info.mmproj = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
+    info.npu_cache_repo = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_repo", "");
+    info.npu_cache_filename = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_filename", "");
 
     if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {
         for (const auto& label : (*model_json)["labels"]) {
@@ -2367,6 +2390,8 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", false);
     info.mmproj = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
+    info.npu_cache_repo = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_repo", "");
+    info.npu_cache_filename = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_filename", "");
 
     // Parse labels array
     if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {

@@ -116,6 +116,9 @@ TEST_AUDIO_URL = (
 # Stable Diffusion test configuration
 SD_MODEL = "SD-Turbo"
 
+# Text-to-Speech test configuration
+TTS_MODEL = "kokoro-v1"
+
 # Models that should be pre-downloaded for offline testing
 MODELS_FOR_OFFLINE_CACHE = [
     "Qwen3-0.6B-GGUF",

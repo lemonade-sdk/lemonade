@@ -9,9 +9,14 @@ using json = nlohmann::json;
 
 static const json DEFAULTS = {
     {"ctx_size", 4096},
+#ifdef __APPLE__
+    {"llamacpp_backend", "metal"},  // Will be overridden dynamically
+#else
     {"llamacpp_backend", "vulkan"},  // Will be overridden dynamically
+#endif
     {"llamacpp_args", ""},
     {"sd-cpp_backend", "cpu"},  // sd.cpp backend selection (cpu or rocm)
+    {"whispercpp_backend", "npu"},
     // Image generation defaults (for sd-cpp recipe)
     {"steps", 20},
     {"cfg_scale", 7.0},
@@ -19,8 +24,9 @@ static const json DEFAULTS = {
     {"height", 512}
 };
 
-// CLI_OPTIONS without allowed_values for llamacpp (will be set dynamically)
+// CLI_OPTIONS without allowed_values for inference engines (will be set dynamically)
 static const json CLI_OPTIONS = {
+    // LLM Options
     {"--ctx-size", {
         {"option_name", "ctx_size"},
         {"type_name", "SIZE"},
@@ -46,6 +52,14 @@ static const json CLI_OPTIONS = {
         {"allowed_values", {"cpu", "rocm"}},
         {"envname", "LEMONADE_SDCPP"},
         {"help", "SD.cpp backend to use (cpu for CPU, rocm for AMD GPU)"}
+    }},
+    // ASR options
+    {"--whispercpp", {
+        {"option_name", "whispercpp_backend"},
+        {"type_name", "BACKEND"},
+        {"allowed_values", {"cpu", "npu"}},
+        {"envname", "LEMONADE_WHISPERCPP"},
+        {"help", "WhisperCpp backend to use"}
     }},
     // Image generation options (for sd-cpp recipe)
     {"--steps", {
@@ -77,12 +91,13 @@ static const json CLI_OPTIONS = {
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
         return {"ctx_size", "llamacpp_backend", "llamacpp_args"};
+    } else if (recipe == "whispercpp") {
+        return {"whispercpp_backend"};
     } else if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu" || recipe == "ryzenai" || recipe == "flm") {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
         return {"sd-cpp_backend", "steps", "cfg_scale", "width", "height"};
     } else {
-        // "whispercpp" has currently no option
         return {};
     }
 }

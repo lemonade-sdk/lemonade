@@ -68,6 +68,7 @@ public:
 
     // Audio endpoints (OpenAI /v1/audio/* compatible)
     json audio_transcriptions(const json& request);
+    void audio_speech(const json& request, httplib::DataSink& sink);
 
     // Image endpoints (OpenAI /v1/images/* compatible)
     json image_generations(const json& request);

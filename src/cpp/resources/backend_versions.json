@@ -6,7 +6,12 @@
     "metal": "b7869",
     "cpu": "b7869"
   },
-  "whispercpp": "v1.8.2",
+  "whispercpp": {
+    "cpu": "v1.8.2",
+    "vulkan": "v1.8.2",
+    "rocm": "v1.8.2",
+    "npu": "v1.8.2"
+  },
   "sd-cpp": {
     "cpu": "master-471-7010bb4",
     "rocm": "master-487-43e829f"
@@ -15,5 +20,8 @@
   "flm": {
     "version": "v0.9.27",
     "min_npu_driver": "32.0.203.304"
+  },
+  "kokoro": {
+    "cpu": "b14"
   }
 }

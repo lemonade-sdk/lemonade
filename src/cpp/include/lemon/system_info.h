@@ -100,11 +100,13 @@ public:
     // Version and installation detection (public for use by backends and helpers)
     static std::string get_llamacpp_version(const std::string& backend);
     static std::string get_whispercpp_version();
+    static std::string get_kokoro_version(const std::string& backend);
     static std::string get_sdcpp_version();
     static std::string get_oga_version();
     static std::string get_flm_version();
     static bool is_llamacpp_installed(const std::string& backend);
     static bool is_whispercpp_installed();
+    static bool is_kokoro_installed(const std::string& backend);
     static bool is_sdcpp_installed();
     static bool is_ryzenai_serve_available();
 
@@ -178,7 +180,7 @@ private:
     double parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname);
 };
 
-// macOS implementation (basic stub for now)
+// macOS implementation
 class MacOSSystemInfo : public SystemInfo {
 public:
     CPUInfo get_cpu_device() override;
@@ -186,6 +188,8 @@ public:
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
     std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
     NPUInfo get_npu_device() override;
+
+    std::vector<GPUInfo> detect_metal_gpus();
 };
 
 // Factory function

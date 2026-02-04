@@ -288,7 +288,8 @@ json FastFlowLMServer::responses(const json& request) {
 
 void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
                                                   const std::string& request_body,
-                                                  httplib::DataSink& sink) {
+                                                  httplib::DataSink& sink,
+                                                  bool sse) {
     // FLM requires the checkpoint name in the model field (e.g., "gemma3:4b"),
     // not the Lemonade model name (e.g., "Gemma3-4b-it-FLM")
     try {
@@ -297,10 +298,10 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
         std::string modified_body = request.dump();
 
         // Call base class with modified request
-        WrappedServer::forward_streaming_request(endpoint, modified_body, sink);
+        WrappedServer::forward_streaming_request(endpoint, modified_body, sink, sse);
     } catch (const json::exception& e) {
         // If JSON parsing fails, forward original request
-        WrappedServer::forward_streaming_request(endpoint, request_body, sink);
+        WrappedServer::forward_streaming_request(endpoint, request_body, sink, sse);
     }
 }
 

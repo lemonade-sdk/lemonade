@@ -37,6 +37,7 @@ from utils.test_models import (
     TIMEOUT_DEFAULT,
     get_default_server_binary,
 )
+from utils.server_base import _stop_server_via_systemd
 
 # Global configuration
 _config = {
@@ -150,7 +151,13 @@ def wait_for_server_stop(port=PORT, timeout=30):
 
 
 def stop_server():
-    """Stop the server using CLI."""
+    """Stop the server using systemctl on Linux, or CLI as fallback."""
+    # Try systemd first on Linux
+    if _stop_server_via_systemd():
+        wait_for_server_stop()
+        return
+
+    # Try CLI stop command as fallback
     try:
         run_cli_command(["stop"], timeout=30)
         wait_for_server_stop()

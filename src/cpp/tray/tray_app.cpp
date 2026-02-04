@@ -1,8 +1,12 @@
 #include "lemon_tray/tray_app.h"
+#ifdef _WIN32
 #include "lemon_tray/platform/windows_tray.h"  // For set_menu_update_callback
+#endif
+#include "LemonadeServiceManager.h"  // For macOS service management
 #include <lemon/single_instance.h>
 #include <lemon/system_info.h>
 #include <lemon/version.h>
+#include <lemon/utils/path_utils.h>
 #include <httplib.h>
 #include <iostream>
 #include <iomanip>
@@ -33,6 +37,14 @@
 #include <sys/file.h>  // for flock
 #include <fcntl.h>     // for open
 #include <cerrno>      // for errno
+#ifdef HAVE_SYSTEMD
+#include <systemd/sd-bus.h>
+#include <systemd/sd-daemon.h>
+#endif
+#endif
+
+#ifdef __APPLE__
+#include <mach-o/dyld.h>  // for _NSGetExecutablePath
 #endif
 
 namespace fs = std::filesystem;
@@ -57,6 +69,224 @@ static bool is_local_path(const std::string& path) {
 
     return false;
 }
+
+#if !defined(_WIN32)
+// Helper: Check if systemd is running and a unit is active
+static bool is_systemd_service_active(const char* unit_name) {
+#ifdef HAVE_SYSTEMD
+    if (!unit_name || unit_name[0] == '\0') {
+        return false;
+    }
+
+    if (sd_booted() <= 0) {
+        return false;
+    }
+
+    sd_bus* bus = nullptr;
+    sd_bus_message* reply = nullptr;
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+
+    int r = sd_bus_open_system(&bus);
+    if (r < 0 || !bus) {
+        sd_bus_error_free(&error);
+        return false;
+    }
+
+    r = sd_bus_call_method(
+        bus,
+        "org.freedesktop.systemd1",
+        "/org/freedesktop/systemd1",
+        "org.freedesktop.systemd1.Manager",
+        "GetUnit",
+        &error,
+        &reply,
+        "s",
+        unit_name
+    );
+
+    if (r < 0 || !reply) {
+        sd_bus_error_free(&error);
+        sd_bus_unref(bus);
+        return false;
+    }
+
+    const char* unit_path = nullptr;
+    r = sd_bus_message_read(reply, "o", &unit_path);
+    sd_bus_message_unref(reply);
+    reply = nullptr;
+
+    if (r < 0 || !unit_path) {
+        sd_bus_error_free(&error);
+        sd_bus_unref(bus);
+        return false;
+    }
+
+    char* active_state = nullptr;
+    r = sd_bus_get_property_string(
+        bus,
+        "org.freedesktop.systemd1",
+        unit_path,
+        "org.freedesktop.systemd1.Unit",
+        "ActiveState",
+        &error,
+        &active_state
+    );
+
+    if (r < 0 || !active_state) {
+        sd_bus_error_free(&error);
+        sd_bus_unref(bus);
+        return false;
+    }
+
+    bool is_active =
+        (strcmp(active_state, "active") == 0) ||
+        (strcmp(active_state, "activating") == 0) ||
+        (strcmp(active_state, "reloading") == 0);
+
+    free(active_state);
+    sd_bus_error_free(&error);
+    sd_bus_unref(bus);
+
+    return is_active;
+#else
+    (void)unit_name;
+    return false;
+#endif
+}
+
+// Helper: Get systemd service MainPID (returns 0 if unavailable)
+static int get_systemd_service_main_pid(const char* unit_name) {
+#ifdef HAVE_SYSTEMD
+    if (!unit_name || unit_name[0] == '\0') {
+        return 0;
+    }
+
+    if (sd_booted() <= 0) {
+        return 0;
+    }
+
+    sd_bus* bus = nullptr;
+    sd_bus_message* reply = nullptr;
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+
+    int r = sd_bus_open_system(&bus);
+    if (r < 0 || !bus) {
+        sd_bus_error_free(&error);
+        return 0;
+    }
+
+    r = sd_bus_call_method(
+        bus,
+        "org.freedesktop.systemd1",
+        "/org/freedesktop/systemd1",
+        "org.freedesktop.systemd1.Manager",
+        "GetUnit",
+        &error,
+        &reply,
+        "s",
+        unit_name
+    );
+
+    if (r < 0 || !reply) {
+        sd_bus_error_free(&error);
+        sd_bus_unref(bus);
+        return 0;
+    }
+
+    const char* unit_path = nullptr;
+    r = sd_bus_message_read(reply, "o", &unit_path);
+    sd_bus_message_unref(reply);
+    reply = nullptr;
+
+    if (r < 0 || !unit_path) {
+        sd_bus_error_free(&error);
+        sd_bus_unref(bus);
+        return 0;
+    }
+
+    unsigned int main_pid = 0;
+    r = sd_bus_get_property_trivial(
+        bus,
+        "org.freedesktop.systemd1",
+        unit_path,
+        "org.freedesktop.systemd1.Service",
+        "MainPID",
+        &error,
+        'u',
+        &main_pid
+    );
+
+    if (r < 0) {
+        sd_bus_error_free(&error);
+        sd_bus_unref(bus);
+        return 0;
+    }
+
+    sd_bus_error_free(&error);
+    sd_bus_unref(bus);
+
+    return static_cast<int>(main_pid);
+#else
+    (void)unit_name;
+    return 0;
+#endif
+}
+
+// Helper: Check if systemd service is active in another process (not this one)
+static bool is_systemd_service_active_other_process(const char* unit_name) {
+#ifdef HAVE_SYSTEMD
+    if (!is_systemd_service_active(unit_name)) {
+        return false;
+    }
+
+    int main_pid = get_systemd_service_main_pid(unit_name);
+    if (main_pid <= 0) {
+        return false;
+    }
+
+    return (main_pid != getpid());
+#else
+    (void)unit_name;
+    return false;
+#endif
+}
+
+// Helper: Known systemd unit names for lemonade server (native or snap)
+static const char* kSystemdUnitNames[] = {
+    "lemonade-server.service",
+    "snap.lemonade-server.daemon.service"
+};
+
+static const char* get_active_systemd_unit_name() {
+    for (const auto* unit_name : kSystemdUnitNames) {
+        if (is_systemd_service_active(unit_name)) {
+            return unit_name;
+        }
+    }
+    return nullptr;
+}
+
+static bool is_any_systemd_service_active() {
+    return get_active_systemd_unit_name() != nullptr;
+}
+
+static int get_systemd_any_service_main_pid() {
+    const char* unit_name = get_active_systemd_unit_name();
+    if (!unit_name) {
+        return 0;
+    }
+    return get_systemd_service_main_pid(unit_name);
+}
+
+static bool is_systemd_any_service_active_other_process() {
+    for (const auto* unit_name : kSystemdUnitNames) {
+        if (is_systemd_service_active_other_process(unit_name)) {
+            return true;
+        }
+    }
+    return false;
+}
+#endif
 
 // Helper macro for debug logging
 #define DEBUG_LOG(app, msg) \
@@ -278,6 +508,9 @@ int TrayApp::run() {
     DEBUG_LOG(this, "TrayApp::run() starting...");
     DEBUG_LOG(this, "Command: " << tray_config_.command);
 
+    bool server_already_running = false;
+    bool run_command_already_executed = false;
+
     // Find server binary automatically (needed for most commands)
     if (server_binary_.empty()) {
         DEBUG_LOG(this, "Searching for server binary...");
@@ -308,70 +541,199 @@ int TrayApp::run() {
     } else if (tray_config_.command == "recipes") {
         return execute_recipes_command();
     } else if (tray_config_.command == "serve" || tray_config_.command == "run") {
+        auto connect_to_running_server = [this, &server_already_running, &run_command_already_executed](const char* context) -> int {
+            std::cout << "Lemonade Server is " << context << " already running. Connecting to it..." << std::endl;
+
+            auto [pid, running_port] = get_server_info();
+            (void)pid;
+            if (running_port == 0) {
+                std::cerr << "Error: Could not connect to running server" << std::endl;
+                return 1;
+            }
+
+            server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
+            server_config_.port = running_port;
+
+            server_already_running = true;
+
+            if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
+                server_config_.host = "localhost";
+            }
+
+            if (tray_config_.command == "run") {
+                int result = execute_run_command();
+                if (result != 0) {
+                    return result;
+                }
+                run_command_already_executed = true;
+            }
+
+            return 0;
+        };
+
+#ifdef HAVE_SYSTEMD
+        if (tray_config_.command == "run" &&
+            is_systemd_any_service_active_other_process()) {
+            int result = connect_to_running_server("managed by systemd and");
+            if (result != 0) {
+                return result;
+            }
+            // Continue to tray initialization below
+        }
+#endif
+
         // Check for single instance - only for 'serve' and 'run' commands
         // Other commands (status, list, pull, delete, stop) can run alongside a server
         if (lemon::SingleInstance::IsAnotherInstanceRunning("Server")) {
             // If 'run' command and server is already running, connect to it and execute the run command
             if (tray_config_.command == "run") {
-                std::cout << "Lemonade Server is already running. Connecting to it..." << std::endl;
-
-                // Get the running server's info
-                auto [pid, running_port] = get_server_info();
-                if (running_port == 0) {
-                    std::cerr << "Error: Could not connect to running server" << std::endl;
-                    return 1;
+                int result = connect_to_running_server("");
+                if (result != 0) {
+                    return result;
                 }
+                // Continue to tray initialization below
+            } else {
+                // For 'serve' command, don't allow duplicate servers
+#ifdef _WIN32
+                show_simple_notification("Server Already Running", "Lemonade Server is already running");
+#endif
+                std::cerr << "Error: Another instance of lemonade-server serve is already running.\n"
+                          << "Only one persistent server can run at a time.\n\n"
+                          << "To check server status: lemonade-server status\n"
+                          << "To stop the server: lemonade-server stop\n" << std::endl;
+                return 1;
+            }
+        }
+        // Continue to server initialization below
+    } else if (tray_config_.command == "tray") {
+        // Check for single instance - prevent duplicate tray processes,
+        // the use case here is not for a tray launched by the system its when its being launched by the user or electron app.
+        #ifdef __APPLE__
+        if (LemonadeServiceManager::isTrayActive())
+        {
+            std::cout << "Lemonade Tray is already running." << std::endl;
+            return 0;
+        }
+        // isTrayActive won't work for when the tray is launched as a service, that requires a bunch of other permissions
+        // Permissions that have to be entered into a plist and its beyond the scope of this PR, maybe TODO?
+        if (lemon::SingleInstance::IsAnotherInstanceRunning("Tray")) {
+            std::cout << "Lemonade Tray is already running." << std::endl;
+            return 0;
+        }
+        #else
+        if (lemon::SingleInstance::IsAnotherInstanceRunning("Tray")) {
+            std::cout << "Lemonade Tray is already running." << std::endl;
+            return 0;
+        }
+        #endif
 
+#ifdef __APPLE__
+        // macOS: Tray mode - show tray, starting server service if necessary
+        // Check if server service is already running
+        if (lemon::SingleInstance::IsAnotherInstanceRunning("Server") || LemonadeServiceManager::isServerActive()) {
+            // Server is already running - get its port and connect
+            auto [pid, running_port] = get_server_info();
+            bool server_was_running = (running_port != 0);
+
+            if (running_port != 0) {
+                std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
                 // Create server manager to communicate with running server
-                server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
-                server_config_.port = running_port;  // Update config to match running server
-
                 // Use localhost to connect (works regardless of what the server is bound to)
                 if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
                     server_config_.host = "localhost";
                 }
-
-                // Execute the run command (load model)
-                return execute_run_command();
+                server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
+                server_manager_->set_port(running_port);
+                server_config_.port = running_port;  // Update config to match running server
+            } else {
+                std::cerr << "Error: Server service is active but no port found: " << running_port << std::endl;
+                return 1;
             }
+        } else {
+            // Server is not running - start the service
+            std::cout << "Starting Lemonade Server service..." << std::endl;
+            LemonadeServiceManager::startServer();
 
-            // For 'serve' command, don't allow duplicate servers
-#ifdef _WIN32
-            show_simple_notification("Server Already Running", "Lemonade Server is already running");
-#endif
-            std::cerr << "Error: Another instance of lemonade-server serve is already running.\n"
-                      << "Only one persistent server can run at a time.\n\n"
-                      << "To check server status: lemonade-server status\n"
-                      << "To stop the server: lemonade-server stop\n" << std::endl;
+            // Wait for the service to start (up to 30 seconds)
+            int max_wait = 5;
+            for (int i = 0; i < max_wait; ++i) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                auto [pid, running_port] = get_server_info();
+                if (running_port != 0) {
+                    std::cout << "Server service started on port " << running_port << std::endl;
+
+                    // Create server manager to communicate with running server
+                    server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
+                    server_manager_->set_port(running_port);
+                    server_config_.port = running_port;  // Update config to match running server
+
+                    // Use localhost to connect (works regardless of what the server is bound to)
+                    if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
+                        server_config_.host = "localhost";
+                    }
+
+                    // Continue to tray initialization below
+                    break;
+                }
+                if (i == max_wait - 1) {
+                    std::cerr << "Error: Server service failed to start within 30 seconds" << std::endl;
+                    return 1;
+                }
+            }
+        }
+#else
+        // Other platforms: Tray-only mode - just show tray connected to existing server
+        // Check if server is already running
+        auto [pid, running_port] = get_server_info();
+        if (running_port == 0) {
+            std::cerr << "Error: No Lemonade Server is currently running.\n"
+                      << "Start the server first with: lemonade-server serve\n"
+                      << "Or run: lemonade-server serve --no-tray" << std::endl;
             return 1;
         }
-        // Continue to server initialization below
+
+        // Create server manager to communicate with running server
+        server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
+        server_manager_->set_port(running_port);
+        server_config_.port = running_port;  // Update config to match running server
+
+        // Use localhost to connect (works regardless of what the server is bound to)
+        if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
+            server_config_.host = "localhost";
+        }
+
+        std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
+
+        // Continue to tray initialization below (skip server startup)
+#endif
     } else {
         std::cerr << "Internal Error: Unhandled command '" << tray_config_.command << "'\n" << std::endl;
         return 1;
     }
 
-    // Create server manager
-    DEBUG_LOG(this, "Creating server manager...");
-    server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
+    if (!server_already_running && tray_config_.command != "tray") {
+        // Create server manager
+        DEBUG_LOG(this, "Creating server manager...");
+        server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
 
-    // Start server
-    DEBUG_LOG(this, "Starting server...");
-    if (!start_server()) {
-        std::cerr << "Error: Failed to start server" << std::endl;
-        return 1;
+        // Start server
+        DEBUG_LOG(this, "Starting server...");
+        if (!start_server()) {
+            std::cerr << "Error: Failed to start server" << std::endl;
+            return 1;
+        }
+
+        DEBUG_LOG(this, "Server started successfully!");
+        if (tray_config_.command == "serve" && tray_config_.save_options) {
+            tray_config_.save_options = false;
+            std::cerr << "Warning: Argument --save-options only available for the run command. Ignoring.\n";
+        }
+
+        process_owns_server_ = true;
     }
-
-    DEBUG_LOG(this, "Server started successfully!");
-    if (tray_config_.command == "serve" && tray_config_.save_options) {
-        tray_config_.save_options = false;
-        std::cerr << "Warning: Argument --save-options only available for the run command. Ignoring.\n";
-    }
-
-    process_owns_server_ = true;
 
     // If this is the 'run' command, load the model and run electron app
-    if (tray_config_.command == "run") {
+    if (tray_config_.command == "run" && !run_command_already_executed) {
         int result = execute_run_command();
         if (result != 0) {
             return result;
@@ -384,12 +746,18 @@ int TrayApp::run() {
 
 #ifdef _WIN32
         // Windows: simple sleep loop (signal handler handles Ctrl+C via console_ctrl_handler)
-        while (server_manager_->is_server_running()) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (server_already_running) {
+            while (!should_exit_) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+        } else {
+            while (server_manager_->is_server_running()) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
         }
 #else
         // Linux: monitor signal pipe using select() for proper signal handling
-        while (server_manager_->is_server_running()) {
+        while (server_already_running || server_manager_->is_server_running()) {
             fd_set readfds;
             FD_ZERO(&readfds);
             FD_SET(signal_pipe_[0], &readfds);
@@ -407,6 +775,10 @@ int TrayApp::run() {
 
                 // Now we're safely in the main thread - call shutdown properly
                 shutdown();
+                break;
+            }
+
+            if (!server_already_running && !server_manager_->is_server_running()) {
                 break;
             }
             // Timeout or error - just continue checking if server is still running
@@ -441,21 +813,37 @@ int TrayApp::run() {
     if (auto* windows_tray = dynamic_cast<WindowsTray*>(tray_.get())) {
         windows_tray->set_menu_update_callback([this]() {
             DEBUG_LOG(this, "Refreshing menu state from server...");
-            build_menu();
+            refresh_menu();
         });
     }
 #endif
 
     // Find icon path (matching the CMake resources structure)
     DEBUG_LOG(this, "Searching for icon...");
-    std::string icon_path = "resources/static/favicon.ico";
+    std::string icon_path;
+
+#ifdef __APPLE__
+    // On macOS, look for icon in /Library/Application Support/lemonade/resources
+    icon_path = "/Library/Application Support/lemonade/resources/static/favicon.ico";
+    DEBUG_LOG(this, "Checking macOS Application Support icon at: " << icon_path);
+
+    if (!fs::exists(icon_path)) {
+        std::cout << "WARNING: Icon not found at /Library/Application Support/lemonade/resources/favicon.ico, will use default icon" << std::endl;
+    } else {
+        DEBUG_LOG(this, "Icon found at: " << icon_path);
+    }
+#else
+    // On other platforms, find icon file path
+    icon_path = "resources/static/favicon.ico";
     DEBUG_LOG(this, "Checking icon at: " << fs::absolute(icon_path).string());
+
 
     if (!fs::exists(icon_path)) {
         // Try relative to executable directory
         fs::path exe_path = fs::path(server_binary_).parent_path();
         icon_path = (exe_path / "resources" / "static" / "favicon.ico").string();
         DEBUG_LOG(this, "Icon not found, trying: " << icon_path);
+
 
         // If still not found, try without static subdir (fallback)
         if (!fs::exists(icon_path)) {
@@ -464,11 +852,13 @@ int TrayApp::run() {
         }
     }
 
+
     if (fs::exists(icon_path)) {
         DEBUG_LOG(this, "Icon found at: " << icon_path);
     } else {
         std::cout << "WARNING: Icon not found at any location, will use default icon" << std::endl;
     }
+#endif
 
     // Initialize tray
     DEBUG_LOG(this, "Initializing tray with icon: " << icon_path);
@@ -489,6 +879,9 @@ int TrayApp::run() {
     // This allows us to handle Ctrl+C cleanly even when tray is running
     DEBUG_LOG(this, "Starting signal monitor thread...");
     signal_monitor_thread_ = std::thread([this]() {
+        #ifdef __APPLE__
+        auto last_tick = std::chrono::steady_clock::now();
+        #endif
         while (!stop_signal_monitor_ && !should_exit_) {
             fd_set readfds;
             FD_ZERO(&readfds);
@@ -496,7 +889,18 @@ int TrayApp::run() {
 
             struct timeval tv = {0, 100000};  // 100ms timeout
             int result = select(signal_pipe_[0] + 1, &readfds, nullptr, nullptr, &tv);
+            #ifdef __APPLE__
+            // Check if 5 seconds have passed, refresh menu
+            auto now = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - last_tick).count() >= 5) {
 
+                DEBUG_LOG(this, "Checking if menu needs refresh");
+                refresh_menu();
+
+                // Reset the tracker
+                last_tick = now;
+            }
+            #endif
             if (result > 0 && FD_ISSET(signal_pipe_[0], &readfds)) {
                 // Signal received (SIGINT from Ctrl+C)
                 char sig;
@@ -513,11 +917,10 @@ int TrayApp::run() {
         DEBUG_LOG(this, "Signal monitor thread exiting");
     });
 #endif
-
     DEBUG_LOG(this, "Menu built, entering event loop...");
     // Run tray event loop
     tray_->run();
-
+    //Initialize thread to constantly update the tray models
     DEBUG_LOG(this, "Event loop exited");
     return 0;
 }
@@ -540,11 +943,27 @@ bool TrayApp::find_server_binary() {
 #else
     std::string binary_name = "lemonade-router";
 
+
     // On Unix, try to get executable path
     char exe_path_buf[1024];
+    bool got_exe_path = false;
+
+#ifdef __APPLE__
+    // macOS: Use _NSGetExecutablePath
+    uint32_t bufsize = sizeof(exe_path_buf);
+    if (_NSGetExecutablePath(exe_path_buf, &bufsize) == 0) {
+        got_exe_path = true;
+    }
+#else
+    // Linux: Use /proc/self/exe
     ssize_t len = readlink("/proc/self/exe", exe_path_buf, sizeof(exe_path_buf) - 1);
     if (len != -1) {
         exe_path_buf[len] = '\0';
+        got_exe_path = true;
+    }
+#endif
+
+    if (got_exe_path) {
         fs::path exe_dir = fs::path(exe_path_buf).parent_path();
         search_paths.push_back((exe_dir / binary_name).string());
     }
@@ -560,7 +979,7 @@ bool TrayApp::find_server_binary() {
 #ifdef _WIN32
     search_paths.push_back("C:/Program Files/Lemonade/" + binary_name);
 #else
-    search_paths.push_back("/usr/local/bin/" + binary_name);
+    search_paths.push_back("/opt/bin/" + binary_name);
     search_paths.push_back("/usr/bin/" + binary_name);
 #endif
 
@@ -650,6 +1069,13 @@ std::pair<int, int> TrayApp::get_server_info() {
         }
     }
 #else
+    if (is_any_systemd_service_active()) {
+        int main_pid = get_systemd_any_service_main_pid();
+        if (main_pid > 0) {
+            return {main_pid, server_config_.port};
+        }
+    }
+
     // Unix: Read from PID file
     std::ifstream pid_file("/tmp/lemonade-router.pid");
     if (pid_file.is_open()) {
@@ -1072,8 +1498,14 @@ int TrayApp::execute_run_command() {
     if (server_manager_->load_model(tray_config_.model, server_config_.recipe_options, tray_config_.save_options)) {
         std::cout << "Model loaded successfully!" << std::endl;
 
-        // Launch the Electron app only if we are not terminating immediately
-        if (process_owns_server_) {
+        // Launch the Electron app
+        bool should_launch_app = process_owns_server_;
+#ifdef HAVE_SYSTEMD
+    if (!should_launch_app && is_any_systemd_service_active()) {
+            should_launch_app = true;
+        }
+#endif
+        if (should_launch_app) {
             std::cout << "Launching Lemonade app..." << std::endl;
             launch_electron_app();
         }
@@ -1167,6 +1599,18 @@ int TrayApp::execute_stop_command() {
         std::cout << "Lemonade Server is not running" << std::endl;
         return 0;
     }
+
+    // On Linux, check if server is managed by systemd and warn user
+#ifndef _WIN32
+    const char* active_systemd_unit = get_active_systemd_unit_name();
+    if (active_systemd_unit) {
+        std::cerr << "Error: Lemonade Server is managed by systemd." << std::endl;
+        std::string unit_name(active_systemd_unit);
+        std::cerr << "Please use: sudo systemctl stop " << unit_name << std::endl;
+        std::cerr << "Instead of: lemonade-server stop" << std::endl;
+        return 1;
+    }
+#endif
 
     std::cout << "Stopping server on port " << port << "..." << std::endl;
 
@@ -1559,21 +2003,62 @@ void TrayApp::stop_server() {
 void TrayApp::build_menu() {
     if (!tray_) return;
 
+
     Menu menu = create_menu();
     tray_->set_menu(menu);
+
+    // Cache current state for refresh comparisons
+    last_menu_loaded_models_ = get_all_loaded_models();
+    last_menu_available_models_ = get_downloaded_models();
+}
+
+void TrayApp::refresh_menu() {
+    if (!tray_) return;
+
+    // Only refresh if something has actually changed
+    if (menu_needs_refresh()) {
+        DEBUG_LOG(this, "Menu state changed, rebuilding menu");
+        build_menu();
+    }
+}
+
+bool TrayApp::menu_needs_refresh() {
+    // Check if loaded models have changed
+    auto current_loaded = get_all_loaded_models();
+    if (current_loaded != last_menu_loaded_models_) {
+        return true;
+    }
+
+    // Check if available models have changed
+    auto current_available = get_downloaded_models();
+    if (current_available != last_menu_available_models_) {
+        return true;
+    }
+
+    // Could add more checks here for other dynamic content
+
+    return false;
 }
 
 Menu TrayApp::create_menu() {
     Menu menu;
 
-    // Open app - at the very top (only if Electron app is available on full installer)
+    // Open app - at the very top (Electron app takes priority, web app as fallback)
     if (electron_app_path_.empty()) {
         // Try to find the Electron app if we haven't already
         const_cast<TrayApp*>(this)->find_electron_app();
     }
     if (!electron_app_path_.empty()) {
-        menu.add_item(MenuItem::Action("Open app", [this]() { launch_electron_app(); }));
+        // Electron app is available - use it
+        menu.add_item(MenuItem::Action("Open Lemonade App", [this]() { launch_electron_app(); }));
         menu.add_separator();
+    } else {
+        // Electron app not available - check for web app as fallback
+        const_cast<TrayApp*>(this)->find_web_app();
+        if (web_app_available_) {
+            menu.add_item(MenuItem::Action("Open Lemonade App", [this]() { const_cast<TrayApp*>(this)->open_web_app(); }));
+            menu.add_separator();
+        }
     }
 
     // Get loaded model once and cache it to avoid redundant health checks
@@ -1659,6 +2144,38 @@ Menu TrayApp::create_menu() {
         }
     }
     menu.add_item(MenuItem::Submenu("Load Model", load_submenu));
+
+#ifdef __APPLE__
+    // Service Control menu items (macOS only)
+    bool service_running = LemonadeServiceManager::isServerActive();
+    bool service_enabled = LemonadeServiceManager::isServerEnabled();
+
+    // Show Start/Stop Service based on running state
+    if (service_running) {
+        menu.add_item(MenuItem::Action("Stop Service", [this]() {
+            LemonadeServiceManager::stopServer();
+            build_menu();
+        }));
+    } else if(service_enabled) {
+        menu.add_item(MenuItem::Action("Start Service", [this]() {
+            LemonadeServiceManager::startServer();
+            build_menu();
+        }));
+    }
+
+    // Show Enable/Disable Service based on enabled state
+    if (service_enabled) {
+        menu.add_item(MenuItem::Action("Disable Service", [this]() {
+            LemonadeServiceManager::disableServer();
+            build_menu();
+        }));
+    } else {
+        menu.add_item(MenuItem::Action("Enable Service", [this]() {
+            LemonadeServiceManager::enableServer();
+            build_menu();
+        }));
+    }
+#endif
 
     // Port submenu
     auto port_submenu = std::make_shared<Menu>();
@@ -1866,16 +2383,11 @@ void TrayApp::on_show_logs() {
         kill(log_viewer_pid_, SIGTERM);
         log_viewer_pid_ = 0;
     }
-
-    // Fork and open Terminal.app with tail command
-    pid_t pid = fork();
-    if (pid == 0) {
-        // Child process
-        std::string cmd = "osascript -e 'tell application \"Terminal\" to do script \"tail -f " + log_file_ + "\"'";
-        execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
-        exit(0);
-    } else if (pid > 0) {
-        log_viewer_pid_ = pid;
+    // Use open command to open log file in default editor instead of Terminal.app
+    std::string cmd = "open \"" + log_file_ + "\"";
+    int result = system(cmd.c_str());
+    if (result != 0) {
+        show_notification("Error", "Failed to open log file");
     }
 #else
     // Kill existing log viewer if any
@@ -1906,8 +2418,31 @@ void TrayApp::on_upgrade() {
     std::cout << "Upgrade functionality not yet implemented" << std::endl;
 }
 
+void TrayApp::send_unload_command() {
+#ifdef __APPLE__
+    // On macOS, send HTTP unload command directly to the server
+    if (server_manager_) {
+        try {
+            std::cout << "Sending unload command to server..." << std::endl;
+            server_manager_->make_http_request("/api/v1/unload", "POST", "", 30);
+            std::cout << "Unload command sent successfully" << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "Failed to send unload command: " << e.what() << std::endl;
+        }
+    }
+#endif
+}
+
 void TrayApp::on_quit() {
     std::cout << "Quitting application..." << std::endl;
+#ifdef __APPLE__
+    // On macOS, disable the service first before quitting
+    std::cout << "Disabling service auto-start..." << std::endl;
+    LemonadeServiceManager::performFullQuit();
+
+    // Send UnloadModels command to the lemonade server
+    send_unload_command();
+#endif
     shutdown();
 }
 
@@ -2004,8 +2539,9 @@ void TrayApp::open_url(const std::string& url) {
 }
 
 bool TrayApp::find_electron_app() {
-    // Get directory of this executable (lemonade-tray.exe)
+    // Get directory of this executable (lemonade-tray)
     fs::path exe_dir;
+
 
 #ifdef _WIN32
     wchar_t exe_path[MAX_PATH];
@@ -2013,19 +2549,33 @@ bool TrayApp::find_electron_app() {
     exe_dir = fs::path(exe_path).parent_path();
 #else
     char exe_path[PATH_MAX];
+    bool got_exe_path = false;
+
+#ifdef __APPLE__
+    // macOS: Use _NSGetExecutablePath
+    uint32_t bufsize = sizeof(exe_path);
+    if (_NSGetExecutablePath(exe_path, &bufsize) == 0) {
+        got_exe_path = true;
+    }
+#else
+    // Linux: Use /proc/self/exe
     ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
     if (len != -1) {
         exe_path[len] = '\0';
-        exe_dir = fs::path(exe_path).parent_path();
-    } else {
+        got_exe_path = true;
+    }
+#endif
+
+    if (!got_exe_path) {
         return false;
     }
+    exe_dir = fs::path(exe_path).parent_path();
 #endif
 
     // The Electron app has exactly two possible locations:
     // 1. Production (WIX installer): ../app/ relative to bin/ directory
     // 2. Development: app/<platform>-unpacked/ relative to build directory
-    // 3. Linux production: /usr/local/share/lemonade-server/app/lemonade
+    // 3. Linux production: /opt/share/lemonade-server/app/lemonade
 
 #ifdef _WIN32
     constexpr const char* exe_name = "Lemonade.exe";
@@ -2040,9 +2590,9 @@ bool TrayApp::find_electron_app() {
 
 #if defined(__linux__)
     // On Linux, check the production installation path first
-    // If the executable is in /usr/local/bin, the app is in /usr/local/share/lemonade-server/app/
-    if (exe_dir == "/usr/local/bin") {
-        fs::path linux_production_path = fs::path("/usr/local/share/lemonade-server/app") / exe_name;
+    // If the executable is in /opt/bin, the app is in /opt/share/lemonade-server/app/
+    if (exe_dir == "/opt/bin") {
+        fs::path linux_production_path = fs::path("/opt/share/lemonade-server/app") / exe_name;
         if (fs::exists(linux_production_path)) {
             electron_app_path_ = fs::canonical(linux_production_path).string();
             std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
@@ -2052,6 +2602,7 @@ bool TrayApp::find_electron_app() {
 #endif
 
     // Check production path first (most common case)
+    // WiX installer puts binaries in bin/ and app in app/, so ../app/ from bin/
     fs::path production_path = exe_dir / ".." / "app" / exe_name;
     if (fs::exists(production_path)) {
         electron_app_path_ = fs::canonical(production_path).string();
@@ -2059,8 +2610,19 @@ bool TrayApp::find_electron_app() {
         return true;
     }
 
+#ifdef __APPLE__
+    // macOS: Check standard installation location
+    fs::path mac_apps_path = fs::path("/Applications") / exe_name;
+    if (fs::exists(mac_apps_path)) {
+        electron_app_path_ = fs::canonical(mac_apps_path).string();
+        std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
+        return true;
+    }
+#endif
     // Check development path (app/<platform>-unpacked/ in build directory)
-    fs::path dev_path = exe_dir / "app" / unpacked_dir / exe_name;
+    // CMake builds to build/Release/ on Windows, electron app to build/app/
+    // So we need ../app/<platform>-unpacked/ from build/Release/
+    fs::path dev_path = exe_dir / ".." / "app" / unpacked_dir / exe_name;
     if (fs::exists(dev_path)) {
         electron_app_path_ = fs::canonical(dev_path).string();
         std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
@@ -2080,6 +2642,36 @@ bool TrayApp::find_electron_app() {
     std::cerr << "  Checked: " << dev_path.string() << std::endl;
     std::cerr << "  Checked: " << legacy_dev_path.string() << std::endl;
     return false;
+}
+
+bool TrayApp::find_web_app() {
+    // Use the same path resolution as the server
+    std::string web_app_dir = lemon::utils::get_resource_path("resources/web-app");
+
+    // Check if web app directory exists and has an index.html
+    if (fs::exists(web_app_dir) && fs::is_directory(web_app_dir)) {
+        fs::path index_path = fs::path(web_app_dir) / "index.html";
+        if (fs::exists(index_path)) {
+            std::cout << "Found web app at: " << web_app_dir << std::endl;
+            web_app_available_ = true;
+            return true;
+        }
+    }
+
+    web_app_available_ = false;
+    return false;
+}
+
+void TrayApp::open_web_app() {
+    // Compose the web app URL
+    // Translate 0.0.0.0 to localhost since 0.0.0.0 is not a valid connect address
+    std::string connect_host = server_config_.host;
+    if (connect_host.empty() || connect_host == "0.0.0.0") {
+        connect_host = "localhost";
+    }
+    std::string web_app_url = "http://" + connect_host + ":" + std::to_string(server_config_.port) + "/";
+    std::cout << "Opening web app at: " << web_app_url << std::endl;
+    open_url(web_app_url);
 }
 
 void TrayApp::launch_electron_app() {
