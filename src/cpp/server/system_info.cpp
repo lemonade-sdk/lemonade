@@ -73,11 +73,11 @@ struct RecipeBackendDef {
 //
 // IMPORTANT: Backend order matters! For recipes with multiple backends (e.g., llamacpp),
 // the order in this table defines the preference order. First listed = most preferred.
-// Example: vulkan is listed before cpu, so vulkan is preferred over cpu.
+// Example: metal is listed before vulkan on macOS, vulkan before cpu elsewhere.
 //
 // Empty family set {} means "all families of that device type"
 static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
-    // llamacpp with multiple backends (order = preference: vulkan > rocm > metal > cpu)
+    // llamacpp with multiple backends (order = preference: metal > vulkan > rocm > cpu)
     {"llamacpp", "vulkan", {"windows", "linux", "macos"}, {
         {"cpu", {"x86_64"}},
         {"amd_igpu", {}},      // all iGPU families
@@ -87,9 +87,6 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"llamacpp", "rocm", {"windows", "linux"}, {
         {"amd_igpu", {"gfx1150", "gfx1151"}},                      // STX Point/Halo iGPUs
         {"amd_dgpu", {"gfx110X", "gfx120X"}},                      // RDNA3/RDNA4 dGPUs
-    }},
-    {"llamacpp", "metal", {"macos"}, {
-        {"cpu", {}},           // Apple Silicon
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
@@ -486,33 +483,39 @@ json SystemInfo::get_device_dict() {
 
         if (mac_info) {
             auto metal_gpus = dynamic_cast<MacOSSystemInfo*>(this)->detect_metal_gpus();
-            devices["metal"] = json::array();
-            for (const auto& gpu : metal_gpus) {
-                json gpu_json = {
+            if (!metal_gpus.empty() && metal_gpus[0].available) {
+                // Use first available Metal GPU (similar to how single devices are handled)
+                const auto& gpu = metal_gpus[0];
+                devices["metal"] = {
                     {"name", gpu.name},
                     {"available", gpu.available}
                 };
                 if (gpu.vram_gb > 0) {
-                    gpu_json["vram_gb"] = gpu.vram_gb;
+                    devices["metal"]["vram_gb"] = gpu.vram_gb;
                 }
                 if (!gpu.driver_version.empty()) {
-                    gpu_json["driver_version"] = gpu.driver_version;
+                    devices["metal"]["driver_version"] = gpu.driver_version;
                 }
                 if (!gpu.error.empty()) {
-                    gpu_json["error"] = gpu.error;
+                    devices["metal"]["error"] = gpu.error;
                 }
-                devices["metal"].push_back(gpu_json);
+            } else {
+                devices["metal"] = {
+                    {"name", "Unknown"},
+                    {"available", false},
+                    {"error", "No Metal-compatible GPU found"}
+                };
             }
         }
         else {
-            devices["metal_gpu"] = {
+            devices["metal"] = {
                 {"name", "Unknown"},
                 {"available", false},
                 {"error", std::string("Detection exception: ")}
             };
         }
     } catch (const std::exception& e) {
-        devices["metal_gpu"] = {
+        devices["metal"] = {
             {"name", "Unknown"},
             {"available", false},
             {"error", std::string("Detection exception: ") + e.what()}
@@ -547,7 +550,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
     // Get CPU name for NPU family detection
     std::string cpu_name;
-    if (devices.contains("cpu")) {
+    if (devices.contains("cpu") && devices["cpu"].is_object()) {
         cpu_name = devices["cpu"].value("name", "");
     }
 
@@ -562,7 +565,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
     }
 
     // AMD iGPU
-    if (devices.contains("amd_igpu")) {
+    if (devices.contains("amd_igpu") && devices["amd_igpu"].is_object()) {
         const auto& igpu = devices["amd_igpu"];
         if (igpu.value("available", false)) {
             std::string name = igpu.value("name", "");
@@ -595,7 +598,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
     }
 
     // NPU - use CPU name for family detection
-    if (devices.contains("npu")) {
+    if (devices.contains("npu") && devices["npu"].is_object()) {
         const auto& npu = devices["npu"];
         if (npu.value("available", false)) {
             std::string name = npu.value("name", "");
@@ -608,8 +611,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
     }
 
-    // Metal - use metal for family detection.
-    if (devices.contains("npu")) {
+    // Metal - use metal for family detection
+    if (devices.contains("metal") && devices["metal"].is_object()) {
         const auto& metal = devices["metal"];
         if (metal.value("available", false)) {
             std::string name = metal.value("name", "");

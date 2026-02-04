@@ -941,13 +941,13 @@ if(APPLE)
     # INSTALLATION (Component Structure)
     
     # Main Router -> /usr/local/bin
-    install(TARGETS ${EXECUTABLE_NAME} RUNTIME DESTINATION "usr/local/bin" COMPONENT Runtime)
+    install(TARGETS ${EXECUTABLE_NAME} RUNTIME DESTINATION "bin" COMPONENT Runtime)
 
     # Sign the router binary after installation (Release builds only)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         install(CODE "
             execute_process(
-                COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"\$ENV{DESTDIR}/usr/local/bin/${EXECUTABLE_NAME}\"
+                COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-9.2.0-Darwin/Runtime/usr/local/bin/${EXECUTABLE_NAME}\"
                 RESULT_VARIABLE SIGN_RESULT
             )
             if(NOT SIGN_RESULT EQUAL 0)
@@ -959,13 +959,13 @@ if(APPLE)
     # Tray/Server -> /usr/local/bin
     # (Since tray/CMakeLists.txt skips install on Apple, we must do it here)
     if(TARGET lemonade-server)
-        install(TARGETS lemonade-server RUNTIME DESTINATION "usr/local/bin" COMPONENT Runtime)
+        install(TARGETS lemonade-server RUNTIME DESTINATION "bin" COMPONENT Runtime)
 
         # Sign the server binary after installation (Release builds only)
         if(CMAKE_BUILD_TYPE STREQUAL "Release")
             install(CODE "
                 execute_process(
-                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"\$ENV{DESTDIR}/usr/local/bin/lemonade-server\"
+                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-9.2.0-Darwin/Runtime/usr/local/bin/lemonade-server\"
                     RESULT_VARIABLE SIGN_RESULT
                 )
                 if(NOT SIGN_RESULT EQUAL 0)
@@ -979,9 +979,9 @@ if(APPLE)
     install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/ DESTINATION "Library/Application Support/Lemonade/resources" COMPONENT Resources)
 
     # App Bundle -> /Applications
-    install(DIRECTORY "${ELECTRON_BUILD_COPY}" 
-        DESTINATION "Applications" 
-        USE_SOURCE_PERMISSIONS 
+    install(DIRECTORY "${ELECTRON_BUILD_COPY}"
+        DESTINATION "/Applications"
+        USE_SOURCE_PERMISSIONS
         COMPONENT Applications
     )
     
@@ -1008,7 +1008,7 @@ if(APPLE)
     set(CPACK_PRODUCTBUILD_BUNDLE com.lemonade.server.Applications OFF)
     set(CPACK_PRODUCTBUILD_BUNDLE_ID com.lemonade.server.Applications)
 
-    set(CPACK_PACKAGING_INSTALL_PREFIX "/")
+    set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
     set(CPACK_PACKAGE_RELOCATABLE OFF)
     set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
     set(CPACK_COMPONENT_APPLICATIONS_IS_ABSOLUTE ON)

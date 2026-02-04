@@ -19,7 +19,10 @@ std::vector<GPUInfo> MacOSSystemInfo::detect_metal_gpus() {
         id<MTLDevice> device = MTLCreateSystemDefaultDevice();
         if (device) {
             GPUInfo gpu;
-            gpu.name = [device.name UTF8String];
+            NSString* deviceName = device.name;
+            std::string device_name_str = deviceName ? [deviceName UTF8String] : "Unknown Metal Device";
+            NSLog(@"[Metal] Detected device: %s", device_name_str.c_str());
+            gpu.name = device_name_str;
             gpu.available = true;
 
             // Get VRAM size
