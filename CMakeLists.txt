@@ -953,7 +953,7 @@ if(APPLE)
             if(NOT SIGN_RESULT EQUAL 0)
                 message(FATAL_ERROR \"Failed to sign ${EXECUTABLE_NAME}\")
             endif()
-        ")
+        " COMPONENT Runtime)
     endif()
 
     # Tray/Server -> /usr/local/bin
@@ -971,7 +971,7 @@ if(APPLE)
                 if(NOT SIGN_RESULT EQUAL 0)
                     message(FATAL_ERROR \"Failed to sign lemonade-server\")
                 endif()
-            ")
+            " COMPONENT Runtime)
         endif()
     endif()
 
