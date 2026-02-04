@@ -108,7 +108,8 @@ Server::~Server() {
 
 void Server::log_request(const httplib::Request& req) {
     if (req.path != "/api/v0/health" && req.path != "/api/v1/health" &&
-        req.path != "/api/v0/system-stats" && req.path != "/api/v1/system-stats") {
+        req.path != "/api/v0/system-stats" && req.path != "/api/v1/system-stats" &&
+        req.path != "/api/v0/stats" && req.path != "/api/v1/stats") {
         std::cout << "[Server PRE-ROUTE] " << req.method << " " << req.path << std::endl;
         std::cout.flush();
     }
@@ -502,11 +503,12 @@ std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
 }
 
 void Server::setup_http_logger(httplib::Server &web_server) {
-    // Add request logging for ALL requests (except health checks and system-stats)
+    // Add request logging for ALL requests (except health checks and stats endpoints)
     web_server.set_logger([](const httplib::Request& req, const httplib::Response& res) {
-        // Skip logging health checks and system-stats to reduce log noise
+        // Skip logging health checks and stats endpoints to reduce log noise
         if (req.path != "/api/v0/health" && req.path != "/api/v1/health" && req.path != "/live" &&
-            req.path != "/api/v0/system-stats" && req.path != "/api/v1/system-stats") {
+            req.path != "/api/v0/system-stats" && req.path != "/api/v1/system-stats" &&
+            req.path != "/api/v0/stats" && req.path != "/api/v1/stats") {
             std::cout << "[Server] " << req.method << " " << req.path << " - " << res.status << std::endl;
         }
     });
