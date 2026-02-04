@@ -15,7 +15,7 @@ static const json DEFAULTS = {
     {"llamacpp_backend", "vulkan"},  // Will be overridden dynamically
 #endif
     {"llamacpp_args", ""},
-    {"whispercpp_backend", "cpu"},
+    {"whispercpp_backend", "npu"},
     // Image generation defaults (for sd-cpp recipe)
     {"steps", 20},
     {"cfg_scale", 7.0},
@@ -23,8 +23,9 @@ static const json DEFAULTS = {
     {"height", 512}
 };
 
-// CLI_OPTIONS without allowed_values for llamacpp (will be set dynamically)
+// CLI_OPTIONS without allowed_values for inference engines (will be set dynamically)
 static const json CLI_OPTIONS = {
+    // LLM Options
     {"--ctx-size", {
         {"option_name", "ctx_size"},
         {"type_name", "SIZE"},
@@ -43,10 +44,11 @@ static const json CLI_OPTIONS = {
         {"envname", "LEMONADE_LLAMACPP_ARGS"},
         {"help", "Custom arguments to pass to llama-server (must not conflict with managed args)"}
     }},
+    // ASR options
     {"--whispercpp", {
         {"option_name", "whispercpp_backend"},
         {"type_name", "BACKEND"},
-        {"allowed_values", {"cpu", "vulkan", "rocm", "npu"}},
+        {"allowed_values", {"cpu", "npu"}},
         {"envname", "LEMONADE_WHISPERCPP"},
         {"help", "WhisperCpp backend to use"}
     }},

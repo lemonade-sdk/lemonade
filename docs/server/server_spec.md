@@ -958,13 +958,18 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 
 #### Parameters
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `model_name` | Yes | [Lemonade Server model name](./server_models.md) to load. |
-| `ctx_size` | No | Context size for the model. Overrides the default value for this model. |
-| `llamacpp_backend` | No | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). Only applies to llamacpp models. |
-| `llamacpp_args` | No | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`. |
-| `save_options` | No | Boolean. If true, saves `ctx_size`, `llamacpp_backend` and `llamacpp_args` to the `recipe_options.json` file. Any previously stored value for `model_name` is replaced with the parameters of this request. |
+| Parameter | Required | Applies to | Description |
+|-----------|----------|------------|-------------|
+| `model_name` | Yes | All | [Lemonade Server model name](./server_models.md) to load. |
+| `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. |
+| `ctx_size` | No | llamacpp, flm, oga-* | Context size for the model. Overrides the default value. |
+| `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
+| `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`. |
+| `whispercpp_backend` | No | whispercpp | WhisperCpp backend to use (`npu` or `cpu`). Default is `npu` if supported. |
+| `steps` | No | sd-cpp | Number of inference steps for image generation. Default: 20. |
+| `cfg_scale` | No | sd-cpp | Classifier-free guidance scale for image generation. Default: 7.0. |
+| `width` | No | sd-cpp | Image width in pixels. Default: 512. |
+| `height` | No | sd-cpp | Image height in pixels. Default: 512. |
 
 **Setting Priority:**
 
@@ -976,7 +981,7 @@ When loading a model, settings are applied in this priority order:
 
 #### Per-model options
 
-You can configure a default `ctx_size`, `llamacpp_backend` and `llamacpp_args` on a per-model basis. To achieve this, Lemonade manages a file called `recipe_options.json` in the user's Lemonade cache (default: `~/.cache/lemonade`). An example `recipe_options.json` file follows:
+You can configure recipe-specific options on a per-model basis. Lemonade manages a file called `recipe_options.json` in the user's Lemonade cache (default: `~/.cache/lemonade`). The available options depend on the model's recipe:
 
 ```json
 {
@@ -987,6 +992,9 @@ You can configure a default `ctx_size`, `llamacpp_backend` and `llamacpp_args` o
   },
   "Qwen3-Coder-30B-A3B-Instruct-GGUF" : {
     "llamacpp_backend": "rocm"
+  },
+  "whisper-large-v3-turbo-q8_0.bin": {
+    "whispercpp_backend": "npu"
   }
 }
 ```
@@ -1029,6 +1037,31 @@ curl -X POST http://localhost:8000/api/v1/load \
     "llamacpp_backend": "vulkan",
     "llamacpp_args": "--no-context-shift --no-mmap",
     "save_options": true
+  }'
+```
+
+Load a Whisper model with NPU backend:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/load \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "whisper-large-v3-turbo-q8_0.bin",
+    "whispercpp_backend": "npu"
+  }'
+```
+
+Load an image generation model with custom settings:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/load \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "sd-turbo",
+    "steps": 4,
+    "cfg_scale": 1.0,
+    "width": 512,
+    "height": 512
   }'
 ```
 

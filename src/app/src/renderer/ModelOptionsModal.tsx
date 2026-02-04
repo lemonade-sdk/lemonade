@@ -1,18 +1,27 @@
+/**
+ * Model Options Modal
+ *
+ * This component uses the central recipe options configuration to dynamically
+ * render the appropriate options for each recipe type.
+ */
+
 import React, { useState, useEffect, useRef } from 'react';
-import { RecipeOptions } from './recipes/recipeOptions';
 import { serverFetch } from "./utils/serverConfig";
-import * as llamacpp from './recipes/llamacpp/recipeOptions'
-import * as whispercpp from './recipes/whispercpp/recipeOptions'
-import * as fastflow from './recipes/fastflow/recipeOptions'
-import * as onnx from './recipes/onnx/recipeOptions'
-import * as sdcpp from './recipes/sdcpp/recipeOptions'
 import { ModelInfo } from "./utils/modelData";
 import { useSystem } from "./hooks/useSystem";
-import { OgaRecipies } from "./recipes/onnx/recipeOptions";
+import {
+  RecipeOptions,
+  getOptionsForRecipe,
+  getOptionDefinition,
+  clampOptionValue,
+  createDefaultOptions,
+  apiToRecipeOptions,
+} from './recipes/recipeOptions';
 
 // Display names for backend options
 const BACKEND_DISPLAY_NAMES: Record<string, string> = {
   cpu: "CPU",
+  npu: "NPU",
   rocm: "ROCm",
   vulkan: "Vulkan",
   metal: "Metal",
@@ -39,17 +48,13 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   const [isSubmitting, setIsSubmitting] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
+  // Fetch options when modal opens
   useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
+    if (!isOpen) return;
     let isMounted = true;
 
     const fetchOptions = async () => {
-      if (isMounted) {
-        setIsLoading(true);
-      }
-
+      if (isMounted) setIsLoading(true);
       if (!model) return;
 
       try {
@@ -58,87 +63,31 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
         setModelName(model);
         setModelInfo({ ...data });
-        const modelUrl = `https://huggingface.co/${data.checkpoint.replace(/:.+$/, '')}`;
-        if (modelUrl) setModelUrl(modelUrl);
 
-        if (data.recipe === 'whispercpp') {
-          setOptions(whispercpp.createDefaultOptions());
-          const stored: RecipeOptions = {
-            recipe: 'whispercpp',
-            ctxSize: { value: data.recipe_options.ctx_size, useDefault: true },
-            saveOptions: { value: data.recipe_options.save_options, useDefault: true },
-          }
+        const url = `https://huggingface.co/${data.checkpoint.replace(/:.+$/, '')}`;
+        if (url) setModelUrl(url);
 
-          if (isMounted) {
-            setOptions(whispercpp.mergeWithDefaultOptions(stored));
-          }
-        } else if (data.recipe === 'flm') {
-          setOptions(fastflow.createDefaultOptions());
-          const stored: RecipeOptions = {
-            recipe: 'flm',
-            ctxSize: { value: data.recipe_options.ctx_size, useDefault: true },
-            saveOptions: { value: data.recipe_options.save_options, useDefault: true },
-          }
+        const recipe = data.recipe as string;
+        const recipeOptions = data.recipe_options ?? {};
 
-          if (isMounted) {
-            setOptions(fastflow.mergeWithDefaultOptions(stored));
-          }
-        } else if (OgaRecipies.includes(data.recipe)) {
-          setOptions(onnx.createDefaultOptions());
-          const stored: RecipeOptions = {
-            recipe: data.recipe,
-            ctxSize: { value: data.recipe_options.ctx_size, useDefault: true },
-            saveOptions: { value: data.recipe_options.save_options, useDefault: true },
-          }
-
-          if (isMounted) {
-            setOptions(onnx.mergeWithDefaultOptions(stored));
-          }
-        } else { // llamacpp
-          setOptions(llamacpp.createDefaultOptions());
-          const stored: RecipeOptions = {
-            recipe: 'llamacpp',
-            ctxSize: { value: data.recipe_options.ctx_size, useDefault: true },
-            llamacppBackend: { value: data.recipe_options.llamacpp_backend, useDefault: true },
-            llamacppArgs: { value: data.recipe_options.llamacpp_args, useDefault: true },
-            saveOptions: { value: data.recipe_options.save_options, useDefault: true },
-          }
-
-          if (isMounted) {
-            setOptions(llamacpp.mergeWithDefaultOptions(stored));
-          }
+        if (isMounted) {
+          setOptions(apiToRecipeOptions(recipe, recipeOptions));
         }
       } catch (error) {
         console.error('Failed to load options:', error);
-        if (!options) return;
-
-        if (isMounted) {
-          if (options.recipe === 'llamacpp') {
-            setOptions(llamacpp.createDefaultOptions());
-          } else if (options.recipe === 'whispercpp') {
-            setOptions(whispercpp.createDefaultOptions());
-          } else if (options.recipe === 'flm') {
-            setOptions(fastflow.createDefaultOptions());
-          } else if (options.recipe === 'sd-cpp') {
-            setOptions(fastflow.createDefaultOptions());
-          } else if (OgaRecipies.includes(options.recipe)) {
-            setOptions(onnx.createDefaultOptions());
-          }
+        if (isMounted && options?.recipe) {
+          setOptions(createDefaultOptions(options.recipe));
         }
       } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
+        if (isMounted) setIsLoading(false);
       }
     };
 
     fetchOptions();
-
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [isOpen]);
 
+  // Handle click outside and escape key
   useEffect(() => {
     if (!isOpen) return;
 
@@ -149,9 +98,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onCancel();
-      }
+      if (event.key === 'Escape') onCancel();
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -163,136 +110,243 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     };
   }, [isOpen, onCancel]);
 
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onCancel();
-    }
-  };
+  // Generic handler for numeric option changes
+  const handleNumericChange = (key: string, rawValue: number) => {
+    if (!options) return;
 
-  const handleNumericChange = (key: llamacpp.NumericOptionKey | whispercpp.NumericOptionKey, rawValue: number) => {
-    if (!options) {
-      return null;
-    }
-
-    setOptions((prev) => {
+    setOptions(prev => {
       if (!prev) return prev;
-      if (prev.recipe === 'llamacpp') {
-        return {
-          ...prev,
-          [key]: {
-            value: llamacpp.clampNumericOptionValue(key, rawValue),
-            useDefault: false,
-          }
+      return {
+        ...prev,
+        [key]: {
+          value: clampOptionValue(key, rawValue),
+          useDefault: false,
         }
-      } else if (prev.recipe === 'whispercpp') {
-        return {
-          ...prev,
-          [key]: {
-            value: whispercpp.clampNumericOptionValue(key, rawValue),
-            useDefault: false,
-          }
-        }
-      } else if (prev.recipe === 'flm') {
-        return {
-          ...prev,
-          [key]: {
-            value: fastflow.clampNumericOptionValue(key, rawValue),
-            useDefault: false,
-          }
-        }
-      } else if (prev.recipe === 'sd-cpp') {
-        return {
-          ...prev,
-          [key]: {
-            value: sdcpp.clampNumericOptionValue(key, rawValue),
-            useDefault: false,
-          }
-        }
-      } else if (OgaRecipies.includes(prev.recipe)) {
-        return {
-          ...prev,
-          [key]: {
-            value: onnx.clampNumericOptionValue(key, rawValue),
-            useDefault: false,
-          }
-        }
-      }
+      } as RecipeOptions;
     });
   };
 
-  const handleStringChange = (key: llamacpp.StringOptionKey, rawValue: string) => {
-    setOptions((prev) => {
-      if (!prev) return prev;
+  // Generic handler for string option changes
+  const handleStringChange = (key: string, value: string) => {
+    if (!options) return;
 
-      if (prev.recipe == 'llamacpp') {
-        return {
-          ...prev,
-          [key]: {
-            value: rawValue,
-            useDefault: false,
-          },
-        }
-      }
-    });
-  };
-
-  const handleBooleanChange = (key: llamacpp.BooleanOptionKey | whispercpp.BooleanOptionKey, value: boolean) => {
-    setOptions((prev) => {
+    setOptions(prev => {
       if (!prev) return prev;
       return {
         ...prev,
         [key]: {
           value,
           useDefault: false,
-        },
-      }
+        }
+      } as RecipeOptions;
     });
   };
 
-  const handleResetField = (key: llamacpp.NumericOptionKey | llamacpp.StringOptionKey | llamacpp.BooleanOptionKey | whispercpp.NumericOptionKey | whispercpp.BooleanOptionKey) => {
-    setOptions((prev) => {
-      if (!prev) return prev;
-      if (prev.recipe === 'llamacpp') {
-        return {
-          ...prev,
-          [key]: {
-            value: llamacpp.DEFAULT_OPTION_VALUES[key],
-            useDefault: true,
-          },
-        };
-      }
-    });
-  };
-
-  const handleReset = () => {
+  // Generic handler for boolean option changes
+  const handleBooleanChange = (key: string, value: boolean) => {
     if (!options) return;
 
-    if (options.recipe == 'llamacpp') {
-      setOptions(llamacpp.createDefaultOptions());
-    } else if (options.recipe == 'whispercpp') {
-      setOptions(whispercpp.createDefaultOptions());
-    } else if (options.recipe === 'flm') {
-      setOptions(fastflow.createDefaultOptions());
-    } else if (options.recipe === 'sd-cpp') {
-      setOptions(sdcpp.createDefaultOptions());
-    } else if (OgaRecipies.includes(options.recipe)) {
-      setOptions(onnx.createDefaultOptions());
-    }
+    setOptions(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [key]: {
+          value,
+          useDefault: false,
+        }
+      } as RecipeOptions;
+    });
   };
 
-  const handleCancel = async () => {
+  // Reset a single field to its default value
+  const handleResetField = (key: string) => {
+    const def = getOptionDefinition(key);
+    if (!def) return;
+
+    setOptions(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [key]: {
+          value: def.default,
+          useDefault: true,
+        }
+      } as RecipeOptions;
+    });
+  };
+
+  // Reset all options to defaults
+  const handleReset = () => {
+    if (!options?.recipe) return;
+    setOptions(createDefaultOptions(options.recipe));
+  };
+
+  const handleCancel = () => {
     onCancel();
-    return;
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!options || !modelName) return;
     onSubmit(modelName, options);
-    return;
   };
 
-  if (!isOpen) return null;
-  if (!options) return null;
+  if (!isOpen || !options) return null;
+
+  const recipe = options.recipe;
+  const availableOptions = getOptionsForRecipe(recipe);
+
+  // Check if recipe has multiple backends available
+  const hasMultipleBackends = modelInfo?.recipe && (supportedRecipes[modelInfo.recipe]?.length ?? 0) > 1;
+
+  // Helper to get option value from options object
+  const getOptionValue = <T,>(key: string): T | undefined => {
+    const opt = (options as unknown as Record<string, { value: T; useDefault: boolean }>)[key];
+    return opt?.value;
+  };
+
+  const getOptionUseDefault = (key: string): boolean => {
+    const opt = (options as unknown as Record<string, { value: unknown; useDefault: boolean }>)[key];
+    return opt?.useDefault ?? true;
+  };
+
+  // Render a numeric input field
+  const renderNumericField = (key: string) => {
+    const def = getOptionDefinition(key);
+    if (!def || def.type !== 'numeric') return null;
+
+    const value = getOptionValue<number>(key);
+    if (value === undefined) return null;
+
+    return (
+      <div className="form-section" key={key}>
+        <label className="form-label" title={def.description}>{def.label.toLowerCase()}</label>
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => {
+            if (e.target.value === 'auto' || e.target.value === '') return;
+            const parsed = parseFloat(e.target.value);
+            if (Number.isNaN(parsed)) return;
+            handleNumericChange(key, parsed);
+          }}
+          className="form-input"
+          placeholder="auto"
+        />
+      </div>
+    );
+  };
+
+  // Render a string input field (non-backend)
+  const renderStringField = (key: string) => {
+    const def = getOptionDefinition(key);
+    if (!def || def.type !== 'string' || def.isBackendOption) return null;
+
+    const value = getOptionValue<string>(key);
+    if (value === undefined) return null;
+
+    return (
+      <div className="form-section" key={key}>
+        <label className="form-label" title={def.description}>{def.label.toLowerCase()}</label>
+        <input
+          type="text"
+          className="form-input"
+          placeholder=""
+          value={value}
+          onChange={(e) => handleStringChange(key, e.target.value)}
+        />
+      </div>
+    );
+  };
+
+  // Render a backend selector
+  const renderBackendSelector = (key: string) => {
+    const def = getOptionDefinition(key);
+    if (!def || def.type !== 'string' || !def.isBackendOption) return null;
+    if (!hasMultipleBackends || !modelInfo?.recipe) return null;
+
+    const value = getOptionValue<string>(key);
+    if (value === undefined) return null;
+
+    return (
+      <div className="form-section" key={key}>
+        <label className="form-label" title={def.description}>
+          {def.label.toLowerCase()}
+        </label>
+        <select
+          className="form-input form-select"
+          value={value}
+          onChange={(e) => handleStringChange(key, e.target.value)}
+        >
+          <option value="">Auto</option>
+          {(supportedRecipes[modelInfo.recipe] ?? []).map((backend) => (
+            <option key={backend} value={backend}>{getBackendDisplayName(backend)}</option>
+          ))}
+        </select>
+      </div>
+    );
+  };
+
+  // Render a boolean field (checkbox)
+  const renderBooleanField = (key: string) => {
+    const def = getOptionDefinition(key);
+    if (!def || def.type !== 'boolean') return null;
+
+    const value = getOptionValue<boolean>(key);
+    const useDefault = getOptionUseDefault(key);
+    if (value === undefined) return null;
+
+    return (
+      <div
+        className={`settings-section ${useDefault ? 'settings-section-default' : ''}`}
+        key={key}
+      >
+        <div className="settings-label-row">
+          <span className="settings-label-text">{def.label}</span>
+          <button
+            type="button"
+            className="settings-field-reset"
+            onClick={() => handleResetField(key)}
+            disabled={useDefault}
+          >
+            Reset
+          </button>
+        </div>
+        <label className="settings-checkbox-label">
+          <input
+            type="checkbox"
+            checked={value}
+            onChange={(e) => handleBooleanChange(key, e.target.checked)}
+            className="settings-checkbox"
+          />
+          <div className="settings-checkbox-content">
+            <span className="settings-description">
+              {def.description}
+            </span>
+          </div>
+        </label>
+      </div>
+    );
+  };
+
+  // Render all options for the current recipe
+  const renderOptions = () => {
+    return availableOptions.map(key => {
+      const def = getOptionDefinition(key);
+      if (!def) return null;
+
+      if (def.type === 'numeric') {
+        return renderNumericField(key);
+      } else if (def.type === 'string') {
+        if (def.isBackendOption) {
+          return renderBackendSelector(key);
+        }
+        return renderStringField(key);
+      } else if (def.type === 'boolean') {
+        return renderBooleanField(key);
+      }
+      return null;
+    });
+  };
 
   return (
     <div className="settings-overlay">
@@ -308,320 +362,18 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
         {isLoading ? (
           <div className="settings-loading">Loading options…</div>
-        ) : options.recipe === 'llamacpp' ? (
+        ) : (
           <div className="model-options-content">
             <div className="model-options-category-header">
               <h3>Name: {modelName}</h3>
-              <h5>Checkpoint: <a href={modelUrl} target="_blank">{modelInfo?.checkpoint}</a></h5>
+              <h5>Checkpoint: {modelUrl ? (
+                <a href={modelUrl} target="_blank">{modelInfo?.checkpoint}</a>
+              ) : modelInfo?.checkpoint}</h5>
             </div>
 
-            <div className="form-section">
-              <label className="form-label" title="context size">context size</label>
-              <input
-                type="text"
-                value={options.ctxSize.value}
-                onChange={(e) => {
-                  if (e.target.value === 'auto' || e.target.value === '') {
-                    return;
-                  }
-                  const parsed = parseFloat(e.target.value);
-                  if (Number.isNaN(parsed)) {
-                    return;
-                  }
-                  handleNumericChange('ctxSize', parsed);
-                }}
-                className="form-input"
-                placeholder="auto"
-              />
-            </div>
-
-            {/* Show backend selector only if the model's recipe has multiple backends */}
-            {modelInfo?.recipe && (supportedRecipes[modelInfo.recipe]?.length ?? 0) > 1 && (
-              <div className="form-section">
-                <label className="form-label" title="Select backend to use for this model">
-                  backend
-                </label>
-                <select
-                  className="form-input form-select"
-                  value={options.llamacppBackend.value}
-                  onChange={(e) => handleStringChange('llamacppBackend', e.target.value)}
-                >
-                  <option value="">Auto</option>
-                  {(supportedRecipes[modelInfo.recipe] ?? []).map((backend) => (
-                    <option key={backend} value={backend}>{getBackendDisplayName(backend)}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div className="form-section">
-              <label className="form-label" title="llamacpp arguments">llamacpp arguments</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder=""
-                value={options.llamacppArgs.value}
-                onChange={(e) => handleStringChange('llamacppArgs', e.target.value)}
-              />
-            </div>
-
-            <div
-              className={`settings-section ${
-                options.saveOptions.useDefault ? 'settings-section-default' : ''
-              }`}
-            >
-              <div className="settings-label-row">
-                <span className="settings-label-text">Save Options</span>
-                <button
-                  type="button"
-                  className="settings-field-reset"
-                  onClick={() => handleResetField('saveOptions')}
-                  disabled={options.saveOptions.useDefault}
-                >
-                  Reset
-                </button>
-              </div>
-              <label className="settings-checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={options.saveOptions.value}
-                  onChange={(e) => handleBooleanChange('saveOptions', e.target.checked)}
-                  className="settings-checkbox"
-                />
-                <div className="settings-checkbox-content">
-                  <span className="settings-description">
-                    Determines if the options will be saved in lemonade server.
-                  </span>
-                </div>
-              </label>
-            </div>
+            {renderOptions()}
           </div>
-        ) : options.recipe === 'whispercpp' ? (
-          <div className="model-options-content">
-            <div className="model-options-category-header">
-              <h3>Name: {modelName}</h3>
-              <h5>Checkpoint: {modelInfo?.checkpoint}</h5>
-            </div>
-
-            <div className="form-section">
-              <label className="form-label" title="context size">context size</label>
-              <input
-                type="text"
-                value={options.ctxSize.value}
-                onChange={(e) => {
-                  if (e.target.value === 'auto' || e.target.value === '') {
-                    return;
-                  }
-                  const parsed = parseFloat(e.target.value);
-                  if (Number.isNaN(parsed)) {
-                    return;
-                  }
-                  handleNumericChange('ctxSize', parsed);
-                }}
-                className="form-input"
-                placeholder="auto"
-              />
-            </div>
-            <div
-              className={`settings-section ${
-                options.saveOptions.useDefault ? 'settings-section-default' : ''
-              }`}
-            >
-              <div className="settings-label-row">
-                <span className="settings-label-text">Save Options</span>
-                <button
-                  type="button"
-                  className="settings-field-reset"
-                  onClick={() => handleResetField('saveOptions')}
-                  disabled={options.saveOptions.useDefault}
-                >
-                  Reset
-                </button>
-              </div>
-              <label className="settings-checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={options.saveOptions.value}
-                  onChange={(e) => handleBooleanChange('saveOptions', e.target.checked)}
-                  className="settings-checkbox"
-                />
-                <div className="settings-checkbox-content">
-                  <span className="settings-description">
-                    Determines if the options will be saved in lemonade server.
-                  </span>
-                </div>
-              </label>
-            </div>
-          </div>) : options.recipe === 'flm' ? (
-          <div className="model-options-content">
-            <div className="model-options-category-header">
-              <h3>Name: {modelName}</h3>
-              <h5>Checkpoint: {modelInfo?.checkpoint}</h5>
-            </div>
-
-            <div className="form-section">
-              <label className="form-label" title="context size">context size</label>
-              <input
-                type="text"
-                value={options.ctxSize.value}
-                onChange={(e) => {
-                  if (e.target.value === 'auto' || e.target.value === '') {
-                    return;
-                  }
-                  const parsed = parseFloat(e.target.value);
-                  if (Number.isNaN(parsed)) {
-                    return;
-                  }
-                  handleNumericChange('ctxSize', parsed);
-                }}
-                className="form-input"
-                placeholder="auto"
-              />
-            </div>
-            <div
-              className={`settings-section ${
-                options.saveOptions.useDefault ? 'settings-section-default' : ''
-              }`}
-            >
-              <div className="settings-label-row">
-                <span className="settings-label-text">Save Options</span>
-                <button
-                  type="button"
-                  className="settings-field-reset"
-                  onClick={() => handleResetField('saveOptions')}
-                  disabled={options.saveOptions.useDefault}
-                >
-                  Reset
-                </button>
-              </div>
-              <label className="settings-checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={options.saveOptions.value}
-                  onChange={(e) => handleBooleanChange('saveOptions', e.target.checked)}
-                  className="settings-checkbox"
-                />
-                <div className="settings-checkbox-content">
-                  <span className="settings-description">
-                    Determines if the options will be saved in lemonade server.
-                  </span>
-                </div>
-              </label>
-            </div>
-          </div>) : options.recipe === 'sd-cpp' ? (
-          <div className="model-options-content">
-            <div className="model-options-category-header">
-              <h3>Name: {modelName}</h3>
-              <h5>Checkpoint: {modelInfo?.checkpoint}</h5>
-            </div>
-
-            <div className="form-section">
-              <label className="form-label" title="context size">context size</label>
-              <input
-                type="text"
-                value={options.ctxSize.value}
-                onChange={(e) => {
-                  if (e.target.value === 'auto' || e.target.value === '') {
-                    return;
-                  }
-                  const parsed = parseFloat(e.target.value);
-                  if (Number.isNaN(parsed)) {
-                    return;
-                  }
-                  handleNumericChange('ctxSize', parsed);
-                }}
-                className="form-input"
-                placeholder="auto"
-              />
-            </div>
-            <div
-              className={`settings-section ${
-                options.saveOptions.useDefault ? 'settings-section-default' : ''
-              }`}
-            >
-              <div className="settings-label-row">
-                <span className="settings-label-text">Save Options</span>
-                <button
-                  type="button"
-                  className="settings-field-reset"
-                  onClick={() => handleResetField('saveOptions')}
-                  disabled={options.saveOptions.useDefault}
-                >
-                  Reset
-                </button>
-              </div>
-              <label className="settings-checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={options.saveOptions.value}
-                  onChange={(e) => handleBooleanChange('saveOptions', e.target.checked)}
-                  className="settings-checkbox"
-                />
-                <div className="settings-checkbox-content">
-                  <span className="settings-description">
-                    Determines if the options will be saved in lemonade server.
-                  </span>
-                </div>
-              </label>
-            </div>
-          </div>) : OgaRecipies.includes(options.recipe) ? (
-          <div className="model-options-content">
-            <div className="model-options-category-header">
-              <h3>Name: {modelName}</h3>
-              <h5>Checkpoint: {modelInfo?.checkpoint}</h5>
-            </div>
-
-            <div className="form-section">
-              <label className="form-label" title="context size">context size</label>
-              <input
-                type="text"
-                value={options.ctxSize.value}
-                onChange={(e) => {
-                  if (e.target.value === 'auto' || e.target.value === '') {
-                    return;
-                  }
-                  const parsed = parseFloat(e.target.value);
-                  if (Number.isNaN(parsed)) {
-                    return;
-                  }
-                  handleNumericChange('ctxSize', parsed);
-                }}
-                className="form-input"
-                placeholder="auto"
-              />
-            </div>
-            <div
-              className={`settings-section ${
-                options.saveOptions.useDefault ? 'settings-section-default' : ''
-              }`}
-            >
-              <div className="settings-label-row">
-                <span className="settings-label-text">Save Options</span>
-                <button
-                  type="button"
-                  className="settings-field-reset"
-                  onClick={() => handleResetField('saveOptions')}
-                  disabled={options.saveOptions.useDefault}
-                >
-                  Reset
-                </button>
-              </div>
-              <label className="settings-checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={options.saveOptions.value}
-                  onChange={(e) => handleBooleanChange('saveOptions', e.target.checked)}
-                  className="settings-checkbox"
-                />
-                <div className="settings-checkbox-content">
-                  <span className="settings-description">
-                    Determines if the options will be saved in lemonade server.
-                  </span>
-                </div>
-              </label>
-            </div>
-          </div>
-        ) : <div></div>}
+        )}
 
         <div className="settings-footer">
           <button
