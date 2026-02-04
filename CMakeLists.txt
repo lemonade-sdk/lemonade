@@ -1253,16 +1253,10 @@ if(UNIX AND NOT APPLE)
         endif()
 
     else()
-        # Minimal package (server only)
-        set(CPACK_PACKAGE_NAME "lemonade-server-minimal")
-
+        set(CPACK_PACKAGE_NAME "lemonade")
         set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, fonts-katex")
+        set(CPACK_DEBIAN_PACKAGE_RECOMMENDS, "chromium-browser | google-chrome-stable | chromium")
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
-
-        if(BUILD_ELECTRON_APP)
-            message(WARNING "BUILD_ELECTRON_APP is ON but Electron app not found at ${ELECTRON_APP_UNPACKED_DIR}")
-            message(WARNING "Building minimal deb package instead")
-        endif()
     endif()
     # Post-install script for debian package
     set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst")
