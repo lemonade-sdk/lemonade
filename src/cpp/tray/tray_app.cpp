@@ -1,5 +1,8 @@
 #include "lemon_tray/tray_app.h"
+#ifdef _WIN32
 #include "lemon_tray/platform/windows_tray.h"  // For set_menu_update_callback
+#endif
+#include "LemonadeServiceManager.h"  // For macOS service management
 #include <lemon/single_instance.h>
 #include <lemon/system_info.h>
 #include <lemon/version.h>
@@ -37,6 +40,10 @@
 #include <systemd/sd-bus.h>
 #include <systemd/sd-daemon.h>
 #endif
+#endif
+
+#ifdef __APPLE__
+#include <mach-o/dyld.h>  // for _NSGetExecutablePath
 #endif
 
 namespace fs = std::filesystem;
@@ -561,12 +568,113 @@ int TrayApp::run() {
             }
         }
         // Continue to server initialization below
+    } else if (tray_config_.command == "tray") {
+        // Check for single instance - prevent duplicate tray processes, 
+        // the use case here is not for a tray launched by the system its when its being launched by the user or electron app.
+        #ifdef __APPLE__
+        if (LemonadeServiceManager::isTrayActive())
+        {
+            std::cout << "Lemonade Tray is already running." << std::endl;
+            return 0;
+        }
+        // isTrayActive won't work for when the tray is launched as a service, that requires a bunch of other permissions
+        // Permissions that have to be entered into a plist and its beyond the scope of this PR, maybe TODO?
+        if (lemon::SingleInstance::IsAnotherInstanceRunning("Tray")) {
+            std::cout << "Lemonade Tray is already running." << std::endl;
+            return 0;
+        }
+        #else
+        if (lemon::SingleInstance::IsAnotherInstanceRunning("Tray")) {
+            std::cout << "Lemonade Tray is already running." << std::endl;
+            return 0;
+        }
+        #endif
+
+#ifdef __APPLE__
+        // macOS: Tray mode - show tray, starting server service if necessary
+        // Check if server service is already running
+        if (lemon::SingleInstance::IsAnotherInstanceRunning("Server") || LemonadeServiceManager::isServerActive()) {
+            // Server is already running - get its port and connect
+            auto [pid, running_port] = get_server_info();
+            bool server_was_running = (running_port != 0);
+
+            if (running_port != 0) {
+                std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
+                // Create server manager to communicate with running server
+                // Use localhost to connect (works regardless of what the server is bound to)
+                if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
+                    server_config_.host = "localhost";
+                }
+                server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
+                server_manager_->set_port(running_port);
+                server_config_.port = running_port;  // Update config to match running server
+            } else {
+                std::cerr << "Error: Server service is active but no port found: " << running_port << std::endl;
+                return 1;
+            }
+        } else {
+            // Server is not running - start the service
+            std::cout << "Starting Lemonade Server service..." << std::endl;
+            LemonadeServiceManager::startServer();
+
+            // Wait for the service to start (up to 30 seconds)
+            int max_wait = 5;
+            for (int i = 0; i < max_wait; ++i) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                auto [pid, running_port] = get_server_info();
+                if (running_port != 0) {
+                    std::cout << "Server service started on port " << running_port << std::endl;
+
+                    // Create server manager to communicate with running server
+                    server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
+                    server_manager_->set_port(running_port);
+                    server_config_.port = running_port;  // Update config to match running server
+
+                    // Use localhost to connect (works regardless of what the server is bound to)
+                    if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
+                        server_config_.host = "localhost";
+                    }
+
+                    // Continue to tray initialization below
+                    break;
+                }
+                if (i == max_wait - 1) {
+                    std::cerr << "Error: Server service failed to start within 30 seconds" << std::endl;
+                    return 1;
+                }
+            }
+        }
+#else
+        // Other platforms: Tray-only mode - just show tray connected to existing server
+        // Check if server is already running
+        auto [pid, running_port] = get_server_info();
+        if (running_port == 0) {
+            std::cerr << "Error: No Lemonade Server is currently running.\n"
+                      << "Start the server first with: lemonade-server serve\n"
+                      << "Or run: lemonade-server serve --no-tray" << std::endl;
+            return 1;
+        }
+
+        // Create server manager to communicate with running server
+        server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
+        server_manager_->set_port(running_port);
+        server_config_.port = running_port;  // Update config to match running server
+
+        // Use localhost to connect (works regardless of what the server is bound to)
+        if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
+            server_config_.host = "localhost";
+        }
+
+        std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
+
+        // Continue to tray initialization below (skip server startup)
+#endif
     } else {
         std::cerr << "Internal Error: Unhandled command '" << tray_config_.command << "'\n" << std::endl;
         return 1;
     }
 
-    if (!server_already_running) {
+    if (!server_already_running && tray_config_.command != "tray") {
         // Create server manager
         DEBUG_LOG(this, "Creating server manager...");
         server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
@@ -668,21 +776,37 @@ int TrayApp::run() {
     if (auto* windows_tray = dynamic_cast<WindowsTray*>(tray_.get())) {
         windows_tray->set_menu_update_callback([this]() {
             DEBUG_LOG(this, "Refreshing menu state from server...");
-            build_menu();
+            refresh_menu();
         });
     }
 #endif
 
     // Find icon path (matching the CMake resources structure)
     DEBUG_LOG(this, "Searching for icon...");
-    std::string icon_path = "resources/static/favicon.ico";
+    std::string icon_path;
+
+#ifdef __APPLE__
+    // On macOS, look for icon in /Library/Application Support/lemonade/resources
+    icon_path = "/Library/Application Support/lemonade/resources/static/favicon.ico";
+    DEBUG_LOG(this, "Checking macOS Application Support icon at: " << icon_path);
+
+    if (!fs::exists(icon_path)) {
+        std::cout << "WARNING: Icon not found at /Library/Application Support/lemonade/resources/favicon.ico, will use default icon" << std::endl;
+    } else {
+        DEBUG_LOG(this, "Icon found at: " << icon_path);
+    }
+#else
+    // On other platforms, find icon file path
+    icon_path = "resources/static/favicon.ico";
     DEBUG_LOG(this, "Checking icon at: " << fs::absolute(icon_path).string());
+
 
     if (!fs::exists(icon_path)) {
         // Try relative to executable directory
         fs::path exe_path = fs::path(server_binary_).parent_path();
         icon_path = (exe_path / "resources" / "static" / "favicon.ico").string();
         DEBUG_LOG(this, "Icon not found, trying: " << icon_path);
+
 
         // If still not found, try without static subdir (fallback)
         if (!fs::exists(icon_path)) {
@@ -691,12 +815,14 @@ int TrayApp::run() {
         }
     }
 
+
     if (fs::exists(icon_path)) {
         DEBUG_LOG(this, "Icon found at: " << icon_path);
     } else {
         std::cout << "WARNING: Icon not found at any location, will use default icon" << std::endl;
     }
-
+#endif
+    
     // Initialize tray
     DEBUG_LOG(this, "Initializing tray with icon: " << icon_path);
     if (!tray_->initialize("Lemonade Server", icon_path)) {
@@ -716,6 +842,9 @@ int TrayApp::run() {
     // This allows us to handle Ctrl+C cleanly even when tray is running
     DEBUG_LOG(this, "Starting signal monitor thread...");
     signal_monitor_thread_ = std::thread([this]() {
+        #ifdef __APPLE__
+        auto last_tick = std::chrono::steady_clock::now();
+        #endif
         while (!stop_signal_monitor_ && !should_exit_) {
             fd_set readfds;
             FD_ZERO(&readfds);
@@ -723,7 +852,18 @@ int TrayApp::run() {
 
             struct timeval tv = {0, 100000};  // 100ms timeout
             int result = select(signal_pipe_[0] + 1, &readfds, nullptr, nullptr, &tv);
+            #ifdef __APPLE__
+            // Check if 5 seconds have passed, refresh menu
+            auto now = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - last_tick).count() >= 5) {
 
+                DEBUG_LOG(this, "Checking if menu needs refresh");
+                refresh_menu();
+
+                // Reset the tracker
+                last_tick = now;
+            }
+            #endif
             if (result > 0 && FD_ISSET(signal_pipe_[0], &readfds)) {
                 // Signal received (SIGINT from Ctrl+C)
                 char sig;
@@ -740,11 +880,10 @@ int TrayApp::run() {
         DEBUG_LOG(this, "Signal monitor thread exiting");
     });
 #endif
-
     DEBUG_LOG(this, "Menu built, entering event loop...");
     // Run tray event loop
     tray_->run();
-
+    //Initialize thread to constantly update the tray models
     DEBUG_LOG(this, "Event loop exited");
     return 0;
 }
@@ -767,11 +906,27 @@ bool TrayApp::find_server_binary() {
 #else
     std::string binary_name = "lemonade-router";
 
+
     // On Unix, try to get executable path
     char exe_path_buf[1024];
+    bool got_exe_path = false;
+
+#ifdef __APPLE__
+    // macOS: Use _NSGetExecutablePath
+    uint32_t bufsize = sizeof(exe_path_buf);
+    if (_NSGetExecutablePath(exe_path_buf, &bufsize) == 0) {
+        got_exe_path = true;
+    }
+#else
+    // Linux: Use /proc/self/exe
     ssize_t len = readlink("/proc/self/exe", exe_path_buf, sizeof(exe_path_buf) - 1);
     if (len != -1) {
         exe_path_buf[len] = '\0';
+        got_exe_path = true;
+    }
+#endif
+
+    if (got_exe_path) {
         fs::path exe_dir = fs::path(exe_path_buf).parent_path();
         search_paths.push_back((exe_dir / binary_name).string());
     }
@@ -1809,8 +1964,41 @@ void TrayApp::stop_server() {
 void TrayApp::build_menu() {
     if (!tray_) return;
 
+
     Menu menu = create_menu();
     tray_->set_menu(menu);
+
+    // Cache current state for refresh comparisons
+    last_menu_loaded_models_ = get_all_loaded_models();
+    last_menu_available_models_ = get_downloaded_models();
+}
+
+void TrayApp::refresh_menu() {
+    if (!tray_) return;
+
+    // Only refresh if something has actually changed
+    if (menu_needs_refresh()) {
+        DEBUG_LOG(this, "Menu state changed, rebuilding menu");
+        build_menu();
+    }
+}
+
+bool TrayApp::menu_needs_refresh() {
+    // Check if loaded models have changed
+    auto current_loaded = get_all_loaded_models();
+    if (current_loaded != last_menu_loaded_models_) {
+        return true;
+    }
+
+    // Check if available models have changed
+    auto current_available = get_downloaded_models();
+    if (current_available != last_menu_available_models_) {
+        return true;
+    }
+
+    // Could add more checks here for other dynamic content
+
+    return false;
 }
 
 Menu TrayApp::create_menu() {
@@ -1822,7 +2010,11 @@ Menu TrayApp::create_menu() {
         const_cast<TrayApp*>(this)->find_electron_app();
     }
     if (!electron_app_path_.empty()) {
+#ifdef __APPLE__
+        menu.add_item(MenuItem::Action("Open Lemonade App", [this]() { launch_electron_app(); }));
+#else
         menu.add_item(MenuItem::Action("Open app", [this]() { launch_electron_app(); }));
+#endif
         menu.add_separator();
     }
 
@@ -1909,6 +2101,38 @@ Menu TrayApp::create_menu() {
         }
     }
     menu.add_item(MenuItem::Submenu("Load Model", load_submenu));
+
+#ifdef __APPLE__
+    // Service Control menu items (macOS only)
+    bool service_running = LemonadeServiceManager::isServerActive();
+    bool service_enabled = LemonadeServiceManager::isServerEnabled();
+
+    // Show Start/Stop Service based on running state
+    if (service_running) {
+        menu.add_item(MenuItem::Action("Stop Service", [this]() {
+            LemonadeServiceManager::stopServer();
+            build_menu();
+        }));
+    } else if(service_enabled) {
+        menu.add_item(MenuItem::Action("Start Service", [this]() {
+            LemonadeServiceManager::startServer();
+            build_menu();
+        }));
+    }
+
+    // Show Enable/Disable Service based on enabled state
+    if (service_enabled) {
+        menu.add_item(MenuItem::Action("Disable Service", [this]() {
+            LemonadeServiceManager::disableServer();
+            build_menu();
+        }));
+    } else {
+        menu.add_item(MenuItem::Action("Enable Service", [this]() {
+            LemonadeServiceManager::enableServer();
+            build_menu();
+        }));
+    }
+#endif
 
     // Port submenu
     auto port_submenu = std::make_shared<Menu>();
@@ -2116,16 +2340,11 @@ void TrayApp::on_show_logs() {
         kill(log_viewer_pid_, SIGTERM);
         log_viewer_pid_ = 0;
     }
-
-    // Fork and open Terminal.app with tail command
-    pid_t pid = fork();
-    if (pid == 0) {
-        // Child process
-        std::string cmd = "osascript -e 'tell application \"Terminal\" to do script \"tail -f " + log_file_ + "\"'";
-        execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
-        exit(0);
-    } else if (pid > 0) {
-        log_viewer_pid_ = pid;
+    // Use open command to open log file in default editor instead of Terminal.app
+    std::string cmd = "open \"" + log_file_ + "\"";
+    int result = system(cmd.c_str());
+    if (result != 0) {
+        show_notification("Error", "Failed to open log file");
     }
 #else
     // Kill existing log viewer if any
@@ -2156,8 +2375,31 @@ void TrayApp::on_upgrade() {
     std::cout << "Upgrade functionality not yet implemented" << std::endl;
 }
 
+void TrayApp::send_unload_command() {
+#ifdef __APPLE__
+    // On macOS, send HTTP unload command directly to the server
+    if (server_manager_) {
+        try {
+            std::cout << "Sending unload command to server..." << std::endl;
+            server_manager_->make_http_request("/api/v1/unload", "POST", "", 30);
+            std::cout << "Unload command sent successfully" << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "Failed to send unload command: " << e.what() << std::endl;
+        }
+    }
+#endif
+}
+
 void TrayApp::on_quit() {
     std::cout << "Quitting application..." << std::endl;
+#ifdef __APPLE__
+    // On macOS, disable the service first before quitting
+    std::cout << "Disabling service auto-start..." << std::endl;
+    LemonadeServiceManager::performFullQuit();
+
+    // Send UnloadModels command to the lemonade server
+    send_unload_command();
+#endif
     shutdown();
 }
 
@@ -2254,8 +2496,9 @@ void TrayApp::open_url(const std::string& url) {
 }
 
 bool TrayApp::find_electron_app() {
-    // Get directory of this executable (lemonade-tray.exe)
+    // Get directory of this executable (lemonade-tray)
     fs::path exe_dir;
+
 
 #ifdef _WIN32
     wchar_t exe_path[MAX_PATH];
@@ -2263,13 +2506,27 @@ bool TrayApp::find_electron_app() {
     exe_dir = fs::path(exe_path).parent_path();
 #else
     char exe_path[PATH_MAX];
+    bool got_exe_path = false;
+
+#ifdef __APPLE__
+    // macOS: Use _NSGetExecutablePath
+    uint32_t bufsize = sizeof(exe_path);
+    if (_NSGetExecutablePath(exe_path, &bufsize) == 0) {
+        got_exe_path = true;
+    }
+#else
+    // Linux: Use /proc/self/exe
     ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
     if (len != -1) {
         exe_path[len] = '\0';
-        exe_dir = fs::path(exe_path).parent_path();
-    } else {
+        got_exe_path = true;
+    }
+#endif
+
+    if (!got_exe_path) {
         return false;
     }
+    exe_dir = fs::path(exe_path).parent_path();
 #endif
 
     // The Electron app has exactly two possible locations:
@@ -2310,6 +2567,15 @@ bool TrayApp::find_electron_app() {
         return true;
     }
 
+#ifdef __APPLE__
+    // macOS: Check standard installation location
+    fs::path mac_apps_path = fs::path("/Applications") / exe_name;
+    if (fs::exists(mac_apps_path)) {
+        electron_app_path_ = fs::canonical(mac_apps_path).string();
+        std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
+        return true;
+    }
+#endif
     // Check development path (app/<platform>-unpacked/ in build directory)
     // CMake builds to build/Release/ on Windows, electron app to build/app/
     // So we need ../app/<platform>-unpacked/ from build/Release/

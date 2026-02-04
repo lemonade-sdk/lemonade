@@ -1,0 +1,201 @@
+#!/bin/bash
+
+# ==============================================================================
+# Lemonade System Post-Install Script
+# ==============================================================================
+
+# $2 is the target installation location (usually /). 
+# The ${2%/} syntax ensures no trailing slash to prevent // paths.
+INSTALL_ROOT="${2%/}"
+
+# Define Labels
+DAEMON_LABEL="com.lemonade.server"
+AGENT_LABEL="com.lemonade.tray"
+
+# Define Paths
+DAEMON_PLIST="${INSTALL_ROOT}/Library/LaunchDaemons/${DAEMON_LABEL}.plist"
+AGENT_PLIST="${INSTALL_ROOT}/Library/LaunchAgents/${AGENT_LABEL}.plist"
+LOG_DIR="${INSTALL_ROOT}/var/log/lemonade"
+CONFIG_DIR="${INSTALL_ROOT}/usr/local/etc/lemonade"
+APP_SUPPORT_DIR="${INSTALL_ROOT}/Library/Application Support/Lemonade"
+LEMONADE_SHARE_DIR="${INSTALL_ROOT}/usr/local/share/lemonade-server"
+
+echo "=== Starting Lemonade Post-Install ==="
+
+# ------------------------------------------------------------------------------
+# 1. CLEANUP OLD SERVICES (Unload both Daemon and Tray)
+# ------------------------------------------------------------------------------
+
+# Find the current GUI User ID (The person currently logged in)
+# 'id -u' returns 0 (root) here, so we must ask System Configuration for the Console User.
+CURRENT_UID=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/kCGSSessionUserIDKey/ { print $3 }')
+
+# Stop Daemon (System-wide)
+if launchctl list | grep -q "$DAEMON_LABEL"; then
+    echo "Stopping existing Server Daemon..."
+    launchctl bootout system/"$DAEMON_LABEL" 2>/dev/null || launchctl unload "$DAEMON_PLIST" 2>/dev/null || true
+fi
+
+# Stop Agent (User-specific)
+if [ -n "$CURRENT_UID" ] && [ "$CURRENT_UID" -ne 0 ]; then
+    if launchctl print gui/"$CURRENT_UID"/"$AGENT_LABEL" >/dev/null 2>&1; then
+        echo "Stopping existing Tray Agent for UID $CURRENT_UID..."
+        launchctl bootout gui/"$CURRENT_UID"/"$AGENT_LABEL" 2>/dev/null || true
+    fi
+fi
+sleep 1
+
+# ------------------------------------------------------------------------------
+# 2. ENSURE BINARIES ARE UPDATED (Force overwrite old versions)
+# ------------------------------------------------------------------------------
+echo "Ensuring binaries are updated..."
+
+# Force update binaries (in case installer didn't overwrite running ones)
+LEMONADE_ROUTER="${INSTALL_ROOT}/usr/local/bin/lemonade-router"
+LEMONADE_SERVER="${INSTALL_ROOT}/usr/local/bin/lemonade-server"
+
+# If binaries exist, touch them to ensure timestamps are updated
+# This helps with caching issues
+if [ -f "$LEMONADE_ROUTER" ]; then
+    touch "$LEMONADE_ROUTER"
+    echo "Updated lemonade-router timestamp"
+fi
+
+if [ -f "$LEMONADE_SERVER" ]; then
+    touch "$LEMONADE_SERVER"
+    echo "Updated lemonade-server timestamp"
+fi
+
+# ------------------------------------------------------------------------------
+# 3. SETUP DIRECTORIES
+# ------------------------------------------------------------------------------
+echo "Setting up system directories..."
+
+mkdir -p "$CONFIG_DIR"
+chmod 755 "$CONFIG_DIR"
+
+# Log Directory (Critical: Service crashes if missing)
+mkdir -p "$LOG_DIR"
+chmod 755 "$LOG_DIR"
+chown root:wheel "$LOG_DIR"
+
+# Share Directory
+mkdir -p "$LEMONADE_SHARE_DIR"
+chmod 755 "$LEMONADE_SHARE_DIR"
+chown root:wheel "$LEMONADE_SHARE_DIR"
+
+# ------------------------------------------------------------------------------
+# 4. INSTALL RESOURCES
+# ------------------------------------------------------------------------------
+SOURCE_RES="${INSTALL_ROOT}/usr/local/resources"
+
+if [ -d "$SOURCE_RES" ]; then
+
+    # 1. Check if unset or empty (the :- handles unset variables cleanly)
+    if [ -z "${APP_SUPPORT_DIR:-}" ]; then
+        echo "CRITICAL ERROR: APP_SUPPORT_DIR is unset or empty. Aborting."
+        exit 1
+    fi
+
+    # 2. Check if set to root ("/")
+    if [ "$APP_SUPPORT_DIR" = "/" ]; then
+        echo "CRITICAL ERROR: APP_SUPPORT_DIR is set to root ('/'). Aborting to prevent system deletion."
+        exit 1
+    fi
+
+    echo "Moving resources to Application Support..."
+    mkdir -p "$APP_SUPPORT_DIR"
+
+    # Clean destination & Copy
+    rm -rf "$APP_SUPPORT_DIR/"*
+    cp -R "$SOURCE_RES/"* "$APP_SUPPORT_DIR/"
+
+    # Cleanup staging
+    rm -rf "$SOURCE_RES"
+
+    # Set permissions
+    chmod -R 755 "$APP_SUPPORT_DIR"
+    chown -R root:wheel "$APP_SUPPORT_DIR"
+fi
+
+# ------------------------------------------------------------------------------
+# 5. SETUP BINARIES
+# ------------------------------------------------------------------------------
+APP_BINARY="${INSTALL_ROOT}/Applications/Lemonade.app/Contents/MacOS/Lemonade"
+TARGET_LINK="${INSTALL_ROOT}/usr/local/bin/lemonade"
+
+if [ -f "$APP_BINARY" ]; then
+    echo "Linking 'lemonade' CLI..."
+    mkdir -p "$(dirname "$TARGET_LINK")"
+    ln -sf "$APP_BINARY" "$TARGET_LINK"
+fi
+
+# ------------------------------------------------------------------------------
+# 6. SETUP PLISTS (Permissions & Security)
+# ------------------------------------------------------------------------------
+
+# Daemon (Server)
+echo "Configuring Server Daemon..."
+if [ -f "$DAEMON_PLIST" ]; then
+    chown root:wheel "$DAEMON_PLIST"
+    chmod 644 "$DAEMON_PLIST"
+    xattr -c "$DAEMON_PLIST" 2>/dev/null || true
+else
+    echo "WARNING: Daemon plist not found at $DAEMON_PLIST"
+fi
+
+# Agent (Tray)
+echo "Configuring Tray Agent..."
+# Ensure directory exists
+mkdir -p "${INSTALL_ROOT}/Library/LaunchAgents"
+chmod 755 "${INSTALL_ROOT}/Library/LaunchAgents"
+
+if [ -f "$AGENT_PLIST" ]; then
+    # Security Rule: LaunchAgents must be owned by root, but readable by users.
+    # If a user owns this file, root (launchd) might refuse to load it for security.
+    chown root:wheel "$AGENT_PLIST"
+    chmod 644 "$AGENT_PLIST"
+    xattr -c "$AGENT_PLIST" 2>/dev/null || true
+else
+    echo "WARNING: Agent plist not found at $AGENT_PLIST"
+fi
+
+# ------------------------------------------------------------------------------
+# 7. START SERVICES
+# ------------------------------------------------------------------------------
+
+# A. Start Server Daemon (System)
+echo "Loading Server Daemon..."
+launchctl bootstrap system "$DAEMON_PLIST" 2>/dev/null || launchctl load -w "$DAEMON_PLIST"
+# Kickstart ensures it runs immediately rather than waiting for socket usage
+launchctl kickstart -k system/"$DAEMON_LABEL" 2>/dev/null || true
+
+# B. Start Tray Agent (Current User)
+if [ -n "$CURRENT_UID" ] && [ "$CURRENT_UID" -ne 0 ]; then
+    echo "Loading Tray Agent for user (UID: $CURRENT_UID)..."
+    
+    # 1. Bootstrap: Registers the service in the user's GUI session
+    launchctl bootstrap gui/"$CURRENT_UID" "$AGENT_PLIST" 2>/dev/null || true
+    
+    # 2. Kickstart: Forces the app to launch visually RIGHT NOW
+    launchctl kickstart -k gui/"$CURRENT_UID"/"$AGENT_LABEL" 2>/dev/null || true
+else
+    echo "No GUI user detected. Tray agent will start on next login."
+fi
+
+# ------------------------------------------------------------------------------
+# 8. VERIFY
+# ------------------------------------------------------------------------------
+sleep 2
+
+# Check Daemon
+if launchctl list | grep -q "$DAEMON_LABEL"; then
+    PID=$(launchctl list | grep "$DAEMON_LABEL" | awk '{print $1}')
+    if [ "$PID" != "-" ]; then
+        echo "SUCCESS: Server Service is running (PID: $PID)."
+    else
+        echo "WARNING: Server Service loaded but not running."
+    fi
+fi
+
+exit 0

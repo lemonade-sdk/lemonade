@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { exec } = require('child_process');
+const { exec, spawn, spawnSync } = require('child_process');
 const strict = require('assert/strict');
 
 const DEFAULT_MIN_WIDTH = 400;
@@ -341,48 +341,176 @@ const fetchWithApiKey = async (entpoint) => {
   return await fetch(`${serverUrl}${entpoint}`, options);
 }
 
-const discoverServerPort = () => {
+const ensureTrayRunning = () => {
   return new Promise((resolve) => {
-    exec('lemonade-server status', { timeout: 5000 }, (error, stdout, stderr) => {
-      if (error) {
-        console.warn('Failed to discover server port:', error);
-        resolve(8000); // Fall back to default
-        return;
-      }
+    if (process.platform !== 'darwin') {
+      resolve();
+      return;
+    }
 
-      try {
-        // Parse the output to find the port
-        // Expected format: "Server is running on port {port}" or "Server is not running"
-        const output = stdout.trim();
+    const binaryPath = '/usr/local/bin/lemonade-server';
 
-        // Check if server is not running
-        if (output.includes('not running')) {
-          console.log('Server is not running, using default port 8000');
-          resolve(8000);
-          return;
+    if (!fs.existsSync(binaryPath)) {
+      console.error(`CRITICAL: Binary not found at ${binaryPath}`);
+      resolve();
+      return;
+    }
+
+    console.log('--- STARTING TRAY MANUALLY ---');
+
+    // 1. NUCLEAR CLEANUP (Crucial!)
+    // We must kill any "Ghost" processes and delete the lock files
+    // or the new one will think it's already running and quit immediately.
+    try {
+      gracefulKillBlocking('lemonade-server tray');
+      
+      // Delete the lock file that cause "Already Running" error
+      const lock = '/tmp/lemonade_Tray.lock';
+      if (fs.existsSync(lock)) fs.unlinkSync(lock);
+      console.log('Cleanup complete (Zombies killed, Locks deleted).');
+    } catch (e) {
+      console.error('Cleanup warning:', e.message);
+    }
+
+    // 2. PREPARE ENVIRONMENT
+    // macOS GUI apps don't have /usr/local/bin in PATH. We must add it.
+    const env = { ...process.env };
+    env.PATH = `${env.PATH}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`;
+    // Ensure it can find libraries in /usr/local/lib
+    env.DYLD_LIBRARY_PATH = `${env.DYLD_LIBRARY_PATH}:/usr/local/lib`;
+
+    // 3. LAUNCH
+    console.log('Spawning tray process...');
+    const trayProcess = spawn(binaryPath, ['tray'], {
+      detached: true, // Allows it to run independently of the main window
+      env: env,       // Pass our fixed environment
+      stdio: 'ignore' // Ignore output so it doesn't hang the parent
+    });
+
+    // Unref so Electron doesn't wait for it to exit
+    trayProcess.unref();
+
+    console.log(`Tray launched! (PID: ${trayProcess.pid})`);
+
+    // Give it a moment to initialize
+    setTimeout(resolve, 1000);
+  });
+};
+
+function gracefulKillBlocking(processPattern) {
+    const TIMEOUT_MS = 30000;
+
+    // Send SIGTERM (Polite kill)
+    const killResult = spawnSync('pkill', ['-f', processPattern]);
+
+    // If pkill returned non-zero, the process wasn't running. We are done.
+    if (killResult.status !== 0) {
+        return; 
+    }
+
+    // 2. Poll for exit
+    const deadline = Date.now() + TIMEOUT_MS;
+    let isRunning = true;
+
+    while (isRunning && Date.now() < deadline) {
+        // Check if process exists using pgrep
+        const checkResult = spawnSync('pgrep', ['-f', processPattern]);
+
+        if (checkResult.status !== 0) {
+            // pgrep returned non-zero (process not found) -> It exited!
+            isRunning = false;
+        } else {
+            // Process still exists -> Block for 1 second
+            spawnSync('sleep', ['1']);
         }
+    }
 
-        // Try regex pattern to extract port number
-        // Pattern matches: "Server is running on port 8080" or any similar format
-        const portMatch = output.match(/port[:\s]+(\d+)/i) ||
-                         output.match(/localhost:(\d+)/i) ||
-                         output.match(/127\.0\.0\.1:(\d+)/i);
+    // 3. Force Kill (SIGKILL) if the flag is still true
+    if (isRunning) {
+        spawnSync('pkill', ['-9', '-f', processPattern]);
+    }
+}
 
-        if (portMatch && portMatch[1]) {
-          const port = parseInt(portMatch[1], 10);
-          if (!isNaN(port) && port > 0 && port < 65536) {
-            console.log('Discovered server port:', port);
-            resolve(port);
+const discoverServerPort = () => {
+  //This is the default port to try macos lemonade server on.
+  const DEFAULT_PORT = 8000;
+  const StatusResponseWaitMs = 5000;
+  
+  return new Promise((resolve) => {
+    // Always ensure tray is running on macOS, regardless of server status
+    ensureTrayRunning().then(() => {
+      exec('lemonade-server status', { timeout: StatusResponseWaitMs }, (error, stdout, stderr) => {
+        if (error || (stdout && stdout.trim().includes('not running'))) {
+          // Server not running, tray should start it
+          if (process.platform === 'darwin') {
+            console.warn('Server not running, tray should start it. Waiting...');
+            setTimeout(() => {
+              exec('lemonade-server status', { timeout: StatusResponseWaitMs }, (error3, stdout3, stderr3) => {
+                if (error3 || (stdout3 && stdout3.trim().includes('not running'))) {
+                  console.warn('Server still not running after waiting, using default port 8000');
+                  resolve(DEFAULT_PORT);
+                  return;
+                }
+
+                // Parse the response
+                try {
+                  const output = stdout3.trim();
+                  const portMatch = output.match(/port[:\s]+(\d+)/i) ||
+                                   output.match(/localhost:(\d+)/i) ||
+                                   output.match(/127\.0\.0\.1:(\d+)/i);
+
+                  if (portMatch && portMatch[1]) {
+                    const port = parseInt(portMatch[1], 10);
+                    //Verify parsing since ports can not be less than 0 and not more than 65536 because they are a uint16
+                    if (!isNaN(port) && port > 0 && port < 65536) {
+                      console.log('Discovered server port after tray start:', port);
+                      resolve(port);
+                      return;
+                    }
+                  }
+
+                  console.warn('Could not parse port from status output:', output);
+                  resolve(DEFAULT_PORT);
+                } catch (parseError) {
+                  console.error('Error parsing status:', parseError);
+                  resolve(DEFAULT_PORT);
+                }
+              });
+            }, 10000); // Wait 10 seconds for tray to start server
+            return;
+          } else {
+            // On non-macOS platforms, just fall back to default
+            console.warn('Failed to discover server port:', error);
+            resolve(DEFAULT_PORT);
             return;
           }
         }
 
-        console.warn('Could not parse port from lemonade-server status output:', output);
-        resolve(8000);
-      } catch (parseError) {
-        console.error('Error parsing server status:', parseError);
-        resolve(8000);
-      }
+        try {
+          // Parse the output to find the port
+          const output = stdout.trim();
+
+          // Try regex pattern to extract port number
+          const portMatch = output.match(/port[:\s]+(\d+)/i) ||
+                           output.match(/localhost:(\d+)/i) ||
+                           output.match(/127\.0\.0\.1:(\d+)/i);
+
+          if (portMatch && portMatch[1]) {
+            const port = parseInt(portMatch[1], 10);
+            if (!isNaN(port) && port > 0 && port < 65536) {
+              console.log('Discovered server port:', port);
+              resolve(port);
+              return;
+            }
+          }
+
+          console.warn('Could not parse port from lemonade-server status output:', output);
+          resolve(DEFAULT_PORT);
+        } catch (parseError) {
+          console.error('Error parsing server status:', parseError);
+          resolve(DEFAULT_PORT);
+        }
+      });
     });
   });
 };
@@ -424,6 +552,7 @@ ipcMain.handle('discover-server-port', async () => {
   let baseURL = getBaseURLFromConfig();
   if (baseURL) {
     console.log('Port discovery skipped - using explicit server URL:', baseURL);
+    ensureTrayRunning();
     return null;
   }
 
@@ -616,6 +745,7 @@ function createWindow() {
 
 
 app.on('ready', () => {
+  ensureTrayRunning();
   createWindow();
 
   // Window control handlers

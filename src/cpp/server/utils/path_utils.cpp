@@ -10,14 +10,16 @@
 #include <unistd.h>
 #include <limits.h>
 #ifdef __APPLE__
+#include <unistd.h>
+#include <sys/types.h>
+#include <pwd.h>
 #include <mach-o/dyld.h>
 #endif
 #endif
 
 namespace fs = std::filesystem;
 
-namespace lemon {
-namespace utils {
+namespace lemon::utils {
 
 std::string get_executable_dir() {
 #ifdef _WIN32
@@ -62,9 +64,12 @@ std::string get_resource_path(const std::string& relative_path) {
 #ifndef _WIN32
     // On Linux/macOS, also check standard install locations
     std::vector<std::string> install_prefixes = {
+        "/Library/Application Support/Lemonade",  // macOS system install location
+        "/usr/local/share/lemonade-server",
         "/opt/share/lemonade-server",
         "/usr/share/lemonade-server"
     };
+
 
     // Also check user's local install directory
     const char* home = std::getenv("HOME");
@@ -137,15 +142,58 @@ std::string find_flm_executable() {
 std::string get_cache_dir() {
     const char* cache_dir_env = std::getenv("LEMONADE_CACHE_DIR");
     if (cache_dir_env) {
-        return std::string(cache_dir_env);
+        std::string cache_dir = std::string(cache_dir_env);
+#ifdef __APPLE__
+        // Ensure directory exists on macOS
+        if (!fs::exists(cache_dir)) {
+            fs::create_directories(cache_dir);
+        }
+#endif
+        return cache_dir;
     }
 
-    #ifdef _WIN32
+#ifdef _WIN32
     const char* userprofile = std::getenv("USERPROFILE");
     if (userprofile) {
         return std::string(userprofile) + "\\.cache\\lemonade";
     }
-    #else
+#elif defined(__APPLE__)
+    // Check if we are running as root (UID 0)
+    if (geteuid() != 0) {
+        // --- NORMAL USER MODE ---
+        const char* home = std::getenv("HOME");
+        if (home) {
+            std::string cache_dir = std::string(home) + "/.cache/lemonade";
+            // Ensure directory exists
+            if (!fs::exists(cache_dir)) {
+                fs::create_directories(cache_dir);
+            }
+            return cache_dir;
+        }
+        // Fallback if HOME is missing but we aren't root
+        struct passwd* pw = getpwuid(getuid());
+        if (pw) {
+            std::string cache_dir = std::string(pw->pw_dir) + "/.cache/lemonade";
+            // Ensure directory exists
+            if (!fs::exists(cache_dir)) {
+                fs::create_directories(cache_dir);
+            }
+            return cache_dir;
+        }
+    }
+
+    // --- SYSTEM SERVICE / ROOT MODE ---
+    // If we are root (or getting HOME failed), use a shared system location.
+    // /Users/Shared is okay, but /Library/Application Support is the standard macOS system path.
+    std::string cache_dir = "/Library/Application Support/lemonade/.cache";
+    // Ensure directory exists
+    if (!fs::exists(cache_dir)) {
+        fs::create_directories(cache_dir);
+    }
+    return cache_dir;
+
+#else
+    // Linux and other Unix systems
     const char* home = std::getenv("HOME");
     if (home) {
         return std::string(home) + "/.cache/lemonade";
@@ -168,5 +216,5 @@ std::string get_downloaded_bin_dir() {
     return bin_dir;
 }
 
-} // namespace utils
-} // namespace lemon
+
+} // namespace utils::lemon

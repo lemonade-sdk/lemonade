@@ -21,6 +21,10 @@
 #pragma comment(lib, "wbemuuid.lib")
 #endif
 
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#endif
+
 namespace lemon {
 
 namespace fs = std::filesystem;
@@ -69,11 +73,15 @@ struct RecipeBackendDef {
 //
 // IMPORTANT: Backend order matters! For recipes with multiple backends (e.g., llamacpp),
 // the order in this table defines the preference order. First listed = most preferred.
-// Example: vulkan is listed before cpu, so vulkan is preferred over cpu.
+// Example: metal is listed before vulkan on macOS, vulkan before cpu elsewhere.
 //
 // Empty family set {} means "all families of that device type"
 static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
-    // llamacpp with multiple backends (order = preference: vulkan > rocm > metal > cpu)
+    // llamacpp with multiple backends (order = preference: metal > vulkan > rocm > cpu)
+    {"llamacpp", "metal", {"macos"},
+    {
+        {"metal", {}},
+    }},
     {"llamacpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
         {"amd_igpu", {}},      // all iGPU families
@@ -82,9 +90,6 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"llamacpp", "rocm", {"windows", "linux"}, {
         {"amd_igpu", {"gfx1150", "gfx1151"}},                      // STX Point/Halo iGPUs
         {"amd_dgpu", {"gfx110X", "gfx120X"}},                      // RDNA3/RDNA4 dGPUs
-    }},
-    {"llamacpp", "metal", {"macos"}, {
-        {"cpu", {}},           // Apple Silicon
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
@@ -150,6 +155,7 @@ static const std::map<std::string, std::string> DEVICE_TYPE_NAMES = {
     {"amd_dgpu", "AMD dGPU"},
     {"npu", "NPU"},
     {"nvidia_dgpu", "NVIDIA GPU"},
+    {"metal", "MacOS Metal GPU"}
 };
 
 // Get human-readable name for a device family (e.g., "gfx1150" -> "Radeon 880M/890M")
@@ -250,6 +256,10 @@ static std::string get_device_family(const std::string& device_type, const std::
         // The device_name for NPU is typically "AMD NPU" which isn't useful,
         // so we need the processor name (always available from cached devices)
         return identify_npu_arch(cpu_name);
+    }
+
+    if (device_type == "metal") {
+        return "metal";
     }
 
     return "";
@@ -469,6 +479,53 @@ json SystemInfo::get_device_dict() {
         #endif
     }
 
+    #ifdef __APPLE__
+    // Get Metal GPU info (macOS only) - with fault tolerance
+    try {
+        auto* mac_info = dynamic_cast<MacOSSystemInfo*>(this);
+
+        if (mac_info) {
+            auto metal_gpus = dynamic_cast<MacOSSystemInfo*>(this)->detect_metal_gpus();
+            if (!metal_gpus.empty() && metal_gpus[0].available) {
+                // Use first available Metal GPU (similar to how single devices are handled)
+                const auto& gpu = metal_gpus[0];
+                devices["metal"] = {
+                    {"name", gpu.name},
+                    {"available", gpu.available}
+                };
+                if (gpu.vram_gb > 0) {
+                    devices["metal"]["vram_gb"] = gpu.vram_gb;
+                }
+                if (!gpu.driver_version.empty()) {
+                    devices["metal"]["driver_version"] = gpu.driver_version;
+                }
+                if (!gpu.error.empty()) {
+                    devices["metal"]["error"] = gpu.error;
+                }
+            } else {
+                devices["metal"] = {
+                    {"name", "Unknown"},
+                    {"available", false},
+                    {"error", "No Metal-compatible GPU found"}
+                };
+            }
+        }
+        else {
+            devices["metal"] = {
+                {"name", "Unknown"},
+                {"available", false},
+                {"error", std::string("Detection exception: ")}
+            };
+        }
+    } catch (const std::exception& e) {
+        devices["metal"] = {
+            {"name", "Unknown"},
+            {"available", false},
+            {"error", std::string("Detection exception: ") + e.what()}
+        };
+    }
+    #endif
+    
     return devices;
 }
 
@@ -496,7 +553,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
     // Get CPU name for NPU family detection
     std::string cpu_name;
-    if (devices.contains("cpu")) {
+    if (devices.contains("cpu") && devices["cpu"].is_object()) {
         cpu_name = devices["cpu"].value("name", "");
     }
 
@@ -511,7 +568,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
     }
 
     // AMD iGPU
-    if (devices.contains("amd_igpu")) {
+    if (devices.contains("amd_igpu") && devices["amd_igpu"].is_object()) {
         const auto& igpu = devices["amd_igpu"];
         if (igpu.value("available", false)) {
             std::string name = igpu.value("name", "");
@@ -544,7 +601,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
     }
 
     // NPU - use CPU name for family detection
-    if (devices.contains("npu")) {
+    if (devices.contains("npu") && devices["npu"].is_object()) {
         const auto& npu = devices["npu"];
         if (npu.value("available", false)) {
             std::string name = npu.value("name", "");
@@ -555,6 +612,44 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 true
             });
         }
+    }
+
+    // Metal - use metal for family detection
+    if (devices.contains("metal")) {
+        if (devices["metal"].is_object()) {
+            // Single Metal device (legacy format)
+            const auto& metal = devices["metal"];
+            if (metal.value("available", false)) {
+                std::string name = metal.value("name", "");
+                detected_devices.push_back({
+                    "metal",
+                    name,
+                    get_device_family("metal", name, cpu_name),
+                    true
+                });
+            }
+        } else if (devices["metal"].is_array()) {
+            // Multiple Metal devices
+            for (const auto& metal : devices["metal"]) {
+                if (metal.value("available", false)) {
+                    std::string name = metal.value("name", "");
+                    if (!name.empty()) {
+                        detected_devices.push_back({
+                            "metal",
+                            name,
+                            get_device_family("metal", name, cpu_name),
+                            true
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Special case: Metal is always available on macOS (system GPU)
+    if (current_os == "macos" && std::find_if(detected_devices.begin(), detected_devices.end(),
+        [](const DetectedDevice& d) { return d.type == "metal"; }) == detected_devices.end()) {
+        detected_devices.push_back({"metal", "Apple Metal", "metal", true});
     }
 
     // Build recipes from the definition table
@@ -2164,7 +2259,7 @@ std::string LinuxSystemInfo::get_physical_memory() {
 #endif // __linux__
 
 // ============================================================================
-// macOS implementation (stubs)
+// macOS implementation
 // ============================================================================
 
 #ifdef __APPLE__
@@ -2172,31 +2267,83 @@ std::string LinuxSystemInfo::get_physical_memory() {
 CPUInfo MacOSSystemInfo::get_cpu_device() {
     CPUInfo cpu;
     cpu.available = false;
-    cpu.error = "macOS CPU detection not implemented yet";
+    
+    // Initialize numeric values to -1 to distinguish between "0" and "Failed to fetch"
+    cpu.cores = -1;
+    cpu.threads = -1;
+    cpu.max_clock_speed_mhz = 0;
+
+    size_t size;
+    char buffer[256];
+
+    size = sizeof(buffer);
+    if (sysctlbyname("machdep.cpu.brand_string", buffer, &size, nullptr, 0) == 0) {
+        cpu.name = buffer;
+        cpu.available = true;
+    } else {
+        cpu.name = "Unknown Apple Processor";
+        cpu.error = "sysctl failed for machdep.cpu.brand_string";
+    }
+
+    int cores = 0;
+    size = sizeof(cores);
+    if (sysctlbyname("hw.physicalcpu", &cores, &size, nullptr, 0) == 0) {
+        cpu.cores = cores;
+    } else {
+        cpu.error += " | Failed to get physical cores";
+    }
+
+    int threads = 0;
+    size = sizeof(threads);
+    if (sysctlbyname("hw.logicalcpu", &threads, &size, nullptr, 0) == 0) {
+        cpu.threads = threads;
+    } else {
+        cpu.error += " | Failed to get logical threads";
+    }
+
+    // 4. Get Max Clock Speed
+    uint64_t freq = 0;
+    size = sizeof(freq);
+    if (sysctlbyname("hw.cpufrequency_max", &freq, &size, nullptr, 0) == 0) {
+        //Calculation of hz to mhz
+        cpu.max_clock_speed_mhz = (freq > 0) ? (uint32_t)(freq / 1000000) : 0;
+    } else {
+        cpu.error += " | Failed to get maximum frequency";
+    }
+
     return cpu;
 }
 
 GPUInfo MacOSSystemInfo::get_amd_igpu_device() {
     GPUInfo gpu;
     gpu.available = false;
-    gpu.error = "macOS AMD iGPU detection not implemented yet";
+    gpu.error = "AMD integrated GPUs not detected on macOS";
     return gpu;
 }
 
 std::vector<GPUInfo> MacOSSystemInfo::get_amd_dgpu_devices() {
-    return {};
+    GPUInfo gpu;
+    gpu.available = false;
+    gpu.error = "AMD discrete GPUs not detected on macOS";
+    return {gpu};
 }
 
 std::vector<GPUInfo> MacOSSystemInfo::get_nvidia_dgpu_devices() {
-    return {};
+    GPUInfo gpu;
+    gpu.available = false;
+    gpu.error = "NVIDIA GPUs not detected on macOS";
+    return {gpu};
 }
 
 NPUInfo MacOSSystemInfo::get_npu_device() {
     NPUInfo npu;
+    npu.name = "AMD NPU";
     npu.available = false;
-    npu.error = "macOS NPU detection not implemented yet";
+    npu.error = "NPU not supported on macOS (Ryzen AI NPUs are Windows/Linux only)";
     return npu;
 }
+
+
 
 #endif // __APPLE__
 
