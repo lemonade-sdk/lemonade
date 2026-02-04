@@ -350,7 +350,7 @@ jobs:
           - name: stable-diffusion (rocm)
             test_type: sd
             backend: rocm
-            runner: [stx-halo, Windows]
+            runner: [rai300_400, Windows]
     env:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
