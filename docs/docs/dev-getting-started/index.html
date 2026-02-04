@@ -966,6 +966,67 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#building-from-source-on-macos-for-m-series-arm64-family" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building from Source on MacOS for M-Series / arm64 Family
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Building from Source on MacOS for M-Series / arm64 Family">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#macos-notary-tool-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Macos Notary Tool Command
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cmake-build-instructions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cmake build instructions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cmake-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CMake Targets
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#building-and-notarizing-for-distribution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building and Notarizing for Distribution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#developer-ide-ide-build-steps" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1510,6 +1571,82 @@ sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> <
 </code></pre></div>
 <p><strong>Post-Installation:</strong></p>
 <p>Same as .deb above</p>
+<p><strong>macOS:</strong></p>
+<h3 id="building-from-source-on-macos-for-m-series-arm64-family">Building from Source on MacOS for M-Series / arm64 Family</h3>
+<h4 id="macos-notary-tool-command">Macos Notary Tool Command</h4>
+<p>For access with P
+<div class="highlight"><pre><span></span><code>xcrun notarytool store-credentials AC_PASSWORD --apple-id &quot;your-apple-id@example.com&quot; --team-id &quot;your-team-id&quot; --private-key &quot;/path/to/AuthKey_XXXXXX.p8&quot;
+</code></pre></div>
+or
+For access with API password
+<div class="highlight"><pre><span></span><code>xcrun notarytool store-credentials AC_PASSWORD --apple-id &quot;your-apple-id@example.com&quot; --team-id &quot;your-team-id&quot; --password &quot;&quot;
+</code></pre></div>
+Get your team id at:
+https://developer.apple.com/account</p>
+<h4 id="cmake-build-instructions">Cmake build instructions</h4>
+<div class="highlight"><pre><span></span><code><span class="c1"># Install Xcode command line tools</span>
+xcode-select<span class="w"> </span>--install
+
+<span class="c1"># Navigate to the C++ source directory</span>
+<span class="nb">cd</span><span class="w"> </span>src/cpp
+
+<span class="c1"># Create and enter build directory</span>
+mkdir<span class="w"> </span>build
+<span class="nb">cd</span><span class="w"> </span>build
+
+<span class="c1"># Configure with CMake</span>
+cmake<span class="w"> </span>..
+
+<span class="c1"># Build with all cores</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span>--config<span class="w"> </span>Release<span class="w"> </span>-j
+</code></pre></div>
+<h3 id="cmake-targets">CMake Targets</h3>
+<p>The build system provides several CMake targets for different build configurations:</p>
+<ul>
+<li><strong><code>lemonade-router</code></strong>: The main HTTP server executable that handles LLM inference requests</li>
+<li><strong><code>package-macos</code></strong>: Creates a signed macOS installer package (.pkg) using productbuild</li>
+<li><strong><code>notarize_package</code></strong>: Builds and submits the package to Apple for notarization and staples the ticket</li>
+<li><strong><code>electron-app</code></strong>: Builds the Electron-based GUI application</li>
+<li><strong><code>prepare_electron_app</code></strong>: Prepares the Electron app for inclusion in the installer</li>
+</ul>
+<h3 id="building-and-notarizing-for-distribution">Building and Notarizing for Distribution</h3>
+<p>To build a notarized macOS installer for distribution:</p>
+<ol>
+<li><strong>Prerequisites</strong>:</li>
+<li>Apple Developer Program membership</li>
+<li>Valid Developer ID Application and Installer certificates</li>
+<li>App-specific password for notarization</li>
+<li>
+<p>Xcode command line tools</p>
+</li>
+<li>
+<p><strong>Set Environment Variables</strong>:
+   <div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">DEVELOPER_ID_APPLICATION_IDENTITY</span><span class="o">=</span><span class="s2">&quot;Developer ID Application: Your Name (TEAMID)&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">DEVELOPER_ID_INSTALLER_IDENTITY</span><span class="o">=</span><span class="s2">&quot;Developer ID Installer: Your Name (TEAMID)&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">AC_PASSWORD</span><span class="o">=</span><span class="s2">&quot;your-app-specific-password&quot;</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Configure Notarization Keychain Profile</strong>:
+   <div class="highlight"><pre><span></span><code>xcrun<span class="w"> </span>notarytool<span class="w"> </span>store-credentials<span class="w"> </span><span class="s2">&quot;AC_PASSWORD&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--apple-id<span class="w"> </span><span class="s2">&quot;your-apple-id@example.com&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--team-id<span class="w"> </span><span class="s2">&quot;YOURTEAMID&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--password<span class="w"> </span><span class="s2">&quot;your-app-specific-password&quot;</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Build and Notarize</strong>:
+   <div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>src/cpp/build
+cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span>--config<span class="w"> </span>Release<span class="w"> </span>--target<span class="w"> </span>package-macos
+cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span>--config<span class="w"> </span>Release<span class="w"> </span>--target<span class="w"> </span>notarize_package
+</code></pre></div></p>
+</li>
+</ol>
+<p>The notarization process will:
+- Submit the package to Apple's notarization service
+- Wait for approval
+- Staple the notarization ticket to the package</p>
+<p><strong>Note</strong>: The package is signed with hardened runtime entitlements during the build process for security.</p>
 <h3 id="developer-ide-ide-build-steps">Developer IDE &amp; IDE Build Steps</h3>
 <h4 id="visual-studio-code-setup-guide">Visual Studio Code Setup Guide</h4>
 <ol>
