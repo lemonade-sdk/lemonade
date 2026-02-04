@@ -4742,8 +4742,8 @@ footer {
 
 .amp-result-item {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 8px;
     padding: 8px 10px;
     cursor: pointer;
     transition: background 0.15s ease;
@@ -4756,6 +4756,23 @@ footer {
 
 .amp-result-item:hover {
     background: #1a1a1a;
+}
+
+.amp-result-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: #222;
+}
+
+.amp-result-avatar-placeholder {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #222;
+    flex-shrink: 0;
 }
 
 .amp-result-name {
@@ -4797,12 +4814,29 @@ footer {
 
 .amp-selected-header {
     display: flex;
-    justify-content: space-between;
     align-items: flex-start;
     gap: 8px;
 }
 
+.amp-selected-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: #222;
+}
+
+.amp-selected-avatar-placeholder {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #222;
+    flex-shrink: 0;
+}
+
 .amp-selected-name {
+    flex: 1;
     font-size: 0.7rem;
     font-weight: 500;
     color: #fff;
