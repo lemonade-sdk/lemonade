@@ -81,7 +81,7 @@ private:
     void refresh_menu();
     Menu create_menu();
     bool menu_needs_refresh();
-    
+
     // Menu actions
     void on_load_model(const std::string& model_name);
     void on_unload_model();  // Unload all models (kept for backward compatibility)
@@ -97,6 +97,8 @@ private:
     void open_url(const std::string& url);
     void launch_electron_app();
     bool find_electron_app();
+    bool find_web_app();
+    void open_web_app();
     void show_notification(const std::string& title, const std::string& message);
     void send_unload_command();
     std::string get_loaded_model();
@@ -111,6 +113,7 @@ private:
     std::unique_ptr<TrayInterface> tray_;
     std::unique_ptr<ServerManager> server_manager_;
     std::string electron_app_path_;
+    bool web_app_available_ = false;
 
     // State
     std::string loaded_model_;
