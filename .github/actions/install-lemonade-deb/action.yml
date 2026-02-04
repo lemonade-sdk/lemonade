@@ -1,5 +1,5 @@
-name: 'Install Lemonade Server (.deb)'
-description: 'Downloads and extracts Lemonade Server .deb package, then verifies installation'
+name: 'Install Lemonade (.deb)'
+description: 'Downloads and extracts Lemonade .deb package, then verifies installation'
 inputs:
   version:
     description: 'Version string for the .deb package (e.g., 0.5.0)'
@@ -7,7 +7,7 @@ inputs:
   artifact-name:
     description: 'Name of the artifact to download'
     required: false
-    default: 'lemonade-server-deb'
+    default: 'lemonade-deb'
   extract-path:
     description: 'Path where the .deb should be extracted'
     required: false
@@ -40,7 +40,7 @@ runs:
 
         VERSION="${{ inputs.version }}"
         EXTRACT_PATH="${{ inputs.extract-path }}"
-        DEB_FILE="lemonade-server-minimal_${VERSION}_amd64.deb"
+        DEB_FILE="lemonade-server_${VERSION}_amd64.deb"
 
         echo "Extracting .deb package: $DEB_FILE"
 

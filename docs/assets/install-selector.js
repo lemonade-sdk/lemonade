@@ -196,7 +196,7 @@ function renderDownload() {
         snapCommands = [
           'sudo snap install lemonade-server',
         ];
-        debFile = `lemonade-server-minimal_${version}_amd64.deb`;
+        debFile = `lemonade_${version}_amd64.deb`;
       }
       const downloadUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${debFile}`;
 
