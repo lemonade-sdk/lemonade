@@ -1993,7 +1993,6 @@ footer {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    width: 100%;
 }
 
 .edit-image-preview-container {
@@ -2006,7 +2005,6 @@ footer {
     display: flex;
     align-items: flex-end;
     gap: 8px;
-    width: 100%;
 }
 
 .edit-message-controls {
@@ -2016,7 +2014,6 @@ footer {
 }
 
 .edit-message-input {
-    flex: 1;
     background: transparent;
     border: none;
     padding: 0;
@@ -2027,6 +2024,9 @@ footer {
     min-height: 20px;
     line-height: 1.5;
     overflow: hidden;
+    min-width: 100px;
+    width: auto;
+    field-sizing: content;
 }
 
 .edit-message-input:focus {
