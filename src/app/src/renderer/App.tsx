@@ -257,6 +257,18 @@ const App: React.FC = () => {
           onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
           isDownloadManagerVisible={isDownloadManagerVisible}
           onToggleDownloadManager={() => setIsDownloadManagerVisible(!isDownloadManagerVisible)}
+          onSelectMobilePanel={(panel) => {
+            if (panel === 'model-manager') {
+              setIsModelManagerVisible(true);
+              setIsChatVisible(false);
+            }
+            if (panel === 'chat') {
+              setIsChatVisible(true);
+              setIsModelManagerVisible(false);
+            }
+            setIsCenterPanelVisible(false);
+            setIsLogsVisible(false);
+          }}
         />
         <DownloadManager
           isVisible={isDownloadManagerVisible}

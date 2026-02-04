@@ -4582,3 +4582,245 @@ footer {
     color: #888;
     font-variant-numeric: tabular-nums;
 }
+
+/* ===================================================================
+   MOBILE RESPONSIVE STYLES
+   ===================================================================
+*/
+
+@media (max-width: 768px) {
+    /* Show title bar on mobile but style it as a mobile header */
+    .title-bar {
+        display: flex;
+        height: 50px;
+        padding: 8px 16px;
+        gap: 12px;
+        align-items: center;
+        justify-content: flex-start;
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+        background: #000000;
+    }
+
+    /* Hide logo on mobile */
+    .title-bar-logo {
+        display: none;
+    }
+
+    /* Menu items container */
+    .menu-items {
+        display: flex;
+        gap: 0;
+        align-items: center;
+    }
+
+    /* Show only first menu item (View) as hamburger */
+    .menu-item-wrapper {
+        display: none;
+    }
+
+    .menu-item-wrapper:first-child {
+        display: block;
+        flex: 1;
+    }
+
+    /* Style View menu as hamburger on mobile */
+    .menu-item-wrapper:first-child .menu-item {
+        padding: 8px 12px;
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #ffffff;
+        cursor: pointer;
+        user-select: none;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+    }
+
+    /* Show hamburger symbol before "View" text */
+    .menu-item-wrapper:first-child .menu-item::before {
+        content: "☰ ";
+        margin-right: 8px;
+        font-size: 1.8rem;
+    }
+
+    /* Center and title sections - hide on mobile */
+    .title-bar-center,
+    .title-bar-right {
+        display: none;
+    }
+
+    /* Hide status bar on mobile */
+    .status-bar {
+        display: none;
+    }
+
+    /* Recalculate app layout height without title bar - use flex instead */
+    .app-layout {
+        height: calc(100vh - 50px);
+        flex: 1 1 auto;
+        width: 100%;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    /* Panels - sized for mobile, visibility handled by rendering */
+    .model-manager {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        height: 100%;
+        border-right: none;
+        flex: 1 1 auto;
+    }
+
+    .main-content-container {
+        width: 100%;
+        height: 100%;
+        flex: 1 1 auto;
+    }
+
+    /* Chat window - full width on mobile */
+    .chat-window {
+        width: 100%;
+        flex: 1 1 auto !important;
+        border-left: none;
+        min-width: auto;
+    }
+
+    /* Logs window - mobile sizing */
+    .logs-window {
+        width: 100%;
+        height: 100%;
+        flex: 1 1 auto;
+    }
+
+    /* Adjust touch target sizes */
+    .btn {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
+    .form-input,
+    .form-select {
+        min-height: 40px;
+    }
+
+    /* Status indicator - allow text wrapping */
+    .status-indicator {
+        flex-wrap: wrap;
+        gap: 4px;
+        align-items: flex-start;
+    }
+
+    .status-dot {
+        flex-shrink: 0;
+    }
+
+    /* Font sizing for mobile */
+    .chat-message {
+        font-size: 0.9rem;
+    }
+
+    .card p {
+        font-size: 0.9rem;
+    }
+
+    /* Chat adjustments */
+    .chat-header h3 {
+        font-size: 0.75rem;
+    }
+
+    .chat-messages {
+        padding: 12px;
+        gap: 10px;
+    }
+
+    .chat-message {
+        max-width: 95%;
+        font-size: 0.85rem;
+    }
+
+    .user-message {
+        padding: 8px 12px;
+    }
+
+    .chat-input-wrapper {
+        padding: 8px 8px 6px 10px;
+    }
+
+    .chat-input {
+        min-height: 20px;
+        font-size: 0.85rem;
+    }
+
+    .chat-send-button,
+    .chat-stop-button,
+    .image-upload-button {
+        width: 36px;
+        height: 36px;
+        min-width: 36px;
+        min-height: 36px;
+    }
+
+    /* Model manager adjustments */
+    .model-manager-content {
+        font-size: 0.75rem;
+    }
+
+    .model-item {
+        padding: 3px 8px;
+        min-height: 20px;
+    }
+
+    /* Logs adjustments */
+    .logs-content {
+        padding: 12px;
+        font-size: 0.7rem;
+    }
+
+    /* Resizable dividers - hide on mobile */
+    .resizable-divider {
+        display: none;
+    }
+
+    /* Mobile menu dropdown styling */
+    .menu-dropdown {
+        top: 100%;
+        left: 0;
+        width: 200px;
+    }
+
+    .menu-option {
+        padding: 12px 16px;
+        font-size: 0.9rem;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+    }
+}
+
+@media (max-width: 480px) {
+    /* Extra small screen adjustments */
+    .btn {
+        padding: 8px 12px;
+        font-size: 0.85rem;
+    }
+
+    .card {
+        padding: 10px 12px;
+    }
+
+    header h1 {
+        font-size: 1.2rem;
+    }
+
+    .chat-send-button,
+    .image-upload-button {
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+        min-height: 32px;
+    }
+}

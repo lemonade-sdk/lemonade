@@ -16,6 +16,7 @@ interface TitleBarProps {
   onToggleLogs: () => void;
   isDownloadManagerVisible: boolean;
   onToggleDownloadManager: () => void;
+  onSelectMobilePanel: (panel: 'model-manager' | 'chat') => void;
 }
 
 const TitleBar: React.FC<TitleBarProps> = ({
@@ -28,7 +29,8 @@ const TitleBar: React.FC<TitleBarProps> = ({
   isLogsVisible,
   onToggleLogs,
   isDownloadManagerVisible,
-  onToggleDownloadManager
+  onToggleDownloadManager,
+  onSelectMobilePanel
 }) => {
   const [activeMenu, setActiveMenu] = useState<MenuType>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -44,6 +46,19 @@ const TitleBar: React.FC<TitleBarProps> = ({
 
   // Detect if running as web app vs Electron using explicit flag
   const isWebApp = window.api?.isWebApp === true;
+
+  // Detect mobile viewport
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -144,57 +159,78 @@ const TitleBar: React.FC<TitleBarProps> = ({
               </span>
               {activeMenu === 'view' && (
                 <div className="menu-dropdown">
-                  <div className="menu-option" onClick={() => { onToggleModelManager(); setActiveMenu(null); }}>
-                    <span>{isModelManagerVisible ? '✓ ' : ''}Model Manager</span>
-                    <span className="menu-shortcut">Ctrl+Shift+M</span>
-                  </div>
-                  <div className="menu-option" onClick={() => { onToggleCenterPanel(); setActiveMenu(null); }}>
-                    <span>{isCenterPanelVisible ? '✓ ' : ''}Center Panel</span>
-                    <span className="menu-shortcut">Ctrl+Shift+P</span>
-                  </div>
-                  <div className="menu-option" onClick={() => { onToggleChat(); setActiveMenu(null); }}>
-                    <span>{isChatVisible ? '✓ ' : ''}Chat Window</span>
-                    <span className="menu-shortcut">Ctrl+Shift+H</span>
-                  </div>
-                  <div className="menu-option" onClick={() => { onToggleLogs(); setActiveMenu(null); }}>
-                    <span>{isLogsVisible ? '✓ ' : ''}Logs</span>
-                    <span className="menu-shortcut">Ctrl+Shift+L</span>
-                  </div>
-                  <div className="menu-separator"></div>
-                  <div className="menu-option" onClick={() => handleZoom('in')}>
-                    <span>Zoom In</span>
-                    <span className="menu-shortcut">{zoomInShortcutLabel}</span>
-                  </div>
-                  <div className="menu-option" onClick={() => handleZoom('out')}>
-                    <span>Zoom Out</span>
-                    <span className="menu-shortcut">{zoomOutShortcutLabel}</span>
-                  </div>
+                  {isMobile ? (
+                    <>
+                      <div className="menu-option" onClick={() => {
+                        onSelectMobilePanel('model-manager');
+                        setActiveMenu(null);
+                      }}>
+                        <span>{isModelManagerVisible ? '✓ ' : ''}Model Manager</span>
+                      </div>
+                      <div className="menu-option" onClick={() => {
+                        onSelectMobilePanel('chat');
+                        setActiveMenu(null);
+                      }}>
+                        <span>{isChatVisible ? '✓ ' : ''}Chat</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="menu-option" onClick={() => { onToggleModelManager(); setActiveMenu(null); }}>
+                        <span>{isModelManagerVisible ? '✓ ' : ''}Model Manager</span>
+                        <span className="menu-shortcut">Ctrl+Shift+M</span>
+                      </div>
+                      <div className="menu-option" onClick={() => { onToggleCenterPanel(); setActiveMenu(null); }}>
+                        <span>{isCenterPanelVisible ? '✓ ' : ''}Center Panel</span>
+                        <span className="menu-shortcut">Ctrl+Shift+P</span>
+                      </div>
+                      <div className="menu-option" onClick={() => { onToggleChat(); setActiveMenu(null); }}>
+                        <span>{isChatVisible ? '✓ ' : ''}Chat Window</span>
+                        <span className="menu-shortcut">Ctrl+Shift+H</span>
+                      </div>
+                      <div className="menu-option" onClick={() => { onToggleLogs(); setActiveMenu(null); }}>
+                        <span>{isLogsVisible ? '✓ ' : ''}Logs</span>
+                        <span className="menu-shortcut">Ctrl+Shift+L</span>
+                      </div>
+                      <div className="menu-separator"></div>
+                      <div className="menu-option" onClick={() => handleZoom('in')}>
+                        <span>Zoom In</span>
+                        <span className="menu-shortcut">{zoomInShortcutLabel}</span>
+                      </div>
+                      <div className="menu-option" onClick={() => handleZoom('out')}>
+                        <span>Zoom Out</span>
+                        <span className="menu-shortcut">{zoomOutShortcutLabel}</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
 
-            <div className="menu-item-wrapper">
-              <span
-                className={`menu-item ${activeMenu === 'help' ? 'active' : ''}`}
-                onClick={() => handleMenuClick('help')}
-              >
-                Help
-              </span>
-              {activeMenu === 'help' && (
-                <div className="menu-dropdown">
-                  <div className="menu-option" onClick={() => { window.api.openExternal('https://lemonade-server.ai/docs/'); setActiveMenu(null); }}>
-                    Documentation
+            {!isMobile && (
+              <div className="menu-item-wrapper">
+                <span
+                  className={`menu-item ${activeMenu === 'help' ? 'active' : ''}`}
+                  onClick={() => handleMenuClick('help')}
+                >
+                  Help
+                </span>
+                {activeMenu === 'help' && (
+                  <div className="menu-dropdown">
+                    <div className="menu-option" onClick={() => { window.api.openExternal('https://lemonade-server.ai/docs/'); setActiveMenu(null); }}>
+                      Documentation
+                    </div>
+                    <div className="menu-option" onClick={() => { window.api.openExternal('https://github.com/lemonade-sdk/lemonade/releases'); setActiveMenu(null); }}>
+                      Release Notes
+                    </div>
+                    <div className="menu-separator"></div>
+                    <div className="menu-option" onClick={() => { setIsAboutOpen(prev => !prev); setActiveMenu(null); }}>
+                      About
+                    </div>
                   </div>
-                  <div className="menu-option" onClick={() => { window.api.openExternal('https://github.com/lemonade-sdk/lemonade/releases'); setActiveMenu(null); }}>
-                    Release Notes
-                  </div>
-                  <div className="menu-separator"></div>
-                  <div className="menu-option" onClick={() => { setIsAboutOpen(prev => !prev); setActiveMenu(null); }}>
-                    About
-                  </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <div className="title-bar-center">
