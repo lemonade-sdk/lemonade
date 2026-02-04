@@ -605,7 +605,9 @@ int TrayApp::run() {
                 if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
                     server_config_.host = "localhost";
                 }
-                server_manager_ = std::make_unique<ServerManager>(server_config_.host, port);
+                server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
+                server_manager_->set_port(running_port);
+                server_config_.port = running_port;  // Update config to match running server
             } else {
                 std::cerr << "Error: Server service is active but no port found: " << running_port << std::endl;
                 return 1;
