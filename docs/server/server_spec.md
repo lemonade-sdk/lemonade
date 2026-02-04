@@ -709,6 +709,7 @@ python examples/realtime_transcription.py --mic --model Whisper-Tiny
 - **VAD Behavior**: Server automatically detects speech boundaries and triggers transcription on speech end.
 - **Manual Commit**: Use `input_audio_buffer.commit` to force transcription (e.g., when user clicks "stop").
 - **Clear Buffer**: Use `input_audio_buffer.clear` to discard audio without transcribing.
+- **Chunking**: We are still tuning the chunking to balance latency vs. accuracy.
 
 
 
