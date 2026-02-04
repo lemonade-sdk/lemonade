@@ -6,8 +6,7 @@ import { serverFetch } from './utils/serverConfig';
 import { downloadTracker } from './utils/downloadTracker';
 import { useModels } from './hooks/useModels';
 import ModelOptionsModal from "./ModelOptionsModal";
-import { RecipeOptions } from "./recipes/recipeOptions";
-import { OgaRecipies } from "./recipes/onnx/recipeOptions";
+import { RecipeOptions, recipeOptionsToApi } from "./recipes/recipeOptions";
 
 interface ModelManagerProps {
   isVisible: boolean;
@@ -555,29 +554,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         return;
       }
 
-      // if options are provided, which is not required
+      // if options are provided, convert them to API format
       if (options) {
-        if (options.recipe === 'llamacpp') {
-          modelData = {
-            ...modelData,
-            ctx_size: options.ctxSize.value,
-            llamacpp_backend: options.llamacppBackend.value,
-            llamacpp_args: options.llamacppArgs.value,
-            save_options: options.saveOptions.value
-          }
-        } else if (options.recipe === 'whispercpp') {
-          modelData = {
-            ...modelData,
-            whispercpp_backend: options.whispercppBackend.value,
-            save_options: options.saveOptions.value
-          }
-        } else if (options.recipe === 'sd-cpp') {
-          modelData = { ...modelData, ctx_size: options.ctxSize.value, save_options: options.saveOptions.value }
-        } else if (options.recipe === 'flm') {
-          modelData = { ...modelData, ctx_size: options.ctxSize.value, save_options: options.saveOptions.value }
-        } else if (OgaRecipies.includes(options.recipe)) {
-          modelData = { ...modelData, ctx_size: options.ctxSize.value, save_options: options.saveOptions.value }
-        }
+        const apiOptions = recipeOptionsToApi(options);
+        modelData = { ...modelData, ...apiOptions };
       }
 
       // Add to loading state
