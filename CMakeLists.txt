@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 9.2.0)
+project(lemon_cpp VERSION 9.3.0)
 
 # Enable Objective-C++ for macOS Metal support
 if(APPLE)
@@ -235,17 +235,17 @@ if(APPLE)
     set(BROTLI_BUILD_PROGRAMS OFF CACHE INTERNAL "")
     set(BROTLI_BUILD_SHARED OFF CACHE INTERNAL "")
     set(BROTLI_BUILD_TESTS OFF CACHE INTERNAL "")
-    
+
     FetchContent_MakeAvailable(brotli)
-    
+
     if(TARGET brotlicommon)
         add_library(Brotli::common ALIAS brotlicommon)
     endif()
-    
+
     if(TARGET brotlienc)
         add_library(Brotli::encoder ALIAS brotlienc)
     endif()
-    
+
     if(TARGET brotlidec)
         add_library(Brotli::decoder ALIAS brotlidec)
     endif()
@@ -366,7 +366,7 @@ if(WIN32)
         set(WIX_ELECTRON_FRAGMENT "${CMAKE_CURRENT_BINARY_DIR}/installer/ElectronAppFragment.wxs")
         file(TO_NATIVE_PATH "${WIX_ELECTRON_FRAGMENT}" WIX_ELECTRON_FRAGMENT_NATIVE)
 
-    
+
         # Web app fragment paths
         file(TO_NATIVE_PATH "${WEB_APP_BUILD_DIR}" WIX_WEBAPP_SOURCE_NATIVE)
         set(WIX_WEBAPP_FRAGMENT "${CMAKE_CURRENT_BINARY_DIR}/installer/WebAppFragment.wxs")
@@ -879,7 +879,7 @@ if(APPLE)
 
     set(ENTITLEMENTS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/entitlements.plist")
     if(NOT EXISTS "${ENTITLEMENTS_PATH}")
-        file(WRITE "${ENTITLEMENTS_PATH}" 
+        file(WRITE "${ENTITLEMENTS_PATH}"
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
             <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
             <plist version=\"1.0\">
@@ -919,7 +919,7 @@ if(APPLE)
         COMMENT "Copying Electron App..."
         DEPENDS electron-app
     )
-    
+
     set(CPACK_PRE_BUILD_SCRIPTS "${CMAKE_BINARY_DIR}/cpack_prebuild.cmake")
     file(WRITE "${CMAKE_BINARY_DIR}/cpack_prebuild.cmake"
         "message(STATUS \"Pre-build: Ensuring Electron app is prepared...\")\n"
@@ -927,7 +927,7 @@ if(APPLE)
     )
 
     # INSTALLATION (Component Structure)
-    
+
     # Main Router -> /usr/local/bin
     install(TARGETS ${EXECUTABLE_NAME} RUNTIME DESTINATION "bin" COMPONENT Runtime)
 
@@ -985,9 +985,9 @@ if(APPLE)
     set(CPACK_GENERATOR "productbuild")
     set(CPACK_PACKAGE_NAME "Lemonade")
     set(CPACK_PRODUCTBUILD_IDENTIFIER "com.lemonade.server")
-    
-    set(CPACK_PRODUCTBUILD_DOMAIN "system") 
-    
+
+    set(CPACK_PRODUCTBUILD_DOMAIN "system")
+
     if(INSTALLER_IDENTITY)
         set(CPACK_PRODUCTBUILD_IDENTITY_NAME "${INSTALLER_IDENTITY}")
     endif()
@@ -1010,7 +1010,7 @@ if(APPLE)
     include(CPack)
 
     set(PACKAGE_DEPENDS prepare_electron_app ${EXECUTABLE_NAME})
-    
+
     add_custom_target(package-macos
         DEPENDS ${PACKAGE_DEPENDS}
         COMMAND ${CMAKE_COMMAND} --build . --config $<CONFIG> --target package
@@ -1167,7 +1167,7 @@ if(UNIX AND NOT APPLE)
 
         # Full package name
         set(CPACK_PACKAGE_NAME "lemonade")
-    
+
         set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libsecret-1-0, libasound2t64, fonts-katex")
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
 
@@ -1214,7 +1214,7 @@ if(UNIX AND NOT APPLE)
                 DESTINATION share/pixmaps
                 RENAME lemonade-app.svg
             )
-        
+
             # Create symlink in standard pixmaps path only if not installing to /usr
             if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
                 install(CODE "
@@ -1249,7 +1249,7 @@ if(UNIX AND NOT APPLE)
     else()
         # Minimal package (server only)
         set(CPACK_PACKAGE_NAME "lemonade-server-minimal")
-    
+
         set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, fonts-katex")
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
 
