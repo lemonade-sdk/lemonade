@@ -805,9 +805,8 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
             ")
         endif()
         # Install launch script for web app
-        install(FILES ${CMAKE_SOURCE_DIR}/data/launch-lemonade-web-app.sh
+        install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-web-app
             DESTINATION bin
-            RENAME lemonade-web-app
             PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
         )
         # Create symlink in standard bin path only if not installing to /usr
