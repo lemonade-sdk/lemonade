@@ -12,7 +12,7 @@ using namespace lemon;
 static std::atomic<bool> g_shutdown_requested(false);
 static Server* g_server_instance = nullptr;
 
-// Signal handler for Ctrl+C and SIGTERM
+// Signal handler for Ctrl+C, SIGTERM, and SIGHUP
 void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
         std::cout << "\n[Server] Shutdown signal received, exiting..." << std::endl;
@@ -25,6 +25,12 @@ void signal_handler(int signal) {
         // Use _exit() for async-signal-safe immediate termination
         // The OS will handle cleanup of file descriptors, memory, and child processes
         _exit(0);
+#ifdef SIGHUP
+    } else if (signal == SIGHUP) {
+        // Ignore SIGHUP to prevent termination when parent process exits
+        // This allows the server to continue running as a daemon
+        return;
+#endif
     }
 }
 

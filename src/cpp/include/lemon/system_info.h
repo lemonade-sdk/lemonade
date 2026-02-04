@@ -180,7 +180,7 @@ private:
     double parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname);
 };
 
-// macOS implementation (basic stub for now)
+// macOS implementation
 class MacOSSystemInfo : public SystemInfo {
 public:
     CPUInfo get_cpu_device() override;
@@ -188,6 +188,8 @@ public:
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
     std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
     NPUInfo get_npu_device() override;
+
+    std::vector<GPUInfo> detect_metal_gpus();
 };
 
 // Factory function

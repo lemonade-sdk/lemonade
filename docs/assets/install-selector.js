@@ -207,7 +207,7 @@ function renderDownload() {
         installCmdDiv.style.display = 'block';
         const commands = [
           `wget ${downloadUrl}`,
-          `sudo dpkg -i ${debFile}`
+          `sudo apt install ./${debFile}`
         ];
 
         installCmdDiv.innerHTML = `

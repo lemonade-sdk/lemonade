@@ -232,17 +232,8 @@ curl -X POST http://localhost:{{SERVER_PORT}}/api/v1/chat/completions \
         <!-- Desktop App Hint -->
         <div class="card">
             <h2><span class="icon">💻</span> Want a GUI?</h2>
-            <p class="section-desc" id="gui-hint-windows" style="display: none;">
-                If you installed the <strong>full version</strong> of Lemonade, look for the 🍋 icon in your system tray to open the desktop app.
-                <br><br>
-                Using the minimal install? Get the full version from <a href="https://github.com/lemonade-sdk/lemonade">github.com/lemonade-sdk/lemonade</a> for a built-in chat interface and model manager.
-            </p>
-            <p class="section-desc" id="gui-hint-linux" style="display: none;">
-                If you installed the <strong>full version</strong> of Lemonade, launch the UI by running:<br>
-                <code>/opt/share/lemonade-server/app/lemonade</code>
-                <br><br>
-                Using the minimal install? Get the full version from <a href="https://github.com/lemonade-sdk/lemonade">github.com/lemonade-sdk/lemonade</a> for a built-in chat interface and model manager.
-            </p>
+            This build of Lemonade has been built without a desktop app or a web app.
+            Get the full version from <a href="https://github.com/lemonade-sdk/lemonade">github.com/lemonade-sdk/lemonade</a> for a built-in chat interface and model manager.
         </div>
 
         <div class="footer">
@@ -260,20 +251,6 @@ curl -X POST http://localhost:{{SERVER_PORT}}/api/v1/chat/completions \
                 setTimeout(() => btn.textContent = 'copy', 1500);
             });
         }
-
-        // Detect platform and show appropriate GUI hint
-        (function() {
-            const platform = navigator.platform.toLowerCase();
-            const isWindows = platform.includes('win');
-            const hintWindows = document.getElementById('gui-hint-windows');
-            const hintLinux = document.getElementById('gui-hint-linux');
-
-            if (isWindows) {
-                hintWindows.style.display = 'block';
-            } else {
-                hintLinux.style.display = 'block';
-            }
-        })();
     </script>
 </body>
 </html>

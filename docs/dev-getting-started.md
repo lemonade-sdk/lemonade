@@ -102,17 +102,30 @@ cmake --build --preset windows
 
 The tray menu's "Open app" option and the `lemonade-server run` command can launch the Electron desktop app. To include it in your build:
 
-```bash
-# Build the Electron app using CMake (requires Node.js 20+)
-cmake --build build --target electron-app
+Build the Electron app using CMake (requires Node.js 20+):
 
-# This will:
-# 1. Copy src/app to build/app-src (keeps source tree clean)
-# 2. Run npm install in build/app-src
-# 3. Build to build/app/win-unpacked/ (or similar)
+**Linux**
+```bash
+cmake --build --preset default --target electron-app
 ```
 
-The tray app looks for `Lemonade.exe` in the same directory as the executable (development) or in `../app/` (installed). If not found, the "Open app" option is hidden but everything else works.
+**Windows**
+```powershell
+cmake --build --preset windows --target electron-app
+```
+
+This will:
+1. Copy src/app to build/app-src (keeps source tree clean)
+2. Run npm install in build/app-src
+3. Build to build/app/linux-unpacked/ (Linux) or build/app/win-unpacked/ (Windows)
+
+The tray app searches for the Electron app in these locations:
+- **Windows installed**: `../app/Lemonade.exe` (relative to bin/ directory)
+- **Windows development**: `../app/win-unpacked/Lemonade.exe` (from build/Release/)
+- **Linux installed**: `/usr/local/share/lemonade-server/app/lemonade`
+- **Linux development**: `../app/linux-unpacked/lemonade` (from build/)
+
+If not found, the "Open app" menu option is hidden but everything else works.
 
 ### Platform-Specific Notes
 
@@ -209,10 +222,7 @@ Creates `lemonade-server-minimal_<VERSION>_amd64.deb` (e.g., `lemonade-server-mi
 
 ```bash
 # Replace <VERSION> with the actual version (e.g., 9.0.0)
-sudo dpkg -i lemonade-server-minimal_<VERSION>_amd64.deb
-
-# If dependencies are missing:
-sudo apt-get install -f
+sudo apt install ./lemonade-server-minimal_<VERSION>_amd64.deb
 ```
 
 **Uninstallation:**
@@ -267,6 +277,92 @@ sudo dnf remove lemonade-server-minimal
 **Post-Installation:**
 
 Same as .deb above
+
+**macOS:**
+
+### Building from Source on MacOS for M-Series / arm64 Family
+
+#### Macos Notary Tool Command
+For access with P
+```
+xcrun notarytool store-credentials AC_PASSWORD --apple-id "your-apple-id@example.com" --team-id "your-team-id" --private-key "/path/to/AuthKey_XXXXXX.p8"
+```
+or
+For access with API password
+```
+xcrun notarytool store-credentials AC_PASSWORD --apple-id "your-apple-id@example.com" --team-id "your-team-id" --password ""
+```
+Get your team id at:
+https://developer.apple.com/account
+
+#### Cmake build instructions
+
+```bash
+# Install Xcode command line tools
+xcode-select --install
+
+# Navigate to the C++ source directory
+cd src/cpp
+
+# Create and enter build directory
+mkdir build
+cd build
+
+# Configure with CMake
+cmake ..
+
+# Build with all cores
+cmake --build . --config Release -j
+```
+
+### CMake Targets
+
+The build system provides several CMake targets for different build configurations:
+
+- **`lemonade-router`**: The main HTTP server executable that handles LLM inference requests
+- **`package-macos`**: Creates a signed macOS installer package (.pkg) using productbuild
+- **`notarize_package`**: Builds and submits the package to Apple for notarization and staples the ticket
+- **`electron-app`**: Builds the Electron-based GUI application
+- **`prepare_electron_app`**: Prepares the Electron app for inclusion in the installer
+
+### Building and Notarizing for Distribution
+
+To build a notarized macOS installer for distribution:
+
+1. **Prerequisites**:
+   - Apple Developer Program membership
+   - Valid Developer ID Application and Installer certificates
+   - App-specific password for notarization
+   - Xcode command line tools
+
+2. **Set Environment Variables**:
+   ```bash
+   export DEVELOPER_ID_APPLICATION_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+   export DEVELOPER_ID_INSTALLER_IDENTITY="Developer ID Installer: Your Name (TEAMID)"
+   export AC_PASSWORD="your-app-specific-password"
+   ```
+
+3. **Configure Notarization Keychain Profile**:
+   ```bash
+   xcrun notarytool store-credentials "AC_PASSWORD" \
+     --apple-id "your-apple-id@example.com" \
+     --team-id "YOURTEAMID" \
+     --password "your-app-specific-password"
+   ```
+
+4. **Build and Notarize**:
+   ```bash
+   cd src/cpp/build
+   cmake --build . --config Release --target package-macos
+   cmake --build . --config Release --target notarize_package
+   ```
+
+The notarization process will:
+- Submit the package to Apple's notarization service
+- Wait for approval
+- Staple the notarization ticket to the package
+
+**Note**: The package is signed with hardened runtime entitlements during the build process for security.
 
 ### Developer IDE & IDE Build Steps
 
@@ -369,7 +465,7 @@ src/cpp/
 │   │   ├── fastflowlm_server.cpp # Wraps FastFlowLM for NPU inference
 │   │   ├── ryzenaiserver.cpp     # Wraps RyzenAI server for hybrid NPU
 │   │   ├── sd_server.cpp         # Wraps Stable Diffusion for image generation
-│   │   └── whisper_server.cpp    # Wraps whisper.cpp for audio transcription
+│   │   └── whisper_server.cpp    # Wraps whisper.cpp for audio transcription (CPU/NPU)
 │   │
 │   └── utils/                  # Utility functions
 │       ├── http_client.cpp     # HTTP client using libcurl

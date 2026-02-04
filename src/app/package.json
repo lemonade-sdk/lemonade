@@ -90,10 +90,13 @@
     },
     "electronLanguages": ["en-US"],
     "mac": {
+      "icon": "../../docs/assets/logo_512.png",
       "target": [
         "dmg"
       ],
-      "category": "public.app-category.business"
+      "category": "public.app-category.business",
+      "entitlements": "../../src/cpp/server/entitlements.plist",
+      "entitlementsInherit": "../../src/cpp/server/entitlements.plist"
     },
     "linux": {
       "target": [

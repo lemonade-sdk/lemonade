@@ -141,6 +141,9 @@ CLIParser::CLIParser()
 
     // Recipes
     CLI::App* recipes = app_.add_subcommand("recipes", "List execution backends");
+
+    // Tray
+    CLI::App* tray = app_.add_subcommand("tray", "Launch tray interface for running server");
 #else
     add_serve_options(&app_, config_, max_models_vec_);
 #endif
@@ -148,6 +151,12 @@ CLIParser::CLIParser()
 
 int CLIParser::parse(int argc, char** argv) {
     try {
+#ifdef LEMONADE_TRAY
+        // Show help if no arguments provided
+        if (argc == 1) {
+            throw CLI::CallForHelp();
+        }
+#endif
         app_.parse(argc, argv);
 
         // Process --max-loaded-models values
