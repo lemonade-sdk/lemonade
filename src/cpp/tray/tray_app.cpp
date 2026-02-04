@@ -6,6 +6,7 @@
 #include <lemon/single_instance.h>
 #include <lemon/system_info.h>
 #include <lemon/version.h>
+#include <lemon/utils/path_utils.h>
 #include <httplib.h>
 #include <iostream>
 #include <iomanip>
@@ -605,7 +606,7 @@ int TrayApp::run() {
         }
         // Continue to server initialization below
     } else if (tray_config_.command == "tray") {
-        // Check for single instance - prevent duplicate tray processes, 
+        // Check for single instance - prevent duplicate tray processes,
         // the use case here is not for a tray launched by the system its when its being launched by the user or electron app.
         #ifdef __APPLE__
         if (LemonadeServiceManager::isTrayActive())
@@ -858,7 +859,7 @@ int TrayApp::run() {
         std::cout << "WARNING: Icon not found at any location, will use default icon" << std::endl;
     }
 #endif
-    
+
     // Initialize tray
     DEBUG_LOG(this, "Initializing tray with icon: " << icon_path);
     if (!tray_->initialize("Lemonade Server", icon_path)) {
@@ -2042,18 +2043,22 @@ bool TrayApp::menu_needs_refresh() {
 Menu TrayApp::create_menu() {
     Menu menu;
 
-    // Open app - at the very top (only if Electron app is available on full installer)
+    // Open app - at the very top (Electron app takes priority, web app as fallback)
     if (electron_app_path_.empty()) {
         // Try to find the Electron app if we haven't already
         const_cast<TrayApp*>(this)->find_electron_app();
     }
     if (!electron_app_path_.empty()) {
-#ifdef __APPLE__
+        // Electron app is available - use it
         menu.add_item(MenuItem::Action("Open Lemonade App", [this]() { launch_electron_app(); }));
-#else
-        menu.add_item(MenuItem::Action("Open app", [this]() { launch_electron_app(); }));
-#endif
         menu.add_separator();
+    } else {
+        // Electron app not available - check for web app as fallback
+        const_cast<TrayApp*>(this)->find_web_app();
+        if (web_app_available_) {
+            menu.add_item(MenuItem::Action("Open Lemonade App", [this]() { const_cast<TrayApp*>(this)->open_web_app(); }));
+            menu.add_separator();
+        }
     }
 
     // Get loaded model once and cache it to avoid redundant health checks
@@ -2637,6 +2642,36 @@ bool TrayApp::find_electron_app() {
     std::cerr << "  Checked: " << dev_path.string() << std::endl;
     std::cerr << "  Checked: " << legacy_dev_path.string() << std::endl;
     return false;
+}
+
+bool TrayApp::find_web_app() {
+    // Use the same path resolution as the server
+    std::string web_app_dir = lemon::utils::get_resource_path("resources/web-app");
+
+    // Check if web app directory exists and has an index.html
+    if (fs::exists(web_app_dir) && fs::is_directory(web_app_dir)) {
+        fs::path index_path = fs::path(web_app_dir) / "index.html";
+        if (fs::exists(index_path)) {
+            std::cout << "Found web app at: " << web_app_dir << std::endl;
+            web_app_available_ = true;
+            return true;
+        }
+    }
+
+    web_app_available_ = false;
+    return false;
+}
+
+void TrayApp::open_web_app() {
+    // Compose the web app URL
+    // Translate 0.0.0.0 to localhost since 0.0.0.0 is not a valid connect address
+    std::string connect_host = server_config_.host;
+    if (connect_host.empty() || connect_host == "0.0.0.0") {
+        connect_host = "localhost";
+    }
+    std::string web_app_url = "http://" + connect_host + ":" + std::to_string(server_config_.port) + "/";
+    std::cout << "Opening web app at: " << web_app_url << std::endl;
+    open_url(web_app_url);
 }
 
 void TrayApp::launch_electron_app() {
