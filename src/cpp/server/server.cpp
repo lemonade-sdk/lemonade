@@ -109,14 +109,15 @@ Server::~Server() {
 void Server::log_request(const httplib::Request& req) {
     if (req.path != "/api/v0/health" && req.path != "/api/v1/health" &&
         req.path != "/api/v0/system-stats" && req.path != "/api/v1/system-stats" &&
-        req.path != "/api/v0/stats" && req.path != "/api/v1/stats") {
+        req.path != "/api/v0/stats" && req.path != "/api/v1/stats" &&
+        req.path != "/live") {
         std::cout << "[Server PRE-ROUTE] " << req.method << " " << req.path << std::endl;
         std::cout.flush();
     }
 }
 
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
-    if ((api_key_ != "") && (req.method != "OPTIONS")) {
+    if ((api_key_ != "") && (req.method != "OPTIONS") && (req.path.rfind("/api/", 0) == 0)) {
         if (api_key_ != httplib::get_bearer_token_auth(req)) {
             res.status = 401;
             res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
@@ -131,11 +132,6 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 void Server::setup_routes(httplib::Server &web_server) {
     // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
-        // Absolute bypass for liveness probe
-        if (req.path == "/live") {
-            return httplib::Server::HandlerResponse::Unhandled;
-        }
-
         this->log_request(req);
         return authenticate_request(req, res);
     });
@@ -446,9 +442,22 @@ window.api = {
     onSettingsUpdated: () => {},
     getServerPort: () => parseInt(window.location.port) || 8000,
     onServerPortUpdated: () => {},
+    getServerAPIKey: async () => {
+        return (await window.api.getSettings()).apiKey.value;
+    },
+    fetchWithApiKey: async (url) => {
+        let apiKey = await window.api.getServerAPIKey();
+        const options = {timeout: 3000};
+        if(apiKey != null && apiKey != '') {
+            options.headers = {
+            Authorization: `Bearer ${apiKey}`,
+            }
+        }
+        return await fetch(url, options);
+    },
     getVersion: async () => {
         try {
-            const response = await fetch('/api/v1/health');
+            const response = await window.api.fetchWithApiKey('/api/v1/health');
             if (response.ok) {
                 const data = await response.json();
                 return data.version || 'Unknown';
@@ -467,7 +476,7 @@ window.api = {
     restartApp: () => window.location.reload(),
     getSystemStats: async () => {
         try {
-            const response = await fetch('/api/v1/system-stats');
+            const response = await window.api.fetchWithApiKey('/api/v1/system-stats');
             if (response.ok) {
                 return await response.json();
             }
@@ -478,7 +487,7 @@ window.api = {
     },
     getSystemInfo: async () => {
         try {
-            const response = await fetch('/api/v1/system-info');
+            const response = await window.api.fetchWithApiKey('/api/v1/system-info');
             if (response.ok) {
                 const data = await response.json();
                 let maxGttGb = 0;
