@@ -70,7 +70,7 @@ static bool is_local_path(const std::string& path) {
 }
 
 #if !defined(_WIN32)
-// Helper: Check if systemd is running and lemonade-server.service is active
+// Helper: Check if systemd is running and a unit is active
 static bool is_systemd_service_active(const char* unit_name) {
 #ifdef HAVE_SYSTEMD
     if (!unit_name || unit_name[0] == '\0') {
@@ -248,6 +248,42 @@ static bool is_systemd_service_active_other_process(const char* unit_name) {
     (void)unit_name;
     return false;
 #endif
+}
+
+// Helper: Known systemd unit names for lemonade server (native or snap)
+static const char* kSystemdUnitNames[] = {
+    "lemonade-server.service",
+    "snap.lemonade-server.daemon.service"
+};
+
+static const char* get_active_systemd_unit_name() {
+    for (const auto* unit_name : kSystemdUnitNames) {
+        if (is_systemd_service_active(unit_name)) {
+            return unit_name;
+        }
+    }
+    return nullptr;
+}
+
+static bool is_any_systemd_service_active() {
+    return get_active_systemd_unit_name() != nullptr;
+}
+
+static int get_systemd_any_service_main_pid() {
+    const char* unit_name = get_active_systemd_unit_name();
+    if (!unit_name) {
+        return 0;
+    }
+    return get_systemd_service_main_pid(unit_name);
+}
+
+static bool is_systemd_any_service_active_other_process() {
+    for (const auto* unit_name : kSystemdUnitNames) {
+        if (is_systemd_service_active_other_process(unit_name)) {
+            return true;
+        }
+    }
+    return false;
 }
 #endif
 
@@ -536,7 +572,7 @@ int TrayApp::run() {
 
 #ifdef HAVE_SYSTEMD
         if (tray_config_.command == "run" &&
-            is_systemd_service_active_other_process("lemonade-server.service")) {
+            is_systemd_any_service_active_other_process()) {
             int result = connect_to_running_server("managed by systemd and");
             if (result != 0) {
                 return result;
@@ -1032,8 +1068,8 @@ std::pair<int, int> TrayApp::get_server_info() {
         }
     }
 #else
-    if (is_systemd_service_active("lemonade-server.service")) {
-        int main_pid = get_systemd_service_main_pid("lemonade-server.service");
+    if (is_any_systemd_service_active()) {
+        int main_pid = get_systemd_any_service_main_pid();
         if (main_pid > 0) {
             return {main_pid, server_config_.port};
         }
@@ -1464,7 +1500,7 @@ int TrayApp::execute_run_command() {
         // Launch the Electron app
         bool should_launch_app = process_owns_server_;
 #ifdef HAVE_SYSTEMD
-        if (!should_launch_app && is_systemd_service_active("lemonade-server.service")) {
+    if (!should_launch_app && is_any_systemd_service_active()) {
             should_launch_app = true;
         }
 #endif
@@ -1565,9 +1601,11 @@ int TrayApp::execute_stop_command() {
 
     // On Linux, check if server is managed by systemd and warn user
 #ifndef _WIN32
-    if (is_systemd_service_active("lemonade-server.service")) {
+    const char* active_systemd_unit = get_active_systemd_unit_name();
+    if (active_systemd_unit) {
         std::cerr << "Error: Lemonade Server is managed by systemd." << std::endl;
-        std::cerr << "Please use: sudo systemctl stop lemonade-server" << std::endl;
+        std::string unit_name(active_systemd_unit);
+        std::cerr << "Please use: sudo systemctl stop " << unit_name << std::endl;
         std::cerr << "Instead of: lemonade-server stop" << std::endl;
         return 1;
     }
