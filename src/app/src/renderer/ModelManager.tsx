@@ -6,7 +6,7 @@ import { serverFetch } from './utils/serverConfig';
 import { downloadTracker } from './utils/downloadTracker';
 import { useModels } from './hooks/useModels';
 import ModelOptionsModal from "./ModelOptionsModal";
-import AddModelModal from "./AddModelModal";
+import AddModelPanel from "./AddModelPanel";
 import { RecipeOptions, recipeOptionsToApi } from "./recipes/recipeOptions";
 
 interface ModelManagerProps {
@@ -931,19 +931,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       </div>
 
       <div className="model-manager-footer">
-        <button
-          className="add-model-button"
-          onClick={() => setShowAddModelModal(true)}
-        >
-          Add a model
-        </button>
+        {!showAddModelModal ? (
+          <button
+            className="add-model-button"
+            onClick={() => setShowAddModelModal(true)}
+          >
+            Add a model
+          </button>
+        ) : (
+          <AddModelPanel
+            onClose={() => setShowAddModelModal(false)}
+            onInstall={handleInstallModel}
+          />
+        )}
       </div>
-
-      <AddModelModal
-        isOpen={showAddModelModal}
-        onClose={() => setShowAddModelModal(false)}
-        onInstall={handleInstallModel}
-      />
     </div>
   );
 };
