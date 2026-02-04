@@ -699,7 +699,7 @@ if(APPLE)
     # SIGNING LOGIC (Release Only)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         message(STATUS "Release Build: Configuring Hardened Runtime Signing for Router")
-        
+
         # Sign 'lemonade-router'
         add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E echo "--- Signing ${EXECUTABLE_NAME} ---"
@@ -707,8 +707,7 @@ if(APPLE)
             COMMENT "Signing ${EXECUTABLE_NAME} with Hardened Runtime"
             VERBATIM
         )
-        # Note: 'lemonade-server' (Tray) signs itself inside tray/CMakeLists.txt 
-        # using the SIGNING_IDENTITY we defined above.
+        # Note: 'lemonade-server' signs itself in tray/CMakeLists.txt
     endif()
 
     # Prepare Electron App
@@ -731,10 +730,36 @@ if(APPLE)
     # Main Router -> /usr/local/bin
     install(TARGETS ${EXECUTABLE_NAME} RUNTIME DESTINATION "usr/local/bin" COMPONENT Runtime)
 
+    # Sign the router binary after installation (Release builds only)
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        install(CODE "
+            execute_process(
+                COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"\$ENV{DESTDIR}/usr/local/bin/${EXECUTABLE_NAME}\"
+                RESULT_VARIABLE SIGN_RESULT
+            )
+            if(NOT SIGN_RESULT EQUAL 0)
+                message(FATAL_ERROR \"Failed to sign ${EXECUTABLE_NAME}\")
+            endif()
+        ")
+    endif()
+
     # Tray/Server -> /usr/local/bin
     # (Since tray/CMakeLists.txt skips install on Apple, we must do it here)
     if(TARGET lemonade-server)
         install(TARGETS lemonade-server RUNTIME DESTINATION "usr/local/bin" COMPONENT Runtime)
+
+        # Sign the server binary after installation (Release builds only)
+        if(CMAKE_BUILD_TYPE STREQUAL "Release")
+            install(CODE "
+                execute_process(
+                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"\$ENV{DESTDIR}/usr/local/bin/lemonade-server\"
+                    RESULT_VARIABLE SIGN_RESULT
+                )
+                if(NOT SIGN_RESULT EQUAL 0)
+                    message(FATAL_ERROR \"Failed to sign lemonade-server\")
+                endif()
+            ")
+        endif()
     endif()
 
     # Resources -> /Library/Application Support/Lemonade/resources
@@ -765,6 +790,7 @@ if(APPLE)
     if(INSTALLER_IDENTITY)
         set(CPACK_PRODUCTBUILD_IDENTITY_NAME "${INSTALLER_IDENTITY}")
     endif()
+    set(CPACK_PRODUCTBUILD_RELOCATE OFF)  # Prevent install_name_tool from invalidating signatures
     set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
     set(CPACK_PRODUCTBUILD_BUNDLE com.lemonade.server.Applications OFF)
     set(CPACK_PRODUCTBUILD_BUNDLE_ID com.lemonade.server.Applications)
@@ -794,12 +820,12 @@ if(APPLE)
     if(XCRUN_EXE)
         set(PKG_NAME "Lemonade-${PROJECT_VERSION}-Darwin.pkg")
         add_custom_target(notarize_package
-            COMMAND ${CMAKE_COMMAND} -E echo "Submitting ${PKG_NAME}..."
-            COMMAND ${XCRUN_EXE} notarytool submit "${CMAKE_BINARY_DIR}/${PKG_NAME}" --keychain-profile "AC_PASSWORD" --wait
-            COMMAND ${CMAKE_COMMAND} -E echo "Stapling ticket..."
+            COMMAND ${CMAKE_COMMAND} -E echo "Submitting ${PKG_NAME} for notarization..."
+            COMMAND ${XCRUN_EXE} notarytool submit "${CMAKE_BINARY_DIR}/${PKG_NAME}" --keychain-profile "AC_PASSWORD" --wait --verbose
+            COMMAND ${CMAKE_COMMAND} -E echo "Stapling ticket to ${PKG_NAME}..."
             COMMAND ${XCRUN_EXE} stapler staple "${CMAKE_BINARY_DIR}/${PKG_NAME}"
             WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-            COMMENT "Notarizing and Stapling..."
+            COMMENT "Notarizing and Stapling macOS package..."
             VERBATIM
         )
         add_dependencies(notarize_package package-macos)

@@ -251,7 +251,7 @@ endif()
 # ============================================================
 if(APPLE AND CMAKE_BUILD_TYPE STREQUAL "Release")
     message(STATUS "Configuring signing for Tray Application (lemonade-server)")
-    
+
     # Inherit variables from Parent CMake
     if(NOT DEFINED SIGNING_IDENTITY OR NOT DEFINED ENTITLEMENTS_PATH)
         message(FATAL_ERROR "Signing variables missing! Ensure add_subdirectory(tray) is called AFTER identities are set in root CMakeLists.txt")

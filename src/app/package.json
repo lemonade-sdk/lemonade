@@ -94,7 +94,9 @@
       "target": [
         "dmg"
       ],
-      "category": "public.app-category.business"
+      "category": "public.app-category.business",
+      "entitlements": "../../src/cpp/server/entitlements.plist",
+      "entitlementsInherit": "../../src/cpp/server/entitlements.plist"
     },
     "linux": {
       "target": [
