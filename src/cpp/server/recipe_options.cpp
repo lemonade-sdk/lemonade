@@ -9,7 +9,11 @@ using json = nlohmann::json;
 
 static const json DEFAULTS = {
     {"ctx_size", 4096},
+#ifdef __APPLE__
+    {"llamacpp_backend", "metal"},  // Will be overridden dynamically
+#else
     {"llamacpp_backend", "vulkan"},  // Will be overridden dynamically
+#endif
     {"llamacpp_args", ""},
     // Image generation defaults (for sd-cpp recipe)
     {"steps", 20},

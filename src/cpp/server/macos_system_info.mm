@@ -13,8 +13,8 @@ namespace lemon {
 
 std::vector<GPUInfo> MacOSSystemInfo::detect_metal_gpus() {
     std::vector<GPUInfo> gpus;
-    //Check to make sure we are on atleast version 10.5 to support the API calls to MTLDevice
-    if (@available(macOS 10.5, *)) {
+    //Check to make sure we are on at least version 10.11 to support Metal API
+    if (@available(macOS 10.11, *)) {
         // Use Metal to enumerate available GPUs
         id<MTLDevice> device = MTLCreateSystemDefaultDevice();
         if (device) {

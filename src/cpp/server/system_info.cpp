@@ -78,11 +78,14 @@ struct RecipeBackendDef {
 // Empty family set {} means "all families of that device type"
 static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     // llamacpp with multiple backends (order = preference: metal > vulkan > rocm > cpu)
-    {"llamacpp", "vulkan", {"windows", "linux", "macos"}, {
+    {"llamacpp", "metal", {"macos"},
+    {
+        {"metal", {}},
+    }},
+    {"llamacpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
         {"amd_igpu", {}},      // all iGPU families
         {"amd_dgpu", {}},      // all dGPU families
-        {"metal", {}},
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
         {"amd_igpu", {"gfx1150", "gfx1151"}},                      // STX Point/Halo iGPUs
@@ -612,17 +615,41 @@ json SystemInfo::build_recipes_info(const json& devices) {
     }
 
     // Metal - use metal for family detection
-    if (devices.contains("metal") && devices["metal"].is_object()) {
-        const auto& metal = devices["metal"];
-        if (metal.value("available", false)) {
-            std::string name = metal.value("name", "");
-            detected_devices.push_back({
-                "metal",
-                name,
-                get_device_family("metal", name, cpu_name),
-                true
-            });
+    if (devices.contains("metal")) {
+        if (devices["metal"].is_object()) {
+            // Single Metal device (legacy format)
+            const auto& metal = devices["metal"];
+            if (metal.value("available", false)) {
+                std::string name = metal.value("name", "");
+                detected_devices.push_back({
+                    "metal",
+                    name,
+                    get_device_family("metal", name, cpu_name),
+                    true
+                });
+            }
+        } else if (devices["metal"].is_array()) {
+            // Multiple Metal devices
+            for (const auto& metal : devices["metal"]) {
+                if (metal.value("available", false)) {
+                    std::string name = metal.value("name", "");
+                    if (!name.empty()) {
+                        detected_devices.push_back({
+                            "metal",
+                            name,
+                            get_device_family("metal", name, cpu_name),
+                            true
+                        });
+                    }
+                }
+            }
         }
+    }
+
+    // Special case: Metal is always available on macOS (system GPU)
+    if (current_os == "macos" && std::find_if(detected_devices.begin(), detected_devices.end(),
+        [](const DetectedDevice& d) { return d.type == "metal"; }) == detected_devices.end()) {
+        detected_devices.push_back({"metal", "Apple Metal", "metal", true});
     }
 
     // Build recipes from the definition table
