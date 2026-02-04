@@ -6,6 +6,7 @@ import { serverFetch } from './utils/serverConfig';
 import { downloadTracker } from './utils/downloadTracker';
 import { useModels } from './hooks/useModels';
 import ModelOptionsModal from "./ModelOptionsModal";
+import AddModelModal from "./AddModelModal";
 import { RecipeOptions, recipeOptionsToApi } from "./recipes/recipeOptions";
 
 interface ModelManagerProps {
@@ -24,16 +25,17 @@ interface ModelRegistrationData {
   reranking?: boolean;
 }
 
-const createEmptyModelForm = () => ({
-  name: '',
-  checkpoint: '',
-  recipe: 'llamacpp',
-  mmproj: '',
-  reasoning: false,
-  vision: false,
-  embedding: false,
-  reranking: false,
-});
+// Type for model installation data from AddModelModal
+interface ModelInstallData {
+  name: string;
+  checkpoint: string;
+  recipe: string;
+  mmproj?: string;
+  reasoning?: boolean;
+  vision?: boolean;
+  embedding?: boolean;
+  reranking?: boolean;
+}
 
 const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) => {
   // Get shared model data from context
@@ -42,13 +44,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['all']));
   const [organizationMode, setOrganizationMode] = useState<'recipe' | 'category'>('recipe');
   const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
-  const [showAddModelForm, setShowAddModelForm] = useState(false);
+  const [showAddModelModal, setShowAddModelModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [loadedModels, setLoadedModels] = useState<Set<string>>(new Set());
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const [showModelOptionsModal, setShowModelOptionsModal] = useState(false);
-  const [newModel, setNewModel] = useState(createEmptyModelForm);
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -291,61 +292,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     }
   };
 
-  const resetNewModelForm = () => {
-    setNewModel(createEmptyModelForm());
-    setShowAddModelForm(false);
-  };
-
-  const handleInstallModel = () => {
-    const trimmedName = newModel.name.trim();
-    const trimmedCheckpoint = newModel.checkpoint.trim();
-    const trimmedRecipe = newModel.recipe.trim();
-    const trimmedMmproj = newModel.mmproj.trim();
-
-    if (!trimmedName) {
-      showWarning('Model name is required.');
-      return;
-    }
-
-    if (!trimmedCheckpoint) {
-      showWarning('Checkpoint is required.');
-      return;
-    }
-
-    if (!trimmedRecipe) {
-      showWarning('Recipe is required.');
-      return;
-    }
-
-    // Validate GGUF checkpoint format
-    if (trimmedCheckpoint.toLowerCase().includes('gguf') && !trimmedCheckpoint.includes(':')) {
-      showWarning('GGUF checkpoints must include a variant using the CHECKPOINT:VARIANT syntax');
-      return;
-    }
-
-    // Close the form and start the download
-    const modelName = `user.${trimmedName}`;
-    resetNewModelForm();
-
-    // Use the same download flow as registered models, but include registration data
-    handleDownloadModel(modelName, {
-      checkpoint: trimmedCheckpoint,
-      recipe: trimmedRecipe,
-      mmproj: trimmedMmproj || undefined,
-      reasoning: newModel.reasoning,
-      vision: newModel.vision,
-      embedding: newModel.embedding,
-      reranking: newModel.reranking,
-    });
-  };
-
-  const handleInputChange = (field: string, value: string | boolean) => {
-    setNewModel(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
   const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData) => {
     try {
       // For registered models, verify metadata exists; for new models, we're registering now
@@ -520,6 +466,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       });
     }
   }, [modelsData, showError, showSuccess, showWarning, fetchCurrentLoadedModel]);
+
+  const handleInstallModel = useCallback((modelData: ModelInstallData) => {
+    // Close the modal
+    setShowAddModelModal(false);
+
+    // Generate the model name with user. prefix
+    const modelName = `user.${modelData.name}`;
+
+    // Use the same download flow as registered models, but include registration data
+    handleDownloadModel(modelName, {
+      checkpoint: modelData.checkpoint,
+      recipe: modelData.recipe,
+      mmproj: modelData.mmproj,
+      reasoning: modelData.reasoning,
+      vision: modelData.vision,
+      embedding: modelData.embedding,
+      reranking: modelData.reranking,
+    });
+  }, [handleDownloadModel]);
 
   // Separate useEffect for download resume/retry to avoid stale closure issues
   useEffect(() => {
@@ -966,128 +931,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       </div>
 
       <div className="model-manager-footer">
-        {!showAddModelForm ? (
-          <button
-            className="add-model-button"
-            onClick={() => {
-              setNewModel(createEmptyModelForm());
-              setShowAddModelForm(true);
-            }}
-          >
-            Add a model
-          </button>
-        ) : (
-          <div className="add-model-form">
-            <div className="form-section">
-              <label className="form-label" title="A unique name to identify your model in the catalog">Model Name</label>
-              <div className="input-with-prefix">
-                <span className="input-prefix">user.</span>
-                <input
-                  type="text"
-                  className="form-input with-prefix"
-                  placeholder="Gemma-3-12b-it-GGUF"
-                  value={newModel.name}
-                  onChange={(e) => handleInputChange('name', e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="form-section">
-              <label className="form-label" title="Hugging Face model path (repo/model:quantization)">Checkpoint</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="unsloth/gemma-3-12b-it-GGUF:Q4_0"
-                value={newModel.checkpoint}
-                onChange={(e) => handleInputChange('checkpoint', e.target.value)}
-              />
-            </div>
-
-            <div className="form-section">
-              <label className="form-label" title="Inference backend to use for this model">Recipe</label>
-              <select
-                className="form-input form-select"
-                value={newModel.recipe}
-                onChange={(e) => handleInputChange('recipe', e.target.value)}
-              >
-                <option value="">Select a recipe...</option>
-                <option value="llamacpp">Llama.cpp GPU</option>
-                <option value="flm">FastFlowLM NPU</option>
-                <option value="oga-cpu">ONNX Runtime CPU</option>
-                <option value="oga-hybrid">ONNX Runtime Hybrid</option>
-                <option value="oga-npu">ONNX Runtime NPU</option>
-              </select>
-            </div>
-
-            <div className="form-section">
-              <label className="form-label">More info</label>
-              <div className="form-subsection">
-                <label className="form-label-secondary" title="Multimodal projection file for vision models">mmproj file (Optional)</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="mmproj-F16.gguf"
-                  value={newModel.mmproj}
-                  onChange={(e) => handleInputChange('mmproj', e.target.value)}
-                />
-              </div>
-
-              <div className="form-checkboxes">
-                <label className="checkbox-label" title="Enable if model supports chain-of-thought reasoning">
-                  <input
-                    type="checkbox"
-                    checked={newModel.reasoning}
-                    onChange={(e) => handleInputChange('reasoning', e.target.checked)}
-                  />
-                  <span>Reasoning</span>
-                </label>
-
-                <label className="checkbox-label" title="Enable if model can process images">
-                  <input
-                    type="checkbox"
-                    checked={newModel.vision}
-                    onChange={(e) => handleInputChange('vision', e.target.checked)}
-                  />
-                  <span>Vision</span>
-                </label>
-
-                <label className="checkbox-label" title="Enable if model generates text embeddings">
-                  <input
-                    type="checkbox"
-                    checked={newModel.embedding}
-                    onChange={(e) => handleInputChange('embedding', e.target.checked)}
-                  />
-                  <span>Embedding</span>
-                </label>
-
-                <label className="checkbox-label" title="Enable if model performs reranking">
-                  <input
-                    type="checkbox"
-                    checked={newModel.reranking}
-                    onChange={(e) => handleInputChange('reranking', e.target.checked)}
-                  />
-                  <span>Reranking</span>
-                </label>
-              </div>
-            </div>
-
-            <div className="form-actions">
-              <button
-                className="install-button"
-                onClick={handleInstallModel}
-              >
-                Install
-              </button>
-              <button
-                className="cancel-button"
-                onClick={resetNewModelForm}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
+        <button
+          className="add-model-button"
+          onClick={() => setShowAddModelModal(true)}
+        >
+          Add a model
+        </button>
       </div>
+
+      <AddModelModal
+        isOpen={showAddModelModal}
+        onClose={() => setShowAddModelModal(false)}
+        onInstall={handleInstallModel}
+      />
     </div>
   );
 };
