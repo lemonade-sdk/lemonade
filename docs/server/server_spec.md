@@ -858,7 +858,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | `model_name` | Yes | [Lemonade Server model name](./server_models.md) to load. |
 | `ctx_size` | No | Context size for the model. Overrides the default value for this model. |
 | `llamacpp_backend` | No | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). Only applies to llamacpp models. |
-| `llamacpp_args` | No | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`. |
+| `llamacpp_args` | No | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`, `--jinja`. |
 | `save_options` | No | Boolean. If true, saves `ctx_size`, `llamacpp_backend` and `llamacpp_args` to the `recipe_options.json` file. Any previously stored value for `model_name` is replaced with the parameters of this request. |
 
 **Setting Priority:**
