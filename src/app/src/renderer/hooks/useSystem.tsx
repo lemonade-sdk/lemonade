@@ -1,50 +1,50 @@
 import React, {createContext, useCallback, useContext, useEffect, useMemo, useState} from "react";
-import {fetchSystemInfoData, SystemInfo} from "../utils/systemData";
+import {fetchSystemInfoData, SystemInfo, Recipes} from "../utils/systemData";
 
 interface SystemContextValue {
   systemInfo?: SystemInfo;
   isLoading: boolean;
-  supportedEngines: InferenceEngine[]
+  supportedRecipes: SupportedRecipes;
   refresh: () => Promise<void>;
 }
 
-type InferenceEngine = 'ROCm' | 'Vulkan' | 'OGA' | 'Metal' | 'CPU'
+// Programmatic structure: recipe -> list of supported backends
+export interface SupportedRecipes {
+  [recipeName: string]: string[]; // e.g., { llamacpp: ['vulkan', 'rocm', 'cpu'], 'oga-hybrid': ['default'] }
+}
 
 const SystemContext = createContext<SystemContextValue | null>(null);
-const platform = window.api?.platform ?? navigator?.platform ?? '';
-const normalizedPlatform = platform.toLowerCase();
-const isMacPlatform = normalizedPlatform.includes('darwin') || normalizedPlatform.includes('mac');
-const isWindowsPlatform = normalizedPlatform.includes('win');
 
 export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({children}) => {
   const [systemInfo, setSystemInfo] = useState<SystemInfo>();
   const [isLoading, setIsLoading] = useState(true);
 
-  // return supported inference engines
-  const supportedEngines = useMemo<InferenceEngine[]>(() => {
-    let supportedEngines: Set<InferenceEngine> = new Set();
-    if (!systemInfo) return [];
+  // Programmatically extract supported recipes and backends
+  const supportedRecipes = useMemo<SupportedRecipes>(() => {
+    const result: SupportedRecipes = {};
 
-    const {amd_dgpu, amd_igpu, nvidia_dgpu, npu, cpu} = systemInfo.devices;
-    const amdDevices = [...amd_dgpu, amd_igpu];
+    const recipes = systemInfo?.recipes;
+    if (!recipes) return result;
 
-    amdDevices.forEach(device => {
-      if (!device.inference_engines) return;
-      if (device.inference_engines['llamacpp-rocm']?.available) supportedEngines.add('ROCm');
-      if (device.inference_engines['llamacpp-vulkan']?.available) supportedEngines.add('Vulkan');
-    });
+    // Iterate over all recipes dynamically
+    for (const [recipeName, recipe] of Object.entries(recipes)) {
+      if (!recipe?.backends) continue;
 
-    nvidia_dgpu.forEach(device => {
-      if (!device.inference_engines) return;
-      if (device.inference_engines['llamacpp-vulkan']?.available) supportedEngines.add('Vulkan');
-    });
+      // Collect all supported backends for this recipe (not just available/installed)
+      const supportedBackends: string[] = [];
+      for (const [backendName, backend] of Object.entries(recipe.backends)) {
+        if (backend?.supported) {
+          supportedBackends.push(backendName);
+        }
+      }
 
-    if (npu.available && npu.inference_engines.oga?.available) supportedEngines.add('OGA');
+      // Only include recipes that have at least one supported backend
+      if (supportedBackends.length > 0) {
+        result[recipeName] = supportedBackends;
+      }
+    }
 
-    if (isMacPlatform) supportedEngines.add('Metal');
-    if (cpu.available) supportedEngines.add ('CPU');
-
-    return [...supportedEngines];
+    return result;
   }, [systemInfo]);
 
   // Fetch system info from the server
@@ -69,7 +69,7 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({childre
 
   const value: SystemContextValue = {
     systemInfo,
-    supportedEngines,
+    supportedRecipes,
     isLoading,
     refresh,
   };

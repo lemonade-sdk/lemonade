@@ -4,13 +4,18 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 module.exports = (env, argv) => ({
   mode: argv.mode || 'development',
   entry: './src/renderer/index.tsx',
-  target: 'electron-renderer',
+  target: 'web',  // Changed from 'electron-renderer' to 'web' for browser
   devtool: argv.mode === 'production' ? false : 'source-map',
   module: {
     rules: [
       {
         test: /\.tsx?$/,
-        use: 'ts-loader',
+        use: {
+          loader: 'ts-loader',
+          options: {
+            transpileOnly: true,  // Skip type checking for faster builds
+          }
+        },
         exclude: /node_modules/,
       },
       {
@@ -36,6 +41,10 @@ module.exports = (env, argv) => ({
   },
   resolve: {
     extensions: ['.tsx', '.ts', '.js', '.jsx'],
+    modules: [
+      path.resolve(__dirname, 'node_modules'),  // web-app/node_modules
+      'node_modules'  // fallback to standard resolution
+    ],
     fallback: {
       "path": false,
       "fs": false,
@@ -48,7 +57,7 @@ module.exports = (env, argv) => ({
   },
   output: {
     filename: 'renderer.bundle.js',
-    path: path.resolve(__dirname, 'dist/renderer'),
+    path: process.env.WEBPACK_OUTPUT_PATH || path.resolve(__dirname, 'dist/renderer'),
   },
   plugins: [
     new HtmlWebpackPlugin({
