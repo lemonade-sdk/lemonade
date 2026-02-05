@@ -392,7 +392,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       );
 
       if (ggufFiles.length > 0) {
-        const quantizations = ggufFiles.map(f => {
+        const allQuantizations = ggufFiles.map(f => {
           const filename = f.rfilename;
           const quantMatch = filename.match(/[-._](Q\d+(?:_\d)?(?:_[KS])?(?:_[MSL])?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16)[-._]/i) ||
             filename.match(/[-._](Q\d+(?:_\d)?(?:_[KS])?(?:_[MSL])?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16)\.gguf$/i);
@@ -402,26 +402,34 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
           return { filename, quantization, size };
         });
 
-        setHfModelBackends(prev => ({
-          ...prev,
-          [modelId]: { recipe: 'llamacpp', label: 'GGUF', quantizations }
-        }));
+        // Filter out "Unknown" quantizations - these are false positives
+        const quantizations = allQuantizations.filter(q => q.quantization !== 'Unknown');
 
-        // Auto-select first quantization and set initial size
-        if (quantizations.length > 0 && !hfSelectedQuantizations[modelId]) {
-          setHfSelectedQuantizations(prev => ({
+        // If all quantizations are "Unknown", this is a false positive - skip GGUF detection
+        if (quantizations.length === 0) {
+          // Fall through to check other formats
+        } else {
+          setHfModelBackends(prev => ({
             ...prev,
-            [modelId]: quantizations[0].filename
+            [modelId]: { recipe: 'llamacpp', label: 'GGUF', quantizations }
           }));
-          // Set initial size for first quantization
-          if (quantizations[0].size !== undefined) {
-            setHfModelSizes(prev => ({
+
+          // Auto-select first quantization and set initial size
+          if (quantizations.length > 0 && !hfSelectedQuantizations[modelId]) {
+            setHfSelectedQuantizations(prev => ({
               ...prev,
-              [modelId]: quantizations[0].size
+              [modelId]: quantizations[0].filename
             }));
+            // Set initial size for first quantization
+            if (quantizations[0].size !== undefined) {
+              setHfModelSizes(prev => ({
+                ...prev,
+                [modelId]: quantizations[0].size
+              }));
+            }
           }
+          return;
         }
-        return;
       }
 
       // Check for ONNX files
@@ -488,12 +496,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         return;
       }
 
-      // Default fallback
-      if (tags.includes('text-generation') || tags.includes('conversational')) {
-        setHfModelBackends(prev => ({ ...prev, [modelId]: { recipe: 'llamacpp', label: 'Needs GGUF' } }));
-      } else {
-        setHfModelBackends(prev => ({ ...prev, [modelId]: null }));
-      }
+      // No supported format found - mark as unsupported
+      setHfModelBackends(prev => ({ ...prev, [modelId]: null }));
     } catch (error) {
       console.error('Error detecting backend:', error);
       setHfModelBackends(prev => ({ ...prev, [modelId]: null }));
@@ -1372,17 +1376,34 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                 <circle cx="82.4" cy="36.8" r="6.9"/>
               </svg>
               <span className="category-label">Import from Hugging Face</span>
-              {hfSearchResults.length > 0 && (
-                <span className="category-count">({hfSearchResults.length})</span>
-              )}
+              {(() => {
+                const validCount = hfSearchResults.filter(m => {
+                  const b = hfModelBackends[m.id];
+                  return b === undefined || b !== null;
+                }).length;
+                return validCount > 0 ? <span className="category-count">({validCount})</span> : null;
+              })()}
             </div>
 
             <div className="model-list hf-model-list">
-              {!isSearchingHF && hfSearchResults.length === 0 && searchQuery.length >= 2 && (
-                <div className="hf-empty">No results on Hugging Face</div>
-              )}
+              {(() => {
+                const validResults = hfSearchResults.filter(m => {
+                  const b = hfModelBackends[m.id];
+                  return b === undefined || b !== null;
+                });
+                return !isSearchingHF && validResults.length === 0 && searchQuery.length >= 2 && (
+                  <div className="hf-empty">No compatible models found on Hugging Face</div>
+                );
+              })()}
 
-              {hfSearchResults.map(hfModel => {
+              {hfSearchResults
+                .filter(hfModel => {
+                  // Only show models with a valid/supported backend
+                  const backend = hfModelBackends[hfModel.id];
+                  // Show if still detecting or if backend is valid (not null)
+                  return backend === undefined || backend !== null;
+                })
+                .map(hfModel => {
                 const hfAvatarUrl = avatarCache[hfModel.id.split('/')[0]];
                 const backend = hfModelBackends[hfModel.id];
                 const isDetecting = detectingBackendFor === hfModel.id;
