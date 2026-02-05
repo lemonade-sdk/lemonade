@@ -13,7 +13,6 @@ Usage:
 
 import asyncio
 import base64
-import json
 import os
 import struct
 import sys
@@ -23,7 +22,7 @@ import wave
 
 import requests
 import urllib.request
-import websockets
+from openai import AsyncOpenAI
 
 from utils.server_base import (
     ServerTestBase,
@@ -297,50 +296,52 @@ class WhisperTests(ServerTestBase):
 
         return struct.pack(f"<{len(samples)}h", *samples)
 
+    def _make_openai_client(self):
+        """Create an AsyncOpenAI client configured for the local server."""
+        return AsyncOpenAI(
+            api_key="unused",
+            base_url=f"http://localhost:{PORT}/api/v1",
+            websocket_base_url=f"ws://localhost:{WS_PORT}",
+        )
+
     def test_006_realtime_websocket_connect(self):
-        """Test WebSocket connection and session creation."""
+        """Test WebSocket connection and session creation via OpenAI SDK."""
         asyncio.run(self._test_006_realtime_websocket_connect())
 
     async def _test_006_realtime_websocket_connect(self):
-        ws_url = f"ws://localhost:{WS_PORT}/realtime?model={WHISPER_MODEL}"
+        client = self._make_openai_client()
 
-        print(f"[INFO] Connecting to WebSocket at {ws_url}")
-        async with websockets.connect(ws_url) as ws:
+        print(f"[INFO] Connecting via OpenAI SDK (ws://localhost:{WS_PORT})")
+        async with client.beta.realtime.connect(model=WHISPER_MODEL) as conn:
             # Should receive session.created on connect
-            raw = await asyncio.wait_for(ws.recv(), timeout=10)
-            msg = json.loads(raw)
+            event = await asyncio.wait_for(conn.recv(), timeout=10)
             self.assertEqual(
-                msg["type"],
+                event.type,
                 "session.created",
-                f"Expected session.created, got {msg['type']}",
+                f"Expected session.created, got {event.type}",
             )
-            self.assertIn("session", msg, "session.created should contain session info")
-            print(f"[OK] Session created: {msg['session']}")
+            self.assertTrue(
+                hasattr(event, "session"),
+                "session.created should contain session info",
+            )
+            print(f"[OK] Session created: {event.session}")
 
             # Send session update with model
-            await ws.send(
-                json.dumps(
-                    {
-                        "type": "session.update",
-                        "session": {"model": WHISPER_MODEL},
-                    }
-                )
-            )
+            await conn.session.update(session={"model": WHISPER_MODEL})
 
             # Should receive session.updated
-            raw = await asyncio.wait_for(ws.recv(), timeout=10)
-            msg = json.loads(raw)
+            event = await asyncio.wait_for(conn.recv(), timeout=10)
             self.assertEqual(
-                msg["type"],
+                event.type,
                 "session.updated",
-                f"Expected session.updated, got {msg['type']}",
+                f"Expected session.updated, got {event.type}",
             )
             print(f"[OK] Session updated with model {WHISPER_MODEL}")
 
         print("[OK] WebSocket connection lifecycle passed")
 
     def test_007_realtime_websocket_transcription(self):
-        """Test full realtime transcription: send audio chunks, receive transcript."""
+        """Test full realtime transcription via OpenAI SDK: send audio chunks, receive transcript."""
         asyncio.run(self._test_007_realtime_websocket_transcription())
 
     async def _test_007_realtime_websocket_transcription(self):
@@ -365,60 +366,43 @@ class WhisperTests(ServerTestBase):
         ]
         print(f"[INFO] Split into {len(chunks)} chunks")
 
-        ws_url = f"ws://localhost:{WS_PORT}/realtime?model={WHISPER_MODEL}"
+        client = self._make_openai_client()
 
-        async with websockets.connect(ws_url) as ws:
+        async with client.beta.realtime.connect(model=WHISPER_MODEL) as conn:
             # Wait for session created
-            raw = await asyncio.wait_for(ws.recv(), timeout=10)
-            msg = json.loads(raw)
-            self.assertEqual(msg["type"], "session.created")
+            event = await asyncio.wait_for(conn.recv(), timeout=10)
+            self.assertEqual(event.type, "session.created")
 
             # Configure model
-            await ws.send(
-                json.dumps(
-                    {
-                        "type": "session.update",
-                        "session": {"model": WHISPER_MODEL},
-                    }
-                )
-            )
-            raw = await asyncio.wait_for(ws.recv(), timeout=10)
-            msg = json.loads(raw)
-            self.assertEqual(msg["type"], "session.updated")
+            await conn.session.update(session={"model": WHISPER_MODEL})
+            event = await asyncio.wait_for(conn.recv(), timeout=10)
+            self.assertEqual(event.type, "session.updated")
 
             # Send all audio chunks
             print(f"[INFO] Sending {len(chunks)} audio chunks...")
             for chunk in chunks:
                 b64 = base64.b64encode(chunk).decode("ascii")
-                await ws.send(
-                    json.dumps(
-                        {
-                            "type": "input_audio_buffer.append",
-                            "audio": b64,
-                        }
-                    )
-                )
+                await conn.input_audio_buffer.append(audio=b64)
                 # Small delay to simulate real-time streaming
                 await asyncio.sleep(0.01)
 
             # Commit the audio buffer to force transcription
             print("[INFO] Committing audio buffer...")
-            await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+            await conn.input_audio_buffer.commit()
 
             # Collect messages until we get the transcription result
             transcript = None
             deadline = time.time() + TIMEOUT_MODEL_OPERATION
             while time.time() < deadline:
                 try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=30)
-                    msg = json.loads(raw)
-                    print(f"[INFO] Received message: {msg['type']}")
+                    event = await asyncio.wait_for(conn.recv(), timeout=30)
+                    print(f"[INFO] Received message: {event.type}")
 
                     if (
-                        msg["type"]
+                        event.type
                         == "conversation.item.input_audio_transcription.completed"
                     ):
-                        transcript = msg.get("transcript", "")
+                        transcript = getattr(event, "transcript", "")
                         break
                 except asyncio.TimeoutError:
                     break
