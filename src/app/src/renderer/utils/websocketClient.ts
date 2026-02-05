@@ -4,7 +4,8 @@
  */
 
 export interface TranscriptionCallbacks {
-  onTranscription: (text: string) => void;
+  /** Called with transcription text. isFinal=false for interim results that replace previous interim. */
+  onTranscription: (text: string, isFinal: boolean) => void;
   onSpeechEvent: (event: 'started' | 'stopped') => void;
   onError?: (error: string) => void;
   onConnected?: () => void;
@@ -56,9 +57,16 @@ export class TranscriptionWebSocket {
           case 'input_audio_buffer.speech_stopped':
             callbacks.onSpeechEvent('stopped');
             break;
+          case 'conversation.item.input_audio_transcription.delta':
+            // Interim result - replaces previous interim text
+            if (typeof msg.delta === 'string') {
+              callbacks.onTranscription(msg.delta, false);
+            }
+            break;
           case 'conversation.item.input_audio_transcription.completed':
+            // Final result for this utterance
             if (typeof msg.transcript === 'string') {
-              callbacks.onTranscription(msg.transcript);
+              callbacks.onTranscription(msg.transcript, true);
             }
             break;
           case 'error':

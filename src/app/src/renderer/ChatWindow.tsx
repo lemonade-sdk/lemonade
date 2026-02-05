@@ -1311,19 +1311,27 @@ const sendMessage = async () => {
   const { isRecording: isMicActive, startRecording, stopRecording, error: micError } =
     useAudioCapture(handleAudioChunk, handleAudioLevel);
 
-  const handleLiveTranscription = useCallback((text: string) => {
+  const handleLiveTranscription = useCallback((text: string, isFinal: boolean) => {
     const trimmedText = text.trim();
     if (!trimmedText) return;
 
     if (isLiveRecordingRef.current) {
-      // During recording: accumulate in live transcript and keep ref in sync
-      setLiveTranscript(prev => {
-        const next = prev ? `${prev} ${trimmedText}` : trimmedText;
-        liveTranscriptRef.current = next;
-        return next;
-      });
+      if (isFinal) {
+        // Final result: append to accumulated text and clear interim
+        setLiveTranscript(prev => {
+          const next = prev ? `${prev} ${trimmedText}` : trimmedText;
+          liveTranscriptRef.current = next;
+          return next;
+        });
+      } else {
+        // Interim result: show current accumulated + this interim (will be replaced by next interim)
+        const accumulated = liveTranscriptRef.current;
+        const display = accumulated ? `${accumulated} ${trimmedText}` : trimmedText;
+        setLiveTranscript(display);
+        // Don't update liveTranscriptRef - interim text is temporary
+      }
     } else {
-      // After stop: this is a late-arriving commit response.
+      // After stop: this is a late-arriving response.
       // Append to the last "Live Recording" history entry instead of creating a new one.
       setTranscriptionHistory(h => {
         if (h.length > 0 && h[h.length - 1].filename === 'Live Recording') {
