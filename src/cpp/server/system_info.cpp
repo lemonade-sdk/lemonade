@@ -115,7 +115,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     }},
 
     // stable-diffusion.cpp - Windows/Linux x86_64
-    {"sd-cpp", "default", {"windows", "linux"}, {
+    {"sd-cpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
     }},
 
@@ -295,7 +295,7 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         return SystemInfo::is_kokoro_installed(backend);
     }
     if (recipe == "sd-cpp") {
-        return SystemInfo::is_sdcpp_installed("cpu");
+        return SystemInfo::is_sdcpp_installed(backend);
     }
     if (recipe == "flm") {
         // Check if FLM is installed
@@ -335,7 +335,7 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
         return SystemInfo::get_kokoro_version(backend);
     }
     if (recipe == "sd-cpp") {
-        return SystemInfo::get_sdcpp_version("cpu");
+        return SystemInfo::get_sdcpp_version(backend);
     }
     if (recipe == "flm") {
         return SystemInfo::get_flm_version();
@@ -904,23 +904,19 @@ static std::string read_version_file(const fs::path& version_file) {
 }
 
 std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
-    fs::path bin_dir = utils::get_downloaded_bin_dir();
-    return read_version_file(bin_dir / "llama" / backend / "version.txt");
+    return read_version_file(BackendUtils::get_installed_version_file(LlamaCppServer::SPEC, backend));
 }
 
 std::string SystemInfo::get_whispercpp_version(const std::string& backend) {
-    fs::path bin_dir = utils::get_downloaded_bin_dir();
-    return read_version_file(bin_dir / "whisper" / "version.txt");
+    return read_version_file(BackendUtils::get_installed_version_file(WhisperServer::SPEC, backend));
 }
 
 std::string SystemInfo::get_kokoro_version(const std::string& backend) {
-    fs::path bin_dir = utils::get_downloaded_bin_dir();
-    return read_version_file(bin_dir / "kokoro" / backend / "version.txt");
+    return read_version_file(BackendUtils::get_installed_version_file(KokoroServer::SPEC, backend));
 }
 
 std::string SystemInfo::get_sdcpp_version(const std::string& backend) {
-    fs::path bin_dir = utils::get_downloaded_bin_dir();
-    return read_version_file(bin_dir / "sd-cpp" / "version.txt");
+    return read_version_file(BackendUtils::get_installed_version_file(SDServer::SPEC, backend));
 }
 
 std::string SystemInfo::get_oga_version() {

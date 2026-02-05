@@ -12,7 +12,9 @@
     "rocm": "v1.8.2",
     "npu": "v1.8.2"
   },
-  "sd-cpp": "master-471-7010bb4",
+  "sd-cpp": {
+    "cpu": "master-471-7010bb4"
+  },
   "ryzenai-server": "v1.0.2",
   "flm": {
     "version": "v0.9.31",

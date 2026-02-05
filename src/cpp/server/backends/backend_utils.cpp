@@ -175,6 +175,15 @@ namespace lemon::backends {
         throw std::runtime_error(spec.binary + " not found in install directory: " + install_dir);
     }
 
+    static std::string get_version_file(std::string& install_dir) {
+        return (fs::path(install_dir) / "version.txt").string();
+    }
+
+    std::string BackendUtils::get_installed_version_file(const BackendSpec& spec, const std::string& variant) {
+        std::string install_dir = get_install_directory(spec.dir_name, variant);
+        return get_version_file(install_dir);
+    }
+
 #ifndef LEMONADE_TRAY
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& variant) {
         std::string config_path = utils::get_resource_path("resources/backend_versions.json");
@@ -197,12 +206,6 @@ namespace lemon::backends {
         return version;
     }
 
-    /*static std::string get_installed_version_by_dir(std::string& install_dir) {
-        return (fs::path(install_dir) / "version.txt").string();
-    }
-
-    std::string BackendUtils::get_installed_version(const BackendSpec& spec, const std::string& variant) {
-    }*/
     void BackendUtils::install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& variant) {
         std::string install_dir;
         std::string version_file;
@@ -211,7 +214,7 @@ namespace lemon::backends {
 
         if (needs_install) {
             install_dir = get_install_directory(spec.dir_name, variant);
-            version_file = (fs::path(install_dir) / "version.txt").string();
+            version_file = get_version_file(install_dir);
 
             // Check if already installed with correct version
             exe_path = find_executable_in_install_dir(install_dir, spec.binary);
