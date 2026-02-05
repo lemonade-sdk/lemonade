@@ -108,12 +108,12 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"cpu", {"x86_64"}},
     }},
 
-    // stable-diffusion.cpp with multiple backends (order = preference: rocm > cpu)
     {"sd-cpp", "rocm", {"windows", "linux"}, {
-        {"amd_igpu", {"gfx1150", "gfx1151"}},                      // STX Point/Halo iGPUs
-        {"amd_dgpu", {"gfx110X", "gfx120X"}},                      // RDNA3/RDNA4 dGPUs
+        {"amd_igpu", {"gfx1150", "gfx1151"}},                     
+        {"amd_dgpu", {"gfx110X", "gfx120X"}},                      
     }},
-    {"sd-cpp", "cpu", {"windows", "linux"}, {
+
+    {"sd-cpp", "default", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
     }},
 
