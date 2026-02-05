@@ -10,6 +10,7 @@ Tests the lemonade-server CLI commands directly (not HTTP API):
 - serve
 - stop
 - run
+- recipes
 
 Two test modes:
 1. Persistent server mode (default): Server starts at beginning, runs all tests, stops at end
@@ -36,6 +37,7 @@ from utils.test_models import (
     TIMEOUT_DEFAULT,
     get_default_server_binary,
 )
+from utils.server_base import _stop_server_via_systemd
 
 # Global configuration
 _config = {
@@ -149,7 +151,13 @@ def wait_for_server_stop(port=PORT, timeout=30):
 
 
 def stop_server():
-    """Stop the server using CLI."""
+    """Stop the server using systemctl on Linux, or CLI as fallback."""
+    # Try systemd first on Linux
+    if _stop_server_via_systemd():
+        wait_for_server_stop()
+        return
+
+    # Try CLI stop command as fallback
     try:
         run_cli_command(["stop"], timeout=30)
         wait_for_server_stop()
@@ -292,6 +300,58 @@ class PersistentServerCLITests(CLITestBase):
         # Re-pull for other tests
         run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
 
+    def test_006_recipes(self):
+        """Test recipes command shows available recipes and their status."""
+        result = self.assertCommandSucceeds(["recipes"])
+        output = result.stdout
+
+        # Recipes command should show a table with recipe information
+        self.assertTrue(
+            len(output) > 0,
+            "Recipes command should produce output",
+        )
+
+        # Should contain known recipe names
+        known_recipes = [
+            "llamacpp",
+            "whispercpp",
+            "sd-cpp",
+            "flm",
+            "oga-npu",
+            "oga-hybrid",
+            "oga-cpu",
+        ]
+        for recipe in known_recipes:
+            self.assertTrue(
+                recipe in output.lower(),
+                f"Output should contain '{recipe}' recipe: {output}",
+            )
+
+        # Should contain status indicators (installed, supported, unsupported)
+        output_lower = output.lower()
+        has_status = (
+            "installed" in output_lower
+            or "supported" in output_lower
+            or "unsupported" in output_lower
+        )
+        self.assertTrue(
+            has_status,
+            f"Output should contain status indicators: {output}",
+        )
+
+        # Should contain backend names
+        has_backend = (
+            "vulkan" in output_lower
+            or "cpu" in output_lower
+            or "default" in output_lower
+        )
+        self.assertTrue(
+            has_backend,
+            f"Output should contain backend names: {output}",
+        )
+
+        print(f"[OK] Recipes command output shows recipe/backend status")
+
 
 class EphemeralCLITests(CLITestBase):
     """
@@ -402,6 +462,37 @@ class EphemeralCLITests(CLITestBase):
             or result.returncode != 0,
             f"Status should indicate server is not running: {result.stdout}",
         )
+
+    def test_006_recipes_no_server(self):
+        """Test recipes command works without server running."""
+        self.assertFalse(is_server_running(), "Server should not be running")
+
+        result = self.assertCommandSucceeds(["recipes"])
+        output = result.stdout
+
+        # Recipes command should work without server and show recipe info
+        self.assertTrue(
+            len(output) > 0,
+            "Recipes command should produce output",
+        )
+
+        # Should contain known recipe names
+        known_recipes = [
+            "llamacpp",
+            "whispercpp",
+            "sd-cpp",
+            "flm",
+            "oga-npu",
+            "oga-hybrid",
+            "oga-cpu",
+        ]
+        for recipe in known_recipes:
+            self.assertTrue(
+                recipe in output.lower(),
+                f"Output should contain '{recipe}' recipe: {output}",
+            )
+
+        print("[OK] Recipes command works without server running")
 
 
 def run_cli_tests():

@@ -188,7 +188,6 @@ function renderDownload() {
         // Install server first, then the desktop app (which connects to the server)
         snapCommands = [
           'sudo snap install lemonade-server',
-          'sudo snap connect lemonade-server:process-control',
           'sudo snap install lemonade'
         ];
         debFile = `lemonade_${version}_amd64.deb`;
@@ -196,7 +195,6 @@ function renderDownload() {
         // For Server Only, just need the server snap
         snapCommands = [
           'sudo snap install lemonade-server',
-          'sudo snap connect lemonade-server:process-control'
         ];
         debFile = `lemonade-server-minimal_${version}_amd64.deb`;
       }
@@ -209,7 +207,7 @@ function renderDownload() {
         installCmdDiv.style.display = 'block';
         const commands = [
           `wget ${downloadUrl}`,
-          `sudo dpkg -i ${debFile}`
+          `sudo apt install ./${debFile}`
         ];
 
         installCmdDiv.innerHTML = `

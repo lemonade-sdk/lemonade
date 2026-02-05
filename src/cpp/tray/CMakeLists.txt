@@ -23,6 +23,7 @@ if(WIN32)
         user32
         shell32
         ole32
+        oleaut32
         comctl32
     )
 
@@ -36,10 +37,14 @@ elseif(APPLE)
 
     find_library(COCOA_LIBRARY Cocoa REQUIRED)
     find_library(FOUNDATION_LIBRARY Foundation REQUIRED)
+    find_library(USERNOTIFICATIONS_LIBRARY UserNotifications REQUIRED)
+    find_library(METAL_LIBRARY Metal REQUIRED)
 
     set(PLATFORM_LIBS
         ${COCOA_LIBRARY}
         ${FOUNDATION_LIBRARY}
+        ${USERNOTIFICATIONS_LIBRARY}
+        ${METAL_LIBRARY}
     )
 
     # Enable Objective-C++ compilation
@@ -69,8 +74,27 @@ set(COMMON_SOURCES
     server_manager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/cli_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/recipe_options.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server/system_info.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/path_utils.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/wmi_helper.cpp
     platform/tray_factory.cpp
 )
+
+# macOS-specific sources
+if(APPLE)
+    list(APPEND COMMON_SOURCES
+        LemonadeServiceManager.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/../server/macos_system_info.mm
+    )
+
+    # Enable Objective-C++ compilation for macOS files
+    set_source_files_properties(
+        LemonadeServiceManager.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/../server/macos_system_info.mm
+        PROPERTIES
+        COMPILE_FLAGS "-x objective-c++"
+    )
+endif()
 
 # Add version resource file on Windows
 if(WIN32)
@@ -114,6 +138,11 @@ if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
 endif()
 
 target_compile_definitions(lemonade-server PRIVATE LEMONADE_TRAY)
+
+# Enable ARC (Automatic Reference Counting) for macOS Objective-C++ files
+if(APPLE)
+    target_compile_options(lemonade-server PRIVATE -fobjc-arc)
+endif()
 
 # Set output directory to build root for all platforms
 # Windows uses Debug/Release subdirectories (multi-config generator)
@@ -197,12 +226,56 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(lemonade-server PRIVATE
         Threads::Threads
     )
+
+    # Optional: systemd detection for service status
+    find_package(PkgConfig QUIET)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(SYSTEMD QUIET libsystemd)
+        if(SYSTEMD_FOUND)
+            target_include_directories(lemonade-server PRIVATE ${SYSTEMD_INCLUDE_DIRS})
+            target_link_libraries(lemonade-server PRIVATE ${SYSTEMD_LIBRARIES})
+            target_compile_definitions(lemonade-server PRIVATE HAVE_SYSTEMD)
+        endif()
+    endif()
 endif()
 
-# Install target
-install(TARGETS lemonade-server
-    RUNTIME DESTINATION bin
-)
+# Install target (only on non-macOS platforms where main CMakeLists doesn't handle it)
+if(NOT APPLE)
+    install(TARGETS lemonade-server
+        RUNTIME DESTINATION bin
+    )
+endif()
+
+# ============================================================
+# macOS Signing (Must be in this file where target is defined)
+# ============================================================
+if(APPLE AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    message(STATUS "Configuring signing for Tray Application (lemonade-server)")
+
+    # Inherit variables from Parent CMake
+    if(NOT DEFINED SIGNING_IDENTITY OR NOT DEFINED ENTITLEMENTS_PATH)
+        message(FATAL_ERROR "Signing variables missing! Ensure add_subdirectory(tray) is called AFTER identities are set in root CMakeLists.txt")
+    endif()
+
+    add_custom_command(TARGET lemonade-server POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "--- Signing lemonade-server (Tray) ---"
+        COMMAND codesign --force --options runtime --timestamp --entitlements "${ENTITLEMENTS_PATH}" --sign "${SIGNING_IDENTITY}" -v $<TARGET_FILE:lemonade-server>
+        COMMENT "Signing lemonade-server with Hardened Runtime"
+        VERBATIM
+    )
+endif()
+
+# Create symlink in standard bin path only if not installing to /usr
+if(UNIX AND NOT APPLE AND NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+    install(CODE "
+        file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+                ${CMAKE_INSTALL_PREFIX}/bin/lemonade-server
+                \"\$ENV{DESTDIR}/usr/bin/lemonade-server\"
+        )
+    ")
+endif()
 
 # Note: Icon resources are copied by parent CMakeLists.txt
 

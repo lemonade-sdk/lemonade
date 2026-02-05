@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.lemonade.tray</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/lemonade-server</string>
+        <string>tray</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/lemonade/lemonade-tray.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/lemonade/lemonade-tray.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+        <key>HF_HOME</key>
+        <string>/Library/Application Support/lemonade</string>
+    </dict>
+</dict>
+</plist>

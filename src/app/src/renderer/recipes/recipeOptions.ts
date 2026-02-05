@@ -1,21 +1,42 @@
-import * as llamacpp from "./llamacpp/recipeOptions";
-import * as whispercpp from "./whispercpp/recipeOptions";
-import * as fastflow from "./fastflow/recipeOptions";
-import * as onnx from "./onnx/recipeOptions";
-import * as sdcpp from "./sdcpp/recipeOptions";
+/**
+ * Recipe Options - Re-exports from central config
+ *
+ * This file exists for backward compatibility.
+ * All types and utilities are defined in recipeOptionsConfig.ts
+ */
 
-export interface NumericOption {
-    value: number;
-    useDefault: boolean;
-}
-export interface StringOption {
-    value: string;
-    useDefault: boolean;
-}
+export {
+  // Base option types
+  NumericOption,
+  StringOption,
+  BooleanOption,
 
-export interface BooleanOption {
-    value: boolean;
-    useDefault: boolean;
-}
+  // Recipe-specific interfaces
+  LlamaOptions,
+  WhisperOptions,
+  FlmOptions,
+  OgaOptions,
+  OgaRecipe,
+  StableDiffusionOptions,
 
-export type RecipeOptions = llamacpp.LlamaOptions | whispercpp.WhisperOptions | fastflow.FlmOptions | onnx.OgaOptions | sdcpp.StableDiffusionOptions;
+  // Union type
+  RecipeOptions,
+
+  // Constants
+  OGA_RECIPES,
+
+  // Utilities
+  isOgaRecipe,
+  getOptionsForRecipe,
+  getOptionDefinition,
+  clampOptionValue,
+  createDefaultOptions,
+  apiToRecipeOptions,
+  recipeOptionsToApi,
+  toApiOptionName,
+  toFrontendOptionName,
+
+  // Config
+  OPTION_DEFINITIONS,
+  RECIPE_OPTIONS_MAP,
+} from './recipeOptionsConfig';
