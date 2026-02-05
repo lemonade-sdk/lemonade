@@ -1345,19 +1345,23 @@ const sendMessage = async () => {
     setLiveTranscript('');
     liveTranscriptRef.current = '';
 
-    const serverUrl = getServerBaseUrl();
-    wsClientRef.current = new TranscriptionWebSocket(serverUrl, selectedModel, {
-      onTranscription: handleLiveTranscription,
-      onSpeechEvent: handleSpeechEvent,
-      onError: (err) => setLiveError(err),
-      onConnected: () => setIsLiveConnected(true),
-      onDisconnected: () => setIsLiveConnected(false),
-    });
+    try {
+      const serverUrl = getServerBaseUrl();
+      wsClientRef.current = await TranscriptionWebSocket.connect(serverUrl, selectedModel, {
+        onTranscription: handleLiveTranscription,
+        onSpeechEvent: handleSpeechEvent,
+        onError: (err) => setLiveError(err),
+        onConnected: () => setIsLiveConnected(true),
+        onDisconnected: () => setIsLiveConnected(false),
+      });
 
-    await new Promise(r => setTimeout(r, 500));
-    await startRecording();
-    isLiveRecordingRef.current = true;
-    setIsLiveRecording(true);
+      await new Promise(r => setTimeout(r, 500));
+      await startRecording();
+      isLiveRecordingRef.current = true;
+      setIsLiveRecording(true);
+    } catch (err) {
+      setLiveError(err instanceof Error ? err.message : 'Failed to connect');
+    }
   }, [selectedModel, handleLiveTranscription, handleSpeechEvent, startRecording]);
 
   // Stop recording and push transcript to history.

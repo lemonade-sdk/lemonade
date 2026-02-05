@@ -24,7 +24,7 @@ class Router;
  */
 class WebSocketServer {
 public:
-    WebSocketServer(int port, Router* router);
+    explicit WebSocketServer(Router* router);
     ~WebSocketServer();
 
     // Non-copyable
@@ -33,6 +33,7 @@ public:
 
     /**
      * Start the WebSocket server.
+     * Binds to an OS-assigned port (port 0).
      * @return true if started successfully
      */
     bool start();
@@ -49,6 +50,7 @@ public:
 
     /**
      * Get the server port.
+     * Only valid after start() returns true.
      */
     int get_port() const { return port_; }
 

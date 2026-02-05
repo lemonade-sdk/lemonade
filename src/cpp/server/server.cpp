@@ -105,9 +105,8 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     setup_routes(*http_server_v6_);
 
 #ifdef LEMON_HAS_WEBSOCKET
-    // Initialize WebSocket server on port + 100 (e.g., 8100 for realtime transcription)
-    // Note: port + 1 conflicts with backend subprocess ports (find_free_port starts at 8001)
-    websocket_server_ = std::make_unique<WebSocketServer>(port_ + 100, router_.get());
+    // Initialize WebSocket server (binds to OS-assigned port, exposed via /health)
+    websocket_server_ = std::make_unique<WebSocketServer>(router_.get());
 #endif
 }
 
@@ -1082,6 +1081,13 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
         {"sse", true},
         {"websocket", false}  // WebSocket support not yet implemented
     };
+
+#ifdef LEMON_HAS_WEBSOCKET
+    // Add WebSocket server port for realtime API
+    if (websocket_server_ && websocket_server_->is_running()) {
+        response["websocket_port"] = websocket_server_->get_port();
+    }
+#endif
 
     res.set_content(response.dump(), "application/json");
 }

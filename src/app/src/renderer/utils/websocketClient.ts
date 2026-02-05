@@ -16,14 +16,13 @@ export class TranscriptionWebSocket {
   private socket: WebSocket;
   private wsPort: number;
 
-  constructor(
-    serverUrl: string,
-    model: string,
-    callbacks: TranscriptionCallbacks,
-  ) {
-    // Convert http://localhost:8000 -> ws port (port + 100)
-    this.wsPort = this.getWsPort(serverUrl);
-    const wsUrl = `ws://localhost:${this.wsPort}/realtime?model=${encodeURIComponent(model)}`;
+  /**
+   * Create a new TranscriptionWebSocket.
+   * Use the static connect() method instead of calling this directly.
+   */
+  private constructor(wsPort: number, model: string, callbacks: TranscriptionCallbacks) {
+    this.wsPort = wsPort;
+    const wsUrl = `ws://localhost:${wsPort}/realtime?model=${encodeURIComponent(model)}`;
 
     console.log('[WebSocket] Connecting to:', wsUrl);
 
@@ -94,9 +93,33 @@ export class TranscriptionWebSocket {
     });
   }
 
-  private getWsPort(httpUrl: string): number {
-    const match = httpUrl.match(/:(\d+)/);
-    return match ? parseInt(match[1], 10) + 100 : 8100;
+  /**
+   * Connect to the realtime transcription WebSocket.
+   * Fetches the WebSocket port from /health endpoint.
+   */
+  static async connect(
+    serverUrl: string,
+    model: string,
+    callbacks: TranscriptionCallbacks,
+  ): Promise<TranscriptionWebSocket> {
+    // Fetch WebSocket port from /health endpoint
+    const healthUrl = `${serverUrl}/api/v1/health`;
+    console.log('[WebSocket] Fetching WebSocket port from:', healthUrl);
+
+    const response = await fetch(healthUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch health: ${response.status}`);
+    }
+
+    const health = await response.json();
+    const wsPort = health.websocket_port;
+
+    if (typeof wsPort !== 'number') {
+      throw new Error('Server did not provide websocket_port in /health response');
+    }
+
+    console.log('[WebSocket] Got WebSocket port:', wsPort);
+    return new TranscriptionWebSocket(wsPort, model, callbacks);
   }
 
   private send(msg: object) {

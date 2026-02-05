@@ -1,15 +1,17 @@
 #include "lemon/websocket_server.h"
 #include "lemon/router.h"
+#include "lemon/utils/process_manager.h"
 #include <iostream>
 #include <sstream>
 
 namespace lemon {
 
-WebSocketServer::WebSocketServer(int port, Router* router)
-    : port_(port)
+WebSocketServer::WebSocketServer(Router* router)
+    : port_(utils::ProcessManager::find_free_port(9000))  // Use 9000+ to avoid backend subprocess ports (8001+)
     , router_(router)
     , session_manager_(std::make_unique<RealtimeSessionManager>(router))
-    , ws_server_(port, "0.0.0.0") {
+    , ws_server_(port_, "0.0.0.0") {
+    std::cout << "[WebSocket] Allocated port: " << port_ << std::endl;
 }
 
 WebSocketServer::~WebSocketServer() {
