@@ -96,7 +96,10 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     }},
 
     // whisper.cpp - Windows x86_64 only
-    {"whispercpp", "default", {"windows"}, {
+    {"whispercpp", "npu", {"windows"}, {
+        {"npu", {"XDNA2"}},
+    }},
+    {"whispercpp", "cpu", {"windows"}, {
         {"cpu", {"x86_64"}},
     }},
 
@@ -525,7 +528,7 @@ json SystemInfo::get_device_dict() {
         };
     }
     #endif
-    
+
     return devices;
 }
 
@@ -2267,7 +2270,7 @@ std::string LinuxSystemInfo::get_physical_memory() {
 CPUInfo MacOSSystemInfo::get_cpu_device() {
     CPUInfo cpu;
     cpu.available = false;
-    
+
     // Initialize numeric values to -1 to distinguish between "0" and "Failed to fetch"
     cpu.cores = -1;
     cpu.threads = -1;
