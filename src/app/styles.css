@@ -1345,6 +1345,13 @@ footer {
     color: #ddd;
 }
 
+.hf-quant-text {
+    color: #666;
+    font-size: 0.55rem;
+    padding: 2px 4px;
+    white-space: nowrap;
+}
+
 .hf-backend-badge {
     display: inline-block;
     padding: 2px 5px;

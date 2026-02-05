@@ -415,6 +415,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     }
   }, [hfModelBackends, hfSelectedQuantizations]);
 
+  // Fetch backend details for all HF search results immediately
+  useEffect(() => {
+    if (hfSearchResults.length > 0) {
+      hfSearchResults.forEach(model => {
+        if (hfModelBackends[model.id] === undefined) {
+          detectBackend(model.id);
+        }
+      });
+    }
+  }, [hfSearchResults, hfModelBackends, detectBackend]);
+
   // Format download count
   const formatDownloads = (downloads: number): string => {
     if (downloads >= 1000000) {
@@ -1276,15 +1287,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                 const isHovered = hoveredModel === `hf:${hfModel.id}`;
                 const quantizations = backend?.quantizations || [];
                 const selectedQuant = hfSelectedQuantizations[hfModel.id] || '';
+                const selectedQuantInfo = quantizations.find(q => q.filename === selectedQuant);
 
                 return (
                   <div
                     key={`hf:${hfModel.id}`}
                     className="model-item hf-model-item"
-                    onMouseEnter={() => {
-                      setHoveredModel(`hf:${hfModel.id}`);
-                      detectBackend(hfModel.id);
-                    }}
+                    onMouseEnter={() => setHoveredModel(`hf:${hfModel.id}`)}
                     onMouseLeave={() => setHoveredModel(null)}
                   >
                     <div className="model-item-content">
@@ -1304,26 +1313,32 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                       </div>
 
                       <div className="hf-model-right">
-                        {/* Quantization dropdown (appears on hover for GGUF models) */}
-                        {isHovered && quantizations.length > 0 && (
-                          <select
-                            className="hf-quant-dropdown"
-                            value={selectedQuant}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              setHfSelectedQuantizations(prev => ({
-                                ...prev,
-                                [hfModel.id]: e.target.value
-                              }));
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {quantizations.map(q => (
-                              <option key={q.filename} value={q.filename}>
-                                {q.quantization}
-                              </option>
-                            ))}
-                          </select>
+                        {/* Quantization: show as text when not hovered, dropdown when hovered */}
+                        {quantizations.length > 0 && (
+                          isHovered ? (
+                            <select
+                              className="hf-quant-dropdown"
+                              value={selectedQuant}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                setHfSelectedQuantizations(prev => ({
+                                  ...prev,
+                                  [hfModel.id]: e.target.value
+                                }));
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {quantizations.map(q => (
+                                <option key={q.filename} value={q.filename}>
+                                  {q.quantization}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="hf-quant-text">
+                              {selectedQuantInfo?.quantization || quantizations[0]?.quantization || ''}
+                            </span>
+                          )
                         )}
 
                         {/* Backend badge */}
@@ -1331,8 +1346,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                           <span className="hf-backend-badge detecting">...</span>
                         ) : backend ? (
                           <span className={`hf-backend-badge ${backend.recipe}`}>{backend.label}</span>
-                        ) : isHovered ? (
-                          <span className="hf-backend-badge unknown">?</span>
                         ) : null}
 
                         {/* Download button - show for non-GGUF backends or GGUF with quantizations */}
