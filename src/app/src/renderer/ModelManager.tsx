@@ -8,6 +8,7 @@ import { useModels } from './hooks/useModels';
 import ModelOptionsModal from "./ModelOptionsModal";
 import AddModelPanel from "./AddModelPanel";
 import { RecipeOptions, recipeOptionsToApi } from "./recipes/recipeOptions";
+import logoSvg from '../../assets/logo.svg';
 
 interface ModelManagerProps {
   isVisible: boolean;
@@ -808,11 +809,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                     >
                       <div className="model-item-content">
                         <div className="model-info-left">
-                          {avatarUrl ? (
-                            <img src={avatarUrl} alt="" className="model-avatar" />
-                          ) : (
-                            <div className="model-avatar-placeholder" />
-                          )}
+                          <img
+                            src={avatarUrl || logoSvg}
+                            alt=""
+                            className="model-avatar"
+                          />
                           <span className="model-name">
                             <span
                               className={`model-status-indicator ${statusClass}`}

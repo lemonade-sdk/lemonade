@@ -1128,15 +1128,6 @@ footer {
     border-radius: 50%;
     object-fit: cover;
     flex-shrink: 0;
-    background: #222;
-}
-
-.model-avatar-placeholder {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: #222;
-    flex-shrink: 0;
 }
 
 .model-name {
@@ -4781,15 +4772,6 @@ footer {
     border-radius: 50%;
     object-fit: cover;
     flex-shrink: 0;
-    background: #222;
-}
-
-.amp-result-avatar-placeholder {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: #222;
-    flex-shrink: 0;
 }
 
 .amp-result-name {
@@ -4840,15 +4822,6 @@ footer {
     height: 24px;
     border-radius: 50%;
     object-fit: cover;
-    flex-shrink: 0;
-    background: #222;
-}
-
-.amp-selected-avatar-placeholder {
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: #222;
     flex-shrink: 0;
 }
 
