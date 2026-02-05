@@ -1200,14 +1200,6 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         std::string request_body = req.body;
         bool request_modified = false;
 
-        // OpenAI API compatibility: Transform max_completion_tokens to max_tokens
-        // OpenAI deprecated max_tokens in favor of max_completion_tokens (Sep 2024)
-        // but llama.cpp backends only support the older max_tokens parameter
-        if (request_json.contains("max_completion_tokens") && !request_json.contains("max_tokens")) {
-            request_json["max_tokens"] = request_json["max_completion_tokens"];
-            request_modified = true;
-        }
-
         // Handle enable_thinking=false by prepending /no_think to last user message
         if (request_json.contains("enable_thinking") &&
             request_json["enable_thinking"].is_boolean() &&
@@ -1427,20 +1419,6 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 
         // Use original request body - each backend handles model name transformation internally
         std::string request_body = req.body;
-        bool request_modified = false;
-
-        // OpenAI API compatibility: Transform max_completion_tokens to max_tokens
-        // OpenAI deprecated max_tokens in favor of max_completion_tokens (Sep 2024)
-        // but llama.cpp backends only support the older max_tokens parameter
-        if (request_json.contains("max_completion_tokens") && !request_json.contains("max_tokens")) {
-            request_json["max_tokens"] = request_json["max_completion_tokens"];
-            request_modified = true;
-        }
-
-        // If we modified the request, serialize it back to string
-        if (request_modified) {
-            request_body = request_json.dump();
-        }
 
         if (is_streaming) {
             try {
