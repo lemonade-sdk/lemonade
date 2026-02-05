@@ -360,8 +360,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       // Check for ONNX files
       const hasOnnx = files.some(f => f.endsWith('.onnx') || f.endsWith('.onnx_data'));
       if (hasOnnx) {
-        const hasNpu = tags.includes('npu') || files.some(f => f.includes('npu'));
-        const hasHybrid = tags.includes('hybrid') || files.some(f => f.includes('hybrid'));
+        const modelIdLower = modelId.toLowerCase();
+        // Check for ryzenai naming convention in model ID (e.g., model-ryzenai-npu)
+        const hasRyzenaiNpu = modelIdLower.endsWith('-ryzenai-npu') || modelIdLower.includes('-ryzenai-npu-');
+        const hasRyzenaiHybrid = modelIdLower.endsWith('-ryzenai-hybrid') || modelIdLower.includes('-ryzenai-hybrid-');
+        const hasRyzenaiCpu = modelIdLower.endsWith('-ryzenai-cpu') || modelIdLower.includes('-ryzenai-cpu-');
+        
+        // Also check tags and file names as fallback
+        const hasNpu = hasRyzenaiNpu || tags.includes('npu') || files.some(f => f.includes('npu'));
+        const hasHybrid = hasRyzenaiHybrid || tags.includes('hybrid') || files.some(f => f.includes('hybrid'));
+        const hasCpu = hasRyzenaiCpu;
         const hasIgpu = tags.includes('igpu') || files.some(f => f.includes('igpu'));
 
         let backend: DetectedBackend;
@@ -371,6 +379,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
           backend = { recipe: 'oga-hybrid', label: 'ONNX Hybrid' };
         } else if (hasIgpu) {
           backend = { recipe: 'oga-igpu', label: 'ONNX iGPU' };
+        } else if (hasCpu) {
+          backend = { recipe: 'oga-cpu', label: 'ONNX CPU' };
         } else {
           backend = { recipe: 'oga-cpu', label: 'ONNX CPU' };
         }
