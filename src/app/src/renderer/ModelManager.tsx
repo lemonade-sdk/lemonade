@@ -1082,22 +1082,29 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         <h3>MODEL MANAGER</h3>
         <div className="organization-toggle modality-toggle">
           <button
+            className={`toggle-button ${modalityFilter === null ? 'active' : ''}`}
+            onClick={() => setModalityFilter(null)}
+            title="Show all models"
+          >
+            Any
+          </button>
+          <button
             className={`toggle-button ${modalityFilter === 'text' ? 'active' : ''}`}
-            onClick={() => setModalityFilter(modalityFilter === 'text' ? null : 'text')}
+            onClick={() => setModalityFilter('text')}
             title="Show text models (LLMs, embeddings)"
           >
             Text
           </button>
           <button
             className={`toggle-button ${modalityFilter === 'image' ? 'active' : ''}`}
-            onClick={() => setModalityFilter(modalityFilter === 'image' ? null : 'image')}
+            onClick={() => setModalityFilter('image')}
             title="Show image models (Stable Diffusion, Vision)"
           >
             Image
           </button>
           <button
             className={`toggle-button ${modalityFilter === 'audio' ? 'active' : ''}`}
-            onClick={() => setModalityFilter(modalityFilter === 'audio' ? null : 'audio')}
+            onClick={() => setModalityFilter('audio')}
             title="Show audio models (Speech-to-text, TTS)"
           >
             Audio
