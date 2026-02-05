@@ -51,6 +51,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const [showModelOptionsModal, setShowModelOptionsModal] = useState(false);
 
+  // Avatar cache: author -> avatarUrl
+  const [avatarCache, setAvatarCache] = useState<Record<string, string>>({});
+
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
 
@@ -150,6 +153,49 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       setExpandedCategories(new Set([categories[0]]));
     }
   }, [suggestedModels, organizationMode, showDownloadedOnly, searchQuery]);
+
+  // Fetch avatar URL from Hugging Face API
+  const fetchAvatarUrl = useCallback(async (author: string) => {
+    // Skip if already cached or empty
+    if (!author || avatarCache[author]) return;
+
+    try {
+      const response = await fetch(`https://huggingface.co/api/organizations/${author}/avatar`);
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data.avatarUrl) {
+        setAvatarCache(prev => ({ ...prev, [author]: data.avatarUrl }));
+      }
+    } catch (error) {
+      // Silently fail - avatar is not critical
+    }
+  }, [avatarCache]);
+
+  // Extract author from checkpoint (format: "author/model:quant" or "author/model")
+  const getAuthorFromCheckpoint = (checkpoint: string): string => {
+    if (!checkpoint) return '';
+    const withoutQuant = checkpoint.split(':')[0];
+    const parts = withoutQuant.split('/');
+    return parts.length > 1 ? parts[0] : '';
+  };
+
+  // Fetch avatars when suggested models change
+  useEffect(() => {
+    const authors = new Set<string>();
+    suggestedModels.forEach(model => {
+      const author = getAuthorFromCheckpoint(model.info.checkpoint);
+      if (author && !avatarCache[author]) {
+        authors.add(author);
+      }
+    });
+    authors.forEach(author => fetchAvatarUrl(author));
+  }, [suggestedModels, avatarCache, fetchAvatarUrl]);
+
+  // Get avatar URL for a model
+  const getModelAvatarUrl = (model: { name: string; info: ModelInfo }): string | undefined => {
+    const author = getAuthorFromCheckpoint(model.info.checkpoint);
+    return author ? avatarCache[author] : undefined;
+  };
 
   const getFilteredModels = () => {
     let filtered = suggestedModels;
@@ -752,6 +798,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
                   const isHovered = hoveredModel === model.name;
 
+                  const avatarUrl = getModelAvatarUrl(model);
                   return (
                     <div
                       key={model.name}
@@ -761,6 +808,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                     >
                       <div className="model-item-content">
                         <div className="model-info-left">
+                          {avatarUrl ? (
+                            <img src={avatarUrl} alt="" className="model-avatar" />
+                          ) : (
+                            <div className="model-avatar-placeholder" />
+                          )}
                           <span className="model-name">
                             <span
                               className={`model-status-indicator ${statusClass}`}

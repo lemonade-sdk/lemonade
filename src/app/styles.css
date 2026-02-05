@@ -1122,6 +1122,23 @@ footer {
     min-width: 0;
 }
 
+.model-avatar {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: #222;
+}
+
+.model-avatar-placeholder {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #222;
+    flex-shrink: 0;
+}
+
 .model-name {
     font-size: 0.7rem;
     color: #fff;
