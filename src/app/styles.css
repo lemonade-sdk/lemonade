@@ -274,6 +274,9 @@ main {
     display: flex;
     flex-direction: column;
     position: relative;
+    contain: layout style;
+    will-change: transform;
+    transform: translateZ(0);
 }
 
 .center-panel-close-btn {
@@ -494,6 +497,12 @@ main {
     height: 100%;
     border: none;
     background: #000000;
+}
+
+/* Disable iframe pointer events during resize to prevent event capture */
+body[style*="cursor: col-resize"] .marketplace-iframe,
+body[style*="cursor: row-resize"] .marketplace-iframe {
+    pointer-events: none;
 }
 
 .marketplace-iframe.loading {

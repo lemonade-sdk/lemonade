@@ -288,17 +288,17 @@ const writeAppSettingsFile = async (settings) => {
 
 /**
  * Get base URL from Settings file.
- * 
+ *
  */
 const getBaseURLFromConfig = async () => {
-  const settings = await readAppSettingsFile();  
+  const settings = await readAppSettingsFile();
   const defaultBaseUrl = settings.baseURL.value;
 
   if (defaultBaseUrl) {
     const normalized = normalizeServerUrl(defaultBaseUrl);
     if (normalized) {
        return normalized;
-    } 
+    }
 
     return null;
   }
@@ -325,18 +325,18 @@ const broadcastServerPortUpdated = (port) => {
 const fetchWithApiKey = async (entpoint) => {
   let serverUrl = await getBaseURLFromConfig();
   let apiKey = (await readAppSettingsFile()).apiKey.value;
-  
+
   if (!serverUrl) {
     serverUrl = cachedServerPort ? 'http://localhost:8000' : `http://localhost:${cachedServerPort}`;
   }
-  
+
   const options = {timeout: 3000};
-  
+
   if(apiKey != null && apiKey != '') {
     options.headers = {
       Authorization: `Bearer ${apiKey}`,
     }
-  } 
+  }
 
   return await fetch(`${serverUrl}${entpoint}`, options);
 }
@@ -363,7 +363,7 @@ const ensureTrayRunning = () => {
     // or the new one will think it's already running and quit immediately.
     try {
       gracefulKillBlocking('lemonade-server tray');
-      
+
       // Delete the lock file that cause "Already Running" error
       const lock = '/tmp/lemonade_Tray.lock';
       if (fs.existsSync(lock)) fs.unlinkSync(lock);
@@ -405,7 +405,7 @@ function gracefulKillBlocking(processPattern) {
 
     // If pkill returned non-zero, the process wasn't running. We are done.
     if (killResult.status !== 0) {
-        return; 
+        return;
     }
 
     // 2. Poll for exit
@@ -435,7 +435,7 @@ const discoverServerPort = () => {
   //This is the default port to try macos lemonade server on.
   const DEFAULT_PORT = 8000;
   const StatusResponseWaitMs = 5000;
-  
+
   return new Promise((resolve) => {
     // Always ensure tray is running on macOS, regardless of server status
     ensureTrayRunning().then(() => {
@@ -516,11 +516,11 @@ const discoverServerPort = () => {
 };
 
 // Returns the configured server base URL, or null if using localhost discovery
-ipcMain.handle('get-server-base-url', async () => { 
+ipcMain.handle('get-server-base-url', async () => {
   return await getBaseURLFromConfig();
 });
 
-ipcMain.handle('get-server-api-key', async () => { 
+ipcMain.handle('get-server-api-key', async () => {
   return (await readAppSettingsFile()).apiKey.value;
 });
 
@@ -567,7 +567,7 @@ ipcMain.handle('get-server-port', async () => {
 });
 
 ipcMain.handle('get-system-stats', async () => {
-  try {  
+  try {
     const response = await fetchWithApiKey('/api/v1/system-stats');
     if (response.ok) {
       const data = await response.json();
@@ -660,6 +660,21 @@ ipcMain.handle('get-system-info', async () => {
     gtt_gb: 'Unknown',
     vram_gb: 'Unknown',
   };
+});
+
+// Get local marketplace file URL for development fallback
+ipcMain.handle('get-local-marketplace-url', async () => {
+  // In development, the marketplace.html is in the docs folder at project root
+  // In production, it would be bundled differently
+  const docsPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'docs', 'marketplace.html')
+    : path.join(__dirname, '..', '..', 'docs', 'marketplace.html');
+
+  // Check if file exists
+  if (fs.existsSync(docsPath)) {
+    return `file://${docsPath}?embedded=true&theme=dark`;
+  }
+  return null;
 });
 
 function updateWindowMinWidth(requestedWidth) {

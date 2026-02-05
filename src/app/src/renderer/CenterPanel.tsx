@@ -1,80 +1,126 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, memo, useCallback } from 'react';
 
 interface CenterPanelProps {
   isVisible: boolean;
   onClose?: () => void;
 }
 
-// Marketplace URL with embedded mode and dark theme
-const MARKETPLACE_URL = 'https://lemonade-server.ai/marketplace?embedded=true&theme=dark';
+// Remote marketplace URL
+const REMOTE_MARKETPLACE_URL = 'https://lemonade-server.ai/marketplace?embedded=true&theme=dark';
 
-// Fallback URL for checking connectivity
-const CONNECTIVITY_CHECK_URL = 'https://lemonade-server.ai/favicon.ico';
-
-const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
-  const [isOffline, setIsOffline] = useState(false);
+const CenterPanel: React.FC<CenterPanelProps> = memo(({ isVisible, onClose }) => {
+  const [marketplaceUrl, setMarketplaceUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Check connectivity on mount and when visibility changes
+  // Determine which URL to use on mount
   useEffect(() => {
     if (!isVisible) return;
 
-    const checkConnectivity = async () => {
+    const determineUrl = async () => {
       setIsLoading(true);
       setHasError(false);
 
       try {
-        // Try to fetch a small resource to check connectivity
+        // Try to fetch the remote marketplace page
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-        await fetch(CONNECTIVITY_CHECK_URL, {
-          mode: 'no-cors',
+        const response = await fetch(REMOTE_MARKETPLACE_URL, {
+          method: 'HEAD',
           signal: controller.signal,
         });
 
         clearTimeout(timeoutId);
-        setIsOffline(false);
+
+        if (response.ok) {
+          console.log('Using remote marketplace URL');
+          setMarketplaceUrl(REMOTE_MARKETPLACE_URL);
+        } else {
+          throw new Error(`HTTP ${response.status}`);
+        }
       } catch (error) {
-        console.warn('Marketplace connectivity check failed:', error);
-        setIsOffline(true);
-      } finally {
-        setIsLoading(false);
+        console.warn('Remote marketplace unavailable, falling back to local:', error);
+
+        // Get local marketplace URL via Electron API
+        if (window.api?.getLocalMarketplaceUrl) {
+          const localUrl = await window.api.getLocalMarketplaceUrl();
+          if (localUrl) {
+            console.log('Using local marketplace URL:', localUrl);
+            setMarketplaceUrl(localUrl);
+          } else {
+            console.error('Local marketplace file not found');
+            setHasError(true);
+            setIsLoading(false);
+          }
+        } else {
+          // Fallback for non-Electron environment (shouldn't happen)
+          console.error('Electron API not available');
+          setHasError(true);
+          setIsLoading(false);
+        }
       }
     };
 
-    checkConnectivity();
+    determineUrl();
   }, [isVisible]);
 
   // Handle iframe load events
-  const handleIframeLoad = () => {
+  const handleIframeLoad = useCallback(() => {
     setIsLoading(false);
     setHasError(false);
-  };
+  }, []);
 
-  const handleIframeError = () => {
+  const handleIframeError = useCallback(() => {
     setIsLoading(false);
     setHasError(true);
-  };
+  }, []);
 
   // Retry loading
-  const handleRetry = () => {
+  const handleRetry = async () => {
     setIsLoading(true);
     setHasError(false);
-    setIsOffline(false);
+    setMarketplaceUrl(null);
 
-    // Force iframe reload
-    if (iframeRef.current) {
-      iframeRef.current.src = MARKETPLACE_URL;
+    // Re-trigger URL determination by trying remote first
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+      const response = await fetch(REMOTE_MARKETPLACE_URL, {
+        method: 'HEAD',
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        setMarketplaceUrl(REMOTE_MARKETPLACE_URL);
+      } else {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } catch {
+      // Fall back to local
+      if (window.api?.getLocalMarketplaceUrl) {
+        const localUrl = await window.api.getLocalMarketplaceUrl();
+        if (localUrl) {
+          setMarketplaceUrl(localUrl);
+        } else {
+          setHasError(true);
+          setIsLoading(false);
+        }
+      } else {
+        setHasError(true);
+        setIsLoading(false);
+      }
     }
   };
 
   // Open in browser
-  const handleOpenInBrowser = () => {
+  const handleOpenInBrowser = useCallback(() => {
     window.open('https://lemonade-server.ai/marketplace', '_blank', 'noopener,noreferrer');
-  };
+  }, []);
 
   if (!isVisible) return null;
 
@@ -98,15 +144,13 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
         </div>
       )}
 
-      {/* Offline/Error State */}
-      {(isOffline || hasError) && !isLoading && (
+      {/* Error State */}
+      {hasError && !isLoading && (
         <div className="marketplace-offline">
-          <div className="offline-icon">📡</div>
+          <div className="offline-icon">⚠️</div>
           <h2>App Marketplace</h2>
           <p className="offline-message">
-            {isOffline
-              ? "Unable to connect to the marketplace. Please check your internet connection."
-              : "Something went wrong loading the marketplace."}
+            Something went wrong loading the marketplace.
           </p>
           <div className="offline-actions">
             <button className="offline-btn primary" onClick={handleRetry}>
@@ -120,19 +164,22 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
       )}
 
       {/* Marketplace iframe */}
-      {!isOffline && !hasError && (
+      {marketplaceUrl && !hasError && (
         <iframe
           ref={iframeRef}
-          src={MARKETPLACE_URL}
+          src={marketplaceUrl}
           className={`marketplace-iframe ${isLoading ? 'loading' : ''}`}
           onLoad={handleIframeLoad}
           onError={handleIframeError}
           title="App Marketplace"
           sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          loading="lazy"
         />
       )}
     </div>
   );
-};
+});
+
+CenterPanel.displayName = 'CenterPanel';
 
 export default CenterPanel;

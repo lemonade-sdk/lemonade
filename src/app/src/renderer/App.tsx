@@ -243,6 +243,15 @@ const App: React.FC = () => {
     document.body.style.userSelect = 'none';
   };
 
+  // Memoized callbacks for child components to prevent re-renders during resize
+  const handleCloseCenterPanel = useCallback(() => {
+    setIsCenterPanelVisible(false);
+  }, []);
+
+  const handleCloseDownloadManager = useCallback(() => {
+    setIsDownloadManagerVisible(false);
+  }, []);
+
   return (
     <SystemProvider>
       <ModelsProvider>
@@ -260,7 +269,7 @@ const App: React.FC = () => {
         />
         <DownloadManager
           isVisible={isDownloadManagerVisible}
-          onClose={() => setIsDownloadManagerVisible(false)}
+          onClose={handleCloseDownloadManager}
         />
         <div className="app-layout">
           {isModelManagerVisible && (
@@ -273,7 +282,7 @@ const App: React.FC = () => {
             <div className="main-content-container">
               {isCenterPanelVisible && (
                 <div className={`main-content ${isChatVisible ? 'with-chat' : 'full-width'} ${isModelManagerVisible ? 'with-model-manager' : ''}`}>
-                  <CenterPanel isVisible={true} onClose={() => setIsCenterPanelVisible(false)}/>
+                  <CenterPanel isVisible={true} onClose={handleCloseCenterPanel}/>
                 </div>
               )}
               {isCenterPanelVisible && isLogsVisible && (
