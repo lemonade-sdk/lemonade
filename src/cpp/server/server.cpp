@@ -1198,6 +1198,15 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Use original request body - each backend (FLM, llamacpp, etc.) handles
         // model name transformation internally via their forward methods
         std::string request_body = req.body;
+        bool request_modified = false;
+
+        // OpenAI API compatibility: Transform max_completion_tokens to max_tokens
+        // OpenAI deprecated max_tokens in favor of max_completion_tokens (Sep 2024)
+        // but llama.cpp backends only support the older max_tokens parameter
+        if (request_json.contains("max_completion_tokens") && !request_json.contains("max_tokens")) {
+            request_json["max_tokens"] = request_json["max_completion_tokens"];
+            request_modified = true;
+        }
 
         // Handle enable_thinking=false by prepending /no_think to last user message
         if (request_json.contains("enable_thinking") &&
@@ -1218,14 +1227,17 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         if (messages[i].contains("content") && messages[i]["content"].is_string()) {
                             std::string original_content = messages[i]["content"].get<std::string>();
                             messages[i]["content"] = "/no_think\n" + original_content;
-
-                            // Update request_body with modified JSON
-                            request_body = request_json.dump();
+                            request_modified = true;
                             break;
                         }
                     }
                 }
             }
+        }
+
+        // If we modified the request, serialize it back to string
+        if (request_modified) {
+            request_body = request_json.dump();
         }
 
         if (is_streaming) {
@@ -1415,6 +1427,20 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 
         // Use original request body - each backend handles model name transformation internally
         std::string request_body = req.body;
+        bool request_modified = false;
+
+        // OpenAI API compatibility: Transform max_completion_tokens to max_tokens
+        // OpenAI deprecated max_tokens in favor of max_completion_tokens (Sep 2024)
+        // but llama.cpp backends only support the older max_tokens parameter
+        if (request_json.contains("max_completion_tokens") && !request_json.contains("max_tokens")) {
+            request_json["max_tokens"] = request_json["max_completion_tokens"];
+            request_modified = true;
+        }
+
+        // If we modified the request, serialize it back to string
+        if (request_modified) {
+            request_body = request_json.dump();
+        }
 
         if (is_streaming) {
             try {
