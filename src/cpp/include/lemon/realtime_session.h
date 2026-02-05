@@ -34,6 +34,10 @@ struct RealtimeSession {
     // Timestamps for audio tracking
     int64_t audio_start_ms = 0;  // Start of current speech segment
 
+    // Interim transcription state
+    int64_t last_interim_transcription_ms = 0;  // When we last fired an interim transcription
+    std::atomic<bool> interim_in_flight{false};  // Guard against overlapping interim requests
+
     RealtimeSession(const std::string& id)
         : session_id(id), vad(SimpleVAD::Config{}) {}
 };
@@ -44,6 +48,10 @@ struct RealtimeSession {
  */
 class RealtimeSessionManager {
 public:
+    // Minimum audio accumulation before firing an interim transcription (ms).
+    // Lower values feel more "real-time" but increase Whisper load.
+    static constexpr int INTERIM_TRANSCRIPTION_CHUNK_MS = 1000;
+
     explicit RealtimeSessionManager(Router* router);
     ~RealtimeSessionManager();
 
@@ -114,9 +122,17 @@ private:
     // Snapshot audio buffer and dispatch transcription to worker thread
     void transcribe_and_send(std::shared_ptr<RealtimeSession> session);
 
+    // Fire an interim (partial) transcription without clearing the buffer
+    void transcribe_interim(std::shared_ptr<RealtimeSession> session);
+
+    // Check whether an interim transcription should fire and trigger it
+    void maybe_interim_transcribe(std::shared_ptr<RealtimeSession> session);
+
     // Run Whisper transcription (executes on worker thread)
+    // When is_interim is true the result is sent as a delta event.
     void transcribe_wav(std::shared_ptr<RealtimeSession> session,
-                        std::vector<uint8_t> wav_data, std::string model);
+                        std::vector<uint8_t> wav_data, std::string model,
+                        bool is_interim = false);
 
     // Process VAD for a session
     void process_vad(std::shared_ptr<RealtimeSession> session);
