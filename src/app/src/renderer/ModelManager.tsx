@@ -342,12 +342,42 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       if (treeResponse && treeResponse.ok) {
         try {
           const treeData: TreeFile[] = await treeResponse.json();
-          fileSizes = treeData.reduce((acc, f) => {
-            if (f.path && f.size !== undefined) {
-              acc[f.path] = f.size;
+          
+          // Add root level files to fileSizes
+          treeData.forEach(f => {
+            if (f.path && f.size !== undefined && f.type === 'file') {
+              fileSizes[f.path] = f.size;
             }
-            return acc;
-          }, {} as Record<string, number>);
+          });
+          
+          // Check if any siblings are in subdirectories (contain '/')
+          const subdirs = new Set<string>();
+          data.siblings.forEach(s => {
+            const slashIdx = s.rfilename.indexOf('/');
+            if (slashIdx > 0) {
+              subdirs.add(s.rfilename.substring(0, slashIdx));
+            }
+          });
+          
+          // Fetch subdirectory contents for file sizes
+          if (subdirs.size > 0) {
+            const subDirPromises = Array.from(subdirs).map(async (dir) => {
+              try {
+                const subResponse = await fetch(`https://huggingface.co/api/models/${modelId}/tree/main/${dir}`);
+                if (subResponse.ok) {
+                  const subData: TreeFile[] = await subResponse.json();
+                  subData.forEach(f => {
+                    if (f.path && f.size !== undefined && f.type === 'file') {
+                      fileSizes[f.path] = f.size;
+                    }
+                  });
+                }
+              } catch {
+                // Subdirectory fetch failed, continue
+              }
+            });
+            await Promise.all(subDirPromises);
+          }
         } catch {
           // Tree parsing failed, continue without sizes
         }
