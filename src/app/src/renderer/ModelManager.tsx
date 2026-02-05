@@ -43,7 +43,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const { modelsData, suggestedModels, refresh: refreshModels } = useModels();
 
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['all']));
-  const [organizationMode, setOrganizationMode] = useState<'recipe' | 'category'>('recipe');
+  const [modalityFilter, setModalityFilter] = useState<'text' | 'image' | 'audio' | null>(null);
   const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
   const [showAddModelModal, setShowAddModelModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -146,14 +146,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
   // Auto-expand the single category if only one is available
   useEffect(() => {
-    const groupedModels = organizationMode === 'recipe' ? groupModelsByRecipe() : groupModelsByCategory();
+    const groupedModels = groupModelsByRecipe();
     const categories = Object.keys(groupedModels);
 
     // If only one category exists and it's not already expanded, expand it
     if (categories.length === 1 && !expandedCategories.has(categories[0])) {
       setExpandedCategories(new Set([categories[0]]));
     }
-  }, [suggestedModels, organizationMode, showDownloadedOnly, searchQuery]);
+  }, [suggestedModels, modalityFilter, showDownloadedOnly, searchQuery]);
 
   // Fetch avatar URL from Hugging Face API
   const fetchAvatarUrl = useCallback(async (author: string) => {
@@ -198,6 +198,41 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     return author ? avatarCache[author] : undefined;
   };
 
+  // Determine which modality a model belongs to
+  const getModelModalities = (model: { name: string; info: ModelInfo }): Set<'text' | 'image' | 'audio'> => {
+    const modalities = new Set<'text' | 'image' | 'audio'>();
+    const recipe = model.info.recipe || '';
+    const labels = model.info.labels || [];
+
+    // Text models: LLMs, embeddings, reranking
+    if (['llamacpp', 'oga-cpu', 'oga-hybrid', 'oga-npu', 'oga-igpu', 'flm'].includes(recipe)) {
+      modalities.add('text');
+    }
+    if (labels.includes('embeddings') || labels.includes('reranking')) {
+      modalities.add('text');
+    }
+
+    // Image models: stable diffusion, vision-capable LLMs
+    if (recipe === 'sd-cpp') {
+      modalities.add('image');
+    }
+    if (labels.includes('vision')) {
+      modalities.add('image');
+    }
+
+    // Audio models: whisper (speech-to-text), TTS
+    if (recipe === 'whispercpp' || recipe === 'tts') {
+      modalities.add('audio');
+    }
+
+    // Default to text if no modality detected
+    if (modalities.size === 0) {
+      modalities.add('text');
+    }
+
+    return modalities;
+  };
+
   const getFilteredModels = () => {
     let filtered = suggestedModels;
 
@@ -212,6 +247,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       filtered = filtered.filter(model =>
         model.name.toLowerCase().includes(query)
       );
+    }
+
+    // Filter by modality
+    if (modalityFilter) {
+      filtered = filtered.filter(model => {
+        const modalities = getModelModalities(model);
+        return modalities.has(modalityFilter);
+      });
     }
 
     return filtered;
@@ -232,29 +275,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     return grouped;
   };
 
-  const groupModelsByCategory = () => {
-    const grouped: { [key: string]: Array<{ name: string; info: ModelInfo }> } = {};
-    const filteredModels = getFilteredModels();
-
-    filteredModels.forEach(model => {
-      if (model.info.labels && model.info.labels.length > 0) {
-        model.info.labels.forEach(label => {
-          if (!grouped[label]) {
-            grouped[label] = [];
-          }
-          grouped[label].push(model);
-        });
-      } else {
-        // Models without labels go to 'uncategorized'
-        if (!grouped['uncategorized']) {
-          grouped['uncategorized'] = [];
-        }
-        grouped['uncategorized'].push(model);
-      }
-    });
-
-    return grouped;
-  };
 
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev => {
@@ -309,7 +329,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
   if (!isVisible) return null;
 
-  const groupedModels = organizationMode === 'recipe' ? groupModelsByRecipe() : groupModelsByCategory();
+  const groupedModels = groupModelsByRecipe();
   const categories = Object.keys(groupedModels).sort();
 
   // Auto-expand all categories when searching
@@ -321,22 +341,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   };
 
   const getDisplayLabel = (key: string): string => {
-    if (organizationMode === 'recipe') {
-      // Use friendly names for recipes
-      const recipeLabels: { [key: string]: string } = {
-        'flm': 'FastFlowLM NPU',
-        'llamacpp': 'Llama.cpp GPU',
-        'oga-cpu': 'ONNX Runtime CPU',
-        'oga-hybrid': 'ONNX Runtime Hybrid',
-        'oga-npu': 'ONNX Runtime NPU',
-        'whispercpp': 'Whisper.cpp',
-        'sd-cpp': 'StableDiffusion.cpp'
-      };
-      return recipeLabels[key] || key;
-    } else {
-      // Use friendly labels for categories
-      return getCategoryLabel(key);
-    }
+    // Use friendly names for recipes
+    const recipeLabels: { [key: string]: string } = {
+      'flm': 'FastFlowLM NPU',
+      'llamacpp': 'Llama.cpp GPU',
+      'oga-cpu': 'ONNX Runtime CPU',
+      'oga-hybrid': 'ONNX Runtime Hybrid',
+      'oga-npu': 'ONNX Runtime NPU',
+      'whispercpp': 'Whisper.cpp',
+      'sd-cpp': 'StableDiffusion.cpp'
+    };
+    return recipeLabels[key] || key;
   };
 
   const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData) => {
@@ -705,18 +720,27 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       <ConfirmDialog />
       <div className="model-manager-header">
         <h3>MODEL MANAGER</h3>
-        <div className="organization-toggle">
+        <div className="organization-toggle modality-toggle">
           <button
-            className={`toggle-button ${organizationMode === 'recipe' ? 'active' : ''}`}
-            onClick={() => setOrganizationMode('recipe')}
+            className={`toggle-button ${modalityFilter === 'text' ? 'active' : ''}`}
+            onClick={() => setModalityFilter(modalityFilter === 'text' ? null : 'text')}
+            title="Show text models (LLMs, embeddings)"
           >
-            By Recipe
+            Text
           </button>
           <button
-            className={`toggle-button ${organizationMode === 'category' ? 'active' : ''}`}
-            onClick={() => setOrganizationMode('category')}
+            className={`toggle-button ${modalityFilter === 'image' ? 'active' : ''}`}
+            onClick={() => setModalityFilter(modalityFilter === 'image' ? null : 'image')}
+            title="Show image models (Stable Diffusion, Vision)"
           >
-            By Category
+            Image
+          </button>
+          <button
+            className={`toggle-button ${modalityFilter === 'audio' ? 'active' : ''}`}
+            onClick={() => setModalityFilter(modalityFilter === 'audio' ? null : 'audio')}
+            title="Show audio models (Speech-to-text, TTS)"
+          >
+            Audio
           </button>
         </div>
         <div className="model-search">
