@@ -1311,31 +1311,26 @@ const sendMessage = async () => {
   const { isRecording: isMicActive, startRecording, stopRecording, error: micError } =
     useAudioCapture(handleAudioChunk, handleAudioLevel);
 
-  const handleLiveTranscription = useCallback((text: string) => {
+  const handleLiveTranscription = useCallback((text: string, isFinal: boolean) => {
+    // Ignore events after recording stopped - handleMicStop already saved the transcript
+    if (!isLiveRecordingRef.current) return;
+
     const trimmedText = text.trim();
     if (!trimmedText) return;
 
-    if (isLiveRecordingRef.current) {
-      // During recording: accumulate in live transcript and keep ref in sync
-      setLiveTranscript(prev => {
-        const next = prev ? `${prev} ${trimmedText}` : trimmedText;
-        liveTranscriptRef.current = next;
-        return next;
-      });
+    // Both delta and completed contain the FULL text for the current utterance.
+    // - Delta: replace display with accumulated + delta (interim for current utterance)
+    // - Completed: append this utterance to accumulated, update display
+    const accumulated = liveTranscriptRef.current;
+    if (isFinal) {
+      // Final result: add this utterance to accumulated (previous finals)
+      const next = accumulated ? `${accumulated} ${trimmedText}` : trimmedText;
+      liveTranscriptRef.current = next;
+      setLiveTranscript(next);
     } else {
-      // After stop: this is a late-arriving commit response.
-      // Append to the last "Live Recording" history entry instead of creating a new one.
-      setTranscriptionHistory(h => {
-        if (h.length > 0 && h[h.length - 1].filename === 'Live Recording') {
-          const updated = [...h];
-          updated[updated.length - 1] = {
-            ...updated[updated.length - 1],
-            text: (updated[updated.length - 1].text + ' ' + trimmedText).trim(),
-          };
-          return updated;
-        }
-        return [...h, { filename: 'Live Recording', text: trimmedText }];
-      });
+      // Interim result: show accumulated + this interim (replaces previous interim)
+      const display = accumulated ? `${accumulated} ${trimmedText}` : trimmedText;
+      setLiveTranscript(display);
     }
   }, []);
 
@@ -1365,35 +1360,28 @@ const sendMessage = async () => {
     setIsLiveRecording(true);
   }, [selectedModel, handleLiveTranscription, handleSpeechEvent, startRecording]);
 
-  // Stop recording and push transcript to history immediately.
-  // Any late-arriving commit response is appended to the history entry
-  // by handleLiveTranscription (via isLiveRecordingRef check).
+  // Stop recording and push transcript to history.
+  // With interim transcriptions, we already have the text — no need to commit.
   const handleMicStop = useCallback(() => {
     stopRecording();
     isLiveRecordingRef.current = false;
 
-    // Read accumulated transcript from the ref (synchronous, no closure staleness)
-    // and push to history as a single direct setState call (no nesting).
-    const accumulated = liveTranscriptRef.current.trim();
-    if (accumulated) {
-      setTranscriptionHistory(h => [...h, { filename: 'Live Recording', text: accumulated }]);
-    }
+    // Get the displayed transcript (includes last interim) via DOM or state
+    // liveTranscriptRef has accumulated finals; current interim is only in display
+    // For simplicity, read from state synchronously by capturing current value
+    setLiveTranscript(currentDisplay => {
+      const finalText = currentDisplay.trim();
+      if (finalText) {
+        setTranscriptionHistory(h => [...h, { filename: 'Live Recording', text: finalText }]);
+      }
+      return ''; // Clear display
+    });
     liveTranscriptRef.current = '';
-    setLiveTranscript('');
 
     if (wsClientRef.current) {
-      // Only commit (trigger transcription) if user was mid-speech when they
-      // pressed stop. Otherwise clear the buffer — any trailing silence/noise
-      // would cause Whisper to hallucinate fragments on the padded audio.
-      if (isSpeakingRef.current) {
-        wsClientRef.current.commitAudio();
-      } else {
-        wsClientRef.current.clearAudio();
-      }
-      // Capture the WS instance and detach from the ref immediately.
-      // Without this, the delayed close reads wsClientRef.current which may
-      // already point to a NEW session's WebSocket, killing it and causing
-      // every other recording session to silently fail.
+      // Clear buffer without committing — we already have the transcript from interims
+      wsClientRef.current.clearAudio();
+
       const wsToClose = wsClientRef.current;
       wsClientRef.current = null;
       setIsLiveConnected(false);

@@ -193,6 +193,7 @@ void RealtimeSessionManager::process_vad(std::shared_ptr<RealtimeSession> sessio
         case SimpleVAD::Event::SpeechStart: {
             std::cout << "[RealtimeSession] VAD: SpeechStart detected" << std::endl;
             session->audio_start_ms = session->vad.speech_start_ms();
+            session->last_interim_transcription_ms = 0;  // Reset interim tracking for new utterance
 
             if (session->send_message) {
                 json msg = {
@@ -216,14 +217,71 @@ void RealtimeSessionManager::process_vad(std::shared_ptr<RealtimeSession> sessio
                 session->send_message(msg);
             }
 
-            // Trigger transcription
+            // Trigger final transcription (clears buffer)
             transcribe_and_send(session);
             break;
         }
 
         case SimpleVAD::Event::None:
         default:
+            // Speech is ongoing — check if we should fire an interim transcription
+            if (session->vad.is_speech_active()) {
+                maybe_interim_transcribe(session);
+            }
             break;
+    }
+}
+
+void RealtimeSessionManager::maybe_interim_transcribe(std::shared_ptr<RealtimeSession> session) {
+    if (!session || session->audio_buffer.empty()) return;
+
+    int buffer_ms = session->audio_buffer.duration_ms();
+
+    // Determine how much new audio has arrived since the last interim transcription.
+    // On the first interim of an utterance last_interim_transcription_ms is 0, so we
+    // compare against the raw buffer duration.
+    int since_last = (session->last_interim_transcription_ms == 0)
+        ? buffer_ms
+        : buffer_ms - session->last_interim_transcription_ms;
+
+    if (since_last >= INTERIM_TRANSCRIPTION_CHUNK_MS) {
+        transcribe_interim(session);
+    }
+}
+
+void RealtimeSessionManager::transcribe_interim(std::shared_ptr<RealtimeSession> session) {
+    if (!session || session->audio_buffer.empty()) return;
+
+    // Avoid overlapping interim transcriptions for the same session
+    bool expected = false;
+    if (!session->interim_in_flight.compare_exchange_strong(expected, true)) {
+        return;  // Another interim is already running
+    }
+
+    // Snapshot the buffer WITHOUT clearing it
+    auto wav_data = session->audio_buffer.get_wav_padded(500);
+    std::string model = session->model;
+    session->last_interim_transcription_ms = session->audio_buffer.duration_ms();
+
+    std::cout << "[RealtimeSession] Firing interim transcription at "
+              << session->last_interim_transcription_ms << "ms" << std::endl;
+
+    auto future = std::async(std::launch::async,
+        [this, session, wav_data = std::move(wav_data), model = std::move(model)]() {
+            transcribe_wav(session, wav_data, model, /*is_interim=*/true);
+            session->interim_in_flight.store(false);
+        });
+
+    {
+        std::lock_guard<std::mutex> lock(transcriptions_mutex_);
+        pending_transcriptions_.erase(
+            std::remove_if(pending_transcriptions_.begin(), pending_transcriptions_.end(),
+                [](const std::future<void>& f) {
+                    return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+                }),
+            pending_transcriptions_.end()
+        );
+        pending_transcriptions_.push_back(std::move(future));
     }
 }
 
@@ -272,6 +330,7 @@ void RealtimeSessionManager::transcribe_and_send(std::shared_ptr<RealtimeSession
     std::string model = session->model;
     session->audio_buffer.clear();
     session->vad.reset();
+    session->last_interim_transcription_ms = 0;  // Reset for next utterance
 
     // Dispatch transcription to worker thread so it doesn't block the WebSocket callback
     auto future = std::async(std::launch::async,
@@ -296,7 +355,8 @@ void RealtimeSessionManager::transcribe_and_send(std::shared_ptr<RealtimeSession
 
 void RealtimeSessionManager::transcribe_wav(
     std::shared_ptr<RealtimeSession> session,
-    std::vector<uint8_t> wav_data, std::string model) {
+    std::vector<uint8_t> wav_data, std::string model,
+    bool is_interim) {
     try {
         // Convert WAV bytes to a string for the router (expects file_data as string)
         std::string file_data(reinterpret_cast<const char*>(wav_data.data()), wav_data.size());
@@ -309,9 +369,11 @@ void RealtimeSessionManager::transcribe_wav(
         };
 
         // Call router for transcription
-        std::cout << "[RealtimeSession] Calling Whisper transcription (" << wav_data.size() << " bytes)..." << std::endl;
+        const char* tag = is_interim ? "interim" : "final";
+        std::cout << "[RealtimeSession] Calling Whisper " << tag << " transcription ("
+                  << wav_data.size() << " bytes)..." << std::endl;
         json response = router_->audio_transcriptions(request);
-        std::cout << "[RealtimeSession] Whisper response: " << response.dump() << std::endl;
+        std::cout << "[RealtimeSession] Whisper " << tag << " response: " << response.dump() << std::endl;
 
         // Send transcription result if session is still active
         if (session->send_message && session->session_active.load()) {
@@ -320,13 +382,24 @@ void RealtimeSessionManager::transcribe_wav(
                 transcript = response["text"].get<std::string>();
             }
 
-            std::cout << "[RealtimeSession] Sending transcript to client: \"" << transcript << "\"" << std::endl;
+            std::cout << "[RealtimeSession] Sending " << tag << " transcript to client: \""
+                      << transcript << "\"" << std::endl;
 
-            json msg = {
-                {"type", "conversation.item.input_audio_transcription.completed"},
-                {"transcript", transcript}
-            };
-            session->send_message(msg);
+            if (is_interim) {
+                // Interim/partial result — client should treat as replaceable
+                json msg = {
+                    {"type", "conversation.item.input_audio_transcription.delta"},
+                    {"delta", transcript}
+                };
+                session->send_message(msg);
+            } else {
+                // Final result — speech segment is complete
+                json msg = {
+                    {"type", "conversation.item.input_audio_transcription.completed"},
+                    {"transcript", transcript}
+                };
+                session->send_message(msg);
+            }
         }
 
     } catch (const std::exception& e) {
