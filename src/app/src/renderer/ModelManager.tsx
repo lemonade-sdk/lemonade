@@ -1393,6 +1393,23 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                           {hfModelSizes[hfModel.id] !== undefined && (
                             <span className="model-size">{formatSize(hfModelSizes[hfModel.id]! / (1024 * 1024 * 1024))}</span>
                           )}
+                          {/* Download button - show for non-GGUF backends or GGUF with quantizations */}
+                          {isHovered && backend && (backend.recipe !== 'llamacpp' || (backend.quantizations && backend.quantizations.length > 0)) && (
+                            <button
+                              className="model-action-btn download-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleInstallHFModel(hfModel);
+                              }}
+                              title="Download from Hugging Face"
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                              </svg>
+                            </button>
+                          )}
                         </span>
                       </div>
 
@@ -1443,24 +1460,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                         ) : backend ? (
                           <span className={`hf-backend-badge ${backend.recipe}`}>{backend.label}</span>
                         ) : null}
-
-                        {/* Download button - show for non-GGUF backends or GGUF with quantizations */}
-                        {isHovered && backend && (backend.recipe !== 'llamacpp' || (backend.quantizations && backend.quantizations.length > 0)) && (
-                          <button
-                            className="model-action-btn download-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleInstallHFModel(hfModel);
-                            }}
-                            title="Download from Hugging Face"
-                          >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                              <polyline points="7 10 12 15 17 10" />
-                              <line x1="12" y1="15" x2="12" y2="3" />
-                            </svg>
-                          </button>
-                        )}
                       </div>
                     </div>
                   </div>
