@@ -24,6 +24,7 @@ interface HFModelInfo {
 
 interface HFSibling {
   rfilename: string;
+  size?: number;
 }
 
 interface HFModelDetails {
@@ -36,6 +37,7 @@ interface HFModelDetails {
 interface GGUFQuantization {
   filename: string;
   quantization: string;
+  size?: number;
 }
 
 interface DetectedBackend {
@@ -94,6 +96,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const [isSearchingHF, setIsSearchingHF] = useState(false);
   const [hfModelBackends, setHfModelBackends] = useState<Record<string, DetectedBackend | null>>({});
   const [hfSelectedQuantizations, setHfSelectedQuantizations] = useState<Record<string, string>>({});
+  const [hfModelSizes, setHfModelSizes] = useState<Record<string, number | undefined>>({});
   const [detectingBackendFor, setDetectingBackendFor] = useState<string | null>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -319,14 +322,36 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     setDetectingBackendFor(modelId);
 
     try {
-      const response = await fetch(`https://huggingface.co/api/models/${modelId}`);
-      if (!response.ok) {
+      // Fetch model details and tree (for file sizes) in parallel
+      const [modelResponse, treeResponse] = await Promise.all([
+        fetch(`https://huggingface.co/api/models/${modelId}`),
+        fetch(`https://huggingface.co/api/models/${modelId}/tree/main`).catch(() => null)
+      ]);
+
+      if (!modelResponse.ok) {
         throw new Error('Failed to fetch model details');
       }
 
-      const data: HFModelDetails = await response.json();
+      const data: HFModelDetails = await modelResponse.json();
       const files = data.siblings.map(s => s.rfilename.toLowerCase());
       const tags = data.tags || [];
+
+      // Parse tree data for file sizes (path -> size mapping)
+      interface TreeFile { path: string; size?: number; type: string }
+      let fileSizes: Record<string, number> = {};
+      if (treeResponse && treeResponse.ok) {
+        try {
+          const treeData: TreeFile[] = await treeResponse.json();
+          fileSizes = treeData.reduce((acc, f) => {
+            if (f.path && f.size !== undefined) {
+              acc[f.path] = f.size;
+            }
+            return acc;
+          }, {} as Record<string, number>);
+        } catch {
+          // Tree parsing failed, continue without sizes
+        }
+      }
 
       // Check for GGUF files (llama.cpp)
       const ggufFiles = data.siblings.filter(s =>
@@ -339,7 +364,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
           const quantMatch = filename.match(/[-._](Q\d+(?:_\d)?(?:_[KS])?(?:_[MSL])?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16)[-._]/i) ||
             filename.match(/[-._](Q\d+(?:_\d)?(?:_[KS])?(?:_[MSL])?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16)\.gguf$/i);
           const quantization = quantMatch ? quantMatch[1].toUpperCase() : 'Unknown';
-          return { filename, quantization };
+          // Get size from tree endpoint
+          const size = fileSizes[filename];
+          return { filename, quantization, size };
         });
 
         setHfModelBackends(prev => ({
@@ -347,12 +374,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
           [modelId]: { recipe: 'llamacpp', label: 'GGUF', quantizations }
         }));
 
-        // Auto-select first quantization
+        // Auto-select first quantization and set initial size
         if (quantizations.length > 0 && !hfSelectedQuantizations[modelId]) {
           setHfSelectedQuantizations(prev => ({
             ...prev,
             [modelId]: quantizations[0].filename
           }));
+          // Set initial size for first quantization
+          if (quantizations[0].size !== undefined) {
+            setHfModelSizes(prev => ({
+              ...prev,
+              [modelId]: quantizations[0].size
+            }));
+          }
         }
         return;
       }
@@ -385,6 +419,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
           backend = { recipe: 'oga-cpu', label: 'ONNX CPU' };
         }
         setHfModelBackends(prev => ({ ...prev, [modelId]: backend }));
+        
+        // Calculate total size from ONNX-related files using tree data
+        const onnxSize = data.siblings
+          .filter(s => s.rfilename.toLowerCase().endsWith('.onnx') || 
+                      s.rfilename.toLowerCase().endsWith('.onnx_data') ||
+                      s.rfilename.toLowerCase().endsWith('.onnx.data'))
+          .reduce((sum, s) => sum + (fileSizes[s.rfilename] || 0), 0);
+        if (onnxSize > 0) {
+          setHfModelSizes(prev => ({ ...prev, [modelId]: onnxSize }));
+        }
         return;
       }
 
@@ -1320,6 +1364,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                         <span className="hf-stats">
                           <span className="hf-downloads" title="Downloads">↓{formatDownloads(hfModel.downloads)}</span>
                         </span>
+                        {hfModelSizes[hfModel.id] !== undefined && (
+                          <span className="model-size">{formatSize(hfModelSizes[hfModel.id]! / (1024 * 1024 * 1024))}</span>
+                        )}
                       </div>
 
                       <div className="hf-model-right">
@@ -1331,10 +1378,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                               value={selectedQuant}
                               onChange={(e) => {
                                 e.stopPropagation();
+                                const newFilename = e.target.value;
                                 setHfSelectedQuantizations(prev => ({
                                   ...prev,
-                                  [hfModel.id]: e.target.value
+                                  [hfModel.id]: newFilename
                                 }));
+                                // Update size for the selected quantization
+                                const selectedQ = quantizations.find(q => q.filename === newFilename);
+                                if (selectedQ?.size !== undefined) {
+                                  setHfModelSizes(prev => ({
+                                    ...prev,
+                                    [hfModel.id]: selectedQ.size
+                                  }));
+                                }
                               }}
                               onClick={(e) => e.stopPropagation()}
                             >
