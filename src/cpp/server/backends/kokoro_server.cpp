@@ -9,10 +9,8 @@
 #include <httplib.h>
 #include <iostream>
 #include <fstream>
-#include <random>
 #include <sstream>
 #include <iomanip>
-#include <algorithm>
 #include <vector>
 
 #ifdef _WIN32

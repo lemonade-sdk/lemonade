@@ -10,7 +10,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
-#include <regex>
 #include <thread>
 #include <chrono>
 #include <algorithm>
@@ -75,7 +74,7 @@ static std::string get_llamacpp_version(const std::string& backend) {
 
 // Helper to push reserved flags and their aliases
 static void push_reserved(std::set<std::string>& reserved,
-                    const std::string& key, 
+                    const std::string& key,
                     const std::vector<std::string>& aliases) {
     reserved.insert(key);
     reserved.insert(aliases.begin(), aliases.end());
@@ -84,7 +83,7 @@ static void push_reserved(std::set<std::string>& reserved,
 // Helper to add a flag-only argument (e.g., --jinja, --embeddings)
 static void push_arg(std::vector<std::string>& args,
                     std::set<std::string>& reserved,
-                    const std::string& key, 
+                    const std::string& key,
                     const std::vector<std::string>& aliases = {}) {
     args.push_back(key);
     push_reserved(reserved, key, aliases);
