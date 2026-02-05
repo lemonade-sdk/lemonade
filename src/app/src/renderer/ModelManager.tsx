@@ -234,7 +234,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     authors.forEach(author => fetchAvatarUrl(author));
   }, [suggestedModels, avatarCache, fetchAvatarUrl]);
 
-  // HuggingFace search function
+  // HuggingFace search function - only searches compatible models (GGUF, ONNX, etc.)
   const searchHuggingFace = useCallback(async (query: string) => {
     if (!query.trim() || query.length < 2) {
       setHfSearchResults([]);
@@ -243,19 +243,41 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
     setIsSearchingHF(true);
     try {
-      const response = await fetch(
-        `https://huggingface.co/api/models?search=${encodeURIComponent(query)}&limit=8&sort=downloads&direction=-1`
+      // Search for all compatible formats in parallel:
+      // - gguf: llama.cpp compatible models
+      // - onnx: ONNX Runtime models (RyzenAI, NPU, CPU, iGPU, Hybrid)
+      const encodedQuery = encodeURIComponent(query);
+      const compatibleFilters = ['gguf', 'onnx'];
+      
+      const searchPromises = compatibleFilters.map(filter =>
+        fetch(`https://huggingface.co/api/models?search=${encodedQuery}&filter=${filter}&limit=8&sort=downloads&direction=-1`)
+          .then(res => res.ok ? res.json() : [])
+          .catch(() => [])
       );
 
-      if (!response.ok) {
-        throw new Error('Failed to search models');
+      const results = await Promise.all(searchPromises);
+      
+      // Merge and deduplicate results by model ID
+      const seenIds = new Set<string>();
+      const mergedResults: HFModelInfo[] = [];
+      
+      for (const resultSet of results) {
+        for (const model of resultSet) {
+          if (!seenIds.has(model.id)) {
+            seenIds.add(model.id);
+            mergedResults.push(model);
+          }
+        }
       }
-
-      const data: HFModelInfo[] = await response.json();
-      setHfSearchResults(data);
+      
+      // Sort merged results by downloads and limit to 12
+      mergedResults.sort((a, b) => b.downloads - a.downloads);
+      const finalResults = mergedResults.slice(0, 12);
+      
+      setHfSearchResults(finalResults);
 
       // Fetch avatars for HF results
-      const authors = new Set(data.map(model => model.id.split('/')[0]));
+      const authors = new Set(finalResults.map(model => model.id.split('/')[0]));
       authors.forEach(author => {
         if (!avatarCache[author]) {
           fetchAvatarUrl(author);
@@ -984,7 +1006,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
-          {isSearchingHF && <span className="search-spinner" />}
         </div>
       </div>
 
@@ -1238,17 +1259,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                 <circle cx="82.4" cy="36.8" r="6.9"/>
               </svg>
               <span className="category-label">Hugging Face</span>
-              {isSearchingHF && <span className="hf-searching-indicator" />}
-              {!isSearchingHF && hfSearchResults.length > 0 && (
+              {hfSearchResults.length > 0 && (
                 <span className="category-count">({hfSearchResults.length})</span>
               )}
             </div>
 
             <div className="model-list hf-model-list">
-              {isSearchingHF && hfSearchResults.length === 0 && (
-                <div className="hf-loading">Searching Hugging Face...</div>
-              )}
-
               {!isSearchingHF && hfSearchResults.length === 0 && searchQuery.length >= 2 && (
                 <div className="hf-empty">No results on Hugging Face</div>
               )}
