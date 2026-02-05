@@ -4,18 +4,21 @@ images using Stable Diffusion models via the OpenAI Python client.
 
 Prerequisites:
 1. Install the OpenAI client: pip install openai
-2. Start the lemonade server: lemonade-server
+2. Start the lemonade server: lemonade-server --sdcpp rocm  (or --sdcpp cpu)
 3. The SD-Turbo model will be auto-downloaded on first use
 
 Usage:
     python api_image_generation.py
+    python api_image_generation.py --backend rocm
+    python api_image_generation.py --backend cpu
 """
 
 import base64
+import argparse
 from pathlib import Path
 
 
-def generate_with_openai_client():
+def generate_with_openai_client(backend="cpu"):
     """Generate image using the OpenAI Python client."""
     try:
         from openai import OpenAI
@@ -29,8 +32,10 @@ def generate_with_openai_client():
         api_key="not-needed",  # Lemonade doesn't require API key
     )
 
-    print("Generating image with OpenAI client...")
-    print("(This may take several minutes with CPU backend)")
+    print(f"Generating image with OpenAI client...{backend}")
+    
+    if backend == "cpu":
+        print("(This may take several minutes with CPU backend)")
 
     response = client.images.generate(
         model="SD-Turbo",
@@ -57,6 +62,18 @@ def generate_with_openai_client():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Generate images using Lemonade server with Stable Diffusion"
+    )
+    parser.add_argument(
+        "--backend",
+        type=str,
+        choices=["cpu", "rocm"],
+        default="cpu",
+        help="Backend to use for image generation (default: cpu). Use 'rocm' for AMD GPU acceleration.",
+    )
+    args = parser.parse_args()
+
     print("=" * 60)
     print("Lemonade Image Generation Example")
     print("=" * 60)
@@ -66,7 +83,7 @@ if __name__ == "__main__":
     print()
 
     # Generate using OpenAI client
-    result = generate_with_openai_client()
+    result = generate_with_openai_client(args.backend)
 
     print()
     print("=" * 60)

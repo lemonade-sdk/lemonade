@@ -184,30 +184,29 @@ void SDServer::install(const std::string& /* backend */) {
                 lemon::SystemInfo::get_unsupported_backend_error("sd-cpp", "rocm")
             );
         }
-        
 
-#ifdef _WIN32
-    filename = "sd-" + short_version + "-bin-win-rocm-x64.zip";
-#elif defined(__linux__)
-    filename = "sd-" + short_version + "-bin-linux-rocm-x64.zip";
-#else
-    throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
-#endif
-    std::cout << "[SDServer] Using ROCm GPU backend" << std::endl;
+        #ifdef _WIN32
+        filename = "sd-" + short_version + "-bin-win-rocm-x64.zip";
+        #elif defined(__linux__)
+        filename = "sd-" + short_version + "-bin-linux-rocm-x64.zip";
+        #else
+        throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
+        #endif
+        std::cout << "[SDServer] Using ROCm GPU backend" << std::endl;
     } else {
         // CPU build (default) - unchanged from original
-#ifdef _WIN32
-    // Windows CPU build with AVX2
-    filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
-#elif defined(__linux__)
-    // Linux build
-    filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
-#elif defined(__APPLE__)
-    // macOS ARM build
-    filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.2-arm64.zip";
-#else
-    throw std::runtime_error("Unsupported platform for stable-diffusion.cpp");
-#endif
+        #ifdef _WIN32
+        // Windows CPU build with AVX2
+        filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
+        #elif defined(__linux__)
+        // Linux build
+        filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
+        #elif defined(__APPLE__)
+        // macOS ARM build
+        filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.2-arm64.zip";
+        #else
+        throw std::runtime_error("Unsupported platform for stable-diffusion.cpp");
+        #endif
     }
 
     std::string url = "https://github.com/" + repo + "/releases/download/" +

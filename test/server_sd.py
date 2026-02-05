@@ -18,7 +18,6 @@ import requests
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
-    _config,
 )
 from utils.test_models import (
     SD_MODEL,

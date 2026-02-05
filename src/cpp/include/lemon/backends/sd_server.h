@@ -39,10 +39,7 @@ public:
 
     // IImageServer implementation
     json image_generations(const json& request) override;
-
-private:
-    std::string backend_;
-
+  
 private:
     // Server executable helper
     std::string find_executable_in_install_dir(const std::string& install_dir);
@@ -52,6 +49,7 @@ private:
 
     // Server state (port_ and process_handle_ inherited from WrappedServer)
     std::string model_path_;
+    std::string backend_;
 };
 
 } // namespace backends
