@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -9,6 +9,40 @@ import ModelOptionsModal from "./ModelOptionsModal";
 import AddModelPanel from "./AddModelPanel";
 import { RecipeOptions, recipeOptionsToApi } from "./recipes/recipeOptions";
 import logoSvg from '../../assets/logo.svg';
+
+// Types for Hugging Face API responses
+interface HFModelInfo {
+  id: string;
+  modelId: string;
+  author: string;
+  downloads: number;
+  likes: number;
+  tags: string[];
+  pipeline_tag?: string;
+  lastModified: string;
+}
+
+interface HFSibling {
+  rfilename: string;
+}
+
+interface HFModelDetails {
+  id: string;
+  modelId: string;
+  siblings: HFSibling[];
+  tags: string[];
+}
+
+interface GGUFQuantization {
+  filename: string;
+  quantization: string;
+}
+
+interface DetectedBackend {
+  recipe: string;
+  label: string;
+  quantizations?: GGUFQuantization[];
+}
 
 interface ModelManagerProps {
   isVisible: boolean;
@@ -54,6 +88,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
   // Avatar cache: author -> avatarUrl
   const [avatarCache, setAvatarCache] = useState<Record<string, string>>({});
+
+  // HuggingFace search state
+  const [hfSearchResults, setHfSearchResults] = useState<HFModelInfo[]>([]);
+  const [isSearchingHF, setIsSearchingHF] = useState(false);
+  const [hfModelBackends, setHfModelBackends] = useState<Record<string, DetectedBackend | null>>({});
+  const [hfSelectedQuantizations, setHfSelectedQuantizations] = useState<Record<string, string>>({});
+  const [detectingBackendFor, setDetectingBackendFor] = useState<string | null>(null);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -191,6 +233,175 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     });
     authors.forEach(author => fetchAvatarUrl(author));
   }, [suggestedModels, avatarCache, fetchAvatarUrl]);
+
+  // HuggingFace search function
+  const searchHuggingFace = useCallback(async (query: string) => {
+    if (!query.trim() || query.length < 2) {
+      setHfSearchResults([]);
+      return;
+    }
+
+    setIsSearchingHF(true);
+    try {
+      const response = await fetch(
+        `https://huggingface.co/api/models?search=${encodeURIComponent(query)}&limit=8&sort=downloads&direction=-1`
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to search models');
+      }
+
+      const data: HFModelInfo[] = await response.json();
+      setHfSearchResults(data);
+
+      // Fetch avatars for HF results
+      const authors = new Set(data.map(model => model.id.split('/')[0]));
+      authors.forEach(author => {
+        if (!avatarCache[author]) {
+          fetchAvatarUrl(author);
+        }
+      });
+    } catch (error) {
+      console.error('Error searching Hugging Face:', error);
+      setHfSearchResults([]);
+    } finally {
+      setIsSearchingHF(false);
+    }
+  }, [avatarCache, fetchAvatarUrl]);
+
+  // Debounced search effect
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    if (searchQuery.trim().length >= 2) {
+      searchTimeoutRef.current = setTimeout(() => {
+        searchHuggingFace(searchQuery);
+      }, 400);
+    } else {
+      setHfSearchResults([]);
+    }
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchQuery, searchHuggingFace]);
+
+  // Detect backend for HuggingFace model
+  const detectBackend = useCallback(async (modelId: string) => {
+    if (hfModelBackends[modelId] !== undefined) return; // Already detected
+
+    setDetectingBackendFor(modelId);
+
+    try {
+      const response = await fetch(`https://huggingface.co/api/models/${modelId}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch model details');
+      }
+
+      const data: HFModelDetails = await response.json();
+      const files = data.siblings.map(s => s.rfilename.toLowerCase());
+      const tags = data.tags || [];
+
+      // Check for GGUF files (llama.cpp)
+      const ggufFiles = data.siblings.filter(s =>
+        s.rfilename.toLowerCase().endsWith('.gguf')
+      );
+
+      if (ggufFiles.length > 0) {
+        const quantizations = ggufFiles.map(f => {
+          const filename = f.rfilename;
+          const quantMatch = filename.match(/[-._](Q\d+(?:_\d)?(?:_[KS])?(?:_[MSL])?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16)[-._]/i) ||
+            filename.match(/[-._](Q\d+(?:_\d)?(?:_[KS])?(?:_[MSL])?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16)\.gguf$/i);
+          const quantization = quantMatch ? quantMatch[1].toUpperCase() : 'Unknown';
+          return { filename, quantization };
+        });
+
+        setHfModelBackends(prev => ({
+          ...prev,
+          [modelId]: { recipe: 'llamacpp', label: 'GGUF', quantizations }
+        }));
+
+        // Auto-select first quantization
+        if (quantizations.length > 0 && !hfSelectedQuantizations[modelId]) {
+          setHfSelectedQuantizations(prev => ({
+            ...prev,
+            [modelId]: quantizations[0].filename
+          }));
+        }
+        return;
+      }
+
+      // Check for ONNX files
+      const hasOnnx = files.some(f => f.endsWith('.onnx') || f.endsWith('.onnx_data'));
+      if (hasOnnx) {
+        const hasNpu = tags.includes('npu') || files.some(f => f.includes('npu'));
+        const hasHybrid = tags.includes('hybrid') || files.some(f => f.includes('hybrid'));
+        const hasIgpu = tags.includes('igpu') || files.some(f => f.includes('igpu'));
+
+        let backend: DetectedBackend;
+        if (hasNpu) {
+          backend = { recipe: 'oga-npu', label: 'ONNX NPU' };
+        } else if (hasHybrid) {
+          backend = { recipe: 'oga-hybrid', label: 'ONNX Hybrid' };
+        } else if (hasIgpu) {
+          backend = { recipe: 'oga-igpu', label: 'ONNX iGPU' };
+        } else {
+          backend = { recipe: 'oga-cpu', label: 'ONNX CPU' };
+        }
+        setHfModelBackends(prev => ({ ...prev, [modelId]: backend }));
+        return;
+      }
+
+      // Check for FLM files
+      const hasFlm = tags.includes('flm') || files.some(f => f.includes('flm') || f.endsWith('.flm'));
+      if (hasFlm) {
+        setHfModelBackends(prev => ({ ...prev, [modelId]: { recipe: 'flm', label: 'FLM NPU' } }));
+        return;
+      }
+
+      // Check for Whisper cpp
+      const hasWhisper = tags.includes('whisper') || modelId.toLowerCase().includes('whisper');
+      const hasBin = files.some(f => f.endsWith('.bin'));
+      if (hasWhisper && hasBin) {
+        setHfModelBackends(prev => ({ ...prev, [modelId]: { recipe: 'whispercpp', label: 'Whisper' } }));
+        return;
+      }
+
+      // Check for Stable Diffusion cpp
+      const hasSdTag = tags.includes('stable-diffusion') || tags.includes('text-to-image') ||
+        modelId.toLowerCase().includes('stable-diffusion') || modelId.toLowerCase().includes('flux');
+      if (hasSdTag) {
+        setHfModelBackends(prev => ({ ...prev, [modelId]: { recipe: 'sd-cpp', label: 'SD.cpp' } }));
+        return;
+      }
+
+      // Default fallback
+      if (tags.includes('text-generation') || tags.includes('conversational')) {
+        setHfModelBackends(prev => ({ ...prev, [modelId]: { recipe: 'llamacpp', label: 'Needs GGUF' } }));
+      } else {
+        setHfModelBackends(prev => ({ ...prev, [modelId]: null }));
+      }
+    } catch (error) {
+      console.error('Error detecting backend:', error);
+      setHfModelBackends(prev => ({ ...prev, [modelId]: null }));
+    } finally {
+      setDetectingBackendFor(null);
+    }
+  }, [hfModelBackends, hfSelectedQuantizations]);
+
+  // Format download count
+  const formatDownloads = (downloads: number): string => {
+    if (downloads >= 1000000) {
+      return `${(downloads / 1000000).toFixed(1)}M`;
+    } else if (downloads >= 1000) {
+      return `${(downloads / 1000).toFixed(1)}K`;
+    }
+    return downloads.toString();
+  };
 
   // Get avatar URL for a model
   const getModelAvatarUrl = (model: { name: string; info: ModelInfo }): string | undefined => {
@@ -548,6 +759,28 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     });
   }, [handleDownloadModel]);
 
+  // Handle installing a HuggingFace model
+  const handleInstallHFModel = useCallback((hfModel: HFModelInfo) => {
+    const backend = hfModelBackends[hfModel.id];
+    if (!backend) return;
+
+    let checkpoint = hfModel.id;
+
+    // For GGUF, append the selected quantization file
+    if (backend.recipe === 'llamacpp' && hfSelectedQuantizations[hfModel.id]) {
+      checkpoint = `${hfModel.id}:${hfSelectedQuantizations[hfModel.id]}`;
+    }
+
+    // Generate a clean model name from the HF model ID
+    const modelName = `user.${hfModel.id.split('/').pop() || hfModel.id}`;
+
+    // Use the same download flow as registered models
+    handleDownloadModel(modelName, {
+      checkpoint,
+      recipe: backend.recipe,
+    });
+  }, [hfModelBackends, hfSelectedQuantizations, handleDownloadModel]);
+
   // Separate useEffect for download resume/retry to avoid stale closure issues
   useEffect(() => {
     const handleDownloadResume = (event: CustomEvent) => {
@@ -751,6 +984,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
+          {isSearchingHF && <span className="search-spinner" />}
         </div>
       </div>
 
@@ -991,6 +1225,125 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
             )}
           </div>
         ))}
+
+        {/* HuggingFace Search Results */}
+        {searchQuery.trim().length >= 2 && (
+          <div className="model-category hf-category">
+            <div className="model-category-header hf-header">
+              <svg className="hf-icon" width="14" height="14" viewBox="0 0 120 120" fill="currentColor">
+                <path d="M37.6,76.5c-3.8,0-6.9-3.1-6.9-6.9V50.5c0-3.8,3.1-6.9,6.9-6.9s6.9,3.1,6.9,6.9v19.2C44.5,73.5,41.4,76.5,37.6,76.5z"/>
+                <path d="M82.4,76.5c-3.8,0-6.9-3.1-6.9-6.9V50.5c0-3.8,3.1-6.9,6.9-6.9s6.9,3.1,6.9,6.9v19.2C89.3,73.5,86.2,76.5,82.4,76.5z"/>
+                <path d="M60,95.4c-19.6,0-35.5-15.9-35.5-35.5V60c0-3.8,3.1-6.9,6.9-6.9s6.9,3.1,6.9,6.9v0c0,12,9.8,21.8,21.8,21.8s21.8-9.8,21.8-21.8v0c0-3.8,3.1-6.9,6.9-6.9s6.9,3.1,6.9,6.9v0C95.5,79.5,79.6,95.4,60,95.4z"/>
+                <circle cx="37.6" cy="36.8" r="6.9"/>
+                <circle cx="82.4" cy="36.8" r="6.9"/>
+              </svg>
+              <span className="category-label">Hugging Face</span>
+              {isSearchingHF && <span className="hf-searching-indicator" />}
+              {!isSearchingHF && hfSearchResults.length > 0 && (
+                <span className="category-count">({hfSearchResults.length})</span>
+              )}
+            </div>
+
+            <div className="model-list hf-model-list">
+              {isSearchingHF && hfSearchResults.length === 0 && (
+                <div className="hf-loading">Searching Hugging Face...</div>
+              )}
+
+              {!isSearchingHF && hfSearchResults.length === 0 && searchQuery.length >= 2 && (
+                <div className="hf-empty">No results on Hugging Face</div>
+              )}
+
+              {hfSearchResults.map(hfModel => {
+                const hfAvatarUrl = avatarCache[hfModel.id.split('/')[0]];
+                const backend = hfModelBackends[hfModel.id];
+                const isDetecting = detectingBackendFor === hfModel.id;
+                const isHovered = hoveredModel === `hf:${hfModel.id}`;
+                const quantizations = backend?.quantizations || [];
+                const selectedQuant = hfSelectedQuantizations[hfModel.id] || '';
+
+                return (
+                  <div
+                    key={`hf:${hfModel.id}`}
+                    className="model-item hf-model-item"
+                    onMouseEnter={() => {
+                      setHoveredModel(`hf:${hfModel.id}`);
+                      detectBackend(hfModel.id);
+                    }}
+                    onMouseLeave={() => setHoveredModel(null)}
+                  >
+                    <div className="model-item-content">
+                      <div className="model-info-left">
+                        <img
+                          src={hfAvatarUrl || logoSvg}
+                          alt=""
+                          className="model-avatar"
+                        />
+                        <span className="model-name hf-model-name">
+                          <span className="model-status-indicator hf-indicator" title="Hugging Face">●</span>
+                          {hfModel.id}
+                        </span>
+                        <span className="hf-stats">
+                          <span className="hf-downloads" title="Downloads">↓{formatDownloads(hfModel.downloads)}</span>
+                        </span>
+                      </div>
+
+                      <div className="hf-model-right">
+                        {/* Quantization dropdown (appears on hover for GGUF models) */}
+                        {isHovered && quantizations.length > 0 && (
+                          <select
+                            className="hf-quant-dropdown"
+                            value={selectedQuant}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setHfSelectedQuantizations(prev => ({
+                                ...prev,
+                                [hfModel.id]: e.target.value
+                              }));
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {quantizations.map(q => (
+                              <option key={q.filename} value={q.filename}>
+                                {q.quantization}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+
+                        {/* Backend badge */}
+                        {isDetecting ? (
+                          <span className="hf-backend-badge detecting">...</span>
+                        ) : backend ? (
+                          <span className={`hf-backend-badge ${backend.recipe}`}>{backend.label}</span>
+                        ) : isHovered ? (
+                          <span className="hf-backend-badge unknown">?</span>
+                        ) : null}
+
+                        {/* Download button - show for non-GGUF backends or GGUF with quantizations */}
+                        {isHovered && backend && (backend.recipe !== 'llamacpp' || (backend.quantizations && backend.quantizations.length > 0)) && (
+                          <button
+                            className="model-action-btn download-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleInstallHFModel(hfModel);
+                            }}
+                            title="Download from Hugging Face"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="downloaded-filter">
