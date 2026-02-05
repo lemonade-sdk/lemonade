@@ -137,7 +137,7 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_supported": {
             "llamacpp": ["vulkan", "rocm", "cpu"],
             "whispercpp": ["cpu"],  # cpu backend available on x86_64
-            "sd-cpp": ["default"],
+            "sd-cpp": ["cpu","rocm"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
@@ -186,11 +186,12 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_supported": {
             "llamacpp": ["vulkan", "rocm", "cpu"],
             "whispercpp": ["npu", "cpu"],  # npu supported on XDNA2, cpu on x86_64
-            "sd-cpp": ["default"],
+            "sd-cpp": ["cpu", "rocm"],
             "flm": ["default"],
             "oga-npu": ["default"],
             "oga-hybrid": ["default"],
             "oga-cpu": ["default"],
+            
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
@@ -231,12 +232,13 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_supported": {
             "llamacpp": ["vulkan", "cpu"],
             "whispercpp": ["cpu"],  # cpu backend available on x86_64
-            "sd-cpp": ["default"],
+            "sd-cpp": ["cpu"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],
             "whispercpp": ["npu"],  # npu backend requires XDNA2 NPU
             # NPU recipes unsupported: CPU is "Intel Core i9-13900K" (no Ryzen AI)
+            "sd-cpp": ["rocm"],
             "flm": ["default"],
             "oga-npu": ["default"],
             "oga-hybrid": ["default"],
@@ -276,12 +278,13 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_supported": {
             "llamacpp": ["vulkan", "cpu"],
             "whispercpp": ["cpu"],  # cpu backend available on x86_64
-            "sd-cpp": ["default"],
+            "sd-cpp": ["cpu"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],  # rocm not supported on RDNA2
             "whispercpp": ["npu"],  # npu backend requires XDNA2 NPU
             # NPU recipes unsupported: CPU is "Ryzen 7 6800U" (no Ryzen AI)
+            "sd-cpp": ["rocm"],
             "flm": ["default"],
             "oga-npu": ["default"],
             "oga-hybrid": ["default"],
@@ -315,7 +318,7 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_unsupported": {
             "llamacpp": ["vulkan", "rocm", "cpu"],
             "whispercpp": ["npu", "cpu"],  # whispercpp is Windows-only
-            "sd-cpp": ["default"],
+            "sd-cpp": ["cpu", "rocm"],
             "flm": ["default"],
             "oga-npu": ["default"],
             "oga-hybrid": ["default"],
@@ -345,11 +348,13 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_supported": {
             "llamacpp": ["vulkan", "cpu"],
-            "sd-cpp": ["default"],
+            "sd-cpp": ["cpu"],
+            
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],
             "whispercpp": ["npu", "cpu"],  # whispercpp is Windows-only
+            "sd-cpp": ["rocm"],
             "flm": ["default"],
             "oga-npu": ["default"],
             "oga-hybrid": ["default"],
@@ -386,11 +391,12 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_supported": {
             "llamacpp": ["vulkan", "rocm", "cpu"],
-            "sd-cpp": ["default"],
+            "sd-cpp": ["cpp"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
             "whispercpp": ["npu", "cpu"],  # whispercpp is Windows-only
+            "sd-cpp": ["rocm"],
             "flm": ["default"],  # Windows NPU only
             "oga-npu": ["default"],
             "oga-hybrid": ["default"],
@@ -427,11 +433,12 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_supported": {
             "llamacpp": ["vulkan", "cpu"],
-            "sd-cpp": ["default"],
+            "sd-cpp": ["cpu"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],  # rocm not supported on RDNA2
             "whispercpp": ["npu", "cpu"],  # whispercpp is Windows-only
+            "sd-cpp": ["rocm"],
             "flm": ["default"],
             "oga-npu": ["default"],
             "oga-hybrid": ["default"],
