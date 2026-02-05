@@ -15,6 +15,17 @@ Usage:
 import argparse
 import base64
 import sys
+import os
+
+# Enable ANSI escape codes on Windows
+if os.name == 'nt':
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        # Enable ENABLE_VIRTUAL_TERMINAL_PROCESSING
+        kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+    except:
+        pass
 
 # Check dependencies
 try:
@@ -35,8 +46,10 @@ SAMPLE_RATE = 16000
 CHUNK_SIZE = 4096
 
 
-def transcribe_microphone(model: str, server_url: str, ws_url: str):
+def transcribe_microphone(model: str, server_url: str):
     """Stream microphone audio using OpenAI SDK."""
+    import urllib.request
+    import json
 
     # Load model via REST API first
     print(f"Loading model: {model}...")
@@ -45,8 +58,6 @@ def transcribe_microphone(model: str, server_url: str, ws_url: str):
     try:
         # Use the models endpoint to trigger model loading
         # The /load endpoint expects model_name
-        import urllib.request
-        import json
         req = urllib.request.Request(
             f"{server_url}/load",
             data=json.dumps({"model_name": model}).encode(),
@@ -57,6 +68,20 @@ def transcribe_microphone(model: str, server_url: str, ws_url: str):
     except Exception as e:
         print(f"Error loading model: {e}")
         print("Make sure Lemonade Server is running: lemonade-server serve")
+        return
+
+    # Get WebSocket port from /health endpoint
+    try:
+        health_url = server_url.replace("/api/v1", "") + "/api/v1/health"
+        with urllib.request.urlopen(health_url, timeout=10) as resp:
+            health = json.loads(resp.read().decode())
+            ws_port = health.get("websocket_port")
+            if not ws_port:
+                print("Error: Server did not provide websocket_port in /health response")
+                return
+            print(f"WebSocket port: {ws_port}")
+    except Exception as e:
+        print(f"Error fetching WebSocket port: {e}")
         return
 
     # Connect to WebSocket using openai's low-level websocket
@@ -72,7 +97,7 @@ def transcribe_microphone(model: str, server_url: str, ws_url: str):
         return
 
     async def run():
-        url = f"{ws_url}?model={model}"
+        url = f"ws://localhost:{ws_port}/realtime?model={model}"
         print(f"WebSocket URL: {url}")
 
         async with websockets.connect(url) as ws:
@@ -109,20 +134,29 @@ def transcribe_microphone(model: str, server_url: str, ws_url: str):
                     pass
 
             async def receive_messages():
+                nonlocal transcripts
+
+                # Simple approach:
+                # - Delta: update current line in-place (just the current utterance)
+                # - Completed: print on new line and move on
+
                 try:
                     while True:
                         msg = json.loads(await ws.recv())
                         msg_type = msg.get("type", "")
 
-                        if msg_type == "conversation.item.input_audio_transcription.completed":
-                            transcript = msg.get("transcript", "").strip()
+                        if msg_type == "conversation.item.input_audio_transcription.delta":
+                            # Interim: show just this delta, update in place
+                            delta_text = msg.get("delta", "").replace('\n', ' ').strip()
+                            if delta_text:
+                                # Clear line and print (works on Windows with VT mode)
+                                print(f"\r{delta_text}\033[K", end="", flush=True)
+                        elif msg_type == "conversation.item.input_audio_transcription.completed":
+                            # Final: print and move to new line
+                            transcript = msg.get("transcript", "").replace('\n', ' ').strip()
                             if transcript:
                                 transcripts.append(transcript)
-                                print(f"\n>>> {transcript}")
-                        elif msg_type == "input_audio_buffer.speech_started":
-                            print("\r[listening...]", end="", flush=True)
-                        elif msg_type == "input_audio_buffer.speech_stopped":
-                            print("\r[transcribing...]", end="", flush=True)
+                                print(f"\r{transcript}\033[K")  # newline at end
                         elif msg_type == "error":
                             print(f"\nError: {msg.get('error', {}).get('message', 'Unknown')}")
                 except asyncio.CancelledError:
@@ -186,16 +220,11 @@ def main():
         default="http://localhost:8000/api/v1",
         help="REST API URL"
     )
-    parser.add_argument(
-        "--ws-url",
-        default="ws://localhost:8100/realtime",
-        help="WebSocket URL"
-    )
 
     args = parser.parse_args()
 
     if args.mic:
-        transcribe_microphone(args.model, args.server, args.ws_url)
+        transcribe_microphone(args.model, args.server)
     else:
         parser.print_help()
         print("\nExample:")
