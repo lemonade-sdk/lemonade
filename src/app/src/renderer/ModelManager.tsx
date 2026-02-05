@@ -229,6 +229,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   useEffect(() => {
     const authors = new Set<string>();
     suggestedModels.forEach(model => {
+      // Skip FastFlowLM models - they use a hardcoded avatar URL
+      if (model.info.recipe === 'flm') return;
       const author = getAuthorFromCheckpoint(model.info.checkpoint);
       if (author && !avatarCache[author]) {
         authors.add(author);
@@ -520,8 +522,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     return downloads.toString();
   };
 
+  // FastFlowLM organization avatar URL from HuggingFace CDN
+  // Source: https://huggingface.co/FastFlowLM
+  const FASTFLOWLM_AVATAR = 'https://cdn-avatars.huggingface.co/v1/production/uploads/683f5b78efd76d2cc378bdb8/-UpeILOfzY4irwwxlAlZk.png';
+
   // Get avatar URL for a model
   const getModelAvatarUrl = (model: { name: string; info: ModelInfo }): string | undefined => {
+    // For FastFlowLM models, use the hardcoded FastFlowLM HuggingFace avatar
+    if (model.info.recipe === 'flm') {
+      return FASTFLOWLM_AVATAR;
+    }
     const author = getAuthorFromCheckpoint(model.info.checkpoint);
     return author ? avatarCache[author] : undefined;
   };
