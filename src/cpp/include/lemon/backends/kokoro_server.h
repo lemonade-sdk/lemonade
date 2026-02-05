@@ -52,10 +52,6 @@ public:
 
     // ITextToSpeechServer implementation
     void audio_speech(const json& request, httplib::DataSink& sink) override;
-
-private:
-    // Server lifecycle helpers
-    bool wait_for_ready(int timeout_seconds = 60);
 };
 
 } // namespace backends

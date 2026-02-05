@@ -448,7 +448,7 @@ void LlamaCppServer::load(const std::string& model_name,
     process_handle_ = ProcessManager::start_process(executable, args, "", is_debug(), true, env_vars);
 
     // Wait for server to be ready
-    if (!wait_for_ready()) {
+    if (!wait_for_ready("/health")) {
         ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};  // Reset to prevent double-stop on destructor
         throw std::runtime_error("llama-server failed to start");

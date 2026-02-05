@@ -56,9 +56,6 @@ public:
     json image_generations(const json& request) override;
 
 private:
-    // Server lifecycle helpers
-    bool wait_for_ready(int timeout_seconds = 60);
-
     // Server state (port_ and process_handle_ inherited from WrappedServer)
     std::string model_path_;
 };

@@ -89,55 +89,6 @@ std::string KokoroServer::download_model(const std::string& checkpoint, const st
     return model_path;
 }
 
-bool KokoroServer::wait_for_ready(int timeout_seconds) {
-    std::cout << "[KokoroServer] Waiting for server to be ready on port " << port_ << "..." << std::endl;
-
-    auto start = std::chrono::steady_clock::now();
-
-    while (true) {
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - start).count();
-
-        if (elapsed >= timeout_seconds) {
-            std::cerr << "[KokoroServer] Timeout waiting for server to be ready after "
-                      << timeout_seconds << "s" << std::endl;
-            return false;
-        }
-
-        // Check if process is still running
-        if (!utils::ProcessManager::is_running(process_handle_)) {
-            int exit_code = utils::ProcessManager::get_exit_code(process_handle_);
-            std::cerr << "[KokoroServer] Server process exited unexpectedly with code: "
-                      << exit_code << std::endl;
-            return false;
-        }
-
-        try {
-            httplib::Client client("127.0.0.1", port_);
-            client.set_connection_timeout(2);
-            client.set_read_timeout(2);
-
-            auto response = client.Get("/");
-            if (response && response->status == 200) {
-                std::cout << "[KokoroServer] Server is ready!" << std::endl;
-                return true;
-            }
-            if (response) {
-                std::cout << "[KokoroServer] Got response with status " << response->status
-                          << ", waiting for 200..." << std::endl;
-            }
-        } catch (const std::exception& e) {
-            if (is_debug()) {
-                std::cout << "[KokoroServer] Health check failed: " << e.what() << std::endl;
-            }
-        } catch (...) {
-            // Server not ready yet
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    }
-}
-
 void KokoroServer::load(const std::string& model_name, const ModelInfo& model_info, const RecipeOptions& options, bool do_not_upgrade) {
     std::cout << "[KokoroServer] Loading model: " << model_name << std::endl;
 
@@ -215,7 +166,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     std::cout << "[KokoroServer] Process started with PID: " << process_handle_.pid << std::endl;
 
     // Wait for server to be ready
-    if (!wait_for_ready()) {
+    if (!wait_for_ready("/")) {
         unload();
         throw std::runtime_error("koko failed to start or become ready");
     }

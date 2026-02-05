@@ -30,55 +30,6 @@ SDServer::~SDServer() {
     unload();
 }
 
-bool SDServer::wait_for_ready(int timeout_seconds) {
-    std::cout << "[SDServer] Waiting for server to be ready on port " << port_ << "..." << std::endl;
-
-    auto start = std::chrono::steady_clock::now();
-
-    while (true) {
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - start).count();
-
-        if (elapsed >= timeout_seconds) {
-            std::cerr << "[SDServer] Timeout waiting for server to be ready after "
-                      << timeout_seconds << "s" << std::endl;
-            return false;
-        }
-
-        // Check if process is still running
-        if (!utils::ProcessManager::is_running(process_handle_)) {
-            int exit_code = utils::ProcessManager::get_exit_code(process_handle_);
-            std::cerr << "[SDServer] Server process exited unexpectedly with code: "
-                      << exit_code << std::endl;
-            return false;
-        }
-
-        try {
-            httplib::Client client("127.0.0.1", port_);
-            client.set_connection_timeout(2);
-            client.set_read_timeout(2);
-
-            auto response = client.Get("/");
-            if (response && response->status == 200) {
-                std::cout << "[SDServer] Server is ready!" << std::endl;
-                return true;
-            }
-            if (response) {
-                std::cout << "[SDServer] Got response with status " << response->status
-                          << ", waiting for 200..." << std::endl;
-            }
-        } catch (const std::exception& e) {
-            if (is_debug()) {
-                std::cout << "[SDServer] Health check failed: " << e.what() << std::endl;
-            }
-        } catch (...) {
-            // Server not ready yet
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    }
-}
-
 void SDServer::install(const std::string& backend) {
     std::string repo = "leejet/stable-diffusion.cpp";
     std::string filename;
@@ -268,7 +219,7 @@ void SDServer::load(const std::string& model_name,
     std::cout << "[SDServer] Process started with PID: " << process_handle_.pid << std::endl;
 
     // Wait for server to be ready
-    if (!wait_for_ready()) {
+    if (!wait_for_ready("/", 60, 500)) {
         unload();
         throw std::runtime_error("sd-server failed to start or become ready");
     }
