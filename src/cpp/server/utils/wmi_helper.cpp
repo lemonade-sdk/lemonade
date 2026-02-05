@@ -2,8 +2,6 @@
 
 #include "wmi_helper.h"
 #include <iostream>
-#include <locale>
-#include <codecvt>
 
 #pragma comment(lib, "wbemuuid.lib")
 
