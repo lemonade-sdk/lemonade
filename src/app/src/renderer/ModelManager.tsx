@@ -6,7 +6,7 @@ import { serverFetch } from './utils/serverConfig';
 import { downloadTracker } from './utils/downloadTracker';
 import { useModels } from './hooks/useModels';
 import ModelOptionsModal from "./ModelOptionsModal";
-import AddModelPanel from "./AddModelPanel";
+import AddModelPanel, { AddModelInitialValues } from "./AddModelPanel";
 import { RecipeOptions, recipeOptionsToApi } from "./recipes/recipeOptions";
 import logoSvg from '../../assets/logo.svg';
 
@@ -82,6 +82,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const [modalityFilter, setModalityFilter] = useState<'text' | 'image' | 'audio' | null>(null);
   const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
   const [showAddModelModal, setShowAddModelModal] = useState(false);
+  const [addModelInitialValues, setAddModelInitialValues] = useState<AddModelInitialValues | undefined>(undefined);
   const [searchQuery, setSearchQuery] = useState('');
   const [loadedModels, setLoadedModels] = useState<Set<string>>(new Set());
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
@@ -1370,7 +1371,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                 <circle cx="37.6" cy="36.8" r="6.9"/>
                 <circle cx="82.4" cy="36.8" r="6.9"/>
               </svg>
-              <span className="category-label">Hugging Face</span>
+              <span className="category-label">Import from Hugging Face</span>
               {hfSearchResults.length > 0 && (
                 <span className="category-count">({hfSearchResults.length})</span>
               )}
@@ -1412,20 +1413,46 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                           )}
                           {/* Download button - show for non-GGUF backends or GGUF with quantizations */}
                           {isHovered && backend && (backend.recipe !== 'llamacpp' || (backend.quantizations && backend.quantizations.length > 0)) && (
-                            <button
-                              className="model-action-btn download-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleInstallHFModel(hfModel);
-                              }}
-                              title="Download from Hugging Face"
-                            >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                <polyline points="7 10 12 15 17 10" />
-                                <line x1="12" y1="15" x2="12" y2="3" />
-                              </svg>
-                            </button>
+                            <>
+                              <button
+                                className="model-action-btn download-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleInstallHFModel(hfModel);
+                                }}
+                                title="Download from Hugging Face"
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                  <polyline points="7 10 12 15 17 10" />
+                                  <line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
+                              </button>
+                              <button
+                                className="model-action-btn edit-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // Build checkpoint with quantization for GGUF
+                                  let checkpoint = hfModel.id;
+                                  if (backend.recipe === 'llamacpp' && hfSelectedQuantizations[hfModel.id]) {
+                                    checkpoint = `${hfModel.id}:${hfSelectedQuantizations[hfModel.id]}`;
+                                  }
+                                  // Pre-fill the Add Model panel
+                                  setAddModelInitialValues({
+                                    name: hfModel.id.split('/').pop() || hfModel.id,
+                                    checkpoint,
+                                    recipe: backend.recipe,
+                                  });
+                                  setShowAddModelModal(true);
+                                }}
+                                title="Edit before adding"
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                </svg>
+                              </button>
+                            </>
                           )}
                         </span>
                       </div>
@@ -1505,14 +1532,21 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         {!showAddModelModal ? (
           <button
             className="add-model-button"
-            onClick={() => setShowAddModelModal(true)}
+            onClick={() => {
+              setAddModelInitialValues(undefined);
+              setShowAddModelModal(true);
+            }}
           >
             Add a model
           </button>
         ) : (
           <AddModelPanel
-            onClose={() => setShowAddModelModal(false)}
+            onClose={() => {
+              setShowAddModelModal(false);
+              setAddModelInitialValues(undefined);
+            }}
             onInstall={handleInstallModel}
+            initialValues={addModelInitialValues}
           />
         )}
       </div>

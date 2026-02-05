@@ -1114,6 +1114,10 @@ footer {
     color: #4CAF50;
 }
 
+.model-action-btn.edit-btn:hover {
+    color: #9C27B0;
+}
+
 .model-action-btn.load-btn:hover {
     color: #2196F3;
 }
