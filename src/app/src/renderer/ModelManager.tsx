@@ -406,35 +406,84 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       );
 
       if (ggufFiles.length > 0) {
-        const allQuantizations = ggufFiles.map(f => {
+        // Group GGUF files by their parent folder
+        // Quantizations are often organized as folders containing split model files
+        const folderGroups: Record<string, { files: string[], totalSize: number }> = {};
+        const rootFiles: { filename: string, size?: number }[] = [];
+
+        ggufFiles.forEach(f => {
           const filename = f.rfilename;
+          const slashIdx = filename.indexOf('/');
+          
+          if (slashIdx > 0) {
+            // File is in a subfolder - group by folder name
+            const folderName = filename.substring(0, slashIdx);
+            if (!folderGroups[folderName]) {
+              folderGroups[folderName] = { files: [], totalSize: 0 };
+            }
+            folderGroups[folderName].files.push(filename);
+            // Add size from tree endpoint
+            const size = fileSizes[filename];
+            if (size !== undefined) {
+              folderGroups[folderName].totalSize += size;
+            }
+          } else {
+            // File is at root level
+            rootFiles.push({ filename, size: fileSizes[filename] });
+          }
+        });
+
+        const quantizations: GGUFQuantization[] = [];
+
+        // Process folder-based quantizations (most common for large models)
+        Object.entries(folderGroups).forEach(([folderName, group]) => {
+          // Extract quantization from folder name
+          const quantMatch = folderName.match(/(Q\d+(?:_\d)?(?:_[KS])?(?:_[MSL])?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16)/i);
+          const quantization = quantMatch ? quantMatch[1].toUpperCase() : folderName;
+          
+          quantizations.push({
+            filename: folderName, // Use folder name as the identifier
+            quantization,
+            size: group.totalSize > 0 ? group.totalSize : undefined
+          });
+        });
+
+        // Process root-level single files (for repos with individual quant files)
+        rootFiles.forEach(({ filename, size }) => {
           const quantMatch = filename.match(/[-._](Q\d+(?:_\d)?(?:_[KS])?(?:_[MSL])?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16)[-._]/i) ||
             filename.match(/[-._](Q\d+(?:_\d)?(?:_[KS])?(?:_[MSL])?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16)\.gguf$/i);
           const quantization = quantMatch ? quantMatch[1].toUpperCase() : 'Unknown';
-          // Get size from tree endpoint
-          const size = fileSizes[filename];
-          return { filename, quantization, size };
+          
+          // Only add if we can identify the quantization
+          if (quantization !== 'Unknown') {
+            quantizations.push({ filename, quantization, size });
+          }
         });
 
-        // Filter out "Unknown" quantizations - these are false positives
-        const quantizations = allQuantizations.filter(q => q.quantization !== 'Unknown');
+        // If we found valid quantizations, set up the backend
+        if (quantizations.length > 0) {
+          // Sort quantizations: prefer common quants like Q4_K_M, Q5_K_M first
+          const quantPriority: Record<string, number> = {
+            'Q4_K_M': 1, 'Q4_K_S': 2, 'Q5_K_M': 3, 'Q5_K_S': 4,
+            'Q6_K': 5, 'Q8_0': 6, 'Q3_K_M': 7, 'Q3_K_S': 8,
+          };
+          quantizations.sort((a, b) => {
+            const pa = quantPriority[a.quantization] || 100;
+            const pb = quantPriority[b.quantization] || 100;
+            return pa - pb;
+          });
 
-        // If all quantizations are "Unknown", this is a false positive - skip GGUF detection
-        if (quantizations.length === 0) {
-          // Fall through to check other formats
-        } else {
           setHfModelBackends(prev => ({
             ...prev,
             [modelId]: { recipe: 'llamacpp', label: 'GGUF', quantizations }
           }));
 
           // Auto-select first quantization and set initial size
-          if (quantizations.length > 0 && !hfSelectedQuantizations[modelId]) {
+          if (!hfSelectedQuantizations[modelId]) {
             setHfSelectedQuantizations(prev => ({
               ...prev,
               [modelId]: quantizations[0].filename
             }));
-            // Set initial size for first quantization
             if (quantizations[0].size !== undefined) {
               setHfModelSizes(prev => ({
                 ...prev,
@@ -444,6 +493,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
           }
           return;
         }
+        // If no valid quantizations found, fall through to check other formats
       }
 
       // Check for ONNX files
