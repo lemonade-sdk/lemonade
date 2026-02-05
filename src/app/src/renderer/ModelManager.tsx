@@ -1390,16 +1390,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                         <span className="model-name hf-model-name">
                           <span className="model-status-indicator hf-indicator" title="Hugging Face">●</span>
                           {hfModel.id}
+                          {hfModelSizes[hfModel.id] !== undefined && (
+                            <span className="model-size">{formatSize(hfModelSizes[hfModel.id]! / (1024 * 1024 * 1024))}</span>
+                          )}
                         </span>
-                        <span className="hf-stats">
-                          <span className="hf-downloads" title="Downloads">↓{formatDownloads(hfModel.downloads)}</span>
-                        </span>
-                        {hfModelSizes[hfModel.id] !== undefined && (
-                          <span className="model-size">{formatSize(hfModelSizes[hfModel.id]! / (1024 * 1024 * 1024))}</span>
-                        )}
                       </div>
 
                       <div className="hf-model-right">
+                        <span className="hf-stats">
+                          <span className="hf-downloads" title="Downloads">↓{formatDownloads(hfModel.downloads)}</span>
+                        </span>
                         {/* Quantization: show as text when not hovered, dropdown when hovered */}
                         {quantizations.length > 0 && (
                           isHovered ? (
