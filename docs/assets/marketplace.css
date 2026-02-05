@@ -176,7 +176,7 @@ body.embedded .marketplace-hero {
 body.embedded .marketplace-hero {
   padding: 12px 15px;
   text-align: left;
-  border-bottom: 1px solid #1a1a1a;
+  border-bottom: none;
   background: #000000;
 }
 
@@ -268,6 +268,37 @@ body.embedded .apps-grid {
   box-shadow: none;
 }
 
+/* Embedded mode: match model manager styling exactly */
+body.embedded .search-input {
+  padding: 8px 12px 8px 34px;
+  background: #0a0a0a;
+  border: 1px solid #1a1a1a;
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 0.75rem;
+}
+
+body.embedded .search-input::placeholder {
+  color: #666666;
+}
+
+body.embedded .search-input:focus {
+  border-color: #333333;
+  background: #0f0f0f;
+}
+
+body.embedded .search-input:hover {
+  border-color: #2a2a2a;
+}
+
+body.embedded .search-icon {
+  display: none;
+}
+
+body.embedded .search-input {
+  padding-left: 12px; /* Remove left padding for icon */
+}
+
 .search-icon {
   position: absolute;
   left: 10px;
@@ -320,6 +351,86 @@ body.embedded .apps-grid {
   background: var(--mp-accent);
   color: var(--mp-bg-card);
   font-weight: 500;
+}
+
+/* Category Dropdown (embedded mode) - matches search input styling */
+.mp-filter-select {
+  padding: 8px 32px 8px 12px;
+  font-size: 0.875rem;
+  font-weight: 400;
+  border: 1px solid var(--mp-border);
+  border-radius: var(--mp-radius-sm);
+  background: var(--mp-bg-card);
+  color: var(--mp-text-primary);
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  margin-left: auto; /* Right-justify */
+}
+
+.mp-filter-select:hover {
+  border-color: var(--mp-text-muted);
+}
+
+.mp-filter-select:focus {
+  border-color: var(--mp-accent);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+}
+
+.mp-filter-select option {
+  background: var(--mp-bg-card);
+  color: var(--mp-text-primary);
+  padding: 8px;
+}
+
+[data-theme="dark"] .mp-filter-select {
+  background-color: #1a1a1a;
+  border-color: #333333;
+  color: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+[data-theme="dark"] .mp-filter-select:hover {
+  border-color: #555555;
+}
+
+[data-theme="dark"] .mp-filter-select:focus {
+  border-color: #555555;
+  box-shadow: none;
+}
+
+[data-theme="dark"] .mp-filter-select option {
+  background: #1a1a1a;
+  color: #ffffff;
+}
+
+/* Embedded mode: match model manager styling exactly */
+body.embedded .mp-filter-select {
+  padding: 8px 28px 8px 12px;
+  background-color: #0a0a0a;
+  border: 1px solid #1a1a1a;
+  border-radius: 6px;
+  color: #666666;
+  font-size: 0.75rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+body.embedded .mp-filter-select:hover {
+  border-color: #2a2a2a;
+}
+
+body.embedded .mp-filter-select:focus {
+  border-color: #333333;
+  background-color: #0f0f0f;
+}
+
+body.embedded .mp-filter-select option {
+  background: #0a0a0a;
+  color: #ffffff;
 }
 
 /* === Apps Grid === */

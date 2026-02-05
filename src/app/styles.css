@@ -4740,13 +4740,13 @@ footer {
 .center-panel-menu-subtitle {
     font-size: 0.9rem;
     color: #888;
-    margin: 0 0 28px 0;
+    margin: 0 0 48px 0;
     text-align: center;
 }
 
 .center-panel-menu-cards {
     display: flex;
-    gap: 16px;
+    gap: 32px;
     width: 100%;
     justify-content: center;
     flex-wrap: wrap;
@@ -4773,8 +4773,9 @@ footer {
 }
 
 .center-panel-menu-card.disabled {
-    opacity: 0.6;
+    opacity: 0.8;
     cursor: not-allowed;
+    background: rgba(255, 255, 255, 0.04);
 }
 
 .menu-card-header {
@@ -4849,23 +4850,18 @@ footer {
 /* Pinned Apps Grid */
 .pinned-apps-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
-    margin-bottom: 12px;
-    padding: 10px;
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 10px;
+    grid-template-columns: repeat(3, auto);
+    gap: 12px;
+    margin-bottom: 14px;
+    padding: 8px 4px;
+    justify-content: center;
 }
 
 .pinned-app-item {
-    aspect-ratio: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 8px;
     overflow: hidden;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .pinned-app-item.loading {
@@ -4873,28 +4869,29 @@ footer {
 }
 
 .pinned-app-item.empty {
-    opacity: 0.3;
+    display: none;
 }
 
 .pinned-app-icon {
-    width: 28px;
-    height: 28px;
-    border-radius: 5px;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
     object-fit: cover;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .pinned-app-icon-skeleton {
-    width: 28px;
-    height: 28px;
-    border-radius: 5px;
-    background: rgba(255, 255, 255, 0.1);
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.08);
 }
 
 .pinned-app-icon-empty {
-    width: 28px;
-    height: 28px;
-    border-radius: 5px;
-    background: rgba(255, 255, 255, 0.05);
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
 }
 
 .menu-card-action {
@@ -5013,11 +5010,9 @@ footer {
 
     /* 3 columns x 2 rows = 6 icons */
     .pinned-apps-grid {
-        grid-template-columns: repeat(3, auto);
-        justify-content: center;
-        padding: 8px 10px;
-        gap: 6px;
-        margin-bottom: 8px;
+        gap: 8px;
+        margin-bottom: 10px;
+        padding: 4px 0;
     }
 
     /* Hide icons 7-9 in compact mode */
@@ -5025,19 +5020,12 @@ footer {
         display: none;
     }
 
-    .pinned-app-item {
-        border-radius: 6px;
-        width: 32px;
-        height: 32px;
-        aspect-ratio: auto;
-    }
-
     .pinned-app-icon,
     .pinned-app-icon-skeleton,
     .pinned-app-icon-empty {
-        width: 22px;
-        height: 22px;
-        border-radius: 4px;
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
     }
 
     .menu-card-action {
@@ -5099,20 +5087,16 @@ footer {
     }
 
     .pinned-apps-grid {
-        padding: 6px 8px;
-        gap: 5px;
-    }
-
-    .pinned-app-item {
-        width: 28px;
-        height: 28px;
+        gap: 6px;
+        padding: 2px 0;
     }
 
     .pinned-app-icon,
     .pinned-app-icon-skeleton,
     .pinned-app-icon-empty {
-        width: 18px;
-        height: 18px;
+        width: 30px;
+        height: 30px;
+        border-radius: 6px;
     }
 
     .menu-card-action {

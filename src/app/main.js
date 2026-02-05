@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -8,6 +8,9 @@ const strict = require('assert/strict');
 const DEFAULT_MIN_WIDTH = 400;
 const DEFAULT_MIN_HEIGHT = 600;
 const ABSOLUTE_MIN_WIDTH = 400;
+// Preferred initial window size to properly display center menu with both cards
+const PREFERRED_INITIAL_WIDTH = 1440;
+const PREFERRED_INITIAL_HEIGHT = 900;
 const MIN_ZOOM_LEVEL = -2;
 const MAX_ZOOM_LEVEL = 3;
 const ZOOM_STEP = 0.2;
@@ -710,9 +713,17 @@ const adjustZoomLevel = (delta) => {
 };
 
 function createWindow() {
+  // Get the primary display's work area (excludes taskbar/dock)
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+
+  // Use preferred size or 90% of screen size, whichever is smaller
+  const initialWidth = Math.min(PREFERRED_INITIAL_WIDTH, Math.floor(screenWidth * 0.9));
+  const initialHeight = Math.min(PREFERRED_INITIAL_HEIGHT, Math.floor(screenHeight * 0.9));
+
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: initialWidth,
+    height: initialHeight,
     minWidth: DEFAULT_MIN_WIDTH,
     minHeight: DEFAULT_MIN_HEIGHT,
     backgroundColor: '#000000',

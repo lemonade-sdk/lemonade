@@ -93,13 +93,36 @@ async function loadApps() {
 }
 
 /**
- * Render category filter buttons
+ * Render category filter buttons or dropdown (for embedded mode)
  */
 function renderCategories() {
   const container = document.getElementById('category-filters');
   if (!container) return;
 
-  // Create "All" button
+  // In embedded mode, use a dropdown for space efficiency
+  if (isEmbedded()) {
+    let options = `<option value="all">All Categories</option>`;
+    for (const cat of categories) {
+      options += `<option value="${cat.id}">${cat.label}</option>`;
+    }
+
+    container.innerHTML = `
+      <select class="mp-filter-select" id="category-select">
+        ${options}
+      </select>
+    `;
+
+    const select = document.getElementById('category-select');
+    if (select) {
+      select.addEventListener('change', (e) => {
+        selectedCategory = e.target.value;
+        renderApps();
+      });
+    }
+    return;
+  }
+
+  // Non-embedded: use buttons
   let html = `<button class="mp-filter-btn active" data-category="all">All</button>`;
 
   // Create category buttons
