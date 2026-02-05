@@ -113,7 +113,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_dgpu", {"gfx110X", "gfx120X"}},                      
     }},
 
-    {"sd-cpp", "default", {"windows", "linux"}, {
+    {"sd-cpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
     }},
 
