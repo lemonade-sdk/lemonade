@@ -95,6 +95,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   // HuggingFace search state
   const [hfSearchResults, setHfSearchResults] = useState<HFModelInfo[]>([]);
   const [isSearchingHF, setIsSearchingHF] = useState(false);
+  const [hfRateLimited, setHfRateLimited] = useState(false);
   const [hfModelBackends, setHfModelBackends] = useState<Record<string, DetectedBackend | null>>({});
   const [hfSelectedQuantizations, setHfSelectedQuantizations] = useState<Record<string, string>>({});
   const [hfModelSizes, setHfModelSizes] = useState<Record<string, number | undefined>>({});
@@ -244,10 +245,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const searchHuggingFace = useCallback(async (query: string) => {
     if (!query.trim() || query.length < 2) {
       setHfSearchResults([]);
+      setHfRateLimited(false);
       return;
     }
 
     setIsSearchingHF(true);
+    setHfRateLimited(false);
     try {
       // Search for all compatible formats in parallel:
       // - gguf: llama.cpp compatible models
@@ -257,8 +260,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       
       const searchPromises = compatibleFilters.map(filter =>
         fetch(`https://huggingface.co/api/models?search=${encodedQuery}&filter=${filter}&limit=8&sort=downloads&direction=-1`)
-          .then(res => res.ok ? res.json() : [])
-          .catch(() => [])
+          .then(res => {
+            if (res.status === 429) {
+              throw new Error('RATE_LIMITED');
+            }
+            return res.ok ? res.json() : [];
+          })
+          .catch((err) => {
+            if (err.message === 'RATE_LIMITED') throw err;
+            return [];
+          })
       );
 
       const results = await Promise.all(searchPromises);
@@ -289,8 +300,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
           fetchAvatarUrl(author);
         }
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error searching Hugging Face:', error);
+      if (error.message === 'RATE_LIMITED') {
+        setHfRateLimited(true);
+      }
       setHfSearchResults([]);
     } finally {
       setIsSearchingHF(false);
@@ -1391,9 +1405,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                   const b = hfModelBackends[m.id];
                   return b === undefined || b !== null;
                 });
-                return !isSearchingHF && validResults.length === 0 && searchQuery.length >= 2 && (
-                  <div className="hf-empty">No compatible models found on Hugging Face</div>
-                );
+                if (!isSearchingHF && validResults.length === 0 && searchQuery.length >= 2) {
+                  if (hfRateLimited) {
+                    return <div className="hf-empty hf-rate-limited">You are currently being rate limited by Hugging Face. Please try again later.</div>;
+                  }
+                  return <div className="hf-empty">No compatible models found on Hugging Face</div>;
+                }
+                return null;
               })()}
 
               {hfSearchResults
