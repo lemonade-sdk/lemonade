@@ -1,10 +1,7 @@
 /**
  * WebSocket client for realtime transcription.
- * Thin wrapper around the OpenAI SDK's OpenAIRealtimeWebSocket.
+ * Uses a raw WebSocket with OpenAI Realtime API message format.
  */
-
-import OpenAI from 'openai';
-import { OpenAIRealtimeWebSocket } from 'openai/beta/realtime/websocket';
 
 export interface TranscriptionCallbacks {
   onTranscription: (text: string) => void;
@@ -15,7 +12,8 @@ export interface TranscriptionCallbacks {
 }
 
 export class TranscriptionWebSocket {
-  private rt: OpenAIRealtimeWebSocket;
+  private socket: WebSocket;
+  private wsPort: number;
 
   constructor(
     serverUrl: string,
@@ -23,55 +21,68 @@ export class TranscriptionWebSocket {
     callbacks: TranscriptionCallbacks,
   ) {
     // Convert http://localhost:8000 -> ws port (port + 100)
-    const wsPort = this.getWsPort(serverUrl);
+    this.wsPort = this.getWsPort(serverUrl);
+    const wsUrl = `ws://localhost:${this.wsPort}/realtime?model=${encodeURIComponent(model)}`;
 
-    const client = new OpenAI({
-      apiKey: 'local',
-      baseURL: `http://localhost:${wsPort}`,
-      dangerouslyAllowBrowser: true,
+    console.log('[WebSocket] Connecting to:', wsUrl);
+
+    // Use raw WebSocket without subprotocols
+    this.socket = new WebSocket(wsUrl);
+
+    this.socket.addEventListener('open', () => {
+      console.log('[WebSocket] Connection opened');
+      // Send session.update with model (server sends session.created automatically)
+      this.send({
+        type: 'session.update',
+        session: { model },
+      });
     });
 
-    this.rt = new OpenAIRealtimeWebSocket(
-      {
-        model,
-        dangerouslyAllowBrowser: true,
-        // The SDK forces wss:// but our local server uses plain ws://
-        onURL: (url) => {
-          url.protocol = 'ws:';
-        },
-      },
-      client,
-    );
+    this.socket.addEventListener('message', (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        console.log('[WebSocket] Received:', msg.type);
 
-    // Wire up events
-    this.rt.on('session.created', () => callbacks.onConnected?.());
-    this.rt.on('input_audio_buffer.speech_started', () =>
-      callbacks.onSpeechEvent('started'),
-    );
-    this.rt.on('input_audio_buffer.speech_stopped', () =>
-      callbacks.onSpeechEvent('stopped'),
-    );
-    this.rt.on(
-      'conversation.item.input_audio_transcription.completed',
-      (e) => {
-        if (typeof e.transcript === 'string') {
-          callbacks.onTranscription(e.transcript);
+        switch (msg.type) {
+          case 'session.created':
+            callbacks.onConnected?.();
+            break;
+          case 'session.updated':
+            // Session config updated, nothing to do
+            break;
+          case 'input_audio_buffer.speech_started':
+            callbacks.onSpeechEvent('started');
+            break;
+          case 'input_audio_buffer.speech_stopped':
+            callbacks.onSpeechEvent('stopped');
+            break;
+          case 'conversation.item.input_audio_transcription.completed':
+            if (typeof msg.transcript === 'string') {
+              callbacks.onTranscription(msg.transcript);
+            }
+            break;
+          case 'error':
+            callbacks.onError?.(msg.error?.message || 'Server error');
+            break;
         }
-      },
-    );
-    this.rt.on('error', (e) =>
-      callbacks.onError?.(e.message || 'Unknown error'),
-    );
-    this.rt.socket.addEventListener('close', () =>
-      callbacks.onDisconnected?.(),
-    );
+      } catch (e) {
+        console.error('[WebSocket] Failed to parse message:', e);
+      }
+    });
 
-    // Send session.update with model once the socket is open
-    this.rt.socket.addEventListener('open', () => {
-      this.rt.send({
-        type: 'session.update',
-        session: { model: model as any },
-      });
+    this.socket.addEventListener('error', (event) => {
+      console.error('[WebSocket] Error event:', event);
+      callbacks.onError?.('WebSocket error');
+    });
+
+    this.socket.addEventListener('close', (ev) => {
+      console.log('[WebSocket] Close event:', { code: ev.code, reason: ev.reason });
+      if (ev.code !== 1000) {
+        callbacks.onError?.(
+          `WebSocket closed (code=${ev.code}). Is the server running on port ${this.wsPort}?`,
+        );
+      }
+      callbacks.onDisconnected?.();
     });
   }
 
@@ -80,24 +91,30 @@ export class TranscriptionWebSocket {
     return match ? parseInt(match[1], 10) + 100 : 8100;
   }
 
+  private send(msg: object) {
+    if (this.socket.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify(msg));
+    }
+  }
+
   sendAudio(base64Audio: string) {
-    this.rt.send({ type: 'input_audio_buffer.append', audio: base64Audio });
+    this.send({ type: 'input_audio_buffer.append', audio: base64Audio });
   }
 
   commitAudio() {
-    this.rt.send({ type: 'input_audio_buffer.commit' });
+    this.send({ type: 'input_audio_buffer.commit' });
   }
 
   clearAudio() {
-    this.rt.send({ type: 'input_audio_buffer.clear' });
+    this.send({ type: 'input_audio_buffer.clear' });
   }
 
   isConnected(): boolean {
-    return this.rt.socket.readyState === WebSocket.OPEN;
+    return this.socket.readyState === WebSocket.OPEN;
   }
 
   close() {
-    this.rt.close();
+    this.socket.close(1000, 'OK');
   }
 }
 
