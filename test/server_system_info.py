@@ -391,7 +391,7 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_supported": {
             "llamacpp": ["vulkan", "rocm", "cpu"],
-            "sd-cpp": ["cpp"],
+            "sd-cpp": ["cpu"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
