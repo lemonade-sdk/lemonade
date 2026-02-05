@@ -112,7 +112,7 @@ const getAppSettingsFilePath = () => {
 const DEFAULT_LAYOUT_SETTINGS = Object.freeze({
   isChatVisible: true,
   isModelManagerVisible: true,
-  isCenterPanelVisible: true,
+  isMarketplaceVisible: true,  // Renamed from isCenterPanelVisible to reset user preference
   isLogsVisible: false,
   modelManagerWidth: 280,
   chatWidth: 350,
@@ -236,7 +236,7 @@ const sanitizeAppSettings = (incoming = {}) => {
   const rawLayout = incoming.layout;
   if (rawLayout && typeof rawLayout === 'object') {
     // Sanitize boolean visibility settings
-    ['isChatVisible', 'isModelManagerVisible', 'isCenterPanelVisible', 'isLogsVisible'].forEach((key) => {
+    ['isChatVisible', 'isModelManagerVisible', 'isMarketplaceVisible', 'isLogsVisible'].forEach((key) => {
       if (typeof rawLayout[key] === 'boolean') {
         sanitized.layout[key] = rawLayout[key];
       }
