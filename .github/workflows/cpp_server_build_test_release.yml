@@ -381,7 +381,7 @@ jobs:
           - name: stable-diffusion (rocm)
             test_type: sd
             backend: rocm
-            runner: [rai300_400, Windows]
+            runner: [stx-halo, Windows]
           # Text to speech
           - name: text-to-speech
             test_type: tts
