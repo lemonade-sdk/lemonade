@@ -1079,7 +1079,7 @@ if(UNIX AND NOT APPLE)
 
     # Install systemd service and configuration files
     install(FILES ${CMAKE_BINARY_DIR}/lemonade-server.service
-        DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/systemd/system
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system
     )
     # Create symlink in standard systemd search path only if not installing to /usr
     # (if prefix is /usr, the service is already in the standard location)
@@ -1088,7 +1088,7 @@ if(UNIX AND NOT APPLE)
             file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/lib/systemd/system\")
             execute_process(
                 COMMAND ${CMAKE_COMMAND} -E create_symlink
-                    ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/systemd/system/lemonade-server.service
+                    ${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemonade-server.service
                     \"\$ENV{DESTDIR}/usr/lib/systemd/system/lemonade-server.service\"
             )
         ")
