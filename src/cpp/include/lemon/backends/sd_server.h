@@ -13,7 +13,20 @@ namespace backends {
 
 class SDServer : public WrappedServer, public IImageServer {
 public:
-    static const BackendSpec SPEC;
+    inline static const BackendSpec SPEC = BackendSpec(
+        // log name
+            "SDServer",
+        // recipe
+            "sd-cpp",
+        // executable
+    #ifdef _WIN32
+            "sd-server.exe",
+    #else
+            "sd-server",
+    #endif
+        // installation dir
+            "sd-cpp"
+    );
 
     explicit SDServer(const std::string& log_level = "info",
                       ModelManager* model_manager = nullptr);

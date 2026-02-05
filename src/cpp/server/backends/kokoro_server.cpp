@@ -27,21 +27,6 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-const BackendSpec KokoroServer::SPEC(
-    // log name
-        "KokoroServer",
-    // recipe
-        "kokoro",
-    // executable
-#ifdef _WIN32
-        "koko.exe",
-#else
-        "koko",
-#endif
-    // installation dir
-        "kokoro"
-);
-
 KokoroServer::KokoroServer(const std::string& log_level, ModelManager* model_manager)
     : WrappedServer("kokoro-server", log_level, model_manager) {
 
@@ -178,9 +163,6 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
 
     // Get koko executable path
     std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, "cpu");
-    if (exe_path.empty()) {
-        throw std::runtime_error("koko executable not found");
-    }
 
     // Choose a port
     port_ = choose_port();

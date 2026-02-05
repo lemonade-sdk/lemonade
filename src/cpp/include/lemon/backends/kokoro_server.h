@@ -11,7 +11,20 @@ namespace backends {
 
 class KokoroServer : public WrappedServer, public ITextToSpeechServer {
 public:
-    static const BackendSpec SPEC;
+    inline static const BackendSpec SPEC = BackendSpec(
+        // log name
+            "KokoroServer",
+        // recipe
+            "kokoro",
+        // executable
+    #ifdef _WIN32
+            "koko.exe",
+    #else
+            "koko",
+    #endif
+        // installation dir
+            "kokoro"
+    );
 
     explicit KokoroServer(const std::string& log_level,
                           ModelManager* model_manager);

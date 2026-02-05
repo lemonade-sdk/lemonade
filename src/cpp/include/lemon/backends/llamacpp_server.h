@@ -9,7 +9,20 @@ namespace backends {
 
 class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer {
 public:
-    static const BackendSpec SPEC;
+    inline static const BackendSpec SPEC = BackendSpec(
+        // log name
+            "LlamaCpp",
+        // recipe
+            "llamacpp",
+        // executable
+    #ifdef _WIN32
+            "llama-server.exe",
+    #else
+            "llama-server",
+    #endif
+        // installation dir
+            "llama"
+    );
 
     LlamaCppServer(const std::string& log_level = "info",
                    ModelManager* model_manager = nullptr);

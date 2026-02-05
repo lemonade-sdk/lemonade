@@ -33,21 +33,6 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-const BackendSpec LlamaCppServer::SPEC(
-    // log name
-        "LlamaCpp",
-    // recipe
-        "llamacpp",
-    // executable
-#ifdef _WIN32
-        "llama-server.exe",
-#else
-        "llama-server",
-#endif
-    // installation dir
-        "llama"
-);
-
 // Embedding model batch configuration set to 8192 as default
 static const int EMBEDDING_CTX_SIZE = 8192;
 static const int EMBEDDING_BATCH_SIZE = 8192;

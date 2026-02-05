@@ -46,9 +46,13 @@ namespace lemon::backends {
         */
         static bool extract_archive(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name);
 
+        // Excluding from lemonade-server to avoid having to compile in additional transitive dependencies
+    #ifndef LEMONADE_TRAY
         static void install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& variant);
-        static std::string get_backend_binary_path(const BackendSpec& spec, const std::string& variant);
         static std::string get_backend_version(const std::string& recipe, const std::string& variant);
+    #endif
+
+        static std::string get_backend_binary_path(const BackendSpec& spec, const std::string& variant);
 
         static std::string get_install_directory(const std::string& dir_name, const std::string& variant);
         static std::string find_executable_in_install_dir(const std::string& install_dir, const std::string& binary_name);

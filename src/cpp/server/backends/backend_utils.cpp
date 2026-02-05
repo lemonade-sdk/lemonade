@@ -175,13 +175,14 @@ namespace lemon::backends {
         throw std::runtime_error(spec.binary + " not found in install directory: " + install_dir);
     }
 
+#ifndef LEMONADE_TRAY
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& variant) {
         std::string config_path = utils::get_resource_path("resources/backend_versions.json");
 
         json config = utils::JsonUtils::load_from_file(config_path);
 
         if (!config.contains(recipe) || !config[recipe].is_object()) {
-            throw std::runtime_error("backend_versions.json is missing 'kokoro' section");
+            throw std::runtime_error("backend_versions.json is missing '" + recipe + "' section");
         }
 
         const auto& recipe_config = config[recipe];
@@ -196,6 +197,12 @@ namespace lemon::backends {
         return version;
     }
 
+    /*static std::string get_installed_version_by_dir(std::string& install_dir) {
+        return (fs::path(install_dir) / "version.txt").string();
+    }
+
+    std::string BackendUtils::get_installed_version(const BackendSpec& spec, const std::string& variant) {
+    }*/
     void BackendUtils::install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& variant) {
         std::string install_dir;
         std::string version_file;
@@ -305,5 +312,5 @@ namespace lemon::backends {
             std::cout << "[" << spec.log_name << "] Found executable at: " << exe_path << std::endl;
         }
     }
-
+#endif
 } // namespace lemon::backends

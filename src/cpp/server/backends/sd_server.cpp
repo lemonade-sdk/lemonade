@@ -17,21 +17,6 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-const BackendSpec SDServer::SPEC(
-    // log name
-        "SDServer",
-    // recipe
-        "sd-cpp",
-    // executable
-#ifdef _WIN32
-        "sd-server.exe",
-#else
-        "sd-server",
-#endif
-    // installation dir
-        "sd-cpp"
-);
-
 SDServer::SDServer(const std::string& log_level,
                    ModelManager* model_manager)
     : WrappedServer("sd-server", log_level, model_manager) {
@@ -168,7 +153,7 @@ void SDServer::load(const std::string& model_name,
     std::cout << "[SDServer] Loading model: " << model_name << std::endl;
 
     // Install sd-server if needed
-    install("");
+    install("cpu");
 
     // Get model path
     std::string model_path = model_info.resolved_path;
@@ -229,10 +214,7 @@ void SDServer::load(const std::string& model_name,
     model_path_ = model_path;
 
     // Get sd-server executable path
-    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, "");
-    if (exe_path.empty()) {
-        throw std::runtime_error("sd-server executable not found");
-    }
+    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, "cpu");
 
     // Choose a port
     port_ = choose_port();
