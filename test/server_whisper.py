@@ -36,8 +36,6 @@ from utils.test_models import (
     TIMEOUT_DEFAULT,
 )
 
-# WebSocket server runs on HTTP port + 100
-WS_PORT = PORT + 100
 
 # Global variable to store the backend to test
 WHISPER_BACKEND = None
@@ -296,12 +294,22 @@ class WhisperTests(ServerTestBase):
 
         return struct.pack(f"<{len(samples)}h", *samples)
 
+    def _get_websocket_port(self):
+        """Fetch WebSocket port from /health endpoint."""
+        response = requests.get(f"{self.base_url}/health", timeout=10)
+        self.assertEqual(response.status_code, 200, "Failed to fetch /health")
+        health = response.json()
+        ws_port = health.get("websocket_port")
+        self.assertIsNotNone(ws_port, "Server did not provide websocket_port in /health")
+        return ws_port
+
     def _make_openai_client(self):
         """Create an AsyncOpenAI client configured for the local server."""
+        ws_port = self._get_websocket_port()
         return AsyncOpenAI(
             api_key="unused",
             base_url=f"http://localhost:{PORT}/api/v1",
-            websocket_base_url=f"ws://localhost:{WS_PORT}",
+            websocket_base_url=f"ws://localhost:{ws_port}",
         )
 
     def test_006_realtime_websocket_connect(self):
@@ -309,9 +317,11 @@ class WhisperTests(ServerTestBase):
         asyncio.run(self._test_006_realtime_websocket_connect())
 
     async def _test_006_realtime_websocket_connect(self):
-        client = self._make_openai_client()
+        ws_port = self._get_websocket_port()
+        print(f"[INFO] WebSocket port from /health: {ws_port}")
 
-        print(f"[INFO] Connecting via OpenAI SDK (ws://localhost:{WS_PORT})")
+        client = self._make_openai_client()
+        print(f"[INFO] Connecting via OpenAI SDK (ws://localhost:{ws_port})")
         async with client.beta.realtime.connect(model=WHISPER_MODEL) as conn:
             # Should receive session.created on connect
             event = await asyncio.wait_for(conn.recv(), timeout=10)

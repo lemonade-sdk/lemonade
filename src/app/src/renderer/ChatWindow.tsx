@@ -1918,25 +1918,22 @@ const sendMessage = async () => {
               <div className="transcription-file-display">
                 {isLiveRecording ? (
                   <div className="live-status">
-                    <span className="status-indicator">
-                      <span className={`dot ${isLiveConnected ? 'connected' : 'connecting'}`} />
-                      {isLiveConnected ? 'Connected' : 'Connecting...'}
-                    </span>
-                    {isSpeaking && (
+                    {!isLiveConnected ? (
                       <span className="status-indicator">
-                        <span className="dot speaking" />
-                        Speaking...
+                        <span className="dot connecting" />
+                        Connecting...
                       </span>
+                    ) : (
+                      <div className="level-meter">
+                        <div
+                          className="level-fill"
+                          style={{
+                            width: `${audioLevel * 100}%`,
+                            backgroundColor: audioLevel > 0.7 ? '#f44336' : audioLevel > 0.3 ? '#4caf50' : '#555',
+                          }}
+                        />
+                      </div>
                     )}
-                    <div className="level-meter">
-                      <div
-                        className="level-fill"
-                        style={{
-                          width: `${audioLevel * 100}%`,
-                          backgroundColor: audioLevel > 0.7 ? '#f44336' : audioLevel > 0.3 ? '#4caf50' : '#555',
-                        }}
-                      />
-                    </div>
                   </div>
                 ) : transcriptionFile ? (
                   <div className="transcription-file-info-display">
