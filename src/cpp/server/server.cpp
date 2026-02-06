@@ -1198,6 +1198,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Use original request body - each backend (FLM, llamacpp, etc.) handles
         // model name transformation internally via their forward methods
         std::string request_body = req.body;
+        bool request_modified = false;
 
         // Handle enable_thinking=false by prepending /no_think to last user message
         if (request_json.contains("enable_thinking") &&
@@ -1218,14 +1219,17 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         if (messages[i].contains("content") && messages[i]["content"].is_string()) {
                             std::string original_content = messages[i]["content"].get<std::string>();
                             messages[i]["content"] = "/no_think\n" + original_content;
-
-                            // Update request_body with modified JSON
-                            request_body = request_json.dump();
+                            request_modified = true;
                             break;
                         }
                     }
                 }
             }
+        }
+
+        // If we modified the request, serialize it back to string
+        if (request_modified) {
+            request_body = request_json.dump();
         }
 
         if (is_streaming) {
