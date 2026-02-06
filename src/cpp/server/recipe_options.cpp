@@ -84,7 +84,7 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
         return {"ctx_size", "llamacpp_backend", "llamacpp_args"};
     } else if (recipe == "whispercpp") {
         return {"whispercpp_backend"};
-    } else if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu" || recipe == "ryzenai" || recipe == "flm") {
+    } else if (recipe == "ryzenai-llm" || recipe == "flm") {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
         return {"steps", "cfg_scale", "width", "height"};

@@ -120,7 +120,7 @@ CLIParser::CLIParser()
         ->type_name("CHECKPOINT");
     pull->add_option("--recipe", tray_config_.recipe, "Inference recipe to use. Required when using a local path.")
         ->type_name("RECIPE")
-        ->check(CLI::IsMember({"llamacpp", "flm", "oga-cpu", "oga-hybrid", "oga-npu", "ryzenai", "whispercpp"}));
+        ->check(CLI::IsMember({"llamacpp", "flm", "ryzenai-llm", "whispercpp"}));
     pull->add_flag("--reasoning", tray_config_.is_reasoning, "Mark model as a reasoning model (e.g., DeepSeek-R1). Adds 'reasoning' label to model metadata.");
     pull->add_flag("--vision", tray_config_.is_vision, "Mark model as a vision model (multimodal). Adds 'vision' label to model metadata.");
     pull->add_flag("--embedding", tray_config_.is_embedding, "Mark model as an embedding model. Adds 'embeddings' label to model metadata. For use with /api/v1/embeddings endpoint.");

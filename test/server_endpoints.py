@@ -676,9 +676,7 @@ class EndpointTests(ServerTestBase):
             "whispercpp",
             "sd-cpp",
             "flm",
-            "oga-npu",
-            "oga-hybrid",
-            "oga-cpu",
+            "ryzenai-llm",
         ]
         for recipe in known_recipes:
             self.assertIn(recipe, recipes, f"Missing recipe: {recipe}")

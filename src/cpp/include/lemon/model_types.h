@@ -14,7 +14,7 @@ enum class ModelType {
 };
 
 // Device type flags for tracking hardware usage
-// Uses bitmask pattern for models that use multiple devices (e.g., oga-hybrid)
+// Uses bitmask pattern for models that use multiple devices
 enum DeviceType : uint32_t {
     DEVICE_NONE = 0,
     DEVICE_CPU  = 1 << 0,  // 0x01
@@ -89,12 +89,8 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
 inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
         return DEVICE_GPU;
-    } else if (recipe == "oga-hybrid") {
-        return DEVICE_GPU | DEVICE_NPU;
-    } else if (recipe == "oga-npu") {
+    } else if (recipe == "ryzenai-llm") {
         return DEVICE_NPU;
-    } else if (recipe == "oga-cpu") {
-        return DEVICE_CPU;
     } else if (recipe == "flm") {
         return DEVICE_NPU;
     } else if (recipe == "whispercpp") {
