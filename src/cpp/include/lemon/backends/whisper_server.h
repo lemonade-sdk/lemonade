@@ -2,6 +2,7 @@
 
 #include "../wrapped_server.h"
 #include "../server_capabilities.h"
+#include "backend_utils.h"
 #include <string>
 #include <filesystem>
 
@@ -10,6 +11,17 @@ namespace backends {
 
 class WhisperServer : public WrappedServer, public IAudioServer {
 public:
+    inline static const BackendSpec SPEC = BackendSpec(
+    // recipe
+        "whispercpp",
+    // executable
+#ifdef _WIN32
+        "whisper-server.exe"
+#else
+        "whisper-server"
+#endif
+    );
+
     explicit WhisperServer(const std::string& log_level = "info",
                           ModelManager* model_manager = nullptr);
 
@@ -38,10 +50,6 @@ public:
     json audio_transcriptions(const json& request) override;
 
 private:
-    std::string get_whisper_server_path(const std::string& backend);
-    std::string find_executable_in_install_dir(const std::string& install_dir);
-    std::string find_external_whisper_server(const std::string& backend);
-
     // NPU compiled cache handling
     void download_npu_compiled_cache(const std::string& model_path,
                                       const std::string& checkpoint,

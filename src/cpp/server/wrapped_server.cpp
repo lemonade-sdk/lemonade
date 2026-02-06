@@ -18,15 +18,12 @@ int WrappedServer::choose_port() {
     return port_;
 }
 
-bool WrappedServer::wait_for_ready() {
-    // Try both /health and /v1/health (FLM uses /v1/health, llama-server uses /health)
-    std::string health_url = get_base_url() + "/health";
-    std::string health_url_v1 = get_base_url() + "/v1/health";
+bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_seconds, long poll_interval_ms) {
+    std::string health_url = get_base_url() + endpoint;
 
     std::cout << "Waiting for " + server_name_ + " to be ready..." << std::endl;
 
-    // Wait up to 10 minutes (large models can take time to load)
-    const int max_attempts = 6000; // 10 minutes at 100ms intervals
+    const int max_attempts = (timeout_seconds * 1000) / poll_interval_ms;
 
     for (int i = 0; i < max_attempts; i++) {
         // Check if process is still running
@@ -42,13 +39,12 @@ bool WrappedServer::wait_for_ready() {
         }
 
         // Try both health endpoints
-        if (utils::HttpClient::is_reachable(health_url, 1) ||
-            utils::HttpClient::is_reachable(health_url_v1, 1)) {
+        if (utils::HttpClient::is_reachable(health_url, 1)) {
             std::cout << server_name_ + " is ready!" << std::endl;
             return true;
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval_ms));
 
         // Print progress every 10 seconds
         if (i % 100 == 0 && i > 0) {

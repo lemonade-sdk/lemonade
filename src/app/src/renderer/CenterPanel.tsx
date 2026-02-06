@@ -1,306 +1,219 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef, memo, useCallback } from 'react';
+import CenterPanelMenu from './CenterPanelMenu';
+
+export type CenterPanelView = 'menu' | 'marketplace';
 
 interface CenterPanelProps {
   isVisible: boolean;
+  currentView: CenterPanelView;
+  onViewChange: (view: CenterPanelView) => void;
   onClose?: () => void;
 }
 
-const apps = [
-  {
-    name: 'Hugging Face',
-    url: 'https://huggingface.co/models?apps=lemonade&sort=trending',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/hugging_face.png',
-  },
-  {
-    name: 'Continue',
-    url: 'https://lemonade-server.ai/docs/server/apps/continue/',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/continue.png',
-  },
-  {
-    name: 'n8n',
-    url: 'https://n8n.io/integrations/lemonade-model/',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/n8n.png',
-  },
-  {
-    name: 'Gaia',
-    url: 'https://github.com/amd/gaia',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/gaia.png',
-  },
-  {
-    name: 'Infinity Arcade',
-    url: 'https://github.com/lemonade-sdk/infinity-arcade',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/infinity_arcade.png',
-  },
-  {
-    name: 'GitHub Copilot',
-    url: 'https://marketplace.visualstudio.com/items?itemName=GitHub.copilot',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/github_copilot.png',
-  },
-  {
-    name: 'OpenHands',
-    url: 'https://openhands.dev/',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/openhands.png',
-  },
-  {
-    name: 'Dify',
-    url: 'https://marketplace.dify.ai/plugins/langgenius/lemonade',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/dify.png',
-  },
-  {
-    name: 'Deep Tutor',
-    url: 'https://deeptutor.knowhiz.us/',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/deep_tutor.png',
-  },
-  {
-    name: 'Iterate.ai',
-    url: 'https://www.iterate.ai/',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/iterate_ai.png',
-  },
-  {
-    name: 'Perplexica',
-    url: 'https://github.com/ItzCrazyKns/Perplexica',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/perplexica.png',
-  },
-];
+// Remote marketplace URL
+const REMOTE_MARKETPLACE_URL = 'https://lemonade-server.ai/marketplace?embedded=true&theme=dark';
 
-const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
-  const galleryRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+const CenterPanel: React.FC<CenterPanelProps> = memo(({ isVisible, currentView, onViewChange, onClose }) => {
+  const [marketplaceUrl, setMarketplaceUrl] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Drag state
-  const [isDragging, setIsDragging] = useState(false);
-  const [startX, setStartX] = useState(0);
-  const [scrollLeft, setScrollLeft] = useState(0);
-  const [velocity, setVelocity] = useState(0);
-  const [isSpinning, setIsSpinning] = useState(false);
-  const [translateX, setTranslateX] = useState(0);
-  const [hasInteracted, setHasInteracted] = useState(false);
-  const [isHovering, setIsHovering] = useState(false);
+  // Determine which URL to use when marketplace view is shown
+  useEffect(() => {
+    if (!isVisible || currentView !== 'marketplace') return;
+    if (marketplaceUrl) return; // Already loaded
 
-  // Track mouse positions for velocity calculation
-  const lastMouseX = useRef(0);
-  const lastTime = useRef(0);
-  const velocityHistory = useRef<number[]>([]);
-  const animationFrame = useRef<number | null>(null);
-  const hasDragged = useRef(false);
-  const clickTarget = useRef<HTMLAnchorElement | null>(null);
+    const determineUrl = async () => {
+      setIsLoading(true);
+      setHasError(false);
 
-  // Duplicate apps for seamless infinite scroll
-  const scrollApps = [...apps, ...apps, ...apps];
+      try {
+        // Try to fetch the remote marketplace page
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-  // Get the width of one set of apps for looping
-  const getSetWidth = useCallback(() => {
-    if (galleryRef.current) {
-      return galleryRef.current.scrollWidth / 3;
-    }
-    return 0;
+        const response = await fetch(REMOTE_MARKETPLACE_URL, {
+          method: 'HEAD',
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          console.log('Using remote marketplace URL');
+          setMarketplaceUrl(REMOTE_MARKETPLACE_URL);
+        } else {
+          throw new Error(`HTTP ${response.status}`);
+        }
+      } catch (error) {
+        console.warn('Remote marketplace unavailable, falling back to local:', error);
+
+        // Get local marketplace URL via Electron API
+        if (window.api?.getLocalMarketplaceUrl) {
+          const localUrl = await window.api.getLocalMarketplaceUrl();
+          if (localUrl) {
+            console.log('Using local marketplace URL:', localUrl);
+            setMarketplaceUrl(localUrl);
+          } else {
+            console.error('Local marketplace file not found');
+            setHasError(true);
+            setIsLoading(false);
+          }
+        } else {
+          // Fallback for non-Electron environment (shouldn't happen)
+          console.error('Electron API not available');
+          setHasError(true);
+          setIsLoading(false);
+        }
+      }
+    };
+
+    determineUrl();
+  }, [isVisible, currentView, marketplaceUrl]);
+
+  // Handle iframe load events
+  const handleIframeLoad = useCallback(() => {
+    setIsLoading(false);
+    setHasError(false);
   }, []);
 
-  // Handle infinite loop wrapping
-  const wrapPosition = useCallback((pos: number) => {
-    const setWidth = getSetWidth();
-    if (setWidth === 0) return pos;
+  const handleIframeError = useCallback(() => {
+    setIsLoading(false);
+    setHasError(true);
+  }, []);
 
-    // Keep position within bounds of -setWidth to 0 for seamless loop
-    while (pos < -setWidth * 2) pos += setWidth;
-    while (pos > 0) pos -= setWidth;
+  // Retry loading
+  const handleRetry = async () => {
+    setIsLoading(true);
+    setHasError(false);
+    setMarketplaceUrl(null);
 
-    return pos;
-  }, [getSetWidth]);
+    // Re-trigger URL determination by trying remote first
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-  // Constant drift speed (negative = scroll left)
-  const driftSpeed = -0.4;
-
-  // Animation loop - always runs, pauses on hover or drag
-  useEffect(() => {
-    // Pause when dragging or hovering
-    if (isDragging || isHovering) return;
-
-    const friction = 0.92;
-
-    const animate = () => {
-      setVelocity(prev => {
-        // Blend towards drift speed instead of zero
-        const diff = prev - driftSpeed;
-        const newVelocity = driftSpeed + diff * friction;
-
-        setTranslateX(pos => wrapPosition(pos + newVelocity));
-        return newVelocity;
+      const response = await fetch(REMOTE_MARKETPLACE_URL, {
+        method: 'HEAD',
+        signal: controller.signal,
       });
 
-      animationFrame.current = requestAnimationFrame(animate);
-    };
+      clearTimeout(timeoutId);
 
-    animationFrame.current = requestAnimationFrame(animate);
-
-    return () => {
-      if (animationFrame.current) {
-        cancelAnimationFrame(animationFrame.current);
+      if (response.ok) {
+        setMarketplaceUrl(REMOTE_MARKETPLACE_URL);
+      } else {
+        throw new Error(`HTTP ${response.status}`);
       }
-    };
-  }, [isDragging, isHovering, wrapPosition]);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    // Store the target to check later if it was a link
-    const target = e.target as HTMLElement;
-    const linkElement = target.tagName === 'A' ? target as HTMLAnchorElement : target.closest('a');
-    clickTarget.current = linkElement;
-
-    if (animationFrame.current) {
-      cancelAnimationFrame(animationFrame.current);
+    } catch {
+      // Fall back to local
+      if (window.api?.getLocalMarketplaceUrl) {
+        const localUrl = await window.api.getLocalMarketplaceUrl();
+        if (localUrl) {
+          setMarketplaceUrl(localUrl);
+        } else {
+          setHasError(true);
+          setIsLoading(false);
+        }
+      } else {
+        setHasError(true);
+        setIsLoading(false);
+      }
     }
-
-    setHasInteracted(true);
-    setIsDragging(true);
-    setIsSpinning(false);
-    setStartX(e.clientX);
-    setScrollLeft(translateX);
-    lastMouseX.current = e.clientX;
-    lastTime.current = Date.now();
-    velocityHistory.current = [];
-    hasDragged.current = false;
   };
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDragging) return;
-
-    const x = e.clientX;
-    const walk = x - startX;
-
-    // Mark as dragged if moved more than a few pixels
-    if (Math.abs(walk) > 5) {
-      hasDragged.current = true;
-    }
-
-    const newTranslate = wrapPosition(scrollLeft + walk);
-    setTranslateX(newTranslate);
-
-    // Calculate velocity
-    const now = Date.now();
-    const dt = now - lastTime.current;
-    if (dt > 0) {
-      const dx = x - lastMouseX.current;
-      const currentVelocity = dx / dt * 16; // Normalize to ~60fps
-      velocityHistory.current.push(currentVelocity);
-
-      // Keep only last 5 velocity samples
-      if (velocityHistory.current.length > 5) {
-        velocityHistory.current.shift();
-      }
-    }
-
-    lastMouseX.current = x;
-    lastTime.current = now;
-  }, [isDragging, startX, scrollLeft, wrapPosition]);
-
-  const handleMouseUp = useCallback(() => {
-    if (!isDragging) return;
-
-    setIsDragging(false);
-
-    // If user clicked on a link and didn't drag, navigate to it
-    if (!hasDragged.current && clickTarget.current) {
-      window.open(clickTarget.current.href, '_blank', 'noopener,noreferrer');
-      clickTarget.current = null;
-      return;
-    }
-
-    clickTarget.current = null;
-
-    // Calculate average velocity from history
-    if (velocityHistory.current.length > 0) {
-      const avgVelocity = velocityHistory.current.reduce((a, b) => a + b, 0) / velocityHistory.current.length;
-
-      // Apply velocity boost if significant, otherwise just let drift take over
-      if (Math.abs(avgVelocity) > 2) {
-        setVelocity(avgVelocity * 1.5); // Boost for more satisfying spin
-      }
-    }
-    // Always trigger spinning state so the animation loop continues
-    setIsSpinning(true);
-  }, [isDragging]);
-
-  // Handle click prevention when dragging
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    if (hasDragged.current) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
+  // Open in browser
+  const handleOpenInBrowser = useCallback(() => {
+    window.open('https://lemonade-server.ai/marketplace', '_blank', 'noopener,noreferrer');
   }, []);
 
-  // Global mouse events for smooth dragging
-  useEffect(() => {
-    if (isDragging) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
+  // Handle opening marketplace from menu
+  const handleOpenMarketplace = useCallback(() => {
+    onViewChange('marketplace');
+  }, [onViewChange]);
 
-      return () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
-      };
+  // Handle going back to menu from marketplace
+  const handleBackToMenu = useCallback(() => {
+    onViewChange('menu');
+  }, [onViewChange]);
+
+  // Handle close button - goes back to menu if in marketplace, otherwise closes panel
+  const handleCloseClick = useCallback(() => {
+    if (currentView === 'marketplace') {
+      handleBackToMenu();
+    } else if (onClose) {
+      onClose();
     }
-  }, [isDragging, handleMouseMove, handleMouseUp]);
+  }, [currentView, handleBackToMenu, onClose]);
 
   if (!isVisible) return null;
 
   return (
     <div className="center-panel">
-      {onClose && (
-        <button
-          className="center-panel-close-btn"
-          onClick={onClose}
-          title="Close panel"
-        >
-          ×
-        </button>
-      )}
-      <div className="marketplace-section">
-        <div className="marketplace-badge">
-          <span className="badge-icon">✦</span>
-          <span className="badge-text">Coming Soon</span>
-        </div>
-        <h1 className="marketplace-title">App Marketplace</h1>
-        <p className="marketplace-subtitle">
-          Quick start for your favorite AI apps
-        </p>
+      {/* Close button - goes back to menu from marketplace, or closes panel from menu */}
+      <button
+        className="center-panel-close-btn"
+        onClick={handleCloseClick}
+        title={currentView === 'marketplace' ? "Back to menu" : "Close panel"}
+      >
+        ×
+      </button>
 
-        <div
-          ref={containerRef}
-          className={`apps-gallery-container ${hasInteracted ? 'interactive' : ''}`}
-          onMouseDown={handleMouseDown}
-          onMouseEnter={() => setIsHovering(true)}
-          onMouseLeave={() => setIsHovering(false)}
-        >
-          <div
-            ref={galleryRef}
-            className={`apps-gallery ${isDragging ? 'dragging' : ''}`}
-            style={{
-              transform: `translateX(${translateX}px)`,
-              cursor: isDragging ? 'grabbing' : 'grab',
-            }}
-          >
-            {scrollApps.map((app, index) => (
-              <a
-                key={index}
-                href={app.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="gallery-app-item"
-                title={app.name}
-                onClick={handleClick}
-                draggable={false}
-              >
-                <div className="gallery-app-icon">
-                  <img src={app.logo} alt={app.name} draggable={false} />
-                </div>
-                <span className="gallery-app-name">{app.name}</span>
-              </a>
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* Menu View */}
+      {currentView === 'menu' && (
+        <CenterPanelMenu onOpenMarketplace={handleOpenMarketplace} />
+      )}
+
+      {/* Marketplace View */}
+      {currentView === 'marketplace' && (
+        <>
+          {/* Loading State */}
+          {isLoading && (
+            <div className="marketplace-loading">
+              <div className="marketplace-loading-spinner"></div>
+              <p>Loading Marketplace...</p>
+            </div>
+          )}
+
+          {/* Error State */}
+          {hasError && !isLoading && (
+            <div className="marketplace-offline">
+              <div className="offline-icon">⚠️</div>
+              <h2>App Marketplace</h2>
+              <p className="offline-message">
+                Something went wrong loading the marketplace.
+              </p>
+              <div className="offline-actions">
+                <button className="offline-btn primary" onClick={handleRetry}>
+                  Try Again
+                </button>
+                <button className="offline-btn secondary" onClick={handleOpenInBrowser}>
+                  Open in Browser
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Marketplace iframe */}
+          {marketplaceUrl && !hasError && (
+            <iframe
+              ref={iframeRef}
+              src={marketplaceUrl}
+              className={`marketplace-iframe ${isLoading ? 'loading' : ''}`}
+              onLoad={handleIframeLoad}
+              onError={handleIframeError}
+              title="App Marketplace"
+              sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+              loading="lazy"
+            />
+          )}
+        </>
+      )}
     </div>
   );
-};
+});
+
+CenterPanel.displayName = 'CenterPanel';
 
 export default CenterPanel;

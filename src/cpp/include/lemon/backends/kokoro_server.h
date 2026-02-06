@@ -2,6 +2,7 @@
 
 #include "../wrapped_server.h"
 #include "../server_capabilities.h"
+#include "backend_utils.h"
 #include <string>
 #include <filesystem>
 
@@ -10,6 +11,17 @@ namespace backends {
 
 class KokoroServer : public WrappedServer, public ITextToSpeechServer {
 public:
+    inline static const BackendSpec SPEC = BackendSpec(
+        // recipe
+            "kokoro",
+        // executable
+    #ifdef _WIN32
+            "koko.exe"
+    #else
+            "koko"
+    #endif
+    );
+
     explicit KokoroServer(const std::string& log_level,
                           ModelManager* model_manager);
 
@@ -36,14 +48,6 @@ public:
 
     // ITextToSpeechServer implementation
     void audio_speech(const json& request, httplib::DataSink& sink) override;
-
-private:
-    std::string get_kokoro_server_path();
-    std::string find_executable_in_install_dir(const std::string& install_dir);
-    std::string find_external_kokoro_server();
-
-    // Server lifecycle helpers
-    bool wait_for_ready(int timeout_seconds = 60);
 };
 
 } // namespace backends

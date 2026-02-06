@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -8,6 +8,9 @@ const strict = require('assert/strict');
 const DEFAULT_MIN_WIDTH = 400;
 const DEFAULT_MIN_HEIGHT = 600;
 const ABSOLUTE_MIN_WIDTH = 400;
+// Preferred initial window size to properly display center menu with both cards
+const PREFERRED_INITIAL_WIDTH = 1440;
+const PREFERRED_INITIAL_HEIGHT = 900;
 const MIN_ZOOM_LEVEL = -2;
 const MAX_ZOOM_LEVEL = 3;
 const ZOOM_STEP = 0.2;
@@ -112,7 +115,7 @@ const getAppSettingsFilePath = () => {
 const DEFAULT_LAYOUT_SETTINGS = Object.freeze({
   isChatVisible: true,
   isModelManagerVisible: true,
-  isCenterPanelVisible: true,
+  isMarketplaceVisible: true,  // Renamed from isCenterPanelVisible to reset user preference
   isLogsVisible: false,
   modelManagerWidth: 280,
   chatWidth: 350,
@@ -236,7 +239,7 @@ const sanitizeAppSettings = (incoming = {}) => {
   const rawLayout = incoming.layout;
   if (rawLayout && typeof rawLayout === 'object') {
     // Sanitize boolean visibility settings
-    ['isChatVisible', 'isModelManagerVisible', 'isCenterPanelVisible', 'isLogsVisible'].forEach((key) => {
+    ['isChatVisible', 'isModelManagerVisible', 'isMarketplaceVisible', 'isLogsVisible'].forEach((key) => {
       if (typeof rawLayout[key] === 'boolean') {
         sanitized.layout[key] = rawLayout[key];
       }
@@ -288,17 +291,17 @@ const writeAppSettingsFile = async (settings) => {
 
 /**
  * Get base URL from Settings file.
- * 
+ *
  */
 const getBaseURLFromConfig = async () => {
-  const settings = await readAppSettingsFile();  
+  const settings = await readAppSettingsFile();
   const defaultBaseUrl = settings.baseURL.value;
 
   if (defaultBaseUrl) {
     const normalized = normalizeServerUrl(defaultBaseUrl);
     if (normalized) {
        return normalized;
-    } 
+    }
 
     return null;
   }
@@ -325,18 +328,18 @@ const broadcastServerPortUpdated = (port) => {
 const fetchWithApiKey = async (entpoint) => {
   let serverUrl = await getBaseURLFromConfig();
   let apiKey = (await readAppSettingsFile()).apiKey.value;
-  
+
   if (!serverUrl) {
     serverUrl = cachedServerPort ? 'http://localhost:8000' : `http://localhost:${cachedServerPort}`;
   }
-  
+
   const options = {timeout: 3000};
-  
+
   if(apiKey != null && apiKey != '') {
     options.headers = {
       Authorization: `Bearer ${apiKey}`,
     }
-  } 
+  }
 
   return await fetch(`${serverUrl}${entpoint}`, options);
 }
@@ -363,7 +366,7 @@ const ensureTrayRunning = () => {
     // or the new one will think it's already running and quit immediately.
     try {
       gracefulKillBlocking('lemonade-server tray');
-      
+
       // Delete the lock file that cause "Already Running" error
       const lock = '/tmp/lemonade_Tray.lock';
       if (fs.existsSync(lock)) fs.unlinkSync(lock);
@@ -405,7 +408,7 @@ function gracefulKillBlocking(processPattern) {
 
     // If pkill returned non-zero, the process wasn't running. We are done.
     if (killResult.status !== 0) {
-        return; 
+        return;
     }
 
     // 2. Poll for exit
@@ -435,7 +438,7 @@ const discoverServerPort = () => {
   //This is the default port to try macos lemonade server on.
   const DEFAULT_PORT = 8000;
   const StatusResponseWaitMs = 5000;
-  
+
   return new Promise((resolve) => {
     // Always ensure tray is running on macOS, regardless of server status
     ensureTrayRunning().then(() => {
@@ -516,11 +519,11 @@ const discoverServerPort = () => {
 };
 
 // Returns the configured server base URL, or null if using localhost discovery
-ipcMain.handle('get-server-base-url', async () => { 
+ipcMain.handle('get-server-base-url', async () => {
   return await getBaseURLFromConfig();
 });
 
-ipcMain.handle('get-server-api-key', async () => { 
+ipcMain.handle('get-server-api-key', async () => {
   return (await readAppSettingsFile()).apiKey.value;
 });
 
@@ -567,7 +570,7 @@ ipcMain.handle('get-server-port', async () => {
 });
 
 ipcMain.handle('get-system-stats', async () => {
-  try {  
+  try {
     const response = await fetchWithApiKey('/api/v1/system-stats');
     if (response.ok) {
       const data = await response.json();
@@ -662,6 +665,21 @@ ipcMain.handle('get-system-info', async () => {
   };
 });
 
+// Get local marketplace file URL for development fallback
+ipcMain.handle('get-local-marketplace-url', async () => {
+  // In development, the marketplace.html is in the docs folder at project root
+  // In production, it would be bundled differently
+  const docsPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'docs', 'marketplace.html')
+    : path.join(__dirname, '..', '..', 'docs', 'marketplace.html');
+
+  // Check if file exists
+  if (fs.existsSync(docsPath)) {
+    return `file://${docsPath}?embedded=true&theme=dark`;
+  }
+  return null;
+});
+
 function updateWindowMinWidth(requestedWidth) {
   if (!mainWindow || typeof requestedWidth !== 'number' || !isFinite(requestedWidth)) {
     return;
@@ -695,9 +713,17 @@ const adjustZoomLevel = (delta) => {
 };
 
 function createWindow() {
+  // Get the primary display's work area (excludes taskbar/dock)
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+
+  // Use preferred size or 90% of screen size, whichever is smaller
+  const initialWidth = Math.min(PREFERRED_INITIAL_WIDTH, Math.floor(screenWidth * 0.9));
+  const initialHeight = Math.min(PREFERRED_INITIAL_HEIGHT, Math.floor(screenHeight * 0.9));
+
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: initialWidth,
+    height: initialHeight,
     minWidth: DEFAULT_MIN_WIDTH,
     minHeight: DEFAULT_MIN_HEIGHT,
     backgroundColor: '#000000',
