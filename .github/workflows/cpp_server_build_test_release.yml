@@ -288,7 +288,7 @@ jobs:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '8103545b-7814-4edc-86d6-a91dc2a2291b'
           project-slug: 'lemonade'
-          signing-policy-slug: 'test-signing'
+          signing-policy-slug: 'release-signing'
           github-artifact-id: '${{ needs.build-lemonade-server-installer.outputs.unsigned-artifact-id }}'
           wait-for-completion: true
           output-artifact-directory: 'signed-msi'
@@ -299,17 +299,17 @@ jobs:
         shell: PowerShell
         run: |
           Write-Host "Verifying signed MSI files..." -ForegroundColor Cyan
-          
+
           if (-not (Test-Path "signed-msi\lemonade-server-minimal.msi")) {
               Write-Host "ERROR: Signed lemonade-server-minimal.msi not found!" -ForegroundColor Red
               exit 1
           }
-          
+
           if (-not (Test-Path "signed-msi\lemonade.msi")) {
               Write-Host "ERROR: Signed lemonade.msi not found!" -ForegroundColor Red
               exit 1
           }
-          
+
           Write-Host "Signed MSI files verified!" -ForegroundColor Green
           Get-ChildItem -Path "signed-msi" -Recurse | Format-Table Name, Length
 
