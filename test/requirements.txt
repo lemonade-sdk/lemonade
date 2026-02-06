@@ -16,3 +16,6 @@ psutil
 
 # Numerical computing (required for embedding similarity tests)
 numpy
+
+# WebSocket client (required for realtime transcription tests)
+websockets

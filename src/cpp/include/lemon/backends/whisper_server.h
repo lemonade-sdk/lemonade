@@ -62,6 +62,12 @@ private:
                                          const json& params,
                                          bool translate);
 
+    // Forward audio data directly (no file I/O) using multipart form-data
+    json forward_multipart_audio_data(const std::string& audio_data,
+                                      const std::string& filename,
+                                      const json& params,
+                                      bool translate);
+
     std::string model_path_;
     std::filesystem::path temp_dir_;  // Directory for temporary audio files
 };
