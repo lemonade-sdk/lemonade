@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Local AI Marketplace - Lemonade</title>
+  <link rel="icon" href="./favicon.ico">
+  <link rel="stylesheet" href="assets/website-styles.css">
+  <link rel="stylesheet" href="assets/marketplace.css">
+</head>
+<body id="marketplace-body">
+  <!-- Navbar (hidden in embedded mode) -->
+  <nav class="navbar" id="navbar">
+    <div class="navbar-brand">
+      <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade</a></span>
+    </div>
+    <div class="navbar-links">
+      <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
+      <a href="docs/">Docs</a>
+      <a href="docs/server/server_models/">Models</a>
+      <a href="marketplace.html" class="active">Marketplace</a>
+      <a href="news/">News</a>
+    </div>
+  </nav>
+
+  <main class="marketplace-main">
+    <!-- Hero Section -->
+    <div class="marketplace-hero">
+      <h1 class="marketplace-title">Local AI Marketplace</h1>
+      <p class="marketplace-subtitle">Apps from our partners and community that work great with Lemonade</p>
+    </div>
+
+    <!-- Search and Filters -->
+    <div class="marketplace-controls">
+      <div class="search-container">
+        <input
+          type="text"
+          id="search-input"
+          class="search-input"
+          placeholder="Search apps..."
+          autocomplete="off"
+        >
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <path d="m21 21-4.3-4.3"></path>
+        </svg>
+      </div>
+      <div class="mp-filter-container" id="category-filters">
+        <!-- Category buttons will be inserted here -->
+      </div>
+    </div>
+
+    <!-- Apps Grid -->
+    <div class="apps-grid" id="apps-grid">
+      <!-- App cards will be inserted here -->
+    </div>
+
+    <!-- Loading State -->
+    <div class="loading-state" id="loading-state">
+      <div class="loading-spinner"></div>
+      <p>Loading apps...</p>
+    </div>
+
+    <!-- Error State -->
+    <div class="error-state" id="error-state">
+      <div class="error-icon">⚠️</div>
+      <h2>We're Offline</h2>
+      <p>Unable to load marketplace data. Please check your internet connection.</p>
+      <button class="retry-btn" onclick="loadApps()">Try Again</button>
+    </div>
+
+    <!-- Empty State -->
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">🔍</div>
+      <p>No apps found matching your search.</p>
+    </div>
+  </main>
+
+  <!-- Footer (hidden in embedded mode) -->
+  <div class="footer-placeholder"></div>
+
+  <script src="assets/footer.js"></script>
+  <script src="assets/marketplace.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Initialize footer if not in embedded mode
+      if (!isEmbedded()) {
+        initializeFooter();
+      }
+      // Load apps
+      loadApps();
+    });
+  </script>
+</body>
+</html>
