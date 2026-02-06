@@ -348,7 +348,7 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_supported": {
             "llamacpp": ["vulkan", "cpu"],
-            "sd-cpp": ["cpu"],  
+            "sd-cpp": ["cpu"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],
@@ -390,11 +390,12 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_supported": {
             "llamacpp": ["vulkan", "rocm", "cpu"],
-            "sd-cpp": ["cpu", "rocm"],
+            "sd-cpp": ["cpu"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
             "whispercpp": ["npu", "cpu"],  # whispercpp is Windows-only
+            "sd-cpp": ["rocm"],
             "flm": ["default"],  # Windows NPU only
             "oga-npu": ["default"],
             "oga-hybrid": ["default"],
