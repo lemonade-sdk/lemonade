@@ -6,6 +6,42 @@ Prefer using get_test_model() from capabilities.py for dynamic model selection
 based on the current wrapped server and backend.
 """
 
+import os
+import platform
+
+
+def get_default_server_binary():
+    """
+    Get the default server binary path from the CMake build directory.
+
+    This is the single source of truth for the default server binary path.
+    All test files should import this function rather than computing the path themselves.
+
+    Returns:
+        Path to lemonade-server binary in the build directory.
+    """
+    # Get the workspace root (test/utils/test_models.py -> workspace root)
+    this_file = os.path.abspath(__file__)
+    utils_dir = os.path.dirname(this_file)
+    test_dir = os.path.dirname(utils_dir)
+    workspace_root = os.path.dirname(test_dir)
+
+    if platform.system() == "Windows":
+        # Visual Studio is a multi-config generator; prefer Release, fall back to Debug
+        release_path = os.path.join(
+            workspace_root, "build", "Release", "lemonade-server.exe"
+        )
+        debug_path = os.path.join(
+            workspace_root, "build", "Debug", "lemonade-server.exe"
+        )
+        if os.path.exists(release_path):
+            return release_path
+        return debug_path
+    else:
+        # Ninja/Make are single-config generators; output is directly in build/
+        return os.path.join(workspace_root, "build", "lemonade-server")
+
+
 # Default port for lemonade server
 PORT = 8000
 
@@ -25,6 +61,18 @@ STANDARD_MESSAGES = [
     {"role": "system", "content": "You are a helpful assistant."},
     {"role": "user", "content": "Who won the world series in 2020?"},
     {"role": "assistant", "content": "The LA Dodgers won in 2020."},
+    {"role": "user", "content": "What was the best play?"},
+]
+
+# Standard test messages for responses
+RESPONSES_MESSAGES = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Who won the world series in 2020?"},
+    {
+        "role": "assistant",
+        "type": "message",
+        "content": [{"text": "The LA Dodgers won in 2020.", "type": "output_text"}],
+    },
     {"role": "user", "content": "What was the best play?"},
 ]
 
@@ -67,6 +115,9 @@ TEST_AUDIO_URL = (
 
 # Stable Diffusion test configuration
 SD_MODEL = "SD-Turbo"
+
+# Text-to-Speech test configuration
+TTS_MODEL = "kokoro-v1"
 
 # Models that should be pre-downloaded for offline testing
 MODELS_FOR_OFFLINE_CACHE = [

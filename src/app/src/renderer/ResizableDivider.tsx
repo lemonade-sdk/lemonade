@@ -7,7 +7,7 @@ interface ResizableDividerProps {
 
 const ResizableDivider: React.FC<ResizableDividerProps> = ({ onMouseDown, orientation = 'vertical' }) => {
   return (
-    <div 
+    <div
       className={`resizable-divider ${orientation === 'horizontal' ? 'horizontal' : ''}`}
       onMouseDown={onMouseDown}
     />
@@ -15,4 +15,3 @@ const ResizableDivider: React.FC<ResizableDividerProps> = ({ onMouseDown, orient
 };
 
 export default ResizableDivider;
-

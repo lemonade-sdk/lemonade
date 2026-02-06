@@ -14,6 +14,7 @@ Usage:
 import base64
 from pathlib import Path
 
+
 def generate_with_openai_client():
     """Generate image using the OpenAI Python client."""
     try:
@@ -25,7 +26,7 @@ def generate_with_openai_client():
     # Point to local lemonade server
     client = OpenAI(
         base_url="http://localhost:8000/api/v1",
-        api_key="not-needed"  # Lemonade doesn't require API key
+        api_key="not-needed",  # Lemonade doesn't require API key
     )
 
     print("Generating image with OpenAI client...")
@@ -39,9 +40,9 @@ def generate_with_openai_client():
         response_format="b64_json",
         # SD-specific parameters (passed through)
         extra_body={
-            "steps": 4,      # SD-Turbo works well with 4 steps
-            "cfg_scale": 1.0  # SD-Turbo uses low CFG
-        }
+            "steps": 4,  # SD-Turbo works well with 4 steps
+            "cfg_scale": 1.0,  # SD-Turbo uses low CFG
+        },
     )
 
     # Save the image

@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   // Expose any APIs you need here
+  isWebApp: false,  // Explicit flag to indicate Electron mode (vs web)
   platform: process.platform,
   minimizeWindow: () => ipcRenderer.send('minimize-window'),
   maximizeWindow: () => ipcRenderer.send('maximize-window'),
@@ -34,8 +35,9 @@ contextBridge.exposeInMainWorld('api', {
   getVersion: () => ipcRenderer.invoke('get-version'),
   discoverServerPort: () => ipcRenderer.invoke('discover-server-port'),
   getServerPort: () => ipcRenderer.invoke('get-server-port'),
-  // Returns the configured server base URL (from --base-url or LEMONADE_APP_BASE_URL), or null if using localhost discovery
+  // Returns the configured server base URL, or null if using localhost discovery
   getServerBaseUrl: () => ipcRenderer.invoke('get-server-base-url'),
+  getServerAPIKey: () => ipcRenderer.invoke('get-server-api-key'),
   onServerPortUpdated: (callback) => {
     if (typeof callback !== 'function') {
       return undefined;
@@ -51,6 +53,24 @@ contextBridge.exposeInMainWorld('api', {
     return () => {
       ipcRenderer.removeListener(channel, handler);
     };
-  }
-});
+  },
+  onConnectionSettingsUpdated: (callback) => {
+    if (typeof callback !== 'function') {
+      return undefined;
+    }
 
+    const channel = 'connection-settings-updated';
+    const handler = (_event, baseURL, apiKey) => {
+      callback(baseURL, apiKey);
+    };
+
+    ipcRenderer.on(channel, handler);
+
+    return () => {
+      ipcRenderer.removeListener(channel, handler);
+    };
+  },
+  getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
+  getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
+  getLocalMarketplaceUrl: () => ipcRenderer.invoke('get-local-marketplace-url'),
+});

@@ -6,6 +6,8 @@ on:
     tags:
       - v*
   workflow_dispatch:
+  repository_dispatch:
+    types: [marketplace-updated]
 
 jobs:
     build-n-publish-website:
@@ -37,6 +39,10 @@ jobs:
           run: |
             git checkout website
             git merge origin/main -X theirs
+        - name: Update README with marketplace apps
+          run: |
+            venvPython=".venv/bin/python"
+            $venvPython docs/update_readme_marketplace.py
         - name: Run mkdocs update script
           run: |
             venvPython=".venv/bin/python"

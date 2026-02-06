@@ -10,14 +10,16 @@ Tests the lemonade-server CLI commands directly (not HTTP API):
 - serve
 - stop
 - run
+- recipes
 
 Two test modes:
 1. Persistent server mode (default): Server starts at beginning, runs all tests, stops at end
 2. Ephemeral mode (--ephemeral): Each command that needs a server starts its own
 
 Usage:
-    python server_cli.py --server-binary lemonade-server
-    python server_cli.py --server-binary lemonade-server --ephemeral
+    python server_cli.py
+    python server_cli.py --ephemeral
+    python server_cli.py --server-binary /path/to/lemonade-server
 """
 
 import unittest
@@ -27,36 +29,23 @@ import socket
 import sys
 import os
 import argparse
-import platform
 
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
+    get_default_server_binary,
 )
-
+from utils.server_base import _stop_server_via_systemd
 
 # Global configuration
 _config = {
     "server_binary": None,
     "ephemeral": False,
+    "apikey": False,
+    "listen_all": False,
 }
-
-
-def _get_default_server_binary():
-    """Get the default server binary path from the build directory."""
-    # Get the workspace root (tests_new/server_cli.py -> workspace root)
-    this_file = os.path.abspath(__file__)
-    tests_new_dir = os.path.dirname(this_file)
-    workspace_root = os.path.dirname(tests_new_dir)
-
-    if platform.system() == "Windows":
-        return os.path.join(
-            workspace_root, "src", "cpp", "build", "Release", "lemonade-server.exe"
-        )
-    else:
-        return os.path.join(workspace_root, "src", "cpp", "build", "lemonade-server")
 
 
 def parse_cli_args():
@@ -65,7 +54,7 @@ def parse_cli_args():
     parser.add_argument(
         "--server-binary",
         type=str,
-        default=_get_default_server_binary(),
+        default=get_default_server_binary(),
         help="Path to lemonade-server binary (default: CMake build output)",
     )
     parser.add_argument(
@@ -73,11 +62,23 @@ def parse_cli_args():
         action="store_true",
         help="Run in ephemeral mode (each command starts its own server)",
     )
+    parser.add_argument(
+        "--api-key",
+        action="store_true",
+        help="Run with API Key",
+    )
+    parser.add_argument(
+        "--listen-all",
+        action="store_true",
+        help="Listens on 0.0.0.0 instead of localhost",
+    )
 
     args, unknown = parser.parse_known_args()
 
     _config["server_binary"] = args.server_binary
     _config["ephemeral"] = args.ephemeral
+    _config["apikey"] = args.api_key
+    _config["listen_all"] = args.listen_all
 
     return args
 
@@ -150,7 +151,13 @@ def wait_for_server_stop(port=PORT, timeout=30):
 
 
 def stop_server():
-    """Stop the server using CLI."""
+    """Stop the server using systemctl on Linux, or CLI as fallback."""
+    # Try systemd first on Linux
+    if _stop_server_via_systemd():
+        wait_for_server_stop()
+        return
+
+    # Try CLI stop command as fallback
     try:
         run_cli_command(["stop"], timeout=30)
         wait_for_server_stop()
@@ -201,8 +208,16 @@ class PersistentServerCLITests(CLITestBase):
 
         # Start server in background
         cmd = [_config["server_binary"], "serve"]
-        if os.name == "nt":
+        # Add --no-tray on Windows or in CI environments (no display server in containers)
+        if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
             cmd.append("--no-tray")
+
+        if _config["listen_all"]:
+            cmd.append("--host")
+            cmd.append("0.0.0.0")
+
+        if _config["apikey"]:
+            os.environ["LEMONADE_API_KEY"] = "api-key"
 
         cls._server_process = subprocess.Popen(
             cmd,
@@ -248,15 +263,14 @@ class PersistentServerCLITests(CLITestBase):
             f"Status should indicate server is running: {result.stdout}",
         )
 
-    # https://github.com/lemonade-sdk/lemonade/issues/923
-    # def test_003_list(self):
-    #     """Test list command to show available models."""
-    #     result = self.assertCommandSucceeds(["list"])
-    #     # List should produce some output (model names or empty message)
-    #     self.assertTrue(
-    #         len(result.stdout) > 0,
-    #         "List command should produce output",
-    #     )
+    def test_003_list(self):
+        """Test list command to show available models."""
+        result = self.assertCommandSucceeds(["list"])
+        # List should produce some output (model names or empty message)
+        self.assertTrue(
+            len(result.stdout) > 0,
+            "List command should produce output",
+        )
 
     def test_004_pull(self):
         """Test pull command to download a model."""
@@ -270,22 +284,73 @@ class PersistentServerCLITests(CLITestBase):
             f"Pull should not report errors: {result.stdout}",
         )
 
-    # https://github.com/lemonade-sdk/lemonade/issues/923
-    # def test_005_delete(self):
-    #     """Test delete command to remove a model."""
-    #     # First ensure model exists
-    #     run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
+    def test_005_delete(self):
+        """Test delete command to remove a model."""
+        # First ensure model exists
+        run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
 
-    #     # Delete the model
-    #     result = self.assertCommandSucceeds(["delete", ENDPOINT_TEST_MODEL])
-    #     output = result.stdout.lower() + result.stderr.lower()
-    #     self.assertTrue(
-    #         "success" in output or "deleted" in output or "removed" in output,
-    #         f"Delete should indicate success: {result.stdout}",
-    #     )
+        # Delete the model
+        result = self.assertCommandSucceeds(["delete", ENDPOINT_TEST_MODEL])
+        output = result.stdout.lower() + result.stderr.lower()
+        self.assertTrue(
+            "success" in output or "deleted" in output or "removed" in output,
+            f"Delete should indicate success: {result.stdout}",
+        )
 
-    #     # Re-pull for other tests
-    #     run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
+        # Re-pull for other tests
+        run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
+
+    def test_006_recipes(self):
+        """Test recipes command shows available recipes and their status."""
+        result = self.assertCommandSucceeds(["recipes"])
+        output = result.stdout
+
+        # Recipes command should show a table with recipe information
+        self.assertTrue(
+            len(output) > 0,
+            "Recipes command should produce output",
+        )
+
+        # Should contain known recipe names
+        known_recipes = [
+            "llamacpp",
+            "whispercpp",
+            "sd-cpp",
+            "flm",
+            "oga-npu",
+            "oga-hybrid",
+            "oga-cpu",
+        ]
+        for recipe in known_recipes:
+            self.assertTrue(
+                recipe in output.lower(),
+                f"Output should contain '{recipe}' recipe: {output}",
+            )
+
+        # Should contain status indicators (installed, supported, unsupported)
+        output_lower = output.lower()
+        has_status = (
+            "installed" in output_lower
+            or "supported" in output_lower
+            or "unsupported" in output_lower
+        )
+        self.assertTrue(
+            has_status,
+            f"Output should contain status indicators: {output}",
+        )
+
+        # Should contain backend names
+        has_backend = (
+            "vulkan" in output_lower
+            or "cpu" in output_lower
+            or "default" in output_lower
+        )
+        self.assertTrue(
+            has_backend,
+            f"Output should contain backend names: {output}",
+        )
+
+        print(f"[OK] Recipes command output shows recipe/backend status")
 
 
 class EphemeralCLITests(CLITestBase):
@@ -347,7 +412,8 @@ class EphemeralCLITests(CLITestBase):
 
         # Start server
         cmd = [_config["server_binary"], "serve"]
-        if os.name == "nt":
+        # Add --no-tray on Windows or in CI environments (no display server in containers)
+        if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
             cmd.append("--no-tray")
 
         server_process = subprocess.Popen(
@@ -396,6 +462,37 @@ class EphemeralCLITests(CLITestBase):
             or result.returncode != 0,
             f"Status should indicate server is not running: {result.stdout}",
         )
+
+    def test_006_recipes_no_server(self):
+        """Test recipes command works without server running."""
+        self.assertFalse(is_server_running(), "Server should not be running")
+
+        result = self.assertCommandSucceeds(["recipes"])
+        output = result.stdout
+
+        # Recipes command should work without server and show recipe info
+        self.assertTrue(
+            len(output) > 0,
+            "Recipes command should produce output",
+        )
+
+        # Should contain known recipe names
+        known_recipes = [
+            "llamacpp",
+            "whispercpp",
+            "sd-cpp",
+            "flm",
+            "oga-npu",
+            "oga-hybrid",
+            "oga-cpu",
+        ]
+        for recipe in known_recipes:
+            self.assertTrue(
+                recipe in output.lower(),
+                f"Output should contain '{recipe}' recipe: {output}",
+            )
+
+        print("[OK] Recipes command works without server running")
 
 
 def run_cli_tests():

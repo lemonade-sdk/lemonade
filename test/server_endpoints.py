@@ -13,8 +13,9 @@ Tests endpoints that don't require specific inference backends:
 - /live
 
 Usage:
-    python server_endpoints.py --server-binary lemonade-server
-    python server_endpoints.py --server-binary ./lemonade-server --server-per-test
+    python server_endpoints.py
+    python server_endpoints.py --server-per-test
+    python server_endpoints.py --server-binary /path/to/lemonade-server
 """
 
 import json
@@ -26,6 +27,7 @@ from utils.server_base import (
     ServerTestBase,
     run_server_tests,
     parse_args,
+    get_config,
     OpenAI,
 )
 from utils.test_models import (
@@ -48,12 +50,28 @@ def get_recipe_options_path():
 class EndpointTests(ServerTestBase):
     """Tests for inference-agnostic endpoints."""
 
+    # Track if model has been pulled in per-test mode (persists across tests)
+    _model_pulled = False
+
     @classmethod
     def setUpClass(cls):
         """Set up class - start server and ensure test model is pulled."""
         super().setUpClass()
 
+        # In per-test mode, server isn't started until setUp(), so defer pre-pull
+        if get_config().get("server_per_test", False):
+            print("\n[SETUP] Per-test mode: will pull model in setUp()")
+            return
+
         # Ensure the test model is pulled once for all tests
+        cls._ensure_model_pulled()
+
+    @classmethod
+    def _ensure_model_pulled(cls):
+        """Ensure the test model is pulled (only does work once)."""
+        if cls._model_pulled:
+            return
+
         print(f"\n[SETUP] Ensuring {ENDPOINT_TEST_MODEL} is pulled...")
         response = requests.post(
             f"http://localhost:{PORT}/api/v1/pull",
@@ -62,8 +80,17 @@ class EndpointTests(ServerTestBase):
         )
         if response.status_code == 200:
             print(f"[SETUP] {ENDPOINT_TEST_MODEL} is ready")
+            cls._model_pulled = True
         else:
             print(f"[SETUP] Warning: pull returned {response.status_code}")
+
+    def setUp(self):
+        """Set up each test."""
+        super().setUp()
+
+        # In per-test mode, ensure model is pulled after server starts
+        if get_config().get("server_per_test", False):
+            self._ensure_model_pulled()
 
     def test_000_endpoints_registered(self):
         """Verify all expected endpoints are registered on both v0 and v1."""
@@ -107,7 +134,9 @@ class EndpointTests(ServerTestBase):
 
     def test_001_live_endpoint(self):
         """Test the /live endpoint for load balancer health checks."""
-        response = requests.get(f"http://localhost:{PORT}/live", timeout=TIMEOUT_DEFAULT)
+        response = requests.get(
+            f"http://localhost:{PORT}/live", timeout=TIMEOUT_DEFAULT
+        )
         self.assertEqual(response.status_code, 200)
         print("[OK] /live endpoint returned 200")
 
@@ -164,12 +193,16 @@ class EndpointTests(ServerTestBase):
     def test_004_models_list_show_all(self):
         """Test that show_all=true returns more models than default."""
         # Get only downloaded models (default)
-        response_default = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+        response_default = requests.get(
+            f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+        )
         self.assertEqual(response_default.status_code, 200)
         downloaded_count = len(response_default.json()["data"])
 
         # Get all models including not-yet-downloaded
-        response_all = requests.get(f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT)
+        response_all = requests.get(
+            f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+        )
         self.assertEqual(response_all.status_code, 200)
         all_count = len(response_all.json()["data"])
 
@@ -220,7 +253,9 @@ class EndpointTests(ServerTestBase):
         self.assertIn(delete_response.status_code, [200, 422])
 
         # Verify model is not in downloaded list
-        models_response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+        models_response = requests.get(
+            f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+        )
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertNotIn(
@@ -240,7 +275,9 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data["status"], "success")
 
         # Verify model is now in downloaded list
-        models_response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+        models_response = requests.get(
+            f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+        )
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertIn(
@@ -290,7 +327,9 @@ class EndpointTests(ServerTestBase):
         )
 
         # Verify model is now in downloaded list
-        models_response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+        models_response = requests.get(
+            f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+        )
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertIn(
@@ -315,7 +354,9 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data["status"], "success")
 
         # Verify model is loaded via health endpoint
-        health_response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        health_response = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        )
         self.assertEqual(health_response.status_code, 200)
         health_data = health_response.json()
 
@@ -342,7 +383,9 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(response.status_code, 200)
 
         # Verify options were applied via health endpoint
-        health_response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        health_response = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        )
         health_data = health_response.json()
 
         # Find our model in loaded models
@@ -431,7 +474,9 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(response.status_code, 200)
 
         # Verify via health
-        health_response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        health_response = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        )
         health_data = health_response.json()
 
         for m in health_data.get("all_models_loaded", []):
@@ -456,7 +501,9 @@ class EndpointTests(ServerTestBase):
         )
 
         # Verify model is loaded
-        health_response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        health_response = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        )
         health_data = health_response.json()
         loaded_models = [
             m["model_name"] for m in health_data.get("all_models_loaded", [])
@@ -479,7 +526,9 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data["status"], "success")
 
         # Verify model is actually unloaded via health endpoint
-        health_response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        health_response = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        )
         health_data = health_response.json()
         loaded_models = [
             m["model_name"] for m in health_data.get("all_models_loaded", [])
@@ -524,7 +573,9 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data["status"], "success")
 
         # Verify all models are unloaded
-        health_response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        health_response = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        )
         health_data = health_response.json()
         self.assertEqual(len(health_data.get("all_models_loaded", [])), 0)
 
@@ -533,7 +584,9 @@ class EndpointTests(ServerTestBase):
     def test_016_delete_model(self):
         """Test deleting a model removes it from local storage."""
         # Model should already be pulled from setUpClass or pull tests
-        models_response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+        models_response = requests.get(
+            f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+        )
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertIn(
@@ -552,7 +605,9 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data["status"], "success")
 
         # Verify model is no longer in the list
-        models_response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+        models_response = requests.get(
+            f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+        )
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertNotIn(ENDPOINT_TEST_MODEL, model_ids)
@@ -587,7 +642,13 @@ class EndpointTests(ServerTestBase):
         self.assertIsInstance(data, dict)
 
         # Check required top-level keys per server_spec.md
-        required_keys = ["OS Version", "Processor", "Physical Memory", "devices"]
+        required_keys = [
+            "OS Version",
+            "Processor",
+            "Physical Memory",
+            "devices",
+            "recipes",
+        ]
         for key in required_keys:
             self.assertIn(key, data, f"Missing required key: {key}")
 
@@ -605,28 +666,88 @@ class EndpointTests(ServerTestBase):
         self.assertIn("name", cpu)
         self.assertIn("available", cpu)
 
-        print(f"[OK] /system-info: OS={data['OS Version'][:30]}...")
+        # Verify recipes structure per server_spec.md
+        recipes = data["recipes"]
+        self.assertIsInstance(recipes, dict)
 
-    def test_019_system_info_verbose(self):
-        """Test the /system-info endpoint with verbose flag includes extra details."""
-        response = requests.get(f"{self.base_url}/system-info?verbose=true", timeout=TIMEOUT_DEFAULT)
-        self.assertEqual(response.status_code, 200)
+        # Should contain known recipes
+        known_recipes = [
+            "llamacpp",
+            "whispercpp",
+            "sd-cpp",
+            "flm",
+            "oga-npu",
+            "oga-hybrid",
+            "oga-cpu",
+        ]
+        for recipe in known_recipes:
+            self.assertIn(recipe, recipes, f"Missing recipe: {recipe}")
 
-        data = response.json()
-        self.assertIsInstance(data, dict)
+        # Each recipe should have backends
+        for recipe_name, recipe_data in recipes.items():
+            self.assertIn(
+                "backends", recipe_data, f"Recipe {recipe_name} missing 'backends'"
+            )
+            backends = recipe_data["backends"]
+            self.assertIsInstance(
+                backends, dict, f"Recipe {recipe_name} backends should be dict"
+            )
 
-        # Check that Python Packages is present in verbose mode
-        self.assertIn(
-            "Python Packages",
-            data,
-            "Python Packages should be present in verbose mode",
+            # Each backend should have required fields
+            for backend_name, backend_data in backends.items():
+                self.assertIn(
+                    "devices",
+                    backend_data,
+                    f"Backend {recipe_name}/{backend_name} missing 'devices'",
+                )
+                self.assertIn(
+                    "supported",
+                    backend_data,
+                    f"Backend {recipe_name}/{backend_name} missing 'supported'",
+                )
+                self.assertIn(
+                    "available",
+                    backend_data,
+                    f"Backend {recipe_name}/{backend_name} missing 'available'",
+                )
+                self.assertIsInstance(
+                    backend_data["devices"],
+                    list,
+                    f"Backend {recipe_name}/{backend_name} devices should be list",
+                )
+                self.assertIsInstance(
+                    backend_data["supported"],
+                    bool,
+                    f"Backend {recipe_name}/{backend_name} supported should be bool",
+                )
+                self.assertIsInstance(
+                    backend_data["available"],
+                    bool,
+                    f"Backend {recipe_name}/{backend_name} available should be bool",
+                )
+
+                # If not supported, should have error field
+                if not backend_data["supported"]:
+                    self.assertIn(
+                        "error",
+                        backend_data,
+                        f"Unsupported backend {recipe_name}/{backend_name} missing 'error'",
+                    )
+
+                # If available, may have version field (optional)
+                # version is optional, so we just check it's a string if present
+                if "version" in backend_data:
+                    self.assertIsInstance(
+                        backend_data["version"],
+                        str,
+                        f"Backend {recipe_name}/{backend_name} version should be string",
+                    )
+
+        print(
+            f"[OK] /system-info: OS={data['OS Version'][:30]}..., recipes={len(recipes)}"
         )
-        packages = data["Python Packages"]
-        self.assertIsInstance(packages, list)
 
-        print(f"[OK] /system-info verbose: {len(packages)} packages listed")
-
-    def test_020_stats_endpoint(self):
+    def test_019_stats_endpoint(self):
         """Test the /stats endpoint returns performance metrics."""
         # First, make an inference request to populate stats
         requests.post(

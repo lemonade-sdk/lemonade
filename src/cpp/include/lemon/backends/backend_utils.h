@@ -18,7 +18,7 @@ namespace lemon::backends {
         * @return true if extraction was successful, false otherwise
         */
         static bool extract_zip(const std::string& zip_path, const std::string& dest_dir, const std::string& backend_name);
-        
+
         /**
         * Extract tar.gz files (Linux/macOS/Windows)
         * @param tarball_path Path to the tar.gz file

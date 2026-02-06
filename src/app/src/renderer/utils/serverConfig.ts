@@ -2,21 +2,18 @@
  * Centralized server configuration management
  * This module provides a single source of truth for the server API base URL
  * and handles automatic port discovery when connections fail.
- * 
- * Supports remote servers via:
- * - Command line: --base-url http://192.168.0.2:8000
- * - Environment variable: LEMONADE_APP_BASE_URL=http://192.168.0.2:8000
- * 
+ *
  * When an explicit URL is configured, port discovery is disabled.
  * Falls back to localhost + port discovery when no explicit URL is provided.
  */
 
 type PortChangeListener = (port: number) => void;
-type UrlChangeListener = (url: string) => void;
+type UrlChangeListener = (url: string, apiKey: string) => void;
 
 class ServerConfig {
   private port: number = 8000;
   private explicitBaseUrl: string | null = null;
+  private apiKey: string | null = null;
   private portListeners: Set<PortChangeListener> = new Set();
   private urlListeners: Set<UrlChangeListener> = new Set();
   private isDiscovering: boolean = false;
@@ -29,11 +26,21 @@ class ServerConfig {
     this.initPromise = this.initialize();
 
     // Listen for port updates from main process (only relevant for localhost mode)
-    if (typeof window !== 'undefined' && window.api?.onServerPortUpdated) {
+    if (typeof window !== 'undefined' && window.api?.onServerPortUpdated && window.api?.onConnectionSettingsUpdated) {
       window.api.onServerPortUpdated((port: number) => {
         // Only update port if we're not using an explicit URL
         if (!this.explicitBaseUrl) {
           this.setPort(port);
+        }
+      });
+
+      window.api.onConnectionSettingsUpdated((baseURL: string, apiKey: string) => {
+        if (this.explicitBaseUrl != baseURL) {
+            this.setUpdatedURL(baseURL);
+        }
+
+        if (this.apiKey != apiKey) {
+           this.setUpdatedAPIKey(apiKey);
         }
       });
     }
@@ -41,15 +48,33 @@ class ServerConfig {
 
   private async initialize(): Promise<void> {
     try {
-      // First, check if an explicit base URL was configured (--base-url or env var)
-      if (typeof window !== 'undefined' && window.api?.getServerBaseUrl) {
+      // Get API Key if available
+      if (typeof window !== 'undefined'&& window.api?.getServerAPIKey) {
+        this.apiKey = await window.api.getServerAPIKey();
+      }
+
+      // In web app mode, use the current origin as the server base URL
+      if (typeof window !== 'undefined' && window.api?.isWebApp) {
+        const origin = window.location?.origin;
+        if (origin && origin !== 'null') {
+          const trimmedOrigin = origin.replace(/\/+$/, '');
+          console.log('Using web app origin as server base URL:', trimmedOrigin);
+          this.explicitBaseUrl = trimmedOrigin;
+          this.initialized = true;
+          return;
+        }
+      }
+
+      // Check if an explicit base URL was configured (--base-url or env var)
+      if (typeof window !== 'undefined' && window.api?.getServerBaseUrl && window.api?.getServerAPIKey) {
         const baseUrl = await window.api.getServerBaseUrl();
         if (baseUrl) {
           console.log('Using explicit server base URL:', baseUrl);
           this.explicitBaseUrl = baseUrl;
-          this.initialized = true;
-          return;
         }
+
+        this.initialized = true;
+        return;
       }
 
       // No explicit URL - use localhost with port discovery
@@ -59,7 +84,7 @@ class ServerConfig {
           this.port = port;
         }
       }
-      
+
       console.log('Using localhost mode with port:', this.port);
       this.initialized = true;
     } catch (error) {
@@ -112,12 +137,40 @@ class ServerConfig {
   }
 
   /**
+   * Get the server API key
+   */
+  getAPIKey(): string {
+    if (this.apiKey) {
+      return this.apiKey;
+    }
+    return '';
+  }
+
+  /**
    * Set the port and notify all listeners (only for localhost mode)
    */
   private setPort(port: number) {
     if (this.port !== port) {
       console.log(`Server port updated: ${this.port} -> ${port}`);
       this.port = port;
+      this.notifyPortListeners();
+      this.notifyUrlListeners();
+    }
+  }
+
+  private setUpdatedURL(baseURL: string) {
+    if (this.explicitBaseUrl != baseURL) {
+      console.log(`Base URL updated: ${this.explicitBaseUrl} -> ${baseURL}`);
+      this.explicitBaseUrl = baseURL;
+      this.notifyPortListeners();
+      this.notifyUrlListeners();
+    }
+  }
+
+  private setUpdatedAPIKey(apiKey: string) {
+    if (this.apiKey != apiKey) {
+      console.log(`API Key updated: ${this.apiKey} -> ${apiKey}`);
+      this.apiKey = apiKey;
       this.notifyPortListeners();
       this.notifyUrlListeners();
     }
@@ -160,13 +213,13 @@ class ServerConfig {
 
       console.log('Discovering server port...');
       const port = await window.api.discoverServerPort();
-      
+
       // discoverServerPort returns null when explicit URL is configured
       if (port === null) {
         console.log('Port discovery returned null (explicit URL configured)');
         return null;
       }
-      
+
       this.setPort(port);
       return port;
     } catch (error) {
@@ -209,9 +262,11 @@ class ServerConfig {
 
   private notifyUrlListeners() {
     const url = this.getServerBaseUrl();
+    const apiKey = this.getAPIKey();
+
     this.urlListeners.forEach((listener) => {
       try {
-        listener(url);
+        listener(url, apiKey);
       } catch (error) {
         console.error('Error in URL change listener:', error);
       }
@@ -222,10 +277,19 @@ class ServerConfig {
    * Wrapper for fetch that automatically discovers port on connection failures
    * (only attempts discovery in localhost mode)
    */
-  async fetch(endpoint: string, options?: RequestInit): Promise<Response> {
-    const fullUrl = endpoint.startsWith('http') 
-      ? endpoint 
+  async fetch(endpoint: string, opts?: RequestInit): Promise<Response> {
+    const fullUrl = endpoint.startsWith('http')
+      ? endpoint
       : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+
+    const options = { ...opts };
+
+    if(this.apiKey != null && this.apiKey != '') {
+      options.headers = {
+        ...options.headers,
+        Authorization: `Bearer ${this.apiKey}`,
+      }
+    }
 
     try {
       const response = await fetch(fullUrl, options);
@@ -238,13 +302,13 @@ class ServerConfig {
 
       // If fetch fails in localhost mode, try discovering the port and retry once
       console.warn('Fetch failed, attempting port discovery...', error);
-      
+
       try {
         await this.discoverPort();
         const newUrl = endpoint.startsWith('http')
           ? endpoint.replace(/localhost:\d+/, `localhost:${this.port}`)
           : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
-        
+
         return await fetch(newUrl, options);
       } catch (retryError) {
         // If retry also fails, throw the original error
@@ -260,6 +324,7 @@ export const serverConfig = new ServerConfig();
 // Export convenience functions
 export const getApiBaseUrl = () => serverConfig.getApiBaseUrl();
 export const getServerBaseUrl = () => serverConfig.getServerBaseUrl();
+export const getAPIKey = () => serverConfig.getAPIKey();
 export const getServerPort = () => serverConfig.getPort();
 export const discoverServerPort = () => serverConfig.discoverPort();
 export const isRemoteServer = () => serverConfig.isRemoteServer();

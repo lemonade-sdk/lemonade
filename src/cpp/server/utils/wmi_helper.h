@@ -18,15 +18,15 @@ public:
     COMInitializer() {
         hr_ = CoInitializeEx(0, COINIT_MULTITHREADED);
     }
-    
+
     ~COMInitializer() {
         if (SUCCEEDED(hr_)) {
             CoUninitialize();
         }
     }
-    
+
     bool succeeded() const { return SUCCEEDED(hr_); }
-    
+
 private:
     HRESULT hr_;
 };
@@ -36,13 +36,13 @@ class WMIConnection {
 public:
     WMIConnection();
     ~WMIConnection();
-    
+
     bool is_valid() const { return pSvc_ != nullptr; }
-    
+
     // Query WMI and call callback for each result
-    bool query(const std::wstring& wql_query, 
+    bool query(const std::wstring& wql_query,
                std::function<void(IWbemClassObject*)> callback);
-    
+
 private:
     IWbemLocator* pLoc_ = nullptr;
     IWbemServices* pSvc_ = nullptr;
@@ -59,4 +59,3 @@ uint64_t get_property_uint64(IWbemClassObject* pObj, const std::wstring& prop_na
 } // namespace lemon
 
 #endif // _WIN32
-

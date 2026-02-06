@@ -23,7 +23,7 @@ jobs:
   # ========================================================================
   # BUILD JOBS - Run on rai-160-sdk workers
   # ========================================================================
-  
+
   build-lemonade-server-installer:
     name: Build Lemonade Server Installer
     runs-on: windows-latest
@@ -40,34 +40,34 @@ jobs:
         run: |
           # Check if CMake is already installed
           $cmakeInstalled = Get-Command cmake -ErrorAction SilentlyContinue
-          
+
           if (-not $cmakeInstalled) {
               Write-Host "CMake not found, installing..." -ForegroundColor Yellow
-              
+
               # Download CMake installer
               $cmakeVersion = "3.28.1"
               $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
               $cmakeInstaller = "cmake-installer.msi"
-              
+
               Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller
-              
+
               # Install CMake silently
               Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
-              
+
               # Add CMake to PATH for this session AND future steps
               $cmakePath = "C:\Program Files\CMake\bin"
               $env:PATH = "$cmakePath;$env:PATH"
-              
+
               # Persist to GITHUB_PATH for future steps
               echo $cmakePath >> $env:GITHUB_PATH
-              
+
               # Verify installation
               cmake --version
               if ($LASTEXITCODE -ne 0) {
                   Write-Host "ERROR: CMake installation failed!" -ForegroundColor Red
                   exit 1
               }
-              
+
               Write-Host "CMake installed successfully and added to PATH!" -ForegroundColor Green
           } else {
               Write-Host "CMake is already installed:" -ForegroundColor Green
@@ -96,7 +96,7 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          
+
           # WiX CLI MSI does not always add itself to PATH in non-interactive installs,
           # so we locate it explicitly and then update PATH for subsequent steps.
           $wixDirs = @(
@@ -130,42 +130,38 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          
+
           Write-Host "Building lemonade-router and lemonade-server..." -ForegroundColor Cyan
-          
-          cd src\cpp
-          
+
           # Create build directory
           if (Test-Path "build") {
               Remove-Item -Recurse -Force "build"
           }
-          mkdir build
-          cd build
-          
-          # Configure
-          cmake .. -G "Visual Studio 17 2022" -A x64
+
+          # Configure with preset
+          cmake --preset windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
+
           # Build
-          cmake --build . --config Release
+          cmake --build build --config Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
+
           # Verify binaries exist
-          if (-not (Test-Path "Release\lemonade-router.exe")) {
+          if (-not (Test-Path "build\Release\lemonade-router.exe")) {
               Write-Host "ERROR: lemonade-router.exe not found!" -ForegroundColor Red
               exit 1
           }
-          
-          if (-not (Test-Path "Release\lemonade-server.exe")) {
+
+          if (-not (Test-Path "build\Release\lemonade-server.exe")) {
               Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
               exit 1
           }
-          
-          if (-not (Test-Path "Release\lemonade-tray.exe")) {
+
+          if (-not (Test-Path "build\Release\lemonade-tray.exe")) {
               Write-Host "ERROR: lemonade-tray.exe not found!" -ForegroundColor Red
               exit 1
           }
-          
+
           Write-Host "C++ build successful!" -ForegroundColor Green
 
       - name: Setup Node.js
@@ -177,56 +173,95 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          
-          Write-Host "Building Electron app..." -ForegroundColor Cyan
-          
-          cd src\app
-          
-          # Install dependencies
-          Write-Host "Installing npm dependencies..." -ForegroundColor Yellow
-          npm install
-          if ($LASTEXITCODE -ne 0) { 
-              Write-Host "ERROR: npm install failed!" -ForegroundColor Red
-              exit $LASTEXITCODE 
-          }
-          
-          # Build the Electron app for Windows
-          Write-Host "Building Electron app for Windows..." -ForegroundColor Yellow
-          npm run build:win
-          if ($LASTEXITCODE -ne 0) { 
+
+          Write-Host "Building Electron app via CMake target..." -ForegroundColor Cyan
+
+          # Build using CMake electron-app target (single source of truth)
+          cmake --build --preset windows --target electron-app
+          if ($LASTEXITCODE -ne 0) {
               Write-Host "ERROR: Electron app build failed!" -ForegroundColor Red
-              exit $LASTEXITCODE 
+              exit $LASTEXITCODE
           }
-          
+
           # Verify the build output exists
-          if (-not (Test-Path "dist-app\win-unpacked\Lemonade.exe")) {
+          if (-not (Test-Path "build\app\win-unpacked\Lemonade.exe")) {
               Write-Host "ERROR: Electron app executable not found!" -ForegroundColor Red
               exit 1
           }
-          
+
           Write-Host "Electron app build successful!" -ForegroundColor Green
+
+      - name: Build Web App
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Write-Host "Building Web app..." -ForegroundColor Cyan
+
+          cd src\web-app
+
+          # Install dependencies
+          Write-Host "Installing npm dependencies..." -ForegroundColor Yellow
+          npm install
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "ERROR: npm install failed!" -ForegroundColor Red
+              exit $LASTEXITCODE
+          }
+
+          # Build the Web app
+          Write-Host "Building Web app..." -ForegroundColor Yellow
+          npm run build
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "ERROR: Web app build failed!" -ForegroundColor Red
+              exit $LASTEXITCODE
+          }
+
+          # Verify the build output exists
+          if (-not (Test-Path "dist\renderer\index.html")) {
+              Write-Host "ERROR: Web app build output not found!" -ForegroundColor Red
+              exit 1
+          }
+
+          Write-Host "Web app build successful!" -ForegroundColor Green
+
+          # Copy web app output to the location expected by CMake/WiX installer
+          Write-Host "Copying web app to build\resources\web-app..." -ForegroundColor Yellow
+          $targetDir = "..\..\build\resources\web-app"
+          if (-not (Test-Path "..\..\build\resources")) {
+              New-Item -ItemType Directory -Force -Path "..\..\build\resources" | Out-Null
+          }
+          if (Test-Path $targetDir) {
+              Remove-Item -Recurse -Force $targetDir
+          }
+          Copy-Item -Path "dist\renderer" -Destination $targetDir -Recurse -Force
+
+          # Verify the copy succeeded
+          if (-not (Test-Path "..\..\build\resources\web-app\index.html")) {
+              Write-Host "ERROR: Failed to copy web app to build directory!" -ForegroundColor Red
+              exit 1
+          }
+
+          Write-Host "Web app copied to build directory successfully!" -ForegroundColor Green
 
       - name: Build the Lemonade Server Installer
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          
-          cd src\cpp
-          
+
           # Run the build installer script
-          .\build_installer.ps1
-          
+          .\src\cpp\build_installer.ps1
+
           # Verify installers were created
           if (-not (Test-Path "lemonade-server-minimal.msi")) {
               Write-Host "ERROR: Minimal installer not created!" -ForegroundColor Red
               exit 1
           }
-          
+
           if (-not (Test-Path "lemonade.msi")) {
               Write-Host "ERROR: Full installer not created!" -ForegroundColor Red
               exit 1
           }
-          
+
           Write-Host "Installers created successfully!" -ForegroundColor Green
 
       - name: Upload Lemonade Server Installers
@@ -235,8 +270,8 @@ jobs:
         with:
           name: Lemonade_Server_MSI
           path: |
-            src\cpp\lemonade-server-minimal.msi
-            src\cpp\lemonade.msi
+            lemonade-server-minimal.msi
+            lemonade.msi
           retention-days: 7
 
   sign-msi-installers:
@@ -311,7 +346,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-server-deb
-          path: src/cpp/build/lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
+          path: build/lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
   build-lemonade-deb-full:
@@ -338,7 +373,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-deb-full
-          path: src/cpp/build/lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
+          path: build/lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
   # ========================================================================
@@ -389,12 +424,21 @@ jobs:
             backend: ""
             runner: [rai300_400, Windows]
           # Whisper
-          - name: whisper
+          - name: whisper (cpu)
             test_type: whisper
+            backend: cpu
+            runner: [rai300_400, Windows]
+          - name: whisper (npu)
+            test_type: whisper
+            backend: npu
             runner: [rai300_400, Windows]
           # Stable Diffusion
           - name: stable-diffusion
             test_type: sd
+            runner: [rai300_400, Windows]
+          # Text to speech
+          - name: text-to-speech
+            test_type: tts
             runner: [rai300_400, Windows]
     env:
       LEMONADE_CI_MODE: "True"
@@ -432,12 +476,12 @@ jobs:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           $ErrorActionPreference = "Stop"
-          
+
           $venvPython = ".\.venv\Scripts\python.exe"
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
-          
+
           Write-Host "Running ${{ matrix.name }} tests..." -ForegroundColor Cyan
-          
+
           switch ("${{ matrix.test_type }}") {
               "llm" {
                   if ("${{ matrix.backend }}") {
@@ -447,18 +491,25 @@ jobs:
                   }
               }
               "whisper" {
-                  & $venvPython test/server_whisper.py --server-binary $serverExe
+                  if ("${{ matrix.backend }}") {
+                      & $venvPython test/server_whisper.py --backend ${{ matrix.backend }} --server-binary $serverExe
+                  } else {
+                      & $venvPython test/server_whisper.py --server-binary $serverExe
+                  }
               }
               "sd" {
                   & $venvPython test/server_sd.py --server-binary $serverExe
               }
+              "tts" {
+                  & $venvPython test/server_tts.py --server-binary $serverExe
+              }
           }
-          
+
           if ($LASTEXITCODE -ne 0) {
               Write-Host "ERROR: ${{ matrix.name }} tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE
           }
-          
+
           Write-Host "${{ matrix.name }} tests PASSED!" -ForegroundColor Green
 
       - name: Cleanup
@@ -487,6 +538,10 @@ jobs:
           # Stable Diffusion
           - name: stable-diffusion
             test_type: sd
+            runner: [rai300_400, Linux]
+          # Text to speech
+          - name: text-to-speech
+            test_type: tts
             runner: [rai300_400, Linux]
     env:
       LEMONADE_CI_MODE: "True"
@@ -519,11 +574,11 @@ jobs:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           set -e  # Exit on error
-          
+
           VENV_PYTHON=".venv/bin/python"
-          
+
           echo "Running ${{ matrix.name }} tests..."
-          
+
           case "${{ matrix.test_type }}" in
             llm)
               $VENV_PYTHON test/server_llm.py --wrapped-server llamacpp --backend ${{ matrix.backend }} --server-binary lemonade-server
@@ -531,8 +586,11 @@ jobs:
             sd)
               $VENV_PYTHON test/server_sd.py --server-binary lemonade-server
               ;;
+            tts)
+              $VENV_PYTHON test/server_tts.py --server-binary lemonade-server
+              ;;
           esac
-          
+
           echo "${{ matrix.name }} tests PASSED!"
 
       - name: Print server logs on failure
@@ -545,7 +603,7 @@ jobs:
           else
             echo "Log file /tmp/lemonade-server.log not found"
           fi
-          
+
           echo ""
           echo "=== Router PID file (if exists) ==="
           if [ -f /tmp/lemonade-router.pid ]; then
@@ -553,7 +611,7 @@ jobs:
           else
             echo "PID file not found"
           fi
-          
+
           echo ""
           echo "=== Lock file status ==="
           ls -la /tmp/lemonade*.lock 2>/dev/null || echo "No lock files found"
@@ -576,7 +634,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        test_type: [cli, endpoints]
+        test_type: [cli, endpoints, system-info]
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -586,11 +644,26 @@ jobs:
       - uses: actions/checkout@v4
 
       # ---- Linux Setup ----
+      - name: Download .deb package
+        if: runner.os == 'Linux'
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-server-deb
+          path: .
+
       - name: Install Lemonade Server (.deb)
         if: runner.os == 'Linux'
-        uses: ./.github/actions/install-lemonade-server-deb
-        with:
-          version: ${{ env.LEMONADE_VERSION }}
+        shell: bash
+        run: |
+          DEB_FILE="lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb"
+          echo "Installing .deb package: $DEB_FILE"
+          sudo apt install ./"$DEB_FILE"
+
+          # Verify binaries installed
+          lemonade-server --version
+
+          # Verify the systemd service started automatically
+          sudo systemctl status lemonade-server
 
       - name: Set environment (Linux)
         if: runner.os == 'Linux'
@@ -631,21 +704,38 @@ jobs:
           requirements-file: 'test/requirements.txt'
 
       # ---- Run Tests ----
+      - name: Stop systemd service before tests (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          echo "Stopping lemonade-server systemd service..."
+          sudo systemctl stop lemonade-server || true
+          sudo systemctl status lemonade-server || true
+
       - name: Run ${{ matrix.test_type }} tests
         shell: bash
         env:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           set -e  # Exit on error
-          
+
           if [ "${{ matrix.test_type }}" = "cli" ]; then
               echo "Running CLI tests..."
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY"
-          else
+              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --ephemeral
+              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --listen-all
+              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --api-key
+          elif [ "${{ matrix.test_type }}" = "endpoints" ]; then
               echo "Running endpoint tests..."
               $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY"
+              $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY" --server-per-test
+          elif [ "${{ matrix.test_type }}" = "system-info" ]; then
+              echo "Running system-info mock hardware tests..."
+              # Unset LEMONADE_CI_MODE so the server uses mock cache files
+              unset LEMONADE_CI_MODE
+              $VENV_PYTHON test/server_system_info.py --server-binary "$SERVER_BINARY"
           fi
-          
+
           echo "${{ matrix.test_type }} tests PASSED!"
 
   # ========================================================================
@@ -664,6 +754,11 @@ jobs:
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
     steps:
+      - name: Checkout for release notes action
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+
       - name: Download Signed Lemonade Server Installer (Windows)
         uses: actions/download-artifact@v4
         with:
@@ -690,13 +785,22 @@ jobs:
           ls -lh lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb
           ls -lh lemonade_${LEMONADE_VERSION}_amd64.deb
 
+      - name: Generate release notes
+        id: release-notes
+        uses: ./.github/actions/generate-release-notes
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+          repo: ${{ github.repository }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          name: ${{ github.ref_name }}
+          body_path: ${{ steps.release-notes.outputs.release_notes_file }}
           files: |
             lemonade-server-minimal.msi
             lemonade.msi
             lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
             lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
           fail_on_unmatched_files: true
-
