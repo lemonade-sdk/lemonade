@@ -139,6 +139,9 @@ Chat Completions API. You provide a list of messages and receive a completion. T
 | `tools`       | No | A list of tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_completion_tokens`. This value is now deprecated by OpenAI in favor of `max_completion_tokens` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_completion_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `logit_bias` | No | Modify the likelihood of specified tokens appearing in the completion. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `presence_penalty` | No | Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `response_format` | No | An object specifying the format that the model must output. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 #### Example request
 

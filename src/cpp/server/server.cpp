@@ -834,8 +834,19 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
 }
 
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
+    // Helper to strip "lemonade/" prefix from model name for LiteLLM compatibility
+    auto strip_lemonade_prefix = [](std::string& model_name) -> bool {
+        const std::string prefix = "lemonade/";
+        if (model_name.size() > prefix.size() && model_name.substr(0, prefix.size()) == prefix) {
+            model_name = model_name.substr(prefix.size());
+            return true;
+        }
+        return false;
+    };
+
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        bool model_modified = false;
         
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
@@ -848,6 +859,14 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Handle model loading/switching
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
+            
+            // LiteLLM compatibility: Strip "lemonade/" prefix
+            if (strip_lemonade_prefix(requested_model)) {
+                request_json["model"] = requested_model;
+                model_modified = true;
+                std::cout << "[Server] Stripped 'lemonade/' prefix. Using model: " << requested_model << std::endl;
+            }
+            
             try {
                 auto_load_model_if_needed(requested_model);
             } catch (const std::exception& e) {
@@ -908,11 +927,17 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                             
                             // Update request_body with modified JSON
                             request_body = request_json.dump();
+                            model_modified = false; // Already updated body, no need to do it again
                             break;
                         }
                     }
                 }
             }
+        }
+        
+        // If model name was modified (and body not already updated by enable_thinking logic), update request_body
+        if (model_modified) {
+            request_body = request_json.dump();
         }
         
         if (is_streaming) {
@@ -1062,12 +1087,31 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 }
 
 void Server::handle_completions(const httplib::Request& req, httplib::Response& res) {
+    // Helper to strip "lemonade/" prefix from model name for LiteLLM compatibility
+    auto strip_lemonade_prefix = [](std::string& model_name) -> bool {
+        const std::string prefix = "lemonade/";
+        if (model_name.size() > prefix.size() && model_name.substr(0, prefix.size()) == prefix) {
+            model_name = model_name.substr(prefix.size());
+            return true;
+        }
+        return false;
+    };
+
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        bool model_modified = false;
         
         // Handle model loading/switching (same logic as chat_completions)
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
+            
+            // LiteLLM compatibility: Strip "lemonade/" prefix
+            if (strip_lemonade_prefix(requested_model)) {
+                request_json["model"] = requested_model;
+                model_modified = true;
+                std::cout << "[Server] Stripped 'lemonade/' prefix. Using model: " << requested_model << std::endl;
+            }
+            
             try {
                 auto_load_model_if_needed(requested_model);
             } catch (const std::exception& e) {
@@ -1104,6 +1148,9 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 
         // Use original request body - each backend handles model name transformation internally
         std::string request_body = req.body;
+        if (model_modified) {
+            request_body = request_json.dump();
+        }
         
         if (is_streaming) {
             try {
@@ -1248,12 +1295,29 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 }
 
 void Server::handle_embeddings(const httplib::Request& req, httplib::Response& res) {
+    // Helper to strip "lemonade/" prefix from model name for LiteLLM compatibility
+    auto strip_lemonade_prefix = [](std::string& model_name) -> bool {
+        const std::string prefix = "lemonade/";
+        if (model_name.size() > prefix.size() && model_name.substr(0, prefix.size()) == prefix) {
+            model_name = model_name.substr(prefix.size());
+            return true;
+        }
+        return false;
+    };
+
     try {
         auto request_json = nlohmann::json::parse(req.body);
         
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
+            
+            // LiteLLM compatibility: Strip "lemonade/" prefix
+            if (strip_lemonade_prefix(requested_model)) {
+                request_json["model"] = requested_model;
+                std::cout << "[Server] Stripped 'lemonade/' prefix. Using model: " << requested_model << std::endl;
+            }
+            
             try {
                 auto_load_model_if_needed(requested_model);
             } catch (const std::exception& e) {
@@ -1284,12 +1348,29 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
 }
 
 void Server::handle_reranking(const httplib::Request& req, httplib::Response& res) {
+    // Helper to strip "lemonade/" prefix from model name for LiteLLM compatibility
+    auto strip_lemonade_prefix = [](std::string& model_name) -> bool {
+        const std::string prefix = "lemonade/";
+        if (model_name.size() > prefix.size() && model_name.substr(0, prefix.size()) == prefix) {
+            model_name = model_name.substr(prefix.size());
+            return true;
+        }
+        return false;
+    };
+
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
+            
+            // LiteLLM compatibility: Strip "lemonade/" prefix
+            if (strip_lemonade_prefix(requested_model)) {
+                request_json["model"] = requested_model;
+                std::cout << "[Server] Stripped 'lemonade/' prefix. Using model: " << requested_model << std::endl;
+            }
+            
             try {
                 auto_load_model_if_needed(requested_model);
             } catch (const std::exception& e) {
@@ -1340,6 +1421,13 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         // Extract form fields
         if (req.form.has_field("model")) {
             request_json["model"] = req.form.get_field("model");
+            
+            // LiteLLM compatibility: Strip "lemonade/" prefix
+            std::string model_val = request_json["model"];
+            if (model_val.size() > 9 && model_val.substr(0, 9) == "lemonade/") {
+                request_json["model"] = model_val.substr(9);
+                std::cout << "[Server] Stripped 'lemonade/' prefix. Using model: " << request_json["model"] << std::endl;
+            }
         }
         if (req.form.has_field("language")) {
             request_json["language"] = req.form.get_field("language");
@@ -1424,6 +1512,16 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
 }
 
 void Server::handle_image_generations(const httplib::Request& req, httplib::Response& res) {
+    // Helper to strip "lemonade/" prefix from model name for LiteLLM compatibility
+    auto strip_lemonade_prefix = [](std::string& model_name) -> bool {
+        const std::string prefix = "lemonade/";
+        if (model_name.size() > prefix.size() && model_name.substr(0, prefix.size()) == prefix) {
+            model_name = model_name.substr(prefix.size());
+            return true;
+        }
+        return false;
+    };
+
     try {
         std::cout << "[Server] POST /api/v1/images/generations" << std::endl;
 
@@ -1443,6 +1541,13 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         // Handle model loading
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
+            
+            // LiteLLM compatibility: Strip "lemonade/" prefix
+            if (strip_lemonade_prefix(requested_model)) {
+                request_json["model"] = requested_model;
+                std::cout << "[Server] Stripped 'lemonade/' prefix. Using model: " << requested_model << std::endl;
+            }
+            
             try {
                 auto_load_model_if_needed(requested_model);
             } catch (const std::exception& e) {
@@ -1493,12 +1598,31 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
 }
 
 void Server::handle_responses(const httplib::Request& req, httplib::Response& res) {
+    // Helper to strip "lemonade/" prefix from model name for LiteLLM compatibility
+    auto strip_lemonade_prefix = [](std::string& model_name) -> bool {
+        const std::string prefix = "lemonade/";
+        if (model_name.size() > prefix.size() && model_name.substr(0, prefix.size()) == prefix) {
+            model_name = model_name.substr(prefix.size());
+            return true;
+        }
+        return false;
+    };
+
     try {
         auto request_json = nlohmann::json::parse(req.body);
+        bool model_modified = false;
 
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
+            
+            // LiteLLM compatibility: Strip "lemonade/" prefix
+            if (strip_lemonade_prefix(requested_model)) {
+                request_json["model"] = requested_model;
+                model_modified = true;
+                std::cout << "[Server] Stripped 'lemonade/' prefix. Using model: " << requested_model << std::endl;
+            }
+            
             try {
                 auto_load_model_if_needed(requested_model);
             } catch (const std::exception& e) {
@@ -1545,10 +1669,15 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no");
                 
+                std::string request_body = req.body;
+                if (model_modified) {
+                    request_body = request_json.dump();
+                }
+                
                 // Use cpp-httplib's chunked content provider for SSE streaming
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [this, request_body = req.body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body](size_t offset, httplib::DataSink& sink) {
                         if (offset > 0) {
                             return false; // Only stream once
                         }

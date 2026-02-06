@@ -42,6 +42,8 @@ Links to the video tutorials available are provided in the third column of the f
 | [wut](https://github.com/shobrook/wut)   | [Terminal assistant that uses Lemonade LLMs to explain errors](./wut.md)                                          | _coming soon_                                                                             |
 | [AnythingLLM](https://anythingllm.com/) | [Running agents locally with Lemonade and AnythingLLM](./anythingLLM.md) | _coming soon_                                                                             |
 | [PEEL](https://github.com/lemonade-apps/peel)     | [Using Local LLMs in Windows PowerShell](https://github.com/lemonade-apps/peel?tab=readme-ov-file#installation)                   |[Watch Demo](https://youtu.be/A-8QYktB0Io?si=5LiD3fZDlmaTecpV)                            |
+| [LiteLLM](https://docs.litellm.ai/) | [General guide for using Lemonade with LiteLLM Proxy](./litellm.md) | _coming soon_ |
+| [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview) | [How to use Lemonade LLMs with Claude Code](./claude_code.md) | _coming soon_ |
 | [OpenHands](https://github.com/All-Hands-AI/OpenHands)   | [How to use Lemonade LLMs as a coding assistant in OpenHands](./open-hands.md)                                          | _coming soon_                             |
 
 
