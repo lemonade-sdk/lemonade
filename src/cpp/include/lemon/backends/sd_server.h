@@ -4,6 +4,7 @@
 #include "../server_capabilities.h"
 #include "../recipe_options.h"
 #include "../utils/process_manager.h"
+#include "backend_utils.h"
 #include <string>
 #include <filesystem>
 
@@ -12,6 +13,17 @@ namespace backends {
 
 class SDServer : public WrappedServer, public IImageServer {
 public:
+    inline static const BackendSpec SPEC = BackendSpec(
+        // recipe
+            "sd-cpp",
+        // executable
+    #ifdef _WIN32
+            "sd-server.exe"
+    #else
+            "sd-server"
+    #endif
+    );
+
     explicit SDServer(const std::string& log_level = "info",
                       ModelManager* model_manager = nullptr);
 
@@ -40,12 +52,6 @@ public:
     json image_generations(const json& request) override;
 
 private:
-    // Server executable helper
-    std::string find_executable_in_install_dir(const std::string& install_dir);
-
-    // Server lifecycle helpers
-    bool wait_for_ready(int timeout_seconds = 60);
-
     // Server state (port_ and process_handle_ inherited from WrappedServer)
     std::string model_path_;
 };
