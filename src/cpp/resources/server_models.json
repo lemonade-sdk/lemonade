@@ -317,6 +317,13 @@
         "labels": ["coding","tool-calling","hot"],
         "size": 43.7
     },
+    "KwaiCoder-23B-A4B-v1-GGUF": {
+        "checkpoint": "mradermacher/KwaiCoder-23B-A4B-v1-GGUF:KwaiCoder-23B-A4B-v1.Q8_0.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["coding"],
+        "size": 24.5
+    },
     "Nemotron-3-Nano-30B-A3B-GGUF": {
         "checkpoint": "unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
