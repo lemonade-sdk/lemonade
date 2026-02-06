@@ -26,7 +26,7 @@ model_list:
       api_key: lemonade
 ```
 
-> **Note:** Replace `Qwen2.5-Coder-7B-Instruct-GGUF` with the actual model name you have loaded in Lemonade.
+> **⚠️ WARNING:** You **MUST** replace `Qwen2.5-Coder-7B-Instruct-GGUF` in the config above with the actual model name you have downloaded in Lemonade. Run `lemonade-server list` to see your available models.
 
 ## Step 2: Start LiteLLM Proxy
 

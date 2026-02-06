@@ -121,6 +121,20 @@ Lemonade supports the standard OpenAI parameters passed through LiteLLM, includi
 
 ## Troubleshooting
 
+### Common Configuration Pitfalls
+
+**1. Forgetting to Change the Model Name**
+The examples above use `Qwen2.5-Coder-7B-Instruct-GGUF`. **You must change this** to match a model you have actually downloaded in Lemonade.
+Run `lemonade-server list` to see your available models.
+If your config asks for a model you don't have, you will see a `404 Model not found` error.
+
+**2. Protocol Prefixes (`openai/` vs `lemonade/`)**
+- **In `config.yaml`**: You MUST use the `openai/` prefix (e.g., `model: openai/my-model`) so LiteLLM knows to speak the OpenAI protocol to Lemonade.
+- **In Client Apps**: You might see `lemonade/` used as a prefix. Lemonade Server automatically strips this prefix if it receives it, so `lemonade/my-model` and `my-model` work identically.
+
+**3. YAML Indentation**
+YAML is sensitive to indentation. Ensure your `litellm_params` are indented correctly under `model_list`.
+
 **"Model not found" errors:**
 Ensure that the `model` specified in `litellm_params` matches exactly what `lemonade-server list` returns, OR that you are using the `openai/` prefix so LiteLLM knows which protocol to use.
 
