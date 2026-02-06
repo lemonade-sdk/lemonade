@@ -208,6 +208,33 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data_v1["status"], "ok")
         print("[OK] /v1/health endpoint works correctly")
 
+    def test_000d_litellm_chat_completion(self):
+        """Test /v1/chat/completions endpoint works (LiteLLM style)."""
+        # Ensure model is loaded
+        requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        # Use requests directly to hit /v1/ endpoint
+        # Test with "lemonade/" prefix to verify stripping logic
+        response = requests.post(
+            f"http://localhost:{PORT}/v1/chat/completions",
+            json={
+                "model": f"lemonade/{ENDPOINT_TEST_MODEL}",
+                "messages": [{"role": "user", "content": "Hi"}],
+                "max_tokens": 5
+            },
+            timeout=TIMEOUT_DEFAULT
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("choices", data)
+        self.assertGreater(len(data["choices"]), 0)
+        print("[OK] /v1/chat/completions returned valid response (with prefix stripping)")
+
     def test_001_live_endpoint(self):
         """Test the /live endpoint for load balancer health checks."""
         response = requests.get(f"http://localhost:{PORT}/live", timeout=TIMEOUT_DEFAULT)
