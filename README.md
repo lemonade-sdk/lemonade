@@ -9,6 +9,8 @@
     <img src="https://img.shields.io/badge/Windows-11-0078D6?logo=windows&logoColor=white" alt="Windows 11" /></a>
   <a href="https://lemonade-server.ai/install_options.html#ubuntu" title="Ubuntu 24.04 & 25.04 Supported">
     <img src="https://img.shields.io/badge/Ubuntu-24.04%20%7C%2025.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu 24.04 | 25.04" /></a>
+  <a href="https://snapcraft.io/lemonade-server">
+    <img src="https://snapcraft.io/lemonade-server/badge.svg" alt="Get it from the Snap Store" /></a>
   <a href="https://lemonade-server.ai/install_options.html#arch" title="Arch Linux Supported">
     <img src="https://img.shields.io/aur/version/lemonade-server" alt="Arch Linux"></a>
   <a href="docs/README.md#installation" title="Check out our instructions">
