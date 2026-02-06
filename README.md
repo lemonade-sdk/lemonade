@@ -219,7 +219,7 @@ This is a community project maintained by @amd-pworfolk @bitgamma @danielholanda
 
 Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 
-- **Committers and reviewers**: [Members](https://github.com/orgs/lemonade-sdk/teams) of the lemonade-sdk organization
+- **Committers and reviewers**: [Maintainers](#maintainers) of this repo
 - **Approvers**: [Owners](https://github.com/orgs/lemonade-sdk/people?query=role%3Aowner)
 
 **Privacy policy**: This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. When the user requests it, Lemonade downloads AI models from [Hugging Face Hub](https://huggingface.co/) (see their [privacy policy](https://huggingface.co/privacy)).
