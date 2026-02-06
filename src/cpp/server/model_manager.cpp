@@ -472,6 +472,25 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
 
     // For whispercpp, find the .bin model file
     if (info.recipe == "whispercpp") {
+        // If variant specified, only return the exact matching file
+        if (!variant.empty()) {
+            // Try to find the exact variant in snapshots subdirectories
+            if (fs::exists(model_cache_path)) {
+                for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+                    if (entry.is_regular_file()) {
+                        std::string filename = entry.path().filename().string();
+                        if (filename == variant) {
+                            return entry.path().string();
+                        }
+                    }
+                }
+            }
+            // Variant not found - return empty string to indicate model not downloaded
+            // This prevents returning a wrong model variant (e.g., tiny instead of large)
+            return "";
+        }
+
+        // No variant specified - use fallback logic to find any .bin file
         if (!fs::exists(model_cache_path)) {
             return model_cache_path;  // Return directory path even if not found
         }
@@ -494,17 +513,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
         // Sort files for consistent ordering
         std::sort(all_bin_files.begin(), all_bin_files.end());
 
-        // If variant specified, try to match it
-        if (!variant.empty()) {
-            for (const auto& filepath : all_bin_files) {
-                std::string filename = fs::path(filepath).filename().string();
-                if (filename == variant) {
-                    return filepath;
-                }
-            }
-        }
-
-        // Return first .bin file as fallback
+        // Return first .bin file as fallback (only when no variant specified)
         return all_bin_files[0];
     }
 
