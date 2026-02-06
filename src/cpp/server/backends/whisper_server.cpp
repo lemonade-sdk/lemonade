@@ -82,7 +82,7 @@ void WhisperServer::install(const std::string& backend) {
         throw std::runtime_error("Unsupported platform for whisper.cpp");
 #endif
     } else {
-        throw std::runtime_error("[WhisperServer] Only CPU and NPU backends are supported for automatic installation");
+        throw std::runtime_error("[WhisperServer] Unknown backend: " + backend);
     }
 
     BackendUtils::install_from_github(SPEC, expected_version, repo, filename, backend);
