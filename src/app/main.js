@@ -330,7 +330,7 @@ const fetchWithApiKey = async (entpoint) => {
   let apiKey = (await readAppSettingsFile()).apiKey.value;
 
   if (!serverUrl) {
-    serverUrl = cachedServerPort ? 'http://localhost:8000' : `http://localhost:${cachedServerPort}`;
+    serverUrl = cachedServerPort ? `http://localhost:${cachedServerPort}` : 'http://localhost:8000';
   }
 
   const options = {timeout: 3000};
