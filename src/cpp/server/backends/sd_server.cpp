@@ -126,7 +126,7 @@ void SDServer::load(const std::string& model_name,
     std::cout << "[SDServer] Loading model: " << model_name << std::endl;
 
     // Install sd-server if needed
-    install("cpu");
+    install(backend_);
 
     // Get model path
     std::string model_path = model_info.resolved_path;
