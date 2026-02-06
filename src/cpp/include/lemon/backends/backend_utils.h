@@ -7,14 +7,11 @@ namespace fs = std::filesystem;
 
 namespace lemon::backends {
     struct BackendSpec {
-        const std::string log_name;
         const std::string recipe;
         const std::string binary;
-        const std::string dir_name;
-        BackendSpec(const std::string l,
-            const std::string r,
-            const std::string b,
-            const std::string d): log_name(l), recipe(r), binary(b), dir_name(d) {}
+        BackendSpec(const std::string r, const std::string b): recipe(r), binary(b) {}
+
+        std::string log_name() const { return recipe + " Server"; };
     };
 
     /**

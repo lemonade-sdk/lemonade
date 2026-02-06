@@ -164,7 +164,7 @@ namespace lemon::backends {
             return exe_path;
         }
 
-        std::string install_dir = get_install_directory(spec.dir_name, backend);
+        std::string install_dir = get_install_directory(spec.recipe, backend);
         exe_path = find_executable_in_install_dir(install_dir, spec.binary);
 
         if (!exe_path.empty()) {
@@ -180,7 +180,7 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_installed_version_file(const BackendSpec& spec, const std::string& backend) {
-        std::string install_dir = get_install_directory(spec.dir_name, backend);
+        std::string install_dir = get_install_directory(spec.recipe, backend);
         return get_version_file(install_dir);
     }
 
@@ -213,7 +213,7 @@ namespace lemon::backends {
         bool needs_install = exe_path.empty();
 
         if (needs_install) {
-            install_dir = get_install_directory(spec.dir_name, backend);
+            install_dir = get_install_directory(spec.recipe, backend);
             version_file = get_version_file(install_dir);
 
             // Check if already installed with correct version
@@ -228,7 +228,7 @@ namespace lemon::backends {
                 vf.close();
 
                 if (installed_version != expected_version) {
-                    std::cout << "[" << spec.log_name << "] Upgrading " << spec.binary << " from " << installed_version
+                    std::cout << "[" << spec.log_name() << "] Upgrading " << spec.binary << " from " << installed_version
                             << " to " << expected_version << std::endl;
                     needs_install = true;
                     fs::remove_all(install_dir);
@@ -237,7 +237,7 @@ namespace lemon::backends {
         }
 
         if (needs_install) {
-            std::cout << "[" << spec.log_name << "] Installing " << spec.binary << " (version: "
+            std::cout << "[" << spec.log_name() << "] Installing " << spec.binary << " (version: "
                     << expected_version << ")" << std::endl;
 
             // Create install directory
@@ -253,8 +253,8 @@ namespace lemon::backends {
             std::string zip_ext = is_tarball(filename) ? ".tar.gz" : ".zip";
             std::string zip_path = (cache_dir / (zip_name + "_" + expected_version + zip_ext)).string();
 
-            std::cout << "[" << spec.log_name << "] Downloading from: " << url << std::endl;
-            std::cout << "[" << spec.log_name << "] Downloading to: " << zip_path << std::endl;
+            std::cout << "[" << spec.log_name() << "] Downloading from: " << url << std::endl;
+            std::cout << "[" << spec.log_name() << "] Downloading to: " << zip_path << std::endl;
 
             // Download the file
             auto download_result = utils::HttpClient::download_file(
@@ -268,7 +268,7 @@ namespace lemon::backends {
                                         " - " + download_result.error_message);
             }
 
-            std::cout << std::endl << "[" << spec.log_name << "] Download complete!" << std::endl;
+            std::cout << std::endl << "[" << spec.log_name() << "] Download complete!" << std::endl;
 
             // Verify the downloaded file
             if (!fs::exists(zip_path)) {
@@ -276,11 +276,11 @@ namespace lemon::backends {
             }
 
             std::uintmax_t file_size = fs::file_size(zip_path);
-            std::cout << "[" << spec.log_name << "] Downloaded archive file size: "
+            std::cout << "[" << spec.log_name() << "] Downloaded archive file size: "
                     << (file_size / 1024 / 1024) << " MB" << std::endl;
 
             // Extract
-            if (!extract_archive(zip_path, install_dir, spec.log_name)) {
+            if (!extract_archive(zip_path, install_dir, spec.log_name())) {
                 fs::remove(zip_path);
                 fs::remove_all(install_dir);
                 throw std::runtime_error("Failed to extract archive: " + zip_path);
@@ -289,13 +289,13 @@ namespace lemon::backends {
             // Verify extraction
             exe_path = find_executable_in_install_dir(install_dir, spec.binary);
             if (exe_path.empty()) {
-                std::cerr << "[" << spec.log_name << "] ERROR: Extraction completed but executable not found" << std::endl;
+                std::cerr << "[" << spec.log_name() << "] ERROR: Extraction completed but executable not found" << std::endl;
                 fs::remove(zip_path);
                 fs::remove_all(install_dir);
                 throw std::runtime_error("Extraction failed: executable not found");
             }
 
-            std::cout << "[" << spec.log_name << "] Executable verified at: " << exe_path << std::endl;
+            std::cout << "[" << spec.log_name() << "] Executable verified at: " << exe_path << std::endl;
 
             // Save version info
             std::ofstream vf(version_file);
@@ -310,9 +310,9 @@ namespace lemon::backends {
             // Delete ZIP file
             fs::remove(zip_path);
 
-            std::cout << "[" << spec.log_name << "] Installation complete!" << std::endl;
+            std::cout << "[" << spec.log_name() << "] Installation complete!" << std::endl;
         } else {
-            std::cout << "[" << spec.log_name << "] Found executable at: " << exe_path << std::endl;
+            std::cout << "[" << spec.log_name() << "] Found executable at: " << exe_path << std::endl;
         }
     }
 #endif

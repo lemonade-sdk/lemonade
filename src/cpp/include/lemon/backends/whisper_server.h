@@ -12,18 +12,14 @@ namespace backends {
 class WhisperServer : public WrappedServer, public IAudioServer {
 public:
     inline static const BackendSpec SPEC = BackendSpec(
-    // log name
-        "WhisperServer",
     // recipe
         "whispercpp",
     // executable
 #ifdef _WIN32
-        "whisper-server.exe",
+        "whisper-server.exe"
 #else
-        "whisper-server",
+        "whisper-server"
 #endif
-    // installation dir
-        "whisper"
     );
 
     explicit WhisperServer(const std::string& log_level = "info",
