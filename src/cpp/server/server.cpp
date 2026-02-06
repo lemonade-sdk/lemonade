@@ -432,7 +432,8 @@ window.api = {
                 logsHeight: 200
             },
             theme: 'dark',
-            apiUrl: window.location.origin
+            apiUrl: window.location.origin,
+            apiKey: { value: '' }
         };
     },
     saveSettings: async (settings) => {
@@ -443,17 +444,23 @@ window.api = {
     getServerPort: () => parseInt(window.location.port) || 8000,
     onServerPortUpdated: () => {},
     getServerAPIKey: async () => {
-        return (await window.api.getSettings()).apiKey.value;
+        const settings = await window.api.getSettings();
+        return settings.apiKey?.value || '';
     },
     fetchWithApiKey: async (url) => {
-        let apiKey = await window.api.getServerAPIKey();
-        const options = {timeout: 3000};
-        if(apiKey != null && apiKey != '') {
-            options.headers = {
-            Authorization: `Bearer ${apiKey}`,
+        try {
+            let apiKey = await window.api.getServerAPIKey();
+            const options = {};
+            if(apiKey != null && apiKey != '') {
+                options.headers = {
+                Authorization: `Bearer ${apiKey}`,
+                }
             }
+            return await fetch(url, options);
+        } catch (e) {
+            console.error('fetchWithApiKey error:', e);
+            throw e;
         }
-        return await fetch(url, options);
     },
     getVersion: async () => {
         try {
@@ -461,9 +468,11 @@ window.api = {
             if (response.ok) {
                 const data = await response.json();
                 return data.version || 'Unknown';
+            } else {
+                console.error('Health response not OK:', response.status, response.statusText);
             }
         } catch (e) {
-            console.warn('Failed to fetch version:', e);
+            console.error('Failed to fetch version:', e);
         }
         return 'Unknown';
     },
