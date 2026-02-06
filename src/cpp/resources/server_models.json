@@ -317,6 +317,13 @@
         "labels": ["coding","tool-calling","hot"],
         "size": 43.7
     },
+    "Kwaipilot_KAT-Dev-GGUF": {
+        "checkpoint": "bartowski/Kwaipilot_KAT-Dev-GGUF:Kwaipilot_KAT-Dev-Q6_K_L.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["coding"],
+        "size": 26.9
+    },
     "Nemotron-3-Nano-30B-A3B-GGUF": {
         "checkpoint": "unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
