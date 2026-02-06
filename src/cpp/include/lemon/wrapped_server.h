@@ -166,7 +166,7 @@ protected:
     int choose_port();
 
     // Wait for server to be ready (can be overridden for custom health checks)
-    virtual bool wait_for_ready();
+    virtual bool wait_for_ready(const std::string& endpoint, long timeout_seconds = 600, long poll_interval_ms = 100);
 
     // Common method to forward requests to the wrapped server (non-streaming)
     json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = INFERENCE_TIMEOUT_SECONDS);

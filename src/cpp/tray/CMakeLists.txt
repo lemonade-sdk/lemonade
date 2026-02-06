@@ -75,6 +75,7 @@ set(COMMON_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/cli_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/recipe_options.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/system_info.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server/backends/backend_utils.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/path_utils.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/wmi_helper.cpp
     platform/tray_factory.cpp

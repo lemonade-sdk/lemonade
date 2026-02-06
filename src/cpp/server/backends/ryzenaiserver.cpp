@@ -377,7 +377,7 @@ void RyzenAIServer::load(const std::string& model_name,
               << process_handle_.pid << std::endl;
 
     // Wait for server to be ready
-    if (!wait_for_ready()) {
+    if (!wait_for_ready("/health")) {
         utils::ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};  // Reset to prevent double-stop on destructor
         throw std::runtime_error("RyzenAI-Server failed to start (check logs for details)");

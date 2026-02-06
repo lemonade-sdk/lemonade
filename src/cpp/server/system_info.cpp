@@ -1,6 +1,11 @@
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/llamacpp_server.h"
+#include "lemon/backends/whisper_server.h"
+#include "lemon/backends/sd_server.h"
+#include "lemon/backends/kokoro_server.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -29,6 +34,7 @@ namespace lemon {
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
+using namespace lemon::backends;
 
 // AMD discrete GPU keywords
 const std::vector<std::string> AMD_DISCRETE_GPU_KEYWORDS = {
@@ -109,7 +115,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     }},
 
     // stable-diffusion.cpp - Windows/Linux x86_64
-    {"sd-cpp", "default", {"windows", "linux"}, {
+    {"sd-cpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
     }},
 
@@ -283,13 +289,13 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         return SystemInfo::is_llamacpp_installed(backend);
     }
     if (recipe == "whispercpp") {
-        return SystemInfo::is_whispercpp_installed();
+        return SystemInfo::is_whispercpp_installed(backend);
     }
     if (recipe == "kokoro") {
         return SystemInfo::is_kokoro_installed(backend);
     }
     if (recipe == "sd-cpp") {
-        return SystemInfo::is_sdcpp_installed();
+        return SystemInfo::is_sdcpp_installed(backend);
     }
     if (recipe == "flm") {
         // Check if FLM is installed
@@ -323,13 +329,13 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
         return SystemInfo::get_llamacpp_version(backend);
     }
     if (recipe == "whispercpp") {
-        return SystemInfo::get_whispercpp_version();
+        return SystemInfo::get_whispercpp_version(backend);
     }
     if (recipe == "kokoro") {
         return SystemInfo::get_kokoro_version(backend);
     }
     if (recipe == "sd-cpp") {
-        return SystemInfo::get_sdcpp_version();
+        return SystemInfo::get_sdcpp_version(backend);
     }
     if (recipe == "flm") {
         return SystemInfo::get_flm_version();
@@ -898,23 +904,19 @@ static std::string read_version_file(const fs::path& version_file) {
 }
 
 std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
-    fs::path bin_dir = utils::get_downloaded_bin_dir();
-    return read_version_file(bin_dir / "llama" / backend / "version.txt");
+    return read_version_file(BackendUtils::get_installed_version_file(LlamaCppServer::SPEC, backend));
 }
 
-std::string SystemInfo::get_whispercpp_version() {
-    fs::path bin_dir = utils::get_downloaded_bin_dir();
-    return read_version_file(bin_dir / "whisper" / "version.txt");
+std::string SystemInfo::get_whispercpp_version(const std::string& backend) {
+    return read_version_file(BackendUtils::get_installed_version_file(WhisperServer::SPEC, backend));
 }
 
 std::string SystemInfo::get_kokoro_version(const std::string& backend) {
-    fs::path bin_dir = utils::get_downloaded_bin_dir();
-    return read_version_file(bin_dir / "kokoro" / backend / "version.txt");
+    return read_version_file(BackendUtils::get_installed_version_file(KokoroServer::SPEC, backend));
 }
 
-std::string SystemInfo::get_sdcpp_version() {
-    fs::path bin_dir = utils::get_downloaded_bin_dir();
-    return read_version_file(bin_dir / "sd-cpp" / "version.txt");
+std::string SystemInfo::get_sdcpp_version(const std::string& backend) {
+    return read_version_file(BackendUtils::get_installed_version_file(SDServer::SPEC, backend));
 }
 
 std::string SystemInfo::get_oga_version() {
@@ -923,101 +925,39 @@ std::string SystemInfo::get_oga_version() {
 }
 
 bool SystemInfo::is_llamacpp_installed(const std::string& backend) {
-    // Check if llama-server executable exists for the given backend
-    // Location: {cache_dir}/bin/llama/{backend}/
-
-    fs::path bin_dir = utils::get_downloaded_bin_dir();
-    fs::path install_dir = bin_dir / "llama" / backend;
-
-#ifdef _WIN32
-    fs::path llama_exe = install_dir / "llama-server.exe";
-    return fs::exists(llama_exe);
-#else
-    // For Linux, check build/bin subdirectory first, then root
-    fs::path build_bin_path = install_dir / "build" / "bin" / "llama-server";
-    if (fs::exists(build_bin_path)) {
+    try {
+        BackendUtils::get_backend_binary_path(LlamaCppServer::SPEC, backend);
         return true;
+    } catch (const std::exception& e) {
+        return false;
     }
-    fs::path root_path = install_dir / "llama-server";
-    return fs::exists(root_path);
-#endif
 }
 
-bool SystemInfo::is_whispercpp_installed() {
-    // Check if whisper-server executable exists
-    // Location: {cache_dir}/bin/whisper/
-
-    fs::path bin_dir = utils::get_downloaded_bin_dir();
-    fs::path install_dir = bin_dir / "whisper";
-
-#ifdef _WIN32
-    std::vector<std::string> exe_names = {"whisper-server.exe", "server.exe"};
-#else
-    std::vector<std::string> exe_names = {"whisper-server", "server"};
-#endif
-    std::vector<std::string> subdirs = {"Release", "bin", ""};
-
-    for (const auto& subdir : subdirs) {
-        for (const auto& exe_name : exe_names) {
-            fs::path exe_path;
-            if (subdir.empty()) {
-                exe_path = install_dir / exe_name;
-            } else {
-                exe_path = install_dir / subdir / exe_name;
-            }
-            if (fs::exists(exe_path)) {
-                return true;
-            }
-        }
+bool SystemInfo::is_whispercpp_installed(const std::string& backend) {
+    try {
+        BackendUtils::get_backend_binary_path(WhisperServer::SPEC, backend);
+        return true;
+    } catch (const std::exception& e) {
+        return false;
     }
-
-    return false;
 }
 
 bool SystemInfo::is_kokoro_installed(const std::string& backend) {
-    fs::path bin_dir = utils::get_downloaded_bin_dir();
-    fs::path install_dir = bin_dir / "kokoro" / backend;
-
-    // Look for kokoros executable
-#ifdef _WIN32
-    std::vector<std::string> exe_names = {"koko.exe"};
-    std::vector<std::string> subdirs = {"kokoros-windows-x86_64", "windows-x86_64", ""};
-#else
-    std::vector<std::string> exe_names = {"koko"};
-    std::vector<std::string> subdirs = {"kokoros-linux-x86_64", "linux-x86_64", ""};
-#endif
-
-    for (const auto& subdir : subdirs) {
-        for (const auto& exe_name : exe_names) {
-            fs::path exe_path;
-            if (subdir.empty()) {
-                exe_path = fs::path(install_dir) / exe_name;
-            } else {
-                exe_path = fs::path(install_dir) / subdir / exe_name;
-            }
-            if (fs::exists(exe_path)) {
-                return true;
-            }
-        }
+    try {
+        BackendUtils::get_backend_binary_path(KokoroServer::SPEC, backend);
+        return true;
+    } catch (const std::exception& e) {
+        return false;
     }
-
-    return false;
 }
 
-bool SystemInfo::is_sdcpp_installed() {
-    // Check if sd-server executable exists
-    // Location: {cache_dir}/bin/sd-cpp/
-
-    fs::path bin_dir = utils::get_downloaded_bin_dir();
-    fs::path install_dir = bin_dir / "sd-cpp";
-
-#ifdef _WIN32
-    fs::path exe_path = install_dir / "sd-server.exe";
-#else
-    fs::path exe_path = install_dir / "sd-server";
-#endif
-
-    return fs::exists(exe_path);
+bool SystemInfo::is_sdcpp_installed(const std::string& backend) {
+    try {
+        BackendUtils::get_backend_binary_path(SDServer::SPEC, backend);
+        return true;
+    } catch (const std::exception& e) {
+        return false;
+    }
 }
 
 // Helper to identify ROCm architecture from GPU name

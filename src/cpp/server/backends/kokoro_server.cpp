@@ -27,26 +27,6 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-static std::string get_kokoro_version(const std::string& backend) {
-    std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-
-    json config = utils::JsonUtils::load_from_file(config_path);
-
-    if (!config.contains("kokoro") || !config["kokoro"].is_object()) {
-        throw std::runtime_error("backend_versions.json is missing 'kokoro' section");
-    }
-
-    const auto& kokoro_config = config["kokoro"];
-
-    if (!kokoro_config.contains(backend) || !kokoro_config[backend].is_string()) {
-        throw std::runtime_error("backend_versions.json is missing version for backend: " + backend);
-    }
-
-    std::string version = kokoro_config[backend].get<std::string>();
-    std::cout << "[KokoroServer] Using " << backend << " version from config: " << version << std::endl;
-    return version;
-}
-
 KokoroServer::KokoroServer(const std::string& log_level, ModelManager* model_manager)
     : WrappedServer("kokoro-server", log_level, model_manager) {
 
@@ -56,133 +36,21 @@ KokoroServer::~KokoroServer() {
     unload();
 }
 
-static std::string get_kokoro_install_dir(const std::string& backend) {
-    return (fs::path(get_downloaded_bin_dir()) / "kokoro" / backend).string();
-}
-
 // WrappedServer interface
 void KokoroServer::install(const std::string& backend) {
-    std::string install_dir;
-    std::string version_file;
-    std::string expected_version;
-    std::string exe_path = find_external_kokoro_server();
-    bool needs_install = exe_path.empty();
-
-    if (needs_install) {
-        install_dir = get_kokoro_install_dir(backend);
-        version_file = (fs::path(install_dir) / "version.txt").string();
-
-        // Get expected version from config
-        expected_version = get_kokoro_version(backend);
-
-        // Check if already installed with correct version
-        exe_path = find_executable_in_install_dir(install_dir);
-        needs_install = exe_path.empty();
-
-        if (!needs_install && fs::exists(version_file)) {
-            std::string installed_version;
-
-            std::ifstream vf(version_file);
-            std::getline(vf, installed_version);
-            vf.close();
-
-            if (installed_version != expected_version) {
-                std::cout << "[KokoroServer] Upgrading from " << installed_version
-                        << " to " << expected_version << std::endl;
-                needs_install = true;
-                fs::remove_all(install_dir);
-            }
-        }
-    }
-
-    if (needs_install) {
-        std::cout << "[KokoroServer] Installing kokoros (version: "
-                 << expected_version << ")" << std::endl;
-
-        // Create install directory
-        fs::create_directories(install_dir);
-
-        // Determine download URL
-        std::string repo = "lemonade-sdk/Kokoros";
-        std::string filename;
+    std::string repo = "lemonade-sdk/Kokoros";
+    std::string filename;
+    std::string expected_version = BackendUtils::get_backend_version(SPEC.recipe, backend);
 
 #ifdef _WIN32
-        filename = "kokoros-windows-x86_64.tar.gz";
+    filename = "kokoros-windows-x86_64.tar.gz";
 #elif defined(__linux__)
-        filename = "kokoros-linux-x86_64.tar.gz";  // Linux binary
+    filename = "kokoros-linux-x86_64.tar.gz";  // Linux binary
 #else
-        throw std::runtime_error("Unsupported platform for kokoros");
+    throw std::runtime_error("Unsupported platform for kokoros");
 #endif
 
-        std::string url = "https://github.com/" + repo + "/releases/download/" +
-                         expected_version + "/" + filename;
-
-        // Download ZIP to cache directory
-        fs::path cache_dir = model_manager_ ? fs::path(model_manager_->get_hf_cache_dir()) : fs::temp_directory_path();
-        fs::create_directories(cache_dir);
-        std::string zip_path = (cache_dir / ("kokoros_" + expected_version + ".tar.gz")).string();
-
-        std::cout << "[KokoroServer] Downloading from: " << url << std::endl;
-        std::cout << "[KokoroServer] Downloading to: " << zip_path << std::endl;
-
-        // Download the file
-        auto download_result = utils::HttpClient::download_file(
-            url,
-            zip_path,
-            utils::create_throttled_progress_callback()
-        );
-
-        if (!download_result.success) {
-            throw std::runtime_error("Failed to download kokoros from: " + url +
-                                    " - " + download_result.error_message);
-        }
-
-        std::cout << std::endl << "[KokoroServer] Download complete!" << std::endl;
-
-        // Verify the downloaded file
-        if (!fs::exists(zip_path)) {
-            throw std::runtime_error("Downloaded tarball does not exist: " + zip_path);
-        }
-
-        std::uintmax_t file_size = fs::file_size(zip_path);
-        std::cout << "[KokoroServer] Downloaded tarball file size: "
-                  << (file_size / 1024 / 1024) << " MB" << std::endl;
-
-        // Extract
-        if (!backends::BackendUtils::extract_archive(zip_path, install_dir, "KokoroServer")) {
-            fs::remove(zip_path);
-            fs::remove_all(install_dir);
-            throw std::runtime_error("Failed to extract kokoros archive");
-        }
-
-        // Verify extraction
-        exe_path = find_executable_in_install_dir(install_dir);
-        if (exe_path.empty()) {
-            std::cerr << "[KokoroServer] ERROR: Extraction completed but executable not found" << std::endl;
-            fs::remove(zip_path);
-            fs::remove_all(install_dir);
-            throw std::runtime_error("Extraction failed: executable not found");
-        }
-
-        std::cout << "[KokoroServer] Executable verified at: " << exe_path << std::endl;
-
-        // Save version info
-        std::ofstream vf(version_file);
-        vf << expected_version;
-        vf.close();
-
-#ifndef _WIN32
-        // Make executable on Linux/macOS
-        chmod(exe_path.c_str(), 0755);
-#endif
-
-        // Delete ZIP file
-        fs::remove(zip_path);
-
-        std::cout << "[KokoroServer] Installation complete!" << std::endl;
-    } else {
-        std::cout << "[KokoroServer] Found koko at: " << exe_path << std::endl;
-    }
+    BackendUtils::install_from_github(SPEC, expected_version, repo, filename, backend);
 }
 
 std::string KokoroServer::download_model(const std::string& checkpoint, const std::string& mmproj, bool do_not_upgrade) {
@@ -221,55 +89,6 @@ std::string KokoroServer::download_model(const std::string& checkpoint, const st
     return model_path;
 }
 
-bool KokoroServer::wait_for_ready(int timeout_seconds) {
-    std::cout << "[KokoroServer] Waiting for server to be ready on port " << port_ << "..." << std::endl;
-
-    auto start = std::chrono::steady_clock::now();
-
-    while (true) {
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - start).count();
-
-        if (elapsed >= timeout_seconds) {
-            std::cerr << "[KokoroServer] Timeout waiting for server to be ready after "
-                      << timeout_seconds << "s" << std::endl;
-            return false;
-        }
-
-        // Check if process is still running
-        if (!utils::ProcessManager::is_running(process_handle_)) {
-            int exit_code = utils::ProcessManager::get_exit_code(process_handle_);
-            std::cerr << "[KokoroServer] Server process exited unexpectedly with code: "
-                      << exit_code << std::endl;
-            return false;
-        }
-
-        try {
-            httplib::Client client("127.0.0.1", port_);
-            client.set_connection_timeout(2);
-            client.set_read_timeout(2);
-
-            auto response = client.Get("/");
-            if (response && response->status == 200) {
-                std::cout << "[KokoroServer] Server is ready!" << std::endl;
-                return true;
-            }
-            if (response) {
-                std::cout << "[KokoroServer] Got response with status " << response->status
-                          << ", waiting for 200..." << std::endl;
-            }
-        } catch (const std::exception& e) {
-            if (is_debug()) {
-                std::cout << "[KokoroServer] Health check failed: " << e.what() << std::endl;
-            }
-        } catch (...) {
-            // Server not ready yet
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    }
-}
-
 void KokoroServer::load(const std::string& model_name, const ModelInfo& model_info, const RecipeOptions& options, bool do_not_upgrade) {
     std::cout << "[KokoroServer] Loading model: " << model_name << std::endl;
 
@@ -294,10 +113,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     std::cout << "[KokoroServer] Using model: " << model_index["model"] << std::endl;
 
     // Get koko executable path
-    std::string exe_path = get_kokoro_server_path();
-    if (exe_path.empty()) {
-        throw std::runtime_error("koko executable not found");
-    }
+    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, "cpu");
 
     // Choose a port
     port_ = choose_port();
@@ -350,7 +166,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     std::cout << "[KokoroServer] Process started with PID: " << process_handle_.pid << std::endl;
 
     // Wait for server to be ready
-    if (!wait_for_ready()) {
+    if (!wait_for_ready("/")) {
         unload();
         throw std::runtime_error("koko failed to start or become ready");
     }
@@ -407,55 +223,6 @@ void KokoroServer::audio_speech(const json& request, httplib::DataSink& sink) {
     }
 
     forward_streaming_request("/v1/audio/speech", tts_request.dump(), sink, false);
-}
-
-std::string KokoroServer::get_kokoro_server_path() {
-    std::string exe_path = find_external_kokoro_server();
-
-    if (!exe_path.empty()) {
-        return exe_path;
-    }
-
-    std::string install_dir = get_kokoro_install_dir("cpu");
-    return find_executable_in_install_dir(install_dir);
-}
-
-std::string KokoroServer::find_executable_in_install_dir(const std::string& install_dir) {
-    // Look for kokoros executable
-#ifdef _WIN32
-    std::vector<std::string> exe_names = {"koko.exe"};
-    std::vector<std::string> subdirs = {"kokoros-windows-x86_64", "windows-x86_64", ""};
-#else
-    std::vector<std::string> exe_names = {"koko"};
-    std::vector<std::string> subdirs = {"kokoros-linux-x86_64", "linux-x86_64", ""};
-#endif
-
-    for (const auto& subdir : subdirs) {
-        for (const auto& exe_name : exe_names) {
-            fs::path exe_path;
-            if (subdir.empty()) {
-                exe_path = fs::path(install_dir) / exe_name;
-            } else {
-                exe_path = fs::path(install_dir) / subdir / exe_name;
-            }
-            if (fs::exists(exe_path)) {
-                return exe_path.string();
-            }
-        }
-    }
-
-    return "";
-}
-
-std::string KokoroServer::find_external_kokoro_server() {
-    const char* kokoro_bin_env = std::getenv("LEMONADE_KOKORO_CPU_BIN");
-    if (!kokoro_bin_env) {
-        return "";
-    }
-
-    std::string kokoro_bin = std::string(kokoro_bin_env);
-
-    return fs::exists(kokoro_bin) ? kokoro_bin : "";
 }
 
 } // namespace backends
