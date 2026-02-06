@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#lemonade-server-examples" class="md-skip">
+        <a href="#app-integration-guides" class="md-skip">
           Skip to content
         </a>
       
@@ -347,10 +347,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#video-tutorials" class="md-nav__link">
+  <a href="#view-the-marketplace" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🎥 Video Tutorials
+        View the Marketplace
       
     </span>
   </a>
@@ -358,32 +358,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#looking-for-installation-help" class="md-nav__link">
+  <a href="#contributing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        📦 Looking for Installation Help?
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#support" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        🛠️ Support
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#want-to-add-an-example" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        💡 Want to Add an Example?
+        Contributing
       
     </span>
   </a>
@@ -922,10 +900,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#video-tutorials" class="md-nav__link">
+  <a href="#view-the-marketplace" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🎥 Video Tutorials
+        View the Marketplace
       
     </span>
   </a>
@@ -933,32 +911,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#looking-for-installation-help" class="md-nav__link">
+  <a href="#contributing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        📦 Looking for Installation Help?
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#support" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        🛠️ Support
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#want-to-add-an-example" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        💡 Want to Add an Example?
+        Contributing
       
     </span>
   </a>
@@ -985,117 +941,12 @@
   
 
 
-<h1 id="lemonade-server-examples">Lemonade Server Examples</h1>
-<p>Many applications today utilize OpenAI models like ChatGPT through APIs such as:</p>
-<p><code>POST https://api.openai.com/v1/chat/completions</code></p>
-<p>This API call triggers the ChatGPT model to generate responses for a chat. With Lemonade Server, we are replacing the OpenAI endpoint with a local LLM. The new API call becomes:</p>
-<p><code>POST http://localhost:8000/api/v1/chat/completions</code></p>
-<p>This allows the same application to leverage local LLMs instead of relying on OpenAI's cloud-based models. The guides in this folder show how to connect Lemonade Server to popular applications to enable local LLM execution.</p>
-<h2 id="video-tutorials">🎥 Video Tutorials</h2>
-<div id="yt-carousel" data-videos='[
-  {"id": "mcf7dDybUco", "title": "Getting Started with Lemonade Server"},
-  {"id": "HUwGxlH3yAg", "title": "Lemonade for GitHub Copilot"},
-  {"id": "yZs-Yzl736E", "title": "Open WebUI Demo"},
-  {"id": "JecpotOZ6qo", "title": "Microsoft AI Toolkit Demo"},
-  {"id": "bP_MZnDpbUc", "title": "Continue Coding Assistant"},
-  {"id": "_PORHv_-atI", "title": "GAIA"},
-  {"id": "A-8QYktB0Io", "title": "PEEL"}
-]'></div>
-
-<div class="hide-in-mkdocs">
-
-Links to the video tutorials available are provided in the third column of the following table.
-
-</div>
-
-<table>
-<thead>
-<tr>
-<th>App</th>
-<th>Guide</th>
-<th>Video</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a href="https://marketplace.visualstudio.com/items?itemName=lemonade-sdk.lemonade-sdk">Lemonade for GitHub Copilot</a></td>
-<td><a href="https://marketplace.visualstudio.com/items?itemName=lemonade-sdk.lemonade-sdk">How to use Lemonade LLMs with VS Code Copilot Extension</a></td>
-<td><a href="https://www.youtube.com/watch?v=HUwGxlH3yAg&amp;list=PLYw1WVX5aNHABNAfottruTY8oX2eFlzmz&amp;index=13">Watch Demo</a></td>
-</tr>
-<tr>
-<td><a href="https://github.com/open-webui/open-webui">Open WebUI</a></td>
-<td><a href="open-webui/">How to chat with Lemonade LLMs in Open WebUI</a></td>
-<td><a href="https://www.youtube.com/watch?v=yZs-Yzl736E">Watch Demo</a></td>
-</tr>
-<tr>
-<td><a href="https://www.continue.dev/">Continue.dev</a></td>
-<td><a href="continue/">How to use Lemonade LLMs as a coding assistant in Continue</a></td>
-<td><a href="https://youtu.be/bP_MZnDpbUc?si=hRhLbLEV6V_OGlUt">Watch Demo</a></td>
-</tr>
-<tr>
-<td><a href="https://learn.microsoft.com/en-us/windows/ai/toolkit/">Microsoft AI Toolkit</a></td>
-<td><a href="ai-toolkit/">Experimenting with Lemonade LLMs in VS Code using Microsoft's AI Toolkit</a></td>
-<td><a href="https://youtu.be/JecpotOZ6qo?si=WxWVQhUBCJQgE6vX">Watch Demo</a></td>
-</tr>
-<tr>
-<td><a href="https://github.com/amd/gaia">GAIA</a></td>
-<td><a href="https://github.com/amd/gaia?tab=readme-ov-file#getting-started-guide">An application for running LLMs locally, includes a ChatBot, YouTube Agent, and more</a></td>
-<td><a href="https://youtu.be/_PORHv_-atI?si=EYQjmrRQ6Zy2H0ek">Watch Demo</a></td>
-</tr>
-<tr>
-<td><a href="https://aka.ms/ai-dev-gallery">Microsoft AI Dev Gallery</a></td>
-<td><a href="ai-dev-gallery/">Microsoft's showcase application for exploring AI capabilities</a></td>
-<td><em>coming soon</em></td>
-</tr>
-<tr>
-<td><a href="https://dify.ai/">Dify</a></td>
-<td><a href="https://marketplace.dify.ai/plugins/langgenius/lemonade">Build node based AI agents and RAG workflows powered by Lemonade</a></td>
-<td><em>coming soon</em></td>
-</tr>
-<tr>
-<td><a href="https://codegpt.co/">CodeGPT</a></td>
-<td><a href="codeGPT/">How to use Lemonade LLMs as a coding assistant in CodeGPT</a></td>
-<td><em>coming soon</em></td>
-</tr>
-<tr>
-<td><a href="https://github.com/kolbytn/mindcraft">MindCraft</a></td>
-<td><a href="mindcraft/">How to use Lemonade LLMs as a Minecraft agent</a></td>
-<td><em>coming soon</em></td>
-</tr>
-<tr>
-<td><a href="https://github.com/shobrook/wut">wut</a></td>
-<td><a href="wut/">Terminal assistant that uses Lemonade LLMs to explain errors</a></td>
-<td><em>coming soon</em></td>
-</tr>
-<tr>
-<td><a href="https://anythingllm.com/">AnythingLLM</a></td>
-<td><a href="anythingLLM/">Running agents locally with Lemonade and AnythingLLM</a></td>
-<td><em>coming soon</em></td>
-</tr>
-<tr>
-<td><a href="https://github.com/lemonade-apps/peel">PEEL</a></td>
-<td><a href="https://github.com/lemonade-apps/peel?tab=readme-ov-file#installation">Using Local LLMs in Windows PowerShell</a></td>
-<td><a href="https://youtu.be/A-8QYktB0Io?si=5LiD3fZDlmaTecpV">Watch Demo</a></td>
-</tr>
-<tr>
-<td><a href="https://github.com/All-Hands-AI/OpenHands">OpenHands</a></td>
-<td><a href="open-hands/">How to use Lemonade LLMs as a coding assistant in OpenHands</a></td>
-<td><em>coming soon</em></td>
-</tr>
-</tbody>
-</table>
-<h2 id="looking-for-installation-help">📦 Looking for Installation Help?</h2>
-<p>To set up Lemonade Server, check out the <a href="../">Lemonade Server guide</a> for installation instructions and the <a href="../server_spec/">server spec</a> to learn more about the functionality. For more information about 🍋 Lemonade SDK, see the <a href="../">Lemonade SDK README</a>.</p>
-<h2 id="support">🛠️ Support</h2>
-<p>If you encounter any issues or have questions, feel free to:</p>
-<ul>
-<li>File an issue on our <a href="https://github.com/lemonade-sdk/lemonade/issues">GitHub Issues page</a>.</li>
-<li>Email us at <a href="mailto:lemonade@amd.com">lemonade@amd.com</a>.</li>
-</ul>
-<h2 id="want-to-add-an-example">💡 Want to Add an Example?</h2>
-<p>If you've connected Lemonade to a new application, feel free to contribute a guide by following our contribution guide found <a href="../../contribute/">here</a> or let us know at <a href="mailto:lemonade@amd.com">lemonade@amd.com</a>.</p>
-<!--This file was originally licensed under Apache 2.0. It has been modified.
-Modifications Copyright (c) 2025 AMD-->
+<h1 id="app-integration-guides">App Integration Guides</h1>
+<p>This folder contains integration guides for connecting third-party applications to Lemonade Server.</p>
+<h2 id="view-the-marketplace">View the Marketplace</h2>
+<p>For a complete list of compatible apps with links to guides, videos, and more, visit the <strong><a href="https://lemonade-server.ai/marketplace">Lemonade Marketplace</a></strong>.</p>
+<h2 id="contributing">Contributing</h2>
+<p>If you've connected Lemonade to a new application and would like to contribute a guide, see our <a href="../../contribute/">contribution guide</a> or email us at <a href="mailto:lemonade@amd.com">lemonade@amd.com</a>.</p>
 
 
 

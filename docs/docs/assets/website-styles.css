@@ -377,7 +377,7 @@ body.install-options {
   left: 100%;
 }
 
-.download-btn, .dev-btn {
+.download-btn, .dev-btn, .marketplace-cta-btn {
   display: inline-block;
   font-weight: 700;
   border: none;
@@ -419,7 +419,7 @@ body.install-options {
   transform: scale(0.98);
 }
 
-.dev-btn {
+.dev-btn, .marketplace-cta-btn {
   background: linear-gradient(135deg, var(--bg-white) 0%, #f8f9fa 100%);
   color: #333;
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15), 0 2px 0 rgba(255, 255, 255, 0.6) inset;
@@ -431,11 +431,28 @@ body.install-options {
   transform: translateY(-2px) scale(1.02);
 }
 
+.marketplace-cta-btn:hover, .marketplace-cta-btn:focus {
+  /* No hover effect */
+}
+
 .dev-btn:active {
   background: #ededed;
   box-shadow: 0 2px 8px rgba(187, 187, 187, 0.13);
   border-color: #888;
   transform: scale(0.98);
+}
+
+/* Marketplace button - single line variant */
+.marketplace-cta-btn {
+  display: inline-block;
+  min-width: auto;
+  max-width: none;
+  height: auto;
+  padding: var(--spacing-md) 2rem;
+  font-size: 1rem;
+  flex-direction: unset;
+  align-items: unset;
+  justify-content: unset;
 }
 
 .download-btn .download-sub, .dev-btn .dev-sub {
@@ -583,7 +600,7 @@ body.install-options {
   height: 120px;
 }
 
-.partner-apps a:hover {
+.partner-apps a:hover:not(.marketplace-cta-btn) {
   transform: translateY(-6px) scale(1.05);
   opacity: 1;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
@@ -600,6 +617,30 @@ body.install-options {
 .partner-apps a:hover img {
   transform: scale(1.05);
 }
+
+.partner-apps-link {
+  margin-top: var(--spacing-sm);
+  text-align: center;
+}
+
+.view-all-link {
+  display: inline-block;
+  color: var(--accent-gold);
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  padding: 10px 20px;
+  border: 2px solid var(--accent-gold);
+  border-radius: var(--radius-lg);
+  transition: var(--transition-medium);
+}
+
+.view-all-link:hover {
+  background: var(--accent-gold);
+  color: var(--text-primary);
+  transform: translateY(-2px);
+}
+
 
 /* Video Section */
 .video-section {
