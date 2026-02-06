@@ -125,13 +125,13 @@ namespace lemon::backends {
         return extract_zip(archive_path, dest_dir, backend_name);
     }
 
-    std::string BackendUtils::get_install_directory(const std::string& dir_name, const std::string& variant) {
+    std::string BackendUtils::get_install_directory(const std::string& dir_name, const std::string& backend) {
         fs::path ret = (fs::path(utils::get_downloaded_bin_dir()) / dir_name);
-        return ((variant != "") ? (ret / variant) : ret).string();
+        return ((backend != "") ? (ret / backend) : ret).string();
     }
 
-    std::string BackendUtils::find_external_backend_binary(const std::string& recipe, const std::string& variant) {
-        std::string upper = variant == "" ? recipe : (recipe + "_" + variant);
+    std::string BackendUtils::find_external_backend_binary(const std::string& recipe, const std::string& backend) {
+        std::string upper = backend == "" ? recipe : (recipe + "_" + backend);
         std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
         std::string env = "LEMONADE_" + upper + "_BIN";
         const char* backend_bin_env = std::getenv(env.c_str());
@@ -157,14 +157,14 @@ namespace lemon::backends {
         return "";
     }
 
-    std::string BackendUtils::get_backend_binary_path(const BackendSpec& spec, const std::string& variant) {
-        std::string exe_path = find_external_backend_binary(spec.recipe, variant);
+    std::string BackendUtils::get_backend_binary_path(const BackendSpec& spec, const std::string& backend) {
+        std::string exe_path = find_external_backend_binary(spec.recipe, backend);
 
         if (!exe_path.empty()) {
             return exe_path;
         }
 
-        std::string install_dir = get_install_directory(spec.dir_name, variant);
+        std::string install_dir = get_install_directory(spec.dir_name, backend);
         exe_path = find_executable_in_install_dir(install_dir, spec.binary);
 
         if (!exe_path.empty()) {
@@ -179,13 +179,13 @@ namespace lemon::backends {
         return (fs::path(install_dir) / "version.txt").string();
     }
 
-    std::string BackendUtils::get_installed_version_file(const BackendSpec& spec, const std::string& variant) {
-        std::string install_dir = get_install_directory(spec.dir_name, variant);
+    std::string BackendUtils::get_installed_version_file(const BackendSpec& spec, const std::string& backend) {
+        std::string install_dir = get_install_directory(spec.dir_name, backend);
         return get_version_file(install_dir);
     }
 
 #ifndef LEMONADE_TRAY
-    std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& variant) {
+    std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
         std::string config_path = utils::get_resource_path("resources/backend_versions.json");
 
         json config = utils::JsonUtils::load_from_file(config_path);
@@ -195,25 +195,25 @@ namespace lemon::backends {
         }
 
         const auto& recipe_config = config[recipe];
-        const std::string variant_id = recipe + ":" + variant;
+        const std::string backend_id = recipe + ":" + backend;
 
-        if (!recipe_config.contains(variant) || !recipe_config[variant].is_string()) {
-            throw std::runtime_error("backend_versions.json is missing version for backend: " + variant_id);
+        if (!recipe_config.contains(backend) || !recipe_config[backend].is_string()) {
+            throw std::runtime_error("backend_versions.json is missing version for backend: " + backend_id);
         }
 
-        std::string version = recipe_config[variant].get<std::string>();
-        std::cout << "[BackendUtils] Using " << variant_id << " version from config: " << version << std::endl;
+        std::string version = recipe_config[backend].get<std::string>();
+        std::cout << "[BackendUtils] Using " << backend_id << " version from config: " << version << std::endl;
         return version;
     }
 
-    void BackendUtils::install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& variant) {
+    void BackendUtils::install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& backend) {
         std::string install_dir;
         std::string version_file;
-        std::string exe_path = find_external_backend_binary(spec.recipe, variant);
+        std::string exe_path = find_external_backend_binary(spec.recipe, backend);
         bool needs_install = exe_path.empty();
 
         if (needs_install) {
-            install_dir = get_install_directory(spec.dir_name, variant);
+            install_dir = get_install_directory(spec.dir_name, backend);
             version_file = get_version_file(install_dir);
 
             // Check if already installed with correct version
@@ -249,7 +249,7 @@ namespace lemon::backends {
             // Download ZIP to cache directory
             fs::path cache_dir = fs::temp_directory_path();
             fs::create_directories(cache_dir);
-            std::string zip_name = variant == "" ? spec.recipe : spec.recipe + "_" + variant;
+            std::string zip_name = backend == "" ? spec.recipe : spec.recipe + "_" + backend;
             std::string zip_ext = is_tarball(filename) ? ".tar.gz" : ".zip";
             std::string zip_path = (cache_dir / (zip_name + "_" + expected_version + zip_ext)).string();
 
