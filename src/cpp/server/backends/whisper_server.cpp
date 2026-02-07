@@ -104,7 +104,6 @@ static std::pair<std::string, std::string> get_npu_cache_info(const ModelInfo& m
 
 // Helper to download NPU compiled cache (.rai file) for a given ggml .bin model
 void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
-                                                const std::string& checkpoint,
                                                 const ModelInfo& model_info,
                                                 bool do_not_upgrade) {
     auto [cache_repo, cache_filename] = get_npu_cache_info(model_info);
@@ -157,49 +156,6 @@ void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
     }
 }
 
-std::string WhisperServer::download_model(const std::string& checkpoint,
-                                         const std::string& mmproj,
-                                         bool do_not_upgrade) {
-    std::string repo, filename;
-    size_t colon_pos = checkpoint.find(':');
-
-    if (colon_pos != std::string::npos) {
-        repo = checkpoint.substr(0, colon_pos);
-        filename = checkpoint.substr(colon_pos + 1);
-    } else {
-        throw std::runtime_error("Invalid checkpoint format. Expected 'repo:filename'");
-    }
-
-    if (!model_manager_) {
-        throw std::runtime_error("ModelManager not available for model download");
-    }
-
-    std::cout << "[WhisperServer] Downloading model: " << filename << " from " << repo << std::endl;
-
-    model_manager_->download_model(
-        checkpoint,  // model_name
-        checkpoint,  // checkpoint
-        "whispercpp",  // recipe
-        false,  // reasoning
-        false,  // vision
-        false,  // embedding
-        false,  // reranking
-        false,  // image
-        "",     // mmproj
-        do_not_upgrade
-    );
-
-    ModelInfo info = model_manager_->get_model_info(checkpoint);
-    std::string model_path = info.resolved_path;
-
-    if (model_path.empty() || !fs::exists(model_path)) {
-        throw std::runtime_error("Failed to download Whisper model: " + checkpoint);
-    }
-
-    std::cout << "[WhisperServer] Model downloaded to: " << model_path << std::endl;
-    return model_path;
-}
-
 void WhisperServer::load(const std::string& model_name,
                         const ModelInfo& model_info,
                         const RecipeOptions& options,
@@ -222,7 +178,7 @@ void WhisperServer::load(const std::string& model_name,
 
     // For NPU backend, download the compiled cache (.rai file). This is a must-have for NPU backend.
     if (whispercpp_backend == "npu") {
-        download_npu_compiled_cache(model_path, model_info.checkpoint, model_info, do_not_upgrade);
+        download_npu_compiled_cache(model_path, model_info, do_not_upgrade);
     }
 
     // Get whisper-server executable path

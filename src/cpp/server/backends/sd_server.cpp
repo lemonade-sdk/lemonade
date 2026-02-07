@@ -62,41 +62,6 @@ void SDServer::install(const std::string& backend) {
     BackendUtils::install_from_github(SPEC, expected_version, repo, filename, backend);
 }
 
-std::string SDServer::download_model(const std::string& checkpoint,
-                                     const std::string& /* mmproj */,
-                                     bool do_not_upgrade) {
-    if (!model_manager_) {
-        throw std::runtime_error("ModelManager not available for model download");
-    }
-
-    std::cout << "[SDServer] Downloading model: " << checkpoint << std::endl;
-
-    // Use ModelManager's download_model which handles HuggingFace downloads
-    model_manager_->download_model(
-        checkpoint,  // model_name
-        checkpoint,  // checkpoint
-        "sd-cpp",    // recipe
-        false,       // reasoning
-        false,       // vision
-        false,       // embedding
-        false,       // reranking
-        true,        // image
-        "",          // mmproj
-        do_not_upgrade
-    );
-
-    // Get the resolved path from model info
-    ModelInfo info = model_manager_->get_model_info(checkpoint);
-    std::string model_path = info.resolved_path;
-
-    if (model_path.empty()) {
-        throw std::runtime_error("Failed to download SD model: " + checkpoint);
-    }
-
-    std::cout << "[SDServer] Model downloaded to: " << model_path << std::endl;
-    return model_path;
-}
-
 void SDServer::load(const std::string& model_name,
                     const ModelInfo& model_info,
                     const RecipeOptions& /* options */,

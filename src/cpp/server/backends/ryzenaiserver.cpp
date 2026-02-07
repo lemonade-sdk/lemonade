@@ -272,18 +272,6 @@ void RyzenAIServer::download_and_install(const std::string& version) {
     std::cout << "[RyzenAI-Server] Installation complete!" << std::endl;
 }
 
-std::string RyzenAIServer::download_model(const std::string& checkpoint,
-                                         const std::string& mmproj,
-                                         bool do_not_upgrade) {
-    // RyzenAI-Server uses ONNX models downloaded via Hugging Face
-    // The model is expected to already be downloaded in ONNX format
-    std::cout << "[RyzenAI-Server] Note: RyzenAI-Server requires pre-downloaded ONNX models" << std::endl;
-    std::cout << "[RyzenAI-Server] Expected checkpoint format: repository/model-name" << std::endl;
-    std::cout << "[RyzenAI-Server] Model will be loaded from Hugging Face cache" << std::endl;
-
-    return checkpoint;
-}
-
 void RyzenAIServer::load(const std::string& model_name,
                         const ModelInfo& model_info,
                         const RecipeOptions& options,

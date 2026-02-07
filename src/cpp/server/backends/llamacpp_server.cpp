@@ -230,13 +230,6 @@ void LlamaCppServer::install(const std::string& backend) {
     BackendUtils::install_from_github(SPEC, expected_version, repo, filename, backend);
 }
 
-std::string LlamaCppServer::download_model(const std::string& checkpoint,
-                                          const std::string& mmproj,
-                                          bool do_not_upgrade) {
-    // Model download is handled by ModelManager
-    return checkpoint;
-}
-
 void LlamaCppServer::load(const std::string& model_name,
                          const ModelInfo& model_info,
                          const RecipeOptions& options,
