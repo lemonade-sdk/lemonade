@@ -181,10 +181,6 @@ const TitleBar: React.FC<TitleBarProps> = ({
                         >
                           <span>{isCenterPanelVisible && centerPanelView === 'marketplace' ? '✓ ' : ''}Marketplace</span>
                         </div>
-                        <div className="menu-option disabled">
-                          <span>Recipe Manager</span>
-                          <span className="coming-soon-label">Coming Soon</span>
-                        </div>
                       </div>
                     )}
                   </div>

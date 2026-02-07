@@ -96,7 +96,6 @@ body.embedded .site-footer {
 
 body.embedded .marketplace-main {
   padding-top: 0;
-  padding-right: 32px; /* Space for close button */
   min-height: 100vh;
   /* Remove centering in embedded mode - use full width with padding instead */
   max-width: none;
@@ -106,7 +105,7 @@ body.embedded .marketplace-main {
 }
 
 body.embedded .marketplace-hero {
-  padding-top: 0;
+  padding: 12px 0 12px;
 }
 
 /* === Page Background === */
@@ -174,7 +173,7 @@ body.embedded .marketplace-hero {
 
 /* In embedded mode, use compact heading matching app section headers */
 body.embedded .marketplace-hero {
-  padding: 12px 15px;
+  padding: 12px 0;
   text-align: left;
   border-bottom: none;
   background: #000000;
@@ -204,12 +203,12 @@ body.embedded {
 
 /* Embedded mode: align controls with heading */
 body.embedded .marketplace-controls {
-  padding: 0 15px;
+  padding: 0;
   margin-bottom: 16px;
 }
 
 body.embedded .apps-grid {
-  padding: 0 15px;
+  padding: 0;
 }
 
 /* === Controls === */
@@ -676,6 +675,12 @@ body.embedded .mp-filter-select option {
     max-width: none;
   }
 
+  /* In embedded mode, keep search bar at fixed width */
+  body.embedded .search-container {
+    width: 240px;
+    max-width: 100%;
+  }
+
   .apps-grid {
     grid-template-columns: 1fr;
     gap: 10px;
@@ -698,11 +703,11 @@ body.embedded .mp-filter-select option {
   }
 
   body.embedded .marketplace-controls {
-    padding: 0 10px;
+    padding: 0;
   }
 
   body.embedded .apps-grid {
-    padding: 0 10px;
+    padding: 0;
     grid-template-columns: 1fr; /* Force single column on very narrow */
   }
 

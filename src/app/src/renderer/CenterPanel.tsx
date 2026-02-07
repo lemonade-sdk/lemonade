@@ -28,8 +28,18 @@ const CenterPanel: React.FC<CenterPanelProps> = memo(({ isVisible, currentView, 
       setIsLoading(true);
       setHasError(false);
 
+      // Try local marketplace first, fall back to remote
+      if (window.api?.getLocalMarketplaceUrl) {
+        const localUrl = await window.api.getLocalMarketplaceUrl();
+        if (localUrl) {
+          console.log('Using local marketplace URL:', localUrl);
+          setMarketplaceUrl(localUrl);
+          return;
+        }
+      }
+
+      // Fall back to remote marketplace
       try {
-        // Try to fetch the remote marketplace page
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3000);
 
@@ -47,25 +57,9 @@ const CenterPanel: React.FC<CenterPanelProps> = memo(({ isVisible, currentView, 
           throw new Error(`HTTP ${response.status}`);
         }
       } catch (error) {
-        console.warn('Remote marketplace unavailable, falling back to local:', error);
-
-        // Get local marketplace URL via Electron API
-        if (window.api?.getLocalMarketplaceUrl) {
-          const localUrl = await window.api.getLocalMarketplaceUrl();
-          if (localUrl) {
-            console.log('Using local marketplace URL:', localUrl);
-            setMarketplaceUrl(localUrl);
-          } else {
-            console.error('Local marketplace file not found');
-            setHasError(true);
-            setIsLoading(false);
-          }
-        } else {
-          // Fallback for non-Electron environment (shouldn't happen)
-          console.error('Electron API not available');
-          setHasError(true);
-          setIsLoading(false);
-        }
+        console.warn('Remote marketplace also unavailable:', error);
+        setHasError(true);
+        setIsLoading(false);
       }
     };
 
@@ -89,7 +83,15 @@ const CenterPanel: React.FC<CenterPanelProps> = memo(({ isVisible, currentView, 
     setHasError(false);
     setMarketplaceUrl(null);
 
-    // Re-trigger URL determination by trying remote first
+    // Try local first, fall back to remote
+    if (window.api?.getLocalMarketplaceUrl) {
+      const localUrl = await window.api.getLocalMarketplaceUrl();
+      if (localUrl) {
+        setMarketplaceUrl(localUrl);
+        return;
+      }
+    }
+
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
@@ -107,19 +109,8 @@ const CenterPanel: React.FC<CenterPanelProps> = memo(({ isVisible, currentView, 
         throw new Error(`HTTP ${response.status}`);
       }
     } catch {
-      // Fall back to local
-      if (window.api?.getLocalMarketplaceUrl) {
-        const localUrl = await window.api.getLocalMarketplaceUrl();
-        if (localUrl) {
-          setMarketplaceUrl(localUrl);
-        } else {
-          setHasError(true);
-          setIsLoading(false);
-        }
-      } else {
-        setHasError(true);
-        setIsLoading(false);
-      }
+      setHasError(true);
+      setIsLoading(false);
     }
   };
 
@@ -138,27 +129,20 @@ const CenterPanel: React.FC<CenterPanelProps> = memo(({ isVisible, currentView, 
     onViewChange('menu');
   }, [onViewChange]);
 
-  // Handle close button - goes back to menu if in marketplace, otherwise closes panel
-  const handleCloseClick = useCallback(() => {
-    if (currentView === 'marketplace') {
-      handleBackToMenu();
-    } else if (onClose) {
-      onClose();
-    }
-  }, [currentView, handleBackToMenu, onClose]);
-
   if (!isVisible) return null;
 
   return (
     <div className="center-panel">
-      {/* Close button - goes back to menu from marketplace, or closes panel from menu */}
-      <button
-        className="center-panel-close-btn"
-        onClick={handleCloseClick}
-        title={currentView === 'marketplace' ? "Back to menu" : "Close panel"}
-      >
-        ×
-      </button>
+      {/* Close button on menu view */}
+      {currentView === 'menu' && onClose && (
+        <button
+          className="center-panel-close-btn"
+          onClick={onClose}
+          title="Close panel"
+        >
+          ×
+        </button>
+      )}
 
       {/* Menu View */}
       {currentView === 'menu' && (
@@ -168,6 +152,20 @@ const CenterPanel: React.FC<CenterPanelProps> = memo(({ isVisible, currentView, 
       {/* Marketplace View */}
       {currentView === 'marketplace' && (
         <>
+          {/* Back button header */}
+          <div className="center-panel-back-header">
+            <button
+              className="center-panel-back-btn"
+              onClick={handleBackToMenu}
+              title="Back to menu"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"/>
+                <polyline points="12 19 5 12 12 5"/>
+              </svg>
+            </button>
+          </div>
+
           {/* Loading State */}
           {isLoading && (
             <div className="marketplace-loading">
