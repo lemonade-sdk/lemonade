@@ -712,10 +712,6 @@ void ModelManager::build_cache() {
             info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
         }
 
-        // Parse NPU cache fields if present (for whispercpp models)
-        info.npu_cache_repo = JsonUtils::get_or_default<std::string>(value, "npu_cache_repo", "");
-        info.npu_cache_filename = JsonUtils::get_or_default<std::string>(value, "npu_cache_filename", "");
-
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
@@ -751,10 +747,6 @@ void ModelManager::build_cache() {
             info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
             info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
         }
-
-        // Parse NPU cache fields if present (for whispercpp models)
-        info.npu_cache_repo = JsonUtils::get_or_default<std::string>(value, "npu_cache_repo", "");
-        info.npu_cache_filename = JsonUtils::get_or_default<std::string>(value, "npu_cache_filename", "");
 
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
@@ -901,8 +893,6 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     info.recipe_options = RecipeOptions(info.recipe, JsonUtils::get_or_default(recipe_options_, model_name, json::object()));
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
-    info.npu_cache_repo = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_repo", "");
-    info.npu_cache_filename = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_filename", "");
 
     if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {
         for (const auto& label : (*model_json)["labels"]) {
@@ -2405,8 +2395,6 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", false);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
-    info.npu_cache_repo = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_repo", "");
-    info.npu_cache_filename = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_filename", "");
 
     // Parse labels array
     if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {

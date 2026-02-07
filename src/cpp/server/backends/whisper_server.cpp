@@ -90,11 +90,22 @@ void WhisperServer::install(const std::string& backend) {
 
 // Helper to determine NPU compiled cache info based on model info from server_models.json
 static std::pair<std::string, std::string> get_npu_cache_info(const ModelInfo& model_info) {
+    std::string npu_cache = model_info.checkpoint_by_type("npu_cache");
+    std::string npu_cache_repo = "";
+    std::string npu_cache_filename = "";
 
-    if (!model_info.npu_cache_repo.empty() && !model_info.npu_cache_filename.empty()) {
+    if (!npu_cache.empty()) {
+        size_t colon_pos = npu_cache.find(':');
+        if (colon_pos != std::string::npos) {
+            npu_cache_repo = npu_cache.substr(0, colon_pos);
+            npu_cache_filename = npu_cache.substr(colon_pos + 1);
+        }
+    }
+
+    if (!npu_cache_repo.empty() && !npu_cache_filename.empty()) {
         std::cout << "[WhisperServer] Using NPU cache from server_models.json: "
-                  << model_info.npu_cache_repo << " / " << model_info.npu_cache_filename << std::endl;
-        return {model_info.npu_cache_repo, model_info.npu_cache_filename};
+                  << npu_cache_repo << " / " << npu_cache_filename << std::endl;
+        return {npu_cache_repo, npu_cache_filename};
     }
 
     // No NPU cache configured for this model in server_models.json

@@ -58,12 +58,14 @@ struct ModelInfo {
     // Image generation defaults (for sd-cpp models)
     ImageDefaults image_defaults;
 
-    // NPU cache fields for whispercpp recipe with RyzenAI based NPU backend
-    std::string npu_cache_repo;      // HuggingFace repo for NPU compiled cache
-    std::string npu_cache_filename;  // Filename of .rai cache file
-
-    std::string checkpoint() const { return checkpoints.at("main"); }
-    std::string mmproj() const { return checkpoints.at("mmproj"); }
+    // Utility
+    std::string checkpoint_by_type(const std::string& type) const {
+        try {
+            return checkpoints.at(type);
+        } catch(const std::out_of_range& ex) { return ""; }
+    }
+    std::string checkpoint() const { return checkpoint_by_type("main"); }
+    std::string mmproj() const { return checkpoint_by_type("mmproj"); }
 };
 
 class ModelManager {
