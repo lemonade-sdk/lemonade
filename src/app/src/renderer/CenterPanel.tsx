@@ -334,7 +334,7 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
       <button
         className="center-panel-close-btn"
         onClick={handleCloseClick}
-        title={view === 'marketplace' ? 'Back to carousel' : 'Close panel'}
+        title={view === 'marketplace' ? 'Back to Main Menu' : 'Close panel'}
       >
         {view === 'marketplace' ? '←' : '×'}
       </button>
@@ -342,6 +342,10 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
       {/* Carousel View */}
       {view === 'carousel' && (
         <div className="marketplace-section">
+          <h1 className="marketplace-title">App Marketplace</h1>
+          <p className="marketplace-subtitle">
+            Quick start for your favorite AI apps
+          </p>
           <div
             className="marketplace-badge clickable"
             onClick={openMarketplace}
@@ -351,12 +355,8 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openMarketplace(); }}
           >
             <span className="badge-icon">✦</span>
-            <span className="badge-text">Explore</span>
+            <span className="badge-text">Explore Marketplace</span>
           </div>
-          <h1 className="marketplace-title">App Marketplace</h1>
-          <p className="marketplace-subtitle">
-            Quick start for your favorite AI apps
-          </p>
 
           <div
             ref={containerRef}
