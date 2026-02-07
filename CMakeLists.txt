@@ -1095,6 +1095,12 @@ if(UNIX AND NOT APPLE)
     endif()
     install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.conf
         DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/lemonade
+        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE WORLD_READ
+    )
+
+    install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
+        DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/lemonade
+        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE
     )
 
     # Create symlinks for KaTeX fonts if they exist on the system
