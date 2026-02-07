@@ -335,6 +335,21 @@ main {
     animation: badgePulse 3s ease-in-out infinite;
 }
 
+.marketplace-badge.clickable {
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, transform 0.15s;
+}
+
+.marketplace-badge.clickable:hover {
+    background: linear-gradient(135deg, rgba(255, 200, 50, 0.25) 0%, rgba(255, 150, 50, 0.2) 100%);
+    border-color: rgba(255, 200, 50, 0.5);
+    transform: scale(1.05);
+}
+
+.marketplace-badge.clickable:active {
+    transform: scale(0.97);
+}
+
 @keyframes badgePulse {
     0%, 100% {
         box-shadow: 0 0 0 0 rgba(255, 200, 50, 0);
