@@ -47,8 +47,7 @@ This "nuclear" policy simplifies implementation while remaining effective in pra
 ### NPU Exclusivity
 
 Only one model can occupy the NPU at a time. The following recipes use the NPU:
-- `oga-hybrid`
-- `oga-npu`
+- `ryzenai-llm`
 - `flm`
 
 When loading a WrappedServer with an NPU recipe, any existing NPU-using WrappedServer is evicted regardless of type or `--max-loaded-models` settings.
@@ -59,9 +58,7 @@ When loading a WrappedServer with an NPU recipe, any existing NPU-using WrappedS
 | Recipe | Device(s) |
 |--------|-----------|
 | `llamacpp` | gpu |
-| `oga-hybrid` | gpu, npu |
-| `oga-npu` | npu |
-| `oga-cpu` | cpu |
+| `ryzenai-llm` | npu |
 | `flm` | npu |
 
 ModelInfo and WrappedServer include a bitmask enum field for tracking target devices, enabling checks like `if (model.device & Device::NPU)`.

@@ -2373,7 +2373,7 @@ void Server::handle_params(const httplib::Request& req, httplib::Response& res) 
 // Parameters:
 //   - dest_path: Directory where model files are located (already copied/uploaded)
 //   - model_name: Model name with "user." prefix
-//   - recipe: Inference recipe (llamacpp, oga-*, whispercpp)
+//   - recipe: Inference recipe (llamacpp, ryzenai-llm, whispercpp)
 //   - variant: Optional variant hint for GGUF file selection
 //   - mmproj: Optional mmproj filename hint
 //   - reasoning, vision, embedding, reranking, image: Model labels
@@ -2394,8 +2394,8 @@ void Server::resolve_and_register_local_model(
     std::string resolved_checkpoint;
     std::string resolved_mmproj;
 
-    // For OGA models, find genai_config.json
-    if (recipe.find("oga-") == 0) {
+    // For RyzenAI LLM models, find genai_config.json
+    if (recipe == "ryzenai-llm") {
         for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
             if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
                 resolved_checkpoint = entry.path().parent_path().string();
