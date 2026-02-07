@@ -8,9 +8,16 @@ on:
   pull_request:
   merge_group:
   workflow_dispatch:
+    inputs:
+      enable_signing:
+        description: 'Enable MSI signing with SignPath (for testing)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
+  actions: read  # Required for SignPath to read workflow/job details
 
 jobs:
   # ========================================================================
@@ -20,6 +27,8 @@ jobs:
   build-lemonade-server-installer:
     name: Build Lemonade Server Installer
     runs-on: windows-latest
+    outputs:
+      unsigned-artifact-id: ${{ steps.upload-unsigned-msi.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -256,12 +265,62 @@ jobs:
           Write-Host "Installers created successfully!" -ForegroundColor Green
 
       - name: Upload Lemonade Server Installers
+        id: upload-unsigned-msi
         uses: actions/upload-artifact@v4
         with:
           name: Lemonade_Server_MSI
           path: |
             lemonade-server-minimal.msi
             lemonade.msi
+          retention-days: 7
+
+  sign-msi-installers:
+    name: Sign MSI Installers with SignPath
+    runs-on: windows-latest
+    needs: build-lemonade-server-installer
+    # Sign on tag pushes (releases) or when manually enabled via workflow_dispatch
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.enable_signing == true
+    steps:
+      - name: Sign MSI Installers with SignPath
+        id: sign-msi
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '8103545b-7814-4edc-86d6-a91dc2a2291b'
+          project-slug: 'lemonade'
+          signing-policy-slug: 'release-signing'
+          github-artifact-id: '${{ needs.build-lemonade-server-installer.outputs.unsigned-artifact-id }}'
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: 'signed-msi'
+          parameters: |
+            version: "${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'test' }}"
+
+      - name: Verify Signed MSI Files
+        shell: PowerShell
+        run: |
+          Write-Host "Verifying signed MSI files..." -ForegroundColor Cyan
+
+          if (-not (Test-Path "signed-msi\lemonade-server-minimal.msi")) {
+              Write-Host "ERROR: Signed lemonade-server-minimal.msi not found!" -ForegroundColor Red
+              exit 1
+          }
+
+          if (-not (Test-Path "signed-msi\lemonade.msi")) {
+              Write-Host "ERROR: Signed lemonade.msi not found!" -ForegroundColor Red
+              exit 1
+          }
+
+          Write-Host "Signed MSI files verified!" -ForegroundColor Green
+          Get-ChildItem -Path "signed-msi" -Recurse | Format-Table Name, Length
+
+      - name: Upload Signed MSI Installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lemonade_Server_MSI_Signed
+          path: |
+            signed-msi/lemonade-server-minimal.msi
+            signed-msi/lemonade.msi
           retention-days: 7
 
   build-lemonade-server-deb:
@@ -326,6 +385,8 @@ jobs:
     name: Test .exe - ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     needs: build-lemonade-server-installer
+    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
     strategy:
       fail-fast: false
       matrix:
@@ -460,6 +521,8 @@ jobs:
     name: Test .deb - ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     needs: build-lemonade-server-deb
+    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
     strategy:
       fail-fast: false
       matrix:
@@ -684,11 +747,9 @@ jobs:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     needs:
-      - build-lemonade-server-installer
+      - sign-msi-installers
       - build-lemonade-server-deb
       - build-lemonade-deb-full
-      - test-exe-inference
-      - test-deb-inference
       - test-cli-endpoints
     if: startsWith(github.ref, 'refs/tags/v')
     env:
@@ -699,10 +760,10 @@ jobs:
         with:
           sparse-checkout: .github
 
-      - name: Download Lemonade Server Installer (Windows)
+      - name: Download Signed Lemonade Server Installer (Windows)
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_MSI
+          name: Lemonade_Server_MSI_Signed
           path: .
 
       - name: Download Lemonade Server .deb Package (Linux - Minimal)

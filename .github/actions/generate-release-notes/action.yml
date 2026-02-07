@@ -133,5 +133,13 @@ runs:
         [ -n "$NEW_CONTRIBUTORS" ] && echo "$NEW_CONTRIBUTORS" >> "$RELEASE_NOTES_FILE" && echo "" >> "$RELEASE_NOTES_FILE"
         [ -n "$FULL_CHANGELOG" ] && echo "$FULL_CHANGELOG" >> "$RELEASE_NOTES_FILE"
 
+        # Code signing policy note
+        {
+          echo ""
+          echo "---"
+          echo ""
+          echo "> Windows installers are signed. Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). See our [Code Signing Policy](https://github.com/$REPO#code-signing-policy)."
+        } >> "$RELEASE_NOTES_FILE"
+
         echo "release_notes_file=$RELEASE_NOTES_FILE" >> $GITHUB_OUTPUT
         cat "$RELEASE_NOTES_FILE"

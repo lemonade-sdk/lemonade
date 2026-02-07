@@ -217,6 +217,15 @@ New contributors can find beginner-friendly issues tagged with "Good First Issue
 
 This is a community project maintained by @amd-pworfolk @bitgamma @danielholanda @jeremyfowers @Geramy @ramkrishna2910 @siavashhub @sofiageo @vgodsoe, and sponsored by AMD. You can reach us by filing an [issue](https://github.com/lemonade-sdk/lemonade/issues), emailing [lemonade@amd.com](mailto:lemonade@amd.com), or joining our [Discord](https://discord.gg/5xXzkMu8Zk).
 
+## Code Signing Policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- **Committers and reviewers**: [Maintainers](#maintainers) of this repo
+- **Approvers**: [Owners](https://github.com/orgs/lemonade-sdk/people?query=role%3Aowner)
+
+**Privacy policy**: This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. When the user requests it, Lemonade downloads AI models from [Hugging Face Hub](https://huggingface.co/) (see their [privacy policy](https://huggingface.co/privacy)).
+
 ## License and Attribution
 
 This project is:
