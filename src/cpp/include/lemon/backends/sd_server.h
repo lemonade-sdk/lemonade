@@ -25,7 +25,8 @@ public:
     );
 
     explicit SDServer(const std::string& log_level = "info",
-                      ModelManager* model_manager = nullptr);
+                      ModelManager* model_manager = nullptr,
+                      const std::string& backend = "cpu");
 
     ~SDServer() override;
 
@@ -50,10 +51,11 @@ public:
 
     // IImageServer implementation
     json image_generations(const json& request) override;
-
+  
 private:
     // Server state (port_ and process_handle_ inherited from WrappedServer)
     std::string model_path_;
+    std::string backend_;
 };
 
 } // namespace backends

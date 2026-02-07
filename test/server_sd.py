@@ -318,4 +318,8 @@ class StableDiffusionTests(ServerTestBase):
 
 
 if __name__ == "__main__":
-    run_server_tests(StableDiffusionTests, "STABLE DIFFUSION TESTS")
+    run_server_tests(
+        StableDiffusionTests,
+        "STABLE DIFFUSION TESTS",
+        wrapped_server="sd-cpp",
+    )
