@@ -476,11 +476,7 @@ window.api = {
         }
         return 'Unknown';
     },
-    downloadModel: () => console.log('Model downloads not available in web mode'),
-    onDownloadProgress: () => {},
-    getDownloads: async () => [],
     pauseDownload: () => {},
-    resumeDownload: () => {},
     cancelDownload: () => {},
     restartApp: () => window.location.reload(),
     getSystemStats: async () => {
