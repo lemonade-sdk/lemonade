@@ -682,19 +682,22 @@ static void load_checkpoints(ModelInfo& info, json& model_json) {
     }
 }
 
+static std::string legacy_mmproj_to_checkpoint(std::string main, std::string mmproj) {
+    std::string repo_id;
+    size_t colon_pos = main.find(':');
+    if (colon_pos != std::string::npos) {
+        repo_id = main.substr(0, colon_pos);
+    }
+
+    return repo_id + ":" + mmproj;
+}
+
 static void parse_legacy_mmproj(ModelInfo& info, const json& model_json) {
     std::string mmproj = JsonUtils::get_or_default<std::string>(model_json, "mmproj", "");
 
     if (!mmproj.empty()) {
-        std::string checkpoint = JsonUtils::get_or_default<std::string>(model_json, "checkpoint", "");
-
-        std::string repo_id;
-        size_t colon_pos = info.checkpoint().find(':');
-        if (colon_pos != std::string::npos) {
-            repo_id = info.checkpoint().substr(0, colon_pos);
-        }
-
-        info.checkpoints["mmproj"] = repo_id + ":" + mmproj;
+        std::string main = JsonUtils::get_or_default<std::string>(model_json, "checkpoint", "");
+        info.checkpoints["mmproj"] = legacy_mmproj_to_checkpoint(main, mmproj);
     }
 }
 
