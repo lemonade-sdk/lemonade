@@ -233,10 +233,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
   const getRecipeLabel = (recipe: string): string => {
     const labels: { [key: string]: string } = {
-      'oga-cpu': 'CPU',
-      'oga-hybrid': 'Hybrid',
-      'oga-npu': 'NPU',
-      'oga-igpu': 'iGPU',
+      'ryzenai-llm': 'RyzenAI',
       'llamacpp': 'GGUF',
       'flm': 'FLM',
       'whispercpp': 'Whisper.cpp'
@@ -278,9 +275,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       const recipeLabels: { [key: string]: string } = {
         'flm': 'FastFlowLM NPU',
         'llamacpp': 'Llama.cpp GPU',
-        'oga-cpu': 'ONNX Runtime CPU',
-        'oga-hybrid': 'ONNX Runtime Hybrid',
-        'oga-npu': 'ONNX Runtime NPU',
+        'ryzenai-llm': 'Ryzen AI LLM',
         'whispercpp': 'Whisper.cpp',
         'sd-cpp': 'StableDiffusion.cpp'
       };
@@ -1013,9 +1008,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                 <option value="">Select a recipe...</option>
                 <option value="llamacpp">Llama.cpp GPU</option>
                 <option value="flm">FastFlowLM NPU</option>
-                <option value="oga-cpu">ONNX Runtime CPU</option>
-                <option value="oga-hybrid">ONNX Runtime Hybrid</option>
-                <option value="oga-npu">ONNX Runtime NPU</option>
+                <option value="ryzenai-llm">Ryzen AI LLM</option>
               </select>
             </div>
 

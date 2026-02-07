@@ -165,28 +165,15 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     } else if (model_info.recipe == "flm") {
         std::cout << "[Router] Creating FastFlowLM backend" << std::endl;
         new_server = std::make_unique<backends::FastFlowLMServer>(log_level_, model_manager_);
-    } else if (model_info.recipe == "oga-npu" || model_info.recipe == "oga-hybrid" ||
-               model_info.recipe == "oga-cpu" || model_info.recipe == "ryzenai") {
-        std::cout << "[Router] Creating RyzenAI-Server backend: " << model_info.recipe << std::endl;
+    } else if (model_info.recipe == "ryzenai-llm") {
+        std::cout << "[Router] Creating RyzenAI-Server backend" << std::endl;
 
         std::string model_path = model_info.resolved_path;
         std::cout << "[Router] Using model path: " << model_path << std::endl;
 
-        std::string backend_mode = model_info.recipe;
-        if (model_info.recipe == "oga-npu") {
-            backend_mode = "npu";
-        } else if (model_info.recipe == "oga-hybrid") {
-            backend_mode = "hybrid";
-        } else if (model_info.recipe == "oga-cpu") {
-            backend_mode = "cpu";
-        } else {
-            backend_mode = "auto";
-        }
-
         auto* ryzenai_server = new RyzenAIServer(model_info.model_name,
                                                   log_level_ == "debug", model_manager_);
         ryzenai_server->set_model_path(model_path);
-        ryzenai_server->set_execution_mode(backend_mode);
         new_server.reset(ryzenai_server);
     } else {
         std::cout << "[Router] Creating LlamaCpp backend" << std::endl;

@@ -747,7 +747,7 @@ curl http://localhost:8000/api/v1/models?show_all=true
   - `object` - Type of object, always `"model"`
   - `owned_by` - Owner of the model, always `"lemonade"`
   - `checkpoint` - Full checkpoint identifier on Hugging Face
-  - `recipe` - Backend/device recipe used to load the model (e.g., `"oga-cpu"`, `"oga-hybrid"`, `"llamacpp"`, `"flm"`)
+  - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `size` - Model size in GB (omitted for models without size information)
   - `downloaded` - Boolean indicating if the model is downloaded and available locally
   - `suggested` - Boolean indicating if the model is recommended for general use
@@ -962,7 +962,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 |-----------|----------|------------|-------------|
 | `model_name` | Yes | All | [Lemonade Server model name](./server_models.md) to load. |
 | `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. |
-| `ctx_size` | No | llamacpp, flm, oga-* | Context size for the model. Overrides the default value. |
+| `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
 | `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`. |
 | `whispercpp_backend` | No | whispercpp | WhisperCpp backend to use (`npu` or `cpu`). Default is `npu` if supported. |
@@ -1151,7 +1151,7 @@ curl http://localhost:8000/api/v1/health
       "last_use": 1732123456.789,
       "type": "llm",
       "device": "gpu npu",
-      "recipe": "oga-hybrid",
+      "recipe": "ryzenai-llm",
       "recipe_options": {
         "ctx_size": 4096
       },
@@ -1191,7 +1191,7 @@ curl http://localhost:8000/api/v1/health
   - `type` - Model type: `"llm"`, `"embedding"`, or `"reranking"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
-  - `recipe`: - Backend/device recipe used to load the model (e.g., `"oga-cpu"`, `"oga-hybrid"`, `"llamacpp"`, `"flm"`)
+  - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`)
 - `max_models` - Maximum number of models that can be loaded simultaneously (set via `--max-loaded-models`):
   - `llm` - Maximum LLM/chat models
@@ -1328,28 +1328,10 @@ curl "http://localhost:8000/api/v1/system-info"
         }
       }
     },
-    "oga-npu": {
+    "ryzenai-llm": {
       "backends": {
         "default": {
           "devices": ["npu"],
-          "supported": true,
-          "available": true
-        }
-      }
-    },
-    "oga-hybrid": {
-      "backends": {
-        "default": {
-          "devices": ["npu"],
-          "supported": true,
-          "available": true
-        }
-      }
-    },
-    "oga-cpu": {
-      "backends": {
-        "default": {
-          "devices": ["cpu"],
           "supported": true,
           "available": true
         }

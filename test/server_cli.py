@@ -317,9 +317,7 @@ class PersistentServerCLITests(CLITestBase):
             "whispercpp",
             "sd-cpp",
             "flm",
-            "oga-npu",
-            "oga-hybrid",
-            "oga-cpu",
+            "ryzenai-llm",
         ]
         for recipe in known_recipes:
             self.assertTrue(
@@ -482,9 +480,7 @@ class EphemeralCLITests(CLITestBase):
             "whispercpp",
             "sd-cpp",
             "flm",
-            "oga-npu",
-            "oga-hybrid",
-            "oga-cpu",
+            "ryzenai-llm",
         ]
         for recipe in known_recipes:
             self.assertTrue(

@@ -1222,7 +1222,7 @@ int TrayApp::execute_pull_command() {
         // Recipe is required for local imports
         if (tray_config_.recipe.empty()) {
             std::cerr << "Error: --recipe is required when importing from a local path" << std::endl;
-            std::cerr << "Options: llamacpp, oga-cpu, oga-hybrid, oga-npu, whispercpp" << std::endl;
+            std::cerr << "Options: llamacpp, ryzenai-llm, whispercpp" << std::endl;
             return 1;
         }
 

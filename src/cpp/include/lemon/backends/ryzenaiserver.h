@@ -31,9 +31,6 @@ public:
              const RecipeOptions& options,
              bool do_not_upgrade = false) override;
 
-    // RyzenAI-specific: set execution mode before loading
-    void set_execution_mode(const std::string& mode) { execution_mode_ = mode; }
-
     // RyzenAI-specific: set model path before loading
     void set_model_path(const std::string& path) { model_path_ = path; }
 
@@ -47,15 +44,10 @@ public:
 private:
     std::string model_name_;
     std::string model_path_;
-    std::string execution_mode_; // "auto", "npu", or "hybrid"
     bool is_loaded_;
 
     // Helper to download and install ryzenai-server
     static void download_and_install(const std::string& version);
-
-    // Helper to determine best execution mode based on model
-    std::string determine_execution_mode(const std::string& model_path,
-                                        const std::string& backend);
 };
 
 } // namespace lemon

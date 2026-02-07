@@ -15,7 +15,7 @@
   "sd-cpp": {
     "cpu": "master-471-7010bb4"
   },
-  "ryzenai-server": "v1.0.2",
+  "ryzenai-server": "v1.7.0",
   "flm": {
     "version": "v0.9.31",
     "min_npu_driver": "32.0.203.304"

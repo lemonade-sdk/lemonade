@@ -1,245 +1,544 @@
 {
     "Qwen2.5-0.5B-Instruct-CPU": {
         "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
-        "recipe": "oga-cpu",
+        "recipe": "ryzenai-llm",
         "suggested": true,
         "size": 0.77
     },
     "Llama-3.2-1B-Instruct-CPU": {
         "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-uint4-float16-cpu-onnx",
-        "recipe": "oga-cpu",
+        "recipe": "ryzenai-llm",
         "suggested": false,
         "size": 1.64
     },
     "Llama-3.2-3B-Instruct-CPU": {
         "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-uint4-float16-cpu-onnx",
-        "recipe": "oga-cpu",
+        "recipe": "ryzenai-llm",
         "suggested": false,
         "size": 3.15
     },
     "Phi-3-Mini-Instruct-CPU": {
         "checkpoint": "amd/Phi-3-mini-4k-instruct_int4_float16_onnx_cpu",
-        "recipe": "oga-cpu",
+        "recipe": "ryzenai-llm",
         "suggested": true,
         "size": 2.23
     },
     "Qwen-1.5-7B-Chat-CPU": {
         "checkpoint": "amd/Qwen1.5-7B-Chat_uint4_asym_g128_float16_onnx_cpu",
-        "recipe": "oga-cpu",
+        "recipe": "ryzenai-llm",
         "suggested": true,
         "size": 5.89
     },
     "DeepSeek-R1-Distill-Llama-8B-CPU": {
         "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu",
-        "recipe": "oga-cpu",
+        "recipe": "ryzenai-llm",
         "suggested": true,
         "labels": ["reasoning"],
         "size": 5.78
     },
     "DeepSeek-R1-Distill-Qwen-7B-CPU": {
         "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu",
-        "recipe": "oga-cpu",
+        "recipe": "ryzenai-llm",
         "suggested": true,
         "labels": ["reasoning"],
         "size": 5.78
     },
-    "Llama-3.2-1B-Instruct-Hybrid": {
-        "checkpoint": "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-hybrid",
-        "recipe": "oga-hybrid",
+    "AMD-OLMo-1B-SFT-DPO-Hybrid": {
+        "checkpoint": "amd/AMD-OLMo-1B-SFT-DPO-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 1.89
+        "size": 1.38
     },
-    "Llama-3.2-3B-Instruct-Hybrid": {
-        "checkpoint": "amd/Llama-3.2-3B-Instruct-onnx-ryzenai-hybrid",
-        "recipe": "oga-hybrid",
+    "CodeLlama-7b-Instruct-hf-Hybrid": {
+        "checkpoint": "amd/CodeLlama-7b-Instruct-hf-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 4.28
-    },
-    "Phi-3-Mini-Instruct-Hybrid": {
-        "checkpoint": "amd/Phi-3-mini-4k-instruct-onnx-ryzenai-hybrid",
-        "recipe": "oga-hybrid",
-        "suggested": true,
-        "size": 4.18
-    },
-    "Phi-3.5-Mini-Instruct-Hybrid": {
-        "checkpoint": "amd/Phi-3.5-mini-instruct-onnx-ryzenai-hybrid",
-        "recipe": "oga-hybrid",
-        "suggested": false,
-        "size": 4.21
-    },
-    "Qwen-1.5-7B-Chat-Hybrid": {
-        "checkpoint": "amd/Qwen1.5-7B-Chat-onnx-ryzenai-hybrid",
-        "recipe": "oga-hybrid",
-        "suggested": true,
-        "size": 8.83
-    },
-    "Qwen-2.5-7B-Instruct-Hybrid": {
-        "checkpoint": "amd/Qwen2.5-7B-Instruct-onnx-ryzenai-hybrid",
-        "recipe": "oga-hybrid",
-        "suggested": true,
-        "size": 8.65
-    },
-    "Qwen-2.5-3B-Instruct-Hybrid": {
-        "checkpoint": "amd/Qwen2.5-3B-Instruct-onnx-ryzenai-hybrid",
-        "recipe": "oga-hybrid",
-        "suggested": true,
-        "size": 3.97
-    },
-    "Qwen-2.5-1.5B-Instruct-Hybrid": {
-    "checkpoint": "amd/Qwen-2.5-1.5B-Instruct-onnx-ryzenai-hybrid",
-        "recipe": "oga-hybrid",
-        "suggested": true,
-        "size": 2.16
+        "size": 6.74,
+        "labels": [
+            "coding"
+        ]
     },
     "DeepSeek-R1-Distill-Llama-8B-Hybrid": {
-        "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-onnx-ryzenai-hybrid",
-        "recipe": "oga-hybrid",
+        "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
         "suggested": true,
-        "labels": ["reasoning"],
-        "size": 9.09
+        "size": 8.47,
+        "labels": [
+            "reasoning"
+        ]
+    },
+    "DeepSeek-R1-Distill-Qwen-1.5B-Hybrid": {
+        "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-1.5B-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 2.04,
+        "labels": [
+            "reasoning"
+        ]
     },
     "DeepSeek-R1-Distill-Qwen-7B-Hybrid": {
-        "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-onnx-ryzenai-hybrid",
-        "recipe": "oga-hybrid",
-        "max_prompt_length": 2000,
-        "suggested": false,
-        "labels": ["reasoning"],
-        "size": 8.67
-    },
-    "Mistral-7B-v0.3-Instruct-Hybrid": {
-        "checkpoint": "amd/Mistral-7B-Instruct-v0.3-onnx-ryzenai-hybrid",
-        "recipe": "oga-hybrid",
+        "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 7.85
+        "size": 8.08,
+        "labels": [
+            "reasoning"
+        ]
     },
-    "Llama-3.1-8B-Instruct-Hybrid": {
-        "checkpoint": "amd/Meta-Llama-3.1-8B-Instruct-onnx-ryzenai-hybrid",
-        "recipe": "oga-hybrid",
+    "Llama-2-7b-chat-hf-Hybrid": {
+        "checkpoint": "amd/Llama-2-7b-chat-hf-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 9.09
+        "size": 6.8
+    },
+    "Llama-2-7b-hf-Hybrid": {
+        "checkpoint": "amd/Llama-2-7b-hf-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 6.8
+    },
+    "Llama-3.1-8B-Hybrid": {
+        "checkpoint": "amd/Llama-3.1-8B-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 8.47
+    },
+    "Llama-3.2-1B-Hybrid": {
+        "checkpoint": "amd/Llama-3.2-1B-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 1.76
+    },
+    "Llama-3.2-1B-Instruct-Hybrid": {
+        "checkpoint": "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 1.76
+    },
+    "Llama-3.2-3B-Hybrid": {
+        "checkpoint": "amd/Llama-3.2-3B-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 3.98
+    },
+    "Llama-3.2-3B-Instruct-Hybrid": {
+        "checkpoint": "amd/Llama-3.2-3B-Instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 3.98
+    },
+    "Meta-Llama-3-8B-Hybrid": {
+        "checkpoint": "amd/Meta-Llama-3-8B-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 8.44
+    },
+    "Meta-Llama-3.1-8B-Instruct-Hybrid": {
+        "checkpoint": "amd/Meta-Llama-3.1-8B-Instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 8.47
+    },
+    "Mistral-7B-Instruct-v0.1-Hybrid": {
+        "checkpoint": "amd/Mistral-7B-Instruct-v0.1-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 7.3
+    },
+    "Mistral-7B-Instruct-v0.2-Hybrid": {
+        "checkpoint": "amd/Mistral-7B-Instruct-v0.2-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 7.3
+    },
+    "Mistral-7B-Instruct-v0.3-Hybrid": {
+        "checkpoint": "amd/Mistral-7B-Instruct-v0.3-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 7.31
+    },
+    "Mistral-7B-v0.3-Hybrid": {
+        "checkpoint": "amd/Mistral-7B-v0.3-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 7.31
+    },
+    "Phi-3-mini-128k-instruct-Hybrid": {
+        "checkpoint": "amd/Phi-3-mini-128k-instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 3.92
+    },
+    "Phi-3-mini-4k-instruct-Hybrid": {
+        "checkpoint": "amd/Phi-3-mini-4k-instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 3.9
+    },
+    "Phi-3.5-mini-instruct-Hybrid": {
+        "checkpoint": "amd/Phi-3.5-mini-instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 3.92
+    },
+    "Phi-4-mini-instruct-Hybrid": {
+        "checkpoint": "amd/Phi-4-mini-instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 5.1
+    },
+    "Phi-4-mini-reasoning-Hybrid": {
+        "checkpoint": "amd/Phi-4-mini-reasoning-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 5.1,
+        "labels": [
+            "reasoning"
+        ]
+    },
+    "Qwen-2.5-1.5B-Instruct-Hybrid": {
+        "checkpoint": "amd/Qwen-2.5_1.5B_Instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 2.02
+    },
+    "Qwen1.5-7B-Chat-Hybrid": {
+        "checkpoint": "amd/Qwen1.5-7B-Chat-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 8.23
+    },
+    "Qwen2-1.5B-Hybrid": {
+        "checkpoint": "amd/Qwen2-1.5B-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 2.04
+    },
+    "Qwen2-7B-Hybrid": {
+        "checkpoint": "amd/Qwen2-7B-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 8.08
+    },
+    "Qwen2.5-0.5B-Instruct-Hybrid": {
+        "checkpoint": "amd/Qwen2.5-0.5B-Instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 0.77
+    },
+    "Qwen2.5-14B-instruct-Hybrid": {
+        "checkpoint": "amd/Qwen2.5-14B-instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 15.31
+    },
+    "Qwen2.5-3B-Instruct-Hybrid": {
+        "checkpoint": "amd/Qwen2.5_3B_Instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 3.7
+    },
+    "Qwen2.5-7B-Instruct-Hybrid": {
+        "checkpoint": "amd/Qwen2.5-7B-Instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 8.06
+    },
+    "Qwen2.5-Coder-0.5B-Instruct-Hybrid": {
+        "checkpoint": "amd/Qwen2.5-Coder-0.5B-Instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 0.77,
+        "labels": [
+            "coding"
+        ]
+    },
+    "Qwen2.5-Coder-1.5B-Instruct-Hybrid": {
+        "checkpoint": "amd/Qwen2.5-Coder-1.5B-Instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 2.02,
+        "labels": [
+            "coding"
+        ]
+    },
+    "Qwen2.5-Coder-7B-Instruct-Hybrid": {
+        "checkpoint": "amd/Qwen2.5-Coder-7B-Instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 8.06,
+        "labels": [
+            "coding"
+        ]
     },
     "Qwen3-1.7B-Hybrid": {
-        "checkpoint": "amd/Qwen3-1.7B-awq-quant-onnx-hybrid",
-        "recipe": "oga-hybrid",
+        "checkpoint": "amd/Qwen3-1.7B-awq-quant-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
         "suggested": true,
-        "labels": ["reasoning"],
-        "size": 2.55
+        "size": 2.38,
+        "labels": [
+            "reasoning"
+        ]
     },
-    "Phi-4-Mini-Instruct-Hybrid": {
-        "checkpoint": "amd/Phi-4-mini-instruct-onnx-ryzenai-hybrid",
-        "recipe": "oga-hybrid",
+    "Qwen3-14B-Hybrid": {
+        "checkpoint": "amd/Qwen3-14B-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 5.46
+        "size": 15.31,
+        "labels": [
+            "reasoning"
+        ]
     },
     "Qwen3-4B-Hybrid": {
-        "checkpoint": "amd/Qwen3-4B-awq-quant-onnx-hybrid",
-        "recipe": "oga-hybrid",
+        "checkpoint": "amd/Qwen3-4B-awq-quant-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
         "suggested": true,
-        "labels": ["reasoning"],
-        "size": 5.17
+        "size": 4.82,
+        "labels": [
+            "reasoning"
+        ]
     },
     "Qwen3-8B-Hybrid": {
-        "checkpoint": "amd/Qwen3-8B-awq-quant-onnx-hybrid",
-        "recipe": "oga-hybrid",
+        "checkpoint": "amd/Qwen3-8B-awq-quant-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
         "suggested": true,
-        "labels": ["reasoning"],
-        "size": 9.42
+        "size": 8.77,
+        "labels": [
+            "reasoning"
+        ]
     },
-    "Qwen-2.5-7B-Instruct-NPU": {
-        "checkpoint": "amd/Qwen2.5-7B-Instruct-onnx-ryzenai-npu",
-        "recipe": "oga-npu",
+    "SmolLM-135M-Instruct-Hybrid": {
+        "checkpoint": "amd/SmolLM-135M-Instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 8.82
+        "size": 0.22
     },
-    "Qwen-2.5-3B-Instruct-NPU": {
-        "checkpoint": "amd/Qwen2.5-3B-Instruct-onnx-ryzenai-npu",
-        "recipe": "oga-npu",
+    "SmolLM2-135M-Instruct-Hybrid": {
+        "checkpoint": "amd/SmolLM2-135M-Instruct-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 4.09
+        "size": 0.22
+    },
+    "chatglm3-6b-Hybrid": {
+        "checkpoint": "amd/chatglm3-6b-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 6.43
+    },
+    "gemma-2-2b-Hybrid": {
+        "checkpoint": "amd/gemma-2-2b-onnx-ryzenai-1.7-hybrid",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 3.76
+    },
+    "CodeLlama-7b-Instruct-hf-NPU": {
+        "checkpoint": "amd/CodeLlama-7b-Instruct-hf-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 7.03,
+        "labels": [
+            "coding"
+        ]
     },
     "DeepSeek-R1-Distill-Llama-8B-NPU": {
         "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-onnx-ryzenai-npu",
-        "recipe": "oga-npu",
+        "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 9.30
-    },
-    "DeepSeek-R1-Distill-Qwen-7B-NPU": {
-        "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-onnx-ryzenai-npu",
-        "recipe": "oga-npu",
-        "suggested": false,
-        "size": 8.87
+        "size": 8.66,
+        "labels": [
+            "reasoning"
+        ]
     },
     "DeepSeek-R1-Distill-Qwen-1.5B-NPU": {
         "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-1.5B-onnx-ryzenai-npu",
-        "recipe": "oga-npu",
-        "suggested": false,
-        "size": 2.30
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 2.14,
+        "labels": [
+            "reasoning"
+        ]
+    },
+    "DeepSeek-R1-Distill-Qwen-7B-NPU": {
+        "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 8.26,
+        "labels": [
+            "reasoning"
+        ]
+    },
+    "Gemma-3-4b-it-mm-NPU": {
+        "checkpoint": "amd/Gemma-3-4b-it-mm-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 6.22,
+        "labels": [
+            "vision"
+        ]
+    },
+    "Llama-2-7b-chat-hf-NPU": {
+        "checkpoint": "amd/Llama-2-7b-chat-hf-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 6.95
+    },
+    "Llama-2-7b-hf-NPU": {
+        "checkpoint": "amd/Llama-2-7b-hf-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 6.95
+    },
+    "Llama-3.1-8B-NPU": {
+        "checkpoint": "amd/Llama-3.1-8B-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 8.66
     },
     "Llama-3.2-1B-Instruct-NPU": {
         "checkpoint": "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-npu",
-        "recipe": "oga-npu",
-        "suggested": false,
-        "size": 1.96
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 1.82
     },
-    "Mistral-7B-v0.3-Instruct-NPU": {
+    "Llama-3.2-1B-NPU": {
+        "checkpoint": "amd/Llama-3.2-1B-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 1.82
+    },
+    "Meta-Llama-3-8B-NPU": {
+        "checkpoint": "amd/Meta-Llama-3-8B-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 8.6
+    },
+    "Meta-Llama-3.1-8B-Instruct-NPU": {
+        "checkpoint": "amd/Meta-Llama-3.1-8B-Instruct-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 8.66
+    },
+    "Mistral-7B-Instruct-v0.1-NPU": {
+        "checkpoint": "amd/Mistral-7B-Instruct-v0.1-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 7.46
+    },
+    "Mistral-7B-Instruct-v0.2-NPU": {
+        "checkpoint": "amd/Mistral-7B-Instruct-v0.2-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 7.46
+    },
+    "Mistral-7B-Instruct-v0.3-NPU": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.3-onnx-ryzenai-npu",
-        "recipe": "oga-npu",
+        "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 8.09
+        "size": 7.54
     },
-    "Phi-3.5-Mini-Instruct-NPU": {
+    "Mistral-7B-v0.3-NPU": {
+        "checkpoint": "amd/Mistral-7B-v0.3-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 7.54
+    },
+    "Phi-3-mini-128k-instruct-NPU": {
+        "checkpoint": "amd/Phi-3-mini-128k-instruct-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 4.05
+    },
+    "Phi-3-mini-4k-instruct-NPU": {
+        "checkpoint": "amd/Phi-3-mini-4k-instruct-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 4.0
+    },
+    "Phi-3.5-mini-instruct-NPU": {
         "checkpoint": "amd/Phi-3.5-mini-instruct-onnx-ryzenai-npu",
-        "recipe": "oga-npu",
+        "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 4.35
+        "size": 4.05
     },
-    "ChatGLM-3-6b-Instruct-NPU": {
-        "checkpoint": "amd/chatglm3-6b-onnx-ryzenai-npu",
-        "recipe": "oga-npu",
-        "suggested": false,
-        "size": 7.03
+    "Phi-4-mini-instruct-NPU": {
+        "checkpoint": "amd/Phi-4-mini-instruct-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 5.21
     },
-    "Llama-3.2-1B-Instruct-DirectML": {
-        "checkpoint": "amd/Llama-3.2-1B-Instruct-dml-int4-awq-block-128-directml",
-        "recipe": "oga-igpu",
-        "suggested": false,
-        "size": 2.81
+    "Qwen-2.5-1.5B-Instruct-NPU": {
+        "checkpoint": "amd/Qwen-2.5_1.5B_Instruct-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 2.1
     },
-    "Llama-3.2-3B-Instruct-DirectML": {
-        "checkpoint": "amd/Llama-3.2-3B-Instruct-dml-int4-awq-block-128-directml",
-        "recipe": "oga-igpu",
-        "suggested": false,
-        "size": 6.75
+    "Qwen1.5-7B-Chat-NPU": {
+        "checkpoint": "amd/Qwen1.5-7B-Chat-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 8.4
     },
-    "Phi-3.5-Mini-Instruct-DirectML": {
-        "checkpoint": "amd/phi3.5-mini-instruct-int4-awq-block-128-directml",
-        "recipe": "oga-igpu",
-        "suggested": false,
+    "Qwen2-1.5B-NPU": {
+        "checkpoint": "amd/Qwen2-1.5B-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
         "size": 2.14
     },
-    "Qwen-1.5-7B-Chat-DirectML": {
-        "checkpoint": "amd/Qwen1.5-7B-Chat-dml-int4-awq-block-128-directml",
-        "recipe": "oga-igpu",
-        "suggested": false,
-        "size": 3.73
+    "Qwen2-7B-NPU": {
+        "checkpoint": "amd/Qwen2-7B-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 8.27
     },
-    "Mistral-7B-v0.1-Instruct-DirectML": {
-        "checkpoint": "amd/Mistral-7B-Instruct-v0.1-awq-g128-int4-onnx-directml",
-        "recipe": "oga-igpu",
-        "suggested": false,
-        "size": 3.67
+    "Qwen2.5-3B-Instruct-NPU": {
+        "checkpoint": "amd/Qwen2.5-3B-Instruct-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 3.81
     },
-    "Llama-3-8B-Instruct-DirectML": {
-        "checkpoint": "amd/llama3-8b-instruct-awq-g128-int4-onnx-directml",
-        "recipe": "oga-igpu",
-        "suggested": false,
-        "size": 4.61
+    "Qwen2.5-7B-Instruct-NPU": {
+        "checkpoint": "amd/Qwen2.5-7B-Instruct-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 8.22
+    },
+    "Qwen2.5-Coder-1.5B-Instruct-NPU": {
+        "checkpoint": "amd/Qwen2.5-Coder-1.5B-Instruct-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 2.1,
+        "labels": [
+            "coding"
+        ]
+    },
+    "Qwen2.5-Coder-7B-Instruct-NPU": {
+        "checkpoint": "amd/Qwen2.5-Coder-7B-Instruct-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 8.22,
+        "labels": [
+            "coding"
+        ]
+    },
+    "chatglm3-6b-NPU": {
+        "checkpoint": "amd/chatglm3-6b-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 6.55
+    },
+    "gpt-oss-20b-NPU": {
+        "checkpoint": "amd/gpt-oss-20b-onnx-ryzenai-npu",
+        "recipe": "ryzenai-llm",
+        "suggested": true,
+        "size": 12.49
     },
     "Qwen3-0.6B-GGUF": {
         "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 0.38
     },
     "Tiny-Test-Model-GGUF": {
@@ -252,49 +551,63 @@
         "checkpoint": "unsloth/Qwen3-1.7B-GGUF:Q4_0",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 1.06
     },
     "Qwen3-4B-GGUF": {
         "checkpoint": "unsloth/Qwen3-4B-GGUF:Q4_0",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 2.38
     },
     "Qwen3-8B-GGUF": {
         "checkpoint": "unsloth/Qwen3-8B-GGUF:Q4_1",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 5.25
     },
     "DeepSeek-Qwen3-8B-GGUF": {
         "checkpoint": "unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF:Q4_1",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 5.25
     },
     "Qwen3-14B-GGUF": {
         "checkpoint": "unsloth/Qwen3-14B-GGUF:Q4_0",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 8.54
     },
     "Qwen3-4B-Instruct-2507-GGUF": {
         "checkpoint": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["hot"],
+        "labels": [
+            "hot"
+        ],
         "size": 2.5
     },
     "Qwen3-30B-A3B-GGUF": {
         "checkpoint": "unsloth/Qwen3-30B-A3B-GGUF:Q4_0",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 17.4
     },
     "Qwen3-30B-A3B-Instruct-2507-GGUF": {
@@ -307,21 +620,31 @@
         "checkpoint": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["coding","tool-calling","hot"],
+        "labels": [
+            "coding",
+            "tool-calling",
+            "hot"
+        ],
         "size": 18.6
     },
     "Qwen3-Coder-Next-GGUF": {
         "checkpoint": "unsloth/Qwen3-Coder-Next-GGUF:Qwen3-Coder-Next-MXFP4_MOE.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["coding","tool-calling","hot"],
+        "labels": [
+            "coding",
+            "tool-calling",
+            "hot"
+        ],
         "size": 43.7
     },
     "Nemotron-3-Nano-30B-A3B-GGUF": {
         "checkpoint": "unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["hot"],
+        "labels": [
+            "hot"
+        ],
         "size": 22.8
     },
     "Gemma-3-4b-it-GGUF": {
@@ -329,7 +652,10 @@
         "mmproj": "mmproj-model-f16.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["hot","vision"],
+        "labels": [
+            "hot",
+            "vision"
+        ],
         "size": 3.61
     },
     "Phi-4-mini-instruct-GGUF": {
@@ -379,7 +705,9 @@
         "mmproj": "Ministral-3-3B-Instruct-2512-BF16-mmproj.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["vision"],
+        "labels": [
+            "vision"
+        ],
         "size": 2.85
     },
     "Qwen2.5-VL-7B-Instruct-GGUF": {
@@ -387,7 +715,9 @@
         "mmproj": "mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["vision"],
+        "labels": [
+            "vision"
+        ],
         "size": 4.68
     },
     "Qwen3-VL-4B-Instruct-GGUF": {
@@ -395,7 +725,9 @@
         "mmproj": "mmproj-Qwen3VL-4B-Instruct-F16.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["vision"],
+        "labels": [
+            "vision"
+        ],
         "size": 3.33
     },
     "Qwen3-VL-8B-Instruct-GGUF": {
@@ -403,14 +735,18 @@
         "mmproj": "mmproj-Qwen3VL-8B-Instruct-F16.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["vision"],
+        "labels": [
+            "vision"
+        ],
         "size": 6.19
     },
     "Qwen3-Next-80B-A3B-Instruct-GGUF": {
         "checkpoint": "unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF:Qwen3-Next-80B-A3B-Instruct-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["hot"],
+        "labels": [
+            "hot"
+        ],
         "size": 45.1
     },
     "Llama-4-Scout-17B-16E-Instruct-GGUF": {
@@ -418,7 +754,9 @@
         "mmproj": "mmproj-F16.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["vision"],
+        "labels": [
+            "vision"
+        ],
         "size": 61.5
     },
     "Cogito-v2-llama-109B-MoE-GGUF": {
@@ -426,126 +764,169 @@
         "mmproj": "mmproj-F16.gguf",
         "recipe": "llamacpp",
         "suggested": false,
-        "labels": ["vision"],
+        "labels": [
+            "vision"
+        ],
         "size": 65.3
     },
     "nomic-embed-text-v1-GGUF": {
         "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["embeddings"],
+        "labels": [
+            "embeddings"
+        ],
         "size": 0.0781
     },
     "nomic-embed-text-v2-moe-GGUF": {
         "checkpoint": "nomic-ai/nomic-embed-text-v2-moe-GGUF:Q8_0",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["embeddings"],
+        "labels": [
+            "embeddings"
+        ],
         "size": 0.51
     },
     "Qwen3-Embedding-0.6B-GGUF": {
         "checkpoint": "Qwen/Qwen3-Embedding-0.6B-GGUF:Qwen3-Embedding-0.6B-Q8_0.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["embeddings"],
+        "labels": [
+            "embeddings"
+        ],
         "size": 0.64
     },
     "Qwen3-Embedding-4B-GGUF": {
         "checkpoint": "Qwen/Qwen3-Embedding-4B-GGUF:Qwen3-Embedding-4B-Q8_0.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["embeddings"],
+        "labels": [
+            "embeddings"
+        ],
         "size": 4.28
     },
     "Qwen3-Embedding-8B-GGUF": {
         "checkpoint": "Qwen/Qwen3-Embedding-8B-GGUF:Qwen3-Embedding-8B-Q8_0.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["embeddings"],
+        "labels": [
+            "embeddings"
+        ],
         "size": 8.05
     },
     "bge-reranker-v2-m3-GGUF": {
         "checkpoint": "pqnet/bge-reranker-v2-m3-Q8_0-GGUF",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["reranking"],
+        "labels": [
+            "reranking"
+        ],
         "size": 0.53
     },
     "jina-reranker-v1-tiny-en-GGUF": {
         "checkpoint": "mradermacher/jina-reranker-v1-tiny-en-GGUF:Q8_0",
         "recipe": "llamacpp",
         "suggested": false,
-        "labels": ["reranking"],
+        "labels": [
+            "reranking"
+        ],
         "size": 0.03
     },
-    "Devstral-Small-2507-GGUF":{
+    "Devstral-Small-2507-GGUF": {
         "checkpoint": "mistralai/Devstral-Small-2507_gguf:Q4_K_M",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["coding","tool-calling"],
+        "labels": [
+            "coding",
+            "tool-calling"
+        ],
         "size": 14.3
     },
     "Qwen2.5-Coder-32B-Instruct-GGUF": {
         "checkpoint": "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF:Q4_K_M",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["coding"],
+        "labels": [
+            "coding"
+        ],
         "size": 19.85
     },
     "gpt-oss-120b-GGUF": {
         "checkpoint": "unsloth/gpt-oss-120b-GGUF:Q4_K_M",
         "recipe": "llamacpp",
         "suggested": false,
-        "labels": ["reasoning", "tool-calling"],
+        "labels": [
+            "reasoning",
+            "tool-calling"
+        ],
         "size": 62.7
     },
     "gpt-oss-20b-GGUF": {
         "checkpoint": "unsloth/gpt-oss-20b-GGUF:Q4_K_M",
         "recipe": "llamacpp",
         "suggested": false,
-        "labels": ["reasoning", "tool-calling"],
+        "labels": [
+            "reasoning",
+            "tool-calling"
+        ],
         "size": 11.6
     },
     "gpt-oss-120b-mxfp-GGUF": {
         "checkpoint": "ggml-org/gpt-oss-120b-GGUF:*",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["hot", "reasoning", "tool-calling"],
+        "labels": [
+            "hot",
+            "reasoning",
+            "tool-calling"
+        ],
         "size": 63.3
     },
     "gpt-oss-20b-mxfp4-GGUF": {
         "checkpoint": "ggml-org/gpt-oss-20b-GGUF",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["hot", "reasoning", "tool-calling"],
+        "labels": [
+            "hot",
+            "reasoning",
+            "tool-calling"
+        ],
         "size": 12.1
     },
     "GLM-4.5-Air-UD-Q4K-XL-GGUF": {
         "checkpoint": "unsloth/GLM-4.5-Air-GGUF:UD-Q4_K_XL",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 73.1
     },
     "GLM-4.7-Flash-GGUF": {
         "checkpoint": "unsloth/GLM-4.7-Flash-GGUF:GLM-4.7-Flash-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["hot"],
+        "labels": [
+            "hot"
+        ],
         "size": 17.6
     },
     "Playable1-GGUF": {
         "checkpoint": "playable/Playable1-GGUF:Playable1-q4_k_m.gguf",
         "recipe": "llamacpp",
         "suggested": false,
-        "labels": ["coding"],
+        "labels": [
+            "coding"
+        ],
         "size": 4.68
     },
     "granite-4.0-h-tiny-GGUF": {
         "checkpoint": "unsloth/granite-4.0-h-tiny-GGUF:Q4_K_M",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["tool-calling"],
+        "labels": [
+            "tool-calling"
+        ],
         "size": 4.25
     },
     "LFM2-8B-A1B-GGUF": {
@@ -558,7 +939,9 @@
         "checkpoint": "gpt-oss:20b",
         "recipe": "flm",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 13.4
     },
     "Gemma3-1b-it-FLM": {
@@ -571,21 +954,29 @@
         "checkpoint": "gemma3:4b",
         "recipe": "flm",
         "suggested": true,
-        "labels": ["hot","vision"],
+        "labels": [
+            "hot",
+            "vision"
+        ],
         "size": 5.26
     },
     "Qwen3-4B-VL-FLM": {
         "checkpoint": "qwen3vl-it:4b",
         "recipe": "flm",
         "suggested": true,
-        "labels": ["hot","vision"],
+        "labels": [
+            "hot",
+            "vision"
+        ],
         "size": 3.85
     },
     "Qwen3-0.6b-FLM": {
         "checkpoint": "qwen3:0.6b",
         "recipe": "flm",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 0.66
     },
     "Qwen3-4B-Instruct-2507-FLM": {
@@ -598,7 +989,9 @@
         "checkpoint": "qwen3:8b",
         "recipe": "flm",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 5.57
     },
     "Llama-3.1-8B-FLM": {
@@ -641,7 +1034,10 @@
         "checkpoint": "ggerganov/whisper.cpp:ggml-tiny.bin",
         "recipe": "whispercpp",
         "suggested": true,
-        "labels": ["audio", "transcription"],
+        "labels": [
+            "audio",
+            "transcription"
+        ],
         "size": 0.075,
         "npu_cache_repo": "amd/whisper-tiny-onnx-npu",
         "npu_cache_filename": "ggml-tiny-encoder-vitisai.rai"
@@ -650,7 +1046,10 @@
         "checkpoint": "ggerganov/whisper.cpp:ggml-base.bin",
         "recipe": "whispercpp",
         "suggested": true,
-        "labels": ["audio", "transcription"],
+        "labels": [
+            "audio",
+            "transcription"
+        ],
         "size": 0.142,
         "npu_cache_repo": "amd/whisper-base-onnx-npu",
         "npu_cache_filename": "ggml-base-encoder-vitisai.rai"
@@ -659,7 +1058,10 @@
         "checkpoint": "ggerganov/whisper.cpp:ggml-small.bin",
         "recipe": "whispercpp",
         "suggested": true,
-        "labels": ["audio", "transcription"],
+        "labels": [
+            "audio",
+            "transcription"
+        ],
         "size": 0.466,
         "npu_cache_repo": "amd/whisper-small-onnx-npu",
         "npu_cache_filename": "ggml-small-encoder-vitisai.rai"
@@ -668,7 +1070,10 @@
         "checkpoint": "ggerganov/whisper.cpp:ggml-medium.bin",
         "recipe": "whispercpp",
         "suggested": true,
-        "labels": ["audio", "transcription"],
+        "labels": [
+            "audio",
+            "transcription"
+        ],
         "size": 1.42,
         "npu_cache_repo": "amd/whisper-medium-onnx-npu",
         "npu_cache_filename": "ggml-medium-encoder-vitisai.rai"
@@ -677,7 +1082,10 @@
         "checkpoint": "ggerganov/whisper.cpp:ggml-large-v3.bin",
         "recipe": "whispercpp",
         "suggested": true,
-        "labels": ["audio", "transcription"],
+        "labels": [
+            "audio",
+            "transcription"
+        ],
         "size": 2.87,
         "npu_cache_repo": "amd/whisper-large-v3-onnx-npu",
         "npu_cache_filename": "ggml-large-v3-encoder-vitisai.rai"
@@ -686,7 +1094,11 @@
         "checkpoint": "ggerganov/whisper.cpp:ggml-large-v3-turbo.bin",
         "recipe": "whispercpp",
         "suggested": true,
-        "labels": ["audio", "transcription", "hot"],
+        "labels": [
+            "audio",
+            "transcription",
+            "hot"
+        ],
         "size": 1.55,
         "npu_cache_repo": "amd/whisper-large-turbo-onnx-npu",
         "npu_cache_filename": "ggml-large-v3-turbo-encoder-vitisai.rai"
@@ -695,14 +1107,18 @@
         "checkpoint": "deepseek-r1:8b",
         "recipe": "flm",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 5.36
     },
     "DeepSeek-R1-0528-Qwen3-8B-FLM": {
         "checkpoint": "deepseek-r1-0528:8b",
         "recipe": "flm",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 5.57
     },
     "LFM2-2.6B-FLM": {
@@ -715,21 +1131,27 @@
         "checkpoint": "qwen3:1.7b",
         "recipe": "flm",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 1.59
     },
     "LFM2.5-1.2B-Thinking-FLM": {
         "checkpoint": "lfm2.5-tk:1.2b",
         "recipe": "flm",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 0.96
     },
     "SD-Turbo": {
         "checkpoint": "stabilityai/sd-turbo:sd_turbo.safetensors",
         "recipe": "sd-cpp",
         "suggested": true,
-        "labels": ["image"],
+        "labels": [
+            "image"
+        ],
         "size": 5.2,
         "image_defaults": {
             "steps": 4,
@@ -742,7 +1164,9 @@
         "checkpoint": "stabilityai/sdxl-turbo:sd_xl_turbo_1.0_fp16.safetensors",
         "recipe": "sd-cpp",
         "suggested": true,
-        "labels": ["image"],
+        "labels": [
+            "image"
+        ],
         "size": 6.9,
         "image_defaults": {
             "steps": 4,
@@ -755,7 +1179,9 @@
         "checkpoint": "stable-diffusion-v1-5/stable-diffusion-v1-5:v1-5-pruned.safetensors",
         "recipe": "sd-cpp",
         "suggested": true,
-        "labels": ["image"],
+        "labels": [
+            "image"
+        ],
         "size": 4.3,
         "image_defaults": {
             "steps": 20,
@@ -768,7 +1194,9 @@
         "checkpoint": "stabilityai/stable-diffusion-xl-base-1.0:sd_xl_base_1.0.safetensors",
         "recipe": "sd-cpp",
         "suggested": true,
-        "labels": ["image"],
+        "labels": [
+            "image"
+        ],
         "size": 6.9,
         "image_defaults": {
             "steps": 20,
@@ -781,7 +1209,10 @@
         "checkpoint": "mikkoph/kokoro-onnx",
         "recipe": "kokoro",
         "suggested": false,
-        "labels": ["audio", "speech"],
+        "labels": [
+            "audio",
+            "speech"
+        ],
         "size": 0.34
     }
 }

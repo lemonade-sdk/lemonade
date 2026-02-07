@@ -71,12 +71,12 @@ WRAPPED_SERVER_CAPABILITIES = {
             "multi_model": True,
             "stop_parameter": True,
             "echo_parameter": False,
-            "generation_parameters": True,
+            "generation_parameters": False,
         },
         "test_models": {
             "llm_cpu": "Qwen2.5-0.5B-Instruct-CPU",
             "llm_hybrid": "Qwen-2.5-1.5B-Instruct-Hybrid",
-            "llm_npu": "Qwen-2.5-3B-Instruct-NPU",
+            "llm_npu": "Qwen2.5-3B-Instruct-NPU",
         },
     },
     "flm": {
