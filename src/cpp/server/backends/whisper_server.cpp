@@ -90,7 +90,7 @@ void WhisperServer::install(const std::string& backend) {
 
 // Helper to determine NPU compiled cache info based on model info from server_models.json
 static std::pair<std::string, std::string> get_npu_cache_info(const ModelInfo& model_info) {
-    std::string npu_cache = model_info.checkpoint_by_type("npu_cache");
+    std::string npu_cache = model_info.checkpoint("npu_cache");
     std::string npu_cache_repo = "";
     std::string npu_cache_filename = "";
 
@@ -178,7 +178,7 @@ void WhisperServer::load(const std::string& model_name,
 
     install(whispercpp_backend);
 
-    std::string model_path = model_info.resolved_path;
+    std::string model_path = model_info.resolved_path();
     if (model_path.empty()) {
         throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint());
     }

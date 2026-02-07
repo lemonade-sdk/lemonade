@@ -331,7 +331,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         std::string model_name = std::string(EXTRA_MODEL_PREFIX) + filename;
         ModelInfo info = init_extra_model_info(model_name);
         info.checkpoints["main"] = gguf_path.string();
-        info.resolved_path = gguf_path.string();
+        info.resolved_paths["main"] = gguf_path.string();
         info.type = ModelType::LLM;
 
         // Calculate size in GB
@@ -354,12 +354,10 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
         // Find the main model file and mmproj file
         fs::path main_model_path;
-        std::string mmproj_file;
+        fs::path mmproj_file;
         double total_size = 0.0;
 
         for (const auto& gguf_path : gguf_files) {
-            std::string filename = gguf_path.filename().string();
-
             // Calculate total size
             try {
                 uintmax_t file_size = fs::file_size(gguf_path);
@@ -367,8 +365,8 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             } catch (...) {}
 
             // Check if this is an mmproj file (can be anywhere in filename)
-            if (contains_ignore_case(filename, "mmproj")) {
-                mmproj_file = filename;
+            if (contains_ignore_case(gguf_path.filename().string(), "mmproj")) {
+                mmproj_file = gguf_path;
                 continue;
             }
 
@@ -387,12 +385,13 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         std::string model_name = std::string(EXTRA_MODEL_PREFIX) + dir_name;
         ModelInfo info = init_extra_model_info(model_name);
         info.checkpoints["main"] = dir_path;
-        info.resolved_path = main_model_path.string();
+        info.resolved_paths["main"] = main_model_path.string();
         info.size = total_size;
 
         // If mmproj found, set it and add vision label
         if (!mmproj_file.empty()) {
-            info.checkpoints["mmproj"] = mmproj_file;
+            info.checkpoints["mmproj"] = mmproj_file.filename().string();
+            info.resolved_paths["mmproj"] = mmproj_file.string();
             info.labels.push_back("vision");
         }
 
@@ -406,35 +405,40 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     return discovered;
 }
 
-std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
+std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
     // FLM models use checkpoint as-is (e.g., "gemma3:4b")
     if (info.recipe == "flm") {
-        return info.checkpoint();
+        return checkpoint;
     }
 
     // Local path models use checkpoint as-is (absolute path to file)
     if (info.source == "local_path") {
-        return info.checkpoint();
+        return checkpoint;
     }
 
     std::string hf_cache = get_hf_cache_dir();
 
     // Local uploads: checkpoint is relative path from HF cache
     if (info.source == "local_upload") {
-        std::string normalized = info.checkpoint();
+        std::string normalized = checkpoint;
         std::replace(normalized.begin(), normalized.end(), '\\', '/');
         return hf_cache + "/" + normalized;
     }
 
+    // For now, NPU cache is handled directly in whisper.cpp
+    if (type == "npu_cache") {
+        return "";
+    }
+
     // HuggingFace models: need to find the GGUF file in cache
     // Parse checkpoint to get repo_id and variant
-    std::string repo_id = info.checkpoint();
+    std::string repo_id = checkpoint;
     std::string variant;
 
-    size_t colon_pos = info.checkpoint().find(':');
+    size_t colon_pos = checkpoint.find(':');
     if (colon_pos != std::string::npos) {
-        repo_id = info.checkpoint().substr(0, colon_pos);
-        variant = info.checkpoint().substr(colon_pos + 1);
+        repo_id = checkpoint.substr(0, colon_pos);
+        variant = checkpoint.substr(colon_pos + 1);
     }
 
     // Convert org/model to models--org--model
@@ -471,25 +475,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
     }
 
     // For whispercpp, find the .bin model file
-    if (info.recipe == "whispercpp") {
-        // If variant specified, only return the exact matching file
-        if (!variant.empty()) {
-            // Try to find the exact variant in snapshots subdirectories
-            if (fs::exists(model_cache_path)) {
-                for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
-                    if (entry.is_regular_file()) {
-                        std::string filename = entry.path().filename().string();
-                        if (filename == variant) {
-                            return entry.path().string();
-                        }
-                    }
-                }
-            }
-            // Variant not found - return empty string to indicate model not downloaded
-            // This prevents returning a wrong model variant (e.g., tiny instead of large)
-            return "";
-        }
-
+    if (info.recipe == "whispercpp" && variant.empty()) {
         // No variant specified - use fallback logic to find any .bin file
         if (!fs::exists(model_cache_path)) {
             return model_cache_path;  // Return directory path even if not found
@@ -518,7 +504,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
     }
 
     // For llamacpp, find the GGUF file with advanced sharded model support
-    if (info.recipe == "llamacpp") {
+    if (info.recipe == "llamacpp" && type == "main") {
         if (!fs::exists(model_cache_path)) {
             return model_cache_path;  // Return directory path even if not found
         }
@@ -604,8 +590,31 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
         return all_gguf_files[0];
     }
 
+    // Everything else
+    if (!variant.empty()) {
+        // Try to find the exact variant in snapshots subdirectories
+        if (fs::exists(model_cache_path)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+                if (entry.is_regular_file()) {
+                    std::string filename = entry.path().filename().string();
+                    if (filename == variant) {
+                        return entry.path().string();
+                    }
+                }
+            }
+        }
+        // Variant not found - return empty string to indicate model not downloaded
+        return "";
+    }
+
     // Fallback: return directory path
     return model_cache_path;
+}
+
+void ModelManager::resolve_all_model_paths(ModelInfo& info) {
+    for (auto const& [type, checkpoint] : info.checkpoints) {
+        info.resolved_paths[type] = resolve_model_path(info, type, checkpoint);
+    }
 }
 
 json ModelManager::load_server_models() {
@@ -673,6 +682,22 @@ static void load_checkpoints(ModelInfo& info, json& model_json) {
     }
 }
 
+static void parse_legacy_mmproj(ModelInfo& info, const json& model_json) {
+    std::string mmproj = JsonUtils::get_or_default<std::string>(model_json, "mmproj", "");
+
+    if (!mmproj.empty()) {
+        std::string checkpoint = JsonUtils::get_or_default<std::string>(model_json, "checkpoint", "");
+
+        std::string repo_id;
+        size_t colon_pos = info.checkpoint().find(':');
+        if (colon_pos != std::string::npos) {
+            repo_id = info.checkpoint().substr(0, colon_pos);
+        }
+
+        info.checkpoints["mmproj"] = repo_id + ":" + mmproj;
+    }
+}
+
 void ModelManager::build_cache() {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
@@ -690,7 +715,7 @@ void ModelManager::build_cache() {
         ModelInfo info;
         info.model_name = key;
         info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
-        info.checkpoints["mmproj"] = JsonUtils::get_or_default<std::string>(value, "mmproj", "");
+        parse_legacy_mmproj(info, value);
         load_checkpoints(info, value);
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
@@ -716,7 +741,7 @@ void ModelManager::build_cache() {
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
 
-        info.resolved_path = resolve_model_path(info);
+        resolve_all_model_paths(info);
         all_models[key] = info;
     }
 
@@ -725,7 +750,7 @@ void ModelManager::build_cache() {
         ModelInfo info;
         info.model_name = "user." + key;
         info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
-        info.checkpoints["mmproj"] = JsonUtils::get_or_default<std::string>(value, "mmproj", "");
+        parse_legacy_mmproj(info, value);
         load_checkpoints(info, value);
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", true);
@@ -752,7 +777,7 @@ void ModelManager::build_cache() {
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
 
-        info.resolved_path = resolve_model_path(info);
+        resolve_all_model_paths(info);
         all_models[info.model_name] = info;
     }
 
@@ -807,13 +832,13 @@ void ModelManager::build_cache() {
             info.downloaded = flm_set.count(info.checkpoint()) > 0;
         } else {
             // Check if model file/dir exists
-            bool file_exists = !info.resolved_path.empty() && fs::exists(info.resolved_path);
+            bool file_exists = !info.resolved_path().empty() && fs::exists(info.resolved_path());
 
             if (file_exists) {
                 // Also check for incomplete downloads:
                 // 1. Check for .download_manifest.json in snapshot directory
                 // 2. Check for any .partial files
-                fs::path resolved(info.resolved_path);
+                fs::path resolved(info.resolved_path());
 
                 // For directories (OGA models), check within the directory
                 // For files (GGUF models), check in parent directory
@@ -835,7 +860,7 @@ void ModelManager::build_cache() {
                     }
                 } else {
                     // For files, check if the specific file has a .partial version
-                    has_partial = fs::exists(info.resolved_path + ".partial");
+                    has_partial = fs::exists(info.resolved_path() + ".partial");
                 }
 
                 info.downloaded = !has_manifest && !has_partial;
@@ -887,7 +912,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     ModelInfo info;
     info.model_name = model_name;
     info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
-    info.checkpoints["mmproj"] = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
+    parse_legacy_mmproj(info, *model_json);
     load_checkpoints(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
     info.recipe_options = RecipeOptions(info.recipe, JsonUtils::get_or_default(recipe_options_, model_name, json::object()));
@@ -904,7 +929,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     info.type = get_model_type_from_labels(info.labels);
     info.device = get_device_type_from_recipe(info.recipe);
 
-    info.resolved_path = resolve_model_path(info);
+    resolve_all_model_paths(info);
 
     // Check if it should be filtered out by backend availability
     std::map<std::string, ModelInfo> temp_map = {{model_name, info}};
@@ -920,11 +945,11 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
         auto flm_models = get_flm_installed_models();
         info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint()) != flm_models.end();
     } else {
-        bool file_exists = !info.resolved_path.empty() && fs::exists(info.resolved_path);
+        bool file_exists = !info.resolved_path().empty() && fs::exists(info.resolved_path());
 
         if (file_exists) {
             // Check for incomplete downloads
-            fs::path resolved(info.resolved_path);
+            fs::path resolved(info.resolved_path());
             fs::path snapshot_dir = fs::is_directory(resolved) ? resolved : resolved.parent_path();
 
             fs::path manifest_path = snapshot_dir / ".download_manifest.json";
@@ -939,7 +964,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
                     }
                 }
             } else {
-                has_partial = fs::exists(info.resolved_path + ".partial");
+                has_partial = fs::exists(info.resolved_path() + ".partial");
             }
 
             info.downloaded = !has_manifest && !has_partial;
@@ -981,10 +1006,10 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
         // Recompute resolved_path after download
         // The path changes now that files exist on disk
         if (downloaded) {
-            it->second.resolved_path = resolve_model_path(it->second);
+            resolve_all_model_paths(it->second);
             std::cout << "[ModelManager] Updated '" << model_name
                       << "' downloaded=" << downloaded
-                      << ", resolved_path=" << it->second.resolved_path << std::endl;
+                      << ", resolved_path=" << it->second.resolved_path() << std::endl;
         } else {
             std::cout << "[ModelManager] Updated '" << model_name
                       << "' downloaded=" << downloaded << std::endl;
@@ -2290,13 +2315,13 @@ void ModelManager::delete_model(const std::string& model_name) {
     }
 
     // Use resolved_path to find the model directory to delete
-    if (info.resolved_path.empty()) {
+    if (info.resolved_path().empty()) {
         throw std::runtime_error("Model has no resolved_path, cannot determine files to delete");
     }
 
     // Find the models--* directory from resolved_path
     // resolved_path could be a file or directory, we need to find the models-- ancestor
-    fs::path path_obj(info.resolved_path);
+    fs::path path_obj(info.resolved_path());
     std::string model_cache_path;
 
     // Walk up the directory tree to find models--* directory
@@ -2310,7 +2335,7 @@ void ModelManager::delete_model(const std::string& model_name) {
     }
 
     if (model_cache_path.empty()) {
-        throw std::runtime_error("Could not find models-- directory in path: " + info.resolved_path);
+        throw std::runtime_error("Could not find models-- directory in path: " + info.resolved_path());
     }
 
     std::cout << "[ModelManager] Cache path: " << model_cache_path << std::endl;
@@ -2390,7 +2415,7 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
     // Parse model info from JSON
     info.model_name = model_name;
     info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
-    info.checkpoints["mmproj"] = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
+    parse_legacy_mmproj(info, *model_json);
     load_checkpoints(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", false);

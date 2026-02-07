@@ -42,7 +42,7 @@ struct ImageDefaults {
 struct ModelInfo {
     std::string model_name;
     std::map<std::string, std::string> checkpoints;
-    std::string resolved_path;   // Absolute path to model file/directory on disk
+    std::map<std::string, std::string> resolved_paths; // Absolute path to model file/directory on disk
     std::string recipe;
     std::vector<std::string> labels;
     bool suggested = false;
@@ -59,13 +59,19 @@ struct ModelInfo {
     ImageDefaults image_defaults;
 
     // Utility
-    std::string checkpoint_by_type(const std::string& type) const {
+    std::string checkpoint(const std::string& type = "main") const {
         try {
             return checkpoints.at(type);
         } catch(const std::out_of_range& ex) { return ""; }
     }
-    std::string checkpoint() const { return checkpoint_by_type("main"); }
-    std::string mmproj() const { return checkpoint_by_type("mmproj"); }
+
+    std::string resolved_path(const std::string& type = "main") const {
+        try {
+            return resolved_paths.at(type);
+        } catch(const std::out_of_range& ex) { return ""; }
+    }
+
+    std::string mmproj() const { return checkpoint("mmproj"); }
 };
 
 class ModelManager {
@@ -165,7 +171,8 @@ private:
     void remove_model_from_cache(const std::string& model_name);
 
     // Resolve model checkpoint to absolute path on disk
-    std::string resolve_model_path(const ModelInfo& info) const;
+    std::string resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const;
+    void resolve_all_model_paths(ModelInfo& info);
 
     // Download from Hugging Face
     void download_from_huggingface(const std::string& repo_id,

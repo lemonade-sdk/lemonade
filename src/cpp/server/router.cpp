@@ -168,7 +168,7 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     } else if (model_info.recipe == "ryzenai-llm") {
         std::cout << "[Router] Creating RyzenAI-Server backend" << std::endl;
 
-        std::string model_path = model_info.resolved_path;
+        std::string model_path = model_info.resolved_path();
         std::cout << "[Router] Using model path: " << model_path << std::endl;
 
         auto* ryzenai_server = new RyzenAIServer(model_info.model_name,

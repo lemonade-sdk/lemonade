@@ -72,50 +72,9 @@ void SDServer::load(const std::string& model_name,
     install("cpu");
 
     // Get model path
-    std::string model_path = model_info.resolved_path;
+    std::string model_path = model_info.resolved_path();
     if (model_path.empty()) {
         throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint());
-    }
-
-    // For SD models, checkpoint format is "repo:filename" - find the actual file
-    std::string target_filename;
-    size_t colon_pos = model_info.checkpoint().find(':');
-    if (colon_pos != std::string::npos) {
-        target_filename = model_info.checkpoint().substr(colon_pos + 1);
-    }
-
-    // Navigate HuggingFace cache structure if needed
-    if (fs::is_directory(model_path)) {
-        if (!target_filename.empty()) {
-            std::cout << "[SDServer] Searching for " << target_filename << " in " << model_path << std::endl;
-        }
-
-        fs::path snapshots_dir = fs::path(model_path) / "snapshots";
-        if (fs::exists(snapshots_dir) && fs::is_directory(snapshots_dir)) {
-            for (const auto& snapshot_entry : fs::directory_iterator(snapshots_dir)) {
-                if (snapshot_entry.is_directory()) {
-                    if (!target_filename.empty()) {
-                        fs::path candidate = snapshot_entry.path() / target_filename;
-                        if (fs::exists(candidate) && fs::is_regular_file(candidate)) {
-                            model_path = candidate.string();
-                            break;
-                        }
-                    } else {
-                        // Search for any .safetensors file
-                        for (const auto& file_entry : fs::directory_iterator(snapshot_entry.path())) {
-                            if (file_entry.is_regular_file()) {
-                                std::string fname = file_entry.path().filename().string();
-                                if (fname.size() > 12 && fname.substr(fname.size() - 12) == ".safetensors") {
-                                    model_path = file_entry.path().string();
-                                    break;
-                                }
-                            }
-                        }
-                        if (!fs::is_directory(model_path)) break;
-                    }
-                }
-            }
-        }
     }
 
     if (fs::is_directory(model_path)) {
