@@ -476,8 +476,6 @@ window.api = {
         }
         return 'Unknown';
     },
-    pauseDownload: () => {},
-    cancelDownload: () => {},
     restartApp: () => window.location.reload(),
     getSystemStats: async () => {
         try {
