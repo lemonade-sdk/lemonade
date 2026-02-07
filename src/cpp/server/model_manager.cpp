@@ -1489,13 +1489,6 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
     return false;
 }
 
-bool ModelManager::is_model_downloaded(const std::string& model_name,
-                                       const std::vector<std::string>* flm_cache) {
-    // This overload is no longer needed with unified cache, but keep for compatibility
-    // Just delegate to the simpler version
-    return is_model_downloaded(model_name);
-}
-
 void ModelManager::download_model(const std::string& model_name,
                                  const std::string& checkpoint,
                                  const std::string& recipe,
