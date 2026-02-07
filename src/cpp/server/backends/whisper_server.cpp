@@ -169,7 +169,7 @@ void WhisperServer::load(const std::string& model_name,
 
     std::string model_path = model_info.resolved_path;
     if (model_path.empty()) {
-        throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint);
+        throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint());
     }
 
     std::cout << "[WhisperServer] Using model: " << model_path << std::endl;

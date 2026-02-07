@@ -315,11 +315,11 @@ void Server::setup_static_files(httplib::Server &web_server) {
         for (const auto& [model_name, info] : models_map) {
             filtered_models[model_name] = {
                 {"model_name", info.model_name},
-                {"checkpoint", info.checkpoint},
+                {"checkpoint", info.checkpoint()},
                 {"recipe", info.recipe},
                 {"labels", info.labels},
                 {"suggested", info.suggested},
-                {"mmproj", info.mmproj}
+                {"mmproj", info.mmproj()}
             };
 
             // Add size if available
@@ -1116,7 +1116,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"object", "model"},
         {"created", 1234567890},
         {"owned_by", "lemonade"},
-        {"checkpoint", info.checkpoint},
+        {"checkpoint", info.checkpoint()},
         {"recipe", info.recipe},
         {"downloaded", info.downloaded},
         {"suggested", info.suggested},
@@ -2197,7 +2197,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         nlohmann::json response = {
             {"status", "success"},
             {"model_name", model_name},
-            {"checkpoint", info.checkpoint},
+            {"checkpoint", info.checkpoint()},
             {"recipe", info.recipe}
         };
         res.set_content(response.dump(), "application/json");

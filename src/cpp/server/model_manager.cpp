@@ -330,7 +330,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
         std::string model_name = std::string(EXTRA_MODEL_PREFIX) + filename;
         ModelInfo info = init_extra_model_info(model_name);
-        info.checkpoint = gguf_path.string();
+        info.checkpoints["main"] = gguf_path.string();
         info.resolved_path = gguf_path.string();
         info.type = ModelType::LLM;
 
@@ -386,13 +386,13 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
         std::string model_name = std::string(EXTRA_MODEL_PREFIX) + dir_name;
         ModelInfo info = init_extra_model_info(model_name);
-        info.checkpoint = dir_path;
+        info.checkpoints["main"] = dir_path;
         info.resolved_path = main_model_path.string();
         info.size = total_size;
 
         // If mmproj found, set it and add vision label
         if (!mmproj_file.empty()) {
-            info.mmproj = mmproj_file;
+            info.checkpoints["mmproj"] = mmproj_file;
             info.labels.push_back("vision");
         }
 
@@ -409,32 +409,32 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
     // FLM models use checkpoint as-is (e.g., "gemma3:4b")
     if (info.recipe == "flm") {
-        return info.checkpoint;
+        return info.checkpoint();
     }
 
     // Local path models use checkpoint as-is (absolute path to file)
     if (info.source == "local_path") {
-        return info.checkpoint;
+        return info.checkpoint();
     }
 
     std::string hf_cache = get_hf_cache_dir();
 
     // Local uploads: checkpoint is relative path from HF cache
     if (info.source == "local_upload") {
-        std::string normalized = info.checkpoint;
+        std::string normalized = info.checkpoint();
         std::replace(normalized.begin(), normalized.end(), '\\', '/');
         return hf_cache + "/" + normalized;
     }
 
     // HuggingFace models: need to find the GGUF file in cache
     // Parse checkpoint to get repo_id and variant
-    std::string repo_id = info.checkpoint;
+    std::string repo_id = info.checkpoint();
     std::string variant;
 
-    size_t colon_pos = info.checkpoint.find(':');
+    size_t colon_pos = info.checkpoint().find(':');
     if (colon_pos != std::string::npos) {
-        repo_id = info.checkpoint.substr(0, colon_pos);
-        variant = info.checkpoint.substr(colon_pos + 1);
+        repo_id = info.checkpoint().substr(0, colon_pos);
+        variant = info.checkpoint().substr(colon_pos + 1);
     }
 
     // Convert org/model to models--org--model
@@ -665,6 +665,14 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     return models_cache_;
 }
 
+static void load_checkpoints(ModelInfo& info, json& model_json) {
+    if (model_json.contains("checkpoints") && model_json["checkpoints"].is_object()) {
+        for (auto& [key, value] : model_json["checkpoints"].items()) {
+            info.checkpoints[key] = value.get<std::string>();
+        }
+    }
+}
+
 void ModelManager::build_cache() {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
@@ -681,10 +689,11 @@ void ModelManager::build_cache() {
     for (auto& [key, value] : server_models_.items()) {
         ModelInfo info;
         info.model_name = key;
-        info.checkpoint = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
+        info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
+        info.checkpoints["mmproj"] = JsonUtils::get_or_default<std::string>(value, "mmproj", "");
+        load_checkpoints(info, value);
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
-        info.mmproj = JsonUtils::get_or_default<std::string>(value, "mmproj", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
 
         if (value.contains("labels") && value["labels"].is_array()) {
@@ -719,10 +728,11 @@ void ModelManager::build_cache() {
     for (auto& [key, value] : user_models_.items()) {
         ModelInfo info;
         info.model_name = "user." + key;
-        info.checkpoint = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
+        info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
+        info.checkpoints["mmproj"] = JsonUtils::get_or_default<std::string>(value, "mmproj", "");
+        load_checkpoints(info, value);
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", true);
-        info.mmproj = JsonUtils::get_or_default<std::string>(value, "mmproj", "");
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
 
@@ -802,7 +812,7 @@ void ModelManager::build_cache() {
     int downloaded_count = 0;
     for (auto& [name, info] : all_models) {
         if (info.recipe == "flm") {
-            info.downloaded = flm_set.count(info.checkpoint) > 0;
+            info.downloaded = flm_set.count(info.checkpoint()) > 0;
         } else {
             // Check if model file/dir exists
             bool file_exists = !info.resolved_path.empty() && fs::exists(info.resolved_path);
@@ -884,11 +894,12 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     // Build ModelInfo
     ModelInfo info;
     info.model_name = model_name;
-    info.checkpoint = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
+    info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
+    info.checkpoints["mmproj"] = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
+    load_checkpoints(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
     info.recipe_options = RecipeOptions(info.recipe, JsonUtils::get_or_default(recipe_options_, model_name, json::object()));
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
-    info.mmproj = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
     info.npu_cache_repo = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_repo", "");
     info.npu_cache_filename = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_filename", "");
@@ -917,7 +928,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     // Check download status
     if (info.recipe == "flm") {
         auto flm_models = get_flm_installed_models();
-        info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint) != flm_models.end();
+        info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint()) != flm_models.end();
     } else {
         bool file_exists = !info.resolved_path.empty() && fs::exists(info.resolved_path);
 
@@ -1033,12 +1044,12 @@ void ModelManager::refresh_flm_download_status() {
     for (auto& [name, info] : models_cache_) {
         if (info.recipe == "flm") {
             bool was_downloaded = info.downloaded;
-            info.downloaded = flm_set.count(info.checkpoint) > 0;
+            info.downloaded = flm_set.count(info.checkpoint()) > 0;
 
             // Log changes for debugging
             if (was_downloaded != info.downloaded) {
                 std::cout << "[ModelManager] FLM status changed: " << name
-                          << " (checkpoint: " << info.checkpoint << ") -> "
+                          << " (checkpoint: " << info.checkpoint() << ") -> "
                           << (info.downloaded ? "downloaded" : "not downloaded") << std::endl;
             }
         }
@@ -1553,14 +1564,14 @@ void ModelManager::download_model(const std::string& model_name,
         // Model is registered - if checkpoint not provided, look up from registry
         if (actual_checkpoint.empty()) {
             auto info = get_model_info(model_name);
-            actual_checkpoint = info.checkpoint;
+            actual_checkpoint = info.checkpoint();
             actual_recipe = info.recipe;
         }
 
         // Also look up mmproj if not provided (for vision models)
         if (actual_mmproj.empty()) {
             auto info = get_model_info(model_name);
-            actual_mmproj = info.mmproj;
+            actual_mmproj = info.mmproj();
             if (!actual_mmproj.empty()) {
                 std::cout << "[ModelManager] Found mmproj for vision model: " << actual_mmproj << std::endl;
             }
@@ -2212,21 +2223,21 @@ void ModelManager::delete_model(const std::string& model_name) {
     auto info = get_model_info(model_name);
 
     std::cout << "[ModelManager] Deleting model: " << model_name << std::endl;
-    std::cout << "[ModelManager] Checkpoint: " << info.checkpoint << std::endl;
+    std::cout << "[ModelManager] Checkpoint: " << info.checkpoint() << std::endl;
     std::cout << "[ModelManager] Recipe: " << info.recipe << std::endl;
 
     // Handle extra models (from --extra-models-dir) - these are user-managed external files
     if (model_name.substr(0, 6) == "extra.") {
         throw std::runtime_error("Cannot delete extra models via API. Models in --extra-models-dir are user-managed. "
-                                 "Delete the file directly from: " + info.checkpoint);
+                                 "Delete the file directly from: " + info.checkpoint());
     }
 
     // Handle FLM models separately
     if (info.recipe == "flm") {
-        std::cout << "[ModelManager] Deleting FLM model: " << info.checkpoint << std::endl;
+        std::cout << "[ModelManager] Deleting FLM model: " << info.checkpoint() << std::endl;
 
         // Validate checkpoint is not empty
-        if (info.checkpoint.empty()) {
+        if (info.checkpoint().empty()) {
             throw std::runtime_error("FLM model has empty checkpoint field, cannot delete");
         }
 
@@ -2239,7 +2250,7 @@ void ModelManager::delete_model(const std::string& model_name) {
 #endif
 
         // Prepare arguments for 'flm remove' command
-        std::vector<std::string> args = {"remove", info.checkpoint};
+        std::vector<std::string> args = {"remove", info.checkpoint()};
 
         std::cout << "[ProcessManager] Starting process: \"" << flm_path << "\"";
         for (const auto& arg : args) {
@@ -2388,10 +2399,11 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
 
     // Parse model info from JSON
     info.model_name = model_name;
-    info.checkpoint = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
+    info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
+    info.checkpoints["mmproj"] = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
+    load_checkpoints(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", false);
-    info.mmproj = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
     info.npu_cache_repo = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_repo", "");
     info.npu_cache_filename = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_filename", "");

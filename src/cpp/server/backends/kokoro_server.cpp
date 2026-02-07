@@ -62,7 +62,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     // Use pre-resolved model path
     fs::path model_path = fs::path(model_info.resolved_path);
     if (model_path.empty() || !fs::exists(model_path)) {
-        throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint);
+        throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint());
     }
 
     json model_index;

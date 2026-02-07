@@ -41,12 +41,11 @@ struct ImageDefaults {
 
 struct ModelInfo {
     std::string model_name;
-    std::string checkpoint;      // Original checkpoint identifier (for downloads/display)
+    std::map<std::string, std::string> checkpoints;
     std::string resolved_path;   // Absolute path to model file/directory on disk
     std::string recipe;
     std::vector<std::string> labels;
     bool suggested = false;
-    std::string mmproj;
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available
     double size = 0.0;   // Model size in GB
@@ -62,6 +61,9 @@ struct ModelInfo {
     // NPU cache fields for whispercpp recipe with RyzenAI based NPU backend
     std::string npu_cache_repo;      // HuggingFace repo for NPU compiled cache
     std::string npu_cache_filename;  // Filename of .rai cache file
+
+    std::string checkpoint() const { return checkpoints.at("main"); }
+    std::string mmproj() const { return checkpoints.at("mmproj"); }
 };
 
 class ModelManager {

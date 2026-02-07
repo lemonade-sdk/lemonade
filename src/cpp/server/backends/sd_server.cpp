@@ -74,14 +74,14 @@ void SDServer::load(const std::string& model_name,
     // Get model path
     std::string model_path = model_info.resolved_path;
     if (model_path.empty()) {
-        throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint);
+        throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint());
     }
 
     // For SD models, checkpoint format is "repo:filename" - find the actual file
     std::string target_filename;
-    size_t colon_pos = model_info.checkpoint.find(':');
+    size_t colon_pos = model_info.checkpoint().find(':');
     if (colon_pos != std::string::npos) {
-        target_filename = model_info.checkpoint.substr(colon_pos + 1);
+        target_filename = model_info.checkpoint().substr(colon_pos + 1);
     }
 
     // Navigate HuggingFace cache structure if needed

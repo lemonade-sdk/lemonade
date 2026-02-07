@@ -166,7 +166,7 @@ void FastFlowLMServer::load(const std::string& model_name,
     }
 
     // Download model if needed
-    download_model(model_info.checkpoint, do_not_upgrade);
+    download_model(model_info.checkpoint(), do_not_upgrade);
 
     // Choose a port
     port_ = choose_port();
@@ -178,7 +178,7 @@ void FastFlowLMServer::load(const std::string& model_name,
     // Bind to localhost only for security
     std::vector<std::string> args = {
         "serve",
-        model_info.checkpoint,
+        model_info.checkpoint(),
         "--ctx-len", std::to_string(ctx_size),
         "--port", std::to_string(port_),
         "--host", "127.0.0.1"
