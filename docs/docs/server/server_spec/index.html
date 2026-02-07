@@ -3917,7 +3917,7 @@ curl<span class="w"> </span>http://localhost:8000/api/v1/models?show_all<span cl
 <li><code>object</code> - Type of object, always <code>"model"</code></li>
 <li><code>owned_by</code> - Owner of the model, always <code>"lemonade"</code></li>
 <li><code>checkpoint</code> - Full checkpoint identifier on Hugging Face</li>
-<li><code>recipe</code> - Backend/device recipe used to load the model (e.g., <code>"oga-cpu"</code>, <code>"oga-hybrid"</code>, <code>"llamacpp"</code>, <code>"flm"</code>)</li>
+<li><code>recipe</code> - Backend/device recipe used to load the model (e.g., <code>"ryzenai-llm"</code>, <code>"llamacpp"</code>, <code>"flm"</code>)</li>
 <li><code>size</code> - Model size in GB (omitted for models without size information)</li>
 <li><code>downloaded</code> - Boolean indicating if the model is downloaded and available locally</li>
 <li><code>suggested</code> - Boolean indicating if the model is recommended for general use</li>
@@ -4203,7 +4203,7 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <tr>
 <td><code>ctx_size</code></td>
 <td>No</td>
-<td>llamacpp, flm, oga-*</td>
+<td>llamacpp, flm, ryzenai-llm</td>
 <td>Context size for the model. Overrides the default value.</td>
 </tr>
 <tr>
@@ -4388,7 +4388,7 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <span class="w">      </span><span class="nt">&quot;last_use&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1732123456.789</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;device&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpu npu&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;oga-hybrid&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ryzenai-llm&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;recipe_options&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="nt">&quot;ctx_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span>
 <span class="w">      </span><span class="p">},</span>
@@ -4427,7 +4427,7 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <li><code>type</code> - Model type: <code>"llm"</code>, <code>"embedding"</code>, or <code>"reranking"</code></li>
 <li><code>device</code> - Space-separated device list: <code>"cpu"</code>, <code>"gpu"</code>, <code>"npu"</code>, or combinations like <code>"gpu npu"</code></li>
 <li><code>backend_url</code> - URL of the backend server process handling this model (useful for debugging)</li>
-<li><code>recipe</code>: - Backend/device recipe used to load the model (e.g., <code>"oga-cpu"</code>, <code>"oga-hybrid"</code>, <code>"llamacpp"</code>, <code>"flm"</code>)</li>
+<li><code>recipe</code>: - Backend/device recipe used to load the model (e.g., <code>"ryzenai-llm"</code>, <code>"llamacpp"</code>, <code>"flm"</code>)</li>
 <li><code>recipe_options</code>: - Options used to load the model (e.g., <code>"ctx_size"</code>, <code>"llamacpp_backend"</code>, <code>"llamacpp_args"</code>)</li>
 <li><code>max_models</code> - Maximum number of models that can be loaded simultaneously (set via <code>--max-loaded-models</code>):</li>
 <li><code>llm</code> - Maximum LLM/chat models</li>
@@ -4547,28 +4547,10 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <span class="w">        </span><span class="p">}</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;oga-npu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;ryzenai-llm&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">      </span><span class="nt">&quot;backends&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;npu&quot;</span><span class="p">],</span>
-<span class="w">          </span><span class="nt">&quot;supported&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">          </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
-<span class="w">        </span><span class="p">}</span>
-<span class="w">      </span><span class="p">}</span>
-<span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;oga-hybrid&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;backends&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;npu&quot;</span><span class="p">],</span>
-<span class="w">          </span><span class="nt">&quot;supported&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">          </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
-<span class="w">        </span><span class="p">}</span>
-<span class="w">      </span><span class="p">}</span>
-<span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;oga-cpu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;backends&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;cpu&quot;</span><span class="p">],</span>
 <span class="w">          </span><span class="nt">&quot;supported&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
 <span class="w">        </span><span class="p">}</span>
