@@ -2,8 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import logo from '../../assets/logo.svg';
 import SettingsModal from './SettingsModal';
 import AboutModal from './AboutModal';
-import { CenterPanelView } from './CenterPanel';
-
 type MenuType = 'view' | 'help' | null;
 
 interface TitleBarProps {
@@ -13,7 +11,6 @@ interface TitleBarProps {
   onToggleModelManager: () => void;
   isCenterPanelVisible: boolean;
   onToggleCenterPanel: () => void;
-  centerPanelView: CenterPanelView;
   onOpenMarketplace: () => void;
   isLogsVisible: boolean;
   onToggleLogs: () => void;
@@ -28,7 +25,6 @@ const TitleBar: React.FC<TitleBarProps> = ({
   onToggleModelManager,
   isCenterPanelVisible,
   onToggleCenterPanel,
-  centerPanelView,
   onOpenMarketplace,
   isLogsVisible,
   onToggleLogs,
@@ -36,7 +32,6 @@ const TitleBar: React.FC<TitleBarProps> = ({
   onToggleDownloadManager
 }) => {
   const [activeMenu, setActiveMenu] = useState<MenuType>(null);
-  const [isCenterPanelSubmenuOpen, setIsCenterPanelSubmenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -155,38 +150,11 @@ const TitleBar: React.FC<TitleBarProps> = ({
                     <span className="menu-shortcut">Ctrl+Shift+M</span>
                   </div>
                   <div
-                    className="menu-option has-submenu"
-                    onClick={() => { onToggleCenterPanel(); setActiveMenu(null); setIsCenterPanelSubmenuOpen(false); }}
-                    onMouseEnter={() => setIsCenterPanelSubmenuOpen(true)}
-                    onMouseLeave={() => setIsCenterPanelSubmenuOpen(false)}
+                    className="menu-option"
+                    onClick={() => { onToggleCenterPanel(); setActiveMenu(null); }}
                   >
                     <span>{isCenterPanelVisible ? '✓ ' : ''}Center Panel</span>
                     <span className="menu-shortcut">Ctrl+Shift+P</span>
-                    <svg className="submenu-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="9 18 15 12 9 6"/>
-                    </svg>
-                    {isCenterPanelSubmenuOpen && (
-                      <div
-                        className="menu-submenu"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div
-                          className="menu-option"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenMarketplace();
-                            setActiveMenu(null);
-                            setIsCenterPanelSubmenuOpen(false);
-                          }}
-                        >
-                          <span>{isCenterPanelVisible && centerPanelView === 'marketplace' ? '✓ ' : ''}Marketplace</span>
-                        </div>
-                        <div className="menu-option disabled">
-                          <span>Recipe Manager</span>
-                          <span className="coming-soon-label">Coming Soon</span>
-                        </div>
-                      </div>
-                    )}
                   </div>
                   <div className="menu-option" onClick={() => { onToggleChat(); setActiveMenu(null); }}>
                     <span>{isChatVisible ? '✓ ' : ''}Chat Window</span>

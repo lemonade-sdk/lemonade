@@ -3,7 +3,7 @@ import TitleBar from './TitleBar';
 import ChatWindow from './ChatWindow';
 import ModelManager from './ModelManager';
 import LogsWindow from './LogsWindow';
-import CenterPanel, { CenterPanelView } from './CenterPanel';
+import CenterPanel from './CenterPanel';
 import ResizableDivider from './ResizableDivider';
 import DownloadManager from './DownloadManager';
 import StatusBar from './StatusBar';
@@ -24,7 +24,6 @@ const App: React.FC = () => {
   const [isChatVisible, setIsChatVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isChatVisible);
   const [isModelManagerVisible, setIsModelManagerVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isModelManagerVisible);
   const [isCenterPanelVisible, setIsCenterPanelVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isCenterPanelVisible_v2);
-  const [centerPanelView, setCenterPanelView] = useState<CenterPanelView>('menu');
   const [isLogsVisible, setIsLogsVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isLogsVisible);
   const [isDownloadManagerVisible, setIsDownloadManagerVisible] = useState(false);
   const [modelManagerWidth, setModelManagerWidth] = useState(DEFAULT_LAYOUT_SETTINGS.modelManagerWidth);
@@ -250,10 +249,6 @@ const App: React.FC = () => {
     setIsCenterPanelVisible(false);
   }, []);
 
-  const handleCenterPanelViewChange = useCallback((view: CenterPanelView) => {
-    setCenterPanelView(view);
-  }, []);
-
   // Toggle center panel visibility
   const handleToggleCenterPanel = useCallback(() => {
     setIsCenterPanelVisible(prev => !prev);
@@ -262,7 +257,6 @@ const App: React.FC = () => {
   // Open marketplace directly (from View menu)
   const handleOpenMarketplace = useCallback(() => {
     setIsCenterPanelVisible(true);
-    setCenterPanelView('marketplace');
   }, []);
 
   const handleCloseDownloadManager = useCallback(() => {
@@ -279,7 +273,6 @@ const App: React.FC = () => {
           onToggleModelManager={() => setIsModelManagerVisible(!isModelManagerVisible)}
           isCenterPanelVisible={isCenterPanelVisible}
           onToggleCenterPanel={handleToggleCenterPanel}
-          centerPanelView={centerPanelView}
           onOpenMarketplace={handleOpenMarketplace}
           isLogsVisible={isLogsVisible}
           onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
@@ -303,8 +296,6 @@ const App: React.FC = () => {
                 <div className={`main-content ${isChatVisible ? 'with-chat' : 'full-width'} ${isModelManagerVisible ? 'with-model-manager' : ''}`}>
                   <CenterPanel
                     isVisible={true}
-                    currentView={centerPanelView}
-                    onViewChange={handleCenterPanelViewChange}
                     onClose={handleCloseCenterPanel}
                   />
                 </div>
