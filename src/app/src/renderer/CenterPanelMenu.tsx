@@ -67,13 +67,6 @@ const CenterPanelMenu: React.FC<CenterPanelMenuProps> = memo(({ onOpenMarketplac
             onClick={handleMarketplaceClick}
           >
             <div className="menu-card-header">
-              <div className="menu-card-icon marketplace-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="9" cy="21" r="1"/>
-                  <circle cx="20" cy="21" r="1"/>
-                  <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
-                </svg>
-              </div>
               <div className="menu-card-title-section">
                 <h3 className="menu-card-title">Marketplace</h3>
                 <p className="menu-card-description">Discover local AI apps from our partners and community</p>
@@ -124,38 +117,6 @@ const CenterPanelMenu: React.FC<CenterPanelMenuProps> = memo(({ onOpenMarketplac
               </svg>
             </div>
           </button>
-
-          {/* Recipe Manager Card (Coming Soon) */}
-          <div className="center-panel-menu-card recipe-card disabled">
-            <div className="menu-card-header">
-              <div className="menu-card-icon recipe-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
-                  <polyline points="14 2 14 8 20 8"/>
-                  <line x1="16" y1="13" x2="8" y2="13"/>
-                  <line x1="16" y1="17" x2="8" y2="17"/>
-                  <line x1="10" y1="9" x2="8" y2="9"/>
-                </svg>
-              </div>
-              <div className="menu-card-title-section">
-                <h3 className="menu-card-title">
-                  Recipe Manager
-                  <span className="coming-soon-badge">Coming Soon</span>
-                </h3>
-                <p className="menu-card-description">Install and manage inference engines</p>
-              </div>
-            </div>
-
-            <div className="recipe-preview-placeholder">
-              <div className="recipe-preview-icon">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                  <line x1="3" y1="9" x2="21" y2="9"/>
-                  <line x1="9" y1="21" x2="9" y2="9"/>
-                </svg>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
