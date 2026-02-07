@@ -15,18 +15,18 @@ export {
   LlamaOptions,
   WhisperOptions,
   FlmOptions,
-  OgaOptions,
-  OgaRecipe,
+  RyzenAIOptions,
+  RyzenAIRecipe,
   StableDiffusionOptions,
 
   // Union type
   RecipeOptions,
 
   // Constants
-  OGA_RECIPES,
+  RYZENAI_RECIPES,
 
   // Utilities
-  isOgaRecipe,
+  isRyzenAIRecipe,
   getOptionsForRecipe,
   getOptionDefinition,
   clampOptionValue,
