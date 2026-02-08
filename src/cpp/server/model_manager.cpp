@@ -1643,211 +1643,21 @@ void ModelManager::download_model(const std::string& model_name,
     download_registered_model(get_model_info(model_name), do_not_upgrade, progress_callback);
 }
 
-// Download model files from HuggingFace
-// =====================================
-// IMPORTANT: This function ALWAYS queries the HuggingFace API to get the repository
-// file list, then downloads any missing files. It does NOT check do_not_upgrade.
-//
-// The caller (download_model) is responsible for checking do_not_upgrade and
-// calling is_model_downloaded() before invoking this function.
-//
-// Download capabilities by backend:
-//   - Lemonade Router (ModelManager): ✅ Downloads non-FLM models from HuggingFace
-//   - FLM backend: ✅ Downloads FLM models via 'flm pull' command
-//   - llama-server backend: ❌ Cannot download (expects GGUF files pre-cached)
-//   - ryzenai-server backend: ❌ Cannot download (expects ONNX files pre-cached)
-void ModelManager::download_from_huggingface(const ModelInfo& info,
-                                            DownloadProgressCallback progress_callback) {
-
-    std::string repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
-    std::string variant = checkpoint_to_variant(info.checkpoint("main"));
-
-    // Get Hugging Face cache directory
-    std::string hf_cache = get_hf_cache_dir();
-
-    // Create cache directory structure
-    fs::create_directories(hf_cache);
-
-    std::string cache_dir_name = "models--";
-    for (char c : repo_id) {
-        if (c == '/') {
-            cache_dir_name += "--";
-        } else {
-            cache_dir_name += c;
-        }
-    }
-
-    std::string model_cache_path = hf_cache + "/" + cache_dir_name;
-    fs::create_directories(model_cache_path);
-
-    // Get HF token if available
-    std::map<std::string, std::string> headers;
-    const char* hf_token = std::getenv("HF_TOKEN");
-    if (hf_token) {
-        headers["Authorization"] = "Bearer " + std::string(hf_token);
-    }
-
-    // Query HuggingFace API to get list of all files in the repository
-    // NOTE: This API call happens EVERY time this function is called, regardless of
-    // whether files are cached. The do_not_upgrade check should happen in the caller
-    // (download_model) to avoid this API call when using cached models.
-    std::string api_url = "https://huggingface.co/api/models/" + repo_id;
-
-    std::cout << "[ModelManager] Fetching repository file list from Hugging Face..." << std::endl;
-    auto response = HttpClient::get(api_url, headers);
-
-    if (response.status_code != 200) {
-        throw std::runtime_error(
-            "Failed to fetch model info from Hugging Face API (status: " +
-            std::to_string(response.status_code) + ")"
-        );
-    }
-
-    auto model_info = JsonUtils::parse(response.body);
-
-    if (!model_info.contains("siblings") || !model_info["siblings"].is_array()) {
-        throw std::runtime_error("Invalid model info response from Hugging Face API");
-    }
-
-    // Extract commit hash (sha) from the API response
-    std::string commit_hash;
-    if (model_info.contains("sha") && model_info["sha"].is_string()) {
-        commit_hash = model_info["sha"].get<std::string>();
-        std::cout << "[ModelManager] Using commit hash: " << commit_hash << std::endl;
-    } else {
-        // Fallback to "main" if sha is not available
-        commit_hash = "main";
-        std::cout << "[ModelManager] Warning: No commit hash found in API response, using 'main'" << std::endl;
-    }
-
-    // Create snapshot directory using commit hash
-    std::string snapshot_path = model_cache_path + "/snapshots/" + commit_hash;
-    fs::create_directories(snapshot_path);
-
-    // Create refs/main file pointing to this commit (matching huggingface_hub behavior)
-    std::string refs_dir = model_cache_path + "/refs";
-    fs::create_directories(refs_dir);
-    std::string refs_main_path = refs_dir + "/main";
-    std::ofstream refs_file(refs_main_path);
-    if (refs_file.is_open()) {
-        refs_file << commit_hash;
-        refs_file.close();
-    }
-
-    // Extract list of all files in the repository
-    std::vector<std::string> repo_files;
-    for (const auto& file : model_info["siblings"]) {
-        if (file.contains("rfilename")) {
-            repo_files.push_back(file["rfilename"].get<std::string>());
-        }
-    }
-
-    std::cout << "[ModelManager] Repository contains " << repo_files.size() << " files" << std::endl;
-
-    std::vector<std::string> files_to_download;
-
-    // Check if this is a GGUF model (variant provided) or non-GGUF (variant empty)
-    if (!variant.empty()) {
-        // Check if variant is a safetensors file (for sd-cpp models)
-        bool is_safetensors = variant.size() > 12 &&
-            variant.substr(variant.size() - 12) == ".safetensors";
-
-        if (is_safetensors) {
-            // For safetensors files, just download the specified file directly
-            if (std::find(repo_files.begin(), repo_files.end(), variant) != repo_files.end()) {
-                files_to_download.push_back(variant);
-                std::cout << "[ModelManager] Found safetensors file: " << variant << std::endl;
-            } else {
-                throw std::runtime_error("Safetensors file not found in repository: " + variant);
-            }
-        } else {
-            // GGUF model: Use identify_gguf_models to determine which files to download
-            GGUFFiles gguf_files = identify_gguf_models(repo_id, variant, repo_files);
-
-            // Combine core files and sharded files into one list
-            for (const auto& [key, filename] : gguf_files.core_files) {
-                files_to_download.push_back(filename);
-            }
-            for (const auto& filename : gguf_files.sharded_files) {
-                files_to_download.push_back(filename);
-            }
-        }
-
-        // Also download essential config files if they exist
-        std::vector<std::string> config_files = {
-            "config.json",
-            "tokenizer.json",
-            "tokenizer_config.json",
-            "tokenizer.model"
-        };
-        for (const auto& config_file : config_files) {
-            if (std::find(repo_files.begin(), repo_files.end(), config_file) != repo_files.end()) {
-                if (std::find(files_to_download.begin(), files_to_download.end(), config_file) == files_to_download.end()) {
-                    files_to_download.push_back(config_file);
-                }
-            }
-        }
-    } else {
-        // Non-GGUF model (ONNX, etc.): Download all files in repository
-        files_to_download = repo_files;
-    }
-
-    std::cout << "[ModelManager] Identified " << files_to_download.size() << " files to download:" << std::endl;
-    for (const auto& filename : files_to_download) {
-        std::cout << "  - " << filename << std::endl;
-    }
-
-    // Create download manifest to track incomplete downloads
-    // This allows us to detect partially downloaded models
-    std::string manifest_path = snapshot_path + "/.download_manifest.json";
-
-    // Fetch file sizes from the tree API (the models API doesn't include sizes)
-    std::map<std::string, size_t> file_sizes;
-    std::string tree_url = "https://huggingface.co/api/models/" + repo_id + "/tree/main";
-    auto tree_response = HttpClient::get(tree_url, headers);
-
-    if (tree_response.status_code == 200) {
-        auto tree_info = JsonUtils::parse(tree_response.body);
-        if (tree_info.is_array()) {
-            for (const auto& file : tree_info) {
-                if (file.contains("path") && file.contains("size")) {
-                    std::string fpath = file["path"].get<std::string>();
-                    size_t fsize = file["size"].get<size_t>();
-                    file_sizes[fpath] = fsize;
-                }
-            }
-        }
-        std::cout << "[ModelManager] Retrieved file sizes for " << file_sizes.size() << " files" << std::endl;
-    } else {
-        std::cout << "[ModelManager] Warning: Could not fetch file sizes (tree API returned "
-                    << tree_response.status_code << ")" << std::endl;
-    }
-
-    // Create manifest with expected files
-    json manifest;
-    manifest["repo_id"] = repo_id;
-    manifest["commit_hash"] = commit_hash;
-    manifest["files"] = json::array();
-    for (const auto& filename : files_to_download) {
-        json file_entry;
-        file_entry["name"] = filename;
-        file_entry["size"] = file_sizes.count(filename) ? file_sizes[filename] : 0;
-        manifest["files"].push_back(file_entry);
-    }
-
-    // Write manifest (indicates download in progress)
-    JsonUtils::save_to_file(manifest, manifest_path);
-    std::cout << "[ModelManager] Created download manifest" << std::endl;
-
+/**
+ * Download everything from download manifest.
+ */
+void ModelManager::download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback) {
     // Download each file with robust retry and resume support
     int file_index = 0;
-    int total_files = static_cast<int>(files_to_download.size());
+    std::string download_path = manifest["download_path"].get<std::string>();
+    int total_files = manifest["files_count"].get<int>();
 
-    for (const auto& filename : files_to_download) {
+    for (const auto& file_desc : manifest["files"]) {
         file_index++;
-        std::string file_url = "https://huggingface.co/" + repo_id +
-                                "/resolve/main/" + filename;
-        std::string output_path = snapshot_path + "/" + filename;
+        std::string filename = file_desc["name"].get<std::string>();
+        std::string file_url = file_desc["url"].get<std::string>();
+        int file_size = file_desc["size"].get<int>();
+        std::string output_path = download_path + "/" + filename;
 
         // Create parent directory for file (handles folders in filenames)
         fs::create_directories(fs::path(output_path).parent_path());
@@ -1861,7 +1671,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             progress.file_index = file_index;
             progress.total_files = total_files;
             progress.bytes_downloaded = 0;
-            progress.bytes_total = file_sizes.count(filename) ? file_sizes[filename] : 0;
+            progress.bytes_total = file_size;
             progress.percent = 0;
             if (!progress_callback(progress)) {
                 std::cout << "[ModelManager] Download cancelled by client" << std::endl;
@@ -1938,8 +1748,11 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     // Validate all expected files exist after download
     std::cout << "[ModelManager] Validating downloaded files..." << std::endl;
     bool all_valid = true;
-    for (const auto& filename : files_to_download) {
-        std::string expected_path = snapshot_path + "/" + filename;
+    for (const auto& file_desc : manifest["files"]) {
+        std::string filename = file_desc["name"].get<std::string>();
+        int expected_size = file_desc["size"].get<int>();
+
+        std::string expected_path = download_path + "/" + filename;
         std::string partial_path = expected_path + ".partial";
 
         // Check for .partial file (incomplete download)
@@ -1956,9 +1769,8 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         }
 
         // Verify file size if we have expected size
-        if (file_sizes.count(filename) && file_sizes[filename] > 0) {
+        if (expected_size > 0) {
             size_t actual_size = fs::file_size(expected_path);
-            size_t expected_size = file_sizes[filename];
             if (actual_size != expected_size) {
                 all_valid = false;
                 std::cerr << "[ModelManager] Size mismatch for " << filename
@@ -1973,6 +1785,236 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             "Run the command again to resume."
         );
     }
+}
+
+// Download model files from HuggingFace
+// =====================================
+// IMPORTANT: This function ALWAYS queries the HuggingFace API to get the repository
+// file list, then downloads any missing files. It does NOT check do_not_upgrade.
+//
+// The caller (download_model) is responsible for checking do_not_upgrade and
+// calling is_model_downloaded() before invoking this function.
+//
+// Download capabilities by backend:
+//   - Lemonade Router (ModelManager): ✅ Downloads non-FLM models from HuggingFace
+//   - FLM backend: ✅ Downloads FLM models via 'flm pull' command
+//   - llama-server backend: ❌ Cannot download (expects GGUF files pre-cached)
+//   - ryzenai-server backend: ❌ Cannot download (expects ONNX files pre-cached)
+void ModelManager::download_from_huggingface(const ModelInfo& info,
+                                            DownloadProgressCallback progress_callback) {
+    std::string main_repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
+    std::string main_variant = checkpoint_to_variant(info.checkpoint("main"));
+
+    // Get Hugging Face cache directory
+    std::string hf_cache = get_hf_cache_dir();
+
+    // Create cache directory structure
+    fs::create_directories(hf_cache);
+
+    std::string cache_dir_name = "models--";
+    for (char c : main_repo_id) {
+        if (c == '/') {
+            cache_dir_name += "--";
+        } else {
+            cache_dir_name += c;
+        }
+    }
+
+    std::string model_cache_path = hf_cache + "/" + cache_dir_name;
+    fs::create_directories(model_cache_path);
+
+    // Get HF token if available
+    std::map<std::string, std::string> headers;
+    const char* hf_token = std::getenv("HF_TOKEN");
+    if (hf_token) {
+        headers["Authorization"] = "Bearer " + std::string(hf_token);
+    }
+
+    std::map<std::string, std::vector<std::string>> files_to_download;
+
+    // Query HuggingFace API to get list of all files in the repository
+    // NOTE: This API call happens EVERY time this function is called, regardless of
+    // whether files are cached. The do_not_upgrade check should happen in the caller
+    // (download_model) to avoid this API call when using cached models.
+    std::string api_url = "https://huggingface.co/api/models/" + main_repo_id;
+
+    std::cout << "[ModelManager] Fetching repository file list from Hugging Face..." << std::endl;
+    auto response = HttpClient::get(api_url, headers);
+
+    if (response.status_code != 200) {
+        throw std::runtime_error(
+            "Failed to fetch model info from Hugging Face API (status: " +
+            std::to_string(response.status_code) + ")"
+        );
+    }
+
+    auto model_info = JsonUtils::parse(response.body);
+
+    if (!model_info.contains("siblings") || !model_info["siblings"].is_array()) {
+        throw std::runtime_error("Invalid model info response from Hugging Face API");
+    }
+
+    // Extract commit hash (sha) from the API response
+    std::string commit_hash;
+    if (model_info.contains("sha") && model_info["sha"].is_string()) {
+        commit_hash = model_info["sha"].get<std::string>();
+        std::cout << "[ModelManager] Using commit hash: " << commit_hash << std::endl;
+    } else {
+        // Fallback to "main" if sha is not available
+        commit_hash = "main";
+        std::cout << "[ModelManager] Warning: No commit hash found in API response, using 'main'" << std::endl;
+    }
+
+    // Create snapshot directory using commit hash
+    std::string snapshot_path = model_cache_path + "/snapshots/" + commit_hash;
+    fs::create_directories(snapshot_path);
+
+    // Create refs/main file pointing to this commit (matching huggingface_hub behavior)
+    std::string refs_dir = model_cache_path + "/refs";
+    fs::create_directories(refs_dir);
+    std::string refs_main_path = refs_dir + "/main";
+    std::ofstream refs_file(refs_main_path);
+    if (refs_file.is_open()) {
+        refs_file << commit_hash;
+        refs_file.close();
+    }
+
+    // Extract list of all files in the repository
+    std::vector<std::string> repo_files;
+    for (const auto& file : model_info["siblings"]) {
+        if (file.contains("rfilename")) {
+            repo_files.push_back(file["rfilename"].get<std::string>());
+        }
+    }
+
+    std::cout << "[ModelManager] Repository contains " << repo_files.size() << " files" << std::endl;
+
+    // Check if this is a GGUF model (variant provided) or non-GGUF (variant empty)
+    if (!main_variant.empty()) {
+        // Check if variant is a safetensors file (for sd-cpp models)
+        bool is_safetensors = main_variant.size() > 12 &&
+            main_variant.substr(main_variant.size() - 12) == ".safetensors";
+
+        if (is_safetensors) {
+            // For safetensors files, just download the specified file directly
+            if (std::find(repo_files.begin(), repo_files.end(), main_variant) != repo_files.end()) {
+                files_to_download[main_repo_id].push_back(main_variant);
+                std::cout << "[ModelManager] Found safetensors file: " << main_variant << std::endl;
+            } else {
+                throw std::runtime_error("Safetensors file not found in repository: " + main_variant);
+            }
+        } else {
+            // GGUF model: Use identify_gguf_models to determine which files to download
+            GGUFFiles gguf_files = identify_gguf_models(main_repo_id, main_variant, repo_files);
+
+            // Combine core files and sharded files into one list
+            for (const auto& [key, filename] : gguf_files.core_files) {
+                files_to_download[main_repo_id].push_back(filename);
+            }
+            for (const auto& filename : gguf_files.sharded_files) {
+                files_to_download[main_repo_id].push_back(filename);
+            }
+        }
+
+        // Also download essential config files if they exist
+        std::vector<std::string> config_files = {
+            "config.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "tokenizer.model"
+        };
+        for (const auto& config_file : config_files) {
+            if (std::find(repo_files.begin(), repo_files.end(), config_file) != repo_files.end()) {
+                if (std::find(files_to_download[main_repo_id].begin(), files_to_download[main_repo_id].end(), config_file) == files_to_download[main_repo_id].end()) {
+                    files_to_download[main_repo_id].push_back(config_file);
+                }
+            }
+        }
+    } else {
+        // Non-GGUF model (ONNX, etc.): Download all files in repository
+        files_to_download[main_repo_id].insert(files_to_download[main_repo_id].end(), repo_files.begin(), repo_files.end());
+    }
+
+    for (auto const& [type, checkpoint] : info.checkpoints) {
+        std::string repo_id = checkpoint_to_repo_id(checkpoint);
+        std::string variant = checkpoint_to_variant(checkpoint);
+        files_to_download.emplace(repo_id, std::vector<std::string>{});
+
+        // main must be processed first. NPU Cache are currently handled by whisper
+        if (type != "main" && type != "npu_cache") {
+            if (variant.empty()) {
+                throw std::runtime_error("Additional checkpoints must contain exact variants");
+            }
+
+            files_to_download[repo_id].push_back(variant);
+        }
+    }
+
+
+    int total_files = 0;
+    std::cout << "[ModelManager] Identified files to download:" << std::endl;
+
+    for (auto const& [repo_id, files] : files_to_download) {
+        for (const auto& filename : files) {
+            total_files++;
+            std::cout << "  - " << filename << std::endl;
+        }
+    }
+
+    std::cout << "  Total file count: " << total_files << std::endl;
+
+    // Create download manifest to track incomplete downloads
+    // This allows us to detect partially downloaded models
+    std::string manifest_path = snapshot_path + "/.download_manifest.json";
+
+    // Fetch file sizes from the tree API (the models API doesn't include sizes)
+    std::map<std::string, size_t> file_sizes;
+
+    for (auto const& [repo_id, files] : files_to_download) {
+        std::string tree_url = "https://huggingface.co/api/models/" + repo_id + "/tree/main";
+        auto tree_response = HttpClient::get(tree_url, headers);
+
+        if (tree_response.status_code == 200) {
+            auto tree_info = JsonUtils::parse(tree_response.body);
+            if (tree_info.is_array()) {
+                for (const auto& file : tree_info) {
+                    if (file.contains("path") && file.contains("size")) {
+                        std::string fpath = repo_id + ':' + file["path"].get<std::string>();
+                        size_t fsize = file["size"].get<size_t>();
+                        file_sizes[fpath] = fsize;
+                    }
+                }
+            }
+            std::cout << "[ModelManager] Retrieved file sizes for " << file_sizes.size() << " files" << std::endl;
+        } else {
+            std::cout << "[ModelManager] Warning: Could not fetch file sizes (tree API returned "
+                        << tree_response.status_code << ")" << std::endl;
+        }
+    }
+
+    // Create manifest with expected files
+    json manifest;
+    manifest["repo_id"] = main_repo_id;
+    manifest["commit_hash"] = commit_hash;
+    manifest["download_path"] = snapshot_path;
+    manifest["files_count"] = total_files;
+    manifest["files"] = json::array();
+    for (auto const& [repo_id, files] : files_to_download) {
+        for (const auto& filename : files) {
+            json file_entry;
+            std::string size_key = repo_id + ':' + filename;
+            file_entry["name"] = filename;
+            file_entry["url"] = "https://huggingface.co/" + repo_id + "/resolve/main/" + filename;
+            file_entry["size"] = file_sizes.count(size_key) ? file_sizes[size_key] : 0;
+            manifest["files"].push_back(file_entry);
+        }
+    }
+
+    // Write manifest (indicates download in progress)
+    JsonUtils::save_to_file(manifest, manifest_path);
+    std::cout << "[ModelManager] Created download manifest" << std::endl;
+
+    download_from_manifest(manifest, headers, progress_callback);
 
     // All files validated - remove manifest to mark download as complete
     if (fs::exists(manifest_path)) {

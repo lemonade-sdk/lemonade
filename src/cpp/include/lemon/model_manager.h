@@ -59,17 +59,8 @@ struct ModelInfo {
     ImageDefaults image_defaults;
 
     // Utility
-    std::string checkpoint(const std::string& type = "main") const {
-        try {
-            return checkpoints.at(type);
-        } catch(const std::out_of_range& ex) { return ""; }
-    }
-
-    std::string resolved_path(const std::string& type = "main") const {
-        try {
-            return resolved_paths.at(type);
-        } catch(const std::out_of_range& ex) { return ""; }
-    }
+    std::string checkpoint(const std::string& type = "main") const { return checkpoints.count(type) ? checkpoints.at(type) : ""; }
+    std::string resolved_path(const std::string& type = "main") const { return resolved_paths.count(type) ? resolved_paths.at(type) : ""; }
 
     std::string mmproj() const { return checkpoint("mmproj"); }
 };
@@ -174,6 +165,9 @@ private:
     // Resolve model checkpoint to absolute path on disk
     std::string resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const;
     void resolve_all_model_paths(ModelInfo& info);
+
+    // Download from a JSON manifest
+    void download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback);
 
     // Download from Hugging Face
     void download_from_huggingface(const ModelInfo& info,
