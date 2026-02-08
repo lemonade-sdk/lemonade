@@ -72,7 +72,10 @@ void SDServer::load(const std::string& model_name,
     install("cpu");
 
     // Get model path
-    std::string model_path = model_info.resolved_path();
+    std::string model_path = model_info.resolved_path("main");
+    std::string llm_path = model_info.resolved_path("text_encoder");
+    std::string vae_path = model_info.resolved_path("vae");
+
     if (model_path.empty()) {
         throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint());
     }
@@ -101,9 +104,20 @@ void SDServer::load(const std::string& model_name,
 
     // Build command line arguments
     std::vector<std::string> args = {
-        "-m", model_path_,
         "--listen-port", std::to_string(port_)
     };
+
+    if (llm_path.empty() || vae_path.empty()) {
+        args.push_back("-m");
+        args.push_back(model_path_);
+    } else {
+        args.push_back("--diffusion-model");
+        args.push_back(model_path_);
+        args.push_back("--llm");
+        args.push_back(llm_path);
+        args.push_back("--vae");
+        args.push_back(vae_path);
+    }
 
     if (is_debug()) {
         args.push_back("-v");

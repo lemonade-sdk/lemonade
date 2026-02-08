@@ -597,6 +597,12 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
                     if (filename == variant) {
                         return entry.path().string();
                     }
+                } else if (entry.is_directory()) {
+                    // variant could be a path
+                    std::string variant_path = entry.path() / variant;
+                    if (fs::exists(variant_path)) {
+                        return variant_path;
+                    }
                 }
             }
         }

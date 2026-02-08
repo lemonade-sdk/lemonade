@@ -1211,6 +1211,44 @@
             "height": 1024
         }
     },
+    "Flux-2-Klein-4b": {
+        "checkpoints": {
+            "main": "black-forest-labs/FLUX.2-klein-4B:flux-2-klein-4b.safetensors",
+            "text_encoder": "Comfy-Org/vae-text-encorder-for-flux-klein-4b:split_files/text_encoders/qwen_3_4b.safetensors",
+            "vae": "Comfy-Org/vae-text-encorder-for-flux-klein-4b:split_files/vae/flux2-vae.safetensors"
+        },
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 16.0,
+        "image_defaults": {
+            "steps": 4,
+            "cfg_scale": 1,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "Z-Image-Turbo": {
+        "checkpoints": {
+            "main": "Comfy-Org/z_image:split_files/diffusion_models/z_image_bf16.safetensors",
+            "text_encoder": "Comfy-Org/z_image:split_files/text_encoders/qwen_3_4b.safetensors",
+            "vae": "Comfy-Org/z_image:split_files/vae/ae.safetensors"
+        },
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 20.0,
+        "image_defaults": {
+            "steps": 4,
+            "cfg_scale": 1,
+            "width": 1024,
+            "height": 1024
+        }
+    },
     "kokoro-v1": {
         "checkpoint": "mikkoph/kokoro-onnx",
         "recipe": "kokoro",
