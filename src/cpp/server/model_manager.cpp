@@ -599,7 +599,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
                     }
                 } else if (entry.is_directory()) {
                     // variant could be a path
-                    std::string variant_path = entry.path() / variant;
+                    std::string variant_path = (entry.path() / variant).string();
                     if (fs::exists(variant_path)) {
                         return variant_path;
                     }
@@ -1662,7 +1662,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         file_index++;
         std::string filename = file_desc["name"].get<std::string>();
         std::string file_url = file_desc["url"].get<std::string>();
-        int file_size = file_desc["size"].get<int>();
+        size_t file_size = file_desc["size"].get<size_t>();
         std::string output_path = download_path + "/" + filename;
 
         // Create parent directory for file (handles folders in filenames)
@@ -1756,7 +1756,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
     bool all_valid = true;
     for (const auto& file_desc : manifest["files"]) {
         std::string filename = file_desc["name"].get<std::string>();
-        int expected_size = file_desc["size"].get<int>();
+        size_t expected_size = file_desc["size"].get<size_t>();
 
         std::string expected_path = download_path + "/" + filename;
         std::string partial_path = expected_path + ".partial";
