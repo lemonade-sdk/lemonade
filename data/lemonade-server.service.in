@@ -8,6 +8,7 @@ User=lemonade
 Group=lemonade
 WorkingDirectory=@CMAKE_INSTALL_FULL_LOCALSTATEDIR@/lib/lemonade
 EnvironmentFile=@CMAKE_INSTALL_FULL_SYSCONFDIR@/lemonade/lemonade.conf
+EnvironmentFile=@CMAKE_INSTALL_FULL_SYSCONFDIR@/lemonade/secrets.conf
 ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/lemonade-server serve
 Restart=on-failure
 RestartSec=5s
