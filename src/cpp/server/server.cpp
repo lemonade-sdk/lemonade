@@ -108,8 +108,11 @@ Server::~Server() {
 
 void Server::log_request(const httplib::Request& req) {
     if (req.path != "/api/v0/health" && req.path != "/api/v1/health" &&
+        req.path != "/v0/health" && req.path != "/v1/health" &&
         req.path != "/api/v0/system-stats" && req.path != "/api/v1/system-stats" &&
+        req.path != "/v0/system-stats" && req.path != "/v1/system-stats" &&
         req.path != "/api/v0/stats" && req.path != "/api/v1/stats" &&
+        req.path != "/v0/stats" && req.path != "/v1/stats" &&
         req.path != "/live") {
         std::cout << "[Server PRE-ROUTE] " << req.method << " " << req.path << std::endl;
         std::cout.flush();
@@ -117,7 +120,12 @@ void Server::log_request(const httplib::Request& req) {
 }
 
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
-    if ((api_key_ != "") && (req.method != "OPTIONS") && (req.path.rfind("/api/", 0) == 0)) {
+    // Check if path requires authentication (API routes with /api/, /v0/, or /v1/ prefix)
+    bool is_api_route = (req.path.rfind("/api/", 0) == 0) ||
+                        (req.path.rfind("/v0/", 0) == 0) ||
+                        (req.path.rfind("/v1/", 0) == 0);
+
+    if ((api_key_ != "") && (req.method != "OPTIONS") && is_api_route) {
         if (api_key_ != httplib::get_bearer_token_auth(req)) {
             res.status = 401;
             res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
@@ -143,17 +151,21 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Setup CORS for all routes
     setup_cors(web_server);
 
-    // Helper lambda to register routes for both v0 and v1
+    // Helper lambda to register routes for both v0 and v1 (with and without /api prefix for OpenAI compatibility)
     auto register_get = [this, &web_server](const std::string& endpoint,
                                std::function<void(const httplib::Request&, httplib::Response&)> handler) {
         web_server.Get("/api/v0/" + endpoint, handler);
         web_server.Get("/api/v1/" + endpoint, handler);
+        web_server.Get("/v0/" + endpoint, handler);
+        web_server.Get("/v1/" + endpoint, handler);
     };
 
     auto register_post = [this, &web_server](const std::string& endpoint,
                                 std::function<void(const httplib::Request&, httplib::Response&)> handler) {
         web_server.Post("/api/v0/" + endpoint, handler);
         web_server.Post("/api/v1/" + endpoint, handler);
+        web_server.Post("/v0/" + endpoint, handler);
+        web_server.Post("/v1/" + endpoint, handler);
         // Also register as GET for HEAD request support (HEAD uses GET handler)
         // Return 405 Method Not Allowed (endpoint exists but wrong method)
         web_server.Get("/api/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
@@ -161,6 +173,14 @@ void Server::setup_routes(httplib::Server &web_server) {
             res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
         });
         web_server.Get("/api/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+            res.status = 405;
+            res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
+        });
+        web_server.Get("/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+            res.status = 405;
+            res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
+        });
+        web_server.Get("/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
             res.status = 405;
             res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
         });
@@ -176,11 +196,17 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_models(req, res);
     });
 
-    // Model by ID (need to register for both versions with regex)
+    // Model by ID (need to register for both versions with regex, with and without /api prefix)
     web_server.Get(R"(/api/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_model_by_id(req, res);
     });
     web_server.Get(R"(/api/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_by_id(req, res);
+    });
+    web_server.Get(R"(/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_by_id(req, res);
+    });
+    web_server.Get(R"(/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_model_by_id(req, res);
     });
 
@@ -636,9 +662,9 @@ window.api = {
 
         std::cout << "[Server] Web app UI available at root (/) from: " << web_app_dir << std::endl;
 
-        // SPA fallback: serve index.html for any unmatched GET routes that don't start with /api, /static, or /live
+        // SPA fallback: serve index.html for any unmatched GET routes that don't start with /api, /v0, /v1, /static, or /live
         // This enables client-side routing
-        web_server.Get(R"(^(?!/api|/static|/live|/status|/internal).*)",
+        web_server.Get(R"(^(?!/api|/v0|/v1|/static|/live|/status|/internal).*)",
                       [serve_web_app_html](const httplib::Request& req, httplib::Response& res) {
             // Only serve index.html if the path doesn't look like a file with extension
             std::string path = req.path;
@@ -787,9 +813,12 @@ void Server::setup_http_logger(httplib::Server &web_server) {
     // Add request logging for ALL requests (except health checks and stats endpoints)
     web_server.set_logger([](const httplib::Request& req, const httplib::Response& res) {
         // Skip logging health checks and stats endpoints to reduce log noise
-        if (req.path != "/api/v0/health" && req.path != "/api/v1/health" && req.path != "/live" &&
+        if (req.path != "/api/v0/health" && req.path != "/api/v1/health" &&
+            req.path != "/v0/health" && req.path != "/v1/health" && req.path != "/live" &&
             req.path != "/api/v0/system-stats" && req.path != "/api/v1/system-stats" &&
-            req.path != "/api/v0/stats" && req.path != "/api/v1/stats") {
+            req.path != "/v0/system-stats" && req.path != "/v1/system-stats" &&
+            req.path != "/api/v0/stats" && req.path != "/api/v1/stats" &&
+            req.path != "/v0/stats" && req.path != "/v1/stats") {
             std::cout << "[Server] " << req.method << " " << req.path << " - " << res.status << std::endl;
         }
     });
