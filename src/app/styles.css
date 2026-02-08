@@ -1840,6 +1840,36 @@ footer {
     padding: 4px 0;
 }
 
+.audio-button-visible {
+  transition: opacity 1000ms;
+  opacity: 1;
+}
+
+.audio-button-invisible {
+   opacity: 0;
+}
+
+.message-play-button-container {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    z-index: 22;
+}
+
+.message-play-button {
+    background-color: #ffffff;
+    border: solid #000000 1px;
+    border-radius: 28px;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(40px);
+}
+
 .chat-input-container {
     padding: 12px 15px;
     border-top: 1px solid #1a1a1a;

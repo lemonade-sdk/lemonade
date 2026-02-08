@@ -109,6 +109,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   }>>([]);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
+  // Text to speech state
+  const [audioPaused, setAudioPaused] = useState(true);
+
   // Image generation settings
   interface ImageSettings {
     steps: number;
@@ -328,6 +331,14 @@ const fetchLoadedModel = async () => {
     return modelInfo?.recipe === 'whispercpp';
   };
 
+  const isSpeechModel = (): boolean => {
+    if (!selectedModel) return false;
+
+    const modelInfo = modelsData[selectedModel];
+
+    return modelInfo?.recipe === 'kokoro';
+  };
+
   const isImageGenerationModel = (): boolean => {
     if (!selectedModel) return false;
 
@@ -343,11 +354,12 @@ const fetchLoadedModel = async () => {
            modelInfo?.labels?.includes('image') || false;
   };
 
-  const getModelType = (): 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' => {
+  const getModelType = (): 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'speech' => {
     if (isEmbeddingModel()) return 'embedding';
     if (isRerankingModel()) return 'reranking';
     if (isTranscriptionModel()) return 'transcription';
     if (isImageGenerationModel()) return 'image';
+    if(isSpeechModel()) return 'speech';
     return 'llm';
   };
 
@@ -993,6 +1005,50 @@ const sendMessage = async () => {
     e.stopPropagation(); // Prevent closing when clicking inside the edit area
   };
 
+  // Handle text to sreech conversion using Kokoro
+  const handleTextToSpeech = async (message: MessageContent) => {
+    setAudioPaused(!audioPaused);
+
+    const textToSpeechModel = 'kokoro-v1';
+
+    if(message instanceof Array) {
+      message = message.map(function(item) {return (item.type == "text") ? item.text : ''}).toString();
+    }
+
+    message.replace(/[^\p{L}\p{N}\p{P}\p{Z}^$\n]/gu, '');
+
+    try {
+      const requestBody: any = {
+        model: textToSpeechModel,
+        input: message,
+        voice: 'alloy'
+      };
+
+      const response = await serverFetch('/audio/speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const audioCtx = new AudioContext();
+      let source: any;
+
+      audioCtx.decodeAudioData(await response.arrayBuffer(), (buff: AudioBuffer) => {
+        source = audioCtx.createBufferSource();
+        source.buffer = buff;
+        source.connect(audioCtx.destination);
+        source.start();
+      });
+
+    } catch(err: any) {
+      console.log(`Error: ${err}`);
+    }
+  }
+
   const submitEdit = async () => {
     if ((!editingValue.trim() && editingImages.length === 0) || editingIndex === null || isLoading) return;
 
@@ -1394,6 +1450,7 @@ const sendMessage = async () => {
                     : modelType === 'reranking' ? 'Lemonade Reranking'
                     : modelType === 'transcription' ? 'Lemonade Transcriber'
                     : modelType === 'image' ? 'Lemonade Image Generator'
+                    : modelType === 'speech' ? 'Lemonade Text to Speech'
                     : 'LLM Chat';
 
   // Reusable components
@@ -1411,6 +1468,34 @@ const sendMessage = async () => {
       <span></span>
     </div>
   );
+
+  const AudioButton = ({ textMessage, index }: {textMessage: MessageContent, index: number}) => {
+    const [audioButtonVisible, setAudioButtonVisible] = useState(false)
+
+    const mouseOver = (event: any) => {
+        setAudioButtonVisible(true)
+    }
+
+    const mouseOut = (event: any) => {
+        setAudioButtonVisible(false)
+    }
+
+    return (
+      <div key={index} className={`message-play-button-container ${audioButtonVisible ? 'audio-button-visible' : 'audio-button-invisible'}`} onMouseEnter={mouseOver} onMouseLeave={mouseOut}>
+        <button className="message-play-button" onClick={() => handleTextToSpeech(textMessage)}>
+          {
+            audioPaused ?
+            <svg fill="#000000" width="16px" height="16px" viewBox="-10 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg">
+              <path d="M0.84 23.52c-0.16 0-0.32-0.040-0.44-0.12-0.24-0.16-0.4-0.44-0.4-0.72v-13.36c0-0.28 0.16-0.56 0.4-0.72s0.56-0.16 0.8-0.040l14.28 6.68c0.28 0.12 0.48 0.44 0.48 0.76s-0.2 0.64-0.48 0.76l-14.28 6.68c-0.080 0.040-0.2 0.080-0.36 0.080zM1.68 10.64v10.68l11.52-5.32-11.52-5.36z"></path>
+            </svg> :
+            <svg fill="#000000" width="16px" height="16px" viewBox="-11.5 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg">
+              <path d="M8.2 22.48c-0.48 0-0.84-0.36-0.84-0.84v-11.28c0-0.48 0.36-0.84 0.84-0.84s0.84 0.36 0.84 0.84v11.32c0 0.44-0.36 0.8-0.84 0.8zM0.84 22.48c-0.48 0-0.84-0.36-0.84-0.84v-11.28c0-0.48 0.36-0.84 0.84-0.84s0.84 0.36 0.84 0.84v11.32c-0.040 0.44-0.36 0.8-0.84 0.8z"></path>
+            </svg>
+            }
+          </button>
+      </div>
+    );
+}
 
   // Build the list of models for the dropdown
   const dropdownModels = isDefaultModelPending
@@ -1940,7 +2025,8 @@ const sendMessage = async () => {
                   className={`chat-message ${message.role === 'user' ? 'user-message' : 'assistant-message'} ${
                     message.role === 'user' && !isLoading ? 'editable' : ''
                   } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''}`}
-                >
+                  >
+                  <AudioButton textMessage={message.content} index={index} />
                   {editingIndex === index ? (
                     <div className="edit-message-wrapper" onClick={handleEditContainerClick}>
                       {editingImages.length > 0 && (
