@@ -1019,7 +1019,7 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
         std::cout << "[Server] Model not cached, downloading from Hugging Face..." << std::endl;
         std::cout << "[Server] This may take several minutes for large models." << std::endl;
-        model_manager_->download_model(requested_model, "", "", false, false, "", true);
+        model_manager_->download_registered_model(info, true);
         std::cout << "[Server] Model download complete: " << requested_model << std::endl;
 
         // CRITICAL: Refresh model info after download to get correct resolved_path
@@ -2186,7 +2186,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         // Download model if needed (first-time use)
         if (!info.downloaded) {
             std::cout << "[Server] Model not downloaded, downloading..." << std::endl;
-            model_manager_->download_model(model_name);
+            model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
         }
 

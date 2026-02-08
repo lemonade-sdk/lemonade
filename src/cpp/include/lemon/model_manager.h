@@ -100,7 +100,7 @@ public:
                             const std::string& mmproj = "",
                             const std::string& source = "");
 
-    // Download a model
+    // Register (if needed) and download a model
     void download_model(const std::string& model_name,
                        const std::string& checkpoint = "",
                        const std::string& recipe = "",
@@ -112,6 +112,11 @@ public:
                        const std::string& mmproj = "",
                        bool do_not_upgrade = false,
                        DownloadProgressCallback progress_callback = nullptr);
+
+    // Download a model
+    void download_registered_model(const ModelInfo& info,
+                                bool do_not_upgrade = false,
+                                DownloadProgressCallback progress_callback = nullptr);
 
     // Delete a model
     void delete_model(const std::string& model_name);
@@ -171,9 +176,7 @@ private:
     void resolve_all_model_paths(ModelInfo& info);
 
     // Download from Hugging Face
-    void download_from_huggingface(const std::string& repo_id,
-                                   const std::string& variant = "",
-                                   const std::string& mmproj = "",
+    void download_from_huggingface(const ModelInfo& info,
                                    DownloadProgressCallback progress_callback = nullptr);
 
     // Download from FLM
