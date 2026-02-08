@@ -41,12 +41,11 @@ struct ImageDefaults {
 
 struct ModelInfo {
     std::string model_name;
-    std::string checkpoint;      // Original checkpoint identifier (for downloads/display)
-    std::string resolved_path;   // Absolute path to model file/directory on disk
+    std::map<std::string, std::string> checkpoints;
+    std::map<std::string, std::string> resolved_paths; // Absolute path to model file/directory on disk
     std::string recipe;
     std::vector<std::string> labels;
     bool suggested = false;
-    std::string mmproj;
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available
     double size = 0.0;   // Model size in GB
@@ -59,9 +58,11 @@ struct ModelInfo {
     // Image generation defaults (for sd-cpp models)
     ImageDefaults image_defaults;
 
-    // NPU cache fields for whispercpp recipe with RyzenAI based NPU backend
-    std::string npu_cache_repo;      // HuggingFace repo for NPU compiled cache
-    std::string npu_cache_filename;  // Filename of .rai cache file
+    // Utility
+    std::string checkpoint(const std::string& type = "main") const { return checkpoints.count(type) ? checkpoints.at(type) : ""; }
+    std::string resolved_path(const std::string& type = "main") const { return resolved_paths.count(type) ? resolved_paths.at(type) : ""; }
+
+    std::string mmproj() const { return checkpoint("mmproj"); }
 };
 
 class ModelManager {
@@ -90,7 +91,7 @@ public:
                             const std::string& mmproj = "",
                             const std::string& source = "");
 
-    // Download a model
+    // Register (if needed) and download a model
     void download_model(const std::string& model_name,
                        const std::string& checkpoint = "",
                        const std::string& recipe = "",
@@ -102,6 +103,11 @@ public:
                        const std::string& mmproj = "",
                        bool do_not_upgrade = false,
                        DownloadProgressCallback progress_callback = nullptr);
+
+    // Download a model
+    void download_registered_model(const ModelInfo& info,
+                                bool do_not_upgrade = false,
+                                DownloadProgressCallback progress_callback = nullptr);
 
     // Delete a model
     void delete_model(const std::string& model_name);
@@ -126,10 +132,6 @@ public:
 
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
-
-    // Check if model is downloaded with optional FLM cache (optimization)
-    bool is_model_downloaded(const std::string& model_name,
-                             const std::vector<std::string>* flm_cache);
 
     // Get list of installed FLM models (for caching)
     std::vector<std::string> get_flm_installed_models();
@@ -161,12 +163,14 @@ private:
     void remove_model_from_cache(const std::string& model_name);
 
     // Resolve model checkpoint to absolute path on disk
-    std::string resolve_model_path(const ModelInfo& info) const;
+    std::string resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const;
+    void resolve_all_model_paths(ModelInfo& info);
+
+    // Download from a JSON manifest
+    void download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback);
 
     // Download from Hugging Face
-    void download_from_huggingface(const std::string& repo_id,
-                                   const std::string& variant = "",
-                                   const std::string& mmproj = "",
+    void download_from_huggingface(const ModelInfo& info,
                                    DownloadProgressCallback progress_callback = nullptr);
 
     // Download from FLM

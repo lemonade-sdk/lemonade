@@ -76,9 +76,7 @@ void FastFlowLMServer::install(const std::string& backend) {
     }
 }
 
-std::string FastFlowLMServer::download_model(const std::string& checkpoint,
-                                            const std::string& mmproj,
-                                            bool do_not_upgrade) {
+std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade) {
     std::cout << "[FastFlowLM] Pulling model with FLM: " << checkpoint << std::endl;
 
     // Check NPU driver version before pulling models
@@ -168,7 +166,7 @@ void FastFlowLMServer::load(const std::string& model_name,
     }
 
     // Download model if needed
-    download_model(model_info.checkpoint, model_info.mmproj, do_not_upgrade);
+    download_model(model_info.checkpoint(), do_not_upgrade);
 
     // Choose a port
     port_ = choose_port();
@@ -180,7 +178,7 @@ void FastFlowLMServer::load(const std::string& model_name,
     // Bind to localhost only for security
     std::vector<std::string> args = {
         "serve",
-        model_info.checkpoint,
+        model_info.checkpoint(),
         "--ctx-len", std::to_string(ctx_size),
         "--port", std::to_string(port_),
         "--host", "127.0.0.1"
