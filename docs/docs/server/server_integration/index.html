@@ -1422,7 +1422,10 @@ sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w">
 <p>The Lemonade Server systemd service is configured to read settings from <code>/etc/lemonade/lemonade.conf</code>. Environment variables defined in this file are passed to the server process. Edit this file to customize server behavior:</p>
 <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>nano<span class="w"> </span>/etc/lemonade/lemonade.conf
 </code></pre></div>
-<p>After making changes to the configuration file, restart the service for changes to take effect:</p>
+<p>Secrets, like the LEMONADE_API_KEY secret, are defined in <code>/etc/lemonade/secrets.conf</code> </p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>nano<span class="w"> </span>/etc/lemonade/secrets.conf
+</code></pre></div>
+<p>After making changes to the configuration files, restart the service for changes to take effect:</p>
 <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>lemonade-server
 </code></pre></div>
 <p><strong>Service File Location:</strong></p>
