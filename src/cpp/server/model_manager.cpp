@@ -1645,12 +1645,17 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
     if (hf_token) {
         headers["Authorization"] = "Bearer " + std::string(hf_token);
     }
+    const char* hf_mirror = std::getenv("HF_ENDPOINT");
+    std::string host_name = "https://huggingface.co";
+    if (hf_mirror) {
+        host_name = std::string(hf_mirror);
+    }
 
     // Query HuggingFace API to get list of all files in the repository
     // NOTE: This API call happens EVERY time this function is called, regardless of
     // whether files are cached. The do_not_upgrade check should happen in the caller
     // (download_model) to avoid this API call when using cached models.
-    std::string api_url = "https://huggingface.co/api/models/" + repo_id;
+    std::string api_url = host_name + "/api/models/" + repo_id;
 
     try {
         std::cout << "[ModelManager] Fetching repository file list from Hugging Face..." << std::endl;
@@ -1763,7 +1768,7 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
 
         // Fetch file sizes from the tree API (the models API doesn't include sizes)
         std::map<std::string, size_t> file_sizes;
-        std::string tree_url = "https://huggingface.co/api/models/" + repo_id + "/tree/main";
+        std::string tree_url = host_name + "/api/models/" + repo_id + "/tree/main";
         auto tree_response = HttpClient::get(tree_url, headers);
 
         if (tree_response.status_code == 200) {
@@ -1805,7 +1810,7 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
 
         for (const auto& filename : files_to_download) {
             file_index++;
-            std::string file_url = "https://huggingface.co/" + repo_id +
+            std::string file_url = host_name + "/" + repo_id +
                                  "/resolve/main/" + filename;
             std::string output_path = snapshot_path + "/" + filename;
 
