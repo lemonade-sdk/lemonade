@@ -16,7 +16,7 @@
     #include <unistd.h>
 
     #define closesocket close
-    #define SOCKET_ERROR -1
+    #define INVALID_SOCKET_NB -1
 #endif
 
 NetworkBeacon::NetworkBeacon() : _socket(INVALID_SOCKET_NB), _isInitialized(false), _netThreadRunning(false) {

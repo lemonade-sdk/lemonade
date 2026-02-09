@@ -13,7 +13,6 @@
     typedef int socklen_t;
 #else
     typedef int SOCKET;
-    #define INVALID_SOCKET_NB -1
 #endif
 
 class NetworkBeacon {
