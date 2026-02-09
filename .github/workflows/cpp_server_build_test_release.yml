@@ -393,7 +393,6 @@ jobs:
         uses: ./.github/actions/get-version
 
       - name: Setup macOS Keychain
-        if: startsWith(github.ref, 'refs/tags/v') || inputs.enable_signing == true
         uses: ./.github/actions/setup-macos-keychain
         with:
           dev-signing-key: ${{ secrets.MACOS_DEV_SIGNING_IDENTITY_KEY }}
