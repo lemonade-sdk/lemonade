@@ -407,11 +407,11 @@ jobs:
         with:
           include-electron: 'true'
 
-      - name: Upload .dmg package
+      - name: Upload .pkg package
         uses: actions/upload-artifact@v4
         with:
-          name: lemonade-macos-dmg
-          path: build/app/*.dmg
+          name: lemonade-macos-pkg
+          path: build/*.pkg
           retention-days: 7
 
       - name: Cleanup keychain
@@ -712,7 +712,7 @@ jobs:
       - name: Set HF_HOME environment variable
         run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
 
-      - name: Install Lemonade Server (.dmg)
+      - name: Install Lemonade Server (.pkg)
         uses: ./.github/actions/install-lemonade-server-dmg
         with:
           version: ${{ env.LEMONADE_VERSION }}
@@ -736,7 +736,7 @@ jobs:
 
           case "${{ matrix.test_type }}" in
             llm)
-              $VENV_PYTHON test/server_llm.py --wrapped-server ${{ matrix.wrapped_server }} --backend ${{ matrix.backend }} --server-binary lemonade-server
+              $VENV_PYTHON test/server_llm.py --wrapped-server ${{ matrix.wrapped_server }} --backend ${{ matrix.backend }} --server-binary /usr/local/bin/lemonade-server
               ;;
           esac
 
@@ -849,14 +849,15 @@ jobs:
           echo "SERVER_BINARY=$Env:LEMONADE_INSTALL_PATH\bin\lemonade-server.exe" >> $Env:GITHUB_ENV
 
       # ---- macOS Setup ----
-      - name: Download .dmg package
+      - name: Download .pkg package
         if: runner.os == 'macOS'
         uses: actions/download-artifact@v4
         with:
-          name: lemonade-macos-dmg
+          name: lemonade-macos-pkg
           path: .
 
-      - name: Install Lemonade Server (.dmg)
+      - name: Install Lemonade Server (.pkg)
+        id: install-pkg
         if: runner.os == 'macOS'
         uses: ./.github/actions/install-lemonade-server-dmg
         with:
@@ -869,7 +870,7 @@ jobs:
         run: |
           echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
           echo "VENV_PYTHON=.venv/bin/python" >> $GITHUB_ENV
-          echo "SERVER_BINARY=lemonade-server" >> $GITHUB_ENV
+          echo "SERVER_BINARY=${{ steps.install-pkg.outputs.bin-path }}/lemonade-server" >> $GITHUB_ENV
 
       # ---- Common Setup ----
       - name: Setup Python and virtual environment
@@ -964,10 +965,10 @@ jobs:
           name: lemonade-deb-full
           path: .
 
-      - name: Download Lemonade macOS .dmg Package
+      - name: Download Lemonade macOS .pkg Package
         uses: actions/download-artifact@v4
         with:
-          name: lemonade-macos-dmg
+          name: lemonade-macos-pkg
           path: .
 
       - name: Verify release artifacts
@@ -977,7 +978,7 @@ jobs:
           ls -lh lemonade.msi
           ls -lh lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb
           ls -lh lemonade_${LEMONADE_VERSION}_amd64.deb
-          ls -lh *.dmg
+          ls -lh *.pkg
 
       - name: Generate release notes
         id: release-notes
@@ -997,5 +998,5 @@ jobs:
             lemonade.msi
             lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
             lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
-            *.dmg
+            *.pkg
           fail_on_unmatched_files: true

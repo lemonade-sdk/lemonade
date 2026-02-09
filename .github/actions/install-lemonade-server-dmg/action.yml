@@ -1,13 +1,13 @@
-name: 'Install Lemonade Server (.dmg)'
-description: 'Downloads and installs Lemonade Server from a .dmg, then verifies installation'
+name: 'Install Lemonade Server (.pkg)'
+description: 'Downloads and installs Lemonade Server from a .pkg, then verifies installation'
 inputs:
   version:
-    description: 'Version string for the .dmg package (e.g., 9.3.1)'
+    description: 'Version string for the package (e.g., 9.3.1)'
     required: true
   artifact-name:
     description: 'Name of the artifact to download'
     required: false
-    default: 'lemonade-macos-dmg'
+    default: 'lemonade-macos-pkg'
   download-artifact:
     description: 'Whether to download the artifact (set to false if already downloaded)'
     required: false
@@ -21,92 +21,39 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Download .dmg package
+    - name: Download .pkg package
       if: ${{ inputs.download-artifact == 'true' }}
       uses: actions/download-artifact@v4
       with:
         name: ${{ inputs.artifact-name }}
         path: .
 
-    - name: Install from .dmg
+    - name: Install .pkg
       id: install
       shell: bash
       run: |
         set -e
 
-        echo "Looking for .dmg file..."
+        echo "Looking for .pkg file..."
 
-        # Find the .dmg file
-        DMG_FILE=$(find . -maxdepth 1 -name "*.dmg" -type f | head -1)
+        PKG_FILE=$(find . -maxdepth 1 -name "*.pkg" -type f | head -1)
 
-        if [ -z "$DMG_FILE" ]; then
-            echo "ERROR: No .dmg file found in current directory!"
-            ls -la *.dmg 2>/dev/null || echo "No .dmg files found"
+        if [ -z "$PKG_FILE" ]; then
+            echo "ERROR: No .pkg file found in current directory!"
+            ls -la
             exit 1
         fi
 
-        echo "Installing from: $DMG_FILE"
+        echo "Installing: $PKG_FILE"
+        sudo installer -pkg "$PKG_FILE" -target /
+        echo "Installation complete"
 
-        # Mount the .dmg
-        echo "Mounting .dmg..."
-        MOUNT_OUTPUT=$(hdiutil attach "$DMG_FILE" -nobrowse 2>&1)
-        echo "$MOUNT_OUTPUT"
-
-        # Extract the mount point from hdiutil output
-        MOUNT_POINT=$(echo "$MOUNT_OUTPUT" | grep "/Volumes/" | awk -F'\t' '{print $NF}' | head -1)
-
-        if [ -z "$MOUNT_POINT" ]; then
-            echo "ERROR: Could not determine mount point!"
-            echo "hdiutil output: $MOUNT_OUTPUT"
-            exit 1
-        fi
-
-        echo "Mounted at: $MOUNT_POINT"
-
-        # Copy Lemonade.app to /Applications
-        echo "Copying Lemonade.app to /Applications..."
-        if [ -d "$MOUNT_POINT/Lemonade.app" ]; then
-            sudo cp -R "$MOUNT_POINT/Lemonade.app" /Applications/
-            echo "Lemonade.app installed to /Applications/"
-        else
-            echo "WARNING: Lemonade.app not found in .dmg"
-            echo "Contents of mount point:"
-            ls -la "$MOUNT_POINT/"
-        fi
-
-        # Detach the .dmg
-        echo "Unmounting .dmg..."
-        hdiutil detach "$MOUNT_POINT" 2>/dev/null || true
-
-        # Find the server binary - check common locations
-        BIN_PATH=""
-
-        # Check if binaries are inside the app bundle (extraResources)
-        if [ -x "/Applications/Lemonade.app/Contents/Resources/bin/lemonade-server" ]; then
-            BIN_PATH="/Applications/Lemonade.app/Contents/Resources/bin"
-        # Check if installed to /usr/local/bin (system install)
-        elif [ -x "/usr/local/bin/lemonade-server" ]; then
-            BIN_PATH="/usr/local/bin"
-        # Check MacOS directory inside app bundle
-        elif [ -x "/Applications/Lemonade.app/Contents/MacOS/lemonade-server" ]; then
-            BIN_PATH="/Applications/Lemonade.app/Contents/MacOS"
-        fi
-
-        if [ -z "$BIN_PATH" ]; then
-            echo "WARNING: Could not find lemonade-server binary in standard locations."
-            echo "Searching inside app bundle..."
-            find /Applications/Lemonade.app -name "lemonade-server" -type f 2>/dev/null || true
-            find /Applications/Lemonade.app -name "lemonade-router" -type f 2>/dev/null || true
-
-            # Fallback: use the app bundle Resources path
-            BIN_PATH="/Applications/Lemonade.app/Contents/Resources"
-        fi
-
-        # Add to PATH
+        # Binaries are installed at /usr/local/bin
+        BIN_PATH="/usr/local/bin"
         echo "$BIN_PATH" >> $GITHUB_PATH
         echo "bin-path=$BIN_PATH" >> $GITHUB_OUTPUT
 
-        echo "Binaries available at: $BIN_PATH"
+        echo "Binaries at: $BIN_PATH"
 
     - name: Verify installation
       shell: bash
@@ -116,17 +63,14 @@ runs:
         BIN_PATH="${{ steps.install.outputs.bin-path }}"
         echo "Verifying installation at: $BIN_PATH"
 
-        # Check for server binary
         if [ -x "$BIN_PATH/lemonade-server" ]; then
             echo "Found: lemonade-server"
             "$BIN_PATH/lemonade-server" --version
         else
-            echo "WARNING: lemonade-server not found at $BIN_PATH"
-            echo "Checking PATH..."
-            which lemonade-server 2>/dev/null && lemonade-server --version || echo "lemonade-server not in PATH"
+            echo "ERROR: lemonade-server not found at $BIN_PATH"
+            exit 1
         fi
 
-        # Check for router binary
         if [ -x "$BIN_PATH/lemonade-router" ]; then
             echo "Found: lemonade-router"
             "$BIN_PATH/lemonade-router" --version

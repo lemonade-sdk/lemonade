@@ -123,13 +123,13 @@ runs:
 
         echo "Web app built and copied successfully!"
 
-    - name: Build .dmg and notarize
+    - name: Build .pkg and notarize
       id: build-dmg
       shell: bash
       run: |
         set -e
 
-        echo "Building macOS .dmg via CMake notarize target..."
+        echo "Building macOS .pkg via CMake notarize target..."
         echo "This will: build electron app, sign binaries, create package, notarize, and staple."
 
         if ! cmake --build --preset default --target notarize; then
@@ -139,7 +139,6 @@ runs:
             echo "========================================="
 
             # Find the submission ID from notarytool output and fetch the log
-            # Try to get the most recent submission log
             SUBMISSION_ID=$(xcrun notarytool history --keychain-profile AC_PASSWORD 2>/dev/null | grep -m1 "id:" | awk '{print $2}' || echo "")
             if [ -n "$SUBMISSION_ID" ]; then
                 echo "Fetching log for submission: $SUBMISSION_ID"
@@ -152,28 +151,21 @@ runs:
             exit 1
         fi
 
-        # Find the generated .dmg
-        DMG_FILE=$(find build/app -name "*.dmg" -type f 2>/dev/null | head -1)
+        # Find the generated .pkg
+        PKG_FILE=$(find build -maxdepth 1 -name "*.pkg" -type f | head -1)
 
-        if [ -z "$DMG_FILE" ]; then
-            echo "WARNING: No .dmg found in build/app/, searching broader..."
-            DMG_FILE=$(find build -name "*.dmg" -type f 2>/dev/null | head -1)
-        fi
-
-        if [ -z "$DMG_FILE" ]; then
-            echo "ERROR: No .dmg file found after build!"
+        if [ -z "$PKG_FILE" ]; then
+            echo "ERROR: No .pkg file found after build!"
             echo "Contents of build directory:"
-            find build -name "*.dmg" -o -name "*.pkg" -o -name "*.app" 2>/dev/null || true
-            ls -lR build/app/ 2>/dev/null || true
+            ls -lh build/*.pkg build/*.dmg 2>/dev/null || true
             exit 1
         fi
 
-        ARTIFACT_NAME=$(basename "$DMG_FILE")
-        echo ".dmg created: $ARTIFACT_NAME (at $DMG_FILE)"
+        ARTIFACT_NAME=$(basename "$PKG_FILE")
+        echo "Package created: $ARTIFACT_NAME (at $PKG_FILE)"
         echo "artifact_name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
 
-        # Verify the .dmg
         echo "File details:"
-        ls -lh "$DMG_FILE"
+        ls -lh "$PKG_FILE"
 
-        echo ".dmg build and notarization complete!"
+        echo "Build and notarization complete!"
