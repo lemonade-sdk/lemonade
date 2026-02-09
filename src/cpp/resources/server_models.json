@@ -1211,7 +1211,7 @@
             "height": 1024
         }
     },
-    "Flux-2-Klein-4b": {
+    "Flux-2-Klein-4B": {
         "checkpoints": {
             "main": "black-forest-labs/FLUX.2-klein-4B:flux-2-klein-4b.safetensors",
             "text_encoder": "Comfy-Org/vae-text-encorder-for-flux-klein-4b:split_files/text_encoders/qwen_3_4b.safetensors",
@@ -1223,6 +1223,25 @@
             "image"
         ],
         "size": 16.0,
+        "image_defaults": {
+            "steps": 4,
+            "cfg_scale": 1,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "Flux-2-Klein-9B-GGUF": {
+        "checkpoints": {
+            "main": "unsloth/FLUX.2-klein-9B-GGUF:flux-2-klein-9b-Q8_0.gguf",
+            "text_encoder": "unsloth/Qwen3-8B-GGUF:Qwen3-8B-Q8_0.gguf",
+            "vae": "Comfy-Org/vae-text-encorder-for-flux-klein-9b:split_files/vae/flux2-vae.safetensors"
+        },
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 18.0,
         "image_defaults": {
             "steps": 4,
             "cfg_scale": 1,
@@ -1243,7 +1262,7 @@
         ],
         "size": 20.0,
         "image_defaults": {
-            "steps": 4,
+            "steps": 9,
             "cfg_scale": 1,
             "width": 1024,
             "height": 1024
