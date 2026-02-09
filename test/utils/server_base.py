@@ -265,6 +265,10 @@ def start_server(
     if wrapped_server == "llamacpp" and backend:
         cmd.extend(["--llamacpp", backend])
 
+    # Add sdcpp backend option if specified
+    if wrapped_server == "sd-cpp" and backend:
+        cmd.extend(["--sdcpp", backend])
+
     # Add any additional server arguments
     if additional_args:
         cmd.extend(additional_args)

@@ -160,8 +160,13 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
         std::cout << "[Router] Creating Kokoro backend" << std::endl;
         new_server = std::make_unique<backends::KokoroServer>(log_level_, model_manager_);
     } else if (model_info.recipe == "sd-cpp") {
-        std::cout << "[Router] Creating SDServer backend" << std::endl;
-        new_server = std::make_unique<backends::SDServer>(log_level_, model_manager_);
+        // Pass sd-cpp_backend from default_options_ to SDServer
+        std::string backend = "cpu";  // default
+        if (default_options_.contains("sd-cpp_backend") && default_options_["sd-cpp_backend"].is_string()) {
+            backend = default_options_["sd-cpp_backend"].get<std::string>();
+        }
+        std::cout << "[Router] Creating SDServer backend (backend: " << backend << ")" << std::endl;
+        new_server = std::make_unique<backends::SDServer>(log_level_, model_manager_, backend);
     } else if (model_info.recipe == "flm") {
         std::cout << "[Router] Creating FastFlowLM backend" << std::endl;
         new_server = std::make_unique<backends::FastFlowLMServer>(log_level_, model_manager_);
