@@ -1,0 +1,148 @@
+name: 'Build macOS .dmg Package'
+description: 'Build Lemonade .dmg for macOS (signed and notarized via CMake notarize target)'
+inputs:
+  include-electron:
+    description: 'Whether to include the Electron app (full build)'
+    required: false
+    default: 'true'
+outputs:
+  artifact-name:
+    description: 'The name of the generated .dmg file'
+    value: ${{ steps.build-dmg.outputs.artifact_name }}
+runs:
+  using: "composite"
+  steps:
+    - name: Run setup.sh to configure environment
+      shell: bash
+      run: |
+        set -e
+
+        echo "Running setup.sh to configure build environment..."
+        bash setup.sh
+
+        echo "Build environment configured successfully!"
+
+    - name: Setup Node.js
+      if: inputs.include-electron == 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Build C++ Server with CMake
+      shell: bash
+      run: |
+        set -e
+
+        echo "Building lemonade-router and lemonade-server for macOS..."
+
+        # Reconfigure if Electron app is included (setup.sh already did basic config)
+        if [ "${{ inputs.include-electron }}" == "true" ]; then
+            echo "Reconfiguring CMake with Electron app enabled..."
+            cmake --preset default -DBUILD_ELECTRON_APP=ON
+        fi
+
+        # Build (BUILD_ELECTRON_APP will trigger electron build automatically)
+        echo "Building binaries..."
+        cmake --build --preset default
+
+        # Verify binaries exist
+        if [ ! -f "build/lemonade-router" ]; then
+            echo "ERROR: lemonade-router not found!"
+            echo "Build directory contents:"
+            ls -lh build/
+            exit 1
+        fi
+
+        if [ ! -f "build/lemonade-server" ]; then
+            echo "ERROR: lemonade-server not found!"
+            echo "Build directory contents:"
+            ls -lh build/
+            exit 1
+        fi
+
+        echo "Verifying binary executability..."
+        ./build/lemonade-router --version
+        ./build/lemonade-server --version
+
+        # Check if binaries are signed (non-fatal)
+        echo "Checking code signatures..."
+        codesign --verify --verbose=2 build/lemonade-router 2>&1 || echo "WARNING: lemonade-router not signed (expected for non-release builds)"
+        codesign --verify --verbose=2 build/lemonade-server 2>&1 || echo "WARNING: lemonade-server not signed (expected for non-release builds)"
+
+        echo "C++ build successful!"
+
+    - name: Build Web App
+      shell: bash
+      run: |
+        set -e
+
+        echo "Building Web app..."
+        cd src/web-app
+
+        # Install dependencies
+        echo "Installing npm dependencies..."
+        npm install
+
+        # Build the Web app
+        echo "Building Web app..."
+        npm run build
+
+        # Verify the build output exists
+        if [ ! -f "dist/renderer/index.html" ]; then
+            echo "ERROR: Web app build output not found!"
+            exit 1
+        fi
+
+        # Copy web app output to the location expected by CMake
+        echo "Copying web app to build/resources/web-app..."
+        TARGET_DIR="../../build/resources/web-app"
+        mkdir -p "$(dirname "$TARGET_DIR")"
+        if [ -d "$TARGET_DIR" ]; then
+            rm -rf "$TARGET_DIR"
+        fi
+        cp -R dist/renderer "$TARGET_DIR"
+
+        # Verify the copy succeeded
+        if [ ! -f "../../build/resources/web-app/index.html" ]; then
+            echo "ERROR: Failed to copy web app to build directory!"
+            exit 1
+        fi
+
+        echo "Web app built and copied successfully!"
+
+    - name: Build .dmg and notarize
+      id: build-dmg
+      shell: bash
+      run: |
+        set -e
+
+        echo "Building macOS .dmg via CMake notarize target..."
+        echo "This will: build electron app, sign binaries, create package, notarize, and staple."
+
+        cmake --build --preset default --target notarize
+
+        # Find the generated .dmg
+        DMG_FILE=$(find build/app -name "*.dmg" -type f 2>/dev/null | head -1)
+
+        if [ -z "$DMG_FILE" ]; then
+            echo "WARNING: No .dmg found in build/app/, searching broader..."
+            DMG_FILE=$(find build -name "*.dmg" -type f 2>/dev/null | head -1)
+        fi
+
+        if [ -z "$DMG_FILE" ]; then
+            echo "ERROR: No .dmg file found after build!"
+            echo "Contents of build directory:"
+            find build -name "*.dmg" -o -name "*.pkg" -o -name "*.app" 2>/dev/null || true
+            ls -lR build/app/ 2>/dev/null || true
+            exit 1
+        fi
+
+        ARTIFACT_NAME=$(basename "$DMG_FILE")
+        echo ".dmg created: $ARTIFACT_NAME (at $DMG_FILE)"
+        echo "artifact_name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+
+        # Verify the .dmg
+        echo "File details:"
+        ls -lh "$DMG_FILE"
+
+        echo ".dmg build and notarization complete!"

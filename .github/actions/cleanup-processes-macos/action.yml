@@ -1,0 +1,126 @@
+name: 'Cleanup Processes (macOS)'
+description: 'Kill all lemonade, Python, and llama-server processes on macOS'
+runs:
+  using: "composite"
+  steps:
+    - name: Kill zombie processes
+      shell: bash
+      run: |
+        echo "========================================"
+        echo "Cleaning up processes on macOS..."
+        echo "========================================"
+
+        # Kill processes aggressively by pattern
+        kill_by_pattern() {
+            local pattern=$1
+            local description=$2
+
+            echo ""
+            echo "Killing $description processes..."
+
+            pkill -9 -f "$pattern" 2>/dev/null && echo "  Killed processes matching: $pattern" || echo "  No $description processes found"
+        }
+
+        # Kill by exact name
+        kill_by_exact_name() {
+            local name=$1
+
+            if pgrep -x "$name" > /dev/null 2>&1; then
+                echo "Killing $name (exact match)..."
+                pkill -9 -x "$name"
+                sleep 0.5
+                if pgrep -x "$name" > /dev/null 2>&1; then
+                    echo "  WARNING: $name still running after kill!"
+                else
+                    echo "  Successfully killed $name"
+                fi
+            fi
+        }
+
+        # Kill llama processes
+        kill_by_pattern "llama-server" "llama-server"
+        kill_by_pattern "llama-cli" "llama-cli"
+        kill_by_pattern "llama-bench" "llama-bench"
+
+        # Kill everything lemonade-related
+        kill_by_pattern "lemonade" "lemonade"
+
+        # Kill Python processes
+        kill_by_pattern "python" "Python"
+
+        # Additional pass: kill by exact process names
+        echo ""
+        echo "Second pass: killing by exact name..."
+        for proc_name in lemonade-server lemonade-router lemonade-tray llama-server llama-cli llama-bench; do
+            kill_by_exact_name "$proc_name"
+        done
+
+        # Wait for processes to die
+        sleep 2
+
+        # Unload LaunchDaemons/LaunchAgents if present
+        echo ""
+        echo "Unloading launchd services..."
+        sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
+
+        CURRENT_UID=$(id -u)
+        if [ "$CURRENT_UID" -ne 0 ]; then
+            launchctl bootout gui/"$CURRENT_UID"/com.lemonade.tray 2>/dev/null || true
+        fi
+
+        # FINAL VERIFICATION
+        echo ""
+        echo "=== Verification: checking for remaining processes ==="
+        if pgrep -f "lemonade|llama" > /dev/null 2>&1; then
+            echo "WARNING: Some processes still alive:"
+            ps aux | grep -E "lemonade|llama" | grep -v grep | grep -v "cleanup-processes" || true
+
+            # Nuclear option
+            echo "Using nuclear option..."
+            pkill -9 -f "llama" 2>/dev/null || true
+            pkill -9 -f "lemonade" 2>/dev/null || true
+            sleep 1
+
+            if pgrep -f "lemonade|llama" > /dev/null 2>&1; then
+                echo "ERROR: Processes STILL alive after nuclear option!"
+                ps aux | grep -E "lemonade|llama" | grep -v grep || true
+            else
+                echo "Nuclear option successful"
+            fi
+        else
+            echo "All target processes terminated successfully"
+        fi
+
+        # Clean up lock files and PID files
+        echo ""
+        echo "Cleaning up lock and PID files..."
+        rm -f /tmp/lemonade*.lock 2>/dev/null || true
+        rm -f /tmp/lemonade*.pid 2>/dev/null || true
+        rm -f /tmp/lemonade-router.pid 2>/dev/null || true
+        echo "Lock and PID files cleaned."
+
+        # Clean up log files
+        echo ""
+        echo "Cleaning up log files..."
+        rm -f /tmp/lemonade*.log 2>/dev/null || true
+        rm -f /tmp/lemonade-server*.log 2>/dev/null || true
+        rm -f /tmp/lemonade-router*.log 2>/dev/null || true
+        sudo rm -f /var/log/lemonade/*.log 2>/dev/null || true
+        echo "Log files cleaned."
+
+        # Clean up installation directories
+        echo ""
+        echo "Cleaning up lemonade installation directories..."
+        if [ -d "$HOME/Library/Application Support/lemonade-server" ]; then
+            rm -rf "$HOME/Library/Application Support/lemonade-server" 2>/dev/null || true
+            echo "Removed: ~/Library/Application Support/lemonade-server"
+        fi
+        if [ -d "$HOME/.local/share/lemonade-server" ]; then
+            rm -rf "$HOME/.local/share/lemonade-server" 2>/dev/null || true
+            echo "Removed: ~/.local/share/lemonade-server"
+        fi
+
+        echo ""
+        echo "========================================"
+        echo "Process cleanup complete!"
+        echo "========================================"
