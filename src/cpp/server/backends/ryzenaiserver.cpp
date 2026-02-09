@@ -337,11 +337,16 @@ void RyzenAIServer::load(const std::string& model_name,
     }
     std::cout << std::endl;
 
+    // Set working directory to the ryzenai-server binary's directory so that
+    // DLLs (e.g. onnxruntime.dll, onnxruntime_providers_ryzenai.dll) next to
+    // the executable are found before any others on PATH or in the parent's CWD.
+    std::string working_dir = fs::path(ryzenai_server_path).parent_path().string();
+
     // Start the process (filter health check spam)
     process_handle_ = utils::ProcessManager::start_process(
         ryzenai_server_path,
         args,
-        "",
+        working_dir,
         is_debug(),
         true
     );
