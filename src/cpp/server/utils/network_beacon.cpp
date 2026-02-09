@@ -9,6 +9,7 @@
 #ifdef _WIN32
     #include <ws2tcpip.h>
     #pragma comment(lib, "ws2_32.lib")
+    #define INVALID_SOCKET_NB INVALID_SOCKET
 #else
     #include <arpa/inet.h>
     #include <netinet/in.h>
