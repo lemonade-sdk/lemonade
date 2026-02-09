@@ -34,6 +34,8 @@ runs:
         # Tell electron-builder to use the Developer ID Application cert from keychain
         if [ -n "$DEVELOPER_ID_APPLICATION_IDENTITY" ]; then
             echo "CSC_NAME=$DEVELOPER_ID_APPLICATION_IDENTITY" >> $GITHUB_ENV
+            # electron-builder skips signing on PR branches by default
+            echo "CSC_FOR_PULL_REQUEST=true" >> $GITHUB_ENV
             echo "Electron builder will sign with: $DEVELOPER_ID_APPLICATION_IDENTITY"
         else
             echo "WARNING: No signing identity found, electron-builder will not sign"
