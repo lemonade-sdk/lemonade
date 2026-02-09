@@ -30,7 +30,11 @@ if ! id "$SOURCE_USER" &>/dev/null; then
 fi
 
 # Get source user's home directory
-SOURCE_HOME=$(eval echo ~"$SOURCE_USER")
+SOURCE_HOME=$(getent passwd "$SOURCE_USER" | cut -d: -f6)
+if [[ -z "$SOURCE_HOME" ]]; then
+    echo -e "${RED}Error: Could not determine home directory for user '$SOURCE_USER'${NC}"
+    exit 1
+fi
 if [[ ! -d "$SOURCE_HOME" ]]; then
     echo -e "${RED}Error: Home directory '$SOURCE_HOME' does not exist${NC}"
     exit 1
@@ -44,9 +48,13 @@ if ! id "lemonade" &>/dev/null; then
 fi
 
 # Get lemonade user's home directory
-LEMONADE_HOME=$(eval echo ~lemonade)
+LEMONADE_HOME=$(getent passwd "lemonade" | cut -d: -f6)
+if [[ -z "$LEMONADE_HOME" ]]; then
+    echo -e "${RED}Error: Could not determine home directory for user 'lemonade'${NC}"
+    exit 1
+fi
 if [[ ! -d "$LEMONADE_HOME" ]]; then
-    echo -e "${RED)Error: Lemonade home directory '$LEMONADE_HOME' does not exist${NC}"
+    echo -e "${RED}Error: Lemonade home directory '$LEMONADE_HOME' does not exist${NC}"
     exit 1
 fi
 
