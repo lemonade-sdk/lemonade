@@ -127,6 +127,31 @@ The tray app searches for the Electron app in these locations:
 
 If not found, the "Open app" menu option is hidden but everything else works.
 
+### Building an AppImage (Linux Only)
+
+To create a standalone AppImage package that can run on any Linux distribution:
+
+```bash
+cmake --build --preset default --target appimage
+```
+
+This will:
+1. Copy the Electron app source to a separate build directory
+2. Set the package.json version to match the CMake project version
+3. Install npm dependencies
+4. Build the renderer with production optimizations
+5. Package the application as an AppImage using electron-builder
+
+The generated AppImage will be located in:
+- `build/app-appimage/Lemonade-<version>-<arch>.AppImage`
+
+The AppImage is a self-contained executable that includes all dependencies and can be run on any Linux distribution without installation. Simply make it executable and run it:
+
+```bash
+chmod +x build/app-appimage/Lemonade-*.AppImage
+./build/app-appimage/Lemonade-*.AppImage
+```
+
 ### Platform-Specific Notes
 
 **Windows:**

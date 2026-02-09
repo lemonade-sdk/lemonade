@@ -1305,4 +1305,34 @@ if(UNIX AND NOT APPLE)
     # RPM specific variables defined within
     include(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/CPackRPM.cmake)
     include(CPack)
+
+    # ============================================================
+    # AppImage Build Target (Linux only)
+    # ============================================================
+    if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
+        # Set the build directory and source directory for AppImage
+        set(APPIMAGE_BUILD_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/app-appimage-src")
+        set(APPIMAGE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/app-appimage")
+
+        add_custom_target(appimage
+            COMMAND ${CMAKE_COMMAND} -E echo "Copying Electron app source to AppImage build directory..."
+            COMMAND ${CMAKE_COMMAND} -E remove_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${ELECTRON_APP_SOURCE_DIR}" "${APPIMAGE_BUILD_SOURCE_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E echo "Setting version to ${PROJECT_VERSION}..."
+            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} version ${PROJECT_VERSION} --no-git-tag-version --allow-same-version
+            COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for AppImage build..."
+            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci
+            COMMAND ${CMAKE_COMMAND} -E echo "Building AppImage with electron-builder..."
+            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} run build:renderer:prod
+            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_EXECUTABLE} exec -- electron-builder --linux AppImage --config.directories.output=${APPIMAGE_BUILD_DIR}
+            COMMAND ${CMAKE_COMMAND} -E echo "AppImage build complete. Output in ${APPIMAGE_BUILD_DIR}"
+            COMMENT "Building Electron app as AppImage"
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        )
+
+        message(STATUS "AppImage build target available: cmake --build . --target appimage")
+    else()
+        message(STATUS "Node.js or npm not found - AppImage build target disabled")
+    endif()
 endif()
