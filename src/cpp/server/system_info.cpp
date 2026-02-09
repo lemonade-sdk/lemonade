@@ -120,6 +120,13 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_dgpu", {"gfx110X", "gfx120X"}},
     }},
 
+    // stable-diffusion.cpp - Vulkan backend (cross-platform GPU)
+    {"sd-cpp", "vulkan", {"windows", "linux"}, {
+        {"cpu", {"x86_64"}},
+        {"amd_igpu", {}},
+        {"amd_dgpu", {}},
+    }},
+
     // stable-diffusion.cpp - CPU backend (Windows/Linux x86_64)
     {"sd-cpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
