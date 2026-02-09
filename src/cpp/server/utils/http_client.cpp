@@ -35,7 +35,7 @@ struct ProgressData {
 
 // CURL progress callback - returns non-zero to abort transfer
 static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
-                             curl_off_t /*ultotal*/, curl_off_t /*ulnow*/) {
+                             curl_off_t ultotal, curl_off_t ulnow) {
     ProgressData* data = static_cast<ProgressData*>(clientp);
     if (!data) return 0;
 

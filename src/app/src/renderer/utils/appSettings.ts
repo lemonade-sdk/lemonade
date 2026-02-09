@@ -1,6 +1,7 @@
 export type NumericSettingKey = 'temperature' | 'topK' | 'topP' | 'repeatPenalty';
 export type BooleanSettingKey = 'enableThinking' | 'collapseThinkingByDefault';
-export type SettingKey = NumericSettingKey | BooleanSettingKey;
+export type StringSettingKey = 'baseURL' | 'apiKey';
+export type SettingKey = NumericSettingKey | BooleanSettingKey | StringSettingKey;
 
 export interface NumericSetting {
   value: number;
@@ -12,10 +13,15 @@ export interface BooleanSetting {
   useDefault: boolean;
 }
 
+export interface StringSetting {
+  value: string;
+  useDefault: boolean;
+}
+
 export interface LayoutSettings {
   isChatVisible: boolean;
   isModelManagerVisible: boolean;
-  isCenterPanelVisible: boolean;
+  isCenterPanelVisible_v2: boolean;  // v2 to reset user preference from old isMarketplaceVisible
   isLogsVisible: boolean;
   modelManagerWidth: number;
   chatWidth: number;
@@ -29,12 +35,16 @@ export interface AppSettings {
   repeatPenalty: NumericSetting;
   enableThinking: BooleanSetting;
   collapseThinkingByDefault: BooleanSetting;
+  baseURL: StringSetting;
+  apiKey: StringSetting;
   layout: LayoutSettings;
 }
 
 type BaseSettingValues = Record<NumericSettingKey, number> & {
   enableThinking: boolean;
   collapseThinkingByDefault: boolean;
+  baseURL: string;
+  apiKey: string;
 };
 
 export const BASE_SETTING_VALUES: BaseSettingValues = {
@@ -44,6 +54,8 @@ export const BASE_SETTING_VALUES: BaseSettingValues = {
   repeatPenalty: 1.1,
   enableThinking: true,
   collapseThinkingByDefault: false,
+  baseURL: '',
+  apiKey: '',
 };
 
 export const NUMERIC_SETTING_LIMITS: Record<NumericSettingKey, { min: number; max: number; step: number }> = {
@@ -58,7 +70,7 @@ const numericSettingKeys: NumericSettingKey[] = ['temperature', 'topK', 'topP', 
 export const DEFAULT_LAYOUT_SETTINGS: LayoutSettings = {
   isChatVisible: true,
   isModelManagerVisible: true,
-  isCenterPanelVisible: true,
+  isCenterPanelVisible_v2: true,  // v2 to reset user preference from old isMarketplaceVisible
   isLogsVisible: false,
   modelManagerWidth: 280,
   chatWidth: 350,
@@ -72,6 +84,8 @@ export const createDefaultSettings = (): AppSettings => ({
   repeatPenalty: { value: BASE_SETTING_VALUES.repeatPenalty, useDefault: true },
   enableThinking: { value: BASE_SETTING_VALUES.enableThinking, useDefault: true },
   collapseThinkingByDefault: { value: BASE_SETTING_VALUES.collapseThinkingByDefault, useDefault: true },
+  baseURL: { value: BASE_SETTING_VALUES.baseURL, useDefault: true },
+  apiKey: { value: BASE_SETTING_VALUES.apiKey, useDefault: true },
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
 });
 
@@ -82,6 +96,8 @@ export const cloneSettings = (settings: AppSettings): AppSettings => ({
   repeatPenalty: { ...settings.repeatPenalty },
   enableThinking: { ...settings.enableThinking },
   collapseThinkingByDefault: { ...settings.collapseThinkingByDefault },
+  baseURL: { ...settings.baseURL },
+  apiKey: { ...settings.apiKey },
   layout: { ...settings.layout },
 });
 
@@ -160,6 +176,42 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
     };
   }
 
+  const rawBaseURL = incoming.baseURL;
+  if (rawBaseURL && typeof rawBaseURL === 'object') {
+    const useDefault =
+      typeof rawBaseURL.useDefault === 'boolean'
+        ? rawBaseURL.useDefault
+        : defaults.baseURL.useDefault;
+    const value = useDefault
+      ? defaults.baseURL.value
+      : typeof rawBaseURL.value === 'string'
+        ? rawBaseURL.value
+        : defaults.baseURL.value;
+
+    defaults.baseURL = {
+      value,
+      useDefault,
+    };
+  }
+
+  const rawApiKey = incoming.apiKey;
+  if (rawApiKey && typeof rawApiKey === 'object') {
+    const useDefault =
+      typeof rawApiKey.useDefault === 'boolean'
+        ? rawApiKey.useDefault
+        : defaults.apiKey.useDefault;
+    const value = useDefault
+      ? defaults.apiKey.value
+      : typeof rawApiKey.value === 'string'
+        ? rawApiKey.value
+        : defaults.apiKey.value;
+
+    defaults.apiKey = {
+      value,
+      useDefault,
+    };
+  }
+
   // Merge layout settings
   const rawLayout = incoming.layout;
   if (rawLayout && typeof rawLayout === 'object') {
@@ -170,8 +222,8 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
     if (typeof rawLayout.isModelManagerVisible === 'boolean') {
       defaults.layout.isModelManagerVisible = rawLayout.isModelManagerVisible;
     }
-    if (typeof rawLayout.isCenterPanelVisible === 'boolean') {
-      defaults.layout.isCenterPanelVisible = rawLayout.isCenterPanelVisible;
+    if (typeof rawLayout.isCenterPanelVisible_v2 === 'boolean') {
+      defaults.layout.isCenterPanelVisible_v2 = rawLayout.isCenterPanelVisible_v2;
     }
     if (typeof rawLayout.isLogsVisible === 'boolean') {
       defaults.layout.isLogsVisible = rawLayout.isLogsVisible;
@@ -220,4 +272,3 @@ export const buildChatRequestOverrides = (settings?: AppSettings | null): Record
 
   return overrides;
 };
-

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Lemonade App
+Comment=Local LLMs with GPU and NPU acceleration - Desktop Application
+GenericName=AI Model Manager
+Exec=lemonade-app
+Icon=lemonade-app
+Terminal=false
+Categories=Development;Utility;
+Keywords=AI;LLM;GPU;NPU;Machine Learning;

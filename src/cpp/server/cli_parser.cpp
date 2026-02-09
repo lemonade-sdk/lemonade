@@ -51,10 +51,17 @@ static void add_serve_options(CLI::App* serve, ServerConfig& config, std::vector
         ->type_name("PATH")
         ->default_val(config.extra_models_dir);
 
+    serve->add_flag("--no-broadcast", config.no_broadcast,
+                   "Disable UDP broadcasting on private networks")
+        ->envname("LEMONADE_NO_BROADCAST")
+        ->expected(0, 1)
+        ->default_val(config.no_broadcast);
+
     // Multi-model support: Max loaded models
     // Use a member vector to capture 1, 3, 4, or 5 values (2 is not allowed)
     serve->add_option("--max-loaded-models", max_models_vec,
                    "Max loaded models: LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO] [IMAGE]")
+        ->envname("LEMONADE_MAX_LOADED_MODELS")
         ->type_name("N [E] [R] [A] [I]")
         ->expected(1, 5)
         ->default_val(std::vector<int>{config.max_llm_models, config.max_embedding_models, config.max_reranking_models, config.max_audio_models, config.max_image_models})
@@ -103,7 +110,7 @@ CLIParser::CLIParser()
     run->add_flag("--save-options", tray_config_.save_options, "Save model load options as default for this model");
 
     // List
-    app_.add_subcommand("list", "List available models");
+    CLI::App* list = app_.add_subcommand("list", "List available models");
 
     // Pull
     CLI::App* pull = app_.add_subcommand("pull", "Download a model");
@@ -114,7 +121,7 @@ CLIParser::CLIParser()
         ->type_name("CHECKPOINT");
     pull->add_option("--recipe", tray_config_.recipe, "Inference recipe to use. Required when using a local path.")
         ->type_name("RECIPE")
-        ->check(CLI::IsMember({"llamacpp", "flm", "oga-cpu", "oga-hybrid", "oga-npu", "ryzenai", "whispercpp"}));
+        ->check(CLI::IsMember({"llamacpp", "flm", "ryzenai-llm", "whispercpp"}));
     pull->add_flag("--reasoning", tray_config_.is_reasoning, "Mark model as a reasoning model (e.g., DeepSeek-R1). Adds 'reasoning' label to model metadata.");
     pull->add_flag("--vision", tray_config_.is_vision, "Mark model as a vision model (multimodal). Adds 'vision' label to model metadata.");
     pull->add_flag("--embedding", tray_config_.is_embedding, "Mark model as an embedding model. Adds 'embeddings' label to model metadata. For use with /api/v1/embeddings endpoint.");
@@ -128,10 +135,16 @@ CLIParser::CLIParser()
     del->add_option("model", tray_config_.model, "The model to delete")->required();
 
     // Status
-    app_.add_subcommand("status", "Check server status");
+    CLI::App* status = app_.add_subcommand("status", "Check server status");
 
     // Stop
-    app_.add_subcommand("stop", "Stop the server");
+    CLI::App* stop = app_.add_subcommand("stop", "Stop the server");
+
+    // Recipes
+    CLI::App* recipes = app_.add_subcommand("recipes", "List execution backends");
+
+    // Tray
+    CLI::App* tray = app_.add_subcommand("tray", "Launch tray interface for running server");
 #else
     add_serve_options(&app_, config_, max_models_vec_);
 #endif
@@ -139,6 +152,12 @@ CLIParser::CLIParser()
 
 int CLIParser::parse(int argc, char** argv) {
     try {
+#ifdef LEMONADE_TRAY
+        // Show help if no arguments provided
+        if (argc == 1) {
+            throw CLI::CallForHelp();
+        }
+#endif
         app_.parse(argc, argv);
 
         // Process --max-loaded-models values

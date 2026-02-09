@@ -68,6 +68,7 @@ These settings can also be provided via environment variables that Lemonade Serv
 | `LEMONADE_PORT`                    | Port number to run the server on                                                                                                                        |
 | `LEMONADE_LOG_LEVEL`               | Logging level                                                                                                                                           |
 | `LEMONADE_LLAMACPP`                | Default LlamaCpp backend (`vulkan`, `rocm`, or `cpu`)                                                                                                   |
+| `LEMONADE_WHISPERCPP`              | Default WhisperCpp backend (`cpu` or `npu`)                                                                                                             |
 | `LEMONADE_CTX_SIZE`                | Default context size for models                                                                                                                         |
 | `LEMONADE_LLAMACPP_ARGS`           | Custom arguments to pass to llama-server                                                                                                                |
 | `LEMONADE_EXTRA_MODELS_DIR`        | Secondary directory to scan for GGUF model files                                                                                                        |
@@ -83,7 +84,8 @@ You can provide your own `llama-server`, `whisper-server`, or `ryzenai-server` b
 | `LEMONADE_LLAMACPP_ROCM_BIN` | Path to custom `llama-server` binary for ROCm backend |
 | `LEMONADE_LLAMACPP_VULKAN_BIN` | Path to custom `llama-server` binary for Vulkan backend |
 | `LEMONADE_LLAMACPP_CPU_BIN` | Path to custom `llama-server` binary for CPU backend |
-| `LEMONADE_WHISPERCPP_BIN` | Path to custom `whisper-server` binary |
+| `LEMONADE_WHISPERCPP_CPU_BIN` | Path to custom `whisper-server` binary for CPU backend |
+| `LEMONADE_WHISPERCPP_NPU_BIN` | Path to custom `whisper-server` binary for NPU backend |
 | `LEMONADE_RYZENAI_SERVER_BIN` | Path to custom `ryzenai-server` binary for NPU/Hybrid models |
 
 **Note:** These environment variables do not override the `--llamacpp` option. They allow you to specify an alternative binary for specific backends while still using the standard backend selection mechanism.
@@ -121,7 +123,7 @@ lemonade-server pull <model_name> [options]
 | Option | Description | Required |
 |--------|-------------|----------|
 | `--checkpoint CHECKPOINT` | Hugging Face checkpoint in the format `org/model:variant`. For GGUF models, the variant (after the colon) is required. Examples: `unsloth/Qwen3-8B-GGUF:Q4_0`, `amd/Qwen3-4B-awq-quant-onnx-hybrid` | For custom models |
-| `--recipe RECIPE` | Inference recipe to use. Options: `llamacpp`, `flm`, `oga-cpu`, `oga-hybrid`, `oga-npu` | For custom models |
+| `--recipe RECIPE` | Inference recipe to use. Options: `llamacpp`, `flm`, `ryzenai-llm` | For custom models |
 | `--reasoning` | Mark the model as a reasoning model (e.g., DeepSeek-R1). Adds the 'reasoning' label to model metadata. | No |
 | `--vision` | Mark the model as a vision/multimodal model. Adds the 'vision' label to model metadata. | No |
 | `--embedding` | Mark the model as an embedding model. Adds the 'embeddings' label to model metadata. For use with the `/api/v1/embeddings` endpoint. | No |
@@ -169,12 +171,9 @@ The Lemonade Desktop App provides a graphical interface for chatting with models
 ```bash
 # Launch the app (connects to local server automatically)
 lemonade-app
-
-# Launch with a specific server URL
-lemonade-app --base-url http://192.168.0.100:8000
 ```
 
-By default, the app connects to a server running on `localhost` and automatically discovers the port. To connect to a remote server, use the `--base-url` option.
+By default, the app connects to a server running on `localhost` and automatically discovers the port. To connect to a remote server, change the app settings.
 
 ### Remote Server Connection
 
@@ -186,20 +185,12 @@ To connect the app to a server running on a different machine:
    ```
    > **Note:** Using `--host 0.0.0.0` allows connections from other machines on the network. Only do this on trusted networks. You can use `LEMONADE_API_KEY` (see above) to manage access on your network.
 
-2. **Launch the app** on the client machine with the `--base-url` flag:
+2. **Launch the app** on the client machine and configure the endpoint through the UI:
    ```bash
-   lemonade-app --base-url http://192.168.0.100:8000
+   lemonade-app
    ```
-   Replace `192.168.0.100` with the IP address of the machine running the server.
 
-Alternatively, you can set the `LEMONADE_APP_BASE_URL` environment variable.
-
-| Option / Environment Variable | Description |
-|-------------------------------|-------------|
-| `--base-url URL` | Connect the app to a server at the specified URL (e.g., `http://192.168.0.100:8000`) |
-| `LEMONADE_APP_BASE_URL` | Environment variable alternative to `--base-url`. The command-line flag takes precedence if both are set. |
-
-When no `--base-url` is provided, the app automatically discovers and connects to a local server.
+The app automatically discovers and connects to a local server unless an endpoint is explicitly configured in the UI.
 
 ## Next Steps
 

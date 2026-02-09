@@ -210,10 +210,7 @@ ProcessHandle ProcessManager::start_process(
     if (pid == 0) {
         // Child process
         if (!working_dir.empty()) {
-            if (chdir(working_dir.c_str()) != 0) {
-                std::cerr << "Failed to change directory to " << working_dir << std::endl;
-                _exit(1);
-            }
+            chdir(working_dir.c_str());
         }
 
         // Set environment variables
@@ -453,7 +450,7 @@ int ProcessManager::wait_for_exit(ProcessHandle handle, int timeout_seconds) {
 #endif
 }
 
-std::string ProcessManager::read_output(ProcessHandle /*handle*/, int /*max_bytes*/) {
+std::string ProcessManager::read_output(ProcessHandle handle, int max_bytes) {
     // Note: This is a simplified version. Full implementation would need pipes
     // for stdout/stderr capture during process creation
     return "";
@@ -664,10 +661,7 @@ int ProcessManager::run_process_with_output(
         close(stdout_pipe[1]);
 
         if (!working_dir.empty()) {
-            if (chdir(working_dir.c_str()) != 0) {
-                std::cerr << "Failed to change directory to " << working_dir << std::endl;
-                _exit(1);
-            }
+            chdir(working_dir.c_str());
         }
 
         // Prepare argv

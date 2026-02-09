@@ -18,15 +18,12 @@ int WrappedServer::choose_port() {
     return port_;
 }
 
-bool WrappedServer::wait_for_ready(int timeout_seconds) {
-    // Try both /health and /v1/health (FLM uses /v1/health, llama-server uses /health)
-    std::string health_url = get_base_url() + "/health";
-    std::string health_url_v1 = get_base_url() + "/v1/health";
+bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_seconds, long poll_interval_ms) {
+    std::string health_url = get_base_url() + endpoint;
 
     std::cout << "Waiting for " + server_name_ + " to be ready..." << std::endl;
 
-    // Calculate max attempts based on timeout
-    const int max_attempts = timeout_seconds * 10; // 100ms intervals
+    const int max_attempts = (timeout_seconds * 1000) / poll_interval_ms;
 
     for (int i = 0; i < max_attempts; i++) {
         // Check if process is still running
@@ -42,13 +39,12 @@ bool WrappedServer::wait_for_ready(int timeout_seconds) {
         }
 
         // Try both health endpoints
-        if (utils::HttpClient::is_reachable(health_url, 1) ||
-            utils::HttpClient::is_reachable(health_url_v1, 1)) {
+        if (utils::HttpClient::is_reachable(health_url, 1)) {
             std::cout << server_name_ + " is ready!" << std::endl;
             return true;
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval_ms));
 
         // Print progress every 10 seconds
         if (i % 100 == 0 && i > 0) {
@@ -106,7 +102,8 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
 
 void WrappedServer::forward_streaming_request(const std::string& endpoint,
                                               const std::string& request_body,
-                                              httplib::DataSink& sink) {
+                                              httplib::DataSink& sink,
+                                              bool sse) {
     if (!is_process_running()) {
         std::string error_msg = "data: {\"error\":{\"message\":\"No model loaded: " + server_name_ +
                                "\",\"type\":\"model_not_loaded\"}}\n\n";
@@ -117,19 +114,24 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
     std::string url = get_base_url() + endpoint;
 
     try {
-        // Use StreamingProxy to forward the SSE stream with telemetry callback
-        // Use INFERENCE_TIMEOUT_SECONDS (0 = infinite) as chat completions can take a long time
-        StreamingProxy::forward_sse_stream(url, request_body, sink,
-            [this](const StreamingProxy::TelemetryData& telemetry) {
-                // Save telemetry to member variable
-                telemetry_.input_tokens = telemetry.input_tokens;
-                telemetry_.output_tokens = telemetry.output_tokens;
-                telemetry_.time_to_first_token = telemetry.time_to_first_token;
-                telemetry_.tokens_per_second = telemetry.tokens_per_second;
-                // Note: decode_token_times is not available from streaming proxy
-            },
-            INFERENCE_TIMEOUT_SECONDS
-        );
+
+        if (sse) {
+            // Use StreamingProxy to forward the SSE stream with telemetry callback
+            // Use INFERENCE_TIMEOUT_SECONDS (0 = infinite) as chat completions can take a long time
+            StreamingProxy::forward_sse_stream(url, request_body, sink,
+                [this](const StreamingProxy::TelemetryData& telemetry) {
+                    // Save telemetry to member variable
+                    telemetry_.input_tokens = telemetry.input_tokens;
+                    telemetry_.output_tokens = telemetry.output_tokens;
+                    telemetry_.time_to_first_token = telemetry.time_to_first_token;
+                    telemetry_.tokens_per_second = telemetry.tokens_per_second;
+                    // Note: decode_token_times is not available from streaming proxy
+                },
+                INFERENCE_TIMEOUT_SECONDS
+            );
+        } else {
+            StreamingProxy::forward_byte_stream(url, request_body, sink, INFERENCE_TIMEOUT_SECONDS);
+        }
     } catch (const std::exception& e) {
         // Log the error but don't crash the server
         std::cerr << "[WrappedServer ERROR] Streaming request failed: " << e.what() << std::endl;

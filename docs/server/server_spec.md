@@ -11,6 +11,7 @@ Lemonade Server currently supports these backends:
 | [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM)    | `.q4nx`      | Uses FLM's `flm serve` backend. More details [here](#fastflowlm-support).                    |
 | [whisper.cpp](https://github.com/ggerganov/whisper.cpp) | `.bin` | Uses whisper.cpp's `whisper-server` backend for audio transcription. Models: Whisper-Tiny, Whisper-Base, Whisper-Small. |
 | [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) | `.safetensors` | Uses sd.cpp's `sd-cli` backend for image generation. Models: SD-Turbo, SDXL-Turbo, etc. |
+| [Kokoros](https://github.com/lucasjinreal/Kokoros) | `.onnx` | Uses Kokoro's `koko` backend for speech generation. Models: kokoro-v1 |
 
 
 ## Endpoints Overview
@@ -25,6 +26,7 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/embeddings` - Embeddings (text -> vector representations)
 - POST `/api/v1/responses` - Chat Completions (prompt|messages -> event)
 - POST `/api/v1/audio/transcriptions` - Audio Transcription (audio -> text)
+- POST `/api/v1/audio/speech` - Text to speech (text -> audio)
 - POST `/api/v1/images/generations` - Image Generation (prompt -> image)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
@@ -594,7 +596,7 @@ Image Generation API. You provide a text prompt and receive a generated image. T
 >
 > **Performance:** CPU inference takes ~4-5 minutes per image. GPU (Vulkan) is faster but may have compatibility issues with some hardware.
 
-#### Parameters 
+#### Parameters
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
@@ -623,24 +625,43 @@ Image Generation API. You provide a text prompt and receive a generated image. T
           }'
     ```
 
+### `POST /api/v1/audio/speech` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Speech Generation API. You provide a text input and receive an audio file. This API uses [Kokoros](https://github.com/lucasjinreal/Kokoros) as the backend.
+
+> **Note:** The model to use is called `kokoro-v1`. No other model is supported at the moment.
+>
+> **Limitations:** Only `mp3`, `wav`, `opus`, and `pcm` are supported. Streaming is supported in `audio` (`pcm`) mode.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `input` | Yes | The text to speak. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model to use (e.g., `kokoro-v1`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `speed` | No | Speaking speed. Default: `1.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `voice` | No | The voice to use. All OpenAI-defined voices can be used (`alloy`, `ash`, ...), as well as those defined by the kokoro model (`af_sky`, `am_echo`, ...). Default: `shimmer` | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `response_format` | No | Format of the response. `mp3`, `wav`, `opus`, and `pcm` are supported. Default: `mp3`| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `stream_format` | No | If set, the response will be streamed. Only `audio` is supported, which will output `pcm` audio. Default: not set| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+#### Example request
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/audio/speech \
+      -H "Content-Type: application/json" \
+      -d '{
+            "model": "kokoro-v1",
+            "input": "Lemonade can speak!",
+            "speed": 1.0,
+            "steps": 4,
+            "response_format": "mp3"
+          }'
+    ```
+
 #### Response format
 
-```json
-{
-  "created": 1742927481,
-  "data": [
-    {
-      "b64_json": "/9j/4AAQSkZJRgABAQAAAQABAAD..."
-    }
-  ]
-}
-```
-
-**Field Descriptions:**
-
-- `created` - Unix timestamp when the image was generated
-- `data` - Array of generated images
-  - `b64_json` - Base64-encoded PNG image data
+The generated audio file is returned as-is.
 
 
 ### `GET /api/v1/models` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -726,7 +747,7 @@ curl http://localhost:8000/api/v1/models?show_all=true
   - `object` - Type of object, always `"model"`
   - `owned_by` - Owner of the model, always `"lemonade"`
   - `checkpoint` - Full checkpoint identifier on Hugging Face
-  - `recipe` - Backend/device recipe used to load the model (e.g., `"oga-cpu"`, `"oga-hybrid"`, `"llamacpp"`, `"flm"`)
+  - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `size` - Model size in GB (omitted for models without size information)
   - `downloaded` - Boolean indicating if the model is downloaded and available locally
   - `suggested` - Boolean indicating if the model is recommended for general use
@@ -937,13 +958,18 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 
 #### Parameters
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `model_name` | Yes | [Lemonade Server model name](./server_models.md) to load. |
-| `ctx_size` | No | Context size for the model. Overrides the default value for this model. |
-| `llamacpp_backend` | No | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). Only applies to llamacpp models. |
-| `llamacpp_args` | No | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`. |
-| `save_options` | No | Boolean. If true, saves `ctx_size`, `llamacpp_backend` and `llamacpp_args` to the `recipe_options.json` file. Any previously stored value for `model_name` is replaced with the parameters of this request. |
+| Parameter | Required | Applies to | Description |
+|-----------|----------|------------|-------------|
+| `model_name` | Yes | All | [Lemonade Server model name](./server_models.md) to load. |
+| `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. |
+| `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. |
+| `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
+| `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`. |
+| `whispercpp_backend` | No | whispercpp | WhisperCpp backend to use (`npu` or `cpu`). Default is `npu` if supported. |
+| `steps` | No | sd-cpp | Number of inference steps for image generation. Default: 20. |
+| `cfg_scale` | No | sd-cpp | Classifier-free guidance scale for image generation. Default: 7.0. |
+| `width` | No | sd-cpp | Image width in pixels. Default: 512. |
+| `height` | No | sd-cpp | Image height in pixels. Default: 512. |
 
 **Setting Priority:**
 
@@ -955,7 +981,7 @@ When loading a model, settings are applied in this priority order:
 
 #### Per-model options
 
-You can configure a default `ctx_size`, `llamacpp_backend` and `llamacpp_args` on a per-model basis. To achieve this, Lemonade manages a file called `recipe_options.json` in the user's Lemonade cache (default: `~/.cache/lemonade`). An example `recipe_options.json` file follows:
+You can configure recipe-specific options on a per-model basis. Lemonade manages a file called `recipe_options.json` in the user's Lemonade cache (default: `~/.cache/lemonade`). The available options depend on the model's recipe:
 
 ```json
 {
@@ -966,6 +992,9 @@ You can configure a default `ctx_size`, `llamacpp_backend` and `llamacpp_args` o
   },
   "Qwen3-Coder-30B-A3B-Instruct-GGUF" : {
     "llamacpp_backend": "rocm"
+  },
+  "whisper-large-v3-turbo-q8_0.bin": {
+    "whispercpp_backend": "npu"
   }
 }
 ```
@@ -1008,6 +1037,31 @@ curl -X POST http://localhost:8000/api/v1/load \
     "llamacpp_backend": "vulkan",
     "llamacpp_args": "--no-context-shift --no-mmap",
     "save_options": true
+  }'
+```
+
+Load a Whisper model with NPU backend:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/load \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "whisper-large-v3-turbo-q8_0.bin",
+    "whispercpp_backend": "npu"
+  }'
+```
+
+Load an image generation model with custom settings:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/load \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "sd-turbo",
+    "steps": 4,
+    "cfg_scale": 1.0,
+    "width": 512,
+    "height": 512
   }'
 ```
 
@@ -1097,10 +1151,10 @@ curl http://localhost:8000/api/v1/health
       "last_use": 1732123456.789,
       "type": "llm",
       "device": "gpu npu",
-      "recipe": "oga-hybrid",
+      "recipe": "ryzenai-llm",
       "recipe_options": {
         "ctx_size": 4096
-      },      
+      },
       "backend_url": "http://127.0.0.1:8001/v1"
     },
     {
@@ -1137,7 +1191,7 @@ curl http://localhost:8000/api/v1/health
   - `type` - Model type: `"llm"`, `"embedding"`, or `"reranking"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
-  - `recipe`: - Backend/device recipe used to load the model (e.g., `"oga-cpu"`, `"oga-hybrid"`, `"llamacpp"`, `"flm"`)
+  - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`)
 - `max_models` - Maximum number of models that can be loaded simultaneously (set via `--max-loaded-models`):
   - `llm` - Maximum LLM/chat models
@@ -1184,58 +1238,136 @@ curl http://localhost:8000/api/v1/stats
 
 System information endpoint that provides complete hardware details and device enumeration.
 
-#### Parameters
-
-| Parameter | Required | Description | Status |
-|-----------|----------|-------------|--------|
-| `verbose` | No | Include detailed system information. When `false` (default), returns essential information (OS, processor, memory, devices). When `true`, includes additional details like Python packages and extended system information. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
 #### Example request
 
-=== "Basic system information"
-
-    ```bash
-    curl "http://localhost:8000/api/v1/system-info"
-    ```
-
-=== "Detailed system information"
-
-    ```bash
-    curl "http://localhost:8000/api/v1/system-info?verbose=true"
-    ```
+```bash
+curl "http://localhost:8000/api/v1/system-info"
+```
 
 #### Response format
 
-=== "Basic response (verbose=false)"
-
-    ```json
-    {
-      "OS Version": "Windows-10-10.0.26100-SP0",
-      "Processor": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
-      "Physical Memory": "32.0 GB",
-      "devices": {
+```json
+{
+  "OS Version": "Windows-10-10.0.26100-SP0",
+  "Processor": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
+  "Physical Memory": "32.0 GB",
+  "OEM System": "ASUS Zenbook S 16",
+  "BIOS Version": "1.0.0",
+  "CPU Max Clock": "5100 MHz",
+  "Windows Power Setting": "Balanced",
+  "devices": {
+    "cpu": {
+      "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
+      "cores": 12,
+      "threads": 24,
+      "available": true
+    },
+    "amd_igpu": {
+      "name": "AMD Radeon(TM) 890M Graphics",
+      "vram_gb": 0.5,
+      "available": true
+    },
+    "amd_dgpu": [],
+    "npu": {
+      "name": "AMD NPU",
+      "power_mode": "Default",
+      "available": true
+    }
+  },
+  "recipes": {
+    "llamacpp": {
+      "backends": {
+        "vulkan": {
+          "devices": ["cpu", "amd_igpu"],
+          "supported": true,
+          "available": true,
+          "version": "b7869"
+        },
+        "rocm": {
+          "devices": ["amd_igpu"],
+          "supported": true,
+          "available": false
+        },
+        "metal": {
+          "devices": [],
+          "supported": false,
+          "error": "Requires macOS"
+        },
         "cpu": {
-          "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
-          "cores": 12,
-          "threads": 24,
-          "available": true
-        },
-        "amd_igpu": {
-          "name": "AMD Radeon(TM) 890M Graphics",
-          "memory_mb": 512,
-          "driver_version": 32.0.12010.10001,
-          "available": true
-        },
-        "amd_dgpu": [],
-        "npu": {
-          "name": "AMD NPU",
-          "driver_version": "32.0.203.257",
-          "power_mode": "Default",
+          "devices": ["cpu"],
+          "supported": true,
+          "available": false
+        }
+      }
+    },
+    "whispercpp": {
+      "backends": {
+        "default": {
+          "devices": ["cpu"],
+          "supported": true,
+          "available": false
+        }
+      }
+    },
+    "sd-cpp": {
+      "backends": {
+        "default": {
+          "devices": ["cpu"],
+          "supported": true,
+          "available": false
+        }
+      }
+    },
+    "flm": {
+      "backends": {
+        "default": {
+          "devices": ["npu"],
+          "supported": true,
+          "available": true,
+          "version": "1.2.0"
+        }
+      }
+    },
+    "ryzenai-llm": {
+      "backends": {
+        "default": {
+          "devices": ["npu"],
+          "supported": true,
           "available": true
         }
       }
     }
-    ```
+  }
+}
+```
+
+**Field Descriptions:**
+
+- **System fields:**
+  - `OS Version` - Operating system name and version
+  - `Processor` - CPU model name
+  - `Physical Memory` - Total RAM
+  - `OEM System` - System/laptop model name (Windows only)
+  - `BIOS Version` - BIOS information (Windows only)
+  - `CPU Max Clock` - Maximum CPU clock speed (Windows only)
+  - `Windows Power Setting` - Current power plan (Windows only)
+
+- `devices` - Hardware devices detected on the system (no software/support information)
+  - `cpu` - CPU information (name, cores, threads)
+  - `amd_igpu` - AMD integrated GPU (if present)
+  - `amd_dgpu` - Array of AMD discrete GPUs (if present)
+  - `nvidia_dgpu` - Array of NVIDIA discrete GPUs (if present)
+  - `npu` - NPU device (if present)
+
+- `recipes` - Software recipes and their backend support status
+  - Each recipe (e.g., `llamacpp`, `whispercpp`, `flm`) contains:
+    - `backends` - Available backends for this recipe
+      - Each backend contains:
+        - `devices` - List of devices **on this system** that support this backend (empty if not supported)
+        - `supported` - Whether installation is possible on this system
+        - `available` - Whether the backend is currently installed
+        - `version` - Installed version (if available)
+        - `error` - Reason why not supported (if applicable)
 
 # Debugging
 

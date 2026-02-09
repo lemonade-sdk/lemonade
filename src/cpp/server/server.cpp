@@ -30,16 +30,29 @@
     #include <unistd.h>
 #endif
 
+#ifdef __APPLE__
+    #include <sys/sysctl.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace lemon {
 
+static const json MIME_TYPES = {
+    {"mp3",  "audio/mpeg"},
+    {"opus", "audio/opus"},
+    {"aac",  "audio/aac"},
+    {"flac", "audio/flac"},
+    {"wav",  "audio/wav"},
+    {"pcm",  "audio/l16;rate=24000;endianness=little-endian"}
+};
+
 Server::Server(int port, const std::string& host, const std::string& log_level,
                const json& default_options, int max_llm_models,
                int max_embedding_models, int max_reranking_models, int max_audio_models,
-               int max_image_models, const std::string& extra_models_dir)
+               int max_image_models, const std::string& extra_models_dir, bool no_broadcast)
     : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
-      running_(false) {
+      no_broadcast_(no_broadcast), running_(false), udp_beacon_() {
 
     // Detect log file path (same location as tray uses)
     // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
@@ -94,14 +107,25 @@ Server::~Server() {
 }
 
 void Server::log_request(const httplib::Request& req) {
-    if (req.path != "/api/v0/health" && req.path != "/api/v1/health") {
+    if (req.path != "/api/v0/health" && req.path != "/api/v1/health" &&
+        req.path != "/v0/health" && req.path != "/v1/health" &&
+        req.path != "/api/v0/system-stats" && req.path != "/api/v1/system-stats" &&
+        req.path != "/v0/system-stats" && req.path != "/v1/system-stats" &&
+        req.path != "/api/v0/stats" && req.path != "/api/v1/stats" &&
+        req.path != "/v0/stats" && req.path != "/v1/stats" &&
+        req.path != "/live") {
         std::cout << "[Server PRE-ROUTE] " << req.method << " " << req.path << std::endl;
         std::cout.flush();
     }
 }
 
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
-    if ((api_key_ != "") && (req.method != "OPTIONS")) {
+    // Check if path requires authentication (API routes with /api/, /v0/, or /v1/ prefix)
+    bool is_api_route = (req.path.rfind("/api/", 0) == 0) ||
+                        (req.path.rfind("/v0/", 0) == 0) ||
+                        (req.path.rfind("/v1/", 0) == 0);
+
+    if ((api_key_ != "") && (req.method != "OPTIONS") && is_api_route) {
         if (api_key_ != httplib::get_bearer_token_auth(req)) {
             res.status = 401;
             res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
@@ -116,11 +140,6 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 void Server::setup_routes(httplib::Server &web_server) {
     // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
-        // Absolute bypass for liveness probe
-        if (req.path == "/live") {
-            return httplib::Server::HandlerResponse::Unhandled;
-        }
-
         this->log_request(req);
         return authenticate_request(req, res);
     });
@@ -132,17 +151,21 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Setup CORS for all routes
     setup_cors(web_server);
 
-    // Helper lambda to register routes for both v0 and v1
+    // Helper lambda to register routes for both v0 and v1 (with and without /api prefix for OpenAI compatibility)
     auto register_get = [this, &web_server](const std::string& endpoint,
                                std::function<void(const httplib::Request&, httplib::Response&)> handler) {
         web_server.Get("/api/v0/" + endpoint, handler);
         web_server.Get("/api/v1/" + endpoint, handler);
+        web_server.Get("/v0/" + endpoint, handler);
+        web_server.Get("/v1/" + endpoint, handler);
     };
 
     auto register_post = [this, &web_server](const std::string& endpoint,
                                 std::function<void(const httplib::Request&, httplib::Response&)> handler) {
         web_server.Post("/api/v0/" + endpoint, handler);
         web_server.Post("/api/v1/" + endpoint, handler);
+        web_server.Post("/v0/" + endpoint, handler);
+        web_server.Post("/v1/" + endpoint, handler);
         // Also register as GET for HEAD request support (HEAD uses GET handler)
         // Return 405 Method Not Allowed (endpoint exists but wrong method)
         web_server.Get("/api/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
@@ -150,6 +173,14 @@ void Server::setup_routes(httplib::Server &web_server) {
             res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
         });
         web_server.Get("/api/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+            res.status = 405;
+            res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
+        });
+        web_server.Get("/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+            res.status = 405;
+            res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
+        });
+        web_server.Get("/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
             res.status = 405;
             res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
         });
@@ -165,11 +196,17 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_models(req, res);
     });
 
-    // Model by ID (need to register for both versions with regex)
+    // Model by ID (need to register for both versions with regex, with and without /api prefix)
     web_server.Get(R"(/api/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_model_by_id(req, res);
     });
     web_server.Get(R"(/api/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_by_id(req, res);
+    });
+    web_server.Get(R"(/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_by_id(req, res);
+    });
+    web_server.Get(R"(/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_model_by_id(req, res);
     });
 
@@ -196,6 +233,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Audio endpoints (OpenAI /v1/audio/* compatible)
     register_post("audio/transcriptions", [this](const httplib::Request& req, httplib::Response& res) {
         handle_audio_transcriptions(req, res);
+    });
+
+    // Speech
+    register_post("audio/speech", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_audio_speech(req, res);
     });
 
     // Image endpoints (OpenAI /v1/images/* compatible)
@@ -238,6 +280,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_system_info(req, res);
     });
 
+    register_get("system-stats", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_system_stats(req, res);
+    });
+
     register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
         handle_log_level(req, res);
     });
@@ -256,7 +302,7 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
 
     // Test endpoint to verify POST works
-    web_server.Post("/api/v1/test", [](const httplib::Request& /*req*/, httplib::Response& res) {
+    web_server.Post("/api/v1/test", [](const httplib::Request& req, httplib::Response& res) {
         std::cout << "[Server] TEST POST endpoint hit!" << std::endl;
         res.set_content("{\"test\": \"ok\"}", "application/json");
     });
@@ -349,37 +395,316 @@ void Server::setup_static_files(httplib::Server &web_server) {
         res.set_content(html_template, "text/html");
     };
 
-    // Root path - serve index.html
-    web_server.Get("/", serve_index_html);
+    // Keep status page at /status endpoint
+    web_server.Get("/status", serve_index_html);
 
-    // Also serve index.html at /api/v1
+    // Also serve index.html at /api/v1 for compatibility
     web_server.Get("/api/v1", serve_index_html);
 
-    // Serve favicon.ico from root as expected by most browsers
-    web_server.Get("/favicon.ico", [static_dir](const httplib::Request& /*req*/, httplib::Response& res) {
-        std::ifstream ifs(static_dir + "/favicon.ico", std::ios::binary);
-        if (ifs) {
-            // Read favicon bytes to string to pass to response
-            std::string content((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
-            res.set_content(content, "image/x-icon");
-            res.status = 200;
-        } else {
-            res.set_content("Favicon not found.", "text/plain");
-            res.status = 404;
-        }
-    });
-
-    // Mount static files directory for other files (CSS, JS, images)
+    // Mount static files directory for status page assets (CSS, JS, images)
     if (!web_server.set_mount_point("/static", static_dir)) {
         std::cerr << "[Server WARNING] Could not mount static files from: " << static_dir << std::endl;
-        std::cerr << "[Server] Web UI assets will not be available" << std::endl;
+        std::cerr << "[Server] Status page assets will not be available" << std::endl;
     } else {
         std::cout << "[Server] Static files mounted from: " << static_dir << std::endl;
     }
 
+    // Web app UI endpoint - serve the React web app at root
+    std::string web_app_dir = utils::get_resource_path("resources/web-app");
+
+    // Check if web app directory exists
+    if (fs::exists(web_app_dir) && fs::is_directory(web_app_dir)) {
+        // Create a handler for serving web app index.html for SPA routing
+        auto serve_web_app_html = [web_app_dir](const httplib::Request&, httplib::Response& res) {
+            std::string index_path = web_app_dir + "/index.html";
+            std::ifstream file(index_path);
+
+            if (!file.is_open()) {
+                res.status = 404;
+                res.set_content("{\"error\": \"Web app not found\"}", "application/json");
+                return;
+            }
+
+            std::string html((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            file.close();
+
+            // Inject mock API for web compatibility with Electron app code
+            std::string mock_api = R"(
+<script>
+// Mock Electron API for web compatibility
+window.api = {
+    isWebApp: true,  // Explicit flag to indicate web mode
+    platform: navigator.platform || 'web',
+    minimizeWindow: () => {},
+    maximizeWindow: () => {},
+    closeWindow: () => {},
+    openExternal: (url) => window.open(url, '_blank'),
+    onMaximizeChange: () => {},
+    updateMinWidth: () => {},
+    zoomIn: () => document.body.style.zoom = (parseFloat(document.body.style.zoom || '1') + 0.1).toString(),
+    zoomOut: () => document.body.style.zoom = (parseFloat(document.body.style.zoom || '1') - 0.1).toString(),
+    getSettings: async () => {
+        const saved = localStorage.getItem('lemonade-settings');
+        if (saved) return JSON.parse(saved);
+        // Return defaults matching DEFAULT_LAYOUT_SETTINGS from appSettings.ts
+        return {
+            layout: {
+                isChatVisible: true,
+                isModelManagerVisible: true,
+                isCenterPanelVisible: true,
+                isLogsVisible: false,
+                modelManagerWidth: 280,
+                chatWidth: 350,
+                logsHeight: 200
+            },
+            theme: 'dark',
+            apiUrl: window.location.origin,
+            apiKey: { value: '' }
+        };
+    },
+    saveSettings: async (settings) => {
+        localStorage.setItem('lemonade-settings', JSON.stringify(settings));
+        return settings;
+    },
+    onSettingsUpdated: () => {},
+    getServerPort: () => parseInt(window.location.port) || 8000,
+    onServerPortUpdated: () => {},
+    getServerAPIKey: async () => {
+        const settings = await window.api.getSettings();
+        return settings.apiKey?.value || '';
+    },
+    fetchWithApiKey: async (url) => {
+        try {
+            let apiKey = await window.api.getServerAPIKey();
+            const options = {};
+            if(apiKey != null && apiKey != '') {
+                options.headers = {
+                Authorization: `Bearer ${apiKey}`,
+                }
+            }
+            return await fetch(url, options);
+        } catch (e) {
+            console.error('fetchWithApiKey error:', e);
+            throw e;
+        }
+    },
+    getVersion: async () => {
+        try {
+            const response = await window.api.fetchWithApiKey('/api/v1/health');
+            if (response.ok) {
+                const data = await response.json();
+                return data.version || 'Unknown';
+            } else {
+                console.error('Health response not OK:', response.status, response.statusText);
+            }
+        } catch (e) {
+            console.error('Failed to fetch version:', e);
+        }
+        return 'Unknown';
+    },
+    restartApp: () => window.location.reload(),
+    getSystemStats: async () => {
+        try {
+            const response = await window.api.fetchWithApiKey('/api/v1/system-stats');
+            if (response.ok) {
+                return await response.json();
+            }
+        } catch (e) {
+            console.warn('Failed to fetch system stats:', e);
+        }
+        return { cpu_percent: null, memory_gb: 0, gpu_percent: null, vram_gb: null };
+    },
+    getSystemInfo: async () => {
+        try {
+            const response = await window.api.fetchWithApiKey('/api/v1/system-info');
+            if (response.ok) {
+                const data = await response.json();
+                let maxGttGb = 0;
+                let maxVramGb = 0;
+
+                const considerAmdGpu = (gpu) => {
+                    if (gpu && typeof gpu.virtual_mem_gb === 'number' && isFinite(gpu.virtual_mem_gb)) {
+                        maxGttGb = Math.max(maxGttGb, gpu.virtual_mem_gb);
+                    }
+                    if (gpu && typeof gpu.vram_gb === 'number' && isFinite(gpu.vram_gb)) {
+                        maxVramGb = Math.max(maxVramGb, gpu.vram_gb);
+                    }
+                };
+
+                if (data.devices?.amd_igpu) {
+                    considerAmdGpu(data.devices.amd_igpu);
+                }
+                if (Array.isArray(data.devices?.amd_dgpu)) {
+                    data.devices.amd_dgpu.forEach(considerAmdGpu);
+                }
+
+                // Transform server response to match the About window format
+                const systemInfo = {
+                    system: 'Unknown',
+                    os: data['OS Version'] || 'Unknown',
+                    cpu: data['Processor'] || 'Unknown',
+                    gpus: [],
+                    gtt_gb: maxGttGb > 0 ? `${maxGttGb} GB` : undefined,
+                    vram_gb: maxVramGb > 0 ? `${maxVramGb} GB` : undefined,
+                };
+
+                // Extract GPU information from devices
+                if (data.devices) {
+                    if (data.devices.amd_igpu?.name) {
+                        systemInfo.gpus.push(data.devices.amd_igpu.name);
+                    }
+                    if (data.devices.nvidia_igpu?.name) {
+                        systemInfo.gpus.push(data.devices.nvidia_igpu.name);
+                    }
+                    if (Array.isArray(data.devices.amd_dgpu)) {
+                        data.devices.amd_dgpu.forEach(gpu => {
+                            if (gpu.name) systemInfo.gpus.push(gpu.name);
+                        });
+                    }
+                    if (Array.isArray(data.devices.nvidia_dgpu)) {
+                        data.devices.nvidia_dgpu.forEach(gpu => {
+                            if (gpu.name) systemInfo.gpus.push(gpu.name);
+                        });
+                    }
+                }
+
+                return systemInfo;
+            }
+        } catch (e) {
+            console.warn('Failed to fetch system info:', e);
+        }
+        return { system: 'Unknown', os: 'Unknown', cpu: 'Unknown', gpus: [], gtt_gb: undefined, vram_gb: undefined };
+    }
+};
+</script>
+)";
+
+            // Insert mock API before the closing </head> tag
+            size_t head_end_pos = html.find("</head>");
+            if (head_end_pos != std::string::npos) {
+                html.insert(head_end_pos, mock_api);
+            }
+
+            // Set no-cache headers
+            res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
+            res.set_header("Pragma", "no-cache");
+            res.set_header("Expires", "0");
+            res.set_content(html, "text/html");
+        };
+
+        // Serve the web app's index.html at root and for SPA routes
+        web_server.Get("/", serve_web_app_html);
+
+        // Also serve at /web-app for backwards compatibility
+        web_server.Get("/web-app/?", serve_web_app_html);
+
+        // Serve all static assets from the web app directory (JS, CSS, fonts, assets, etc.)
+        // Handle both root-level assets and /web-app/ prefixed paths for backwards compatibility
+        auto serve_web_app_asset = [web_app_dir](const httplib::Request& req, httplib::Response& res, const std::string& file_path) {
+            std::string full_path = web_app_dir + "/" + file_path;
+
+            // Serve the file
+            std::ifstream file(full_path, std::ios::binary);
+            if (!file.is_open()) {
+                res.status = 404;
+                res.set_content("File not found", "text/plain");
+                return;
+            }
+
+            // Read file content
+            std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            file.close();
+
+            // Determine content type based on extension
+            std::string content_type = "application/octet-stream";
+            size_t dot_pos = file_path.rfind('.');
+            if (dot_pos != std::string::npos) {
+                std::string ext = file_path.substr(dot_pos);
+                if (ext == ".js") content_type = "text/javascript";
+                else if (ext == ".css") content_type = "text/css";
+                else if (ext == ".html") content_type = "text/html";
+                else if (ext == ".woff") content_type = "font/woff";
+                else if (ext == ".woff2") content_type = "font/woff2";
+                else if (ext == ".ttf") content_type = "font/ttf";
+                else if (ext == ".svg") content_type = "image/svg+xml";
+                else if (ext == ".png") content_type = "image/png";
+                else if (ext == ".jpg" || ext == ".jpeg") content_type = "image/jpeg";
+                else if (ext == ".json") content_type = "application/json";
+                else if (ext == ".ico") content_type = "image/x-icon";
+            }
+
+            res.set_content(content, content_type);
+        };
+
+        // Serve favicon from web-app directory at root
+        web_server.Get("/favicon.ico", [serve_web_app_asset](const httplib::Request& req, httplib::Response& res) {
+            serve_web_app_asset(req, res, "favicon.ico");
+        });
+
+        // Serve web app assets from root (for files like renderer.bundle.js, fonts, etc.)
+        web_server.Get(R"(/([^/]+\.(js|css|woff|woff2|ttf|svg|png|jpg|jpeg|json|ico)))",
+                      [serve_web_app_asset](const httplib::Request& req, httplib::Response& res) {
+            std::string file_path = req.matches[1].str();
+            serve_web_app_asset(req, res, file_path);
+        });
+
+        // Keep /web-app/ prefix routes for backwards compatibility
+        web_server.Get(R"(/web-app/(.+))", [serve_web_app_asset](const httplib::Request& req, httplib::Response& res) {
+            std::string file_path = req.matches[1].str();
+            serve_web_app_asset(req, res, file_path);
+        });
+
+        std::cout << "[Server] Web app UI available at root (/) from: " << web_app_dir << std::endl;
+
+        // SPA fallback: serve index.html for any unmatched GET routes that don't start with /api, /v0, /v1, /static, or /live
+        // This enables client-side routing
+        web_server.Get(R"(^(?!/api|/v0|/v1|/static|/live|/status|/internal).*)",
+                      [serve_web_app_html](const httplib::Request& req, httplib::Response& res) {
+            // Only serve index.html if the path doesn't look like a file with extension
+            std::string path = req.path;
+            size_t last_slash = path.rfind('/');
+            std::string last_segment = (last_slash != std::string::npos) ? path.substr(last_slash + 1) : path;
+
+            // If the last segment has an extension and it's not .html, let it 404
+            // (This helps catch missing assets more clearly)
+            size_t dot_pos = last_segment.rfind('.');
+            if (dot_pos != std::string::npos) {
+                std::string ext = last_segment.substr(dot_pos);
+                if (ext != ".html" && ext != ".htm") {
+                    // File with extension not found, return 404
+                    res.status = 404;
+                    return;
+                }
+            }
+
+            // Otherwise, serve the SPA index.html for client-side routing
+            serve_web_app_html(req, res);
+        });
+    } else {
+        // Fallback to static page when web-app is not compiled
+        std::cout << "[Server] Web app directory not found at: " << web_app_dir << std::endl;
+        std::cout << "[Server] Falling back to static status page at root" << std::endl;
+
+        // Serve the static status page at root instead
+        web_server.Get("/", serve_index_html);
+
+        // Serve favicon from static directory
+        web_server.Get("/favicon.ico", [static_dir](const httplib::Request& req, httplib::Response& res) {
+            std::ifstream ifs(static_dir + "/favicon.ico", std::ios::binary);
+            if (ifs) {
+                std::string content((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
+                res.set_content(content, "image/x-icon");
+                res.status = 200;
+            } else {
+                res.set_content("Favicon not found.", "text/plain");
+                res.status = 404;
+            }
+        });
+    }
+
     // Override default headers for static files to include no-cache
     // This ensures the web UI always gets the latest version
-    web_server.set_file_request_handler([](const httplib::Request& /*req*/, httplib::Response& res) {
+    web_server.set_file_request_handler([](const httplib::Request& req, httplib::Response& res) {
         // Add no-cache headers for static files
         res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
         res.set_header("Pragma", "no-cache");
@@ -436,7 +761,7 @@ void Server::setup_cors(httplib::Server &web_server) {
 }
 
 std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
-    struct addrinfo hints = {};
+    struct addrinfo hints = {0};
     hints.ai_family = ai_family;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_ADDRCONFIG; // Optional: Only return IPs configured on system
@@ -479,10 +804,15 @@ std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
 }
 
 void Server::setup_http_logger(httplib::Server &web_server) {
-    // Add request logging for ALL requests (except health checks)
+    // Add request logging for ALL requests (except health checks and stats endpoints)
     web_server.set_logger([](const httplib::Request& req, const httplib::Response& res) {
-        // Skip logging health checks to reduce log noise
-        if (req.path != "/api/v0/health" && req.path != "/api/v1/health" && req.path != "/live") {
+        // Skip logging health checks and stats endpoints to reduce log noise
+        if (req.path != "/api/v0/health" && req.path != "/api/v1/health" &&
+            req.path != "/v0/health" && req.path != "/v1/health" && req.path != "/live" &&
+            req.path != "/api/v0/system-stats" && req.path != "/api/v1/system-stats" &&
+            req.path != "/v0/system-stats" && req.path != "/v1/system-stats" &&
+            req.path != "/api/v0/stats" && req.path != "/api/v1/stats" &&
+            req.path != "/v0/stats" && req.path != "/v1/stats") {
             std::cout << "[Server] " << req.method << " " << req.path << " - " << res.status << std::endl;
         }
     });
@@ -511,6 +841,29 @@ void Server::run() {
             http_server_v6_->listen_after_bind();
         });
     }
+
+    //For now we will use getLocalHostname to get the machines hostname.
+    //This allows external devices to not have to do a rDNS lookup.
+    bool RFC1918_IP = udp_beacon_.isRFC1918(ipv4);
+    if(RFC1918_IP && !no_broadcast_) {
+        udp_beacon_.startBroadcasting(
+            8000, //Broadcast port best to not make it adjustable, so clients dont have to scan.
+            udp_beacon_.buildStandardPayloadPattern
+            (
+                udp_beacon_.getLocalHostname(),
+                "http://" + ipv4 + ":" + std::to_string(port_) + "/api/v1/"
+            ),
+            2
+        );
+    }
+    else if (RFC1918_IP && no_broadcast_) {
+        std::cout << "[Server] [Net Broadcast] Broadcasting disabled by --no-broadcast option" << std::endl;
+    }
+    else {
+        std::cout << "[Server] [Net Broadcast] Unable to broadcast my existance please use a RFC1918 IPv4," << std::endl
+                    << "[Server] [Net Broadcast] or hostname that resolves to RFC1918 IPv4." << std::endl;
+    }
+
     if(http_v4_thread_.joinable())
         http_v4_thread_.join();
     if(http_v6_thread_.joinable())
@@ -520,6 +873,7 @@ void Server::run() {
 void Server::stop() {
     if (running_) {
         std::cout << "[Server] Stopping HTTP server..." << std::endl;
+        udp_beacon_.stopBroadcasting();
         http_server_v6_->stop();
         http_server_->stop();
         running_ = false;
@@ -876,6 +1230,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Use original request body - each backend (FLM, llamacpp, etc.) handles
         // model name transformation internally via their forward methods
         std::string request_body = req.body;
+        bool request_modified = false;
 
         // Handle enable_thinking=false by prepending /no_think to last user message
         if (request_json.contains("enable_thinking") &&
@@ -896,14 +1251,17 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         if (messages[i].contains("content") && messages[i]["content"].is_string()) {
                             std::string original_content = messages[i]["content"].get<std::string>();
                             messages[i]["content"] = "/no_think\n" + original_content;
-
-                            // Update request_body with modified JSON
-                            request_body = request_json.dump();
+                            request_modified = true;
                             break;
                         }
                     }
                 }
             }
+        }
+
+        // If we modified the request, serialize it back to string
+        if (request_modified) {
+            request_body = request_json.dump();
         }
 
         if (is_streaming) {
@@ -930,8 +1288,6 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         // Use unified Router path for streaming
                         router_->chat_completion_stream(request_body, sink);
 
-                        // Explicitly signal we're done - this ensures proper chunked encoding termination
-                        sink.done();
                         return false;
                     }
                 );
@@ -1117,8 +1473,6 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                         // Use unified Router path for streaming
                         router_->completion_stream(request_body, sink);
 
-                        // Explicitly signal we're done - this ensures proper chunked encoding termination
-                        sink.done();
                         return false;
                     }
                 );
@@ -1414,6 +1768,117 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
     }
 }
 
+void Server::handle_audio_speech(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+
+        // Handle model loading
+        if (request_json.contains("model")) {
+            std::string requested_model = request_json["model"];
+            try {
+                auto_load_model_if_needed(requested_model);
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Failed to load text-to-speech model: " << e.what() << std::endl;
+                auto error_response = create_model_error(requested_model, e.what());
+                std::string error_code = error_response["error"]["code"].get<std::string>();
+                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+                res.set_content(error_response.dump(), "application/json");
+                return;
+            }
+        } else {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'model' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        if (!request_json.contains("input")) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'input' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        bool is_streaming = (request_json.contains("stream") && request_json["stream"].get<bool>());
+
+        if (request_json.contains("stream_format")) {
+            is_streaming = true;
+            if (request_json["stream_format"] != "audio") {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Only pcm audio streaming format is supported"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+        }
+
+        std::string mime_type;
+        if (is_streaming) {
+            mime_type = MIME_TYPES["pcm"];
+        } else if (request_json.contains("response_format")) {
+            if (MIME_TYPES.contains(request_json["response_format"])) {
+                mime_type = MIME_TYPES[request_json["response_format"]];
+            } else {
+                nlohmann::json error = {{"error", {
+                    {"message", "Unsupported audio format requested"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+        } else {
+            mime_type = MIME_TYPES["mp3"];
+        }
+
+        // Log the HTTP request
+        std::cout << "[Server] POST /api/v1/audio/speech" << std::endl;
+
+        res.set_header("Content-Type", mime_type);
+
+        auto audio_source = [this, request_json](size_t offset, httplib::DataSink& sink) {
+            // For chunked responses, offset tracks bytes sent so far
+            // We only want to stream once when offset is 0
+            if (offset > 0) {
+                return false; // We're done after the first call
+            }
+
+            // Use unified Router path for streaming
+            router_->audio_speech(request_json, sink);
+
+            return false;
+        };
+
+        if (is_streaming) {
+            res.set_header("Cache-Control", "no-cache");
+            res.set_header("Connection", "keep-alive");
+            res.set_header("X-Accel-Buffering", "no"); // Disable nginx buffering
+
+            // Use cpp-httplib's chunked content provider for streaming
+            res.set_chunked_content_provider(mime_type, audio_source);
+        } else {
+            res.set_content_provider(mime_type, audio_source);
+        }
+
+        return;
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_audio_speech: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "internal_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
 void Server::handle_image_generations(const httplib::Request& req, httplib::Response& res) {
     try {
         std::cout << "[Server] POST /api/v1/images/generations" << std::endl;
@@ -1507,22 +1972,6 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
             return;
         }
 
-        // Check if current model supports responses API (only oga-* recipes)
-        std::string loaded_recipe = router_->get_loaded_recipe();
-        if (loaded_recipe.find("oga-") == std::string::npos && loaded_recipe != "oga") {
-            std::cerr << "[Server ERROR] Responses API not supported for recipe: " << loaded_recipe << std::endl;
-            res.status = 422;
-            nlohmann::json error_response = {
-                {"error", {
-                    {"message", "Responses API not supported for recipe: " + loaded_recipe},
-                    {"type", "unsupported_recipe"},
-                    {"code", "responses_not_supported"}
-                }}
-            };
-            res.set_content(error_response.dump(), "application/json");
-            return;
-        }
-
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
@@ -1547,8 +1996,6 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                         // Use unified Router path for streaming
                         router_->responses_stream(request_body, sink);
 
-                        // Explicitly signal we're done - this ensures proper chunked encoding termination
-                        sink.done();
                         return false;
                     }
                 );
@@ -1931,7 +2378,7 @@ void Server::handle_delete(const httplib::Request& req, httplib::Response& res) 
     }
 }
 
-void Server::handle_params(const httplib::Request& /*req*/, httplib::Response& res) {
+void Server::handle_params(const httplib::Request& req, httplib::Response& res) {
     try {
         // Update model parameters (stub for now)
         nlohmann::json response = {{"status", "success"}};
@@ -1949,7 +2396,7 @@ void Server::handle_params(const httplib::Request& /*req*/, httplib::Response& r
 // Parameters:
 //   - dest_path: Directory where model files are located (already copied/uploaded)
 //   - model_name: Model name with "user." prefix
-//   - recipe: Inference recipe (llamacpp, oga-*, whispercpp)
+//   - recipe: Inference recipe (llamacpp, ryzenai-llm, whispercpp)
 //   - variant: Optional variant hint for GGUF file selection
 //   - mmproj: Optional mmproj filename hint
 //   - reasoning, vision, embedding, reranking, image: Model labels
@@ -1970,8 +2417,8 @@ void Server::resolve_and_register_local_model(
     std::string resolved_checkpoint;
     std::string resolved_mmproj;
 
-    // For OGA models, find genai_config.json
-    if (recipe.find("oga-") == 0) {
+    // For RyzenAI LLM models, find genai_config.json
+    if (recipe == "ryzenai-llm") {
         for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
             if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
                 resolved_checkpoint = entry.path().parent_path().string();
@@ -2113,17 +2560,290 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         return;
     }
 
-    // Get verbose parameter from query string (default to false)
-    bool verbose = false;
-    if (req.has_param("verbose")) {
-        std::string verbose_param = req.get_param_value("verbose");
-        std::transform(verbose_param.begin(), verbose_param.end(), verbose_param.begin(), ::tolower);
-        verbose = (verbose_param == "true" || verbose_param == "1");
+    // Get system info - this function handles all errors internally and never throws
+    nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache();
+    res.set_content(system_info.dump(), "application/json");
+}
+
+// Helper: Get CPU usage percentage
+double Server::get_cpu_usage() {
+#ifdef __linux__
+    // Linux: Parse /proc/stat for system-wide CPU usage
+    std::lock_guard<std::mutex> lock(cpu_stats_mutex_);
+
+    std::ifstream stat_file("/proc/stat");
+    if (!stat_file.is_open()) {
+        return -1.0;
     }
 
-    // Get system info - this function handles all errors internally and never throws
-    nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache(verbose);
-    res.set_content(system_info.dump(), "application/json");
+    std::string line;
+    std::getline(stat_file, line);
+    stat_file.close();
+
+    // Parse: "cpu  user nice system idle iowait irq softirq steal"
+    std::istringstream iss(line);
+    std::string cpu_label;
+    uint64_t user, nice, system, idle, iowait, irq, softirq, steal;
+
+    iss >> cpu_label >> user >> nice >> system >> idle >> iowait >> irq >> softirq >> steal;
+
+    uint64_t total_idle = idle + iowait;
+    uint64_t total_active = user + nice + system + irq + softirq + steal;
+    uint64_t total = total_idle + total_active;
+
+    if (last_cpu_stats_.total > 0) {
+        uint64_t idle_diff = total_idle - last_cpu_stats_.total_idle;
+        uint64_t total_diff = total - last_cpu_stats_.total;
+
+        last_cpu_stats_.total_idle = total_idle;
+        last_cpu_stats_.total = total;
+
+        if (total_diff > 0) {
+            return ((total_diff - idle_diff) * 100.0) / total_diff;
+        }
+    }
+
+    last_cpu_stats_.total_idle = total_idle;
+    last_cpu_stats_.total = total;
+    return 0.0; // First call, no delta yet
+
+#elif defined(_WIN32)
+    // Windows: Use GetSystemTimes for system-wide CPU usage
+    std::lock_guard<std::mutex> lock(cpu_stats_mutex_);
+
+    FILETIME idle_time, kernel_time, user_time;
+    if (!GetSystemTimes(&idle_time, &kernel_time, &user_time)) {
+        return -1.0;
+    }
+
+    // Convert FILETIME to uint64_t (100-nanosecond intervals)
+    auto filetime_to_uint64 = [](const FILETIME& ft) -> uint64_t {
+        return (static_cast<uint64_t>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
+    };
+
+    uint64_t idle = filetime_to_uint64(idle_time);
+    uint64_t kernel = filetime_to_uint64(kernel_time); // Includes idle time
+    uint64_t user = filetime_to_uint64(user_time);
+
+    // Kernel time includes idle time, so subtract it to get actual kernel time
+    uint64_t total = kernel + user;
+    uint64_t total_idle = idle;
+
+    if (last_cpu_stats_.total > 0) {
+        uint64_t idle_diff = total_idle - last_cpu_stats_.total_idle;
+        uint64_t total_diff = total - last_cpu_stats_.total;
+
+        last_cpu_stats_.total_idle = total_idle;
+        last_cpu_stats_.total = total;
+
+        if (total_diff > 0) {
+            return ((total_diff - idle_diff) * 100.0) / total_diff;
+        }
+    }
+
+    last_cpu_stats_.total_idle = total_idle;
+    last_cpu_stats_.total = total;
+    return 0.0; // First call, no delta yet
+
+#elif defined(__APPLE__)
+    // macOS: Could use host_processor_info or top command
+    return -1.0; // Not implemented yet
+
+#else
+    return -1.0;
+#endif
+}
+
+// Helper: Get GPU usage percentage (AMD GPUs on Linux)
+double Server::get_gpu_usage() {
+#ifdef __linux__
+    // Linux: Read from AMD sysfs (gpu_busy_percent)
+    // Check all GPUs and return the highest utilization
+    try {
+        std::string drm_path = "/sys/class/drm";
+
+        if (!fs::exists(drm_path)) {
+            return -1.0;
+        }
+
+        double highest_usage = -1.0;
+
+        for (const auto& entry : fs::directory_iterator(drm_path)) {
+            std::string card_name = entry.path().filename().string();
+            if (card_name.find("card") != 0 || card_name.find("-") != std::string::npos) {
+                continue;
+            }
+
+            std::string busy_path = entry.path().string() + "/device/gpu_busy_percent";
+            std::ifstream busy_file(busy_path);
+            if (busy_file.is_open()) {
+                double usage;
+                busy_file >> usage;
+                busy_file.close();
+                if (usage > highest_usage) {
+                    highest_usage = usage;
+                }
+            }
+        }
+
+        return highest_usage;
+    } catch (...) {
+        return -1.0;
+    }
+
+#else
+    // GPU usage monitoring not implemented for Windows/macOS
+    return -1.0;
+#endif
+}
+
+// Helper: Get VRAM/GTT usage in GB (AMD GPUs on Linux)
+double Server::get_vram_usage() {
+#ifdef __linux__
+    // Linux: Read from AMD sysfs
+    // For dGPU: return VRAM used
+    // For APU: return VRAM + GTT used
+    // On multi-GPU systems, return memory from GPU with highest utilization
+    try {
+        std::string drm_path = "/sys/class/drm";
+
+        if (!fs::exists(drm_path)) {
+            return -1.0;
+        }
+
+        double highest_usage = -1.0;
+        std::string highest_card;
+        double highest_card_memory = 0.0;
+
+        for (const auto& entry : fs::directory_iterator(drm_path)) {
+            std::string card_name = entry.path().filename().string();
+            if (card_name.find("card") != 0 || card_name.find("-") != std::string::npos) {
+                continue;
+            }
+
+            std::string device_path = entry.path().string() + "/device";
+
+            // Read GPU utilization to find the most active GPU
+            double gpu_usage = 0.0;
+            std::ifstream busy_file(device_path + "/gpu_busy_percent");
+            if (busy_file.is_open()) {
+                busy_file >> gpu_usage;
+                busy_file.close();
+            }
+
+            // Check if this is a dGPU (has board_info) or APU (no board_info)
+            bool is_dgpu = fs::exists(device_path + "/board_info");
+
+            // Read VRAM used
+            uint64_t vram_used = 0;
+            std::ifstream vram_file(device_path + "/mem_info_vram_used");
+            if (vram_file.is_open()) {
+                vram_file >> vram_used;
+                vram_file.close();
+            }
+
+            // Read GTT used
+            uint64_t gtt_used = 0;
+            std::ifstream gtt_file(device_path + "/mem_info_gtt_used");
+            if (gtt_file.is_open()) {
+                gtt_file >> gtt_used;
+                gtt_file.close();
+            }
+
+            // Skip if no memory info found
+            if (vram_used == 0 && gtt_used == 0) {
+                continue;
+            }
+
+            // Calculate memory for this card
+            uint64_t card_memory = is_dgpu ? vram_used : (vram_used + gtt_used);
+
+            // Track the GPU with highest utilization
+            if (gpu_usage > highest_usage || highest_usage < 0) {
+                highest_usage = gpu_usage;
+                highest_card = card_name;
+                highest_card_memory = card_memory / (1024.0 * 1024.0 * 1024.0); // Convert to GB
+            }
+        }
+
+        return highest_card_memory > 0 ? highest_card_memory : -1.0;
+    } catch (...) {
+        return -1.0;
+    }
+
+#else
+    // VRAM monitoring not implemented for Windows/macOS
+    return -1.0;
+#endif
+}
+
+void Server::handle_system_stats(const httplib::Request& req, httplib::Response& res) {
+    // For HEAD requests, just return 200 OK without processing
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+
+    nlohmann::json stats;
+
+    // CPU usage
+    double cpu_percent = get_cpu_usage();
+    stats["cpu_percent"] = (cpu_percent >= 0) ? nlohmann::json(cpu_percent) : nlohmann::json();
+
+    // Get memory info
+#ifdef _WIN32
+    MEMORYSTATUSEX memInfo;
+    memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+    if (GlobalMemoryStatusEx(&memInfo)) {
+        double used_gb = (memInfo.ullTotalPhys - memInfo.ullAvailPhys) / (1024.0 * 1024.0 * 1024.0);
+        stats["memory_gb"] = std::round(used_gb * 10.0) / 10.0;
+    } else {
+        stats["memory_gb"] = 0;
+    }
+#elif defined(__linux__)
+    // Linux: Read /proc/meminfo
+    std::ifstream meminfo("/proc/meminfo");
+    if (meminfo.is_open()) {
+        std::string line;
+        long long total_kb = 0, available_kb = 0;
+        while (std::getline(meminfo, line)) {
+            if (line.find("MemTotal:") == 0) {
+                sscanf(line.c_str(), "MemTotal: %lld kB", &total_kb);
+            } else if (line.find("MemAvailable:") == 0) {
+                sscanf(line.c_str(), "MemAvailable: %lld kB", &available_kb);
+                break;
+            }
+        }
+        meminfo.close();
+        double used_gb = (total_kb - available_kb) / (1024.0 * 1024.0);
+        stats["memory_gb"] = std::round(used_gb * 10.0) / 10.0;
+    } else {
+        stats["memory_gb"] = 0;
+    }
+#elif defined(__APPLE__)
+    // macOS: Get memory info
+    int64_t physical_memory = 0;
+    size_t length = sizeof(physical_memory);
+    if (sysctlbyname("hw.memsize", &physical_memory, &length, nullptr, 0) == 0) {
+        // For now, just report total memory since getting free memory is complex on macOS
+        double total_gb = physical_memory / (1024.0 * 1024.0 * 1024.0);
+        stats["memory_gb"] = std::round(total_gb * 10.0) / 10.0;
+    } else {
+        stats["memory_gb"] = 0;
+    }
+#else
+    stats["memory_gb"] = 0;
+#endif
+
+    // GPU usage
+    double gpu_percent = get_gpu_usage();
+    stats["gpu_percent"] = (gpu_percent >= 0) ? nlohmann::json(gpu_percent) : nlohmann::json();
+
+    // VRAM usage
+    double vram_gb = get_vram_usage();
+    stats["vram_gb"] = (vram_gb >= 0) ? nlohmann::json(vram_gb) : nlohmann::json();
+
+    res.set_content(stats.dump(), "application/json");
 }
 
 void Server::handle_log_level(const httplib::Request& req, httplib::Response& res) {
@@ -2141,7 +2861,7 @@ void Server::handle_log_level(const httplib::Request& req, httplib::Response& re
     }
 }
 
-void Server::handle_shutdown(const httplib::Request& /*req*/, httplib::Response& res) {
+void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res) {
     std::cout << "[Server] Shutdown request received" << std::endl;
 
     nlohmann::json response = {{"status", "shutting down"}};
@@ -2177,7 +2897,7 @@ void Server::handle_shutdown(const httplib::Request& /*req*/, httplib::Response&
     }).detach();
 }
 
-void Server::handle_logs_stream(const httplib::Request& /*req*/, httplib::Response& res) {
+void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& res) {
     // Check if log file exists
     if (log_file_path_.empty() || !std::filesystem::exists(log_file_path_)) {
         std::cerr << "[Server] Log file not found: " << log_file_path_ << std::endl;

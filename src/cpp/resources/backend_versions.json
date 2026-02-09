@@ -1,16 +1,27 @@
 {
   "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-server, and FLM versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
   "llamacpp": {
-    "vulkan": "b7788",
-    "rocm": "b1162",
-    "metal": "b7788",
-    "cpu": "b7788"
+    "vulkan": "b7869",
+    "rocm": "b1170",
+    "metal": "b7869",
+    "cpu": "b7869"
   },
-  "whispercpp": "v1.8.2",
-  "sd-cpp": "master-471-7010bb4",
-  "ryzenai-server": "v1.0.2",
+  "whispercpp": {
+    "cpu": "v1.8.2",
+    "vulkan": "v1.8.2",
+    "rocm": "v1.8.2",
+    "npu": "v1.8.2"
+  },
+  "sd-cpp": {
+    "cpu": "master-471-7010bb4",
+    "rocm": "master-487-43e829f"
+  },
+  "ryzenai-server": "v1.7.0",
   "flm": {
-    "version": "v0.9.27",
+    "version": "v0.9.31",
     "min_npu_driver": "32.0.203.304"
+  },
+  "kokoro": {
+    "cpu": "b14"
   }
 }

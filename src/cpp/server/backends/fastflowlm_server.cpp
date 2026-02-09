@@ -37,7 +37,7 @@ FastFlowLMServer::~FastFlowLMServer() {
     unload();
 }
 
-void FastFlowLMServer::install(const std::string& /*backend*/) {
+void FastFlowLMServer::install(const std::string& backend) {
     std::cout << "[FastFlowLM] Checking FLM installation..." << std::endl;
 
     // Reset upgrade tracking
@@ -77,7 +77,7 @@ void FastFlowLMServer::install(const std::string& /*backend*/) {
 }
 
 std::string FastFlowLMServer::download_model(const std::string& checkpoint,
-                                            const std::string& /*mmproj*/,
+                                            const std::string& mmproj,
                                             bool do_not_upgrade) {
     std::cout << "[FastFlowLM] Pulling model with FLM: " << checkpoint << std::endl;
 
@@ -201,6 +201,7 @@ void FastFlowLMServer::load(const std::string& model_name,
     bool ready = wait_for_ready();
     if (!ready) {
         utils::ProcessManager::stop_process(process_handle_);
+        process_handle_ = {nullptr, 0};  // Reset to prevent double-stop on destructor
         throw std::runtime_error("flm-server failed to start");
     }
 
@@ -218,13 +219,13 @@ void FastFlowLMServer::unload() {
     }
 }
 
-bool FastFlowLMServer::wait_for_ready(int timeout_seconds) {
+bool FastFlowLMServer::wait_for_ready() {
     // FLM doesn't have a health endpoint, so we use /api/tags to check if it's up
     std::string tags_url = get_base_url() + "/api/tags";
 
     std::cout << "Waiting for " + server_name_ + " to be ready..." << std::endl;
 
-    const int max_attempts = timeout_seconds * 10;  // 100ms intervals
+    const int max_attempts = 300;  // 5 minutes timeout (large models can take time to load)
     for (int attempt = 0; attempt < max_attempts; ++attempt) {
         // Check if process is still running
         if (!utils::ProcessManager::is_running(process_handle_)) {
@@ -278,7 +279,7 @@ json FastFlowLMServer::reranking(const json& request) {
     return forward_request("/v1/rerank", request);
 }
 
-json FastFlowLMServer::responses(const json& /*request*/) {
+json FastFlowLMServer::responses(const json& request) {
     // Responses API is not supported for FLM backend
     return ErrorResponse::from_exception(
         UnsupportedOperationException("Responses API", "flm")
@@ -287,7 +288,8 @@ json FastFlowLMServer::responses(const json& /*request*/) {
 
 void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
                                                   const std::string& request_body,
-                                                  httplib::DataSink& sink) {
+                                                  httplib::DataSink& sink,
+                                                  bool sse) {
     // FLM requires the checkpoint name in the model field (e.g., "gemma3:4b"),
     // not the Lemonade model name (e.g., "Gemma3-4b-it-FLM")
     try {
@@ -296,10 +298,10 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
         std::string modified_body = request.dump();
 
         // Call base class with modified request
-        WrappedServer::forward_streaming_request(endpoint, modified_body, sink);
+        WrappedServer::forward_streaming_request(endpoint, modified_body, sink, sse);
     } catch (const json::exception& e) {
         // If JSON parsing fails, forward original request
-        WrappedServer::forward_streaming_request(endpoint, request_body, sink);
+        WrappedServer::forward_streaming_request(endpoint, request_body, sink, sse);
     }
 }
 

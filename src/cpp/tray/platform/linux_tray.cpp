@@ -10,8 +10,8 @@
 namespace lemon_tray {
 
 LinuxTray::LinuxTray()
-    : log_level_("info")
-    , should_exit_(false)
+    : should_exit_(false)
+    , log_level_("info")
 {
     // Headless mode - no initialization needed
 }
@@ -71,7 +71,7 @@ void LinuxTray::update_menu() {
 void LinuxTray::show_notification(
     const std::string& title,
     const std::string& message,
-    NotificationType /*type*/)
+    NotificationType type)
 {
     // Print to console instead of showing a GUI notification
     std::cout << "[Notification] " << title << ": " << message << std::endl;

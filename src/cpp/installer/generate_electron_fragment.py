@@ -21,7 +21,6 @@ import sys
 import textwrap
 import uuid
 
-
 MAX_WIX_ID_LENGTH = 70
 
 
@@ -129,16 +128,12 @@ def generate_wxs(
         ).upper()
         guid = f"{{{guid_value}}}"
         windows_rel_path = rel_path.replace("/", "\\")
-        file_entries.append(
-            textwrap.dedent(
-                f"""\
+        file_entries.append(textwrap.dedent(f"""\
                 <Component Id="{component_id}" Guid="{guid}" Directory="{dir_node.id}">
                   <File Id="{file_id}"
                         Source="$(var.{path_variable})\\{windows_rel_path}"
                         KeyPath="yes" />
-                </Component>"""
-            ).rstrip()
-        )
+                </Component>""").rstrip())
 
     content = [
         '<?xml version="1.0" encoding="UTF-8"?>',

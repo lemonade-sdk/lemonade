@@ -2,7 +2,7 @@
 
 This guide provides instructions on how to integrate Lemonade Server into your application.
 
-There are two main ways in which Lemonade Sever might integrate into apps:
+There are two main ways in which Lemonade Server might integrate into apps:
 
 * User-Managed Server: User is responsible for installing and managing Lemonade Server.
 * App-Managed Server: App is responsible for installing and managing Lemonade Server on behalf of the user.
@@ -16,7 +16,7 @@ The first part of this guide contains instructions that are common for both inte
 To identify if Lemonade Server is installed on a system, you can use the [`lemonade-server` CLI command](./lemonade-server-cli.md), which is added to path when using our installer. This is a reliable method to:
 
 - Verify if the server is installed.
-- Check which version is currently available is running the command below.
+- Check which version is currently available by running the command below.
 
 ```
 lemonade-server --version
@@ -62,14 +62,21 @@ The recommended way of directing users to the installer is pointing users to htt
 
 ### Installing Additional Models
 
-Lemonade Server installations always come with at least one LLM installed. If you want to install additional models on behalf of your users, the following tools are available:
+If you want to install models on behalf of your users, the following tools are available:
 
-- Discovering which LLMs are available:
-  - [A human-readable list of supported models](./server_models.md).
-  - [A JSON file with the list of supported models](https://github.com/lemonade-sdk/lemonade/tree/main/src/lemonade_server/server_models.json) is included in every Lemonade Server installation.
-- Installing LLMs:
-  - [The `pull` endpoint in the server](./server_spec.md#get-apiv1pull).
+- LLMs that are already available in lemonade:
+  - Run `lemonade-server list`.
+  - Use the [models endpoint](./server_spec.md#get-apiv1models).
+  - [A human-readable list of supported models](./server_models.md). Do not modify this file in an existing install (see `user_models.json` below).
+  - [A JSON file that defines the list of built-in models](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/server_models.json).
   - `lemonade-server pull MODEL` on the command line interface.
+
+- Adding new LLMs:
+
+  - The `user_models.json` file is similar to `server_models.json` (see above), but contains a user-specific registry that persists across lemonade updates. It is located at `$LEMONADE_CACHE_DIR/user_models.json`, which defaults to `~/.cache/lemonade/user_models.json`.
+  - [The `pull` endpoint in the server](./server_spec.md#post-apiv1pull) automates the process of registering models into `user_models.json` and downloading them.
+  - The `lemonade-server pull` CLI command can also register and download new models, see [Options for pull](./lemonade-server-cli.md#options-for-pull).
+
 
 ## Stand-Alone Server Integration
 
@@ -173,6 +180,86 @@ msiexec /i lemonade.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemona
 **Troubleshooting:**
 - If installation fails silently, check that you're running as Administrator
 - Add `/L*V install.log` to generate a debug log file
+
+## Linux Installation
+
+### Debian/Ubuntu Package
+
+The Debian package installer handles all system configuration automatically, including setting up a systemd service for managing the Lemonade Server.
+
+If you would prefer to manage the lifecycle of the server process manually, the service can be disabled and manually run as well.
+
+### Systemd Service Management
+
+When Lemonade Server is installed via the Debian package, it registers a systemd service called `lemonade-server` that allows you to manage the server process using standard systemd commands.
+
+**Service Features:**
+
+- **Automatic restart:** The service automatically restarts if the server crashes
+- **User isolation:** Runs under the unprivileged `lemonade` user for security
+- **GPU access:** The service is configured with proper group membership to access GPU/NPU hardware via the `render` group
+- **Security hardening:** Includes systemd security options like `ProtectSystem=full`, `ProtectHome=yes`, and `NoNewPrivileges=yes`
+- **Boot integration:** Starts automatically on system boot (if enabled)
+
+**Common Commands:**
+
+```bash
+# Start the service
+sudo systemctl start lemonade-server
+
+# Stop the service
+sudo systemctl stop lemonade-server
+
+# Restart the service
+sudo systemctl restart lemonade-server
+
+# Check service status
+sudo systemctl status lemonade-server
+
+# Enable automatic startup on boot
+sudo systemctl enable lemonade-server
+
+# Disable automatic startup on boot
+sudo systemctl disable lemonade-server
+
+# View service logs
+sudo journalctl -u lemonade-server
+
+# View recent logs (follow mode)
+sudo journalctl -u lemonade-server -f
+```
+
+**Configuration:**
+
+The Lemonade Server systemd service is configured to read settings from `/etc/lemonade/lemonade.conf`. Environment variables defined in this file are passed to the server process. Edit this file to customize server behavior:
+
+```bash
+sudo nano /etc/lemonade/lemonade.conf
+```
+
+Secrets, like the LEMONADE_API_KEY secret, are defined in `/etc/lemonade/secrets.conf` 
+
+```bash
+sudo nano /etc/lemonade/secrets.conf
+```
+
+After making changes to the configuration files, restart the service for changes to take effect:
+
+```bash
+sudo systemctl restart lemonade-server
+```
+
+**Service File Location:**
+
+The systemd service file is located at `/etc/systemd/system/lemonade-server.service`. This file should not be edited directly as it may be overwritten during package updates. Instead, use the configuration file (`/etc/lemonade/lemonade.conf`) to customize server behavior.
+
+If you need to make persistent changes to the service file, use systemd's drop-in override mechanism:
+
+```bash
+sudo systemctl edit lemonade-server
+```
+
+This creates an override file that takes precedence over the original service file and persists across updates.
 
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.

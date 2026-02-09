@@ -29,33 +29,6 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-// Helper to get whisper.cpp version from configuration
-static std::string get_whisper_version() {
-    std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-
-    try {
-        json config = utils::JsonUtils::load_from_file(config_path);
-
-        if (!config.contains("whispercpp") || !config["whispercpp"].is_string()) {
-            // Default version if not in config
-            return "v1.8.2";
-        }
-
-        return config["whispercpp"].get<std::string>();
-
-    } catch (const std::exception& e) {
-        std::cerr << "[WhisperServer] Warning: Could not load version from config: "
-                  << e.what() << std::endl;
-        std::cerr << "[WhisperServer] Using default version: v1.8.2" << std::endl;
-        return "v1.8.2";
-    }
-}
-
-// Helper to get the install directory for whisper-server
-static std::string get_whisper_install_dir() {
-    return (fs::path(get_downloaded_bin_dir()) / "whisper").string();
-}
-
 WhisperServer::WhisperServer(const std::string& log_level, ModelManager* model_manager)
     : WrappedServer("whisper-server", log_level, model_manager) {
 
@@ -78,193 +51,115 @@ WhisperServer::~WhisperServer() {
     }
 }
 
-std::string WhisperServer::find_executable_in_install_dir(const std::string& install_dir) {
-    // Look for whisper-server executable
-    // The official whisper.cpp releases extract to Release/ subdirectory
+void WhisperServer::install(const std::string& backend) {
+    std::string repo;
+    std::string filename;
+    std::string expected_version = BackendUtils::get_backend_version(SPEC.recipe, backend);
+
+    // Determine download URL
+    if (backend == "npu") {
+        // NPU support from lemonade-sdk/whisper.cpp-npu
+        repo = "lemonade-sdk/whisper.cpp-npu";
+
 #ifdef _WIN32
-    std::vector<std::string> exe_names = {"whisper-server.exe", "server.exe"};
-    std::vector<std::string> subdirs = {"Release", "bin", ""};
+        filename = "whisper-" + expected_version + "-windows-npu-x64.zip";
 #else
-    std::vector<std::string> exe_names = {"whisper-server", "server"};
-    std::vector<std::string> subdirs = {"Release", "bin", ""};
+        throw std::runtime_error("NPU whisper.cpp only supported on Windows");
 #endif
+        std::cout << "[WhisperServer] Using NPU backend" << std::endl;
 
-    for (const auto& subdir : subdirs) {
-        for (const auto& exe_name : exe_names) {
-            fs::path exe_path;
-            if (subdir.empty()) {
-                exe_path = fs::path(install_dir) / exe_name;
-            } else {
-                exe_path = fs::path(install_dir) / subdir / exe_name;
-            }
-            if (fs::exists(exe_path)) {
-                return exe_path.string();
-            }
-        }
-    }
-
-    return "";
-}
-
-std::string WhisperServer::find_external_whisper_server() {
-    const char* whisper_bin_env = std::getenv("LEMONADE_WHISPERCPP_BIN");
-    if (!whisper_bin_env) {
-        return "";
-    }
-
-    std::string whisper_bin = std::string(whisper_bin_env);
-
-    return fs::exists(whisper_bin) ? whisper_bin : "";
-}
-
-std::string WhisperServer::get_whisper_server_path() {
-    std::string exe_path = find_external_whisper_server();
-
-    if (!exe_path.empty()) {
-        return exe_path;
-    }
-
-    std::string install_dir = get_whisper_install_dir();
-    return find_executable_in_install_dir(install_dir);
-}
-
-void WhisperServer::install(const std::string& /*backend*/) {
-    std::string install_dir;
-    std::string version_file;
-    std::string expected_version;
-    std::string exe_path = find_external_whisper_server();
-    bool needs_install = exe_path.empty();
-
-    if (needs_install) {
-        install_dir = get_whisper_install_dir();
-        version_file = (fs::path(install_dir) / "version.txt").string();
-
-        // Get expected version from config
-        expected_version = get_whisper_version();
-
-        // Check if already installed with correct version
-        exe_path = find_executable_in_install_dir(install_dir);
-        needs_install = exe_path.empty();
-
-        if (!needs_install && fs::exists(version_file)) {
-            std::string installed_version;
-
-            std::ifstream vf(version_file);
-            std::getline(vf, installed_version);
-            vf.close();
-
-            if (installed_version != expected_version) {
-                std::cout << "[WhisperServer] Upgrading from " << installed_version
-                        << " to " << expected_version << std::endl;
-                needs_install = true;
-                fs::remove_all(install_dir);
-            }
-        }
-    }
-
-    if (needs_install) {
-        std::cout << "[WhisperServer] Installing whisper-server (version: "
-                 << expected_version << ")" << std::endl;
-
-        // Create install directory
-        fs::create_directories(install_dir);
-
-        // Determine download URL
-        std::string repo = "ggml-org/whisper.cpp";
-        std::string filename;
+    } else if (backend == "cpu") {
+        // CPU-only builds from ggml-org/whisper.cpp
+        repo = "ggml-org/whisper.cpp";
 
 #ifdef _WIN32
         filename = "whisper-bin-x64.zip";
 #elif defined(__linux__)
-        filename = "whisper-bin-x64.zip";  // Linux binary
+        filename = "whisper-bin-x64.zip";
 #elif defined(__APPLE__)
-        filename = "whisper-bin-arm64.zip";  // macOS Apple Silicon
+        filename = "whisper-bin-arm64.zip";
 #else
         throw std::runtime_error("Unsupported platform for whisper.cpp");
 #endif
+    } else {
+        throw std::runtime_error("[WhisperServer] Unknown backend: " + backend);
+    }
 
-        std::string url = "https://github.com/" + repo + "/releases/download/" +
-                         expected_version + "/" + filename;
+    BackendUtils::install_from_github(SPEC, expected_version, repo, filename, backend);
+}
 
-        // Download ZIP to cache directory
-        fs::path cache_dir = model_manager_ ? fs::path(model_manager_->get_hf_cache_dir()) : fs::temp_directory_path();
-        fs::create_directories(cache_dir);
-        std::string zip_path = (cache_dir / ("whisper_" + expected_version + ".zip")).string();
+// Helper to determine NPU compiled cache info based on model info from server_models.json
+static std::pair<std::string, std::string> get_npu_cache_info(const ModelInfo& model_info) {
 
-        std::cout << "[WhisperServer] Downloading from: " << url << std::endl;
-        std::cout << "[WhisperServer] Downloading to: " << zip_path << std::endl;
+    if (!model_info.npu_cache_repo.empty() && !model_info.npu_cache_filename.empty()) {
+        std::cout << "[WhisperServer] Using NPU cache from server_models.json: "
+                  << model_info.npu_cache_repo << " / " << model_info.npu_cache_filename << std::endl;
+        return {model_info.npu_cache_repo, model_info.npu_cache_filename};
+    }
 
-        // Download the file
+    // No NPU cache configured for this model in server_models.json
+    std::cout << "[WhisperServer] No NPU cache configured for model: " << model_info.model_name << std::endl;
+    return {"", ""};
+}
+
+// Helper to download NPU compiled cache (.rai file) for a given ggml .bin model
+void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
+                                                const std::string& checkpoint,
+                                                const ModelInfo& model_info,
+                                                bool do_not_upgrade) {
+    auto [cache_repo, cache_filename] = get_npu_cache_info(model_info);
+
+    if (cache_repo.empty() || cache_filename.empty()) {
+        std::cout << "[WhisperServer] No NPU compiled cache available for this model" << std::endl;
+        return;
+    }
+
+    std::cout << "[WhisperServer] Downloading NPU compiled cache: " << cache_filename << std::endl;
+    std::cout << "[WhisperServer] From repository: " << cache_repo << std::endl;
+
+    // Determine where to place the .rai file (must be in the same directory as .bin file)
+    fs::path model_dir = fs::path(model_path).parent_path();
+    fs::path cache_path = model_dir / cache_filename;
+
+    // Check if cache already exists
+    if (fs::exists(cache_path) && !do_not_upgrade) {
+        std::cout << "[WhisperServer] NPU cache already exists: " << cache_path << std::endl;
+        return;
+    }
+
+    try {
+        // Download .rai file directly from HuggingFace using HttpClient
+        std::string hf_url = "https://huggingface.co/" + cache_repo + "/resolve/main/" + cache_filename;
+
+        std::cout << "[WhisperServer] Downloading from: " << hf_url << std::endl;
+
+        // Download directly to the target location
         auto download_result = utils::HttpClient::download_file(
-            url,
-            zip_path,
+            hf_url,
+            cache_path.string(),
             utils::create_throttled_progress_callback()
         );
 
         if (!download_result.success) {
-            throw std::runtime_error("Failed to download whisper-server from: " + url +
-                                    " - " + download_result.error_message);
+            throw std::runtime_error("Failed to download NPU cache from: " + hf_url + " - " + download_result.error_message);
         }
 
-        std::cout << std::endl << "[WhisperServer] Download complete!" << std::endl;
+        std::cout << "[WhisperServer] NPU cache ready at: " << cache_path << std::endl;
 
-        // Verify the downloaded file
-        if (!fs::exists(zip_path)) {
-            throw std::runtime_error("Downloaded ZIP file does not exist: " + zip_path);
+    } catch (const std::exception& e) {
+        if (fs::exists(cache_path)) {
+            fs::remove(cache_path);
+            std::cout << "[WhisperServer] Cleaned up partial cache file" << std::endl;
         }
 
-        std::uintmax_t file_size = fs::file_size(zip_path);
-        std::cout << "[WhisperServer] Downloaded ZIP file size: "
-                  << (file_size / 1024 / 1024) << " MB" << std::endl;
-
-        const std::uintmax_t MIN_ZIP_SIZE = 1024 * 1024;  // 1 MB
-        if (file_size < MIN_ZIP_SIZE) {
-            std::cerr << "[WhisperServer] ERROR: Downloaded file is too small" << std::endl;
-            fs::remove(zip_path);
-            throw std::runtime_error("Downloaded file is too small, likely corrupted");
-        }
-
-        // Extract
-        if (!backends::BackendUtils::extract_archive(zip_path, install_dir, "WhisperServer")) {
-            fs::remove(zip_path);
-            fs::remove_all(install_dir);
-            throw std::runtime_error("Failed to extract whisper-server archive");
-        }
-
-        // Verify extraction
-        exe_path = find_executable_in_install_dir(install_dir);
-        if (exe_path.empty()) {
-            std::cerr << "[WhisperServer] ERROR: Extraction completed but executable not found" << std::endl;
-            fs::remove(zip_path);
-            fs::remove_all(install_dir);
-            throw std::runtime_error("Extraction failed: executable not found");
-        }
-
-        std::cout << "[WhisperServer] Executable verified at: " << exe_path << std::endl;
-
-        // Save version info
-        std::ofstream vf(version_file);
-        vf << expected_version;
-        vf.close();
-
-#ifndef _WIN32
-        // Make executable on Linux/macOS
-        chmod(exe_path.c_str(), 0755);
-#endif
-
-        // Delete ZIP file
-        fs::remove(zip_path);
-
-        std::cout << "[WhisperServer] Installation complete!" << std::endl;
-    } else {
-        std::cout << "[WhisperServer] Found whisper-server at: " << exe_path << std::endl;
+        std::cerr << "[WhisperServer] Warning: Failed to download NPU cache: " << e.what() << std::endl;
+        std::cerr << "[WhisperServer] Continuing without NPU cache (may cause runtime errors)" << std::endl;
     }
 }
 
 std::string WhisperServer::download_model(const std::string& checkpoint,
-                                         const std::string& /*mmproj*/,
+                                         const std::string& mmproj,
                                          bool do_not_upgrade) {
-    // Parse checkpoint: "ggml-org/whisper.cpp:ggml-large-v3.bin"
     std::string repo, filename;
     size_t colon_pos = checkpoint.find(':');
 
@@ -275,16 +170,12 @@ std::string WhisperServer::download_model(const std::string& checkpoint,
         throw std::runtime_error("Invalid checkpoint format. Expected 'repo:filename'");
     }
 
-    // Download .bin file from Hugging Face using ModelManager
     if (!model_manager_) {
         throw std::runtime_error("ModelManager not available for model download");
     }
 
     std::cout << "[WhisperServer] Downloading model: " << filename << " from " << repo << std::endl;
 
-    // Use ModelManager's download_model which handles HuggingFace downloads
-    // The download is triggered through the model registry system
-    // Model path will be resolved via ModelInfo.resolved_path
     model_manager_->download_model(
         checkpoint,  // model_name
         checkpoint,  // checkpoint
@@ -298,7 +189,6 @@ std::string WhisperServer::download_model(const std::string& checkpoint,
         do_not_upgrade
     );
 
-    // Get the resolved path from model info
     ModelInfo info = model_manager_->get_model_info(checkpoint);
     std::string model_path = info.resolved_path;
 
@@ -312,27 +202,31 @@ std::string WhisperServer::download_model(const std::string& checkpoint,
 
 void WhisperServer::load(const std::string& model_name,
                         const ModelInfo& model_info,
-                        const RecipeOptions& /*options*/,
-                        bool /*do_not_upgrade*/) {
+                        const RecipeOptions& options,
+                        bool do_not_upgrade) {
     std::cout << "[WhisperServer] Loading model: " << model_name << std::endl;
+    std::cout << "[WhisperServer] Per-model settings: " << options.to_log_string() << std::endl;
 
-    // Install whisper-server if needed
-    install("");
+    std::string whispercpp_backend = options.get_option("whispercpp_backend");
 
-    // Use pre-resolved model path
+    install(whispercpp_backend);
+
     std::string model_path = model_info.resolved_path;
     if (model_path.empty()) {
         throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint);
     }
 
     std::cout << "[WhisperServer] Using model: " << model_path << std::endl;
+    std::cout << "[WhisperServer] Using backend: " << whispercpp_backend << std::endl;
     model_path_ = model_path;
 
-    // Get whisper-server executable path
-    std::string exe_path = get_whisper_server_path();
-    if (exe_path.empty()) {
-        throw std::runtime_error("whisper-server executable not found");
+    // For NPU backend, download the compiled cache (.rai file). This is a must-have for NPU backend.
+    if (whispercpp_backend == "npu") {
+        download_npu_compiled_cache(model_path, model_info.checkpoint, model_info, do_not_upgrade);
     }
+
+    // Get whisper-server executable path
+    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, whispercpp_backend);
 
     // Choose a port
     port_ = choose_port();
@@ -367,7 +261,7 @@ void WhisperServer::load(const std::string& model_name,
     std::cout << "[WhisperServer] Process started with PID: " << process_handle_.pid << std::endl;
 
     // Wait for server to be ready
-    if (!wait_for_ready()) {
+    if (!wait_for_ready("/health")) {
         unload();
         throw std::runtime_error("whisper-server failed to start or become ready");
     }
@@ -386,7 +280,7 @@ void WhisperServer::unload() {
 }
 
 // ICompletionServer implementation - not supported for Whisper
-json WhisperServer::chat_completion(const json& /*request*/) {
+json WhisperServer::chat_completion(const json& request) {
     return json{
         {"error", {
             {"message", "Whisper models do not support chat completion. Use audio transcription endpoints instead."},
@@ -396,7 +290,7 @@ json WhisperServer::chat_completion(const json& /*request*/) {
     };
 }
 
-json WhisperServer::completion(const json& /*request*/) {
+json WhisperServer::completion(const json& request) {
     return json{
         {"error", {
             {"message", "Whisper models do not support text completion. Use audio transcription endpoints instead."},
@@ -406,7 +300,7 @@ json WhisperServer::completion(const json& /*request*/) {
     };
 }
 
-json WhisperServer::responses(const json& /*request*/) {
+json WhisperServer::responses(const json& request) {
     return json{
         {"error", {
             {"message", "Whisper models do not support responses. Use audio transcription endpoints instead."},
