@@ -119,7 +119,25 @@ runs:
         echo "Building macOS .dmg via CMake notarize target..."
         echo "This will: build electron app, sign binaries, create package, notarize, and staple."
 
-        cmake --build --preset default --target notarize
+        if ! cmake --build --preset default --target notarize; then
+            echo ""
+            echo "========================================="
+            echo "Notarize target failed - fetching Apple notarization log..."
+            echo "========================================="
+
+            # Find the submission ID from notarytool output and fetch the log
+            # Try to get the most recent submission log
+            SUBMISSION_ID=$(xcrun notarytool history --keychain-profile AC_PASSWORD 2>/dev/null | grep -m1 "id:" | awk '{print $2}' || echo "")
+            if [ -n "$SUBMISSION_ID" ]; then
+                echo "Fetching log for submission: $SUBMISSION_ID"
+                xcrun notarytool log "$SUBMISSION_ID" --keychain-profile AC_PASSWORD 2>&1 || true
+            else
+                echo "Could not retrieve submission ID for log lookup"
+                xcrun notarytool history --keychain-profile AC_PASSWORD 2>&1 || true
+            fi
+
+            exit 1
+        fi
 
         # Find the generated .dmg
         DMG_FILE=$(find build/app -name "*.dmg" -type f 2>/dev/null | head -1)
