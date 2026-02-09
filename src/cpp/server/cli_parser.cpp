@@ -61,6 +61,7 @@ static void add_serve_options(CLI::App* serve, ServerConfig& config, std::vector
     // Use a member vector to capture 1, 3, 4, or 5 values (2 is not allowed)
     serve->add_option("--max-loaded-models", max_models_vec,
                    "Max loaded models: LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO] [IMAGE]")
+        ->envname("LEMONADE_MAX_LOADED_MODELS")
         ->type_name("N [E] [R] [A] [I]")
         ->expected(1, 5)
         ->default_val(std::vector<int>{config.max_llm_models, config.max_embedding_models, config.max_reranking_models, config.max_audio_models, config.max_image_models})
@@ -120,7 +121,7 @@ CLIParser::CLIParser()
         ->type_name("CHECKPOINT");
     pull->add_option("--recipe", tray_config_.recipe, "Inference recipe to use. Required when using a local path.")
         ->type_name("RECIPE")
-        ->check(CLI::IsMember({"llamacpp", "flm", "oga-cpu", "oga-hybrid", "oga-npu", "ryzenai", "whispercpp"}));
+        ->check(CLI::IsMember({"llamacpp", "flm", "ryzenai-llm", "whispercpp"}));
     pull->add_flag("--reasoning", tray_config_.is_reasoning, "Mark model as a reasoning model (e.g., DeepSeek-R1). Adds 'reasoning' label to model metadata.");
     pull->add_flag("--vision", tray_config_.is_vision, "Mark model as a vision model (multimodal). Adds 'vision' label to model metadata.");
     pull->add_flag("--embedding", tray_config_.is_embedding, "Mark model as an embedding model. Adds 'embeddings' label to model metadata. For use with /api/v1/embeddings endpoint.");

@@ -144,13 +144,11 @@ MOCK_HARDWARE_CONFIGS = {
             "whispercpp": ["npu"],  # npu backend requires XDNA2 NPU
             # NPU recipes unsupported: CPU is "Ryzen 9 7950X" (no "Ryzen AI" -> no XDNA2)
             "flm": ["default"],
-            "oga-npu": ["default"],
-            "oga-hybrid": ["default"],
-            "oga-cpu": ["default"],
+            "ryzenai-llm": ["default"],
         },
     },
     # Windows x86_64 with AMD iGPU (Strix Point - ROCm-capable) and NPU
-    # Tests: ROCm iGPU support, NPU recipes (flm, oga-*)
+    # Tests: ROCm iGPU support, NPU recipes (flm, ryzenai-llm)
     "windows_x86_with_rocm_igpu": {
         "requires_os": "windows",
         "requires_arch": "x86_64",
@@ -188,10 +186,7 @@ MOCK_HARDWARE_CONFIGS = {
             "whispercpp": ["npu", "cpu"],  # npu supported on XDNA2, cpu on x86_64
             "sd-cpp": ["cpu", "rocm"],
             "flm": ["default"],
-            "oga-npu": ["default"],
-            "oga-hybrid": ["default"],
-            "oga-cpu": ["default"],
-            
+            "ryzenai-llm": ["default"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
@@ -240,9 +235,7 @@ MOCK_HARDWARE_CONFIGS = {
             # NPU recipes unsupported: CPU is "Intel Core i9-13900K" (no Ryzen AI)
             "sd-cpp": ["rocm"],
             "flm": ["default"],
-            "oga-npu": ["default"],
-            "oga-hybrid": ["default"],
-            "oga-cpu": ["default"],
+            "ryzenai-llm": ["default"],
         },
     },
     # Windows x86_64 with AMD iGPU but NOT ROCm-capable (older GPU)
@@ -286,9 +279,7 @@ MOCK_HARDWARE_CONFIGS = {
             # NPU recipes unsupported: CPU is "Ryzen 7 6800U" (no Ryzen AI)
             "sd-cpp": ["rocm"],
             "flm": ["default"],
-            "oga-npu": ["default"],
-            "oga-hybrid": ["default"],
-            "oga-cpu": ["default"],
+            "ryzenai-llm": ["default"],
         },
     },
     # macOS ARM64 (Apple Silicon) - ONLY RUN ON MACOS
@@ -320,9 +311,7 @@ MOCK_HARDWARE_CONFIGS = {
             "whispercpp": ["npu", "cpu"],  # whispercpp is Windows-only
             "sd-cpp": ["cpu", "rocm"],
             "flm": ["default"],
-            "oga-npu": ["default"],
-            "oga-hybrid": ["default"],
-            "oga-cpu": ["default"],
+            "ryzenai-llm": ["default"],
         },
     },
     # Linux x86_64 with no AMD GPU - ONLY RUN ON LINUX
@@ -355,9 +344,7 @@ MOCK_HARDWARE_CONFIGS = {
             "whispercpp": ["npu", "cpu"],  # whispercpp is Windows-only
             "sd-cpp": ["rocm"],
             "flm": ["default"],
-            "oga-npu": ["default"],
-            "oga-hybrid": ["default"],
-            "oga-cpu": ["default"],
+            "ryzenai-llm": ["default"],
         },
     },
     # Linux x86_64 with AMD RDNA3 dGPU (ROCm-capable) - ONLY RUN ON LINUX
@@ -396,9 +383,7 @@ MOCK_HARDWARE_CONFIGS = {
             "llamacpp": ["metal"],
             "whispercpp": ["npu", "cpu"],  # whispercpp is Windows-only
             "flm": ["default"],  # Windows NPU only
-            "oga-npu": ["default"],
-            "oga-hybrid": ["default"],
-            "oga-cpu": ["default"],
+            "ryzenai-llm": ["default"],
         },
     },
     # Linux x86_64 with AMD GPU that doesn't support ROCm (RDNA2) - ONLY RUN ON LINUX
@@ -438,9 +423,7 @@ MOCK_HARDWARE_CONFIGS = {
             "whispercpp": ["npu", "cpu"],  # whispercpp is Windows-only
             "sd-cpp": ["rocm"],
             "flm": ["default"],
-            "oga-npu": ["default"],
-            "oga-hybrid": ["default"],
-            "oga-cpu": ["default"],
+            "ryzenai-llm": ["default"],
         },
     },
 }

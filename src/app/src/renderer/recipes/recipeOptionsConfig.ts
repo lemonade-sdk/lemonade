@@ -51,10 +51,10 @@ export interface FlmOptions {
   saveOptions: BooleanOption;
 }
 
-export type OgaRecipe = 'oga-cpu' | 'oga-npu' | 'oga-hybrid';
+export type RyzenAIRecipe = 'ryzenai-llm';
 
-export interface OgaOptions {
-  recipe: OgaRecipe;
+export interface RyzenAIOptions {
+  recipe: RyzenAIRecipe;
   ctxSize: NumericOption;
   saveOptions: BooleanOption;
 }
@@ -69,19 +69,19 @@ export interface StableDiffusionOptions {
 }
 
 // Union type of all recipe options
-export type RecipeOptions = LlamaOptions | WhisperOptions | FlmOptions | OgaOptions | StableDiffusionOptions;
+export type RecipeOptions = LlamaOptions | WhisperOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions;
 
 // =============================================================================
 // Recipe Constants
 // =============================================================================
 
-export const OGA_RECIPES: OgaRecipe[] = ['oga-cpu', 'oga-npu', 'oga-hybrid'];
+export const RYZENAI_RECIPES: RyzenAIRecipe[] = ['ryzenai-llm'];
 
 /**
- * Checks if a recipe name is an OGA recipe
+ * Checks if a recipe name is a RyzenAI recipe
  */
-export function isOgaRecipe(recipe: string): boolean {
-  return OGA_RECIPES.includes(recipe as OgaRecipe);
+export function isRyzenAIRecipe(recipe: string): boolean {
+  return RYZENAI_RECIPES.includes(recipe as RyzenAIRecipe);
 }
 
 // =============================================================================
@@ -123,7 +123,7 @@ export type OptionDef = NumericOptionDef | StringOptionDef | BooleanOptionDef;
 // =============================================================================
 
 export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
-  // LLM context size option (shared by llamacpp, flm, oga-*)
+  // LLM context size option (shared by llamacpp, flm, ryzenai-llm)
   ctxSize: {
     type: 'numeric',
     default: 4096,
@@ -211,7 +211,7 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
 // Recipe Configuration - Maps recipes to their available options
 // =============================================================================
 
-export type RecipeName = 'llamacpp' | 'whispercpp' | 'flm' | 'oga-cpu' | 'oga-npu' | 'oga-hybrid' | 'sd-cpp';
+export type RecipeName = 'llamacpp' | 'whispercpp' | 'flm' | 'ryzenai-llm' | 'sd-cpp';
 
 /**
  * Maps recipe names to the option keys they support.
@@ -221,9 +221,7 @@ export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
   'llamacpp': ['ctxSize', 'llamacppBackend', 'llamacppArgs', 'saveOptions'],
   'whispercpp': ['whispercppBackend', 'saveOptions'],
   'flm': ['ctxSize', 'saveOptions'],
-  'oga-cpu': ['ctxSize', 'saveOptions'],
-  'oga-npu': ['ctxSize', 'saveOptions'],
-  'oga-hybrid': ['ctxSize', 'saveOptions'],
+  'ryzenai-llm': ['ctxSize', 'saveOptions'],
   'sd-cpp': ['steps', 'cfgScale', 'width', 'height', 'saveOptions'],
 };
 

@@ -123,7 +123,7 @@ lemonade-server pull <model_name> [options]
 | Option | Description | Required |
 |--------|-------------|----------|
 | `--checkpoint CHECKPOINT` | Hugging Face checkpoint in the format `org/model:variant`. For GGUF models, the variant (after the colon) is required. Examples: `unsloth/Qwen3-8B-GGUF:Q4_0`, `amd/Qwen3-4B-awq-quant-onnx-hybrid` | For custom models |
-| `--recipe RECIPE` | Inference recipe to use. Options: `llamacpp`, `flm`, `oga-cpu`, `oga-hybrid`, `oga-npu` | For custom models |
+| `--recipe RECIPE` | Inference recipe to use. Options: `llamacpp`, `flm`, `ryzenai-llm` | For custom models |
 | `--reasoning` | Mark the model as a reasoning model (e.g., DeepSeek-R1). Adds the 'reasoning' label to model metadata. | No |
 | `--vision` | Mark the model as a vision/multimodal model. Adds the 'vision' label to model metadata. | No |
 | `--embedding` | Mark the model as an embedding model. Adds the 'embeddings' label to model metadata. For use with the `/api/v1/embeddings` endpoint. | No |
@@ -190,7 +190,7 @@ To connect the app to a server running on a different machine:
    lemonade-app
    ```
 
-The app automatically discovers and connects to a local server unless an endpoint is explicitly configured in the UI. 
+The app automatically discovers and connects to a local server unless an endpoint is explicitly configured in the UI.
 
 ## Next Steps
 

@@ -445,8 +445,8 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
 
     std::string model_cache_path = hf_cache + "/" + cache_dir_name;
 
-    // For OGA models, look for genai_config.json directory
-    if (info.recipe.find("oga-") == 0 || info.recipe == "ryzenai") {
+    // For RyzenAI LLM models, look for genai_config.json directory
+    if (info.recipe == "ryzenai-llm") {
         if (fs::exists(model_cache_path)) {
             for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
                 if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
@@ -1086,9 +1086,9 @@ static bool is_flm_available(const json& hardware) {
     return is_npu_available(hardware);
 }
 
-static bool is_oga_available(const json& hardware) {
-    // OGA models are available if NPU hardware is present
-    // The ryzenai-server executable (OGA backend) will be obtained as needed
+static bool is_ryzenai_llm_available(const json& hardware) {
+    // RyzenAI LLM models are available if NPU hardware is present
+    // The ryzenai-server executable will be obtained as needed
     return is_npu_available(hardware);
 }
 
@@ -1203,7 +1203,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     // Check backend availability (passing hardware info)
     bool npu_available = is_npu_available(hardware);
     bool flm_available = is_flm_available(hardware);
-    bool oga_available = is_oga_available(hardware);
+    bool ryzenai_llm_available = is_ryzenai_llm_available(hardware);
 
     // Get largest VRAM object for memory-based filtering
     double largest_mem_pool_gb = 0.0;
@@ -1251,7 +1251,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         std::cout << "[ModelManager] Backend availability:" << std::endl;
         std::cout << "  - NPU hardware: " << (npu_available ? "Yes" : "No") << std::endl;
         std::cout << "  - FLM available: " << (flm_available ? "Yes" : "No") << std::endl;
-        std::cout << "  - OGA available: " << (oga_available ? "Yes" : "No") << std::endl;
+        std::cout << "  - RyzenAI LLM available: " << (ryzenai_llm_available ? "Yes" : "No") << std::endl;
         if (system_ram_gb > 0.0) {
             std::cout << "  - System RAM: " << std::fixed << std::setprecision(1) << system_ram_gb
                       << " GB (max model size: " << max_model_size_gb << " GB)" << std::endl;
@@ -1275,12 +1275,6 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
             filter_reason = unsupported_reason + " "
                            "Detected processor: " + processor + ". "
                            "Detected operating system: " + os_version + ".";
-        }
-
-        // Filter out other OGA models (not yet implemented)
-        if (recipe == "oga-igpu") {
-            filter_out = true;
-            filter_reason = "The oga-igpu recipe is not yet implemented in this version of Lemonade Server.";
         }
 
         // On macOS, only show llamacpp models
@@ -1622,7 +1616,7 @@ void ModelManager::download_model(const std::string& model_name,
         // For llamacpp (GGUF), whispercpp (.bin), and sd-cpp (.safetensors) models, use variant-aware download
         download_from_huggingface(repo_id, variant, actual_mmproj, progress_callback);
     } else {
-        // For non-GGUF models (oga-*, etc.), download all files (no variant filtering)
+        // For non-GGUF models (ryzenai-llm, etc.), download all files (no variant filtering)
         download_from_huggingface(repo_id, "", "", progress_callback);
     }
 

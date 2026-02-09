@@ -130,14 +130,8 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"npu", {"XDNA2"}},
     }},
 
-    // OGA recipes - Windows NPU (XDNA2)
-    {"oga-npu", "default", {"windows"}, {
-        {"npu", {"XDNA2"}},
-    }},
-    {"oga-hybrid", "default", {"windows"}, {
-        {"npu", {"XDNA2"}},
-    }},
-    {"oga-cpu", "default", {"windows"}, {
+    // RyzenAI LLM - Windows NPU (XDNA2)
+    {"ryzenai-llm", "default", {"windows"}, {
         {"npu", {"XDNA2"}},
     }},
 };
@@ -323,7 +317,7 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         #endif
         return false;
     }
-    if (recipe.find("oga") == 0) {  // oga-npu, oga-hybrid, oga-cpu
+    if (recipe == "ryzenai-llm") {
         return SystemInfo::is_ryzenai_serve_available();
     }
     return false;
@@ -346,7 +340,7 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
     if (recipe == "flm") {
         return SystemInfo::get_flm_version();
     }
-    if (recipe.find("oga") == 0) {  // oga-npu, oga-hybrid, oga-cpu
+    if (recipe == "ryzenai-llm") {
         return SystemInfo::get_oga_version();
     }
     return "";

@@ -237,7 +237,13 @@ The Lemonade Server systemd service is configured to read settings from `/etc/le
 sudo nano /etc/lemonade/lemonade.conf
 ```
 
-After making changes to the configuration file, restart the service for changes to take effect:
+Secrets, like the LEMONADE_API_KEY secret, are defined in `/etc/lemonade/secrets.conf` 
+
+```bash
+sudo nano /etc/lemonade/secrets.conf
+```
+
+After making changes to the configuration files, restart the service for changes to take effect:
 
 ```bash
 sudo systemctl restart lemonade-server
