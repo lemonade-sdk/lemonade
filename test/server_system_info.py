@@ -137,7 +137,7 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_supported": {
             "llamacpp": ["vulkan", "rocm", "cpu"],
             "whispercpp": ["cpu"],  # cpu backend available on x86_64
-            "sd-cpp": ["cpu", "rocm"],
+            "sd-cpp": ["cpu", "rocm", "vulkan"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
@@ -184,7 +184,7 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_supported": {
             "llamacpp": ["vulkan", "rocm", "cpu"],
             "whispercpp": ["npu", "cpu"],  # npu supported on XDNA2, cpu on x86_64
-            "sd-cpp": ["cpu", "rocm"],
+            "sd-cpp": ["cpu", "rocm", "vulkan"],
             "flm": ["default"],
             "ryzenai-llm": ["default"],
         },
@@ -227,7 +227,7 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_supported": {
             "llamacpp": ["vulkan", "cpu"],
             "whispercpp": ["cpu"],  # cpu backend available on x86_64
-            "sd-cpp": ["cpu"],
+            "sd-cpp": ["cpu", "vulkan"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],
@@ -271,7 +271,7 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_supported": {
             "llamacpp": ["vulkan", "cpu"],
             "whispercpp": ["cpu"],  # cpu backend available on x86_64
-            "sd-cpp": ["cpu"],
+            "sd-cpp": ["cpu", "vulkan"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],  # rocm not supported on RDNA2
@@ -337,7 +337,7 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_supported": {
             "llamacpp": ["vulkan", "cpu"],
-            "sd-cpp": ["cpu"],
+            "sd-cpp": ["cpu", "vulkan"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],
@@ -377,7 +377,7 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_supported": {
             "llamacpp": ["vulkan", "rocm", "cpu"],
-            "sd-cpp": ["cpu", "rocm"],
+            "sd-cpp": ["cpu", "rocm", "vulkan"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
@@ -416,7 +416,7 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_supported": {
             "llamacpp": ["vulkan", "cpu"],
-            "sd-cpp": ["cpu"],
+            "sd-cpp": ["cpu", "vulkan"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],  # rocm not supported on RDNA2

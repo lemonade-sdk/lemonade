@@ -68,6 +68,18 @@ void SDServer::install(const std::string& backend) {
         throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
 #endif
         std::cout << "[SDServer] Using ROCm GPU backend" << std::endl;
+    } else if (backend_ == "vulkan") {
+        // Vulkan backend for cross-platform GPU support
+#ifdef _WIN32
+        filename = "sd-" + short_version + "-bin-win-vulkan-x64.zip";
+#elif defined(__linux__)
+        filename = "sd-" + short_version + "-bin-linux-vulkan-x64.zip";
+#elif defined(__APPLE__)
+        filename = "sd-" + short_version + "-bin-macos-vulkan-arm64.zip";
+#else
+        throw std::runtime_error("Vulkan sd.cpp platform not supported");
+#endif
+        std::cout << "[SDServer] Using Vulkan GPU backend" << std::endl;
     } else {
         // CPU build (default)
 #ifdef _WIN32
