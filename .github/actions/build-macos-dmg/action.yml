@@ -28,6 +28,17 @@ runs:
       with:
         node-version: '20'
 
+    - name: Set Electron signing identity
+      shell: bash
+      run: |
+        # Tell electron-builder to use the Developer ID Application cert from keychain
+        if [ -n "$DEVELOPER_ID_APPLICATION_IDENTITY" ]; then
+            echo "CSC_NAME=$DEVELOPER_ID_APPLICATION_IDENTITY" >> $GITHUB_ENV
+            echo "Electron builder will sign with: $DEVELOPER_ID_APPLICATION_IDENTITY"
+        else
+            echo "WARNING: No signing identity found, electron-builder will not sign"
+        fi
+
     - name: Build C++ Server with CMake
       shell: bash
       run: |
