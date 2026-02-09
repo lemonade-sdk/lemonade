@@ -377,6 +377,65 @@ jobs:
           path: build/lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
+  build-lemonade-appimage:
+    name: Build Lemonade AppImage
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Get version from CMakeLists.txt
+        id: get_version
+        uses: ./.github/actions/get-version
+
+      - name: Run setup.sh to configure environment
+        shell: bash
+        run: |
+          set -e
+          echo "Running setup.sh to configure build environment..."
+          bash setup.sh
+          echo "Build environment configured successfully!"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build AppImage
+        shell: bash
+        run: |
+          set -e
+
+          echo "Building Lemonade AppImage..."
+          cmake --build --preset default --target appimage
+
+          # Verify AppImage was created
+          APPIMAGE_FILE="build/app-appimage/Lemonade-${LEMONADE_VERSION}-x86_64.AppImage"
+          if [ ! -f "$APPIMAGE_FILE" ]; then
+              echo "ERROR: AppImage not created!"
+              echo "Contents of build/app-appimage directory:"
+              ls -lh build/app-appimage/ || echo "Directory does not exist"
+              exit 1
+          fi
+
+          echo "AppImage created successfully!"
+          ls -lh "$APPIMAGE_FILE"
+
+          # Verify it's executable
+          chmod +x "$APPIMAGE_FILE"
+          "$APPIMAGE_FILE" --appimage-help | head -5
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-appimage
+          path: build/app-appimage/Lemonade-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
+          retention-days: 7
+
   # ========================================================================
   # TEST JOBS - Inference tests on self-hosted runners
   # ========================================================================
@@ -765,6 +824,7 @@ jobs:
       - sign-msi-installers
       - build-lemonade-server-deb
       - build-lemonade-deb-full
+      - build-lemonade-appimage
       - test-cli-endpoints
     if: startsWith(github.ref, 'refs/tags/v')
     env:
@@ -793,6 +853,12 @@ jobs:
           name: lemonade-deb-full
           path: .
 
+      - name: Download Lemonade AppImage (Linux)
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-appimage
+          path: .
+
       - name: Verify release artifacts
         run: |
           echo "Release artifacts:"
@@ -800,6 +866,7 @@ jobs:
           ls -lh lemonade.msi
           ls -lh lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb
           ls -lh lemonade_${LEMONADE_VERSION}_amd64.deb
+          ls -lh Lemonade-${LEMONADE_VERSION}-x86_64.AppImage
 
       - name: Generate release notes
         id: release-notes
@@ -819,4 +886,5 @@ jobs:
             lemonade.msi
             lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
             lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
+            Lemonade-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
           fail_on_unmatched_files: true
