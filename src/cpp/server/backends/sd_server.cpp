@@ -5,6 +5,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/error_types.h"
+#include "lemon/system_info.h"
 #include <httplib.h>
 #include <iostream>
 #include <filesystem>
@@ -18,11 +19,14 @@ namespace lemon {
 namespace backends {
 
 SDServer::SDServer(const std::string& log_level,
-                   ModelManager* model_manager)
-    : WrappedServer("sd-server", log_level, model_manager) {
+                   ModelManager* model_manager,
+                   const std::string& backend)
+    : WrappedServer("sd-server", log_level, model_manager),
+      backend_(backend) {
 
     if (is_debug()) {
-        std::cout << "[SDServer] Created with log_level=" << log_level << std::endl;
+        std::cout << "[SDServer] Created with log_level=" << log_level
+                  << ", backend=" << backend << std::endl;
     }
 }
 
@@ -46,18 +50,36 @@ void SDServer::install(const std::string& backend) {
         }
     }
 
+    // ROCm backend selection for AMD GPU support
+    if (backend == "rocm") {
+        // Validate ROCm architecture support
+        std::string target_arch = lemon::SystemInfo::get_rocm_arch();
+        if (target_arch.empty()) {
+            throw std::runtime_error(
+                lemon::SystemInfo::get_unsupported_backend_error("sd-cpp", "rocm")
+            );
+        }
+
 #ifdef _WIN32
-    // Windows CPU build with AVX2
-    filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
+        filename = "sd-" + short_version + "-bin-win-rocm-x64.zip";
 #elif defined(__linux__)
-    // Linux build
-    filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
-#elif defined(__APPLE__)
-    // macOS ARM build
-    filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.2-arm64.zip";
+        filename = "sd-" + short_version + "-bin-linux-rocm-x64.zip";
 #else
-    throw std::runtime_error("Unsupported platform for stable-diffusion.cpp");
+        throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
 #endif
+        std::cout << "[SDServer] Using ROCm GPU backend" << std::endl;
+    } else {
+        // CPU build (default)
+#ifdef _WIN32
+        filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
+#elif defined(__linux__)
+        filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
+#elif defined(__APPLE__)
+        filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.2-arm64.zip";
+#else
+        throw std::runtime_error("Unsupported platform for stable-diffusion.cpp");
+#endif
+    }
 
     BackendUtils::install_from_github(SPEC, expected_version, repo, filename, backend);
 }
@@ -104,7 +126,7 @@ void SDServer::load(const std::string& model_name,
     std::cout << "[SDServer] Loading model: " << model_name << std::endl;
 
     // Install sd-server if needed
-    install("cpu");
+    install(backend_);
 
     // Get model path
     std::string model_path = model_info.resolved_path;
@@ -165,7 +187,7 @@ void SDServer::load(const std::string& model_name,
     model_path_ = model_path;
 
     // Get sd-server executable path
-    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, "cpu");
+    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, backend_);
 
     // Choose a port
     port_ = choose_port();
@@ -173,7 +195,7 @@ void SDServer::load(const std::string& model_name,
         throw std::runtime_error("Failed to find an available port");
     }
 
-    std::cout << "[SDServer] Starting server on port " << port_ << std::endl;
+    std::cout << "[SDServer] Starting server on port " << port_ << " (backend: " << backend_ << ")" << std::endl;
 
     // Build command line arguments
     std::vector<std::string> args = {
@@ -185,10 +207,12 @@ void SDServer::load(const std::string& model_name,
         args.push_back("-v");
     }
 
-    // Set up environment variables for Linux (LD_LIBRARY_PATH)
+    // Set up environment variables
     std::vector<std::pair<std::string, std::string>> env_vars;
-#ifndef _WIN32
     fs::path exe_dir = fs::path(exe_path).parent_path();
+
+#ifndef _WIN32
+    // For Linux, always set LD_LIBRARY_PATH to include executable directory
     std::string lib_path = exe_dir.string();
 
     const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
@@ -199,6 +223,21 @@ void SDServer::load(const std::string& model_name,
     env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
     if (is_debug()) {
         std::cout << "[SDServer] Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+    }
+#else
+    // ROCm builds on Windows require hipblaslt.dll, rocblas.dll, amdhip64.dll, etc.
+    // These DLLs are distributed alongside sd-server.exe but need PATH to be set for loading
+    if (backend_ == "rocm") {
+        // Add executable directory to PATH for ROCm runtime DLLs
+        // This allows the sd-server.exe to find required HIP/ROCm libraries at runtime
+        std::string new_path = exe_dir.string();
+        const char* existing_path = std::getenv("PATH");
+        if (existing_path && strlen(existing_path) > 0) {
+            new_path = new_path + ";" + std::string(existing_path);
+        }
+        env_vars.push_back({"PATH", new_path});
+        
+        std::cout << "[SDServer] ROCm backend: added " << exe_dir.string() << " to PATH" << std::endl;
     }
 #endif
 

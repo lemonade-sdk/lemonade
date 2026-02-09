@@ -114,7 +114,13 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"cpu", {"x86_64"}},
     }},
 
-    // stable-diffusion.cpp - Windows/Linux x86_64
+    // stable-diffusion.cpp - ROCm backend for AMD GPUs
+    {"sd-cpp", "rocm", {"windows", "linux"}, {
+        {"amd_igpu", {"gfx1150", "gfx1151"}},
+        {"amd_dgpu", {"gfx110X", "gfx120X"}},
+    }},
+
+    // stable-diffusion.cpp - CPU backend (Windows/Linux x86_64)
     {"sd-cpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
     }},
