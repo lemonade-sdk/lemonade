@@ -47,16 +47,42 @@ jobs:
       - name: Get artifacts
         id: artifacts
         run: |
-          curl -s \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            https://api.github.com/repos/${{ github.repository }}/actions/artifacts \
-            > artifacts.json
+          # Fetch all artifacts with pagination
+          echo '{"artifacts":[]}' > artifacts.json
+          page=1
+          while true; do
+            response=$(curl -s \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?per_page=100&page=$page")
+            
+            # Check if request was successful and has artifacts
+            artifact_count=$(echo "$response" | jq '.artifacts | length')
+            
+            if [ "$artifact_count" -eq 0 ] || [ "$artifact_count" = "null" ]; then
+              break
+            fi
+            
+            # Merge artifacts into our main file
+            jq -s '.[0].artifacts + .[1].artifacts | {"artifacts": .}' artifacts.json <(echo "$response") > temp.json
+            mv temp.json artifacts.json
+            
+            page=$((page + 1))
+            
+            # Safety break after 10 pages (1000 artifacts)
+            if [ $page -gt 10 ]; then
+              break
+            fi
+          done
 
       - name: Check each runner heartbeat
         id: check
         run: |
           missing=""
           now=$(date -u +%s)
+          
+          echo "Current time: $(date -u)"
+          echo "Total artifacts found: $(jq '.artifacts | length' artifacts.json)"
+          echo "Heartbeat artifacts found: $(jq '[.artifacts[] | select(.name | startswith("heartbeat-"))] | length' artifacts.json)"
 
           for r in $(echo "${{ steps.runners.outputs.names }}" | tr ',' ' '); do
             [ -z "$r" ] && continue
@@ -70,12 +96,17 @@ jobs:
               continue
             fi
 
+            echo "Latest heartbeat for $r: $ts"
             hb=$(date -d "$ts" +%s)
             diff=$((now - hb))
+            
+            echo "Age: $diff seconds ($(($diff / 3600)) hours)"
 
             if [ $diff -gt 691200 ]; then   # 8 days (weekly + 1 day buffer)
               echo "Heartbeat stale for $r (last seen: $ts)"
               missing="$missing $r"
+            else
+              echo "Heartbeat OK for $r"
             fi
           done
 
