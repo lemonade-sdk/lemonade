@@ -443,6 +443,11 @@ jobs:
             test_type: sd
             backend: rocm
             runner: [stx-halo, Windows]
+          # Stable Diffusion (Vulkan)
+          - name: stable-diffusion (vulkan)
+            test_type: sd
+            backend: vulkan
+            runner: [rai300_400, Windows]
           # Text to speech
           - name: text-to-speech
             test_type: tts
@@ -550,6 +555,11 @@ jobs:
           - name: stable-diffusion (cpu)
             test_type: sd
             backend: ""
+            runner: [rai300_400, Linux]
+          # Stable Diffusion (Vulkan)
+          - name: stable-diffusion (vulkan)
+            test_type: sd
+            backend: vulkan
             runner: [rai300_400, Linux]
           # Text to speech
           - name: text-to-speech
