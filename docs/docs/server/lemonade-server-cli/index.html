@@ -1269,9 +1269,9 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 <td>None</td>
 </tr>
 <tr>
-<td><code>--max-loaded-models [LLMS] [EMBEDDINGS] [RERANKINGS] [AUDIO]</code></td>
-<td>Maximum number of models to keep loaded simultaneously. Accepts 1, 3, or 4 values for LLM, embedding, reranking, and audio models respectively. Unspecified values default to 1. Example: <code>--max-loaded-models 3 2 1 1</code> loads up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model.</td>
-<td><code>1 1 1 1</code></td>
+<td><code>--max-loaded-models [N]</code></td>
+<td>Maximum number of models to keep loaded per type slot (LLMs, audio, image, etc.). Use <code>-1</code> for unlimited. Example: <code>--max-loaded-models 5</code> allows up to 5 of each model type simultaneously.</td>
+<td><code>1</code></td>
 </tr>
 <tr>
 <td><code>--save-options</code></td>

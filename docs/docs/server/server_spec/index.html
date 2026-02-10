@@ -2951,21 +2951,22 @@
 <h2 id="multi-model-support">Multi-Model Support</h2>
 <p>Lemonade Server supports loading multiple models simultaneously, allowing you to keep frequently-used models in memory for faster switching. The server uses a Least Recently Used (LRU) cache policy to automatically manage model eviction when limits are reached.</p>
 <h3 id="configuration">Configuration</h3>
-<p>Use the <code>--max-loaded-models</code> option to specify how many models to keep loaded:</p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Load up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model</span>
-lemonade-server<span class="w"> </span>serve<span class="w"> </span>--max-loaded-models<span class="w"> </span><span class="m">3</span><span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="m">1</span>
-
-<span class="c1"># Load up to 5 LLMs (embeddings, reranking, and audio default to 1 each)</span>
+<p>Use the <code>--max-loaded-models</code> option to specify how many models to keep loaded per type slot:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Allow up to 5 models of each type (5 LLMs, 5 embedding, 5 reranking, 5 audio, 5 image)</span>
 lemonade-server<span class="w"> </span>serve<span class="w"> </span>--max-loaded-models<span class="w"> </span><span class="m">5</span>
+
+<span class="c1"># Unlimited models (no LRU eviction)</span>
+lemonade-server<span class="w"> </span>serve<span class="w"> </span>--max-loaded-models<span class="w"> </span>-1
 </code></pre></div>
-<p><strong>Default:</strong> <code>1 1 1 1</code> (one model of each type)</p>
+<p><strong>Default:</strong> <code>1</code> (one model of each type). Use <code>-1</code> for unlimited.</p>
 <h3 id="model-types">Model Types</h3>
 <p>Models are categorized into these types:
 - <strong>LLM</strong> - Chat and completion models (default type)
 - <strong>Embedding</strong> - Models for generating text embeddings (identified by the <code>embeddings</code> label)
 - <strong>Reranking</strong> - Models for document reranking (identified by the <code>reranking</code> label)
-- <strong>Audio</strong> - Models for audio transcription using Whisper (identified by the <code>audio</code> label)</p>
-<p>Each type has its own independent limit and LRU cache.</p>
+- <strong>Audio</strong> - Models for audio transcription using Whisper (identified by the <code>audio</code> label)
+- <strong>Image</strong> - Models for image generation (identified by the <code>image</code> label)</p>
+<p>Each type has its own independent LRU cache, all sharing the same slot limit set by <code>--max-loaded-models</code>.</p>
 <h3 id="device-constraints">Device Constraints</h3>
 <ul>
 <li><strong>NPU Exclusivity:</strong> Only one model can use the NPU at a time. Loading a new NPU model will evict any existing NPU model regardless of type or limits.</li>
@@ -4429,10 +4430,12 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <li><code>backend_url</code> - URL of the backend server process handling this model (useful for debugging)</li>
 <li><code>recipe</code>: - Backend/device recipe used to load the model (e.g., <code>"ryzenai-llm"</code>, <code>"llamacpp"</code>, <code>"flm"</code>)</li>
 <li><code>recipe_options</code>: - Options used to load the model (e.g., <code>"ctx_size"</code>, <code>"llamacpp_backend"</code>, <code>"llamacpp_args"</code>)</li>
-<li><code>max_models</code> - Maximum number of models that can be loaded simultaneously (set via <code>--max-loaded-models</code>):</li>
+<li><code>max_models</code> - Maximum number of models that can be loaded simultaneously per type (set via <code>--max-loaded-models</code>):</li>
 <li><code>llm</code> - Maximum LLM/chat models</li>
 <li><code>embedding</code> - Maximum embedding models</li>
 <li><code>reranking</code> - Maximum reranking models</li>
+<li><code>audio</code> - Maximum audio models</li>
+<li><code>image</code> - Maximum image models</li>
 </ul>
 <h3 id="get-apiv1stats"><code>GET /api/v1/stats</code> <sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></h3>
 <p>Performance statistics from the last request.</p>

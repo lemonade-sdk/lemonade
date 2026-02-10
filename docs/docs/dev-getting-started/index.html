@@ -1822,7 +1822,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 - Router maintains multiple WrappedServer instances simultaneously
 - Separate LRU caches for LLM, embedding, reranking, and audio model types
 - NPU exclusivity: only one model can use NPU at a time
-- Configurable limits via <code>--max-loaded-models</code> (default: 1 1 1 1)
+- Configurable limits via <code>--max-loaded-models N</code> (default: 1)
 - Automatic eviction of least-recently-used models when limits reached
 - Thread-safe model loading with serialization to prevent races
 - Protection against evicting models actively serving inference requests</p>
@@ -1894,8 +1894,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 <span class="c1">#   --ctx-size SIZE          Context size (default: 4096)</span>
 <span class="c1">#   --log-level LEVEL        Log level: critical, error, warning, info, debug, trace</span>
 <span class="c1">#   --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal</span>
-<span class="c1">#   --max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO]</span>
-<span class="c1">#                            Maximum models to keep loaded (default: 1 1 1 1)</span>
+<span class="c1">#   --max-loaded-models N    Maximum models per type slot (default: 1)</span>
 <span class="c1">#   --version, -v            Show version</span>
 <span class="c1">#   --help, -h               Show help</span>
 </code></pre></div>
@@ -1940,7 +1939,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 - <code>--log-file PATH</code> - Custom log file location
 - <code>--server-binary PATH</code> - Path to lemonade-router executable
 - <code>--no-tray</code> - Run without tray (headless mode)
-- <code>--max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO]</code> - Maximum number of models to keep loaded simultaneously (default: 1 1 1 1)</p>
+- <code>--max-loaded-models N</code> - Maximum number of models to keep loaded per type slot (default: 1)</p>
 <p><strong>Note:</strong> <code>lemonade-router</code> is always launched with <code>--log-level debug</code> for optimal troubleshooting. Use <code>--log-level debug</code> on <code>lemonade-server</code> commands to see client-side debug output.</p>
 <h3 id="lemonade-trayexe-gui-tray-launcher-windows-only">lemonade-tray.exe (GUI Tray Launcher - Windows Only)</h3>
 <p>The <code>lemonade-tray</code> executable is a simple GUI launcher for desktop users:
