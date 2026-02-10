@@ -14,7 +14,7 @@
   },
   "sd-cpp": {
     "cpu": "master-471-7010bb4",
-    "rocm": "master-487-43e829f"
+    "rocm": "master-502-45ce78a"
   },
   "ryzenai-server": "v1.7.0",
   "flm": {
