@@ -28,7 +28,7 @@
 
 namespace lemon {
 
-static void add_serve_options(CLI::App* serve, ServerConfig& config, int& max_models_arg) {
+static void add_serve_options(CLI::App* serve, ServerConfig& config) {
     serve->add_option("--port", config.port, "Port number to serve on")
         ->envname("LEMONADE_PORT")
         ->type_name("PORT")
@@ -58,7 +58,7 @@ static void add_serve_options(CLI::App* serve, ServerConfig& config, int& max_mo
         ->default_val(config.no_broadcast);
 
     // Multi-model support: Max loaded models per type slot
-    serve->add_option("--max-loaded-models", max_models_arg,
+    serve->add_option("--max-loaded-models", config.max_loaded_models,
                    "Max models per type slot (LLMs, audio, image, etc.). Use -1 for unlimited.")
         ->envname("LEMONADE_MAX_LOADED_MODELS")
         ->type_name("N")
@@ -88,13 +88,13 @@ CLIParser::CLIParser()
 
     // Serve
     CLI::App* serve = app_.add_subcommand("serve", "Start the server");
-    add_serve_options(serve, config_, max_models_arg_);
+    add_serve_options(serve, config_);
     serve->add_flag("--no-tray", tray_config_.no_tray, "Start server without tray (headless mode, default on Linux)");
 
     // Run
     CLI::App* run = app_.add_subcommand("run", "Run a model");
     run->add_option("model", tray_config_.model, "The model to run")->required();
-    add_serve_options(run, config_, max_models_arg_);
+    add_serve_options(run, config_);
     run->add_flag("--no-tray", tray_config_.no_tray, "Start server without tray (headless mode, default on Linux)");
     run->add_flag("--save-options", tray_config_.save_options, "Save model load options as default for this model");
 
@@ -135,7 +135,7 @@ CLIParser::CLIParser()
     // Tray
     CLI::App* tray = app_.add_subcommand("tray", "Launch tray interface for running server");
 #else
-    add_serve_options(&app_, config_, max_models_arg_);
+    add_serve_options(&app_, config_);
 #endif
 }
 
@@ -149,10 +149,6 @@ int CLIParser::parse(int argc, char** argv) {
 #endif
         app_.parse(argc, argv);
 
-        // Process --max-loaded-models value (-1 = unlimited, or positive integer)
-        if (max_models_arg_ != 0) {
-            config_.max_loaded_models = max_models_arg_;
-        }
 #ifdef LEMONADE_TRAY
         tray_config_.command = app_.get_subcommands().at(0)->get_name();
 #endif

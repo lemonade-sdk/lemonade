@@ -72,7 +72,6 @@ private:
 #endif
     bool should_continue_ = true;
     int exit_code_ = 0;
-    int max_models_arg_ = 0;  // Capture --max-loaded-models value
 };
 
 } // namespace lemon
