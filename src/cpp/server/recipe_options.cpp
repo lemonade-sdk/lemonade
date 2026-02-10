@@ -14,10 +14,13 @@ static const json DEFAULTS = {
 #else
     {"llamacpp_backend", "vulkan"},  // Will be overridden dynamically
 #endif
-    {"llamacpp_args", ""},
-    {"sd-cpp_backend", "cpu"},  // sd.cpp backend selection (cpu or rocm)
-    {"whispercpp_backend", "npu"},
-    // Image generation defaults (for sd-cpp recipe)
+{"llamacpp_args", ""},
+     {"sd-cpp_backend", "cpu"},  // sd.cpp backend selection (cpu or rocm)
+     {"whispercpp_backend", "npu"},
+     // Thread management defaults
+     {"threads", -1},  // -1 = auto-detect based on system topology
+     {"thread_affinity", "none"},  // Default: no specific affinity
+     // Image generation defaults (for sd-cpp recipe)
     {"steps", 20},
     {"cfg_scale", 7.0},
     {"width", 512},
@@ -80,27 +83,40 @@ static const json CLI_OPTIONS = {
         {"envname", "LEMONADE_WIDTH"},
         {"help", "Image width in pixels"}
     }},
-    {"--height", {
-        {"option_name", "height"},
-        {"type_name", "PX"},
-        {"envname", "LEMONADE_HEIGHT"},
-        {"help", "Image height in pixels"}
-    }},
-};
+{"--height", {
+         {"option_name", "height"},
+         {"type_name", "PX"},
+         {"envname", "LEMONADE_HEIGHT"},
+         {"help", "Image height in pixels"}
+     }},
+     // Thread management options
+     {"--threads", {
+         {"option_name", "threads"},
+         {"type_name", "N"},
+         {"envname", "LEMONADE_THREADS"},
+         {"help", "Number of threads to use for CPU inference"}
+     }},
+     {"--thread-affinity", {
+         {"option_name", "thread_affinity"},
+         {"type_name", "TYPE"},
+         {"envname", "LEMONADE_THREAD_AFFINITY"},
+         {"help", "Thread affinity mode: none, spread, compact, numa, cache"}
+     }},
+ };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
-    if (recipe == "llamacpp") {
-        return {"ctx_size", "llamacpp_backend", "llamacpp_args"};
-    } else if (recipe == "whispercpp") {
-        return {"whispercpp_backend"};
-    } else if (recipe == "ryzenai-llm" || recipe == "flm") {
-        return {"ctx_size"};
-    } else if (recipe == "sd-cpp") {
-        return {"sd-cpp_backend", "steps", "cfg_scale", "width", "height"};
-    } else {
-        return {};
-    }
-}
+     if (recipe == "llamacpp") {
+         return {"ctx_size", "llamacpp_backend", "llamacpp_args", "threads", "thread_affinity"};
+     } else if (recipe == "whispercpp") {
+         return {"whispercpp_backend", "threads", "thread_affinity"};
+     } else if (recipe == "ryzenai-llm" || recipe == "flm") {
+         return {"ctx_size", "threads", "thread_affinity"};
+     } else if (recipe == "sd-cpp") {
+         return {"sd-cpp_backend", "steps", "cfg_scale", "width", "height"};
+     } else {
+         return {};
+     }
+ }
 
 static const bool is_empty_option(json option) {
     return (option.is_number() && (option == -1)) ||

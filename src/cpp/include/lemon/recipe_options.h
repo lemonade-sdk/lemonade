@@ -14,13 +14,13 @@ public:
     json to_json() const;
     std::string to_log_string(bool resolve_defaults=true) const;
     RecipeOptions inherit(const RecipeOptions& options) const;
-    json get_option(const std::string& opt) const;
-    std::string get_recipe() const { return recipe_; };
+json get_option(const std::string& opt) const;
+     std::string get_recipe() const { return recipe_; };
 
-    static void add_cli_options(CLI::App& app, json& storage);
-    static std::vector<std::string> to_cli_options(const json& raw_options);
-private:
-    json options_ = json::object();
-    std::string recipe_ = "";
-};
-}
+     static void add_cli_options(CLI::App& app, json& storage);
+     static std::vector<std::string> to_cli_options(const json& raw_options);
+ private:
+     json options_ = json::object();
+     std::string recipe_ = "";
+ };
+ }
