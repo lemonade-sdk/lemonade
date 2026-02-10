@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       enable_signing:
-        description: 'Enable signing (Windows MSI via SignPath, macOS .dmg via Apple Developer ID)'
+        description: 'Enable MSI signing with SignPath (for testing)'
         required: false
         default: false
         type: boolean
@@ -705,9 +705,6 @@ jobs:
       LEMONADE_VERSION: ${{ needs.build-lemonade-macos-dmg.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Cleanup processes
-        uses: ./.github/actions/cleanup-processes-macos
 
       - name: Set HF_HOME environment variable
         run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
