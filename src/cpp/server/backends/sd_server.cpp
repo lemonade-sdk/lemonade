@@ -63,7 +63,7 @@ void SDServer::install(const std::string& backend) {
 #ifdef _WIN32
         filename = "sd-" + short_version + "-bin-win-rocm-x64.zip";
 #elif defined(__linux__)
-        filename = "sd-" + short_version + "-bin-linux-rocm-x64.zip";
+        filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm.zip";
 #else
         throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
 #endif
