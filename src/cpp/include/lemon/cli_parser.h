@@ -17,12 +17,8 @@ struct ServerConfig {
     std::string extra_models_dir = "";  // Secondary directory for GGUF model discovery
     bool no_broadcast = false;  // Disable UDP broadcasting on private networks
 
-    // Multi-model support: Max loaded models by type
-    int max_llm_models = 1;
-    int max_embedding_models = 1;
-    int max_reranking_models = 1;
-    int max_audio_models = 1;
-    int max_image_models = 1;
+    // Multi-model support: Max loaded models per type slot
+    int max_loaded_models = 1;
 };
 
 struct TrayConfig {
@@ -76,7 +72,6 @@ private:
 #endif
     bool should_continue_ = true;
     int exit_code_ = 0;
-    std::vector<int> max_models_vec_;  // Vector to capture --max-loaded-models values
 };
 
 } // namespace lemon
