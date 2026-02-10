@@ -28,7 +28,7 @@
 
 namespace lemon {
 
-static void add_serve_options(CLI::App* serve, ServerConfig& config, std::vector<int>& max_models_vec) {
+static void add_serve_options(CLI::App* serve, ServerConfig& config) {
     serve->add_option("--port", config.port, "Port number to serve on")
         ->envname("LEMONADE_PORT")
         ->type_name("PORT")
@@ -57,33 +57,22 @@ static void add_serve_options(CLI::App* serve, ServerConfig& config, std::vector
         ->expected(0, 1)
         ->default_val(config.no_broadcast);
 
-    // Multi-model support: Max loaded models
-    // Use a member vector to capture 1, 3, 4, or 5 values (2 is not allowed)
-    serve->add_option("--max-loaded-models", max_models_vec,
-                   "Max loaded models: LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO] [IMAGE]")
+    // Multi-model support: Max loaded models per type slot
+    serve->add_option("--max-loaded-models", config.max_loaded_models,
+                   "Max models per type slot (LLMs, audio, image, etc.). Use -1 for unlimited.")
         ->envname("LEMONADE_MAX_LOADED_MODELS")
-        ->type_name("N [E] [R] [A] [I]")
-        ->expected(1, 5)
-        ->default_val(std::vector<int>{config.max_llm_models, config.max_embedding_models, config.max_reranking_models, config.max_audio_models, config.max_image_models})
+        ->type_name("N")
+        ->default_val(config.max_loaded_models)
         ->check([](const std::string& val) -> std::string {
-            // Validate that value is a positive integer (digits only, no floats)
-            if (val.empty()) {
-                return "Value must be a positive integer (got empty string)";
-            }
-            for (char c : val) {
-                if (!std::isdigit(static_cast<unsigned char>(c))) {
-                    return "Value must be a positive integer (got '" + val + "')";
-                }
-            }
             try {
                 int num = std::stoi(val);
-                if (num <= 0) {
-                    return "Value must be a non-zero positive integer (got " + val + ")";
+                if (num == -1 || num > 0) {
+                    return "";  // Valid: -1 (unlimited) or positive integer
                 }
+                return "Value must be a positive integer or -1 for unlimited (got " + val + ")";
             } catch (...) {
-                return "Value must be a positive integer (got '" + val + "')";
+                return "Value must be a positive integer or -1 for unlimited (got '" + val + "')";
             }
-            return "";  // Valid
         });
     RecipeOptions::add_cli_options(*serve, config.recipe_options);
 }
@@ -99,13 +88,13 @@ CLIParser::CLIParser()
 
     // Serve
     CLI::App* serve = app_.add_subcommand("serve", "Start the server");
-    add_serve_options(serve, config_, max_models_vec_);
+    add_serve_options(serve, config_);
     serve->add_flag("--no-tray", tray_config_.no_tray, "Start server without tray (headless mode, default on Linux)");
 
     // Run
     CLI::App* run = app_.add_subcommand("run", "Run a model");
     run->add_option("model", tray_config_.model, "The model to run")->required();
-    add_serve_options(run, config_, max_models_vec_);
+    add_serve_options(run, config_);
     run->add_flag("--no-tray", tray_config_.no_tray, "Start server without tray (headless mode, default on Linux)");
     run->add_flag("--save-options", tray_config_.save_options, "Save model load options as default for this model");
 
@@ -146,7 +135,7 @@ CLIParser::CLIParser()
     // Tray
     CLI::App* tray = app_.add_subcommand("tray", "Launch tray interface for running server");
 #else
-    add_serve_options(&app_, config_, max_models_vec_);
+    add_serve_options(&app_, config_);
 #endif
 }
 
@@ -160,25 +149,6 @@ int CLIParser::parse(int argc, char** argv) {
 #endif
         app_.parse(argc, argv);
 
-        // Process --max-loaded-models values
-        if (!max_models_vec_.empty()) {
-            // Validate that we have exactly 1, 3, 4, or 5 values (2 is not allowed)
-            if (max_models_vec_.size() == 2) {
-                throw CLI::ValidationError("--max-loaded-models requires 1 value (LLMS), 3 values (LLMS EMBEDDINGS RERANKINGS), 4 values (LLMS EMBEDDINGS RERANKINGS AUDIO), or 5 values (LLMS EMBEDDINGS RERANKINGS AUDIO IMAGE), not 2");
-            }
-
-            config_.max_llm_models = max_models_vec_[0];
-            if (max_models_vec_.size() >= 3) {
-                config_.max_embedding_models = max_models_vec_[1];
-                config_.max_reranking_models = max_models_vec_[2];
-            }
-            if (max_models_vec_.size() > 3) {
-                config_.max_audio_models = max_models_vec_[3];
-            }
-            if (max_models_vec_.size() > 4) {
-                config_.max_image_models = max_models_vec_[4];
-            }
-        }
 #ifdef LEMONADE_TRAY
         tray_config_.command = app_.get_subcommands().at(0)->get_name();
 #endif

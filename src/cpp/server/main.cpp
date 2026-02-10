@@ -66,9 +66,7 @@ int main(int argc, char** argv) {
         }
 
         Server server(config.port, config.host, config.log_level,
-                    config.recipe_options, config.max_llm_models,
-                    config.max_embedding_models, config.max_reranking_models,
-                    config.max_audio_models, config.max_image_models,
+                    config.recipe_options, config.max_loaded_models,
                     config.extra_models_dir, config.no_broadcast);
 
         // Register signal handler for Ctrl+C

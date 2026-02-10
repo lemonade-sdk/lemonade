@@ -63,17 +63,17 @@ Lemonade Server supports loading multiple models simultaneously, allowing you to
 
 ### Configuration
 
-Use the `--max-loaded-models` option to specify how many models to keep loaded:
+Use the `--max-loaded-models` option to specify how many models to keep loaded per type slot:
 
 ```bash
-# Load up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model
-lemonade-server serve --max-loaded-models 3 2 1 1
-
-# Load up to 5 LLMs (embeddings, reranking, and audio default to 1 each)
+# Allow up to 5 models of each type (5 LLMs, 5 embedding, 5 reranking, 5 audio, 5 image)
 lemonade-server serve --max-loaded-models 5
+
+# Unlimited models (no LRU eviction)
+lemonade-server serve --max-loaded-models -1
 ```
 
-**Default:** `1 1 1 1` (one model of each type)
+**Default:** `1` (one model of each type). Use `-1` for unlimited.
 
 ### Model Types
 
@@ -82,8 +82,9 @@ Models are categorized into these types:
 - **Embedding** - Models for generating text embeddings (identified by the `embeddings` label)
 - **Reranking** - Models for document reranking (identified by the `reranking` label)
 - **Audio** - Models for audio transcription using Whisper (identified by the `audio` label)
+- **Image** - Models for image generation (identified by the `image` label)
 
-Each type has its own independent limit and LRU cache.
+Each type has its own independent LRU cache, all sharing the same slot limit set by `--max-loaded-models`.
 
 ### Device Constraints
 
@@ -1193,10 +1194,12 @@ curl http://localhost:8000/api/v1/health
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`)
-- `max_models` - Maximum number of models that can be loaded simultaneously (set via `--max-loaded-models`):
+- `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `--max-loaded-models`):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
   - `reranking` - Maximum reranking models
+  - `audio` - Maximum audio models
+  - `image` - Maximum image models
 
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 

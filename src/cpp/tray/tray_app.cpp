@@ -1113,11 +1113,7 @@ bool TrayApp::start_ephemeral_server(int port) {
         false,  // show_console - SSE streaming provides progress via client
         true,   // is_ephemeral (suppress startup message)
         server_config_.host,  // Pass host to ServerManager
-        server_config_.max_llm_models,
-        server_config_.max_embedding_models,
-        server_config_.max_reranking_models,
-        server_config_.max_audio_models,
-        server_config_.max_image_models,
+        server_config_.max_loaded_models,
         server_config_.extra_models_dir  // Pass extra models directory
     );
 
@@ -1971,11 +1967,7 @@ bool TrayApp::start_server() {
         true,               // Always show console output for serve command
         false,              // is_ephemeral = false (persistent server, show startup message with URL)
         server_config_.host,        // Pass host to ServerManager
-        server_config_.max_llm_models,
-        server_config_.max_embedding_models,
-        server_config_.max_reranking_models,
-        server_config_.max_audio_models,
-        server_config_.max_image_models,
+        server_config_.max_loaded_models,
         server_config_.extra_models_dir  // Pass extra models directory
     );
 

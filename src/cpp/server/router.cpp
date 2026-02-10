@@ -15,18 +15,15 @@
 namespace lemon {
 
 Router::Router(const json& default_options, const std::string& log_level, ModelManager* model_manager,
-               int max_llm_models, int max_embedding_models, int max_reranking_models,
-               int max_audio_models, int max_image_models)
+               int max_loaded_models)
     : default_options_(default_options), log_level_(log_level), model_manager_(model_manager),
-      max_llm_models_(max_llm_models), max_embedding_models_(max_embedding_models),
-      max_reranking_models_(max_reranking_models), max_audio_models_(max_audio_models),
-      max_image_models_(max_image_models) {
+      max_loaded_models_(max_loaded_models) {
 
-    std::cout << "[Router] Multi-model limits: LLM=" << max_llm_models_
-              << ", Embedding=" << max_embedding_models_
-              << ", Reranking=" << max_reranking_models_
-              << ", Audio=" << max_audio_models_
-              << ", Image=" << max_image_models_ << std::endl;
+    if (max_loaded_models_ == -1) {
+        std::cout << "[Router] Max loaded models per type: unlimited" << std::endl;
+    } else {
+        std::cout << "[Router] Max loaded models per type: " << max_loaded_models_ << std::endl;
+    }
 }
 
 Router::~Router() {
@@ -231,25 +228,8 @@ void Router::load_model(const std::string& model_name,
         ModelType model_type = model_info.type;
         DeviceType device_type = model_info.device;
 
-        // Get max models for this type
-        int max_models = 0;
-        switch (model_type) {
-            case ModelType::LLM:
-                max_models = max_llm_models_;
-                break;
-            case ModelType::EMBEDDING:
-                max_models = max_embedding_models_;
-                break;
-            case ModelType::RERANKING:
-                max_models = max_reranking_models_;
-                break;
-            case ModelType::AUDIO:
-                max_models = max_audio_models_;
-                break;
-            case ModelType::IMAGE:
-                max_models = max_image_models_;
-                break;
-        }
+        // Get max models for this type (same limit for all types)
+        int max_models = max_loaded_models_;
 
         // NPU EXCLUSIVITY CHECK (from spec: Additional NPU Rules)
         if (device_type & DEVICE_NPU) {
@@ -262,8 +242,9 @@ void Router::load_model(const std::string& model_name,
         }
 
         // LRU EVICTION CHECK (from spec: Least Recently Used Cache)
+        // Skip eviction if unlimited (-1)
         int current_count = count_servers_by_type(model_type);
-        if (current_count >= max_models) {
+        if (max_models != -1 && current_count >= max_models) {
             WrappedServer* lru = find_lru_server_by_type(model_type);
             if (lru) {
                 std::cout << "[Router] Slot limit reached for type "
@@ -449,9 +430,11 @@ json Router::get_all_loaded_models() const {
 
 json Router::get_max_model_limits() const {
     return {
-        {"llm", max_llm_models_},
-        {"embedding", max_embedding_models_},
-        {"reranking", max_reranking_models_}
+        {"llm", max_loaded_models_},
+        {"embedding", max_loaded_models_},
+        {"reranking", max_loaded_models_},
+        {"audio", max_loaded_models_},
+        {"image", max_loaded_models_}
     };
 }
 
