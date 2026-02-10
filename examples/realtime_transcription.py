@@ -5,7 +5,7 @@ Uses the official OpenAI SDK to connect to Lemonade Server's
 OpenAI-compatible realtime transcription endpoint.
 
 Requirements:
-    pip install openai pyaudio
+    pip install openai pyaudio websockets
 
 Usage:
     python realtime_transcription.py --mic
@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import asyncio
 import base64
 import sys
 import os
@@ -29,7 +30,7 @@ if os.name == 'nt':
 
 # Check dependencies
 try:
-    from openai import OpenAI
+    from openai import AsyncOpenAI
 except ImportError:
     print("Error: openai library not found.")
     print("Install it with: pip install openai")
@@ -42,22 +43,25 @@ except ImportError:
     print("Install it with: pip install pyaudio")
     sys.exit(1)
 
+try:
+    import websockets  # noqa: F401 — required by openai SDK for realtime
+except ImportError:
+    print("Error: websockets library not found.")
+    print("Install it with: pip install websockets")
+    sys.exit(1)
+
 SAMPLE_RATE = 16000
 CHUNK_SIZE = 4096
 
 
 def transcribe_microphone(model: str, server_url: str):
-    """Stream microphone audio using OpenAI SDK."""
+    """Stream microphone audio using OpenAI SDK's realtime API."""
     import urllib.request
     import json
 
     # Load model via REST API first
     print(f"Loading model: {model}...")
-    client = OpenAI(base_url=server_url, api_key="unused")
-
     try:
-        # Use the models endpoint to trigger model loading
-        # The /load endpoint expects model_name
         req = urllib.request.Request(
             f"{server_url}/load",
             data=json.dumps({"model_name": model}).encode(),
@@ -84,27 +88,20 @@ def transcribe_microphone(model: str, server_url: str):
         print(f"Error fetching WebSocket port: {e}")
         return
 
-    # Connect to WebSocket using openai's low-level websocket
-    # Note: OpenAI SDK expects wss:// but we use ws:// for local
-    print("Connecting to realtime endpoint...")
-
-    try:
-        import websockets
-        import asyncio
-    except ImportError:
-        print("Error: websockets library not found.")
-        print("Install it with: pip install websockets")
-        return
+    # Create OpenAI client pointing at local server
+    client = AsyncOpenAI(
+        api_key="unused",
+        base_url=server_url,
+        websocket_base_url=f"ws://localhost:{ws_port}",
+    )
 
     async def run():
-        url = f"ws://localhost:{ws_port}/realtime?model={model}"
-        print(f"WebSocket URL: {url}")
+        print("Connecting to realtime endpoint...")
 
-        async with websockets.connect(url) as ws:
+        async with client.beta.realtime.connect(model=model) as conn:
             # Wait for session.created
-            import json
-            msg = json.loads(await ws.recv())
-            print(f"Session: {msg['session']['id']}")
+            event = await asyncio.wait_for(conn.recv(), timeout=10)
+            print(f"Session: {event.session.id}")
 
             # Initialize microphone
             pa = pyaudio.PyAudio()
@@ -125,40 +122,39 @@ def transcribe_microphone(model: str, server_url: str):
                 try:
                     while True:
                         data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
-                        await ws.send(json.dumps({
-                            "type": "input_audio_buffer.append",
-                            "audio": base64.b64encode(data).decode()
-                        }))
+                        await conn.input_audio_buffer.append(
+                            audio=base64.b64encode(data).decode()
+                        )
                         await asyncio.sleep(0.01)
                 except asyncio.CancelledError:
                     pass
 
             async def receive_messages():
                 nonlocal transcripts
-
-                # Simple approach:
-                # - Delta: update current line in-place (just the current utterance)
-                # - Completed: print on new line and move on
-
+                # Get terminal width to avoid line-wrapping issues with \r
                 try:
-                    while True:
-                        msg = json.loads(await ws.recv())
-                        msg_type = msg.get("type", "")
-
-                        if msg_type == "conversation.item.input_audio_transcription.delta":
-                            # Interim: show just this delta, update in place
-                            delta_text = msg.get("delta", "").replace('\n', ' ').strip()
+                    term_width = os.get_terminal_size().columns
+                except OSError:
+                    term_width = 80
+                try:
+                    async for event in conn:
+                        if event.type == "conversation.item.input_audio_transcription.delta":
+                            delta_text = getattr(event, "delta", "").replace('\n', ' ').strip()
                             if delta_text:
-                                # Clear line and print (works on Windows with VT mode)
-                                print(f"\r{delta_text}\033[K", end="", flush=True)
-                        elif msg_type == "conversation.item.input_audio_transcription.completed":
-                            # Final: print and move to new line
-                            transcript = msg.get("transcript", "").replace('\n', ' ').strip()
+                                # Truncate to one terminal line so \r can fully overwrite
+                                if len(delta_text) > term_width - 4:
+                                    delta_text = "..." + delta_text[-(term_width - 4):]
+                                print(f"\r\033[2K{delta_text}", end="", flush=True)
+                        elif event.type == "conversation.item.input_audio_transcription.completed":
+                            transcript = getattr(event, "transcript", "").replace('\n', ' ').strip()
                             if transcript:
                                 transcripts.append(transcript)
-                                print(f"\r{transcript}\033[K")  # newline at end
-                        elif msg_type == "error":
-                            print(f"\nError: {msg.get('error', {}).get('message', 'Unknown')}")
+                                # Clear interim line, print final on its own line
+                                print(f"\r\033[2K{transcript}")
+                        elif event.type == "error":
+                            error = getattr(event, "error", None)
+                            msg = getattr(error, "message", "Unknown") if error else "Unknown"
+                            print(f"\nError: {msg}")
                 except asyncio.CancelledError:
                     pass
 
@@ -173,14 +169,14 @@ def transcribe_microphone(model: str, server_url: str):
                 recv_task.cancel()
 
                 # Commit remaining audio
-                await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+                await conn.input_audio_buffer.commit()
 
                 # Wait for final transcript
                 try:
                     while True:
-                        msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=3))
-                        if msg.get("type") == "conversation.item.input_audio_transcription.completed":
-                            transcript = msg.get("transcript", "").strip()
+                        event = await asyncio.wait_for(conn.recv(), timeout=3)
+                        if event.type == "conversation.item.input_audio_transcription.completed":
+                            transcript = getattr(event, "transcript", "").strip()
                             if transcript:
                                 transcripts.append(transcript)
                                 print(f">>> {transcript}")
