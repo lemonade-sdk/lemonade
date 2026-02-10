@@ -23,11 +23,7 @@ public:
            const std::string& host,
            const std::string& log_level,
            const json& default_options,
-           int max_llm_models,
-           int max_embedding_models,
-           int max_reranking_models,
-           int max_audio_models,
-           int max_image_models,
+           int max_loaded_models,
            const std::string& extra_models_dir,
            bool no_broadcast);
 
