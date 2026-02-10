@@ -337,12 +337,12 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_supported": {
             "llamacpp": ["vulkan", "cpu"],
-            "sd-cpp": ["cpu", "vulkan"],
+            "sd-cpp": ["cpu"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],
             "whispercpp": ["npu", "cpu"],  # whispercpp is Windows-only
-            "sd-cpp": ["rocm"],
+            "sd-cpp": ["rocm","vulkan"],
             "flm": ["default"],
             "ryzenai-llm": ["default"],
         },
@@ -377,13 +377,14 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_supported": {
             "llamacpp": ["vulkan", "rocm", "cpu"],
-            "sd-cpp": ["cpu", "rocm", "vulkan"],
+            "sd-cpp": ["cpu", "rocm"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
             "whispercpp": ["npu", "cpu"],  # whispercpp is Windows-only
             "flm": ["default"],  # Windows NPU only
             "ryzenai-llm": ["default"],
+            "sd-cpp": ["vulkan"]
         },
     },
     # Linux x86_64 with AMD GPU that doesn't support ROCm (RDNA2) - ONLY RUN ON LINUX
@@ -416,12 +417,12 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_supported": {
             "llamacpp": ["vulkan", "cpu"],
-            "sd-cpp": ["cpu", "vulkan"],
+            "sd-cpp": ["cpu"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],  # rocm not supported on RDNA2
             "whispercpp": ["npu", "cpu"],  # whispercpp is Windows-only
-            "sd-cpp": ["rocm"],
+            "sd-cpp": ["rocm","vulkan"],
             "flm": ["default"],
             "ryzenai-llm": ["default"],
         },
