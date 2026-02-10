@@ -137,19 +137,15 @@ for i in "${!FILES_TO_MIGRATE[@]}"; do
 
     # Check if destination already exists
     if [[ -e "$DEST_PATH" ]]; then
-        echo -e "  ${YELLOW}Warning: Destination already exists${NC}"
-        read -p "  Overwrite? (yes/no): " OVERWRITE
-        if [[ "$OVERWRITE" != "yes" ]]; then
-            echo "  Skipping..."
-            continue
-        fi
-        echo "  Removing existing destination..."
-        rm -rf "$DEST_PATH"
+        echo -e "  ${YELLOW}Warning: Destination already exists - merging files${NC}"
+        # Use rsync to merge directories (move source files into destination)
+        echo "  Merging into existing destination..."
+        rsync -av --remove-source-files "$SOURCE_PATH/" "$DEST_PATH/"
+    else
+        # Move files (preserves source structure)
+        echo "  Moving files..."
+        mv "$SOURCE_PATH" "$DEST_PATH"
     fi
-
-    # Copy files (preserve ownership temporarily, will fix later)
-    echo "  Copying files..."
-    cp -r "$SOURCE_PATH" "$DEST_PATH"
 
     # Update ownership
     echo "  Updating ownership to lemonade:lemonade..."
