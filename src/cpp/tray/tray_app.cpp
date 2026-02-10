@@ -1113,11 +1113,7 @@ bool TrayApp::start_ephemeral_server(int port) {
         false,  // show_console - SSE streaming provides progress via client
         true,   // is_ephemeral (suppress startup message)
         server_config_.host,  // Pass host to ServerManager
-        server_config_.max_llm_models,
-        server_config_.max_embedding_models,
-        server_config_.max_reranking_models,
-        server_config_.max_audio_models,
-        server_config_.max_image_models,
+        server_config_.max_loaded_models,
         server_config_.extra_models_dir  // Pass extra models directory
     );
 
@@ -1222,7 +1218,7 @@ int TrayApp::execute_pull_command() {
         // Recipe is required for local imports
         if (tray_config_.recipe.empty()) {
             std::cerr << "Error: --recipe is required when importing from a local path" << std::endl;
-            std::cerr << "Options: llamacpp, oga-cpu, oga-hybrid, oga-npu, whispercpp" << std::endl;
+            std::cerr << "Options: llamacpp, ryzenai-llm, whispercpp" << std::endl;
             return 1;
         }
 
@@ -1971,11 +1967,7 @@ bool TrayApp::start_server() {
         true,               // Always show console output for serve command
         false,              // is_ephemeral = false (persistent server, show startup message with URL)
         server_config_.host,        // Pass host to ServerManager
-        server_config_.max_llm_models,
-        server_config_.max_embedding_models,
-        server_config_.max_reranking_models,
-        server_config_.max_audio_models,
-        server_config_.max_image_models,
+        server_config_.max_loaded_models,
         server_config_.extra_models_dir  // Pass extra models directory
     );
 

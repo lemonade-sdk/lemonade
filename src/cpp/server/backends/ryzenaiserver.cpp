@@ -67,7 +67,6 @@ static std::string get_install_directory() {
 RyzenAIServer::RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager)
     : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager),
       model_name_(model_name),
-      execution_mode_("auto"),
       is_loaded_(false) {
 }
 
@@ -285,21 +284,6 @@ std::string RyzenAIServer::download_model(const std::string& checkpoint,
     return checkpoint;
 }
 
-std::string RyzenAIServer::determine_execution_mode(const std::string& model_path,
-                                                   const std::string& backend) {
-    // Map backend to execution mode
-    if (backend == "npu" || backend == "oga-npu") {
-        return "npu";
-    } else if (backend == "hybrid" || backend == "oga-hybrid") {
-        return "hybrid";
-    } else if (backend == "cpu" || backend == "oga-cpu") {
-        return "cpu";
-    } else {
-        // "auto" will let ryzenai-server decide
-        return "auto";
-    }
-}
-
 void RyzenAIServer::load(const std::string& model_name,
                         const ModelInfo& model_info,
                         const RecipeOptions& options,
@@ -330,13 +314,7 @@ void RyzenAIServer::load(const std::string& model_name,
 
     model_name_ = model_name;
 
-    // execution_mode_ should have been set via set_execution_mode() before calling load()
-    if (execution_mode_.empty()) {
-        execution_mode_ = "auto";
-    }
-
     std::cout << "[RyzenAI-Server] Model path: " << model_path_ << std::endl;
-    std::cout << "[RyzenAI-Server] Execution mode: " << execution_mode_ << std::endl;
 
     // Find available port
     port_ = choose_port();
@@ -345,7 +323,6 @@ void RyzenAIServer::load(const std::string& model_name,
     std::vector<std::string> args = {
         "-m", model_path_,
         "--port", std::to_string(port_),
-        "--mode", execution_mode_,
         "--ctx-size", std::to_string(ctx_size)
     };
 
@@ -377,7 +354,7 @@ void RyzenAIServer::load(const std::string& model_name,
               << process_handle_.pid << std::endl;
 
     // Wait for server to be ready
-    if (!wait_for_ready()) {
+    if (!wait_for_ready("/health")) {
         utils::ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};  // Reset to prevent double-stop on destructor
         throw std::runtime_error("RyzenAI-Server failed to start (check logs for details)");

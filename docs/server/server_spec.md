@@ -64,17 +64,17 @@ Lemonade Server supports loading multiple models simultaneously, allowing you to
 
 ### Configuration
 
-Use the `--max-loaded-models` option to specify how many models to keep loaded:
+Use the `--max-loaded-models` option to specify how many models to keep loaded per type slot:
 
 ```bash
-# Load up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model
-lemonade-server serve --max-loaded-models 3 2 1 1
-
-# Load up to 5 LLMs (embeddings, reranking, and audio default to 1 each)
+# Allow up to 5 models of each type (5 LLMs, 5 embedding, 5 reranking, 5 audio, 5 image)
 lemonade-server serve --max-loaded-models 5
+
+# Unlimited models (no LRU eviction)
+lemonade-server serve --max-loaded-models -1
 ```
 
-**Default:** `1 1 1 1` (one model of each type)
+**Default:** `1` (one model of each type). Use `-1` for unlimited.
 
 ### Model Types
 
@@ -83,8 +83,9 @@ Models are categorized into these types:
 - **Embedding** - Models for generating text embeddings (identified by the `embeddings` label)
 - **Reranking** - Models for document reranking (identified by the `reranking` label)
 - **Audio** - Models for audio transcription using Whisper (identified by the `audio` label)
+- **Image** - Models for image generation (identified by the `image` label)
 
-Each type has its own independent limit and LRU cache.
+Each type has its own independent LRU cache, all sharing the same slot limit set by `--max-loaded-models`.
 
 ### Device Constraints
 
@@ -872,7 +873,7 @@ curl http://localhost:8000/api/v1/models?show_all=true
   - `object` - Type of object, always `"model"`
   - `owned_by` - Owner of the model, always `"lemonade"`
   - `checkpoint` - Full checkpoint identifier on Hugging Face
-  - `recipe` - Backend/device recipe used to load the model (e.g., `"oga-cpu"`, `"oga-hybrid"`, `"llamacpp"`, `"flm"`)
+  - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `size` - Model size in GB (omitted for models without size information)
   - `downloaded` - Boolean indicating if the model is downloaded and available locally
   - `suggested` - Boolean indicating if the model is recommended for general use
@@ -1087,7 +1088,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 |-----------|----------|------------|-------------|
 | `model_name` | Yes | All | [Lemonade Server model name](./server_models.md) to load. |
 | `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. |
-| `ctx_size` | No | llamacpp, flm, oga-* | Context size for the model. Overrides the default value. |
+| `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
 | `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`. |
 | `whispercpp_backend` | No | whispercpp | WhisperCpp backend to use (`npu` or `cpu`). Default is `npu` if supported. |
@@ -1276,7 +1277,7 @@ curl http://localhost:8000/api/v1/health
       "last_use": 1732123456.789,
       "type": "llm",
       "device": "gpu npu",
-      "recipe": "oga-hybrid",
+      "recipe": "ryzenai-llm",
       "recipe_options": {
         "ctx_size": 4096
       },
@@ -1316,12 +1317,14 @@ curl http://localhost:8000/api/v1/health
   - `type` - Model type: `"llm"`, `"embedding"`, or `"reranking"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
-  - `recipe`: - Backend/device recipe used to load the model (e.g., `"oga-cpu"`, `"oga-hybrid"`, `"llamacpp"`, `"flm"`)
+  - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`)
-- `max_models` - Maximum number of models that can be loaded simultaneously (set via `--max-loaded-models`):
+- `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `--max-loaded-models`):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
   - `reranking` - Maximum reranking models
+  - `audio` - Maximum audio models
+  - `image` - Maximum image models
 
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -1453,28 +1456,10 @@ curl "http://localhost:8000/api/v1/system-info"
         }
       }
     },
-    "oga-npu": {
+    "ryzenai-llm": {
       "backends": {
         "default": {
           "devices": ["npu"],
-          "supported": true,
-          "available": true
-        }
-      }
-    },
-    "oga-hybrid": {
-      "backends": {
-        "default": {
-          "devices": ["npu"],
-          "supported": true,
-          "available": true
-        }
-      }
-    },
-    "oga-cpu": {
-      "backends": {
-        "default": {
-          "devices": ["cpu"],
           "supported": true,
           "available": true
         }

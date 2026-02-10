@@ -55,7 +55,7 @@ lemonade-server run MODEL_NAME [options]
 | `--ctx-size [size]`            | Default context size for models. For llamacpp recipes, this sets the `--ctx-size` parameter for the llama server. For other recipes, prompts exceeding this size will be truncated. Can be overridden per-model via the `/api/v1/load` endpoint. | 4096 |
 | `--llamacpp-args [args]`       | Default custom arguments to pass to llama-server. Must not conflict with arguments managed by Lemonade (e.g., `-m`, `--port`, `--ctx-size`, `-ngl`). Can be overridden per-model via the `/api/v1/load` endpoint. Example: `--llamacpp-args "--flash-attn on --no-mmap"` | "" |
 | `--extra-models-dir [path]`    | Experimental feature. Secondary directory to scan for LLM GGUF model files. Audio, embedding, reranking, and non-GGUF files are not supported, yet. | None |
-| `--max-loaded-models [LLMS] [EMBEDDINGS] [RERANKINGS] [AUDIO]` | Maximum number of models to keep loaded simultaneously. Accepts 1, 3, or 4 values for LLM, embedding, reranking, and audio models respectively. Unspecified values default to 1. Example: `--max-loaded-models 3 2 1 1` loads up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model. | `1 1 1 1` |
+| `--max-loaded-models [N]`  | Maximum number of models to keep loaded per type slot (LLMs, audio, image, etc.). Use `-1` for unlimited. Example: `--max-loaded-models 5` allows up to 5 of each model type simultaneously. | `1` |
 | `--save-options` | Only available for the run command. Saves the context size, LlamaCpp backend and custom llama-server arguments as default for running this model. Unspecified values will be saved using their default value. | False |
 
 ### Environment Variables
@@ -123,7 +123,7 @@ lemonade-server pull <model_name> [options]
 | Option | Description | Required |
 |--------|-------------|----------|
 | `--checkpoint CHECKPOINT` | Hugging Face checkpoint in the format `org/model:variant`. For GGUF models, the variant (after the colon) is required. Examples: `unsloth/Qwen3-8B-GGUF:Q4_0`, `amd/Qwen3-4B-awq-quant-onnx-hybrid` | For custom models |
-| `--recipe RECIPE` | Inference recipe to use. Options: `llamacpp`, `flm`, `oga-cpu`, `oga-hybrid`, `oga-npu` | For custom models |
+| `--recipe RECIPE` | Inference recipe to use. Options: `llamacpp`, `flm`, `ryzenai-llm` | For custom models |
 | `--reasoning` | Mark the model as a reasoning model (e.g., DeepSeek-R1). Adds the 'reasoning' label to model metadata. | No |
 | `--vision` | Mark the model as a vision/multimodal model. Adds the 'vision' label to model metadata. | No |
 | `--embedding` | Mark the model as an embedding model. Adds the 'embeddings' label to model metadata. For use with the `/api/v1/embeddings` endpoint. | No |
@@ -190,7 +190,7 @@ To connect the app to a server running on a different machine:
    lemonade-app
    ```
 
-The app automatically discovers and connects to a local server unless an endpoint is explicitly configured in the UI. 
+The app automatically discovers and connects to a local server unless an endpoint is explicitly configured in the UI.
 
 ## Next Steps
 

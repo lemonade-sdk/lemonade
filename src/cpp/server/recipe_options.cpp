@@ -15,6 +15,7 @@ static const json DEFAULTS = {
     {"llamacpp_backend", "vulkan"},  // Will be overridden dynamically
 #endif
     {"llamacpp_args", ""},
+    {"sd-cpp_backend", "cpu"},  // sd.cpp backend selection (cpu or rocm)
     {"whispercpp_backend", "npu"},
     // Image generation defaults (for sd-cpp recipe)
     {"steps", 20},
@@ -43,6 +44,14 @@ static const json CLI_OPTIONS = {
         {"type_name", "ARGS"},
         {"envname", "LEMONADE_LLAMACPP_ARGS"},
         {"help", "Custom arguments to pass to llama-server (must not conflict with managed args)"}
+    }},
+    // sd.cpp backend selection option
+    {"--sdcpp", {
+        {"option_name", "sd-cpp_backend"},
+        {"type_name", "BACKEND"},
+        {"allowed_values", {"cpu", "rocm"}},
+        {"envname", "LEMONADE_SDCPP"},
+        {"help", "SD.cpp backend to use (cpu for CPU, rocm for AMD GPU)"}
     }},
     // ASR options
     {"--whispercpp", {
@@ -84,10 +93,10 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
         return {"ctx_size", "llamacpp_backend", "llamacpp_args"};
     } else if (recipe == "whispercpp") {
         return {"whispercpp_backend"};
-    } else if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu" || recipe == "ryzenai" || recipe == "flm") {
+    } else if (recipe == "ryzenai-llm" || recipe == "flm") {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
-        return {"steps", "cfg_scale", "width", "height"};
+        return {"sd-cpp_backend", "steps", "cfg_scale", "width", "height"};
     } else {
         return {};
     }

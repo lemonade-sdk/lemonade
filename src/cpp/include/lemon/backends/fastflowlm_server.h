@@ -37,7 +37,7 @@ public:
     json reranking(const json& request) override;
 
     // FLM uses /api/tags for readiness check instead of /health
-    bool wait_for_ready() override;
+    bool wait_for_ready();
 
     // Override to transform model name to checkpoint for FLM
     void forward_streaming_request(const std::string& endpoint,
