@@ -87,9 +87,6 @@ private:
     std::vector<int16_t> samples_;
     mutable std::mutex mutex_;
 
-    // Helper to decode base64
-    static std::vector<uint8_t> base64_decode(const std::string& encoded);
-
     // Helper to build WAV from samples (no locking — caller must hold mutex_)
     static std::vector<uint8_t> build_wav(const std::vector<int16_t>& samples);
 };

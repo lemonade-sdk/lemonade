@@ -1,4 +1,5 @@
 #include "lemon/streaming_audio_buffer.h"
+#include <ixwebsocket/IXBase64.h>
 #include <cstring>
 #include <stdexcept>
 #include <algorithm>
@@ -6,70 +7,19 @@
 
 namespace lemon {
 
-// Base64 decoding table
-static const unsigned char base64_decode_table[256] = {
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 62, 64, 64, 64, 63,
-    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 64, 64, 64, 64, 64, 64,
-    64,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
-    15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 64, 64, 64, 64, 64,
-    64, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
-    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64
-};
-
-std::vector<uint8_t> StreamingAudioBuffer::base64_decode(const std::string& encoded) {
-    if (encoded.empty()) {
-        return {};
-    }
-
-    size_t in_len = encoded.size();
-    // Skip trailing '=' padding
-    while (in_len > 0 && encoded[in_len - 1] == '=') {
-        in_len--;
-    }
-
-    size_t out_len = in_len * 3 / 4;
-    std::vector<uint8_t> decoded(out_len);
-
-    size_t i = 0, j = 0;
-    uint32_t sextet_a, sextet_b, sextet_c, sextet_d, triple;
-
-    while (i < in_len) {
-        sextet_a = encoded[i] == '=' ? 0 & i++ : base64_decode_table[static_cast<unsigned char>(encoded[i++])];
-        sextet_b = encoded[i] == '=' ? 0 & i++ : base64_decode_table[static_cast<unsigned char>(encoded[i++])];
-        sextet_c = encoded[i] == '=' ? 0 & i++ : base64_decode_table[static_cast<unsigned char>(encoded[i++])];
-        sextet_d = encoded[i] == '=' ? 0 & i++ : base64_decode_table[static_cast<unsigned char>(encoded[i++])];
-
-        triple = (sextet_a << 18) + (sextet_b << 12) + (sextet_c << 6) + sextet_d;
-
-        if (j < out_len) decoded[j++] = (triple >> 16) & 0xFF;
-        if (j < out_len) decoded[j++] = (triple >> 8) & 0xFF;
-        if (j < out_len) decoded[j++] = triple & 0xFF;
-    }
-
-    decoded.resize(j);
-    return decoded;
-}
-
 void StreamingAudioBuffer::append(const std::string& base64_audio) {
     if (base64_audio.empty()) {
         return;
     }
 
-    // Decode base64 to raw bytes
-    std::vector<uint8_t> raw_bytes = base64_decode(base64_audio);
+    // Decode base64 to raw bytes using ixwebsocket's base64 implementation
+    std::string decoded_str;
+    macaron::Base64::Decode(base64_audio, decoded_str);
+    const auto* raw_bytes = reinterpret_cast<const uint8_t*>(decoded_str.data());
+    size_t raw_size = decoded_str.size();
 
     // Convert bytes to int16 samples (little-endian)
-    size_t num_samples = raw_bytes.size() / 2;
+    size_t num_samples = raw_size / 2;
     std::vector<int16_t> new_samples(num_samples);
 
     for (size_t i = 0; i < num_samples; i++) {
@@ -83,10 +33,10 @@ void StreamingAudioBuffer::append(const std::string& base64_audio) {
     if (!logged_first && num_samples > 0) {
         logged_first = true;
         std::cout << "[AudioBuffer] base64 length=" << base64_audio.size()
-                  << " decoded bytes=" << raw_bytes.size()
+                  << " decoded bytes=" << raw_size
                   << " samples=" << num_samples << std::endl;
         std::cout << "[AudioBuffer] first 8 raw bytes:";
-        for (size_t i = 0; i < std::min(raw_bytes.size(), size_t(8)); i++) {
+        for (size_t i = 0; i < std::min(raw_size, size_t(8)); i++) {
             std::cout << " " << static_cast<int>(raw_bytes[i]);
         }
         std::cout << std::endl;
