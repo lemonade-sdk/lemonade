@@ -697,7 +697,7 @@ jobs:
             test_type: llm
             wrapped_server: llamacpp
             backend: metal
-            runner: [mac-metal, macOS]
+            runner: macos-latest
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
