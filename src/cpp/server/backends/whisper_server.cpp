@@ -185,7 +185,6 @@ void WhisperServer::load(const std::string& model_name,
 
     std::cout << "[WhisperServer] Using model: " << model_path << std::endl;
     std::cout << "[WhisperServer] Using backend: " << whispercpp_backend << std::endl;
-    model_path_ = model_path;
 
     // For NPU backend, download the compiled cache (.rai file). This is a must-have for NPU backend.
     if (whispercpp_backend == "npu") {
@@ -207,7 +206,7 @@ void WhisperServer::load(const std::string& model_name,
     // Note: whisper.cpp server handles audio conversion automatically since v1.8
     // Note: Don't include exe_path here - ProcessManager::start_process already handles it
     std::vector<std::string> args = {
-        "-m", model_path_,
+        "-m", model_path,
         "--port", std::to_string(port_)
     };
 
@@ -242,7 +241,6 @@ void WhisperServer::unload() {
         utils::ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
         port_ = 0;
-        model_path_.clear();
     }
 }
 

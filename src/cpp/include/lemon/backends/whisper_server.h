@@ -65,7 +65,6 @@ private:
                                          const json& params,
                                          bool translate);
 
-    std::string model_path_;
     std::filesystem::path temp_dir_;  // Directory for temporary audio files
 };
 

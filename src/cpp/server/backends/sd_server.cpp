@@ -18,15 +18,10 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-SDServer::SDServer(const std::string& log_level,
-                   ModelManager* model_manager,
-                   const std::string& backend)
-    : WrappedServer("sd-server", log_level, model_manager),
-      backend_(backend) {
-
+SDServer::SDServer(const std::string& log_level, ModelManager* model_manager)
+    : WrappedServer("sd-server", log_level, model_manager) {
     if (is_debug()) {
-        std::cout << "[SDServer] Created with log_level=" << log_level
-                  << ", backend=" << backend << std::endl;
+        std::cout << "[SDServer] Created with log_level=" << log_level << std::endl;
     }
 }
 
@@ -86,12 +81,14 @@ void SDServer::install(const std::string& backend) {
 
 void SDServer::load(const std::string& model_name,
                     const ModelInfo& model_info,
-                    const RecipeOptions& /* options */,
+                    const RecipeOptions& options,
                     bool /* do_not_upgrade */) {
     std::cout << "[SDServer] Loading model: " << model_name << std::endl;
 
+    std::string backend = options.get_option("sd-cpp_backend");
+
     // Install sd-server if needed
-    install(backend_);
+    install(backend);
 
     // Get model path
     std::string model_path = model_info.resolved_path("main");
@@ -111,10 +108,9 @@ void SDServer::load(const std::string& model_name,
     }
 
     std::cout << "[SDServer] Using model: " << model_path << std::endl;
-    model_path_ = model_path;
 
     // Get sd-server executable path
-    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, backend_);
+    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, backend);
 
     // Choose a port
     port_ = choose_port();
@@ -122,7 +118,7 @@ void SDServer::load(const std::string& model_name,
         throw std::runtime_error("Failed to find an available port");
     }
 
-    std::cout << "[SDServer] Starting server on port " << port_ << " (backend: " << backend_ << ")" << std::endl;
+    std::cout << "[SDServer] Starting server on port " << port_ << " (backend: " << backend << ")" << std::endl;
 
     // Build command line arguments
     std::vector<std::string> args = {
@@ -131,10 +127,10 @@ void SDServer::load(const std::string& model_name,
 
     if (llm_path.empty() || vae_path.empty()) {
         args.push_back("-m");
-        args.push_back(model_path_);
+        args.push_back(model_path);
     } else {
         args.push_back("--diffusion-model");
-        args.push_back(model_path_);
+        args.push_back(model_path);
         args.push_back("--llm");
         args.push_back(llm_path);
         args.push_back("--vae");
@@ -165,7 +161,7 @@ void SDServer::load(const std::string& model_name,
 #else
     // ROCm builds on Windows require hipblaslt.dll, rocblas.dll, amdhip64.dll, etc.
     // These DLLs are distributed alongside sd-server.exe but need PATH to be set for loading
-    if (backend_ == "rocm") {
+    if (backend == "rocm") {
         // Add executable directory to PATH for ROCm runtime DLLs
         // This allows the sd-server.exe to find required HIP/ROCm libraries at runtime
         std::string new_path = exe_dir.string();
@@ -174,7 +170,7 @@ void SDServer::load(const std::string& model_name,
             new_path = new_path + ";" + std::string(existing_path);
         }
         env_vars.push_back({"PATH", new_path});
-        
+
         std::cout << "[SDServer] ROCm backend: added " << exe_dir.string() << " to PATH" << std::endl;
     }
 #endif
@@ -210,7 +206,6 @@ void SDServer::unload() {
         utils::ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
         port_ = 0;
-        model_path_.clear();
     }
 }
 
