@@ -13,17 +13,16 @@
 <body>
   <div class="navbar-placeholder"></div>
 
-  <main class="main">
+  <main class="main hp-main">
     <!-- ==================== HERO ==================== -->
     <section class="hp-hero">
       <div class="hp-hero-left">
         <h1 class="hp-headline">
-          <span class="hp-headline-top">Refreshingly fast <span class="hp-carousel-wrap">
-            <span class="hp-carousel" id="hpCarousel">
-              <span class="hp-carousel-word">LLMs</span>
-              <span class="hp-carousel-word">images</span>
-              <span class="hp-carousel-word">speech</span>
-              <span class="hp-carousel-word">LLMs</span>
+          <span class="hp-headline-top">Refreshingly fast <span class="hp-carousel-wrap" aria-live="polite">
+            <span class="hp-carousel-sizer" aria-hidden="true">images</span>
+            <span class="hp-carousel-track" id="hpCarouselTrack" aria-hidden="true">
+              <span class="hp-carousel-slot" id="hpCarouselCurrent">LLMs</span>
+              <span class="hp-carousel-slot" id="hpCarouselNext"></span>
             </span>
           </span></span>
           <br>on GPUs and NPUs
@@ -339,28 +338,123 @@
   <script>
     // ---- Carousel + Demo panel sync ----
     (function() {
-      var carousel = document.getElementById('hpCarousel');
-      var words = carousel.querySelectorAll('.hp-carousel-word');
+      var track = document.getElementById('hpCarouselTrack');
+      var currentEl = document.getElementById('hpCarouselCurrent');
+      var nextEl = document.getElementById('hpCarouselNext');
+      if (!track || !currentEl || !nextEl) return;
+
       var demos = document.querySelectorAll('.hp-demo-item');
+      var labels = ['LLMs', 'images', 'speech'];
       var current = 0;
-      var total = 3;
-      var wordH = words[0].offsetHeight;
+      var total = Math.min(demos.length, labels.length);
+      if (total <= 0) return;
+
+      var intervalMs = 3000;
+      var durationMs = 420;
+      var easing = 'cubic-bezier(0.4,0,0.2,1)';
+      var intervalId = null;
+      var isAnimating = false;
+      var activeDemoIndex = 0;
+      var demoExitTimer = null;
+      var prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      function setDemo(index) {
+        if (index === activeDemoIndex) return;
+        var previous = demos[activeDemoIndex];
+        var next = demos[index];
+        if (!next) return;
+        if (previous) {
+          previous.classList.remove('active');
+          previous.classList.add('exiting-up');
+        }
+        next.classList.remove('exiting-up');
+        next.classList.add('active');
+        activeDemoIndex = index;
+        if (demoExitTimer) clearTimeout(demoExitTimer);
+        demoExitTimer = window.setTimeout(function() {
+          demos.forEach(function(d, i) {
+            if (i !== activeDemoIndex) d.classList.remove('exiting-up');
+          });
+          demoExitTimer = null;
+        }, durationMs + 30);
+      }
+
+      function parkSlots() {
+        currentEl.style.transition = 'none';
+        nextEl.style.transition = 'none';
+        currentEl.style.transform = 'translate3d(0, 0, 0)';
+        nextEl.style.transform = 'translate3d(0, 100%, 0)';
+      }
 
       function advance() {
-        current++;
-        carousel.style.transition = 'transform 0.5s cubic-bezier(0.4,0,0.2,1)';
-        carousel.style.transform = 'translateY(-' + (current * wordH) + 'px)';
-        demos.forEach(function(d) { d.classList.remove('active'); });
-        demos[current % total].classList.add('active');
-        if (current >= total) {
-          setTimeout(function() {
-            carousel.style.transition = 'none';
-            current = 0;
-            carousel.style.transform = 'translateY(0)';
-          }, 550);
+        if (isAnimating) return;
+        var nextIndex = (current + 1) % total;
+
+        if (prefersReducedMotion) {
+          currentEl.textContent = labels[nextIndex];
+          current = nextIndex;
+          setDemo(current);
+          return;
+        }
+
+        isAnimating = true;
+        nextEl.textContent = labels[nextIndex];
+        parkSlots();
+        currentEl.offsetHeight;
+
+        var transition = 'transform ' + durationMs + 'ms ' + easing;
+        currentEl.style.transition = transition;
+        nextEl.style.transition = transition;
+        setDemo(nextIndex);
+
+        window.requestAnimationFrame(function() {
+          currentEl.style.transform = 'translate3d(0, -100%, 0)';
+          nextEl.style.transform = 'translate3d(0, 0, 0)';
+        });
+
+        var done = function(event) {
+          if (event.propertyName !== 'transform') return;
+          nextEl.removeEventListener('transitionend', done);
+
+          var oldCurrent = currentEl;
+          currentEl = nextEl;
+          nextEl = oldCurrent;
+          current = nextIndex;
+
+          parkSlots();
+          isAnimating = false;
+        };
+        nextEl.addEventListener('transitionend', done);
+      }
+
+      function handleVisibility() {
+        if (document.hidden) {
+          if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+          }
+          return;
+        }
+        if (!intervalId) {
+          intervalId = setInterval(advance, intervalMs);
         }
       }
-      setInterval(advance, 3000);
+
+      currentEl.textContent = labels[0];
+      nextEl.textContent = labels[1 % total];
+      demos.forEach(function(d, i) {
+        d.classList.remove('active', 'exiting-up');
+        if (i === 0) d.classList.add('active');
+      });
+      activeDemoIndex = 0;
+      setDemo(0);
+      parkSlots();
+      intervalId = setInterval(advance, intervalMs);
+      document.addEventListener('visibilitychange', handleVisibility);
+      window.addEventListener('beforeunload', function() {
+        if (demoExitTimer) clearTimeout(demoExitTimer);
+        if (intervalId) clearInterval(intervalId);
+      });
     })();
 
     // ---- Scroll reveal ----

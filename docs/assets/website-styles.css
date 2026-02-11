@@ -145,12 +145,27 @@ body.install-options {
 .navbar-links {
   display: flex;
   gap: 2.5rem;
+  align-items: center;
+  font-size: 1.22rem;
+  line-height: 1.1;
 }
 
 .navbar a {
   color: #444;
   text-decoration: none;
   transition: var(--transition-fast);
+}
+
+.navbar-links a,
+.navbar-brand .brand-title a {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.15;
+}
+
+.navbar-links a {
+  font-size: 1.22rem;
+  font-weight: 500;
 }
 
 .navbar a:hover {
@@ -2409,6 +2424,25 @@ body.install-options {
   }
 }
 
+@media (max-width: 825px) {
+  .navbar {
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: 1rem;
+  }
+
+  .navbar-links {
+    gap: 1.5rem;
+    font-size: 1.18rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .navbar-links a {
+    font-size: 1.18rem;
+  }
+}
+
 @media (max-width: 768px) {
   .navbar {
     flex-direction: column;
@@ -2418,7 +2452,11 @@ body.install-options {
 
   .navbar-links {
     gap: var(--spacing-lg);
-    font-size: var(--font-size-base);
+    font-size: 1.12rem;
+  }
+
+  .navbar-links a {
+    font-size: 1.12rem;
   }
 
   .navbar-context {
@@ -2705,10 +2743,14 @@ body.install-options {
 
 @media (max-width: 600px) {
   .navbar-links {
-    gap: 0.8rem;
-    font-size: var(--font-size-sm);
+    gap: 1rem;
+    font-size: 1.08rem;
     flex-wrap: wrap;
     justify-content: center;
+  }
+
+  .navbar-links a {
+    font-size: 1.08rem;
   }
 
   .hero-section {
@@ -3719,6 +3761,11 @@ body.install-options {
    HOMEPAGE v6 — tighter layout + stronger section hierarchy
    ============================================================= */
 
+.hp-main {
+  max-width: none;
+  padding-top: 0;
+}
+
 /* --- Split Hero --- */
 .hp-hero {
   display: grid;
@@ -3757,12 +3804,6 @@ body.install-options {
   letter-spacing: -0.035em;
 }
 
-@media (min-width: 1200px) {
-  .hp-headline {
-    font-size: 3rem;
-  }
-}
-
 .hp-headline-top {
   display: inline-flex;
   align-items: baseline;
@@ -3771,25 +3812,48 @@ body.install-options {
 }
 
 .hp-carousel-wrap {
-  display: inline-flex;
-  height: 1.15em;
-  overflow: hidden;
-  vertical-align: bottom;
+  --hp-carousel-line-height: 1.14;
   position: relative;
+  display: inline-block;
+  vertical-align: baseline;
+  overflow: hidden;
+  text-align: left;
+  line-height: var(--hp-carousel-line-height);
+  padding-right: 0.06em;
+  padding-bottom: 0.08em;
 }
 
-.hp-carousel {
-  display: flex;
-  flex-direction: column;
+.hp-carousel-sizer {
+  display: inline-block;
+  visibility: hidden;
+  color: transparent;
+  pointer-events: none;
+  user-select: none;
+  font-weight: 700;
+  line-height: var(--hp-carousel-line-height);
+  white-space: nowrap;
 }
 
-.hp-carousel-word {
+.hp-carousel-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.hp-carousel-slot {
+  position: absolute;
+  top: 0;
+  left: 0;
   display: block;
-  height: 1.15em;
-  line-height: 1.15;
   color: var(--accent-gold-dark);
   font-weight: 700;
-  flex-shrink: 0;
+  white-space: nowrap;
+  text-align: left;
+  line-height: var(--hp-carousel-line-height);
+  transform: translate3d(0, 100%, 0);
+  will-change: transform;
 }
 
 .hp-subtitle {
@@ -3851,7 +3915,7 @@ body.install-options {
   gap: 0.5rem;
   height: calc(100% - 2.8rem);
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(10px);
   transition: opacity 0.4s ease, transform 0.4s ease;
   position: absolute;
   inset: 1.4rem 1.75rem;
@@ -3862,6 +3926,12 @@ body.install-options {
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;
+}
+
+.hp-demo-item.exiting-up {
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
 }
 
 .hp-demo-label {
@@ -4343,8 +4413,8 @@ body.install-options {
 }
 
 .hp-release-nav span {
-  font-size: 2.1rem;
-  line-height: 1;
+  font-size: 3.15rem;
+  line-height: 0.95;
 }
 
 .hp-release-nav:hover,
@@ -4698,8 +4768,8 @@ body.install-options {
 }
 
 .hp-eco-app img {
-  width: 58px;
-  height: 58px;
+  width: 70px;
+  height: 70px;
   object-fit: contain;
   border-radius: 14px;
   flex-shrink: 0;
@@ -4756,16 +4826,32 @@ body.install-options {
 }
 
 /* --- Homepage responsive --- */
+@media (max-width: 1024px) {
+  .hp-main {
+    margin-top: 0 !important;
+  }
+}
+
 @media (max-width: 980px) {
   .hp-hero {
     grid-template-columns: 1fr;
-    gap: 1.5rem;
+    justify-items: center;
+    gap: 1.75rem;
     padding: 2.8rem 1rem 4rem;
+    text-align: center;
   }
 
   .hp-hero-left {
     text-align: center;
     align-items: center;
+    width: 100%;
+    max-width: 560px;
+    margin: 0 auto;
+  }
+
+  .hp-hero-right {
+    width: 100%;
+    margin: 0 auto;
   }
 
   .hp-subtitle-group {
@@ -4776,10 +4862,26 @@ body.install-options {
   .hp-demo-panel {
     max-width: 440px;
     height: 280px;
+    margin: 0 auto;
   }
 
   .hp-open-layout {
     grid-template-columns: 1fr;
+  }
+
+  .hp-open-story {
+    width: 100%;
+    max-width: 440px;
+    justify-self: center;
+  }
+
+  .hp-open-story h3 {
+    text-align: center;
+  }
+
+  .hp-community-cta {
+    margin-left: 0;
+    justify-items: center;
   }
 
   .hp-tech-grid {
@@ -4796,24 +4898,34 @@ body.install-options {
 
   .hp-release-carousel {
     grid-template-columns: minmax(0, 1fr);
-    justify-items: center;
-    gap: 0.42rem;
+    justify-items: stretch;
+    gap: 0;
+    position: relative;
+    padding: 0 2.1rem;
   }
 
   .hp-release-nav {
-    padding: 0;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 3;
+    padding: 0 0.14rem;
+  }
+
+  .hp-release-nav span {
+    font-size: 2.1rem;
+    line-height: 1;
   }
 
   .hp-release-nav-prev {
-    order: 2;
+    left: 0.1rem;
   }
 
   .hp-release-nav-next {
-    order: 3;
+    right: 0.1rem;
   }
 
   .hp-release-section .release-announcement {
-    order: 1;
     width: min(700px, 100%);
     min-width: 0;
     max-width: min(700px, 100%);
@@ -4848,14 +4960,20 @@ body.install-options {
 
   .hp-cta-row {
     flex-direction: column;
-    width: 100%;
-    max-width: 100%;
+    width: auto;
+    max-width: 460px;
+    align-items: center;
   }
 
   .hp-cta-row .download-btn,
   .hp-cta-row .dev-btn {
-    width: 100%;
-    max-width: 100%;
+    width: min(250px, 80vw);
+    min-width: min(250px, 80vw);
+    max-width: min(250px, 80vw);
+    height: 70px;
+    min-height: 70px;
+    padding: 0.8rem 1rem;
+    justify-content: center;
   }
 
   .hp-demo-panel {

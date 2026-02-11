@@ -628,7 +628,7 @@ body.embedded .mp-filter-select option {
   }
 
   .marketplace-title {
-    font-size: 1rem;
+    font-size: clamp(1.95rem, 8.2vw, 2.4rem);
   }
 
   .search-container {
