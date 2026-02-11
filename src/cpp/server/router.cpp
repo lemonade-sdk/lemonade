@@ -438,6 +438,15 @@ json Router::get_max_model_limits() const {
     };
 }
 
+void Router::set_min_loaded_models(int min) {
+    // Only increase, never decrease — and skip if unlimited (-1)
+    if (max_loaded_models_ != -1 && min > max_loaded_models_) {
+        std::cout << "[Router] Increasing max loaded models per type: "
+                  << max_loaded_models_ << " -> " << min << std::endl;
+        max_loaded_models_ = min;
+    }
+}
+
 bool Router::is_model_loaded() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     return !loaded_servers_.empty();

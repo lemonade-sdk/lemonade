@@ -3,6 +3,7 @@
 #include "lemon/utils/path_utils.h"
 #include <iostream>
 #include <fstream>
+#include <map>
 
 namespace lemon {
 
@@ -253,6 +254,31 @@ void Orchestrator::resolve_platform_preset() {
 
             tools_ = available_tools;
             std::cout << "[Orchestrator] Available tools: " << tools_.size() << std::endl;
+
+            // Calculate minimum model slots per type so nothing gets evicted
+            // during orchestration.  Each endpoint model maps to a ModelType:
+            //   orchestrator → LLM, transcription → AUDIO, tts → AUDIO,
+            //   image_generation → IMAGE, embeddings → EMBEDDING, reranking → RERANKING
+            std::map<std::string, int> type_counts;
+            type_counts["llm"] = 1;  // Always need at least the orchestrator
+            auto bump = [&](const std::string& endpoint_key, const std::string& type) {
+                if (endpoint_models_.contains(endpoint_key)) {
+                    type_counts[type]++;
+                }
+            };
+            bump("transcription",    "audio");
+            bump("tts",              "audio");
+            bump("image_generation", "image");
+            bump("embeddings",       "embedding");
+            bump("reranking",        "reranking");
+
+            int max_needed = 1;
+            for (const auto& [type, count] : type_counts) {
+                if (count > max_needed) max_needed = count;
+            }
+
+            router_->set_min_loaded_models(max_needed);
+            std::cout << "[Orchestrator] Min model slots per type: " << max_needed << std::endl;
             return;
         }
     }

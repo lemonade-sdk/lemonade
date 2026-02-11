@@ -43,6 +43,9 @@ public:
     // Get max model limits
     json get_max_model_limits() const;
 
+    // Ensure at least `min` model slots per type (only increases, never decreases)
+    void set_min_loaded_models(int min);
+
     // Check if any model is loaded
     bool is_model_loaded() const;
 
