@@ -302,26 +302,33 @@
         </div>
       </div>
       <div class="hp-api-cta">
-        <a href="https://lemonade-server.ai/docs/server/server_spec/" class="marketplace-cta-btn" target="_blank" rel="noopener">View the full Server Spec</a>
+        <a href="https://lemonade-server.ai/docs/server/server_spec/" class="marketplace-cta-btn" target="_blank" rel="noopener">View the Server Spec</a>
       </div>
     </section>
 
     <!-- ==================== RELEASE NOTES ==================== -->
     <section class="hp-section hp-reveal hp-release-section">
       <span class="hp-section-label">Latest Release</span>
-      <h2 class="hp-section-heading">What shipped recently</h2>
-      <p class="hp-section-desc">Track the newest improvements and highlights from the Lemonade release stream.</p>
+      <h2 class="hp-section-heading">Always improving.</h2>
+      <p class="hp-section-desc">Track the newest improvements and highlights from the Lemonade release  stream.</p>
       <div class="hp-section-release">
-        <div class="release-announcement" id="releaseAnnouncement">
-          <div class="release-content">
-            <div class="release-info">
-              <h3 class="release-title">Latest Release</h3>
-              <p class="release-name" id="releaseName">Loading latest release...</p>
-              <p class="release-date" id="releaseDate"></p>
-              <div class="release-highlights" id="releaseHighlights"></div>
+        <div class="hp-release-carousel">
+          <button class="hp-release-nav hp-release-nav-prev" id="releasePrevBtn" type="button" aria-label="Show previous release" title="Show previous release">
+            <span aria-hidden="true">&#8249;</span>
+          </button>
+          <div class="release-announcement" id="releaseAnnouncement">
+            <div class="release-content">
+              <div class="release-info">
+                <p class="release-name" id="releaseName">Loading releases...</p>
+                <p class="release-date" id="releaseDate"></p>
+                <div class="release-highlights" id="releaseHighlights"></div>
+              </div>
             </div>
+            <a class="release-link" href="#" id="releaseLink" target="_blank" rel="noopener">View Release</a>
           </div>
-          <a class="release-link" href="#" id="releaseLink" target="_blank">View Release</a>
+          <button class="hp-release-nav hp-release-nav-next" id="releaseNextBtn" type="button" aria-label="Show newer release" title="Show newer release">
+            <span aria-hidden="true">&#8250;</span>
+          </button>
         </div>
       </div>
     </section>
@@ -380,33 +387,90 @@
     })();
 
     // ---- Release fetch ----
+    var releaseCarouselState = { items: [], index: 0 };
+    function formatReleaseTitle(release) {
+      var version = release && (release.tag_name || release.name);
+      if (!version) return 'Lemonade latest';
+      var normalized = String(version).trim();
+      if (/^lemonade\s+/i.test(normalized)) return normalized;
+      return 'Lemonade ' + normalized;
+    }
+    function updateReleaseNavState() {
+      var prevBtn = document.getElementById('releasePrevBtn');
+      var nextBtn = document.getElementById('releaseNextBtn');
+      if (!prevBtn || !nextBtn) return;
+      var total = releaseCarouselState.items.length;
+      var atLatest = releaseCarouselState.index <= 0;
+      var atOldest = total === 0 || releaseCarouselState.index >= total - 1;
+      prevBtn.disabled = atOldest;
+      nextBtn.disabled = atLatest;
+    }
+    function renderReleaseAt(index) {
+      var releaseName = document.getElementById('releaseName');
+      var releaseDate = document.getElementById('releaseDate');
+      var releaseLink = document.getElementById('releaseLink');
+      var releaseHighlights = document.getElementById('releaseHighlights');
+      if (!releaseName || !releaseDate || !releaseLink || !releaseHighlights) return;
+      if (!releaseCarouselState.items.length) {
+        releaseName.textContent = 'Lemonade latest';
+        releaseDate.textContent = 'Check for updates';
+        releaseHighlights.innerHTML = '';
+        releaseLink.href = 'https://github.com/lemonade-sdk/lemonade/releases/latest';
+        updateReleaseNavState();
+        return;
+      }
+      var boundedIndex = Math.max(0, Math.min(index, releaseCarouselState.items.length - 1));
+      releaseCarouselState.index = boundedIndex;
+      var release = releaseCarouselState.items[boundedIndex];
+      releaseName.textContent = formatReleaseTitle(release);
+      releaseDate.textContent = release.published_at
+        ? 'Released ' + new Date(release.published_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })
+        : 'Check for updates';
+      releaseLink.href = release.html_url || 'https://github.com/lemonade-sdk/lemonade/releases/latest';
+      var highlights = release.body ? parseHeadlineSection(release.body) : [];
+      if (highlights.length === 0 && release.body) {
+        highlights = parseBodyHighlights(release.body);
+      }
+      if (highlights.length > 0) {
+        releaseHighlights.innerHTML = highlights.map(function(item) {
+          return '<div class="highlight-item">' + item + '</div>';
+        }).join('');
+      } else {
+        releaseHighlights.innerHTML = '<div class="highlight-item">No headline notes published for this release.</div>';
+      }
+      updateReleaseNavState();
+    }
     async function fetchLatestRelease() {
+      var prevBtn = document.getElementById('releasePrevBtn');
+      var nextBtn = document.getElementById('releaseNextBtn');
+      if (prevBtn && !prevBtn.dataset.bound) {
+        prevBtn.dataset.bound = '1';
+        prevBtn.addEventListener('click', function() {
+          renderReleaseAt(releaseCarouselState.index + 1);
+        });
+      }
+      if (nextBtn && !nextBtn.dataset.bound) {
+        nextBtn.dataset.bound = '1';
+        nextBtn.addEventListener('click', function() {
+          renderReleaseAt(releaseCarouselState.index - 1);
+        });
+      }
       try {
-        var response = await fetch('https://api.github.com/repos/lemonade-sdk/lemonade/releases/latest');
-        var release = await response.json();
-        var releaseName = document.getElementById('releaseName');
-        var releaseDate = document.getElementById('releaseDate');
-        var releaseLink = document.getElementById('releaseLink');
-        var releaseHighlights = document.getElementById('releaseHighlights');
-        if (release.name) {
-          releaseName.textContent = release.name;
-          releaseDate.textContent = 'Released ' + new Date(release.published_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
-          releaseLink.href = release.html_url;
-          if (release.body) {
-            var headlines = parseHeadlineSection(release.body);
-            if (headlines.length > 0) {
-              releaseHighlights.innerHTML = headlines.map(function(item) { return '<div class="highlight-item">' + item + '</div>'; }).join('');
-            }
-          }
-        } else {
-          releaseName.textContent = release.tag_name || 'Visit GitHub for Latest Release';
-          releaseDate.textContent = release.published_at ? 'Released ' + new Date(release.published_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) : 'Check for updates';
-          releaseLink.href = release.html_url || 'https://github.com/lemonade-sdk/lemonade/releases/latest';
-        }
+        var response = await fetch('https://api.github.com/repos/lemonade-sdk/lemonade/releases?per_page=12');
+        if (!response.ok) throw new Error('Failed to load release list');
+        var releases = await response.json();
+        if (!Array.isArray(releases)) throw new Error('Invalid release payload');
+        releaseCarouselState.items = releases.filter(function(item) { return item && !item.draft; });
+        if (!releaseCarouselState.items.length) throw new Error('No releases available');
+        renderReleaseAt(0);
       } catch (error) {
-        document.getElementById('releaseName').textContent = 'Visit GitHub for Latest Release';
+        document.getElementById('releaseName').textContent = 'Lemonade latest';
         document.getElementById('releaseDate').textContent = 'Check for updates';
         document.getElementById('releaseLink').href = 'https://github.com/lemonade-sdk/lemonade/releases/latest';
+        document.getElementById('releaseHighlights').innerHTML = '<div class="highlight-item">Unable to load releases right now.</div>';
+        releaseCarouselState.items = [];
+        releaseCarouselState.index = 0;
+        updateReleaseNavState();
       }
     }
     function compactCount(value) {
@@ -578,6 +642,19 @@
         }
       }
       return headlines;
+    }
+    function parseBodyHighlights(body) {
+      var lines = body.replace(/\r\n/g, '\n').split('\n');
+      var bullets = [];
+      for (var i = 0; i < lines.length; i++) {
+        var t = lines[i].trim();
+        if (t.indexOf('- ') === 0 || t.indexOf('* ') === 0) {
+          var item = t.substring(2).trim().replace(/`([^`]+)`/g, '$1').trim();
+          if (item) bullets.push(item);
+        }
+        if (bullets.length >= 4) break;
+      }
+      return bullets;
     }
     document.addEventListener('DOMContentLoaded', function() {
       fetchLatestRelease();
