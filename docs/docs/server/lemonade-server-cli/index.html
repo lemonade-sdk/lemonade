@@ -287,6 +287,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../dev-getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../apps/" class="md-nav__link">
         
   
@@ -324,10 +351,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
         
           
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
             
   
   
@@ -345,8 +372,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -832,33 +859,6 @@
     
   
     Understanding local LLM servers
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../server_models/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Models List
   
 
     
@@ -1382,7 +1382,7 @@ lemonade-server<span class="w"> </span>serve
 <p>If you expose your server over a network you can use the <code>LEMONADE_API_KEY</code> environment variable to set an API key (use a random long string) that will be required to execute any request. The API key will be expected as HTTP Bearer authentication, which is compatible with the OpenAI API.</p>
 <p><strong>IMPORTANT</strong>: If you need to access <code>lemonade-server</code> over the internet, do not expose it directly! You will also need to setup an HTTPS reverse proxy (such as nginx) and expose that instead, otherwise all communication will be in plaintext!</p>
 <h2 id="options-for-pull">Options for pull</h2>
-<p>The <code>pull</code> command downloads and installs models. For models already in the <a href="../server_models/">Lemonade Server registry</a>, only the model name is required. To register and install custom models from Hugging Face, use the registration options below:</p>
+<p>The <code>pull</code> command downloads and installs models. For models already in the <a href="https://lemonade-server.ai/models.html">Lemonade Server registry</a>, only the model name is required. To register and install custom models from Hugging Face, use the registration options below:</p>
 <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>pull<span class="w"> </span>&lt;model_name&gt;<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
 </code></pre></div>
 <table>
@@ -1457,7 +1457,7 @@ lemonade-server<span class="w"> </span>pull<span class="w"> </span>user.nomic-em
 <span class="w">  </span>--recipe<span class="w"> </span>llamacpp<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--embedding
 </code></pre></div>
-<p>For more information about model formats and recipes, see the <a href="../lemonade_api.md">API documentation</a> and the <a href="../server_models/">server models guide</a>.</p>
+<p>For more information about model formats and recipes, see the <a href="../lemonade_api.md">API documentation</a> and the <a href="https://lemonade-server.ai/models.html">server models guide</a>.</p>
 <h2 id="lemonade-desktop-app">Lemonade Desktop App</h2>
 <p>The Lemonade Desktop App provides a graphical interface for chatting with models and managing the server. When installed via the full installer, <code>lemonade-app</code> is added to your PATH for easy command-line access.</p>
 <h3 id="launching-the-app">Launching the App</h3>

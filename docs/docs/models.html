@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lemonade Server Models</title>
+  <link rel="icon" href="./favicon.ico">
+  <link rel="stylesheet" href="assets/website-styles.css">
+  <link rel="stylesheet" href="assets/common.css">
+  <link rel="stylesheet" href="assets/models.css">
+</head>
+<body id="models-page-body">
+  <div class="navbar-placeholder"></div>
+
+  <main class="models-main">
+    <section class="models-hero docs-page-hero">
+      <h1 class="models-title docs-page-title">Models</h1>
+      <p class="models-subtitle docs-page-subtitle">
+        Browse models and install them with the pull command. You can also register new models with the pull command or Add a Model feature UI the app.
+      </p>
+    </section>
+
+    <div class="models-layout">
+      <button
+        id="models-sidebar-toggle"
+        class="models-sidebar-toggle docs-side-toggle"
+        type="button"
+        aria-label="Open filters"
+        aria-controls="models-sidebar"
+        aria-expanded="false"
+      >
+        <span class="hamburger-icon" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </span>
+        <span>Filters</span>
+      </button>
+
+      <aside id="models-sidebar" class="models-sidebar docs-side-nav">
+        <a id="release-tag-link" href="#" class="sidebar-card release-card hidden" target="_blank" rel="noopener">
+          <span class="control-label release-label">Release</span>
+          <span id="release-tag-text" class="backend-filter-btn release-tag-value">Lemonade v0.0.0</span>
+        </a>
+
+        <div class="sidebar-card">
+          <label for="model-search-input" class="control-label">Search models</label>
+          <div class="models-search-wrap">
+            <input id="model-search-input" class="models-search-input" type="text" placeholder="Name, label, checkpoint..." autocomplete="off">
+            <svg class="models-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <path d="m21 21-4.3-4.3"></path>
+            </svg>
+          </div>
+        </div>
+
+        <div class="sidebar-card">
+          <label class="control-label">Recipe</label>
+          <div id="recipe-filter-buttons" class="backend-filter-buttons"></div>
+        </div>
+
+        <div class="sidebar-card">
+          <label class="control-label">Label</label>
+          <div id="label-filter-buttons" class="label-filter-buttons"></div>
+        </div>
+      </aside>
+      <div id="models-sidebar-backdrop" class="models-sidebar-backdrop" aria-hidden="true"></div>
+
+      <section class="models-content">
+        <section id="models-browser" class="models-browser">
+          <div id="models-loading" class="state-box">Loading models from latest tagged release...</div>
+          <div id="models-error" class="state-box hidden">
+            <p>Unable to load model metadata right now.</p>
+            <button id="retry-load-btn" class="retry-btn">Try Again</button>
+          </div>
+          <div id="models-empty" class="state-box hidden">No models match the current search and filters.</div>
+          <div id="models-context" class="models-context hidden"></div>
+
+          <section id="hot-picks-section" class="hot-picks hidden">
+            <div class="hot-picks-head">
+              <h2 class="hot-picks-title">Hot picks</h2>
+              <button id="hot-picks-view-all-btn" class="hot-picks-link" type="button">View all hot models</button>
+            </div>
+            <p class="hot-picks-subtitle">Recommended models. Full supported catalog is listed below.</p>
+            <div id="hot-picks-grid" class="model-grid"></div>
+          </section>
+
+          <div id="supported-model-sections" class="model-sections hidden"></div>
+        </section>
+      </section>
+    </div>
+  </main>
+
+  <div class="footer-placeholder"></div>
+
+  <script src="assets/navbar.js"></script>
+  <script src="assets/footer.js"></script>
+  <script src="assets/models.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      if (typeof initializeNavbar === 'function') {
+        initializeNavbar('./');
+      }
+      if (typeof initializeFooter === 'function') {
+        initializeFooter('../');
+      }
+      if (typeof initializeModelsPage === 'function') {
+        initializeModelsPage();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -287,6 +287,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../dev-getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../" class="md-nav__link">
         
   
@@ -324,10 +351,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
         
           
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
             
   
   
@@ -345,8 +372,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_3">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -923,33 +950,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server_models/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Models List
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../server_spec/" class="md-nav__link">
         
   
@@ -1307,7 +1307,7 @@
 <li><strong>IDE</strong>: <a href="https://code.visualstudio.com/">Visual Studio Code (v1.80+)</a> or another supported IDE.</li>
 <li><strong>Lemonade Server</strong>: Installed and set up using the <a href="https://lemonade-server.ai/docs/server/">Getting Started guide</a>.</li>
 <li><strong>Lemonade Server Running</strong>: The server should be running at <code>http://localhost:8000</code>. If you change the port in Lemonade Server (e.g., to 8020, 8040, etc.), you'll need to update the API Base URL in Continue's configuration to match the same port.</li>
-<li><strong>Model Downloaded</strong>: At least one model from the <a href="https://lemonade-server.ai/docs/server/server_models/">supported models list</a> must be installed locally.</li>
+<li><strong>Model Downloaded</strong>: At least one model from the <a href="https://lemonade-server.ai/models.html">supported models list</a> must be installed locally.</li>
 </ul>
 <h3 id="hardware-requirements">Hardware Requirements</h3>
 <p>For best results, a code-tuned model with at least 20B parameters is required. To run such a model:</p>
@@ -1406,7 +1406,7 @@
 <h3 id="setup-configuration">Setup &amp; Configuration</h3>
 <ul>
 <li><strong>Install Lemonade Server</strong>: Follow the <a href="https://lemonade-server.ai/docs/server/">setup guide</a> to install and configure Lemonade Server before you begin development.</li>
-<li><strong>Download Models Locally</strong>: Use <code>lemonade-server pull &lt;model-name&gt;</code> to install models you want to use. Refer to the <a href="https://lemonade-server.ai/docs/server/server_models/">supported models list</a> for available options.</li>
+<li><strong>Download Models Locally</strong>: Use <code>lemonade-server pull &lt;model-name&gt;</code> to install models you want to use. Refer to the <a href="https://lemonade-server.ai/models.html">supported models list</a> for available options.</li>
 <li><strong>Pre-load Models</strong>: Start Lemonade Server and load your models before coding sessions. This can easily be done using the Lemon tray icon and <code>Load</code>.</li>
 <li><strong>Increase Context Size for Agent Mode</strong>: For large code changes with GGUF models, start Lemonade Server with a higher context size:
     <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve<span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">8192</span>
@@ -1427,7 +1427,7 @@
 <p><strong>Model not appearing in Continue</strong></p>
 <ul>
 <li>Make sure Lemonade Server is running and the model is loaded locally.</li>
-<li>Double-check the <a href="https://lemonade-server.ai/docs/server/server_models/">supported models list</a> and install any missing models with:
+<li>Double-check the <a href="https://lemonade-server.ai/models.html">supported models list</a> and install any missing models with:
       <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>pull<span class="w"> </span>&lt;model-name&gt;
 </code></pre></div></li>
 </ul>
@@ -1447,7 +1447,7 @@
 <h2 id="resources">Resources</h2>
 <ul>
 <li><a href="https://lemonade-server.ai/docs/server/">Lemonade Server Setup Guide</a></li>
-<li><a href="https://lemonade-server.ai/docs/server/server_models/">Lemonade Server Supported Models</a></li>
+<li><a href="https://lemonade-server.ai/models.html">Lemonade Server Supported Models</a></li>
 <li><a href="https://lemonade-server.ai/docs/server/apps/">Lemonade Applications</a></li>
 <li><a href="https://docs.continue.dev">Continue Documentation</a></li>
 </ul>
