@@ -35,7 +35,7 @@ SDServer::~SDServer() {
 }
 
 void SDServer::install(const std::string& backend) {
-    std::string repo = "leejet/stable-diffusion.cpp";
+    std::string repo = "superm1/stable-diffusion.cpp";
     std::string filename;
     std::string expected_version = BackendUtils::get_backend_version(SPEC.recipe, backend);
 
