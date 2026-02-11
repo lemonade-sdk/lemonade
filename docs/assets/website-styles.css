@@ -4604,63 +4604,93 @@ body.install-options {
 /* --- Ecosystem section --- */
 .hp-eco-apps {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.95rem;
-  text-align: left;
-  margin-top: 1.5rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1.2rem 0.85rem;
+  text-align: center;
+  margin-top: 1.35rem;
+  width: min(860px, 100%);
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .hp-eco-app {
   display: flex;
-  align-items: flex-start;
-  gap: 0.78rem;
-  padding: 0.95rem;
-  border-radius: 14px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.45rem;
+  padding: 0.45rem 0.35rem;
+  border-radius: 12px;
   text-decoration: none;
-  background: rgba(255, 255, 255, 0.56);
-  border: 1px solid rgba(0, 0, 0, 0.07);
+  background: transparent;
+  border: 1px solid transparent;
   transition: all 0.22s ease;
 }
 
 .hp-eco-app:hover {
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.58);
   transform: translateY(-2px);
-  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 8px 14px rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.06);
 }
 
 .hp-eco-app img {
-  width: 48px;
-  height: 48px;
+  width: 58px;
+  height: 58px;
   object-fit: contain;
-  border-radius: 11px;
+  border-radius: 14px;
   flex-shrink: 0;
 }
 
-.hp-eco-app-content {
-  display: flex;
-  flex-direction: column;
-  gap: 0.22rem;
-  min-width: 0;
-}
-
 .hp-eco-app-name {
-  font-size: 0.98rem;
-  font-weight: 650;
+  font-size: 0.82rem;
+  font-weight: 620;
   color: #1f1f1f;
-}
-
-.hp-eco-app-desc {
-  font-size: 0.83rem;
-  color: #555;
-  line-height: 1.35;
+  line-height: 1.25;
+  text-align: center;
+  max-width: 100%;
 }
 
 .hp-eco-cta {
-  margin-top: 1.2rem;
+  margin-top: 2.5rem;
+  display: flex;
+  justify-content: center;
 }
 
 .hp-eco-cta .marketplace-cta-btn {
-  margin-bottom: 0;
+  margin: 0;
+  min-width: 0;
+  max-width: none;
+  width: auto;
+  height: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.78rem 1.2rem;
+  border-radius: 14px;
+  font-size: 0.94rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+  text-decoration: none;
+  background: linear-gradient(135deg, var(--primary-yellow) 0%, var(--primary-yellow-dark) 58%, var(--primary-yellow-darker) 100%);
+  border: none;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1), 0 2px 0 rgba(255, 255, 255, 0.3) inset;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.hp-eco-cta .marketplace-cta-btn:hover,
+.hp-eco-cta .marketplace-cta-btn:focus {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15), 0 2px 0 rgba(255, 255, 255, 0.4) inset;
+  transform: translateY(-2px) scale(1.02);
+}
+
+.hp-eco-cta .marketplace-cta-btn:active {
+  background: var(--primary-yellow);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transform: scale(0.98);
 }
 
 /* --- Homepage responsive --- */
@@ -4703,6 +4733,10 @@ body.install-options {
     min-height: 64px;
   }
 
+  .hp-eco-apps {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
 }
 
 @media (max-width: 720px) {
@@ -4743,7 +4777,7 @@ body.install-options {
   }
 
   .hp-eco-apps {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -4771,6 +4805,11 @@ body.install-options {
 
   .hp-logo-chip {
     min-height: 58px;
+  }
+
+  .hp-eco-apps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.62rem 0.5rem;
   }
 
 }
