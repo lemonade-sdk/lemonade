@@ -4458,7 +4458,7 @@ body.install-options {
 /* --- Technical details section --- */
 .hp-tech-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.9rem;
   text-align: left;
 }
@@ -4471,100 +4471,194 @@ body.install-options {
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04);
 }
 
+.hp-tech-icon {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  margin-bottom: 0.62rem;
+}
+
 .hp-tech-card h3 {
-  margin: 0 0 0.38rem;
-  font-size: 0.98rem;
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
   color: #242424;
+  line-height: 1.3;
 }
 
 .hp-tech-card p {
   margin: 0;
-  font-size: 0.86rem;
-  line-height: 1.5;
+  font-size: 0.83rem;
+  line-height: 1.45;
   color: #535353;
 }
 
 /* --- Unified API section --- */
-.hp-api-intro {
-  display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
+.hp-api-layout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 1.1rem;
   text-align: left;
-  margin-bottom: 1rem;
+  margin-top: 1.25rem;
+  --hp-api-block-width: 700px;
 }
 
-.hp-api-quickstart,
-.hp-api-notes {
+.hp-api-modalities {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.7rem;
+  width: min(var(--hp-api-block-width), 100%);
+}
+
+.hp-api-modality {
+  appearance: none;
+  -webkit-appearance: none;
+  background: linear-gradient(145deg, #191a2e, #1f2036);
+  color: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 0.62rem 0.72rem;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  min-height: 52px;
+}
+
+.hp-api-modality:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 224, 102, 0.32);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
+}
+
+.hp-api-modality.is-active {
+  border-color: rgba(255, 224, 102, 0.55);
+  background: linear-gradient(145deg, #21233f, #2a2d50);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 224, 102, 0.24);
+}
+
+.hp-api-modality:focus-visible {
+  border-color: rgba(255, 224, 102, 0.42);
+}
+
+.hp-api-modality:active {
+  background: linear-gradient(145deg, #191a2e, #1f2036);
+  transform: translateY(0);
+}
+
+.hp-api-modality.is-active:active {
+  background: linear-gradient(145deg, #1b1d33, #242642);
+}
+
+.hp-api-modality h3 {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 620;
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.hp-api-modality.is-active h3 {
+  color: #fff2b3;
+}
+
+.hp-api-sample-panel {
   background: #191a2e;
   color: rgba(255, 255, 255, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
   padding: 1.1rem 1.15rem;
+  height: auto;
+  width: min(var(--hp-api-block-width), 100%);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-self: center;
 }
 
-.hp-api-quickstart h3,
-.hp-api-notes h3 {
-  margin: 0 0 0.5rem;
-  font-size: 0.95rem;
-  color: #ffe680;
-  letter-spacing: 0.01em;
+.hp-api-sample-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
 }
 
-.hp-api-quickstart p {
-  margin: 0 0 0.7rem;
-  font-size: 0.84rem;
-  color: rgba(255, 255, 255, 0.7);
-  line-height: 1.45;
-}
-
-.hp-api-quickstart pre {
-  margin: 0;
-  border-radius: 10px;
+.hp-api-copy-btn {
+  border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.06);
-  padding: 0.72rem 0.82rem;
-  overflow-x: auto;
+  color: rgba(255, 255, 255, 0.9);
+  border-radius: 9px;
+  line-height: 0;
+  padding: 0.46rem;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
-.hp-api-quickstart code {
-  color: rgba(255, 255, 255, 0.95);
-  font-size: 0.76rem;
-  line-height: 1.45;
-  font-family: "Consolas", "Monaco", "Courier New", monospace;
+.hp-api-copy-btn svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  display: block;
+  fill: currentColor;
 }
 
-.hp-api-notes ul {
+.hp-api-copy-btn:hover,
+.hp-api-copy-btn:focus {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 224, 102, 0.42);
+  transform: translateY(-1px);
+}
+
+.hp-api-copy-btn.is-copied {
+  color: #ffe680;
+  border-color: rgba(255, 224, 102, 0.55);
+  background: rgba(255, 224, 102, 0.16);
+}
+
+.hp-api-sample-method {
   margin: 0;
-  padding-left: 1rem;
-  display: grid;
-  gap: 0.46rem;
-}
-
-.hp-api-notes li {
-  font-size: 0.82rem;
   color: rgba(255, 255, 255, 0.72);
-  line-height: 1.36;
+  font-size: 0.92rem;
+  font-weight: 600;
+  gap: 0.48rem;
 }
 
-.hp-api-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.95rem;
-  margin: 1.1rem auto 0;
+.hp-api-cta {
+  margin-top: 1.6rem;
+  display: flex;
+  justify-content: center;
 }
 
-.hp-api-card {
-  background: #191a2e;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 1rem;
-  text-align: left;
-  transition: all 0.25s ease;
+.hp-api-cta .marketplace-cta-btn {
+  margin: 0;
 }
 
-.hp-api-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(255, 224, 102, 0.32);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.17);
+.hp-api-sample-panel pre {
+  margin: 0.68rem 0 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.86rem 0.95rem;
+  overflow: visible;
+  max-height: none;
+  white-space: pre-wrap !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  word-wrap: normal !important;
+}
+
+.hp-api-sample-panel code {
+  color: #ffffff;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
+  display: block;
+  min-width: 0;
+  white-space: pre-wrap !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  word-wrap: normal !important;
 }
 
 .hp-api-method {
@@ -4587,19 +4681,6 @@ body.install-options {
   letter-spacing: 0.04em;
 }
 
-.hp-api-card h3 {
-  font-size: 0.93rem;
-  font-weight: 620;
-  color: rgba(255, 255, 255, 0.95);
-  margin: 0 0 0.34rem;
-}
-
-.hp-api-models {
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.58);
-  line-height: 1.45;
-  margin: 0;
-}
 
 /* --- Ecosystem section --- */
 .hp-eco-apps {
@@ -4716,10 +4797,20 @@ body.install-options {
     height: 280px;
   }
 
-  .hp-open-layout,
-  .hp-api-intro,
-  .hp-tech-grid {
+  .hp-open-layout {
     grid-template-columns: 1fr;
+  }
+
+  .hp-tech-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hp-api-modalities {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .hp-api-sample-panel {
+    height: auto;
   }
 
   .hp-logo-grid {
@@ -4768,8 +4859,12 @@ body.install-options {
     height: 128px;
   }
 
-  .hp-api-grid {
+  .hp-api-modalities {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hp-api-sample-panel code {
+    font-size: 0.84rem;
   }
 
   .hp-logo-grid {
@@ -4782,16 +4877,25 @@ body.install-options {
 }
 
 @media (max-width: 480px) {
-  .hp-api-grid {
+  .hp-tech-grid {
     grid-template-columns: 1fr;
+  }
+
+  .hp-api-modalities {
+    grid-template-columns: 1fr;
+  }
+
+  .hp-api-sample-panel {
+    height: auto;
+    padding: 0.95rem;
   }
 
   .hp-demo-panel,
   .hp-open-story,
   .hp-open-stack,
   .hp-tech-card,
-  .hp-api-quickstart,
-  .hp-api-notes,
+  .hp-api-modality,
+  .hp-api-sample-panel,
   .hp-eco-app {
     border-radius: 12px;
   }

@@ -18,7 +18,7 @@
     <div class="navbar-links">
       <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
       <a href="docs/">Docs</a>
-      <a href="docs/server/server_models/">Models</a>
+      <a href="docs/server/models.html">Models</a>
       <a href="marketplace.html">Marketplace</a>
       <a href="news/">News</a>
     </div>
@@ -163,8 +163,8 @@
 
     <!-- ==================== MARKETPLACE ==================== -->
     <section class="hp-section hp-reveal">
-      <span class="hp-section-label">Marketplace</span>
-      <h2 class="hp-section-heading">Works with great apps</h2>
+      <span class="hp-section-label">Ecosystem</span>
+      <h2 class="hp-section-heading">Works with great apps.</h2>
       <p class="hp-section-desc">Lemonade is integrated in many apps and works out-of-box with hundreds more thanks to the OpenAI API standard.</p>
 
       <div class="hp-eco-apps">
@@ -214,83 +214,95 @@
       </div>
     </section>
 
-    <!-- ==================== UNIFIED API ==================== -->
+    <!-- ==================== TECH SPECS ==================== -->
     <section class="hp-section hp-reveal">
-      <span class="hp-section-label">Unified API</span>
-      <h2 class="hp-section-heading">One local endpoint for chat, vision, images, audio, and embeddings.</h2>
-      <p class="hp-section-desc">OpenAI-compatible request shapes with local execution. Point your tools at Lemonade and swap models without rewriting integrations.</p>
+      <span class="hp-section-label">Tech Specs</span>
+      <h2 class="hp-section-heading">Built for practical local AI workflows.</h2>
+      <p class="hp-section-desc">Everything from install to runtime is optimized for fast setup, broad compatibility, and local-first execution.</p>
+      <div class="hp-tech-grid">
+        <div class="hp-tech-card">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/LemonadeIcons/8_cpp.png" alt="Native C++ Icon" class="hp-tech-icon" />
+          <h3>Native C++ Backend</h3>
+          <p>Lightweight service that is only 2MB.</p>
+        </div>
+        <div class="hp-tech-card">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/LemonadeIcons/1_install.png" alt="Install Icon" class="hp-tech-icon" />
+          <h3>One Minute Install</h3>
+          <p>Simple installer that sets up the stack automatically.</p>
+        </div>
+        <div class="hp-tech-card">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/OpenAI-black-monoblossom.png" alt="OpenAI Icon" class="hp-tech-icon" />
+          <h3>OpenAI API Compatible</h3>
+          <p>Works with hundreds of apps out-of-box and integrates in minutes.</p>
+        </div>
+        <div class="hp-tech-card">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/LemonadeIcons/3_configuresHW.png" alt="Auto-config Icon" class="hp-tech-icon" />
+          <h3>Auto-configures for your hardware</h3>
+          <p>Configures dependencies for your GPU and NPU.</p>
+        </div>
+        <div class="hp-tech-card">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/LemonadeIcons/2_multiengine.png" alt="Multi-engine Icon" class="hp-tech-icon" />
+          <h3>Multi-engine compatibility</h3>
+          <p>Works with llama.cpp, Ryzen AI SW, FastFlowLM, and more.</p>
+        </div>
+        <div class="hp-tech-card">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/LemonadeIcons/4_multimodel.png" alt="Multiple Models Icon" class="hp-tech-icon" />
+          <h3>Multiple Models at Once</h3>
+          <p>Run more than one model at the same time.</p>
+        </div>
+        <div class="hp-tech-card">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/LemonadeIcons/5_crossplatform.png" alt="Cross-platform Icon" class="hp-tech-icon" />
+          <h3>Cross-platform</h3>
+          <p>A consistent experience across Windows and Linux.</p>
+        </div>
+        <div class="hp-tech-card">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/LemonadeIcons/7_app.png" alt="Built-in app Icon" class="hp-tech-icon" />
+          <h3>Built-in app</h3>
+          <p>A GUI that lets you download, try, and switch models quickly.</p>
+        </div>
 
-      <div class="hp-api-intro">
-        <div class="hp-api-quickstart">
-          <h3>Quickstart</h3>
-          <p>Drop this into your existing OpenAI-compatible clients. Default local base URL:</p>
-          <pre><code>curl http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d "{\"model\":\"qwen3\",\"messages\":[{\"role\":\"user\",\"content\":\"Summarize this repo in 5 bullets\"}]}"</code></pre>
-        </div>
-        <div class="hp-api-notes">
-          <h3>Developer ergonomics</h3>
-          <ul>
-            <li>Single endpoint family for all modalities</li>
-            <li>Cloud-compatible payload formats</li>
-            <li>Run mixed-model workloads on one local server</li>
-            <li>Switch engines based on available GPU or NPU</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="hp-api-grid">
-        <div class="hp-api-card">
-          <div class="hp-api-method"><span class="hp-method-badge">POST</span> /v1/chat/completions</div>
-          <h3>Chat &amp; Reasoning</h3>
-          <p class="hp-api-models">Qwen 3, GLM-4, gpt-oss, and more text models</p>
-        </div>
-        <div class="hp-api-card">
-          <div class="hp-api-method"><span class="hp-method-badge">POST</span> /v1/chat/completions</div>
-          <h3>Image Understanding</h3>
-          <p class="hp-api-models">Qwen 2.5-VL, GLM-4V, and additional VLMs</p>
-        </div>
-        <div class="hp-api-card">
-          <div class="hp-api-method"><span class="hp-method-badge">POST</span> /v1/images/generations</div>
-          <h3>Image Generation</h3>
-          <p class="hp-api-models">Stable Diffusion 3.5, FLUX, and other diffusion models</p>
-        </div>
-        <div class="hp-api-card">
-          <div class="hp-api-method"><span class="hp-method-badge">POST</span> /v1/audio/speech</div>
-          <h3>Text to Speech</h3>
-          <p class="hp-api-models">Kokoro and additional local voice packs</p>
-        </div>
-        <div class="hp-api-card">
-          <div class="hp-api-method"><span class="hp-method-badge">POST</span> /v1/audio/transcriptions</div>
-          <h3>Speech to Text</h3>
-          <p class="hp-api-models">Whisper-powered transcription and streaming workflows</p>
-        </div>
-        <div class="hp-api-card">
-          <div class="hp-api-method"><span class="hp-method-badge">POST</span> /v1/embeddings</div>
-          <h3>Embeddings</h3>
-          <p class="hp-api-models">Semantic search, retrieval pipelines, and reranking</p>
-        </div>
       </div>
     </section>
 
-    <!-- ==================== TECHNICAL DETAILS ==================== -->
+    <!-- ==================== UNIFIED API ==================== -->
     <section class="hp-section hp-reveal">
-      <span class="hp-section-label">Technical Details</span>
-      <h2 class="hp-section-heading">Optimized for local machines, not cloud lock-in.</h2>
-      <p class="hp-section-desc">A compact native runtime, automatic backend selection, and strict local execution make Lemonade practical for real developer workflows.</p>
-      <div class="hp-tech-grid">
-        <div class="hp-tech-card">
-          <h3>Private by default</h3>
-          <p>Your prompts and files stay local.</p>
+      <span class="hp-section-label">Unified API</span>
+      <h2 class="hp-section-heading">One local service for every modality.</h2>
+      <p class="hp-section-desc">Point your app at Lemonade and get chat, vision, image gen, transcription, speech gen, and more with standard APIs.</p>
+
+      <div class="hp-api-layout">
+        <div class="hp-api-modalities">
+          <button class="hp-api-modality is-active" type="button" data-api-sample="chat">
+            <h3>Chat</h3>
+          </button>
+          <button class="hp-api-modality" type="button" data-api-sample="vision">
+            <h3>Vision</h3>
+          </button>
+          <button class="hp-api-modality" type="button" data-api-sample="image">
+            <h3>Image Gen</h3>
+          </button>
+          <button class="hp-api-modality" type="button" data-api-sample="tts">
+            <h3>Transcription</h3>
+          </button>
+          <button class="hp-api-modality" type="button" data-api-sample="stt">
+            <h3>Speech Gen</h3>
+          </button>
         </div>
-        <div class="hp-tech-card">
-          <h3>Native and lightweight</h3>
-          <p>Built in C++ for low overhead.</p>
+
+        <div class="hp-api-sample-panel">
+          <div class="hp-api-sample-head">
+            <div class="hp-api-method hp-api-sample-method"><span class="hp-method-badge">POST</span> <span id="hpApiSampleEndpoint">/api/v1/chat/completions</span></div>
+            <button id="hpApiCopyBtn" class="hp-api-copy-btn" type="button" aria-label="Copy code sample" title="Copy code sample">
+              <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                <path d="M9 9a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2V9Zm-6 4V5a2 2 0 0 1 2-2h8v2H5v8H3Z"></path>
+              </svg>
+            </button>
+          </div>
+          <pre><code id="hpApiSampleCode"></code></pre>
         </div>
-        <div class="hp-tech-card">
-          <h3>Auto-tuned hardware routing</h3>
-          <p>Picks the best local backend automatically.</p>
-        </div>
+      </div>
+      <div class="hp-api-cta">
+        <a href="https://lemonade-server.ai/docs/server/server_spec/" class="marketplace-cta-btn" target="_blank" rel="noopener">View the full Server Spec</a>
       </div>
     </section>
 
@@ -430,6 +442,127 @@
         discordEl.textContent = 'Online now';
       }
     }
+    function initUnifiedApiSamples() {
+      var codeEl = document.getElementById('hpApiSampleCode');
+      var endpointEl = document.getElementById('hpApiSampleEndpoint');
+      var copyBtn = document.getElementById('hpApiCopyBtn');
+      var modalityButtons = document.querySelectorAll('.hp-api-modality');
+      if (!codeEl || !endpointEl || !copyBtn || modalityButtons.length === 0) return;
+
+      var samples = {
+        chat: {
+          endpoint: '/api/v1/chat/completions',
+          code: [
+            'curl -X POST http://localhost:8000/api/v1/chat/completions \\',
+            '  -H "Content-Type: application/json" \\',
+            "  -d '{",
+            '        "model": "Qwen3-0.6B-GGUF",',
+            '        "messages": [',
+            '          {"role": "user", "content": "What is the population of Paris?"}',
+            '        ],',
+            '        "stream": false',
+            "      }'"
+          ].join('\n')
+        },
+        vision: {
+          endpoint: '/api/v1/chat/completions',
+          code: [
+            'curl -X POST http://localhost:8000/api/v1/chat/completions \\',
+            '  -H "Content-Type: application/json" \\',
+            "  -d '{",
+            '        "model": "Qwen2.5-VL-7B-Instruct",',
+            '        "messages": [',
+            '          {',
+            '            "role": "user",',
+            '            "content": [',
+            '              {"type": "text", "text": "What is in this image?"},',
+            '              {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."}}',
+            '            ]',
+            '          }',
+            '        ],',
+            '        "stream": false',
+            "      }'"
+          ].join('\n')
+        },
+        image: {
+          endpoint: '/api/v1/images/generations',
+          code: [
+            'curl -X POST http://localhost:8000/api/v1/images/generations \\',
+            '  -H "Content-Type: application/json" \\',
+            "  -d '{",
+            '        "model": "SD-Turbo",',
+            '        "prompt": "A serene mountain landscape at sunset",',
+            '        "size": "512x512",',
+            '        "steps": 4,',
+            '        "response_format": "b64_json"',
+            "      }'"
+          ].join('\n')
+        },
+        tts: {
+          endpoint: '/api/v1/audio/speech',
+          code: [
+            'curl -X POST http://localhost:8000/api/v1/audio/speech \\',
+            '  -H "Content-Type: application/json" \\',
+            "  -d '{",
+            '        "model": "kokoro-v1",',
+            '        "input": "Lemonade can speak!",',
+            '        "speed": 1.0,',
+            '        "steps": 4,',
+            '        "response_format": "mp3"',
+            "      }'"
+          ].join('\n')
+        },
+        stt: {
+          endpoint: '/api/v1/audio/transcriptions',
+          code: [
+            'curl -X POST http://localhost:8000/api/v1/audio/transcriptions \\',
+            '  -F "file=@/path/to/audio.wav" \\',
+            '  -F "model=Whisper-Tiny"'
+          ].join('\n')
+        },
+      };
+
+      function setSample(key) {
+        var sample = samples[key];
+        if (!sample) return;
+        endpointEl.textContent = sample.endpoint;
+        codeEl.textContent = sample.code;
+        modalityButtons.forEach(function(btn) {
+          btn.classList.toggle('is-active', btn.getAttribute('data-api-sample') === key);
+        });
+      }
+
+      modalityButtons.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          setSample(btn.getAttribute('data-api-sample'));
+        });
+      });
+
+      copyBtn.addEventListener('click', async function() {
+        var text = codeEl.textContent || '';
+        if (!text) return;
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch (error) {
+          var helper = document.createElement('textarea');
+          helper.value = text;
+          document.body.appendChild(helper);
+          helper.select();
+          document.execCommand('copy');
+          document.body.removeChild(helper);
+        }
+        copyBtn.classList.add('is-copied');
+        copyBtn.setAttribute('aria-label', 'Code copied');
+        copyBtn.setAttribute('title', 'Code copied');
+        setTimeout(function() {
+          copyBtn.classList.remove('is-copied');
+          copyBtn.setAttribute('aria-label', 'Copy code sample');
+          copyBtn.setAttribute('title', 'Copy code sample');
+        }, 1200);
+      });
+
+      setSample('chat');
+    }
     function parseHeadlineSection(body) {
       var lines = body.replace(/\r\n/g, '\n').split('\n');
       var headlines = [], inSection = false;
@@ -449,6 +582,7 @@
     document.addEventListener('DOMContentLoaded', function() {
       fetchLatestRelease();
       fetchCommunityStats();
+      initUnifiedApiSamples();
       if (typeof initializeFooter === 'function') initializeFooter();
       if (document.getElementById('lmn-install-view').style.display === 'flex') {
         if (typeof lmnInit === 'function') lmnInit();
