@@ -3847,49 +3847,47 @@ body.install-options {
 }
 
 /* =============================================================
-   HOMEPAGE v5 — Professional redesign, scroll-reveal sections
+   HOMEPAGE v6 — tighter layout + stronger section hierarchy
    ============================================================= */
 
 /* --- Split Hero --- */
 .hp-hero {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 3rem;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 2rem;
   align-items: center;
   width: 100%;
-  max-width: 1100px;
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 2rem 1.5rem 4rem;
-  min-height: 78vh;
+  padding: 7rem 1.5rem 9rem;
+  min-height: auto;
   position: relative;
 }
 
-/* --- Hero Left --- */
 .hp-hero-left {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 1.5rem;
+  gap: 1.15rem;
+  max-width: 560px;
 }
 
-/* Subtitle + buttons share exact width */
 .hp-subtitle-group {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  width: fit-content;
+  gap: 1rem;
+  width: min(460px, 100%);
 }
 
 .hp-headline {
-  font-size: clamp(1.9rem, 4.5vw, 3.2rem);
+  font-size: clamp(2rem, 4.1vw, 3.25rem);
   font-weight: 400;
-  color: #1a1a1a;
-  line-height: 1.12;
+  color: #171717;
+  line-height: 1.08;
   margin: 0;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.035em;
 }
 
-/* --- Carousel (JS-driven) --- */
 .hp-carousel-wrap {
   display: inline-block;
   height: 1.15em;
@@ -3908,13 +3906,13 @@ body.install-options {
   height: 1.15em;
   line-height: 1.15;
   color: var(--accent-gold-dark);
-  font-weight: 600;
+  font-weight: 700;
   flex-shrink: 0;
 }
 
 .hp-subtitle {
-  font-size: clamp(0.95rem, 2vw, 1.15rem);
-  color: var(--text-secondary);
+  font-size: clamp(0.95rem, 1.8vw, 1.15rem);
+  color: #474747;
   margin: 0;
   line-height: 1.5;
   font-weight: 450;
@@ -3922,25 +3920,27 @@ body.install-options {
 
 .hp-cta-row {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.85rem;
   width: 100%;
+  max-width: 460px;
 }
 
 .hp-cta-row .download-btn,
 .hp-cta-row .dev-btn {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
-  padding: 0.65rem 1rem;
-  font-size: 0.9rem;
+  margin: 0;
+  padding: 0.8rem 1rem;
+  font-size: 1rem;
   text-align: center;
+  line-height: 1.1;
 }
 
 .hp-cta-row .download-sub,
 .hp-cta-row .dev-sub {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
 }
 
-/* --- Demo Panel (right column) --- */
 .hp-hero-right {
   display: flex;
   align-items: center;
@@ -3949,93 +3949,100 @@ body.install-options {
 
 .hp-demo-panel {
   width: 100%;
-  max-width: 420px;
-  background: #1e1e2e;
-  border-radius: 16px;
-  padding: 1.5rem;
+  max-width: 440px;
+  background: #1a1b30;
+  border-radius: 18px;
+  padding: 1.4rem;
+  height: 290px;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18), 0 4px 10px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
 
-/* Demo items stack and crossfade */
 .hp-demo-item {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  height: calc(100% - 2.8rem);
   opacity: 0;
   transform: translateY(8px);
   transition: opacity 0.4s ease, transform 0.4s ease;
   position: absolute;
-  inset: 1.5rem;
+  inset: 1.4rem 1.75rem;
   pointer-events: none;
 }
 
 .hp-demo-item.active {
   opacity: 1;
   transform: translateY(0);
-  position: relative;
-  inset: auto;
   pointer-events: auto;
 }
 
 .hp-demo-label {
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.72rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.5);
-  margin-bottom: 0.25rem;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 0.2rem;
 }
 
-/* Chat demo */
 .hp-demo-chat {
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 0.5rem;
+  height: 100%;
 }
 
 .hp-chat-user {
   background: rgba(255, 224, 102, 0.15);
   color: #ffe066;
   font-size: 0.82rem;
-  padding: 0.6rem 0.8rem;
-  border-radius: 10px 10px 10px 2px;
-  line-height: 1.4;
+  padding: 0.66rem 0.9rem;
+  border-radius: 15px 15px 15px 5px;
+  line-height: 1.38;
   align-self: flex-start;
-  max-width: 85%;
+  max-width: 78%;
+  width: fit-content;
+}
+
+.hp-demo-prompt {
+  max-width: 78%;
+  align-self: flex-start;
 }
 
 .hp-chat-ai {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.78);
   font-size: 0.82rem;
-  padding: 0.6rem 0.8rem;
-  border-radius: 10px 10px 2px 10px;
-  line-height: 1.45;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px 10px 3px 10px;
+  line-height: 1.4;
   align-self: flex-end;
   max-width: 90%;
 }
 
-/* Image demo */
 .hp-demo-image {
   display: flex;
-  align-items: center;
-  gap: 1rem;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.7rem;
+  height: 100%;
 }
 
 .hp-demo-image-placeholder {
-  width: 100px;
-  height: 80px;
+  width: clamp(220px, 68vw, 300px);
+  aspect-ratio: 2 / 1;
+  height: auto;
   flex-shrink: 0;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #ff8c42, #d45d79, #7b68ae, #5e8b7e);
-  background-size: 200% 200%;
-  animation: hp-gradient-shift 6s ease infinite;
+  border-radius: 12px;
+  align-self: flex-end;
+  background: #1f2035 url("https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/generated_image.png") center/contain no-repeat;
 }
 
 @keyframes hp-gradient-shift {
@@ -4045,32 +4052,42 @@ body.install-options {
 
 .hp-demo-image-prompt {
   font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.55);
   font-style: italic;
   line-height: 1.4;
 }
 
-/* Audio demo */
 .hp-demo-audio {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  justify-content: flex-start;
+  gap: 0.7rem;
+  height: 100%;
 }
 
 .hp-waveform {
   display: flex;
   align-items: center;
-  gap: 2px;
-  height: 40px;
+  justify-content: center;
+  gap: 3px;
+  height: 96px;
+  width: 82%;
+  max-width: 82%;
+  align-self: center;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.75rem 1rem;
+  margin-top: 20px;
   flex-shrink: 0;
 }
 
 .hp-waveform span {
   display: block;
-  width: 3px;
+  width: 4px;
   border-radius: 2px;
   background: var(--primary-yellow);
-  opacity: 0.7;
+  opacity: 0.82;
   animation: hp-wave 1.2s ease-in-out infinite;
 }
 
@@ -4106,21 +4123,15 @@ body.install-options {
 }
 
 .hp-audio-text {
-  font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.5);
-  line-height: 1.4;
+  align-self: flex-end;
 }
 
-/* =============================================================
-   SECTION SYSTEM — scroll-reveal, professional hierarchy
-   ============================================================= */
-
-/* Scroll-reveal base state */
+/* --- Shared section system --- */
 .hp-reveal {
   opacity: 0;
-  transform: translateY(40px);
-  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateY(34px);
+  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .hp-reveal.hp-visible {
@@ -4128,17 +4139,28 @@ body.install-options {
   transform: translateY(0);
 }
 
-/* Section wrapper */
 .hp-section {
   width: 100%;
-  max-width: 1100px;
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 6rem 2rem;
+  padding: 3.4rem 1.8rem;
   text-align: center;
   position: relative;
 }
 
-/* Section label (small caps) */
+.hp-section + .hp-section::before {
+  content: '';
+  display: block;
+  width: 72px;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.1);
+  margin: 0 auto;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
 .hp-section-label {
   display: inline-block;
   font-size: 0.72rem;
@@ -4146,55 +4168,75 @@ body.install-options {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--accent-gold-dark);
-  background: rgba(255, 224, 102, 0.15);
-  padding: 0.35rem 0.9rem;
+  background: rgba(255, 224, 102, 0.2);
+  padding: 0.36rem 0.95rem;
   border-radius: 100px;
-  margin-bottom: 1rem;
+  margin-bottom: 0.95rem;
 }
 
-/* Section heading */
 .hp-section-heading {
-  font-size: clamp(1.5rem, 3.5vw, 2.2rem);
-  font-weight: 700;
+  font-size: clamp(1.65rem, 3.2vw, 2.5rem);
+  font-weight: 750;
   color: var(--text-primary);
-  margin: 0 0 1rem 0;
-  letter-spacing: -0.025em;
-  line-height: 1.2;
+  margin: 0 0 0.9rem;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
 }
 
-/* Section description (optional) */
 .hp-section-desc {
-  font-size: clamp(0.9rem, 2vw, 1.05rem);
-  color: var(--text-secondary);
-  margin: 0 auto 2.5rem;
-  max-width: 600px;
-  line-height: 1.6;
+  font-size: clamp(0.96rem, 1.65vw, 1.08rem);
+  color: #505050;
+  margin: 0 auto 2rem;
+  max-width: 760px;
+  line-height: 1.62;
 }
 
-/* Subtle divider between sections */
-.hp-section + .hp-section::before {
-  content: '';
-  display: block;
-  width: 60px;
-  height: 1px;
-  background: rgba(0, 0, 0, 0.1);
-  margin: 0 auto 6rem;
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
+/* --- Open source section --- */
+.hp-open-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.3rem;
+  align-items: stretch;
+  text-align: left;
 }
 
-/* --- Community + Tech section --- */
+.hp-open-copy,
+.hp-open-stack {
+  background: rgba(255, 255, 255, 0.54);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 18px;
+  padding: 1.3rem 1.25rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+}
+
+.hp-open-points {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.hp-open-point h3 {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+  color: #1f1f1f;
+}
+
+.hp-open-point p {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: #525252;
+}
+
 .hp-community-badges {
   display: flex;
-  justify-content: center;
-  gap: 1rem;
-  margin: 1.5rem 0;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
 }
 
 .hp-community-badges a {
-  display: inline-block;
+  display: inline-flex;
   transition: transform 0.2s ease;
 }
 
@@ -4207,200 +4249,244 @@ body.install-options {
   border-radius: 4px;
 }
 
-/* Tech logo row */
+.hp-open-stack h3 {
+  margin: 0 0 0.8rem;
+  font-size: 0.98rem;
+  color: #2f2f2f;
+}
+
 .hp-logo-row {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
   align-items: center;
-  gap: 1.25rem 2rem;
-  padding: 1.5rem 0 0.5rem;
+  gap: 0.85rem 1.2rem;
 }
 
 .hp-logo-row a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.55;
-  transition: all 0.25s ease;
+  opacity: 0.72;
+  transition: all 0.22s ease;
 }
 
 .hp-logo-row a:hover {
   opacity: 1;
-  transform: scale(1.08);
+  transform: translateY(-1px);
 }
 
 .hp-logo-row img {
-  height: 40px;
+  height: 36px;
   width: auto;
   object-fit: contain;
 }
 
 .hp-text-logo {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  color: var(--text-secondary) !important;
+  color: #4f4f4f !important;
   text-decoration: none !important;
-  background: rgba(255, 255, 255, 0.5);
-  padding: 0.4rem 0.85rem;
-  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 0.36rem 0.7rem;
+  border-radius: 8px;
   border: 1px solid rgba(0, 0, 0, 0.06);
-  transition: all 0.25s ease;
 }
 
-.hp-text-logo:hover {
-  background: rgba(255, 255, 255, 0.85);
-  border-color: rgba(230, 184, 0, 0.3);
-  color: var(--text-primary) !important;
-}
-
-/* --- Release within community section --- */
 .hp-section-release {
-  margin-top: 3rem;
+  margin-top: 1.3rem;
 }
 
-.hp-section-release .release-announcement {
-  max-width: 540px;
+.hp-section .release-announcement {
   margin: 0 auto;
+  max-width: 680px;
   animation: none;
 }
 
-/* --- API Capabilities (developer-focused) --- */
-.hp-api-grid {
+/* --- Unified API section --- */
+.hp-api-intro {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
-  max-width: 860px;
-  margin: 2rem auto 0;
-}
-
-.hp-api-card {
-  background: #1e1e2e;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 14px;
-  padding: 1.4rem 1.2rem 1.2rem;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 1.1rem;
   text-align: left;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  position: relative;
-  overflow: hidden;
+  margin-bottom: 1rem;
 }
 
-.hp-api-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: transparent;
-  transition: background 0.3s ease;
+.hp-api-quickstart,
+.hp-api-notes {
+  background: #191a2e;
+  color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 1.1rem 1.15rem;
 }
 
-.hp-api-card:hover {
-  border-color: rgba(255, 224, 102, 0.2);
-  transform: translateY(-3px);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
-}
-
-.hp-api-card:hover::before {
-  background: var(--accent-gold);
-}
-
-.hp-api-method {
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.45);
-  margin-bottom: 0.65rem;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
+.hp-api-quickstart h3,
+.hp-api-notes h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  color: #ffe680;
   letter-spacing: 0.01em;
 }
 
+.hp-api-quickstart p {
+  margin: 0 0 0.7rem;
+  font-size: 0.84rem;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.45;
+}
+
+.hp-api-quickstart pre {
+  margin: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.72rem 0.82rem;
+  overflow-x: auto;
+}
+
+.hp-api-quickstart code {
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.76rem;
+  line-height: 1.45;
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
+}
+
+.hp-api-notes ul {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.46rem;
+}
+
+.hp-api-notes li {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.72);
+  line-height: 1.36;
+}
+
+.hp-api-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.95rem;
+  margin: 1.1rem auto 0;
+}
+
+.hp-api-card {
+  background: #191a2e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 1rem;
+  text-align: left;
+  transition: all 0.25s ease;
+}
+
+.hp-api-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 224, 102, 0.32);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.17);
+}
+
+.hp-api-method {
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.52);
+  margin-bottom: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .hp-method-badge {
-  background: rgba(255, 224, 102, 0.15);
-  color: var(--primary-yellow);
+  background: rgba(255, 224, 102, 0.14);
+  color: #ffe066;
   font-size: 0.62rem;
   font-weight: 700;
-  padding: 0.15rem 0.4rem;
-  border-radius: 3px;
+  padding: 0.15rem 0.38rem;
+  border-radius: 4px;
   letter-spacing: 0.04em;
 }
 
 .hp-api-card h3 {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.92);
-  margin: 0 0 0.3rem 0;
+  font-size: 0.93rem;
+  font-weight: 620;
+  color: rgba(255, 255, 255, 0.95);
+  margin: 0 0 0.34rem;
 }
 
 .hp-api-models {
-  font-size: 0.78rem;
-  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.58);
   line-height: 1.45;
   margin: 0;
 }
 
-/* --- Ecosystem --- */
+/* --- Ecosystem section --- */
 .hp-eco-apps {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 0.5rem;
-  max-width: 580px;
-  margin: 2rem auto 1.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.95rem;
+  text-align: left;
+  margin-top: 1.5rem;
 }
 
 .hp-eco-app {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.8rem 0.5rem;
-  border-radius: 12px;
+  align-items: flex-start;
+  gap: 0.78rem;
+  padding: 0.95rem;
+  border-radius: 14px;
   text-decoration: none;
-  transition: all 0.25s ease;
+  background: rgba(255, 255, 255, 0.56);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  transition: all 0.22s ease;
 }
 
 .hp-eco-app:hover {
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.85);
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.06);
 }
 
 .hp-eco-app img {
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   object-fit: contain;
-  border-radius: 10px;
+  border-radius: 11px;
+  flex-shrink: 0;
 }
 
-.hp-eco-app span {
-  font-size: 0.68rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-  text-align: center;
-  line-height: 1.2;
+.hp-eco-app-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.hp-eco-app-name {
+  font-size: 0.98rem;
+  font-weight: 650;
+  color: #1f1f1f;
+}
+
+.hp-eco-app-desc {
+  font-size: 0.83rem;
+  color: #555;
+  line-height: 1.35;
 }
 
 .hp-eco-cta {
-  text-align: center;
-  margin-top: 1rem;
+  margin-top: 1.2rem;
 }
 
-/* --- Release card within Community section --- */
-.hp-section .release-announcement {
-  margin: 2.5rem auto 0;
-  max-width: 540px;
-  animation: none;
+.hp-eco-cta .marketplace-cta-btn {
+  margin-bottom: 0;
 }
 
-/* --- Homepage Responsive --- */
-@media (max-width: 900px) {
+/* --- Homepage responsive --- */
+@media (max-width: 980px) {
   .hp-hero {
     grid-template-columns: 1fr;
-    gap: 2rem;
-    min-height: auto;
-    padding: 2rem 1rem 3rem;
+    gap: 1.5rem;
+    padding: 2.8rem 1rem 4rem;
   }
 
   .hp-hero-left {
@@ -4410,72 +4496,69 @@ body.install-options {
 
   .hp-subtitle-group {
     width: 100%;
-    max-width: 360px;
-  }
-
-  .hp-cta-row {
-    justify-content: center;
+    max-width: 440px;
   }
 
   .hp-demo-panel {
-    max-width: 380px;
+    max-width: 440px;
+    height: 280px;
   }
 
-  .hp-eco-apps {
-    grid-template-columns: repeat(5, 1fr);
-    max-width: 100%;
+  .hp-open-layout,
+  .hp-api-intro {
+    grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 720px) {
+  .hp-section {
+    padding: 2.8rem 1rem;
+  }
+
   .hp-headline {
-    font-size: 1.8rem;
+    font-size: 1.9rem;
   }
 
   .hp-cta-row {
     flex-direction: column;
     width: 100%;
+    max-width: 100%;
   }
 
   .hp-cta-row .download-btn,
   .hp-cta-row .dev-btn {
-    min-width: auto;
-    max-width: 100%;
     width: 100%;
-  }
-
-  .hp-api-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.75rem;
+    max-width: 100%;
   }
 
   .hp-demo-panel {
-    max-width: 100%;
+    height: 265px;
   }
 
-  .hp-logo-row {
-    gap: 1rem;
+  .hp-demo-image-placeholder {
+    height: 128px;
   }
 
-  .hp-logo-row img {
-    height: 32px;
-  }
-
-  .hp-section {
-    padding: 4rem 1rem;
+  .hp-api-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .hp-eco-apps {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 480px) {
   .hp-api-grid {
     grid-template-columns: 1fr;
   }
 
-  .hp-eco-apps {
-    grid-template-columns: repeat(2, 1fr);
+  .hp-demo-panel,
+  .hp-open-copy,
+  .hp-open-stack,
+  .hp-api-quickstart,
+  .hp-api-notes,
+  .hp-eco-app {
+    border-radius: 12px;
   }
 }

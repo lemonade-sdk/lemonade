@@ -57,22 +57,25 @@
       <div class="hp-hero-right">
         <div class="hp-demo-panel">
           <div class="hp-demo-item active" data-mode="0">
-            <div class="hp-demo-label">💬 Chat</div>
+            <div class="hp-demo-label">Chat</div>
             <div class="hp-demo-chat">
-              <div class="hp-chat-user">Explain quantum computing simply</div>
-              <div class="hp-chat-ai">Quantum computers use qubits that can be 0 and 1 at the same time, letting them explore many solutions at once...</div>
+              <div class="hp-chat-user">What can I do with 128 GB of unified RAM?</div>
+              <div class="hp-chat-ai">Load up models like gpt-oss-120b or Qwen-Coder-Next for advanced tool use.</div>
+              <div class="hp-chat-user">What should I tune first?</div>
+              <div class="hp-chat-ai">You can use --no-mmap to speed up load times and increase context size to 64 or more.</div>
             </div>
           </div>
           <div class="hp-demo-item" data-mode="1">
-            <div class="hp-demo-label">🎨 Image Generation</div>
+            <div class="hp-demo-label">Image Generation</div>
             <div class="hp-demo-image">
+              <div class="hp-chat-user hp-demo-prompt">A pitcher of lemonade in the style of a renaissance painting</div>
               <div class="hp-demo-image-placeholder"></div>
-              <span class="hp-demo-image-prompt">"a sunset over mountains, oil painting"</span>
             </div>
           </div>
           <div class="hp-demo-item" data-mode="2">
-            <div class="hp-demo-label">🔊 Speech</div>
+            <div class="hp-demo-label">Speech</div>
             <div class="hp-demo-audio">
+              <div class="hp-chat-user hp-demo-prompt">Hello, I am your AI assistant. What can I do for you today?</div>
               <div class="hp-waveform">
                 <span></span><span></span><span></span><span></span><span></span>
                 <span></span><span></span><span></span><span></span><span></span>
@@ -80,49 +83,73 @@
                 <span></span><span></span><span></span><span></span><span></span>
                 <span></span><span></span><span></span><span></span><span></span>
               </div>
-              <div class="hp-audio-text">Hello, I'm your local AI assistant.</div>
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ==================== COMMUNITY + TECHNOLOGY ==================== -->
-    <section class="hp-section hp-reveal">
-      <span class="hp-section-label">Open source</span>
-      <h2 class="hp-section-heading">Built by the local AI community for every PC,<br>with optimizations by AMD</h2>
-      <p class="hp-section-desc">Native C++ server &mdash; only 2 MB. Auto-detects your GPU and NPU and picks the optimal engine.</p>
-      <div class="hp-community-badges">
-        <a href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener">
-          <img src="https://img.shields.io/github/stars/lemonade-sdk/lemonade?label=Star%20on%20GitHub" alt="Star on GitHub" />
-        </a>
-        <a href="https://discord.gg/5xXzkMu8Zk" target="_blank" rel="noopener">
-          <img src="https://img.shields.io/discord/1392562559122407535?style=social&logo=discord&label=Join%20Discord" alt="Join Discord" />
-        </a>
+    <!-- ==================== OPEN SOURCE ==================== -->
+    <section class="hp-section hp-reveal hp-open-section">
+      <span class="hp-section-label">Open Source</span>
+      <h2 class="hp-section-heading">Built in public. Tuned for your local hardware.</h2>
+      <p class="hp-section-desc">Lemonade keeps your workloads on-device with a tiny native server, broad engine support, and a community-first roadmap.</p>
+
+      <div class="hp-open-layout">
+        <div class="hp-open-copy">
+          <div class="hp-open-points">
+            <div class="hp-open-point">
+              <h3>Private by default</h3>
+              <p>Inference runs on your machine without shipping prompts, files, or audio to third-party servers.</p>
+            </div>
+            <div class="hp-open-point">
+              <h3>Native and lightweight</h3>
+              <p>Core server is C++ and minimal, with automatic backend selection across GPU and NPU stacks.</p>
+            </div>
+            <div class="hp-open-point">
+              <h3>Community maintained</h3>
+              <p>Open development on GitHub with direct feedback loops from developers shipping local AI apps.</p>
+            </div>
+          </div>
+
+          <div class="hp-community-badges">
+            <a href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener">
+              <img src="https://img.shields.io/github/stars/lemonade-sdk/lemonade?label=Star%20on%20GitHub" alt="Star on GitHub" />
+            </a>
+            <a href="https://discord.gg/5xXzkMu8Zk" target="_blank" rel="noopener">
+              <img src="https://img.shields.io/discord/1392562559122407535?style=social&logo=discord&label=Join%20Discord" alt="Join Discord" />
+            </a>
+          </div>
+        </div>
+
+        <div class="hp-open-stack">
+          <h3>Core projects and runtimes</h3>
+          <div class="hp-logo-row">
+            <a href="https://github.com/ggml-org/llama.cpp" title="llama.cpp" target="_blank">
+              <img src="https://user-images.githubusercontent.com/1991296/230134379-7181e485-c521-4d23-a0d6-f7b3b61ba524.png" alt="llama.cpp" style="height:36px" />
+            </a>
+            <a href="https://github.com/microsoft/onnxruntime" title="ONNX Runtime" target="_blank">
+              <img src="https://raw.githubusercontent.com/microsoft/onnxruntime/main/docs/images/ONNX_Runtime_logo.png" alt="ONNX Runtime" style="height:70px" />
+            </a>
+            <a href="https://github.com/FastFlowLM/FastFlowLM" title="FastFlowLM" target="_blank">
+              <img src="https://raw.githubusercontent.com/FastFlowLM/FastFlowLM/main/assets/logo_next_to_flm.png" alt="FastFlowLM" style="height:40px" />
+            </a>
+            <a href="https://github.com/amd/RyzenAI-SW" title="Ryzen AI SW" target="_blank">
+              <img src="https://www.phoronix.net/image.php?id=2025&image=ryzen_ai_sw_1" alt="Ryzen AI SW" style="height:50px" />
+            </a>
+            <a href="https://rocm.docs.amd.com/" title="ROCm" target="_blank">
+              <img src="https://upload.wikimedia.org/wikipedia/commons/0/06/20467978-A_AMD_ROCm_Lockup_85tall.png" alt="ROCm" />
+            </a>
+            <a href="https://github.com/ggerganov/whisper.cpp" title="whisper.cpp" target="_blank" class="hp-text-logo">whisper.cpp</a>
+            <a href="https://github.com/leejet/stable-diffusion.cpp" title="stable-diffusion.cpp" target="_blank" class="hp-text-logo">sd.cpp</a>
+            <a href="https://github.com/lucasjinreal/Kokoros" title="Kokoro TTS" target="_blank" class="hp-text-logo">Kokoro</a>
+            <a href="https://huggingface.co/" title="Hugging Face" target="_blank">
+              <img src="https://huggingface.co/datasets/huggingface/brand-assets/resolve/main/hf-logo.png" alt="Hugging Face" style="height:50px" />
+            </a>
+          </div>
+        </div>
       </div>
-      <div class="hp-logo-row">
-        <a href="https://github.com/ggml-org/llama.cpp" title="llama.cpp" target="_blank">
-          <img src="https://user-images.githubusercontent.com/1991296/230134379-7181e485-c521-4d23-a0d6-f7b3b61ba524.png" alt="llama.cpp" style="height:36px" />
-        </a>
-        <a href="https://github.com/microsoft/onnxruntime" title="ONNX Runtime" target="_blank">
-          <img src="https://raw.githubusercontent.com/microsoft/onnxruntime/main/docs/images/ONNX_Runtime_logo.png" alt="ONNX Runtime" style="height:70px" />
-        </a>
-        <a href="https://github.com/FastFlowLM/FastFlowLM" title="FastFlowLM" target="_blank">
-          <img src="https://raw.githubusercontent.com/FastFlowLM/FastFlowLM/main/assets/logo_next_to_flm.png" alt="FastFlowLM" style="height:40px" />
-        </a>
-        <a href="https://github.com/amd/RyzenAI-SW" title="Ryzen AI SW" target="_blank">
-          <img src="https://www.phoronix.net/image.php?id=2025&image=ryzen_ai_sw_1" alt="Ryzen AI SW" style="height:50px" />
-        </a>
-        <a href="https://rocm.docs.amd.com/" title="ROCm" target="_blank">
-          <img src="https://upload.wikimedia.org/wikipedia/commons/0/06/20467978-A_AMD_ROCm_Lockup_85tall.png" alt="ROCm" />
-        </a>
-        <a href="https://github.com/ggerganov/whisper.cpp" title="whisper.cpp" target="_blank" class="hp-text-logo">whisper.cpp</a>
-        <a href="https://github.com/leejet/stable-diffusion.cpp" title="stable-diffusion.cpp" target="_blank" class="hp-text-logo">sd.cpp</a>
-        <a href="https://github.com/lucasjinreal/Kokoros" title="Kokoro TTS" target="_blank" class="hp-text-logo">Kokoro</a>
-        <a href="https://huggingface.co/" title="Hugging Face" target="_blank">
-          <img src="https://huggingface.co/datasets/huggingface/brand-assets/resolve/main/hf-logo.png" alt="Hugging Face" style="height:50px" />
-        </a>
-      </div>
+
       <div class="hp-section-release">
         <div class="release-announcement" id="releaseAnnouncement">
           <div class="release-content">
@@ -138,41 +165,61 @@
       </div>
     </section>
 
-    <!-- ==================== CAPABILITIES (API-focused) ==================== -->
+    <!-- ==================== UNIFIED API ==================== -->
     <section class="hp-section hp-reveal">
-      <span class="hp-section-label">API</span>
-      <h2 class="hp-section-heading">Six modalities. Unified API.</h2>
-      <p class="hp-section-desc">OpenAI-compatible endpoints. Drop-in replacement for cloud APIs &mdash; running entirely on your machine.</p>
+      <span class="hp-section-label">Unified API</span>
+      <h2 class="hp-section-heading">One local endpoint for chat, vision, images, audio, and embeddings.</h2>
+      <p class="hp-section-desc">OpenAI-compatible request shapes with local execution. Point your tools at Lemonade and swap models without rewriting integrations.</p>
+
+      <div class="hp-api-intro">
+        <div class="hp-api-quickstart">
+          <h3>Quickstart</h3>
+          <p>Drop this into your existing OpenAI-compatible clients. Default local base URL:</p>
+          <pre><code>curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d "{\"model\":\"qwen3\",\"messages\":[{\"role\":\"user\",\"content\":\"Summarize this repo in 5 bullets\"}]}"</code></pre>
+        </div>
+        <div class="hp-api-notes">
+          <h3>Developer ergonomics</h3>
+          <ul>
+            <li>Single endpoint family for all modalities</li>
+            <li>Cloud-compatible payload formats</li>
+            <li>Run mixed-model workloads on one local server</li>
+            <li>Switch engines based on available GPU or NPU</li>
+          </ul>
+        </div>
+      </div>
+
       <div class="hp-api-grid">
         <div class="hp-api-card">
           <div class="hp-api-method"><span class="hp-method-badge">POST</span> /v1/chat/completions</div>
           <h3>Chat &amp; Reasoning</h3>
-          <p class="hp-api-models">Qwen 3, GLM-4, gpt-oss, and more</p>
+          <p class="hp-api-models">Qwen 3, GLM-4, gpt-oss, and more text models</p>
         </div>
         <div class="hp-api-card">
           <div class="hp-api-method"><span class="hp-method-badge">POST</span> /v1/chat/completions</div>
           <h3>Image Understanding</h3>
-          <p class="hp-api-models">Qwen 2.5-VL, GLM-4V, and more VLMs</p>
+          <p class="hp-api-models">Qwen 2.5-VL, GLM-4V, and additional VLMs</p>
         </div>
         <div class="hp-api-card">
           <div class="hp-api-method"><span class="hp-method-badge">POST</span> /v1/images/generations</div>
           <h3>Image Generation</h3>
-          <p class="hp-api-models">Stable Diffusion 3.5, FLUX, and more</p>
+          <p class="hp-api-models">Stable Diffusion 3.5, FLUX, and other diffusion models</p>
         </div>
         <div class="hp-api-card">
           <div class="hp-api-method"><span class="hp-method-badge">POST</span> /v1/audio/speech</div>
           <h3>Text to Speech</h3>
-          <p class="hp-api-models">Kokoro voices in 15+ languages</p>
+          <p class="hp-api-models">Kokoro and additional local voice packs</p>
         </div>
         <div class="hp-api-card">
           <div class="hp-api-method"><span class="hp-method-badge">POST</span> /v1/audio/transcriptions</div>
           <h3>Speech to Text</h3>
-          <p class="hp-api-models">Whisper-powered transcription</p>
+          <p class="hp-api-models">Whisper-powered transcription and streaming workflows</p>
         </div>
         <div class="hp-api-card">
           <div class="hp-api-method"><span class="hp-method-badge">POST</span> /v1/embeddings</div>
           <h3>Embeddings</h3>
-          <p class="hp-api-models">Semantic search &amp; reranking</p>
+          <p class="hp-api-models">Semantic search, retrieval pipelines, and reranking</p>
         </div>
       </div>
     </section>
@@ -180,51 +227,83 @@
     <!-- ==================== ECOSYSTEM ==================== -->
     <section class="hp-section hp-reveal">
       <span class="hp-section-label">Ecosystem</span>
-      <h2 class="hp-section-heading">Works with your favorite tools</h2>
+      <h2 class="hp-section-heading">Apps and agents already running on Lemonade</h2>
+      <p class="hp-section-desc">Use prebuilt integrations for chat UIs, workflow automation, coding assistants, and marketplace apps.</p>
+
       <div class="hp-eco-apps">
         <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI" target="_blank" class="hp-eco-app">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" />
-          <span>Open WebUI</span>
+          <div class="hp-eco-app-content">
+            <span class="hp-eco-app-name">Open WebUI</span>
+            <span class="hp-eco-app-desc">Self-hosted chat UX for multi-model local inference.</span>
+          </div>
         </a>
         <a href="https://n8n.io/integrations/lemonade-model/" title="n8n" target="_blank" class="hp-eco-app">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/n8n.png" alt="n8n" />
-          <span>n8n</span>
+          <div class="hp-eco-app-content">
+            <span class="hp-eco-app-name">n8n</span>
+            <span class="hp-eco-app-desc">Automate business and agent workflows with Lemonade nodes.</span>
+          </div>
         </a>
         <a href="https://github.com/amd/gaia" title="Gaia" target="_blank" class="hp-eco-app">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/gaia.png" alt="Gaia" />
-          <span>Gaia</span>
+          <div class="hp-eco-app-content">
+            <span class="hp-eco-app-name">Gaia</span>
+            <span class="hp-eco-app-desc">Experiment with local AI agents on AMD-optimized stacks.</span>
+          </div>
         </a>
         <a href="https://github.com/lemonade-sdk/infinity-arcade" title="Infinity Arcade" target="_blank" class="hp-eco-app">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/infinity_arcade.png" alt="Infinity Arcade" />
-          <span>Infinity Arcade</span>
+          <div class="hp-eco-app-content">
+            <span class="hp-eco-app-name">Infinity Arcade</span>
+            <span class="hp-eco-app-desc">Build game-like multimodal experiences with local models.</span>
+          </div>
         </a>
         <a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue" target="_blank" class="hp-eco-app">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/continue.png" alt="Continue" />
-          <span>Continue</span>
+          <div class="hp-eco-app-content">
+            <span class="hp-eco-app-name">Continue</span>
+            <span class="hp-eco-app-desc">Run coding copilots in your IDE with private local context.</span>
+          </div>
         </a>
         <a href="https://marketplace.visualstudio.com/items?itemName=lemonade-sdk.lemonade-sdk" title="GitHub Copilot" target="_blank" class="hp-eco-app">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/github_copilot.png" alt="GitHub Copilot" />
-          <span>GitHub Copilot</span>
+          <div class="hp-eco-app-content">
+            <span class="hp-eco-app-name">GitHub Copilot</span>
+            <span class="hp-eco-app-desc">Route compatible code-assistant workflows to local models.</span>
+          </div>
         </a>
         <a href="https://openhands.dev/" title="OpenHands" target="_blank" class="hp-eco-app">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/openhands.png" alt="OpenHands" />
-          <span>OpenHands</span>
+          <div class="hp-eco-app-content">
+            <span class="hp-eco-app-name">OpenHands</span>
+            <span class="hp-eco-app-desc">Pair autonomous engineering agents with on-device inference.</span>
+          </div>
         </a>
         <a href="https://marketplace.dify.ai/plugins/langgenius/lemonade" title="Dify" target="_blank" class="hp-eco-app">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/dify.png" alt="Dify" />
-          <span>Dify</span>
+          <div class="hp-eco-app-content">
+            <span class="hp-eco-app-name">Dify</span>
+            <span class="hp-eco-app-desc">Ship AI apps fast with local-first model backends.</span>
+          </div>
         </a>
         <a href="https://deeptutor.knowhiz.us/" title="Deep Tutor" target="_blank" class="hp-eco-app">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/deep_tutor.png" alt="Deep Tutor" />
-          <span>Deep Tutor</span>
+          <div class="hp-eco-app-content">
+            <span class="hp-eco-app-name">Deep Tutor</span>
+            <span class="hp-eco-app-desc">Educational experiences powered by local multimodal models.</span>
+          </div>
         </a>
         <a href="https://www.iterate.ai/" title="Iterate.ai" target="_blank" class="hp-eco-app">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/iterate_ai.png" alt="Iterate.ai" />
-          <span>Iterate.ai</span>
+          <div class="hp-eco-app-content">
+            <span class="hp-eco-app-name">Iterate.ai</span>
+            <span class="hp-eco-app-desc">Enterprise workflows that can run fully on-prem.</span>
+          </div>
         </a>
       </div>
       <div class="hp-eco-cta">
-        <a href="marketplace.html" class="marketplace-cta-btn">Discover apps in the Marketplace</a>
+        <a href="marketplace.html" class="marketplace-cta-btn">Explore the full Marketplace</a>
       </div>
     </section>
 
