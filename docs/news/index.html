@@ -147,9 +147,10 @@
       const sidebarToggle = document.getElementById('sidebarToggle');
       const newsSidebar = document.getElementById('newsSidebar');
       const sidebarOverlay = document.getElementById('sidebarOverlay');
-      const collapseBtn = document.getElementById('collapseBtn');
-      const expandBtn = document.getElementById('expandBtn');
-      const newsView = document.querySelector('.news-view');
+
+      // Legacy desktop collapse is no longer used in the news layout.
+      newsSidebar.classList.remove('collapsed');
+      localStorage.setItem('sidebarCollapsed', 'false');
 
       // Mobile sidebar toggle
       sidebarToggle.addEventListener('click', () => {
@@ -163,47 +164,13 @@
         sidebarOverlay.classList.remove('active');
       });
 
-      // Desktop sidebar collapse/expand
-      collapseBtn.addEventListener('click', () => {
-        newsSidebar.classList.add('collapsed');
-        newsView.classList.add('sidebar-collapsed');
-        expandBtn.classList.add('show');
-        localStorage.setItem('sidebarCollapsed', 'true');
-      });
-
-      expandBtn.addEventListener('click', () => {
-        newsSidebar.classList.remove('collapsed');
-        newsView.classList.remove('sidebar-collapsed');
-        expandBtn.classList.remove('show');
-        localStorage.setItem('sidebarCollapsed', 'false');
-      });
-
-      // Restore sidebar state from localStorage
-      const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-      if (sidebarCollapsed && window.innerWidth > 768) {
-        newsSidebar.classList.add('collapsed');
-        newsView.classList.add('sidebar-collapsed');
-        expandBtn.classList.add('show');
-      }
-
       // Close sidebar when window is resized to desktop
       window.addEventListener('resize', () => {
         if (window.innerWidth > 768) {
           newsSidebar.classList.remove('mobile-open');
           sidebarOverlay.classList.remove('active');
-
-          // Restore collapsed state on desktop
-          const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-          if (sidebarCollapsed) {
-            newsSidebar.classList.add('collapsed');
-            newsView.classList.add('sidebar-collapsed');
-            expandBtn.classList.add('show');
-          }
         } else {
-          // Reset collapsed state on mobile
           newsSidebar.classList.remove('collapsed');
-          newsView.classList.remove('sidebar-collapsed');
-          expandBtn.classList.remove('show');
         }
       });
     });
@@ -212,19 +179,11 @@
 <body id="news-page-body">
   <div class="navbar-placeholder"></div>
 
-  <button class="expand-btn" id="expandBtn">
-    ➤ Filters
-  </button>
-
   <!-- Sidebar Overlay (Mobile) -->
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
   <!-- News Sidebar -->
   <div class="news-sidebar docs-side-nav" id="newsSidebar">
-    <button class="collapse-btn" id="collapseBtn">
-      ← Hide
-    </button>
-
     <div class="sidebar-card">
       <div class="sidebar-header">
         <h3>Filters</h3>

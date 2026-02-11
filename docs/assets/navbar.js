@@ -8,7 +8,7 @@ function createNavbar(basePath = '') {
       </div>
       <div class="navbar-links">
         <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
-        <a href="${basePath}">Docs</a>
+        <a href="https://lemonade-server.ai/docs/">Docs</a>
         <a href="${basePath}models.html">Models</a>
         <a href="${basePath}marketplace.html">Marketplace</a>
         <a href="${basePath}news/">News</a>

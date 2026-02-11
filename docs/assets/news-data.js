@@ -1,6 +1,24 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+        title: "Lemonade by AMD: A Unified API for Local AI Developers",
+        url: "https://www.amd.com/en/developer/resources/technical-articles/2026/lemonade-for-local-ai.html",
+        date: "February 10, 2026",
+        description: "Learn how Lemonade delivers a unified, local-first API for text, image, and speech AI across Ryzen AI, Radeon, and broader AI PC hardware.",
+        image: "https://www.amd.com/content/dam/amd/en/images/blogs/designs/technical-blogs/lemonade-sdk/lemonadeheadergraphicsized.png",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "blog"
+        },
+    {
+        title: "AMD puts Strix Halo loaded with 8 AI models in a bun-fight: Is a hot dog a sandwich?",
+        url: "https://videocardz.com/newz/amd-puts-strix-halo-loaded-with-8-ai-models-in-a-bun-fight-is-a-hot-dog-a-sandwich",
+        date: "December 24, 2025",
+        description: "VideoCardz covers AMD Strix Halo running multiple AI models locally and explores performance and positioning for AI PCs.",
+        image: "https://cdn.videocardz.com/1/2025/12/RYZEN-AI-MAX-SANDWICH-HOTDOG-1-1200x624.jpg",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "blog"
+        },
+    {
         title: "Ryzen AI and Radeon are ready to run LLMs Locally",
         url: "https://www.amd.com/en/developer/resources/technical-articles/2025/ryzen-ai-radeon-llms-with-lemonade.html",
         date: "November 13, 2025",

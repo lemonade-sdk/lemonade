@@ -596,9 +596,7 @@
         "checkpoint": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": [
-            "hot"
-        ],
+        "labels": [],
         "size": 2.5
     },
     "Qwen3-30B-A3B-GGUF": {
@@ -642,9 +640,7 @@
         "checkpoint": "unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": [
-            "hot"
-        ],
+        "labels": [],
         "size": 22.8
     },
     "Gemma-3-4b-it-GGUF": {
@@ -653,7 +649,6 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
-            "hot",
             "vision"
         ],
         "size": 3.61
@@ -766,9 +761,7 @@
         "checkpoint": "unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF:Qwen3-Next-80B-A3B-Instruct-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": [
-            "hot"
-        ],
+        "labels": [],
         "size": 45.1
     },
     "Llama-4-Scout-17B-16E-Instruct-GGUF": {
@@ -977,7 +970,6 @@
         "recipe": "flm",
         "suggested": true,
         "labels": [
-            "hot",
             "vision"
         ],
         "size": 5.26
