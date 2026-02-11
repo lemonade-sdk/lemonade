@@ -19,6 +19,8 @@
 #include <shellapi.h>
 #include "../utils/wmi_helper.h"
 #pragma comment(lib, "wbemuuid.lib")
+#else
+#include <sys/utsname.h>
 #endif
 
 // URL to direct users to for driver updates
@@ -357,15 +359,31 @@ std::string FastFlowLMServer::get_min_npu_driver_version() {
 
         const auto& flm_config = config["flm"];
 
+#ifdef _WIN32
+        // Windows: use min_npu_driver field
         if (!flm_config.contains("min_npu_driver") || !flm_config["min_npu_driver"].is_string()) {
             return "32.0.203.311";  // Fallback default
         }
-
         return flm_config["min_npu_driver"].get<std::string>();
+#elif defined(__linux__)
+        // Linux: use min_kernel_version field
+        if (!flm_config.contains("min_kernel_version") || !flm_config["min_kernel_version"].is_string()) {
+            return "7.0";  // Fallback default
+        }
+        return flm_config["min_kernel_version"].get<std::string>();
+#else
+        return "";
+#endif
 
     } catch (const std::exception& e) {
         std::cerr << "[FastFlowLM] Error reading backend_versions.json: " << e.what() << std::endl;
-        return "32.0.203.311";  // Fallback default
+#ifdef _WIN32
+        return "32.0.203.311";  // Fallback default for Windows
+#elif defined(__linux__)
+        return "7.0";  // Fallback default for Linux
+#else
+        return "";
+#endif
     }
 }
 
@@ -449,9 +467,14 @@ std::string FastFlowLMServer::get_npu_driver_version() {
     });
 
     return version;
+#elif defined(__linux__)
+    struct utsname uts;
+    if (uname(&uts) != 0) {
+        return "";
+    }
+    return std::string(uts.release);
 #else
-    // NPU driver check is Windows-only
-    return "0.0.0.0";
+    return "";
 #endif
 }
 
@@ -460,11 +483,19 @@ bool FastFlowLMServer::check_npu_driver_version() {
     std::string min_version = get_min_npu_driver_version();
 
     if (version.empty()) {
+#ifdef _WIN32
         std::cout << "[FastFlowLM] NPU Driver Version: Unknown (Could not detect)" << std::endl;
+#elif defined(__linux__)
+        std::cout << "[FastFlowLM] Kernel Version: Unknown (Could not detect)" << std::endl;
+#endif
         return true;  // Assume OK if we can't detect, to not block users with unusual setups
     }
 
+#ifdef _WIN32
     std::cout << "[FastFlowLM] NPU Driver Version: " << version << std::endl;
+#elif defined(__linux__)
+    std::cout << "[FastFlowLM] Kernel Version: " << version << std::endl;
+#endif
 
     // Parse and compare versions
     auto parse_version = [](const std::string& v) -> std::vector<int> {
@@ -504,15 +535,20 @@ bool FastFlowLMServer::check_npu_driver_version() {
 
     if (too_old) {
         std::cerr << "\n" << std::string(70, '=') << std::endl;
+#ifdef _WIN32
         std::cerr << "ERROR: NPU Driver Version is too old!" << std::endl;
         std::cerr << "Current: " << version << std::endl;
         std::cerr << "Minimum: " << min_version << std::endl;
         std::cerr << "Please update your NPU driver at: " << DRIVER_INSTALL_URL << std::endl;
         std::cerr << std::string(70, '=') << std::endl << std::endl;
-
-#ifdef _WIN32
         // Open browser to driver install page
         ShellExecuteA(NULL, "open", DRIVER_INSTALL_URL.c_str(), NULL, NULL, SW_SHOWNORMAL);
+#elif defined(__linux__)
+        std::cerr << "ERROR: Kernel Version is too old for NPU support!" << std::endl;
+        std::cerr << "Current: " << version << std::endl;
+        std::cerr << "Minimum: " << min_version << std::endl;
+        std::cerr << "Please upgrade your kernel to 7.0 or later" << std::endl;
+        std::cerr << std::string(70, '=') << std::endl << std::endl;
 #endif
         return false;
     }
