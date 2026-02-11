@@ -75,7 +75,6 @@ nav:
       - Wut: server/apps/wut.md
   - Lemonade Server CLI Guide: server/lemonade-server-cli.md
   - Understanding local LLM servers: server/concepts.md
-  - Models List: server/server_models.md
   - Server Spec: server/server_spec.md
   - Integration Guide: server/server_integration.md
   - FAQ Guide: faq.md

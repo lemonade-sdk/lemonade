@@ -166,7 +166,7 @@ Smaller LLMs can produce simple pages with tasteful styling and basic interactiv
 
 ### Image Generation
 
-Open WebUI supports [image generation](https://docs.openwebui.com/features/image-generation-and-editing/usage/) using Stable Diffusion [models](https://lemonade-server.ai/docs/server/server_models/#image-generation-stable-diffusion-cpp) through Lemonade Server.
+Open WebUI supports [image generation](https://docs.openwebui.com/features/image-generation-and-editing/usage/) using Stable Diffusion [models](https://lemonade-server.ai/models.html) through Lemonade Server.
 
 **Configuring Image Generation**
 
@@ -176,7 +176,7 @@ Open WebUI supports [image generation](https://docs.openwebui.com/features/image
     3. Toggle `Prompt Generation` on.
     4. For `OpenAI-API-Basis-URL`, fill in `http://localhost:8000/api/v1` (unless you're using a different port).
     5. Add a character like `-` for `OpenAI-API-Key`.
-    6. If you want to add more parameters, add them to the text field as JSON. For example: `{ "steps": 4, "cfg_scale": 1 }`. See available parameters at [Image Generation (Stable Diffusion CPP)](https://lemonade-server.ai/docs/server/server_models/#image-generation-stable-diffusion-cpp).
+    6. If you want to add more parameters, add them to the text field as JSON. For example: `{ "steps": 4, "cfg_scale": 1 }`. See available parameters at [Image Generation (Stable Diffusion CPP)](https://lemonade-server.ai/models.html).
     7. Add your model name to `Model`, e.g., `SDXL-Turbo`.
     8. Click `Save`.
 
@@ -200,7 +200,7 @@ This mode uses tool calling for image generation and is recommended for high-qua
 1. Configure your model for native tool calling:
     1. Go to Admin > Settings > Models and choose your model.
     2. Go to `Advanced Parameters` and toggle `Function Calling` to `Native`.
-    
+
     > Note: Open WebUI recommends using native mode only for high-quality models. See [Tool Calling Modes](https://docs.openwebui.com/features/plugin/tools/#tool-calling-modes-default-vs-native) for more information. (try out >30B models like GPT-OSS-120B, GLM-4.7-Flash or Qwen-3-Next-80B-A3B)
 
 2. The LLM will automatically call the image generation tool when appropriate based on your prompts.
