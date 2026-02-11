@@ -434,7 +434,7 @@ body.install-options {
 }
 
 .marketplace-cta-btn:hover, .marketplace-cta-btn:focus {
-  /* No hover effect */
+  transform: none;
 }
 
 .dev-btn:active {
@@ -4194,112 +4194,267 @@ body.install-options {
 /* --- Open source section --- */
 .hp-open-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.3rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 1.2rem;
   align-items: stretch;
   text-align: left;
 }
 
-.hp-open-copy,
+.hp-open-story,
 .hp-open-stack {
-  background: rgba(255, 255, 255, 0.54);
-  border: 1px solid rgba(0, 0, 0, 0.07);
-  border-radius: 18px;
-  padding: 1.3rem 1.25rem;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.56));
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 20px;
+  padding: 1.4rem;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.05);
 }
 
-.hp-open-points {
-  display: grid;
-  gap: 0.9rem;
-}
-
-.hp-open-point h3 {
-  margin: 0 0 0.2rem;
-  font-size: 1rem;
-  color: #1f1f1f;
-}
-
-.hp-open-point p {
-  margin: 0;
-  font-size: 0.92rem;
-  line-height: 1.5;
-  color: #525252;
-}
-
-.hp-community-badges {
+.hp-open-story {
   display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  margin-top: 1rem;
-  flex-wrap: wrap;
+  flex-direction: column;
 }
 
-.hp-community-badges a {
-  display: inline-flex;
-  transition: transform 0.2s ease;
-}
-
-.hp-community-badges a:hover {
-  transform: translateY(-1px);
-}
-
-.hp-community-badges img {
-  height: 28px;
-  border-radius: 4px;
-}
-
+.hp-open-story h3,
 .hp-open-stack h3 {
-  margin: 0 0 0.8rem;
-  font-size: 0.98rem;
-  color: #2f2f2f;
+  margin: 0;
+  font-size: 1.15rem;
+  color: #1e1e1e;
+  letter-spacing: -0.01em;
 }
 
-.hp-logo-row {
+.hp-community-cta {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.62rem;
+  margin-top: 0.95rem;
+}
+
+.hp-community-btn {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.85rem 1.2rem;
+  align-items: stretch;
+  text-decoration: none;
+  border-radius: 14px;
+  padding: 0;
+  border: 1px solid transparent;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  overflow: hidden;
+  min-height: 84px;
 }
 
-.hp-logo-row a {
+.hp-community-btn:hover {
+  transform: translateY(-2px);
+}
+
+.hp-community-btn-icon-col {
+  width: 3.2rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.72;
-  transition: all 0.22s ease;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.06);
 }
 
-.hp-logo-row a:hover {
-  opacity: 1;
-  transform: translateY(-1px);
+.hp-community-btn-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0.9rem 1rem 0.84rem;
 }
 
-.hp-logo-row img {
-  height: 36px;
-  width: auto;
+.hp-community-btn-icon {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  opacity: 0.95;
+}
+
+.hp-community-btn-icon img,
+.hp-community-btn-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
   object-fit: contain;
+  fill: currentColor;
 }
 
-.hp-text-logo {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #4f4f4f !important;
-  text-decoration: none !important;
-  background: rgba(255, 255, 255, 0.8);
-  padding: 0.36rem 0.7rem;
-  border-radius: 8px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+.hp-community-btn-label {
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.2;
 }
+
+.hp-community-btn-sub {
+  margin-top: 0.26rem;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.hp-community-btn-github {
+  background: #181818;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.17);
+}
+
+.hp-community-btn-github .hp-community-btn-sub {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.hp-community-btn-github .hp-community-btn-icon-col {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.hp-community-btn-discord {
+  background: linear-gradient(145deg, #6677f9, #5865f2);
+  color: #fff;
+  box-shadow: 0 8px 16px rgba(88, 101, 242, 0.24);
+}
+
+.hp-community-btn-discord .hp-community-btn-sub {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.hp-community-btn-discord .hp-community-btn-icon-col {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.hp-community-btn-github:hover {
+  border-color: rgba(255, 224, 102, 0.36);
+  box-shadow: 0 12px 20px rgba(0, 0, 0, 0.2);
+}
+
+.hp-community-btn-discord:hover {
+  box-shadow: 0 12px 22px rgba(88, 101, 242, 0.3);
+}
+
+.hp-logo-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 0.45rem 0.72rem;
+  margin-top: 0.95rem;
+  /* Partner logo tuning controls (desktop defaults). */
+  --hp-logo-lockup-width: 176px;
+  --hp-logo-base-height: 34px;
+  --hp-logo-scale-1: 1.3; /* llama.cpp */
+  --hp-logo-scale-2: 2; /* ONNX Runtime */
+  --hp-logo-scale-3: 1.08; /* FastFlowLM */
+  --hp-logo-scale-4: 1.5; /* Ryzen AI */
+  --hp-logo-scale-5: 1.3; /* ROCm */
+  --hp-logo-scale-6: 2; /* Hugging Face */
+  --hp-logo-scale-7: 1.25; /* whisper.cpp */
+  --hp-logo-scale-8: 2.5; /* stable-diffusion.cpp */
+  --hp-logo-scale-9: 2.3; /* Kokoros */
+}
+
+.hp-logo-chip {
+  min-height: 70px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0.26rem 0.32rem;
+  text-decoration: none;
+  filter: grayscale(0.04) saturate(0.97);
+  transition: transform 0.2s ease, filter 0.2s ease, opacity 0.2s ease, background-color 0.2s ease;
+  opacity: 0.94;
+  position: relative;
+  border-radius: 10px;
+  flex: 0 1 auto;
+  --hp-scale: 1;
+}
+
+.hp-logo-chip::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.06));
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.hp-logo-chip:hover {
+  transform: translateY(-1px);
+  filter: grayscale(0) saturate(1);
+  opacity: 1;
+}
+
+.hp-logo-chip:hover::before {
+  opacity: 1;
+}
+
+.hp-logo-lockup {
+  width: min(var(--hp-logo-lockup-width), 100%);
+  height: auto;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  overflow: visible;
+  position: relative;
+  z-index: 1;
+}
+
+.hp-logo-chip img {
+  width: auto;
+  max-width: min(182px, 100%);
+  height: max(28px, calc(var(--hp-logo-base-height) * var(--hp-scale)));
+  object-fit: contain;
+  mix-blend-mode: multiply;
+}
+
+.hp-logo-chip:nth-child(1) { --hp-scale: var(--hp-logo-scale-1); }
+.hp-logo-chip:nth-child(2) { --hp-scale: var(--hp-logo-scale-2); }
+.hp-logo-chip:nth-child(3) { --hp-scale: var(--hp-logo-scale-3); }
+.hp-logo-chip:nth-child(4) { --hp-scale: var(--hp-logo-scale-4); }
+.hp-logo-chip:nth-child(5) { --hp-scale: var(--hp-logo-scale-5); }
+.hp-logo-chip:nth-child(6) { --hp-scale: var(--hp-logo-scale-6); }
+.hp-logo-chip:nth-child(7) { --hp-scale: var(--hp-logo-scale-7); }
+.hp-logo-chip:nth-child(8) { --hp-scale: var(--hp-logo-scale-8); }
+.hp-logo-chip:nth-child(9) { --hp-scale: var(--hp-logo-scale-9); }
+
+.hp-logo-chip:nth-child(3n+1) { margin-top: 0.25rem; }
+.hp-logo-chip:nth-child(3n) { margin-top: 0.45rem; }
 
 .hp-section-release {
   margin-top: 1.3rem;
 }
 
-.hp-section .release-announcement {
+.hp-release-section .release-announcement {
   margin: 0 auto;
   max-width: 680px;
   animation: none;
+}
+
+/* --- Technical details section --- */
+.hp-tech-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+  text-align: left;
+}
+
+.hp-tech-card {
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 15px;
+  padding: 1rem;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04);
+}
+
+.hp-tech-card h3 {
+  margin: 0 0 0.38rem;
+  font-size: 0.98rem;
+  color: #242424;
+}
+
+.hp-tech-card p {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: #535353;
 }
 
 /* --- Unified API section --- */
@@ -4505,9 +4660,21 @@ body.install-options {
   }
 
   .hp-open-layout,
-  .hp-api-intro {
+  .hp-api-intro,
+  .hp-tech-grid {
     grid-template-columns: 1fr;
   }
+
+  .hp-logo-grid {
+    gap: 0.34rem 0.58rem;
+    --hp-logo-base-height: 32px;
+    --hp-logo-lockup-width: 164px;
+  }
+
+  .hp-logo-chip {
+    min-height: 64px;
+  }
+
 }
 
 @media (max-width: 720px) {
@@ -4554,11 +4721,23 @@ body.install-options {
   }
 
   .hp-demo-panel,
-  .hp-open-copy,
+  .hp-open-story,
   .hp-open-stack,
+  .hp-tech-card,
   .hp-api-quickstart,
   .hp-api-notes,
   .hp-eco-app {
     border-radius: 12px;
   }
+
+  .hp-logo-grid {
+    gap: 0.24rem 0.4rem;
+    --hp-logo-base-height: 30px;
+    --hp-logo-lockup-width: 144px;
+  }
+
+  .hp-logo-chip {
+    min-height: 58px;
+  }
+
 }
