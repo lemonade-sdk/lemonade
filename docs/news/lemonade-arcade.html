@@ -7,6 +7,7 @@
   <link rel="icon" href="../assets/favicon.ico">
   <link rel="stylesheet" href="../assets/website-styles.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="../assets/navbar.js"></script>
   <script>
     // Define the article description once to avoid repetition
     const ARTICLE_DESCRIPTION = "Lemonade Arcade, a new application that transforms your GPU into a creative engine for generating retro-style games using AI!";
@@ -19,19 +20,7 @@
   <meta property="article:author" content="Lemonade Team">
 </head>
 <body>
-  <!-- Navbar -->
-  <nav class="navbar" id="navbar">
-    <div class="navbar-brand">
-      <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade</a></span>
-    </div>
-    <div class="navbar-links">
-      <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
-      <a href="../docs/">Docs</a>
-      <a href="../docs/server/server_models/">Models</a>
-      <a href="../docs/server/apps/">Featured Apps</a>
-      <a href="index.html">News</a>
-    </div>
-  </nav>
+  <div class="navbar-placeholder"></div>
 
   <!-- Article Content -->
   <main class="main">
@@ -223,6 +212,7 @@
   <script>
     // Initialize footer with star count (uses ../ basePath)
     document.addEventListener('DOMContentLoaded', () => {
+      initializeNavbar('../');
       initializeFooter('../');
 
       // Populate meta tags and subtitle with the description

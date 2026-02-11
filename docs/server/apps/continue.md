@@ -13,7 +13,7 @@ Before you start, make sure you have the following:
 - **IDE**: [Visual Studio Code (v1.80+)](https://code.visualstudio.com/) or another supported IDE.
 - **Lemonade Server**: Installed and set up using the [Getting Started guide](https://lemonade-server.ai/docs/server/).
 - **Lemonade Server Running**: The server should be running at `http://localhost:8000`. If you change the port in Lemonade Server (e.g., to 8020, 8040, etc.), you'll need to update the API Base URL in Continue's configuration to match the same port.
-- **Model Downloaded**: At least one model from the [supported models list](https://lemonade-server.ai/docs/server/server_models/) must be installed locally.
+- **Model Downloaded**: At least one model from the [supported models list](https://lemonade-server.ai/models.html) must be installed locally.
 
 ### Hardware Requirements
 
@@ -128,7 +128,7 @@ Here, we can see that the agent edited the code in `main.py` to improve the game
 ### Setup & Configuration
 
 - **Install Lemonade Server**: Follow the [setup guide](https://lemonade-server.ai/docs/server/) to install and configure Lemonade Server before you begin development.
-- **Download Models Locally**: Use `lemonade-server pull <model-name>` to install models you want to use. Refer to the [supported models list](https://lemonade-server.ai/docs/server/server_models/) for available options.
+- **Download Models Locally**: Use `lemonade-server pull <model-name>` to install models you want to use. Refer to the [supported models list](https://lemonade-server.ai/models.html) for available options.
 - **Pre-load Models**: Start Lemonade Server and load your models before coding sessions. This can easily be done using the Lemon tray icon and `Load`.
 - **Increase Context Size for Agent Mode**: For large code changes with GGUF models, start Lemonade Server with a higher context size:
     ```bash
@@ -151,7 +151,7 @@ Here, we can see that the agent edited the code in `main.py` to improve the game
 **Model not appearing in Continue**
 
   - Make sure Lemonade Server is running and the model is loaded locally.
-  - Double-check the [supported models list](https://lemonade-server.ai/docs/server/server_models/) and install any missing models with:
+  - Double-check the [supported models list](https://lemonade-server.ai/models.html) and install any missing models with:
       ```bash
       lemonade-server pull <model-name>
       ```
@@ -172,6 +172,6 @@ Here, we can see that the agent edited the code in `main.py` to improve the game
 ## Resources
 
 - [Lemonade Server Setup Guide](https://lemonade-server.ai/docs/server/)
-- [Lemonade Server Supported Models](https://lemonade-server.ai/docs/server/server_models/)
+- [Lemonade Server Supported Models](https://lemonade-server.ai/models.html)
 - [Lemonade Applications](https://lemonade-server.ai/docs/server/apps/)
 - [Continue Documentation](https://docs.continue.dev)

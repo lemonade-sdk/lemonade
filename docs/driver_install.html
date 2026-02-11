@@ -8,18 +8,7 @@
   <link rel="stylesheet" href="assets/website-styles.css">
 </head>
 <body>
-  <nav class="navbar" id="navbar">
-    <div class="navbar-brand">
-      <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade Server</a></span>
-    </div>
-    <div class="navbar-links">
-      <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
-      <a href="docs/">Docs</a>
-    <a href="docs/server/server_models/">Models</a>
-      <a href="docs/server/apps/">Featured Apps</a>
-      <a href="news/">News</a>
-    </div>
-  </nav>
+  <div class="navbar-placeholder"></div>
 
   <main class="main">
     <div class="hero-section">
@@ -119,12 +108,16 @@
   <!-- Footer will be inserted here by footer.js -->
   <div class="footer-placeholder"></div>
 
+  <script src="assets/navbar.js"></script>
   <script src="assets/footer.js"></script>
   <script>
     // Initialize footer when page loads
     document.addEventListener('DOMContentLoaded', function() {
+      if (typeof initializeNavbar === 'function') {
+        initializeNavbar('./');
+      }
       if (typeof initializeFooter === 'function') {
-        initializeFooter();
+        initializeFooter('../');
       }
     });
   </script>
