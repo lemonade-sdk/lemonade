@@ -13,6 +13,7 @@
 #include <httplib.h>
 #include "router.h"
 #include "model_manager.h"
+#include "orchestrator.h"
 #include "lemon/utils/network_beacon.h"
 
 namespace lemon {
@@ -90,6 +91,10 @@ private:
     // Image endpoint handlers (OpenAI /v1/images/* compatible)
     void handle_image_generations(const httplib::Request& req, httplib::Response& res);
 
+    // Orchestration endpoint — exposes all endpoints as tools for a local LLM
+    void handle_orchestrate(const httplib::Request& req, httplib::Response& res);
+    void handle_orchestrate_info(const httplib::Request& req, httplib::Response& res);
+
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
 
@@ -119,6 +124,7 @@ private:
 
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
+    std::unique_ptr<Orchestrator> orchestrator_;
 
     bool running_;
 

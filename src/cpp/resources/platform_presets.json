@@ -1,0 +1,76 @@
+{
+    "comment": "Platform presets define which models to use for each endpoint based on detected hardware capabilities. Presets are evaluated in order; the first matching preset is used. The orchestrator_model is the LLM that interprets user requests and decides which endpoint tools to invoke.",
+    "presets": [
+        {
+            "name": "rocm",
+            "description": "AMD discrete GPU with ROCm support (RDNA3/RDNA4, 8+ GB VRAM)",
+            "match": {
+                "llamacpp_backend": "rocm"
+            },
+            "orchestrator_model": "Qwen3-8B-GGUF",
+            "endpoint_models": {
+                "transcription": "Whisper-Large-v3-Turbo",
+                "image_generation": "SDXL-Base-1.0",
+                "tts": "Kokoro",
+                "embeddings": "all-MiniLM-L6-v2-GGUF",
+                "reranking": "jina-reranker-v1-turbo-en-GGUF"
+            }
+        },
+        {
+            "name": "metal",
+            "description": "macOS with Metal GPU acceleration",
+            "match": {
+                "llamacpp_backend": "metal"
+            },
+            "orchestrator_model": "Qwen3-8B-GGUF",
+            "endpoint_models": {
+                "transcription": "Whisper-Large-v3-Turbo",
+                "tts": "Kokoro",
+                "embeddings": "all-MiniLM-L6-v2-GGUF",
+                "reranking": "jina-reranker-v1-turbo-en-GGUF"
+            }
+        },
+        {
+            "name": "vulkan",
+            "description": "GPU with Vulkan support (AMD iGPU or dGPU without ROCm)",
+            "match": {
+                "llamacpp_backend": "vulkan"
+            },
+            "orchestrator_model": "Qwen3-4B-GGUF",
+            "endpoint_models": {
+                "transcription": "Whisper-Small",
+                "image_generation": "SD-Turbo",
+                "tts": "Kokoro",
+                "embeddings": "all-MiniLM-L6-v2-GGUF",
+                "reranking": "jina-reranker-v1-turbo-en-GGUF"
+            }
+        },
+        {
+            "name": "npu",
+            "description": "AMD Ryzen AI NPU (XDNA2) with FLM support",
+            "match": {
+                "flm_backend": "default"
+            },
+            "orchestrator_model": "Qwen3-4B-Instruct-2507-FLM",
+            "endpoint_models": {
+                "transcription": "Whisper-Large-v3-Turbo",
+                "tts": "Kokoro",
+                "embeddings": "all-MiniLM-L6-v2-GGUF",
+                "reranking": "jina-reranker-v1-turbo-en-GGUF"
+            }
+        },
+        {
+            "name": "cpu",
+            "description": "CPU-only fallback (no GPU or NPU acceleration)",
+            "match": {
+                "llamacpp_backend": "cpu"
+            },
+            "orchestrator_model": "Qwen3-1.7B-GGUF",
+            "endpoint_models": {
+                "transcription": "Whisper-Small",
+                "tts": "Kokoro",
+                "embeddings": "all-MiniLM-L6-v2-GGUF"
+            }
+        }
+    ]
+}

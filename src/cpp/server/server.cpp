@@ -88,6 +88,10 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     router_ = std::make_unique<Router>(default_options_, log_level,
                                        model_manager_.get(), max_loaded_models);
 
+    // Initialize the orchestrator — exposes endpoints as tools for a local LLM
+    orchestrator_ = std::make_unique<Orchestrator>(router_.get(), model_manager_.get());
+    orchestrator_->resolve_platform_preset();
+
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
     }
@@ -240,6 +244,14 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Image endpoints (OpenAI /v1/images/* compatible)
     register_post("images/generations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_image_generations(req, res);
+    });
+
+    // Orchestration — exposes all endpoints as tools for a local LLM
+    register_post("orchestrate", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_orchestrate(req, res);
+    });
+    register_get("orchestrate/info", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_orchestrate_info(req, res);
     });
 
     // Responses endpoint
@@ -1943,6 +1955,49 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         }}};
         res.set_content(error.dump(), "application/json");
     }
+}
+
+void Server::handle_orchestrate(const httplib::Request& req, httplib::Response& res) {
+    try {
+        std::cout << "[Server] POST /api/v1/orchestrate" << std::endl;
+
+        auto request_json = nlohmann::json::parse(req.body);
+
+        auto response = orchestrator_->orchestrate(request_json);
+
+        if (response.contains("error")) {
+            res.status = 400;
+        }
+
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const nlohmann::json::exception& e) {
+        std::cerr << "[Server] JSON parse error in handle_orchestrate: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Invalid JSON: " + std::string(e.what())},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_orchestrate: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "internal_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_orchestrate_info(const httplib::Request& req, httplib::Response& res) {
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+
+    auto info = orchestrator_->get_preset_info();
+    res.set_content(info.dump(), "application/json");
 }
 
 void Server::handle_responses(const httplib::Request& req, httplib::Response& res) {
