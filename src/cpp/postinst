@@ -14,6 +14,45 @@ usermod -a -G render lemonade
 
 # Set up the service
 if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-deconfigure" ] || [ "$1" = "abort-remove" ] ; then
+        # Check if service file already exists and prompt user
+        service_file="/lib/systemd/system/lemonade-server.service"
+        config_dir="/etc/lemonade"
+
+        # Check and prompt for service file
+        if [ -f "$service_file" ]; then
+            echo "Warning: $service_file already exists."
+            echo "This file may be overwritten during package upgrade."
+            echo -n "Do you want to overwrite it? (y/N): "
+            read -r response
+            if [[ ! "$response" =~ ^[Yy]$ ]]; then
+                echo "Skipping service file installation."
+                # Skip the service enablement and start
+                exit 0
+            else
+                echo "Overwriting service file..."
+            fi
+        fi
+
+        # Check and prompt for configuration files
+        if [ -d "$config_dir" ]; then
+            echo "Checking for existing configuration files in $config_dir..."
+            config_files=("$config_dir/lemonade.conf" "$config_dir/secrets.conf")
+            for config_file in "${config_files[@]}"; do
+                if [ -f "$config_file" ]; then
+                    echo "Warning: $config_file already exists."
+                    echo "This file may be overwritten during package upgrade."
+                    echo -n "Do you want to overwrite it? (y/N): "
+                    read -r response
+                    if [[ ! "$response" =~ ^[Yy]$ ]]; then
+                        echo "Skipping $config_file installation."
+                    else
+                        echo "Overwriting $config_file..."
+                    fi
+                fi
+            done
+        fi
+
+        # Proceed with normal service setup if we're not skipping
         if deb-systemd-helper --quiet was-enabled 'lemonade-server.service'; then
                 deb-systemd-helper enable 'lemonade-server.service' >/dev/null || true
         else
