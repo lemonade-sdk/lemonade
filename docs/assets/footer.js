@@ -19,7 +19,7 @@ function createFooter(basePath = '') {
             <span>Discord</span>
           </a>
           <a href="${basePath}docs/dev-getting-started/" class="footer-rail-link footer-rail-link--product">Developer Setup</a>
-          <a href="${basePath}docs/server/models.html" class="footer-rail-link footer-rail-link--product">Models</a>
+          <a href="${basePath}docs/models.html" class="footer-rail-link footer-rail-link--product">Models</a>
           <a href="${basePath}marketplace.html" class="footer-rail-link footer-rail-link--product">Marketplace</a>
           <a href="${basePath}docs/" class="footer-rail-link footer-rail-link--product">Documentation</a>
         </nav>

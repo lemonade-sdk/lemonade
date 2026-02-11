@@ -11,18 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-  <nav class="navbar" id="navbar">
-    <div class="navbar-brand">
-      <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade</a></span>
-    </div>
-    <div class="navbar-links">
-      <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
-      <a href="docs/">Docs</a>
-      <a href="docs/server/models.html">Models</a>
-      <a href="marketplace.html">Marketplace</a>
-      <a href="news/">News</a>
-    </div>
-  </nav>
+  <div class="navbar-placeholder"></div>
 
   <main class="main">
     <!-- ==================== HERO ==================== -->
@@ -343,6 +332,7 @@
 
   <div class="footer-placeholder"></div>
 
+  <script src="assets/navbar.js"></script>
   <script src="assets/install-selector.js"></script>
   <script src="assets/footer.js"></script>
   <script src="assets/news-data.js"></script>
@@ -657,10 +647,11 @@
       return bullets;
     }
     document.addEventListener('DOMContentLoaded', function() {
+      if (typeof initializeNavbar === 'function') initializeNavbar('./');
       fetchLatestRelease();
       fetchCommunityStats();
       initUnifiedApiSamples();
-      if (typeof initializeFooter === 'function') initializeFooter();
+      if (typeof initializeFooter === 'function') initializeFooter('../');
       if (document.getElementById('lmn-install-view').style.display === 'flex') {
         if (typeof lmnInit === 'function') lmnInit();
       }
