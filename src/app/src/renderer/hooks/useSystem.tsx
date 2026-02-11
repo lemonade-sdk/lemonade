@@ -1,11 +1,13 @@
-import React, {createContext, useCallback, useContext, useEffect, useMemo, useState} from "react";
-import {fetchSystemInfoData, SystemInfo, Recipes} from "../utils/systemData";
+import React, {createContext, useCallback, useContext, useMemo, useState} from "react";
+import {fetchSystemInfoData, SystemInfo, Recipes, fetchSystemChecks, SystemCheck} from "../utils/systemData";
 
 interface SystemContextValue {
   systemInfo?: SystemInfo;
   isLoading: boolean;
   supportedRecipes: SupportedRecipes;
+  systemChecks: SystemCheck[];
   refresh: () => Promise<void>;
+  ensureSystemInfoLoaded: () => Promise<void>;
 }
 
 // Programmatic structure: recipe -> list of supported backends
@@ -17,7 +19,9 @@ const SystemContext = createContext<SystemContextValue | null>(null);
 
 export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({children}) => {
   const [systemInfo, setSystemInfo] = useState<SystemInfo>();
-  const [isLoading, setIsLoading] = useState(true);
+  const [systemChecks, setSystemChecks] = useState<SystemCheck[]>([]);
+  const [isLoading, setIsLoading] = useState(false); // Changed to false - no longer loading on startup
+  const [hasLoaded, setHasLoaded] = useState(false); // Track if we've ever loaded system info
 
   // Programmatically extract supported recipes and backends
   const supportedRecipes = useMemo<SupportedRecipes>(() => {
@@ -52,8 +56,13 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({childre
     setIsLoading(true);
     try {
       const data = await fetchSystemInfoData();
-
       setSystemInfo(data.info);
+
+      // Fetch system checks (kernel issues, driver warnings, etc.)
+      const checks = await fetchSystemChecks();
+      setSystemChecks(checks);
+
+      setHasLoaded(true);
 
     } catch (error) {
       console.error('Failed to fetch system info:', error);
@@ -62,16 +71,23 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({childre
     }
   }, []);
 
-  // Initial load
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+  // Ensure system info is loaded (for lazy loading on first model use)
+  const ensureSystemInfoLoaded = useCallback(async () => {
+    if (!hasLoaded && !isLoading) {
+      await refresh();
+    }
+  }, [hasLoaded, isLoading, refresh]);
+
+  // No initial load - system info will be fetched when first needed
+  // (e.g., when user tries to load a model)
 
   const value: SystemContextValue = {
     systemInfo,
     supportedRecipes,
+    systemChecks,
     isLoading,
     refresh,
+    ensureSystemInfoLoaded,
   };
 
   return (
