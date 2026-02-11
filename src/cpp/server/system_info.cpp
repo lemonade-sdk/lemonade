@@ -2413,6 +2413,38 @@ void SystemInfoCache::clear() {
     }
 }
 
+void SystemInfoCache::perform_upgrade_cleanup() {
+    // Read the old version from the existing cache file.
+    // This should only be called when cache_file_path_ exists (upgrade path),
+    // never for new installs where no cache file is present.
+    try {
+        if (!fs::exists(cache_file_path_)) {
+            return;
+        }
+
+        std::ifstream file(cache_file_path_);
+        json cache_data = json::parse(file);
+
+        if (!cache_data.contains("version")) {
+            return;
+        }
+
+        std::string old_version = cache_data["version"];
+
+        // When upgrading from 9.3.1 or earlier, delete the backend bin directory.
+        // Backend binaries from older versions may be incompatible and need to be
+        // re-downloaded. Using < 9.3.2 is equivalent to <= 9.3.1.
+        if (is_version_less_than(old_version, "9.3.2")) {
+            std::string bin_dir = get_cache_dir() + "/bin";
+            std::error_code ec;
+            fs::remove_all(bin_dir, ec);
+            // Silently ignore errors - delete as much as possible
+        }
+    } catch (...) {
+        // Silently ignore any errors during upgrade cleanup
+    }
+}
+
 json SystemInfoCache::get_system_info_with_cache() {
     // In-memory static cache to avoid repeated disk reads and message printing
     // within the same process lifetime
@@ -2442,6 +2474,9 @@ json SystemInfoCache::get_system_info_with_cache() {
             // Provide friendly message about why we're detecting hardware
             if (cache_exists) {
                 std::cout << "[Server] Collecting system info (Lemonade was updated)" << std::endl;
+
+                // Perform version-specific cleanup (e.g., removing stale backend binaries)
+                cache.perform_upgrade_cleanup();
             } else {
                 std::cout << "[Server] Collecting system info" << std::endl;
             }
