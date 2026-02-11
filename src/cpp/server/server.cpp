@@ -48,9 +48,8 @@ static const json MIME_TYPES = {
 };
 
 Server::Server(int port, const std::string& host, const std::string& log_level,
-               const json& default_options, int max_llm_models,
-               int max_embedding_models, int max_reranking_models, int max_audio_models,
-               int max_image_models, const std::string& extra_models_dir, bool no_broadcast)
+               const json& default_options, int max_loaded_models,
+               const std::string& extra_models_dir, bool no_broadcast)
     : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
       no_broadcast_(no_broadcast), running_(false), udp_beacon_() {
 
@@ -87,9 +86,7 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     model_manager_->set_extra_models_dir(extra_models_dir);
 
     router_ = std::make_unique<Router>(default_options_, log_level,
-                                       model_manager_.get(), max_llm_models,
-                                       max_embedding_models, max_reranking_models, max_audio_models,
-                                       max_image_models);
+                                       model_manager_.get(), max_loaded_models);
 
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
