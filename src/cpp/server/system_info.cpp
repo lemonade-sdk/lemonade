@@ -2431,10 +2431,16 @@ void SystemInfoCache::perform_upgrade_cleanup() {
 
         std::string old_version = cache_data["version"];
 
-        // When upgrading from 9.3.1 or earlier, delete the backend bin directory.
-        // Backend binaries from older versions may be incompatible and need to be
-        // re-downloaded. Using < 9.3.2 is equivalent to <= 9.3.1.
-        if (is_version_less_than(old_version, "9.3.2")) {
+        // Delete the backend bin directory when upgrading from a version older
+        // than clear_bin_if_lemonade_below (defined in backend_versions.json).
+        // Backend binaries from older versions may be incompatible and need to
+        // be re-downloaded.
+        std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+        std::ifstream config_file(config_path);
+        json config = json::parse(config_file);
+        std::string cleanup_version = config.value("clear_bin_if_lemonade_below", "0.0.0");
+
+        if (is_version_less_than(old_version, cleanup_version)) {
             std::string bin_dir = get_cache_dir() + "/bin";
             std::error_code ec;
             fs::remove_all(bin_dir, ec);
