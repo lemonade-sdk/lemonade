@@ -25,8 +25,9 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/completions` - Text Completions (prompt -> completion)
 - POST `/api/v1/embeddings` - Embeddings (text -> vector representations)
 - POST `/api/v1/responses` - Chat Completions (prompt|messages -> event)
-- POST `/api/v1/audio/transcriptions` - Audio Transcription (audio -> text)
+- POST `/api/v1/audio/transcriptions` - Audio Transcription (audio file -> text)
 - POST `/api/v1/audio/speech` - Text to speech (text -> audio)
+- WS `/realtime` - Realtime Audio Transcription (streaming audio -> text, OpenAI SDK compatible)
 - POST `/api/v1/images/generations` - Image Generation (prompt -> image)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
@@ -608,6 +609,130 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 **Field Descriptions:**
 
 - `text` - The transcribed text from the audio file
+
+
+
+### `WS /realtime` <sub>![Status](https://img.shields.io/badge/status-partial-yellow)</sub>
+
+Realtime Audio Transcription API via WebSocket (OpenAI SDK compatible). Stream audio from a microphone and receive transcriptions in real-time with Voice Activity Detection (VAD).
+
+> **Note:** The WebSocket server runs on HTTP port + 100 (e.g., if HTTP is on port 8000, WebSocket is on port 8100).
+>
+> **Limitations:** Only 16kHz mono PCM16 audio format is supported. Uses the same Whisper models as the HTTP transcription endpoint.
+>
+> **OpenAI SDK Compatible:** This endpoint follows the OpenAI Realtime API format. If you have existing code using OpenAI's Realtime API, you only need to change the `base_url` to point to your local Lemonade server (`ws://localhost:8100`).
+
+#### Connection
+
+Connect to the WebSocket endpoint with the model name (OpenAI SDK compatible):
+
+```
+ws://localhost:8100/realtime?model=Whisper-Tiny
+```
+
+Upon connection, the server sends a `session.created` message with a session ID.
+
+#### Client → Server Messages
+
+| Message Type | Description |
+|--------------|-------------|
+| `session.update` | Configure the session (set model, VAD settings) |
+| `input_audio_buffer.append` | Send audio data (base64-encoded PCM16) |
+| `input_audio_buffer.commit` | Force transcription of buffered audio |
+| `input_audio_buffer.clear` | Clear audio buffer without transcribing |
+
+#### Server → Client Messages
+
+| Message Type | Description |
+|--------------|-------------|
+| `session.created` | Session established, contains session ID |
+| `session.updated` | Session configuration updated |
+| `input_audio_buffer.speech_started` | VAD detected speech start |
+| `input_audio_buffer.speech_stopped` | VAD detected speech end, transcription triggered |
+| `input_audio_buffer.committed` | Audio buffer committed for transcription |
+| `input_audio_buffer.cleared` | Audio buffer cleared |
+| `conversation.item.input_audio_transcription.completed` | Transcription result |
+| `error` | Error message |
+
+#### Example: Configure Session
+
+```json
+{
+  "type": "session.update",
+  "session": {
+    "model": "Whisper-Tiny"
+  }
+}
+```
+
+#### Example: Send Audio
+
+```json
+{
+  "type": "input_audio_buffer.append",
+  "audio": "<base64-encoded PCM16 audio>"
+}
+```
+
+Audio should be:
+- 16kHz sample rate
+- Mono (single channel)
+- 16-bit signed integer (PCM16)
+- Base64 encoded
+- Sent in chunks (~85ms recommended)
+
+#### Example: Transcription Result
+
+```json
+{
+  "type": "conversation.item.input_audio_transcription.completed",
+  "transcript": "Hello, this is a test transcription."
+}
+```
+
+#### VAD Configuration
+
+VAD settings can be configured via `session.update`:
+
+```json
+{
+  "type": "session.update",
+  "session": {
+    "model": "Whisper-Tiny",
+    "turn_detection": {
+      "threshold": 0.01,
+      "silence_duration_ms": 800,
+      "prefix_padding_ms": 250
+    }
+  }
+}
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `threshold` | 0.01 | RMS energy threshold for speech detection |
+| `silence_duration_ms` | 800 | Silence duration to trigger speech end |
+| `prefix_padding_ms` | 250 | Minimum speech duration before triggering |
+
+#### Code Examples
+
+See the [`examples/`](../../examples/) directory for a complete, runnable example:
+
+- **[`realtime_transcription.py`](../../examples/realtime_transcription.py)** - Python CLI for microphone streaming
+
+```bash
+# Stream from microphone
+python examples/realtime_transcription.py --mic --model Whisper-Tiny
+```
+
+#### Integration Notes
+
+- **Audio Format**: Server expects 16kHz mono PCM16. Higher sample rates must be downsampled client-side.
+- **Chunk Size**: Send audio in ~85-256ms chunks for optimal latency/efficiency.
+- **VAD Behavior**: Server automatically detects speech boundaries and triggers transcription on speech end.
+- **Manual Commit**: Use `input_audio_buffer.commit` to force transcription (e.g., when user clicks "stop").
+- **Clear Buffer**: Use `input_audio_buffer.clear` to discard audio without transcribing.
+- **Chunking**: We are still tuning the chunking to balance latency vs. accuracy.
 
 
 
