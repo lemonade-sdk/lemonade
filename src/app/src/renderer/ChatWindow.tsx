@@ -10,6 +10,7 @@ import {
 import { serverFetch } from './utils/serverConfig';
 import { downloadTracker } from './utils/downloadTracker';
 import { useModels, DEFAULT_MODEL_ID } from './hooks/useModels';
+import { Url } from 'url';
 
 interface ImageContent {
   type: 'image_url';
@@ -110,7 +111,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
   // Text to speech state
-  const [audioPaused, setAudioPaused] = useState(true);
+  let pressedAudioButton: number = -1;
+  let currentAudio: HTMLAudioElement | null = null;
+
 
   // Image generation settings
   interface ImageSettings {
@@ -1007,15 +1010,12 @@ const sendMessage = async () => {
 
   // Handle text to sreech conversion using Kokoro
   const handleTextToSpeech = async (message: MessageContent) => {
-    setAudioPaused(!audioPaused);
-
     const textToSpeechModel = 'kokoro-v1';
 
     if(message instanceof Array) {
       message = message.map(function(item) {return (item.type == "text") ? item.text : ''}).toString();
     }
 
-    message.replace(/[^\p{L}\p{N}\p{P}\p{Z}^$\n]/gu, '');
 
     try {
       const requestBody: any = {
@@ -1034,19 +1034,51 @@ const sendMessage = async () => {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const audioCtx = new AudioContext();
-      let source: any;
-
-      audioCtx.decodeAudioData(await response.arrayBuffer(), (buff: AudioBuffer) => {
-        source = audioCtx.createBufferSource();
-        source.buffer = buff;
-        source.connect(audioCtx.destination);
-        source.start();
-      });
-
+      const respBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(respBlob);
+      
+      playAudio(audioUrl);
     } catch(err: any) {
       console.log(`Error: ${err}`);
+      pressedAudioButton = -1;
     }
+  }
+
+  const playAudio = (audioUrl: string) => {
+    currentAudio = new Audio(audioUrl);
+
+    currentAudio.addEventListener('ended', () => stopAudio());
+      currentAudio.addEventListener('error', () => {
+        console.log("Error playing audio");
+        stopAudio();
+      });
+
+    currentAudio.play().catch(e => console.error("Playback prevented:", currentAudio));
+  }
+
+  const stopAudio = () => {
+    if (currentAudio) {
+      currentAudio.pause();
+        if (currentAudio.src.startsWith('blob:')) {
+          URL.revokeObjectURL(currentAudio.src);
+        }
+        
+        currentAudio = null;
+    }
+
+    pressedAudioButton = -1;
+  }
+
+  const handleAudioButtonClick = async (message: MessageContent, btnIndex: number) => {
+    let b = pressedAudioButton;
+    stopAudio();
+
+    if (b === btnIndex) {
+      return;
+    }
+
+    pressedAudioButton = btnIndex;
+    await handleTextToSpeech(message);
   }
 
   const submitEdit = async () => {
@@ -1470,19 +1502,9 @@ const sendMessage = async () => {
   );
 
   const AudioButton = ({ textMessage, index }: {textMessage: MessageContent, index: number}) => {
-    const [audioButtonVisible, setAudioButtonVisible] = useState(false)
-
-    const mouseOver = (event: any) => {
-        setAudioButtonVisible(true)
-    }
-
-    const mouseOut = (event: any) => {
-        setAudioButtonVisible(false)
-    }
-
     return (
-      <div key={index} className={`message-play-button-container ${audioButtonVisible ? 'audio-button-visible' : 'audio-button-invisible'}`} onMouseEnter={mouseOver} onMouseLeave={mouseOut}>
-        <button className="message-play-button" onClick={() => handleTextToSpeech(textMessage)}>
+      <div key={index} className="message-play-button-container">
+        <button className="message-play-button" onClick={() => handleAudioButtonClick(textMessage, index)}>
           {
             audioPaused ?
             <svg fill="#000000" width="16px" height="16px" viewBox="-10 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg">
@@ -2008,7 +2030,7 @@ const sendMessage = async () => {
       )}
 
       {/* LLM Chat UI (default) */}
-      {modelType === 'llm' && (
+      {(modelType === 'llm' || modelType === 'speech') && (
         <>
           <div
             className="chat-messages"

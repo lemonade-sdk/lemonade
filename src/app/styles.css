@@ -1840,15 +1840,6 @@ footer {
     padding: 4px 0;
 }
 
-.audio-button-visible {
-  transition: opacity 1000ms;
-  opacity: 1;
-}
-
-.audio-button-invisible {
-   opacity: 0;
-}
-
 .message-play-button-container {
     position: absolute;
     top: -8px;
