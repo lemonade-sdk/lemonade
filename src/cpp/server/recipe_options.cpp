@@ -49,9 +49,9 @@ static const json CLI_OPTIONS = {
     {"--sdcpp", {
         {"option_name", "sd-cpp_backend"},
         {"type_name", "BACKEND"},
-        {"allowed_values", {"cpu", "rocm"}},
+        {"allowed_values", {"cpu", "rocm", "vulkan"}},
         {"envname", "LEMONADE_SDCPP"},
-        {"help", "SD.cpp backend to use (cpu for CPU, rocm for AMD GPU)"}
+        {"help", "SD.cpp backend to use (cpu for CPU, rocm for AMD GPU, vulkan for cross-platform GPU)"}
     }},
     // ASR options
     {"--whispercpp", {
