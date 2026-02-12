@@ -974,7 +974,7 @@
         ],
         "size": 5.26
     },
-    "Qwen3-4B-VL-FLM": {
+    "Qwen3-VL-4B-Instruct-FLM": {
         "checkpoint": "qwen3vl-it:4b",
         "recipe": "flm",
         "suggested": true,
@@ -984,7 +984,7 @@
         ],
         "size": 3.85
     },
-    "Qwen3-0.6b-FLM": {
+    "Qwen3-0.6B-FLM": {
         "checkpoint": "qwen3:0.6b",
         "recipe": "flm",
         "suggested": true,
@@ -1141,7 +1141,7 @@
         "suggested": true,
         "size": 1.75
     },
-    "Qwen3-1.7b-FLM": {
+    "Qwen3-1.7B-FLM": {
         "checkpoint": "qwen3:1.7b",
         "recipe": "flm",
         "suggested": true,
@@ -1228,5 +1228,20 @@
             "speech"
         ],
         "size": 0.34
+    },
+    "Qwen2.5-3B-Instruct-FLM": {
+        "checkpoint": "qwen2.5-it:3b",
+        "recipe": "flm",
+        "suggested": true,
+        "size": 2.41
+    },
+    "Qwen2.5-VL-3B-Instruct-FLM": {
+        "checkpoint": "qwen2.5vl-it:3b",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": [
+            "vision"
+        ],
+        "size": 3.74
     }
 }
