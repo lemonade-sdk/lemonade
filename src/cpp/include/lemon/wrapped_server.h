@@ -113,11 +113,6 @@ public:
     // Install the backend server
     virtual void install(const std::string& backend = "") = 0;
 
-    // Download model files
-    virtual std::string download_model(const std::string& checkpoint,
-                                      const std::string& mmproj = "",
-                                      bool do_not_upgrade = false) = 0;
-
     // Load a model and start the server
     virtual void load(const std::string& model_name,
                      const ModelInfo& model_info,

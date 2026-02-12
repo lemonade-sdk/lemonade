@@ -21,11 +21,6 @@ public:
     // WrappedServer interface
     void install(const std::string& backend = "") override;
 
-    // Model operations - Note: RyzenAI-Server loads model at startup
-    std::string download_model(const std::string& checkpoint,
-                              const std::string& mmproj = "",
-                              bool do_not_upgrade = true) override;
-
     void load(const std::string& model_name,
              const ModelInfo& model_info,
              const RecipeOptions& options,

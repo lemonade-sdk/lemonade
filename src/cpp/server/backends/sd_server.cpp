@@ -18,15 +18,10 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-SDServer::SDServer(const std::string& log_level,
-                   ModelManager* model_manager,
-                   const std::string& backend)
-    : WrappedServer("sd-server", log_level, model_manager),
-      backend_(backend) {
-
+SDServer::SDServer(const std::string& log_level, ModelManager* model_manager)
+    : WrappedServer("sd-server", log_level, model_manager) {
     if (is_debug()) {
-        std::cout << "[SDServer] Created with log_level=" << log_level
-                  << ", backend=" << backend << std::endl;
+        std::cout << "[SDServer] Created with log_level=" << log_level << std::endl;
     }
 }
 
@@ -84,41 +79,6 @@ void SDServer::install(const std::string& backend) {
     BackendUtils::install_from_github(SPEC, expected_version, repo, filename, backend);
 }
 
-std::string SDServer::download_model(const std::string& checkpoint,
-                                     const std::string& /* mmproj */,
-                                     bool do_not_upgrade) {
-    if (!model_manager_) {
-        throw std::runtime_error("ModelManager not available for model download");
-    }
-
-    std::cout << "[SDServer] Downloading model: " << checkpoint << std::endl;
-
-    // Use ModelManager's download_model which handles HuggingFace downloads
-    model_manager_->download_model(
-        checkpoint,  // model_name
-        checkpoint,  // checkpoint
-        "sd-cpp",    // recipe
-        false,       // reasoning
-        false,       // vision
-        false,       // embedding
-        false,       // reranking
-        true,        // image
-        "",          // mmproj
-        do_not_upgrade
-    );
-
-    // Get the resolved path from model info
-    ModelInfo info = model_manager_->get_model_info(checkpoint);
-    std::string model_path = info.resolved_path;
-
-    if (model_path.empty()) {
-        throw std::runtime_error("Failed to download SD model: " + checkpoint);
-    }
-
-    std::cout << "[SDServer] Model downloaded to: " << model_path << std::endl;
-    return model_path;
-}
-
 void SDServer::load(const std::string& model_name,
                     const ModelInfo& model_info,
                     const RecipeOptions& options,
@@ -126,60 +86,18 @@ void SDServer::load(const std::string& model_name,
     std::cout << "[SDServer] Loading model: " << model_name << std::endl;
     std::cout << "[SDServer] Per-model settings: " << options.to_log_string() << std::endl;
 
-    // Read backend from effective options (same pattern as LlamaCpp/Whisper)
     std::string backend = options.get_option("sd-cpp_backend");
-    if (!backend.empty()) {
-        backend_ = backend;
-    }
 
-    // Install sd-server if needed (use per-model backend)
-    install(backend_);
+    // Install sd-server if needed
+    install(backend);
 
     // Get model path
-    std::string model_path = model_info.resolved_path;
+    std::string model_path = model_info.resolved_path("main");
+    std::string llm_path = model_info.resolved_path("text_encoder");
+    std::string vae_path = model_info.resolved_path("vae");
+
     if (model_path.empty()) {
-        throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint);
-    }
-
-    // For SD models, checkpoint format is "repo:filename" - find the actual file
-    std::string target_filename;
-    size_t colon_pos = model_info.checkpoint.find(':');
-    if (colon_pos != std::string::npos) {
-        target_filename = model_info.checkpoint.substr(colon_pos + 1);
-    }
-
-    // Navigate HuggingFace cache structure if needed
-    if (fs::is_directory(model_path)) {
-        if (!target_filename.empty()) {
-            std::cout << "[SDServer] Searching for " << target_filename << " in " << model_path << std::endl;
-        }
-
-        fs::path snapshots_dir = fs::path(model_path) / "snapshots";
-        if (fs::exists(snapshots_dir) && fs::is_directory(snapshots_dir)) {
-            for (const auto& snapshot_entry : fs::directory_iterator(snapshots_dir)) {
-                if (snapshot_entry.is_directory()) {
-                    if (!target_filename.empty()) {
-                        fs::path candidate = snapshot_entry.path() / target_filename;
-                        if (fs::exists(candidate) && fs::is_regular_file(candidate)) {
-                            model_path = candidate.string();
-                            break;
-                        }
-                    } else {
-                        // Search for any .safetensors file
-                        for (const auto& file_entry : fs::directory_iterator(snapshot_entry.path())) {
-                            if (file_entry.is_regular_file()) {
-                                std::string fname = file_entry.path().filename().string();
-                                if (fname.size() > 12 && fname.substr(fname.size() - 12) == ".safetensors") {
-                                    model_path = file_entry.path().string();
-                                    break;
-                                }
-                            }
-                        }
-                        if (!fs::is_directory(model_path)) break;
-                    }
-                }
-            }
-        }
+        throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint());
     }
 
     if (fs::is_directory(model_path)) {
@@ -191,10 +109,9 @@ void SDServer::load(const std::string& model_name,
     }
 
     std::cout << "[SDServer] Using model: " << model_path << std::endl;
-    model_path_ = model_path;
 
     // Get sd-server executable path
-    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, backend_);
+    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, backend);
 
     // Choose a port
     port_ = choose_port();
@@ -202,13 +119,24 @@ void SDServer::load(const std::string& model_name,
         throw std::runtime_error("Failed to find an available port");
     }
 
-    std::cout << "[SDServer] Starting server on port " << port_ << " (backend: " << backend_ << ")" << std::endl;
+    std::cout << "[SDServer] Starting server on port " << port_ << " (backend: " << backend << ")" << std::endl;
 
     // Build command line arguments
     std::vector<std::string> args = {
-        "-m", model_path_,
         "--listen-port", std::to_string(port_)
     };
+
+    if (llm_path.empty() || vae_path.empty()) {
+        args.push_back("-m");
+        args.push_back(model_path);
+    } else {
+        args.push_back("--diffusion-model");
+        args.push_back(model_path);
+        args.push_back("--llm");
+        args.push_back(llm_path);
+        args.push_back("--vae");
+        args.push_back(vae_path);
+    }
 
     if (is_debug()) {
         args.push_back("-v");
@@ -234,7 +162,7 @@ void SDServer::load(const std::string& model_name,
 #else
     // ROCm builds on Windows require hipblaslt.dll, rocblas.dll, amdhip64.dll, etc.
     // These DLLs are distributed alongside sd-server.exe but need PATH to be set for loading
-    if (backend_ == "rocm") {
+    if (backend == "rocm") {
         // Add executable directory to PATH for ROCm runtime DLLs
         // This allows the sd-server.exe to find required HIP/ROCm libraries at runtime
         std::string new_path = exe_dir.string();
@@ -279,7 +207,6 @@ void SDServer::unload() {
         utils::ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
         port_ = 0;
-        model_path_.clear();
     }
 }
 
