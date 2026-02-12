@@ -1,4 +1,4 @@
-## 🍋 Lemonade: Refreshingly fast local LLMs, image, and speech gen
+## 🍋 Lemonade: Refreshingly fast local LLMs, Image and Speech Generation
 
 <p align="center">
   <a href="https://discord.gg/5xXzkMu8Zk">
