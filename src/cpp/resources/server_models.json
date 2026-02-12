@@ -1141,7 +1141,7 @@
         "suggested": true,
         "size": 1.75
     },
-    "Qwen3-1.7b-FLM": {
+    "Qwen3-1.7B-FLM": {
         "checkpoint": "qwen3:1.7b",
         "recipe": "flm",
         "suggested": true,
