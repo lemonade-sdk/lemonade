@@ -1170,8 +1170,8 @@
         "image_defaults": {
             "steps": 4,
             "cfg_scale": 1.0,
-            "width": 256,
-            "height": 256
+            "width": 512,
+            "height": 512
         }
     },
     "SDXL-Turbo": {
@@ -1185,8 +1185,8 @@
         "image_defaults": {
             "steps": 4,
             "cfg_scale": 1.0,
-            "width": 256,
-            "height": 256
+            "width": 512,
+            "height": 512
         }
     },
     "SD-1.5": {
