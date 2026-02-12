@@ -32,9 +32,9 @@ interface Message {
   thinking?: string;
 }
 
-interface AudioButtonState {
+interface AudioButtonContext {
   buttonId: number;
-  isAudioPlaying: boolean;
+  isAudioPlaying: number;
 }
 
 interface ChatWindowProps {
@@ -116,10 +116,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
   // Text to speech state
-  const [audioPlayingState, setAudioPlayingState] = useState<AudioButtonState>({} as AudioButtonState);
+  const PAUSED = 0;
+  const LOADING = 1;
+  const PLAYING = 2;
+
+  const [audioButtonContent, setAudioButtonContext] = useState<AudioButtonContext>({} as AudioButtonContext);
   const [pressedAudioButton, setPressedAudioButton] = useState<number>(-1);
   const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
-  const [isAudioLoading, setAudioLoading] = useState<boolean>(false);
+
 
 
   // Image generation settings
@@ -288,10 +292,29 @@ useEffect(() => {
     setIsUserAtBottom(true);
   };
 
+const excludeTextToSpeechModel = (data: any) => {
+  const loadedModels = data.all_models_loaded;
+  const loadedModel = loadedModels.find((model: any) => model.model_name === data?.model_loaded);
+
+  let isTextToSpeechModel = (loadedModel.recipe === 'kokoro');
+
+  if(isTextToSpeechModel) {
+    for (const model of data.all_models_loaded) {
+      if (model.type === 'llm') {
+        data.model_loaded = model.model_name;
+        break;
+      }
+    }
+  }
+
+  return data;
+}
+
 const fetchLoadedModel = async () => {
   try {
     const response = await serverFetch('/health');
     const data = await response.json();
+    excludeTextToSpeechModel(data);
 
     if (data?.model_loaded) {
       setCurrentLoadedModel(data.model_loaded);
@@ -1020,8 +1043,8 @@ const sendMessage = async () => {
     if(currentAudio) {
       currentAudio.addEventListener('ended', () => {
         let audioState = stopAudio();
-        setAudioPlayingState({
-          ...audioPlayingState,
+        setAudioButtonContext({
+          ...audioButtonContent,
           isAudioPlaying: audioState
       });
       });
@@ -1032,13 +1055,30 @@ const sendMessage = async () => {
 
       currentAudio.play().catch(e => console.error("Playback prevented:", currentAudio));
     }
+
+    return () => {
+      currentAudio?.removeEventListener('ended', () => {
+        let audioState = stopAudio();
+        setAudioButtonContext({
+          ...audioButtonContent,
+          isAudioPlaying: audioState
+        });
+      });
+      currentAudio?.removeEventListener('error', () => {
+        console.log("Error playing audio");
+        stopAudio();
+      });
+    }
     
-  }, [currentAudio, audioPlayingState]);
+  }, [currentAudio, audioButtonContent]);
 
   const handleTextToSpeech = async (message: MessageContent) => {
     const textToSpeechModel = 'kokoro-v1';
 
-    setAudioLoading(true);
+    setAudioButtonContext({
+      ...audioButtonContent,
+      isAudioPlaying: LOADING
+    });
 
     if(message instanceof Array) {
       message = message.map(function(item) {return (item.type == "text") ? item.text : ''}).toString();
@@ -1064,22 +1104,20 @@ const sendMessage = async () => {
 
       const respBlob = await response.blob();
       const audioUrl = URL.createObjectURL(respBlob);
-      
-      setAudioLoading(false);
       playAudio(audioUrl);
-      return true;
+      return PLAYING;
     } catch(err: any) {
       console.log(`Error: ${err}`);
       setPressedAudioButton(-1);
-      return false;
+      return PAUSED;
     }
   }
 
   const playAudio = (audioUrl: string) => {
     setCurrentAudio(new Audio(audioUrl));
-    setAudioPlayingState({
-      ...audioPlayingState,
-      isAudioPlaying: true
+    setAudioButtonContext({
+      ...audioButtonContent,
+      isAudioPlaying: PLAYING
     });
   }
 
@@ -1094,17 +1132,17 @@ const sendMessage = async () => {
     }
 
     setPressedAudioButton(-1);
-    return false;
+    return PAUSED;
   }
 
   const handleAudioButtonClick = async (message: MessageContent, btnIndex: number) => {
     let b = pressedAudioButton;
-    let audioState: boolean;
+    let audioState: number;
 
     audioState = stopAudio();
 
-    setAudioPlayingState({
-      ...audioPlayingState,
+    setAudioButtonContext({
+      ...audioButtonContent,
       buttonId: btnIndex,
       isAudioPlaying: audioState
     });
@@ -1114,11 +1152,10 @@ const sendMessage = async () => {
     }
 
     setPressedAudioButton(btnIndex);
-
     audioState = await handleTextToSpeech(message);
 
-    setAudioPlayingState({
-      ...audioPlayingState,
+    setAudioButtonContext({
+      ...audioButtonContent,
       buttonId: btnIndex,
       isAudioPlaying: audioState
     });
@@ -1547,9 +1584,9 @@ const sendMessage = async () => {
   const AudioButton = ({ textMessage, index }: {textMessage: MessageContent, index: number}) => {
     return (
       <div key={index} className="message-play-button-container">
-        <button className="message-play-button" onClick={() => handleAudioButtonClick(textMessage, index)} disabled={isAudioLoading}>
+        <button className="message-play-button" onClick={() => handleAudioButtonClick(textMessage, index)} disabled={audioButtonContent.isAudioPlaying == LOADING}>
           {
-            isAudioLoading ? 
+            ((audioButtonContent.isAudioPlaying == LOADING) && pressedAudioButton == index) ? 
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18px" height="18px"  style={{opacity:1}}>
                 <circle cx="3" cy="9" r="2" fill="currentColor">
                   <animate id="SVG9IgbRbsl" attributeName="r" begin="0;SVGFUNpCWdG.end-0.35s" dur="0.95s" values="3;.2;3"/>
@@ -1562,7 +1599,7 @@ const sendMessage = async () => {
                 </circle>
               </svg>
             :
-            (audioPlayingState.isAudioPlaying && audioPlayingState.buttonId == index)  ?
+            ((audioButtonContent.isAudioPlaying == PLAYING) && audioButtonContent.buttonId == index)  ?
             <svg fill="#000000" width="18px" height="18px" viewBox="-11.5 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg">
               <path d="M8.2 22.48c-0.48 0-0.84-0.36-0.84-0.84v-11.28c0-0.48 0.36-0.84 0.84-0.84s0.84 0.36 0.84 0.84v11.32c0 0.44-0.36 0.8-0.84 0.8zM0.84 22.48c-0.48 0-0.84-0.36-0.84-0.84v-11.28c0-0.48 0.36-0.84 0.84-0.84s0.84 0.36 0.84 0.84v11.32c-0.040 0.44-0.36 0.8-0.84 0.8z"></path>
             </svg> : 
