@@ -436,7 +436,7 @@ jobs:
           # Stable Diffusion (CPU)
           - name: stable-diffusion (cpu)
             test_type: sd
-            backend: ""
+            backend: cpu
             runner: [rai300_400, Windows]
           # Stable Diffusion (ROCm)
           - name: stable-diffusion (rocm)
