@@ -116,7 +116,12 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 
     // stable-diffusion.cpp - ROCm backend for AMD GPUs
     {"sd-cpp", "rocm", {"windows", "linux"}, {
-        {"amd_igpu", {"gfx1150", "gfx1151"}},
+        {"amd_igpu", {
+#ifdef __linux__
+            "gfx1150",   // Strix Point - Linux only (ROCm not yet supported on Windows)
+#endif
+            "gfx1151"
+        }},
         {"amd_dgpu", {"gfx110X", "gfx120X"}},
     }},
 
