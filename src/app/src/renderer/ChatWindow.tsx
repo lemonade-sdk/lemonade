@@ -10,7 +10,6 @@ import {
 import { serverFetch } from './utils/serverConfig';
 import { downloadTracker } from './utils/downloadTracker';
 import { useModels, DEFAULT_MODEL_ID } from './hooks/useModels';
-import { Url } from 'url';
 
 interface ImageContent {
   type: 'image_url';
