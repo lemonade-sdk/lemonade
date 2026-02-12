@@ -7,6 +7,7 @@
   <link rel="icon" href="../assets/favicon.ico">
   <link rel="stylesheet" href="../assets/website-styles.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="../assets/navbar.js"></script>
   <script>
     // Define the article description once to avoid repetition
     const ARTICLE_DESCRIPTION = "Lemonade now supports OpenAI's gpt-oss models, bringing you the power to run these cutting-edge models locally on your own hardware!";
@@ -19,19 +20,7 @@
   <meta property="article:author" content="Daniel Holanda, Jeremy Fowers, Krishna Sivakumar, Victoria Godsoe">
 </head>
 <body>
-  <!-- Navbar -->
-  <nav class="navbar" id="navbar">
-    <div class="navbar-brand">
-      <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade</a></span>
-    </div>
-    <div class="navbar-links">
-      <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
-      <a href="../docs/">Docs</a>
-      <a href="../docs/server/server_models/">Models</a>
-      <a href="../docs/server/apps/">Featured Apps</a>
-      <a href="index.html">News</a>
-    </div>
-  </nav>
+  <div class="navbar-placeholder"></div>
 
   <!-- Article Content -->
   <main class="main">
@@ -295,6 +284,7 @@ lemonade-server pull gpt-oss-120b-GGUF</code></pre>
   <script>
     // Initialize footer with star count (uses ../ basePath)
     document.addEventListener('DOMContentLoaded', () => {
+      initializeNavbar('../');
       initializeFooter('../');
 
       // Populate meta tags and subtitle with the description
