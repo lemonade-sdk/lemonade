@@ -121,11 +121,18 @@ std::string SDServer::download_model(const std::string& checkpoint,
 
 void SDServer::load(const std::string& model_name,
                     const ModelInfo& model_info,
-                    const RecipeOptions& /* options */,
+                    const RecipeOptions& options,
                     bool /* do_not_upgrade */) {
     std::cout << "[SDServer] Loading model: " << model_name << std::endl;
+    std::cout << "[SDServer] Per-model settings: " << options.to_log_string() << std::endl;
 
-    // Install sd-server if needed
+    // Read backend from effective options (same pattern as LlamaCpp/Whisper)
+    std::string backend = options.get_option("sd-cpp_backend");
+    if (!backend.empty()) {
+        backend_ = backend;
+    }
+
+    // Install sd-server if needed (use per-model backend)
     install(backend_);
 
     // Get model path
@@ -236,7 +243,7 @@ void SDServer::load(const std::string& model_name,
             new_path = new_path + ";" + std::string(existing_path);
         }
         env_vars.push_back({"PATH", new_path});
-        
+
         std::cout << "[SDServer] ROCm backend: added " << exe_dir.string() << " to PATH" << std::endl;
     }
 #endif

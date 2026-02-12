@@ -133,6 +133,14 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
             const auto& result = backend_cache[recipe];
             std::string default_backend = result.backends.empty() ? "" : result.backends[0];
 
+            // Pre-populate storage with the dynamically detected default so it's
+            // available even when the user doesn't explicitly pass the flag.
+            // (add_option_function's callback only fires on explicit CLI input,
+            // and default_val only affects help text display.)
+            if (!default_backend.empty()) {
+                storage[opt_name] = default_backend;
+            }
+
             o = app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val(default_backend);
             o->check(CLI::IsMember(result.backends));

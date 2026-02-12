@@ -184,12 +184,13 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_supported": {
             "llamacpp": ["vulkan", "rocm", "cpu"],
             "whispercpp": ["npu", "cpu"],  # npu supported on XDNA2, cpu on x86_64
-            "sd-cpp": ["cpu", "rocm"],
+            "sd-cpp": ["cpu"],
             "flm": ["default"],
             "ryzenai-llm": ["default"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
+            "sd-cpp": ["rocm"],
         },
     },
     # Windows x86_64 with no AMD GPU (Intel/NVIDIA only)
