@@ -974,7 +974,7 @@
         ],
         "size": 5.26
     },
-    "Qwen3-VL-4B-FLM": {
+    "Qwen3-VL-4B-Instruct-FLM": {
         "checkpoint": "qwen3vl-it:4b",
         "recipe": "flm",
         "suggested": true,
@@ -1229,13 +1229,13 @@
         ],
         "size": 0.34
     },
-    "Qwen2.5-3B-FLM": {
+    "Qwen2.5-3B-Instruct-FLM": {
         "checkpoint": "qwen2.5-it:3b",
         "recipe": "flm",
         "suggested": true,
         "size": 2.41
     },
-    "Qwen2.5-VL-3B-FLM": {
+    "Qwen2.5-VL-3B-Instruct-FLM": {
         "checkpoint": "qwen2.5vl-it:3b",
         "recipe": "flm",
         "suggested": true,
