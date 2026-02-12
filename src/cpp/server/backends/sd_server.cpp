@@ -84,6 +84,7 @@ void SDServer::load(const std::string& model_name,
                     const RecipeOptions& options,
                     bool /* do_not_upgrade */) {
     std::cout << "[SDServer] Loading model: " << model_name << std::endl;
+    std::cout << "[SDServer] Per-model settings: " << options.to_log_string() << std::endl;
 
     std::string backend = options.get_option("sd-cpp_backend");
 

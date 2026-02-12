@@ -61,6 +61,7 @@ theme:
 # The order of the files in the list will determine the order they appear in the documentation
 nav:
   - Downloading and Getting Started: server/README.md
+  - Developer Getting Started: dev-getting-started.md
   - Supported Applications: server/apps/README.md
   - Application Guides:
       - AI Dev Gallery: server/apps/ai-dev-gallery.md
@@ -74,7 +75,6 @@ nav:
       - Wut: server/apps/wut.md
   - Lemonade Server CLI Guide: server/lemonade-server-cli.md
   - Understanding local LLM servers: server/concepts.md
-  - Models List: server/server_models.md
   - Server Spec: server/server_spec.md
   - Integration Guide: server/server_integration.md
   - FAQ Guide: faq.md

@@ -90,7 +90,7 @@ Lemonade supports **GGUF**, **FLM**, and **ONNX** models across CPU, GPU, and NP
 
 Use `lemonade-server pull` or the built-in **Model Manager** to download models. You can also import custom GGUF/ONNX models from Hugging Face.
 
-**[Browse all built-in models →](https://lemonade-server.ai/docs/server/server_models/)**
+**[Browse all built-in models →](https://lemonade-server.ai/models.html)**
 
 <br clear="right"/>
 
