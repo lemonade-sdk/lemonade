@@ -199,6 +199,18 @@ print(completion.choices[0].message.content)
 
 For more detailed integration instructions, see the [Integration Guide](./docs/server/server_integration.md).
 
+## Development Tools
+
+### Monitoring Self-Hosted Runners
+
+Check the status of Windows self-hosted GitHub Actions runners:
+
+```bash
+python scripts/check_windows_runners.py --token YOUR_GITHUB_TOKEN --repo lemonade-sdk/lemonade
+```
+
+This script shows which runners are online, busy, and what jobs they're currently executing. See [scripts/README.md](./scripts/README.md) for more details.
+
 ## FAQ
 
 To read our frequently asked questions, see our [FAQ Guide](./docs/faq.md)
