@@ -230,9 +230,9 @@ if [ ${#missing_packages[@]} -gt 0 ]; then
             fi
         elif command_exists pacman; then
             if is_root; then
-                install_cmd="pacman -Sy --noconfirm ${missing_packages[*]}"
+                install_cmd="pacman -Syu --needed --noconfirm ${missing_packages[*]}"
             else
-                install_cmd="sudo pacman -Sy --noconfirm ${missing_packages[*]}"
+                install_cmd="sudo pacman -Syu --needed --noconfirm ${missing_packages[*]}"
             fi
         elif command_exists dnf; then
             if is_root; then
@@ -279,7 +279,7 @@ if [ ${#missing_packages[@]} -gt 0 ]; then
                 maybe_sudo apt install -y ${other_packages[@]}
             fi
         elif command_exists pacman; then
-            maybe_sudo pacman -Sy --noconfirm ${missing_packages[@]}
+            maybe_sudo pacman -Syu --needed --noconfirm ${missing_packages[@]}
         elif command_exists dnf; then
             maybe_sudo dnf install -y ${missing_packages[@]}
         fi

@@ -596,9 +596,7 @@
         "checkpoint": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": [
-            "hot"
-        ],
+        "labels": [],
         "size": 2.5
     },
     "Qwen3-30B-A3B-GGUF": {
@@ -642,9 +640,7 @@
         "checkpoint": "unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": [
-            "hot"
-        ],
+        "labels": [],
         "size": 22.8
     },
     "Gemma-3-4b-it-GGUF": {
@@ -653,7 +649,6 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
-            "hot",
             "vision"
         ],
         "size": 3.61
@@ -669,6 +664,18 @@
         "recipe": "llamacpp",
         "suggested": true,
         "size": 0.731
+    },
+    "LFM2.5-1.2B-Instruct-GGUF": {
+        "checkpoint": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF:LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 0.731
+    },
+    "PromptBridge-0.6b-Alpha-GGUF": {
+        "checkpoint": "mradermacher/PromptBridge-0.6b-Alpha-GGUF:PromptBridge-0.6b-Alpha.Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": false,
+        "size": 0.397
     },
     "Jan-nano-128k-GGUF": {
         "checkpoint": "Menlo/Jan-nano-128k-gguf:jan-nano-128k-Q4_K_M.gguf",
@@ -720,6 +727,16 @@
         ],
         "size": 4.68
     },
+    "Qwen2.5-VL-3B-Instruct-GGUF": {
+        "checkpoint": "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF:Q4_K_M",
+        "mmproj": "mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision"
+        ],
+        "size": 3.27
+    },
     "Qwen3-VL-4B-Instruct-GGUF": {
         "checkpoint": "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M",
         "mmproj": "mmproj-Qwen3VL-4B-Instruct-F16.gguf",
@@ -744,9 +761,7 @@
         "checkpoint": "unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF:Qwen3-Next-80B-A3B-Instruct-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": [
-            "hot"
-        ],
+        "labels": [],
         "size": 45.1
     },
     "Llama-4-Scout-17B-16E-Instruct-GGUF": {
@@ -955,7 +970,6 @@
         "recipe": "flm",
         "suggested": true,
         "labels": [
-            "hot",
             "vision"
         ],
         "size": 5.26

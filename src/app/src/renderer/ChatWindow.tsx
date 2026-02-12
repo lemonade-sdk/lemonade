@@ -193,6 +193,11 @@ useEffect(() => {
     setCurrentLoadedModel(null);
   };
 
+  const handleModelLoadStart = (e: CustomEvent) => {
+    setSelectedModel(e.detail.modelId);
+  }
+
+  window.addEventListener('modelLoadStart' as any, handleModelLoadStart);
   window.addEventListener('modelLoadEnd' as any, handleModelLoadEnd);
   window.addEventListener('modelUnload' as any, handleModelUnload);
 
@@ -202,6 +207,7 @@ useEffect(() => {
   }, 5000);
 
   return () => {
+    window.removeEventListener('modelLoadStart' as any, handleModelLoadStart);
     window.removeEventListener('modelLoadEnd' as any, handleModelLoadEnd);
     window.removeEventListener('modelUnload' as any, handleModelUnload);
     clearInterval(healthCheckInterval);

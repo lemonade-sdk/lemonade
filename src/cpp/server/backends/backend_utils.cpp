@@ -139,8 +139,7 @@ namespace lemon::backends {
             return "";
         }
 
-        std::string backend_bin = std::string(backend_bin);
-
+        std::string backend_bin = std::string(backend_bin_env);
         return fs::exists(backend_bin) ? backend_bin : "";
     }
 
