@@ -230,13 +230,6 @@ void LlamaCppServer::install(const std::string& backend) {
     BackendUtils::install_from_github(SPEC, expected_version, repo, filename, backend);
 }
 
-std::string LlamaCppServer::download_model(const std::string& checkpoint,
-                                          const std::string& mmproj,
-                                          bool do_not_upgrade) {
-    // Model download is handled by ModelManager
-    return checkpoint;
-}
-
 void LlamaCppServer::load(const std::string& model_name,
                          const ModelInfo& model_info,
                          const RecipeOptions& options,
@@ -256,75 +249,15 @@ void LlamaCppServer::load(const std::string& model_name,
     install(llamacpp_backend);
 
     // Use pre-resolved GGUF path
-    std::string gguf_path = model_info.resolved_path;
+    std::string gguf_path = model_info.resolved_path();
     if (gguf_path.empty()) {
-        throw std::runtime_error("GGUF file not found for checkpoint: " + model_info.checkpoint);
+        throw std::runtime_error("GGUF file not found for checkpoint: " + model_info.checkpoint());
     }
 
     std::cout << "[LlamaCpp] Using GGUF: " << gguf_path << std::endl;
 
     // Get mmproj path for vision models
-    std::string mmproj_path;
-    if (!model_info.mmproj.empty()) {
-        fs::path search_path;
-
-        // For discovered models (from extra_models_dir), search in the model's directory
-        if (model_info.source == "extra_models_dir") {
-            // checkpoint is the directory path for discovered models
-            search_path = fs::path(model_info.checkpoint);
-            // If checkpoint is the GGUF file itself (standalone file), use its parent directory
-            if (!fs::is_directory(search_path)) {
-                search_path = search_path.parent_path();
-            }
-        } else {
-            // For HuggingFace models, use the HF cache directory
-            std::string repo_id = model_info.checkpoint;
-            size_t colon_pos = model_info.checkpoint.find(':');
-            if (colon_pos != std::string::npos) {
-                repo_id = model_info.checkpoint.substr(0, colon_pos);
-            }
-
-            // Convert org/model to models--org--model
-            std::string cache_dir_name = "models--";
-            for (char c : repo_id) {
-                cache_dir_name += (c == '/') ? "--" : std::string(1, c);
-            }
-
-            std::string hf_cache = model_manager_ ? model_manager_->get_hf_cache_dir() : "";
-            if (hf_cache.empty()) {
-                throw std::runtime_error("ModelManager not available for cache directory lookup");
-            }
-            search_path = fs::path(hf_cache) / cache_dir_name;
-        }
-
-        // Search for mmproj file
-        std::cout << "[LlamaCpp] Searching for mmproj '" << model_info.mmproj
-                  << "' in: " << search_path << std::endl;
-
-        if (fs::exists(search_path)) {
-            try {
-                for (const auto& entry : fs::recursive_directory_iterator(search_path)) {
-                    if (entry.is_regular_file()) {
-                        std::string filename = entry.path().filename().string();
-                        if (filename == model_info.mmproj) {
-                            mmproj_path = entry.path().string();
-                            std::cout << "[LlamaCpp] Found mmproj file: " << mmproj_path << std::endl;
-                            break;
-                        }
-                    }
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "[LlamaCpp] Error during mmproj search: " << e.what() << std::endl;
-            }
-        } else {
-            std::cout << "[LlamaCpp] Search path does not exist: " << search_path << std::endl;
-        }
-
-        if (mmproj_path.empty()) {
-            std::cout << "[LlamaCpp] Warning: mmproj file '" << model_info.mmproj
-                      << "' not found in cache" << std::endl;
-        }
-    }
+    std::string mmproj_path = model_info.resolved_path("mmproj");
 
     // Choose port
     port_ = choose_port();
