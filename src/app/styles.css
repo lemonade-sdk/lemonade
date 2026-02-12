@@ -1842,23 +1842,31 @@ footer {
 
 .message-play-button-container {
     position: absolute;
-    top: -8px;
+    bottom: -8px;
     right: -8px;
     z-index: 22;
 }
 
 .message-play-button {
     background-color: #ffffff;
-    border: solid #000000 1px;
-    border-radius: 28px;
-    width: 20px;
-    height: 20px;
+    border: none;
+    border-radius: 6px;
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    min-height: 22px;
     display: flex;
     flex-direction: column;
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(40px);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.message-play-button:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
 }
 
 .chat-input-container {
