@@ -538,6 +538,11 @@ jobs:
             test_type: llm
             backend: rocm
             runner: [stx-halo, Linux]
+          # Stable Diffusion (ROCm)
+          - name: stable-diffusion (rocm)
+            test_type: sd
+            backend: rocm
+            runner: [stx-halo, Linux]
           # Stable Diffusion (CPU)
           - name: stable-diffusion (cpu)
             test_type: sd

@@ -13,8 +13,8 @@
     "npu": "v1.8.2"
   },
   "sd-cpp": {
-    "cpu": "master-471-7010bb4",
-    "rocm": "master-487-43e829f"
+    "cpu": "master-506-1f30df9",
+    "rocm": "master-506-1f30df9"
   },
   "ryzenai-server": "v1.7.0",
   "flm": {
