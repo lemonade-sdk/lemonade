@@ -119,6 +119,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [audioPlayingState, setAudioPlayingState] = useState<AudioButtonState>({} as AudioButtonState);
   const [pressedAudioButton, setPressedAudioButton] = useState<number>(-1);
   const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
+  const [isAudioLoading, setAudioLoading] = useState<boolean>(false);
 
 
   // Image generation settings
@@ -1037,6 +1038,8 @@ const sendMessage = async () => {
   const handleTextToSpeech = async (message: MessageContent) => {
     const textToSpeechModel = 'kokoro-v1';
 
+    setAudioLoading(true);
+
     if(message instanceof Array) {
       message = message.map(function(item) {return (item.type == "text") ? item.text : ''}).toString();
     }
@@ -1062,6 +1065,7 @@ const sendMessage = async () => {
       const respBlob = await response.blob();
       const audioUrl = URL.createObjectURL(respBlob);
       
+      setAudioLoading(false);
       playAudio(audioUrl);
       return true;
     } catch(err: any) {
@@ -1543,8 +1547,21 @@ const sendMessage = async () => {
   const AudioButton = ({ textMessage, index }: {textMessage: MessageContent, index: number}) => {
     return (
       <div key={index} className="message-play-button-container">
-        <button className="message-play-button" onClick={() => handleAudioButtonClick(textMessage, index)}>
+        <button className="message-play-button" onClick={() => handleAudioButtonClick(textMessage, index)} disabled={isAudioLoading}>
           {
+            isAudioLoading ? 
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18px" height="18px"  style={{opacity:1}}>
+                <circle cx="3" cy="9" r="2" fill="currentColor">
+                  <animate id="SVG9IgbRbsl" attributeName="r" begin="0;SVGFUNpCWdG.end-0.35s" dur="0.95s" values="3;.2;3"/>
+                </circle>
+                <circle cx="9" cy="9" r="2" fill="currentColor">
+                  <animate attributeName="r" begin="SVG9IgbRbsl.end-0.7s" dur="0.95s" values="3;.2;3"/>
+                </circle>
+                <circle cx="16" cy="9" r="2" fill="currentColor">
+                  <animate id="SVGFUNpCWdG" attributeName="r" begin="SVG9IgbRbsl.end-0.55s" dur="0.95s" values="3;.2;3"/>
+                </circle>
+              </svg>
+            :
             (audioPlayingState.isAudioPlaying && audioPlayingState.buttonId == index)  ?
             <svg fill="#000000" width="18px" height="18px" viewBox="-11.5 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg">
               <path d="M8.2 22.48c-0.48 0-0.84-0.36-0.84-0.84v-11.28c0-0.48 0.36-0.84 0.84-0.84s0.84 0.36 0.84 0.84v11.32c0 0.44-0.36 0.8-0.84 0.8zM0.84 22.48c-0.48 0-0.84-0.36-0.84-0.84v-11.28c0-0.48 0.36-0.84 0.84-0.84s0.84 0.36 0.84 0.84v11.32c-0.040 0.44-0.36 0.8-0.84 0.8z"></path>
