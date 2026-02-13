@@ -26,10 +26,6 @@ public:
 
     void install(const std::string& backend = "") override;
 
-    std::string download_model(const std::string& checkpoint,
-                              const std::string& mmproj = "",
-                              bool do_not_upgrade = false) override;
-
     void load(const std::string& model_name,
              const ModelInfo& model_info,
              const RecipeOptions& options,

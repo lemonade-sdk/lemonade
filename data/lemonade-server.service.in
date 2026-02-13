@@ -13,6 +13,7 @@ ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/lemonade-server serve
 Restart=on-failure
 RestartSec=5s
 KillSignal=SIGINT
+LimitMEMLOCK=infinity
 
 # Security hardening
 PrivateTmp=yes

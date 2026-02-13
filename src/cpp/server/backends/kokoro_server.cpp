@@ -53,42 +53,6 @@ void KokoroServer::install(const std::string& backend) {
     BackendUtils::install_from_github(SPEC, expected_version, repo, filename, backend);
 }
 
-std::string KokoroServer::download_model(const std::string& checkpoint, const std::string& mmproj, bool do_not_upgrade) {
-    // Download .bin file from Hugging Face using ModelManager
-    if (!model_manager_) {
-        throw std::runtime_error("ModelManager not available for model download");
-    }
-
-    std::cout << "[KokoroServer] Downloading model from: " << checkpoint << std::endl;
-
-    // Use ModelManager's download_model which handles HuggingFace downloads
-    // The download is triggered through the model registry system
-    // Model path will be resolved via ModelInfo.resolved_path
-    model_manager_->download_model(
-        checkpoint,  // model_name
-        checkpoint,  // checkpoint
-        "kokoro",    // recipe
-        false,       // reasoning
-        false,       // vision
-        false,       // embedding
-        false,       // reranking
-        false,       // image
-        "",          // mmproj
-        do_not_upgrade
-    );
-
-    // Get the resolved path from model info
-    ModelInfo info = model_manager_->get_model_info(checkpoint);
-    std::string model_path = info.resolved_path;
-
-    if (model_path.empty() || !fs::exists(model_path)) {
-        throw std::runtime_error("Failed to download Kokoro model: " + checkpoint);
-    }
-
-    std::cout << "[KokoroServer] Model downloaded to: " << model_path << std::endl;
-    return model_path;
-}
-
 void KokoroServer::load(const std::string& model_name, const ModelInfo& model_info, const RecipeOptions& options, bool do_not_upgrade) {
     std::cout << "[KokoroServer] Loading model: " << model_name << std::endl;
 
@@ -96,9 +60,9 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     install("cpu");
 
     // Use pre-resolved model path
-    fs::path model_path = fs::path(model_info.resolved_path);
+    fs::path model_path = fs::path(model_info.resolved_path());
     if (model_path.empty() || !fs::exists(model_path)) {
-        throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint);
+        throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint());
     }
 
     json model_index;

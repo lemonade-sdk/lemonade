@@ -15,18 +15,15 @@
 namespace lemon {
 
 Router::Router(const json& default_options, const std::string& log_level, ModelManager* model_manager,
-               int max_llm_models, int max_embedding_models, int max_reranking_models,
-               int max_audio_models, int max_image_models)
+               int max_loaded_models)
     : default_options_(default_options), log_level_(log_level), model_manager_(model_manager),
-      max_llm_models_(max_llm_models), max_embedding_models_(max_embedding_models),
-      max_reranking_models_(max_reranking_models), max_audio_models_(max_audio_models),
-      max_image_models_(max_image_models) {
+      max_loaded_models_(max_loaded_models) {
 
-    std::cout << "[Router] Multi-model limits: LLM=" << max_llm_models_
-              << ", Embedding=" << max_embedding_models_
-              << ", Reranking=" << max_reranking_models_
-              << ", Audio=" << max_audio_models_
-              << ", Image=" << max_image_models_ << std::endl;
+    if (max_loaded_models_ == -1) {
+        std::cout << "[Router] Max loaded models per type: unlimited" << std::endl;
+    } else {
+        std::cout << "[Router] Max loaded models per type: " << max_loaded_models_ << std::endl;
+    }
 }
 
 Router::~Router() {
@@ -160,20 +157,15 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
         std::cout << "[Router] Creating Kokoro backend" << std::endl;
         new_server = std::make_unique<backends::KokoroServer>(log_level_, model_manager_);
     } else if (model_info.recipe == "sd-cpp") {
-        // Pass sd-cpp_backend from default_options_ to SDServer
-        std::string backend = "cpu";  // default
-        if (default_options_.contains("sd-cpp_backend") && default_options_["sd-cpp_backend"].is_string()) {
-            backend = default_options_["sd-cpp_backend"].get<std::string>();
-        }
-        std::cout << "[Router] Creating SDServer backend (backend: " << backend << ")" << std::endl;
-        new_server = std::make_unique<backends::SDServer>(log_level_, model_manager_, backend);
+        std::cout << "[Router] Creating SDServer backend" << std::endl;
+        new_server = std::make_unique<backends::SDServer>(log_level_, model_manager_);
     } else if (model_info.recipe == "flm") {
         std::cout << "[Router] Creating FastFlowLM backend" << std::endl;
         new_server = std::make_unique<backends::FastFlowLMServer>(log_level_, model_manager_);
     } else if (model_info.recipe == "ryzenai-llm") {
         std::cout << "[Router] Creating RyzenAI-Server backend" << std::endl;
 
-        std::string model_path = model_info.resolved_path;
+        std::string model_path = model_info.resolved_path();
         std::cout << "[Router] Using model path: " << model_path << std::endl;
 
         auto* ryzenai_server = new RyzenAIServer(model_info.model_name,
@@ -211,7 +203,7 @@ void Router::load_model(const std::string& model_name,
     is_loading_ = true;
 
     std::cout << "[Router] Loading model: " << model_name
-              << " (checkpoint: " << model_info.checkpoint
+              << " (checkpoint: " << model_info.checkpoint()
               << ", recipe: " << model_info.recipe
               << ", type: " << model_type_to_string(model_info.type)
               << ", device: " << device_type_to_string(model_info.device) << ")" << std::endl;
@@ -231,25 +223,8 @@ void Router::load_model(const std::string& model_name,
         ModelType model_type = model_info.type;
         DeviceType device_type = model_info.device;
 
-        // Get max models for this type
-        int max_models = 0;
-        switch (model_type) {
-            case ModelType::LLM:
-                max_models = max_llm_models_;
-                break;
-            case ModelType::EMBEDDING:
-                max_models = max_embedding_models_;
-                break;
-            case ModelType::RERANKING:
-                max_models = max_reranking_models_;
-                break;
-            case ModelType::AUDIO:
-                max_models = max_audio_models_;
-                break;
-            case ModelType::IMAGE:
-                max_models = max_image_models_;
-                break;
-        }
+        // Get max models for this type (same limit for all types)
+        int max_models = max_loaded_models_;
 
         // NPU EXCLUSIVITY CHECK (from spec: Additional NPU Rules)
         if (device_type & DEVICE_NPU) {
@@ -262,8 +237,9 @@ void Router::load_model(const std::string& model_name,
         }
 
         // LRU EVICTION CHECK (from spec: Least Recently Used Cache)
+        // Skip eviction if unlimited (-1)
         int current_count = count_servers_by_type(model_type);
-        if (current_count >= max_models) {
+        if (max_models != -1 && current_count >= max_models) {
             WrappedServer* lru = find_lru_server_by_type(model_type);
             if (lru) {
                 std::cout << "[Router] Slot limit reached for type "
@@ -277,7 +253,7 @@ void Router::load_model(const std::string& model_name,
         std::unique_ptr<WrappedServer> new_server = create_backend_server(model_info);
 
         // Set model metadata
-        new_server->set_model_metadata(model_name, model_info.checkpoint, model_type, device_type, effective_options);
+        new_server->set_model_metadata(model_name, model_info.checkpoint(), model_type, device_type, effective_options);
         new_server->update_access_time();
 
         // CRITICAL: Release lock before slow backend startup
@@ -345,7 +321,7 @@ void Router::load_model(const std::string& model_name,
 
             // Create new server for retry
             std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
-            retry_server->set_model_metadata(model_name, model_info.checkpoint, model_type, device_type, effective_options);
+            retry_server->set_model_metadata(model_name, model_info.checkpoint(), model_type, device_type, effective_options);
             retry_server->update_access_time();
 
             // Release lock for retry
@@ -449,9 +425,11 @@ json Router::get_all_loaded_models() const {
 
 json Router::get_max_model_limits() const {
     return {
-        {"llm", max_llm_models_},
-        {"embedding", max_embedding_models_},
-        {"reranking", max_reranking_models_}
+        {"llm", max_loaded_models_},
+        {"embedding", max_loaded_models_},
+        {"reranking", max_loaded_models_},
+        {"audio", max_loaded_models_},
+        {"image", max_loaded_models_}
     };
 }
 

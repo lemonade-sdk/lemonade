@@ -19,11 +19,7 @@ public:
     Router(const json& default_options = json::object(),
            const std::string& log_level = "info",
            ModelManager* model_manager = nullptr,
-           int max_llm_models = 1,
-           int max_embedding_models = 1,
-           int max_reranking_models = 1,
-           int max_audio_models = 1,
-           int max_image_models = 1);
+           int max_loaded_models = 1);
 
     ~Router();
 
@@ -97,12 +93,8 @@ private:
     std::string log_level_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
 
-    // Multi-model limits by type
-    int max_llm_models_;
-    int max_embedding_models_;
-    int max_reranking_models_;
-    int max_audio_models_;
-    int max_image_models_;
+    // Multi-model limit (applies to each type slot)
+    int max_loaded_models_;
 
     // Concurrency control for load operations
     mutable std::mutex load_mutex_;              // Protects loading state and loaded_servers_
