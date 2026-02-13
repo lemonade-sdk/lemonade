@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MarkdownMessage from './MarkdownMessage';
+import AudioButton, { LOADING, PAUSED, PLAYING } from './AudioButton'
 // @ts-ignore - SVG assets live outside of the TypeScript rootDir for Electron packaging
 import logoSvg from '../../assets/logo.svg';
 import {
@@ -29,11 +30,6 @@ interface Message {
   role: 'user' | 'assistant';
   content: MessageContent;
   thinking?: string;
-}
-
-interface AudioButtonContext {
-  buttonId: number;
-  isAudioPlaying: number;
 }
 
 interface ChatWindowProps {
@@ -115,15 +111,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
   // Text to speech state
-  const PAUSED = 0;
-  const LOADING = 1;
-  const PLAYING = 2;
-
-  const [audioButtonContent, setAudioButtonContext] = useState<AudioButtonContext>({} as AudioButtonContext);
+  const [audioState, setAudioState] = useState<number>(0);
   const [pressedAudioButton, setPressedAudioButton] = useState<number>(-1);
   const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
-
-
 
   // Image generation settings
   interface ImageSettings {
@@ -300,8 +290,8 @@ useEffect(() => {
 const excludeTextToSpeechModel = (data: any) => {
   const loadedModels = data.all_models_loaded;
   const loadedModel = loadedModels.find((model: any) => model.model_name === data?.model_loaded);
-
-  let isTextToSpeechModel = (loadedModel.recipe === 'kokoro');
+  
+  let isTextToSpeechModel = (loadedModel?.recipe === 'kokoro');
 
   if(isTextToSpeechModel) {
     for (const model of data.all_models_loaded) {
@@ -1046,44 +1036,41 @@ const sendMessage = async () => {
   // Handle text to sreech conversion using Kokoro
   useEffect(() => {
     if(currentAudio) {
-      currentAudio.addEventListener('ended', () => {
-        let audioState = stopAudio();
-        setAudioButtonContext({
-          ...audioButtonContent,
-          isAudioPlaying: audioState
-      });
-      });
-      currentAudio.addEventListener('error', () => {
-        console.log("Error playing audio");
-        stopAudio();
-      });
+      currentAudio.addEventListener('ended', stopAudio);
+      currentAudio.addEventListener('error', stopAudio);
 
       currentAudio.play().catch(e => console.error("Playback prevented:", currentAudio));
     }
 
     return () => {
-      currentAudio?.removeEventListener('ended', () => {
-        let audioState = stopAudio();
-        setAudioButtonContext({
-          ...audioButtonContent,
-          isAudioPlaying: audioState
-        });
-      });
-      currentAudio?.removeEventListener('error', () => {
-        console.log("Error playing audio");
-        stopAudio();
-      });
+      currentAudio?.removeEventListener('ended', stopAudio);
+      currentAudio?.removeEventListener('error', stopAudio);
     }
-    
-  }, [currentAudio, audioButtonContent]);
+  }, [currentAudio, audioState]);
+
+  const playAudio = (audioUrl: string) => {
+    setCurrentAudio(new Audio(audioUrl));
+    setAudioState(PLAYING);
+  }
+
+  const stopAudio = () => {
+    if (currentAudio) {
+      currentAudio.pause();
+      if (currentAudio.src.startsWith('blob:')) {
+        URL.revokeObjectURL(currentAudio.src);
+      }
+        
+      setCurrentAudio(null);
+    }
+
+    setPressedAudioButton(-1);
+    setAudioState(PAUSED);
+  }
 
   const handleTextToSpeech = async (message: MessageContent) => {
     const textToSpeechModel = 'kokoro-v1';
 
-    setAudioButtonContext({
-      ...audioButtonContent,
-      isAudioPlaying: LOADING
-    });
+    setAudioState(LOADING);
 
     if(message instanceof Array) {
       message = message.map(function(item) {return (item.type == "text") ? item.text : ''}).toString();
@@ -1110,60 +1097,24 @@ const sendMessage = async () => {
       const respBlob = await response.blob();
       const audioUrl = URL.createObjectURL(respBlob);
       playAudio(audioUrl);
-      return PLAYING;
+      setAudioState(PLAYING);
     } catch(err: any) {
       console.log(`Error: ${err}`);
-      setPressedAudioButton(-1);
-      return PAUSED;
+      stopAudio();
     }
-  }
-
-  const playAudio = (audioUrl: string) => {
-    setCurrentAudio(new Audio(audioUrl));
-    setAudioButtonContext({
-      ...audioButtonContent,
-      isAudioPlaying: PLAYING
-    });
-  }
-
-  const stopAudio = () => {
-    if (currentAudio) {
-      currentAudio.pause();
-      if (currentAudio.src.startsWith('blob:')) {
-        URL.revokeObjectURL(currentAudio.src);
-      }
-        
-      setCurrentAudio(null);
-    }
-
-    setPressedAudioButton(-1);
-    return PAUSED;
   }
 
   const handleAudioButtonClick = async (message: MessageContent, btnIndex: number) => {
     let b = pressedAudioButton;
-    let audioState: number;
 
-    audioState = stopAudio();
-
-    setAudioButtonContext({
-      ...audioButtonContent,
-      buttonId: btnIndex,
-      isAudioPlaying: audioState
-    });
+    stopAudio();
 
     if (b === btnIndex) {
       return;
     }
 
     setPressedAudioButton(btnIndex);
-    audioState = await handleTextToSpeech(message);
-
-    setAudioButtonContext({
-      ...audioButtonContent,
-      buttonId: btnIndex,
-      isAudioPlaying: audioState
-    });
+    await handleTextToSpeech(message);
   }
 
   const submitEdit = async () => {
@@ -1585,37 +1536,6 @@ const sendMessage = async () => {
       <span></span>
     </div>
   );
-
-  const AudioButton = ({ textMessage, index }: {textMessage: MessageContent, index: number}) => {
-    return (
-      <div key={index} className="message-play-button-container">
-        <button className="message-play-button" onClick={() => handleAudioButtonClick(textMessage, index)} disabled={audioButtonContent.isAudioPlaying == LOADING}>
-          {
-            ((audioButtonContent.isAudioPlaying == LOADING) && pressedAudioButton == index) ? 
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18px" height="18px"  style={{opacity:1}}>
-                <circle cx="3" cy="9" r="2" fill="currentColor">
-                  <animate id="SVG9IgbRbsl" attributeName="r" begin="0;SVGFUNpCWdG.end-0.35s" dur="0.95s" values="3;.2;3"/>
-                </circle>
-                <circle cx="9" cy="9" r="2" fill="currentColor">
-                  <animate attributeName="r" begin="SVG9IgbRbsl.end-0.7s" dur="0.95s" values="3;.2;3"/>
-                </circle>
-                <circle cx="16" cy="9" r="2" fill="currentColor">
-                  <animate id="SVGFUNpCWdG" attributeName="r" begin="SVG9IgbRbsl.end-0.55s" dur="0.95s" values="3;.2;3"/>
-                </circle>
-              </svg>
-            :
-            ((audioButtonContent.isAudioPlaying == PLAYING) && audioButtonContent.buttonId == index)  ?
-            <svg fill="#000000" width="18px" height="18px" viewBox="-11.5 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg">
-              <path d="M8.2 22.48c-0.48 0-0.84-0.36-0.84-0.84v-11.28c0-0.48 0.36-0.84 0.84-0.84s0.84 0.36 0.84 0.84v11.32c0 0.44-0.36 0.8-0.84 0.8zM0.84 22.48c-0.48 0-0.84-0.36-0.84-0.84v-11.28c0-0.48 0.36-0.84 0.84-0.84s0.84 0.36 0.84 0.84v11.32c-0.040 0.44-0.36 0.8-0.84 0.8z"></path>
-            </svg> : 
-            <svg fill="#000000" width="18px" height="18px" viewBox="-3.5 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg">
-              <path d="M13.16 25.46c-0.16 0-0.28-0.040-0.4-0.12l-7.52-4.32h-2.6c-1.44 0-2.64-1.16-2.64-2.6v-4.8c0-1.44 1.2-2.64 2.64-2.64h2.6l7.52-4.32c0.12-0.080 0.28-0.12 0.4-0.12 1.44 0 2.64 1.2 2.64 2.64v13.6c0 1.48-1.16 2.68-2.64 2.68zM2.64 12.66c-0.52 0-0.96 0.44-0.96 0.96v4.8c0 0.52 0.44 0.96 0.96 0.96h2.84c0.16 0 0.28 0.040 0.4 0.12l7.48 4.28c0.44-0.080 0.76-0.48 0.76-0.92v-13.64c0-0.48-0.32-0.84-0.76-0.92l-7.48 4.28c-0.12 0.080-0.28 0.12-0.4 0.12l-2.84-0.040zM18.64 21.297c-0.16 0-0.32-0.040-0.48-0.16-0.4-0.24-0.48-0.8-0.24-1.16 0.8-1.16 1.2-2.52 1.2-3.92 0-1.44-0.44-2.84-1.28-4.040-0.28-0.36-0.16-0.92 0.2-1.16 0.36-0.28 0.92-0.16 1.16 0.2 1.040 1.48 1.56 3.2 1.56 5 0 1.76-0.52 3.44-1.48 4.88-0.080 0.24-0.36 0.36-0.64 0.36zM22.28 23.042c-0.16 0-0.28-0.040-0.44-0.12-0.4-0.24-0.52-0.76-0.28-1.16 1.040-1.72 1.6-3.72 1.6-5.76s-0.56-4.040-1.6-5.76c-0.24-0.4-0.12-0.92 0.28-1.16s0.92-0.12 1.16 0.28c1.2 2 1.84 4.28 1.84 6.64s-0.64 4.64-1.84 6.64c-0.16 0.24-0.44 0.4-0.72 0.4z"></path>
-            </svg>
-            }
-          </button>
-      </div>
-    );
-}
 
   // Build the list of models for the dropdown
   const dropdownModels = isDefaultModelPending
@@ -2146,7 +2066,7 @@ const sendMessage = async () => {
                     message.role === 'user' && !isLoading ? 'editable' : ''
                   } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''}`}
                   >
-                  <AudioButton textMessage={message.content} index={index} />
+                  <AudioButton textMessage={message.content} buttonIndex={index} onClickFunction={handleAudioButtonClick} buttonContext={{buttonId: pressedAudioButton, audioState: audioState}} />
                   {editingIndex === index ? (
                     <div className="edit-message-wrapper" onClick={handleEditContainerClick}>
                       {editingImages.length > 0 && (
