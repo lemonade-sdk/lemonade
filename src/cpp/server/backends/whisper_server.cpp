@@ -213,12 +213,34 @@ void WhisperServer::load(const std::string& model_name,
 
     // Note: whisper-server doesn't support --debug flag
 
+    // Set up environment variables for shared library loading
+    std::vector<std::pair<std::string, std::string>> env_vars;
+    fs::path exe_dir = fs::path(exe_path).parent_path();
+
+#ifndef _WIN32
+    // For Linux, set LD_LIBRARY_PATH to include executable directory
+    // This allows whisper-server to find libwhisper.so.1
+    std::string lib_path = exe_dir.string();
+
+    const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+    if (existing_ld_path && strlen(existing_ld_path) > 0) {
+        lib_path = lib_path + ":" + std::string(existing_ld_path);
+    }
+
+    env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+    if (is_debug()) {
+        std::cout << "[WhisperServer] Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+    }
+#endif
+
     // Launch the subprocess
     process_handle_ = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",     // working_dir (empty = current)
-        is_debug()  // inherit_output
+        is_debug(),  // inherit_output
+        false,  // filter_health_logs
+        env_vars
     );
 
     if (process_handle_.pid == 0) {
