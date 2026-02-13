@@ -652,15 +652,28 @@ endif()
 # Resources
 # ============================================================
 
-# Copy resources to the build directory during configuration
 # Resources are self-contained in src/cpp/resources/:
 #   - static/index.html, static/favicon.ico (web UI)
 #   - server_models.json (model registry)
 #   - backend_versions.json (backend version configuration)
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/
-     DESTINATION ${CMAKE_BINARY_DIR}/resources)
 
-# Copy resources to the runtime directoriy after build
+# Collect resource files for dependency tracking
+file(GLOB_RECURSE RESOURCE_FILES
+    CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/*"
+)
+
+# Copy resources to the build directory as part of the build process
+# This ensures that changes to resource files are detected and copied
+add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources
+        ${CMAKE_BINARY_DIR}/resources
+    DEPENDS ${RESOURCE_FILES}
+    COMMENT "Copying resources to build directory"
+)
+
+# Copy resources to the runtime directory after build
 add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_BINARY_DIR}/resources
