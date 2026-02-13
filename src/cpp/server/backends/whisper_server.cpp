@@ -69,14 +69,15 @@ void WhisperServer::install(const std::string& backend) {
         std::cout << "[WhisperServer] Using NPU backend" << std::endl;
 
     } else if (backend == "cpu") {
-        // CPU-only builds from ggml-org/whisper.cpp
-        repo = "ggml-org/whisper.cpp";
-
 #ifdef _WIN32
+        repo = "ggml-org/whisper.cpp";
         filename = "whisper-bin-x64.zip";
 #elif defined(__linux__)
-        filename = "whisper-bin-x64.zip";
+        repo = "lemonade-sdk/whisper.cpp-npu";
+        filename = "whisper-" + expected_version + "-linux-cpu-x86_64.tar.gz";
 #elif defined(__APPLE__)
+        // CPU-only builds from ggml-org/whisper.cpp
+        repo = "ggml-org/whisper.cpp";
         filename = "whisper-bin-arm64.zip";
 #else
         throw std::runtime_error("Unsupported platform for whisper.cpp");
