@@ -1,0 +1,171 @@
+name: 'Build macOS .dmg Package'
+description: 'Build Lemonade .dmg for macOS (signed and notarized via CMake notarize target)'
+inputs:
+  include-electron:
+    description: 'Whether to include the Electron app (full build)'
+    required: false
+    default: 'true'
+outputs:
+  artifact-name:
+    description: 'The name of the generated .dmg file'
+    value: ${{ steps.build-dmg.outputs.artifact_name }}
+runs:
+  using: "composite"
+  steps:
+    - name: Run setup.sh to configure environment
+      shell: bash
+      run: |
+        set -e
+
+        echo "Running setup.sh to configure build environment..."
+        bash setup.sh
+
+        echo "Build environment configured successfully!"
+
+    - name: Setup Node.js
+      if: inputs.include-electron == 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Set Electron signing identity
+      shell: bash
+      run: |
+        # Tell electron-builder to use the Developer ID Application cert from keychain
+        if [ -n "$DEVELOPER_ID_APPLICATION_IDENTITY" ]; then
+            echo "CSC_NAME=$DEVELOPER_ID_APPLICATION_IDENTITY" >> $GITHUB_ENV
+            # electron-builder skips signing on PR branches by default
+            echo "CSC_FOR_PULL_REQUEST=true" >> $GITHUB_ENV
+            echo "Electron builder will sign with: $DEVELOPER_ID_APPLICATION_IDENTITY"
+        else
+            echo "WARNING: No signing identity found, electron-builder will not sign"
+        fi
+
+    - name: Build C++ Server with CMake
+      shell: bash
+      run: |
+        set -e
+
+        echo "Building lemonade-router and lemonade-server for macOS..."
+
+        # Reconfigure if Electron app is included (setup.sh already did basic config)
+        if [ "${{ inputs.include-electron }}" == "true" ]; then
+            echo "Reconfiguring CMake with Electron app enabled..."
+            cmake --preset default -DBUILD_ELECTRON_APP=ON
+        fi
+
+        # Build (BUILD_ELECTRON_APP will trigger electron build automatically)
+        echo "Building binaries..."
+        cmake --build --preset default
+
+        # Verify binaries exist
+        if [ ! -f "build/lemonade-router" ]; then
+            echo "ERROR: lemonade-router not found!"
+            echo "Build directory contents:"
+            ls -lh build/
+            exit 1
+        fi
+
+        if [ ! -f "build/lemonade-server" ]; then
+            echo "ERROR: lemonade-server not found!"
+            echo "Build directory contents:"
+            ls -lh build/
+            exit 1
+        fi
+
+        echo "Verifying binary executability..."
+        ./build/lemonade-router --version
+        ./build/lemonade-server --version
+
+        # Check if binaries are signed (non-fatal)
+        echo "Checking code signatures..."
+        codesign --verify --verbose=2 build/lemonade-router 2>&1 || echo "WARNING: lemonade-router not signed (expected for non-release builds)"
+        codesign --verify --verbose=2 build/lemonade-server 2>&1 || echo "WARNING: lemonade-server not signed (expected for non-release builds)"
+
+        echo "C++ build successful!"
+
+    - name: Build Web App
+      shell: bash
+      run: |
+        set -e
+
+        echo "Building Web app..."
+        cd src/web-app
+
+        # Install dependencies
+        echo "Installing npm dependencies..."
+        npm install
+
+        # Build the Web app
+        echo "Building Web app..."
+        npm run build
+
+        # Verify the build output exists
+        if [ ! -f "dist/renderer/index.html" ]; then
+            echo "ERROR: Web app build output not found!"
+            exit 1
+        fi
+
+        # Copy web app output to the location expected by CMake
+        echo "Copying web app to build/resources/web-app..."
+        TARGET_DIR="../../build/resources/web-app"
+        mkdir -p "$(dirname "$TARGET_DIR")"
+        if [ -d "$TARGET_DIR" ]; then
+            rm -rf "$TARGET_DIR"
+        fi
+        cp -R dist/renderer "$TARGET_DIR"
+
+        # Verify the copy succeeded
+        if [ ! -f "../../build/resources/web-app/index.html" ]; then
+            echo "ERROR: Failed to copy web app to build directory!"
+            exit 1
+        fi
+
+        echo "Web app built and copied successfully!"
+
+    - name: Build .pkg and notarize
+      id: build-dmg
+      shell: bash
+      run: |
+        set -e
+
+        echo "Building macOS .pkg via CMake notarize target..."
+        echo "This will: build electron app, sign binaries, create package, notarize, and staple."
+
+        if ! cmake --build --preset default --target notarize; then
+            echo ""
+            echo "========================================="
+            echo "Notarize target failed - fetching Apple notarization log..."
+            echo "========================================="
+
+            # Find the submission ID from notarytool output and fetch the log
+            SUBMISSION_ID=$(xcrun notarytool history --keychain-profile AC_PASSWORD 2>/dev/null | grep -m1 "id:" | awk '{print $2}' || echo "")
+            if [ -n "$SUBMISSION_ID" ]; then
+                echo "Fetching log for submission: $SUBMISSION_ID"
+                xcrun notarytool log "$SUBMISSION_ID" --keychain-profile AC_PASSWORD 2>&1 || true
+            else
+                echo "Could not retrieve submission ID for log lookup"
+                xcrun notarytool history --keychain-profile AC_PASSWORD 2>&1 || true
+            fi
+
+            exit 1
+        fi
+
+        # Find the generated .pkg
+        PKG_FILE=$(find build -maxdepth 1 -name "*.pkg" -type f | head -1)
+
+        if [ -z "$PKG_FILE" ]; then
+            echo "ERROR: No .pkg file found after build!"
+            echo "Contents of build directory:"
+            ls -lh build/*.pkg build/*.dmg 2>/dev/null || true
+            exit 1
+        fi
+
+        ARTIFACT_NAME=$(basename "$PKG_FILE")
+        echo "Package created: $ARTIFACT_NAME (at $PKG_FILE)"
+        echo "artifact_name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+
+        echo "File details:"
+        ls -lh "$PKG_FILE"
+
+        echo "Build and notarization complete!"
