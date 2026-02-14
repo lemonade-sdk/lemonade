@@ -548,6 +548,11 @@ jobs:
             test_type: sd
             backend: cpu
             runner: [rai300_400, Linux]
+          # Whisper
+          - name: whisper (cpu)
+            test_type: whisper
+            backend: cpu
+            runner: [rai300_400, Linux]
           # Text to speech
           - name: text-to-speech
             test_type: tts
@@ -594,6 +599,9 @@ jobs:
               ;;
             sd)
               $VENV_PYTHON test/server_sd.py --backend ${{ matrix.backend }} --server-binary lemonade-server
+              ;;
+            whisper)
+              $VENV_PYTHON test/server_whisper.py --backend ${{ matrix.backend }} --server-binary lemonade-server
               ;;
             tts)
               $VENV_PYTHON test/server_tts.py --server-binary lemonade-server

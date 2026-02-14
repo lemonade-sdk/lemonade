@@ -69,14 +69,15 @@ void WhisperServer::install(const std::string& backend) {
         std::cout << "[WhisperServer] Using NPU backend" << std::endl;
 
     } else if (backend == "cpu") {
-        // CPU-only builds from ggml-org/whisper.cpp
-        repo = "ggml-org/whisper.cpp";
-
 #ifdef _WIN32
+        repo = "ggml-org/whisper.cpp";
         filename = "whisper-bin-x64.zip";
 #elif defined(__linux__)
-        filename = "whisper-bin-x64.zip";
+        repo = "lemonade-sdk/whisper.cpp-npu";
+        filename = "whisper-" + expected_version + "-linux-cpu-x86_64.tar.gz";
 #elif defined(__APPLE__)
+        // CPU-only builds from ggml-org/whisper.cpp
+        repo = "ggml-org/whisper.cpp";
         filename = "whisper-bin-arm64.zip";
 #else
         throw std::runtime_error("Unsupported platform for whisper.cpp");
@@ -212,12 +213,33 @@ void WhisperServer::load(const std::string& model_name,
 
     // Note: whisper-server doesn't support --debug flag
 
+    // Set up environment variables for shared library loading
+    std::vector<std::pair<std::string, std::string>> env_vars;
+    fs::path exe_dir = fs::path(exe_path).parent_path();
+
+#ifndef _WIN32
+    // set LD_LIBRARY_PATH to include executable directory
+    std::string lib_path = exe_dir.string();
+
+    const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+    if (existing_ld_path && strlen(existing_ld_path) > 0) {
+        lib_path = lib_path + ":" + std::string(existing_ld_path);
+    }
+
+    env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+    if (is_debug()) {
+        std::cout << "[WhisperServer] Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+    }
+#endif
+
     // Launch the subprocess
     process_handle_ = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",     // working_dir (empty = current)
-        is_debug()  // inherit_output
+        is_debug(),  // inherit_output
+        false,  // filter_health_logs
+        env_vars
     );
 
     if (process_handle_.pid == 0) {
