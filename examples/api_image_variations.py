@@ -31,16 +31,16 @@ def create_sample_image():
         return None
 
     # Create a 512x512 image with a simple pattern
-    img = Image.new('RGB', (512, 512), color='white')
+    img = Image.new("RGB", (512, 512), color="white")
     draw = ImageDraw.Draw(img)
-    
+
     # Draw a simple scene
-    draw.rectangle([(0, 256), (512, 512)], fill='lightgreen')  # Ground
-    draw.rectangle([(0, 0), (512, 256)], fill='skyblue')  # Sky
-    draw.ellipse([(350, 50), (450, 150)], fill='gold')  # Sun
-    draw.rectangle([(200, 180), (300, 300)], fill='brown')  # Tree trunk
-    draw.ellipse([(150, 80), (350, 220)], fill='darkgreen')  # Tree foliage
-    
+    draw.rectangle([(0, 256), (512, 512)], fill="lightgreen")  # Ground
+    draw.rectangle([(0, 0), (512, 256)], fill="skyblue")  # Sky
+    draw.ellipse([(350, 50), (450, 150)], fill="gold")  # Sun
+    draw.rectangle([(200, 180), (300, 300)], fill="brown")  # Tree trunk
+    draw.ellipse([(150, 80), (350, 220)], fill="darkgreen")  # Tree foliage
+
     output_path = Path("sample_image_variations.png")
     img.save(output_path)
     print(f"Created sample image: {output_path.absolute()}")
@@ -61,15 +61,17 @@ def create_variations_with_openai_client(image_path, num_variations=1, backend="
         api_key="not-needed",  # Lemonade doesn't require API key
     )
 
-    print(f"Creating {num_variations} variation(s) with OpenAI client (backend: {backend})...")
-    
+    print(
+        f"Creating {num_variations} variation(s) with OpenAI client (backend: {backend})..."
+    )
+
     if backend == "cpu":
         print("(This may take several minutes with CPU backend)")
 
     results = []
-    
+
     # Read the image file
-    with open(image_path, 'rb') as image_file:
+    with open(image_path, "rb") as image_file:
         response = client.images.create_variation(
             model="SD-Turbo",  # or another model
             image=image_file,
@@ -98,40 +100,42 @@ def create_variations_with_requests(image_path, num_variations=1, backend="cpu")
         print("Requests not installed. Install with: pip install requests")
         return []
 
-    print(f"Creating {num_variations} variation(s) with requests library (backend: {backend})...")
-    
+    print(
+        f"Creating {num_variations} variation(s) with requests library (backend: {backend})..."
+    )
+
     if backend == "cpu":
         print("(This may take several minutes with CPU backend)")
 
     results = []
-    
+
     # Prepare the multipart form data
-    with open(image_path, 'rb') as image_file:
+    with open(image_path, "rb") as image_file:
         files = {
-            'image': ('image.png', image_file, 'image/png'),
+            "image": ("image.png", image_file, "image/png"),
         }
         data = {
-            'model': 'SD-Turbo',
-            'size': '512x512',
-            'n': str(num_variations),
-            'response_format': 'b64_json',
+            "model": "SD-Turbo",
+            "size": "512x512",
+            "n": str(num_variations),
+            "response_format": "b64_json",
             # Optional SD-specific parameters
-            'steps': '4',
-            'cfg_scale': '1.0',
+            "steps": "4",
+            "cfg_scale": "1.0",
         }
 
         response = requests.post(
-            'http://localhost:8000/api/v1/images/variations',
+            "http://localhost:8000/api/v1/images/variations",
             files=files,
             data=data,
-            timeout=600  # 10 minutes for image generation
+            timeout=600,  # 10 minutes for image generation
         )
 
     if response.status_code == 200:
         result = response.json()
-        if 'data' in result and len(result['data']) > 0:
-            for i, image_obj in enumerate(result['data']):
-                image_data = base64.b64decode(image_obj['b64_json'])
+        if "data" in result and len(result["data"]) > 0:
+            for i, image_obj in enumerate(result["data"]):
+                image_data = base64.b64decode(image_obj["b64_json"])
                 output_path = Path(f"variation_requests_{i+1}.png")
                 output_path.write_bytes(image_data)
                 print(f"Variation {i+1} saved to: {output_path.absolute()}")
@@ -196,19 +200,23 @@ if __name__ == "__main__":
             exit(1)
 
     print()
-    
+
     # Try creating variations with different methods
     all_results = []
-    
+
     if args.method in ["openai", "both"]:
         print("--- Using OpenAI Client ---")
-        results = create_variations_with_openai_client(image_path, args.num_variations, args.backend)
+        results = create_variations_with_openai_client(
+            image_path, args.num_variations, args.backend
+        )
         all_results.extend(results)
         print()
-    
+
     if args.method in ["requests", "both"]:
         print("--- Using Requests Library ---")
-        results = create_variations_with_requests(image_path, args.num_variations, args.backend)
+        results = create_variations_with_requests(
+            image_path, args.num_variations, args.backend
+        )
         all_results.extend(results)
         print()
 

@@ -3,9 +3,11 @@
 #include <lemon/utils/http_client.h>
 #include <lemon/streaming_proxy.h>
 #include <lemon/error_types.h>
+#include <httplib.h>
 #include <thread>
 #include <chrono>
 #include <iostream>
+#include <vector>
 
 namespace lemon {
 
@@ -93,6 +95,130 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
                     {"status_code", response.status_code},
                     {"response", error_details}
                 }
+            );
+        }
+    } catch (const std::exception& e) {
+        return ErrorResponse::from_exception(NetworkException(e.what()));
+    }
+}
+
+json WrappedServer::forward_multipart_request(const std::string& endpoint, const json& request, long timeout_seconds) {
+    if (!is_process_running()) {
+        return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
+    }
+
+    try {
+        httplib::Client cli("127.0.0.1", port_);
+        cli.set_read_timeout(timeout_seconds, 0);
+        cli.set_write_timeout(timeout_seconds, 0);
+
+        httplib::UploadFormDataItems items;
+
+        // Helper lambda to decode base64
+        auto base64_decode = [](const std::string& encoded_string) -> std::string {
+            static const std::string base64_chars =
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                "abcdefghijklmnopqrstuvwxyz"
+                "0123456789+/";
+
+            std::string decoded;
+            std::vector<int> T(256, -1);
+            for (int i = 0; i < 64; i++) T[base64_chars[i]] = i;
+
+            int val = 0, valb = -8;
+            for (unsigned char c : encoded_string) {
+                if (T[c] == -1) break;
+                val = (val << 6) + T[c];
+                valb += 6;
+                if (valb >= 0) {
+                    decoded.push_back(char((val >> valb) & 0xFF));
+                    valb -= 8;
+                }
+            }
+            return decoded;
+        };
+
+        // Add image file
+        if (request.contains("image_data") && request.contains("image_filename")) {
+            std::string image_data = base64_decode(request["image_data"].get<std::string>());
+            std::string filename = request["image_filename"].get<std::string>();
+            items.push_back({"image[]", image_data, filename, "image/png"});
+        }
+
+        // Add mask file if present
+        if (request.contains("mask_data") && request.contains("mask_filename")) {
+            std::string mask_data = base64_decode(request["mask_data"].get<std::string>());
+            std::string filename = request["mask_filename"].get<std::string>();
+            items.push_back({"mask[]", mask_data, filename, "image/png"});
+        }
+
+        // Add text fields
+        if (request.contains("prompt")) {
+            items.push_back({"prompt", request["prompt"].get<std::string>(), "", ""});
+        }
+        if (request.contains("model")) {
+            items.push_back({"model", request["model"].get<std::string>(), "", ""});
+        }
+        if (request.contains("n")) {
+            items.push_back({"n", std::to_string(request["n"].get<int>()), "", ""});
+        }
+        if (request.contains("size")) {
+            items.push_back({"size", request["size"].get<std::string>(), "", ""});
+        }
+        if (request.contains("response_format")) {
+            items.push_back({"response_format", request["response_format"].get<std::string>(), "", ""});
+        }
+        if (request.contains("user")) {
+            items.push_back({"user", request["user"].get<std::string>(), "", ""});
+        }
+
+        // Add SD-specific parameters
+        if (request.contains("steps")) {
+            items.push_back({"steps", std::to_string(request["steps"].get<int>()), "", ""});
+        }
+        if (request.contains("cfg_scale")) {
+            items.push_back({"cfg_scale", std::to_string(request["cfg_scale"].get<double>()), "", ""});
+        }
+        if (request.contains("seed")) {
+            items.push_back({"seed", std::to_string(request["seed"].get<long long>()), "", ""});
+        }
+        if (request.contains("sample_method")) {
+            items.push_back({"sample_method", request["sample_method"].get<std::string>(), "", ""});
+        }
+        if (request.contains("scheduler")) {
+            items.push_back({"scheduler", request["scheduler"].get<std::string>(), "", ""});
+        }
+
+        auto res = cli.Post(endpoint, items);
+
+        if (res && res->status == 200) {
+            return json::parse(res->body);
+        } else if (res) {
+            // Try to parse error response from backend
+            json error_details;
+            try {
+                error_details = json::parse(res->body);
+            } catch (...) {
+                error_details = res->body;
+            }
+
+            json details = json::object();
+            details["status_code"] = res->status;
+            details["response"] = error_details;
+
+            return ErrorResponse::create(
+                server_name_ + " request failed",
+                ErrorType::BACKEND_ERROR,
+                details
+            );
+        } else {
+            json details = json::object();
+            details["error"] = "Could not connect to backend server";
+
+            return ErrorResponse::create(
+                server_name_ + " connection failed",
+                ErrorType::NETWORK_ERROR,
+                details
             );
         }
     } catch (const std::exception& e) {
