@@ -157,6 +157,10 @@ static std::string validate_custom_args(const std::string& custom_args_str,
 InstallParams LlamaCppServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
 
+    if (backend == "system") {
+        return params; // Return empty params for system backend
+    }
+
     if (backend == "rocm") {
         params.repo = "lemonade-sdk/llamacpp-rocm";
         std::string target_arch = SystemInfo::get_rocm_arch();

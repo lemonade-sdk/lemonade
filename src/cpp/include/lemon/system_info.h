@@ -98,6 +98,7 @@ public:
     static std::vector<RecipeStatus> get_all_recipe_statuses();
 
     static std::string get_flm_version();
+    static std::string get_system_llamacpp_version();
 
     // Device support detection
     static std::string get_rocm_arch();
