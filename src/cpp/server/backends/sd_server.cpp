@@ -269,5 +269,23 @@ json SDServer::image_generations(const json& request) {
     return forward_request("/v1/images/generations", sd_request, 600);
 }
 
+json SDServer::image_edits(const json& request) {
+    if (is_debug()) {
+        std::cout << "[SDServer] Forwarding image edits request to sd-server (multipart)" << std::endl;
+    }
+
+    // Use multipart forwarding for image edits
+    return forward_multipart_request("/v1/images/edits", request, 600);
+}
+
+json SDServer::image_variations(const json& request) {
+    if (is_debug()) {
+        std::cout << "[SDServer] Forwarding image variations request to sd-server (multipart)" << std::endl;
+    }
+
+    // Use multipart forwarding for image variations
+    return forward_multipart_request("/v1/images/variations", request, 600);
+}
+
 } // namespace backends
 } // namespace lemon

@@ -46,6 +46,8 @@ public:
 
     // IImageServer implementation
     json image_generations(const json& request) override;
+    json image_edits(const json& request) override;
+    json image_variations(const json& request) override;
 };
 
 } // namespace backends

@@ -89,6 +89,8 @@ private:
 
     // Image endpoint handlers (OpenAI /v1/images/* compatible)
     void handle_image_generations(const httplib::Request& req, httplib::Response& res);
+    void handle_image_edits(const httplib::Request& req, httplib::Response& res);
+    void handle_image_variations(const httplib::Request& req, httplib::Response& res);
 
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);

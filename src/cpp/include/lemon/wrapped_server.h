@@ -166,6 +166,9 @@ protected:
     // Common method to forward requests to the wrapped server (non-streaming)
     json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = INFERENCE_TIMEOUT_SECONDS);
 
+    // Forward multipart form data request (for image edits/variations)
+    json forward_multipart_request(const std::string& endpoint, const json& request, long timeout_seconds = INFERENCE_TIMEOUT_SECONDS);
+
     // Validate that the process is running (platform-agnostic check)
     bool is_process_running() const;
 
