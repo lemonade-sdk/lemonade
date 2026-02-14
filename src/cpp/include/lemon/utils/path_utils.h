@@ -51,6 +51,20 @@ std::filesystem::path path_from_utf8(const std::string& path);
 std::string path_to_utf8(const std::filesystem::path& path);
 
 /**
+ * Finds an executable in the system's PATH.
+ * @param executable_name The name of the executable to find (e.g., "llama-server", "python").
+ * @return Full path to the executable, or empty string if not found.
+ */
+std::string find_executable_in_path(const std::string& executable_name);
+
+/**
+ * Check if the HIP plugin for GGML backends is available on the system.
+ * This function checks common installation paths for libggml-hip.so.
+ * @return true if the HIP plugin is found, false otherwise.
+ */
+bool is_ggml_hip_plugin_available();
+
+/**
  * Get the cache directory
  */
 std::string get_cache_dir();
