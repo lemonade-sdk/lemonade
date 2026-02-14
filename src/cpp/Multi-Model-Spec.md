@@ -6,23 +6,21 @@ Lemonade Server supports loading multiple models simultaneously. Each model runs
 
 ### Max Loaded Models
 
-The `--max-loaded-models LLMS EMBEDDINGS RERANKINGS AUDIO` argument controls how many WrappedServers can be in memory by type.
+The `--max-loaded-models N` argument controls how many WrappedServers can be in memory per type slot. The same limit applies to every model type. Use `-1` for unlimited (no LRU eviction).
 
-Models are categorized into four types:
+Models are categorized into five types:
 - `llm`: Chat and completion models (default type)
 - `embedding`: Models with the `embedding` label
 - `reranking`: Models with the `reranking` label
 - `audio`: Models with the `audio` label (e.g., Whisper)
+- `image`: Models with the `image` label (e.g., Stable Diffusion)
 
-The default value is `1 1 1 1`:
-- 1x `llm` WrappedServer
-- 1x `embedding` WrappedServer
-- 1x `reranking` WrappedServer
-- 1x `audio` WrappedServer
+The default value is `1`, meaning one model of each type can be loaded simultaneously.
 
 Examples:
-- `--max-loaded-models 3` → 3 LLMs, 1 embedding, 1 reranking, 1 audio (missing values default to 1)
-- `--max-loaded-models 5 2 4 2` → 5 LLMs, 2 embedding, 4 reranking, 2 audio
+- `--max-loaded-models 3` → up to 3 LLMs, 3 embedding, 3 reranking, 3 audio, 3 image
+- `--max-loaded-models 5` → up to 5 of each type
+- `--max-loaded-models -1` → unlimited (no eviction based on slot count)
 
 ModelInfo and WrappedServer include an explicit enum field for tracking the model type. This field is used throughout the codebase (e.g., in `llamacpp_server.cpp`) to adjust settings based on model type.
 

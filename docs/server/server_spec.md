@@ -63,17 +63,17 @@ Lemonade Server supports loading multiple models simultaneously, allowing you to
 
 ### Configuration
 
-Use the `--max-loaded-models` option to specify how many models to keep loaded:
+Use the `--max-loaded-models` option to specify how many models to keep loaded per type slot:
 
 ```bash
-# Load up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model
-lemonade-server serve --max-loaded-models 3 2 1 1
-
-# Load up to 5 LLMs (embeddings, reranking, and audio default to 1 each)
+# Allow up to 5 models of each type (5 LLMs, 5 embedding, 5 reranking, 5 audio, 5 image)
 lemonade-server serve --max-loaded-models 5
+
+# Unlimited models (no LRU eviction)
+lemonade-server serve --max-loaded-models -1
 ```
 
-**Default:** `1 1 1 1` (one model of each type)
+**Default:** `1` (one model of each type). Use `-1` for unlimited.
 
 ### Model Types
 
@@ -82,8 +82,9 @@ Models are categorized into these types:
 - **Embedding** - Models for generating text embeddings (identified by the `embeddings` label)
 - **Reranking** - Models for document reranking (identified by the `reranking` label)
 - **Audio** - Models for audio transcription using Whisper (identified by the `audio` label)
+- **Image** - Models for image generation (identified by the `image` label)
 
-Each type has its own independent limit and LRU cache.
+Each type has its own independent LRU cache, all sharing the same slot limit set by `--max-loaded-models`.
 
 ### Device Constraints
 
@@ -175,6 +176,28 @@ Chat Completions API. You provide a list of messages and receive a completion. T
             "stream": false
           }'
     ```
+
+#### Image understanding input format (OpenAI-compatible)
+
+To send images to `chat/completions`, pass a `messages[*].content` array that mixes `text` and `image_url` items. The image can be provided as a base64 data URL (for example, from `FileReader.readAsDataURL(...)` in web apps).
+
+```bash
+curl -X POST http://localhost:8000/api/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "Qwen2.5-VL-7B-Instruct",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {"type": "text", "text": "What is in this image?"},
+              {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."}}
+            ]
+          }
+        ],
+        "stream": false
+      }'
+```
 
 #### Response format
 
@@ -767,7 +790,7 @@ Retrieve a specific model by its ID. Returns the same model object format as the
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_id` | Yes | The ID of the model to retrieve. Must match one of the model IDs from the [models list](./server_models.md). |
+| `model_id` | Yes | The ID of the model to retrieve. Must match one of the model IDs from the [models list](https://lemonade-server.ai/models.html). |
 
 #### Example request
 
@@ -832,7 +855,7 @@ The Lemonade Server built-in model registry has a collection of model names that
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_name` | Yes | [Lemonade Server model name](./server_models.md) to install. |
+| `model_name` | Yes | [Lemonade Server model name](https://lemonade-server.ai/models.html) to install. |
 
 Example request:
 
@@ -865,7 +888,7 @@ The `recipe` field defines which software framework and device will be used to l
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_name` | Yes | Namespaced [Lemonade Server model name](./server_models.md) to register and install. |
+| `model_name` | Yes | Namespaced [Lemonade Server model name](https://lemonade-server.ai/models.html) to register and install. |
 | `checkpoint` | Yes | HuggingFace checkpoint to install. |
 | `recipe` | Yes | Lemonade API recipe to load the model with. |
 | `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). Adds 'reasoning' label. |
@@ -928,7 +951,7 @@ Delete a model by removing it from local storage. If the model is currently load
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_name` | Yes | [Lemonade Server model name](./server_models.md) to delete. |
+| `model_name` | Yes | [Lemonade Server model name](https://lemonade-server.ai/models.html) to delete. |
 
 Example request:
 
@@ -960,7 +983,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 
 | Parameter | Required | Applies to | Description |
 |-----------|----------|------------|-------------|
-| `model_name` | Yes | All | [Lemonade Server model name](./server_models.md) to load. |
+| `model_name` | Yes | All | [Lemonade Server model name](https://lemonade-server.ai/models.html) to load. |
 | `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. |
 | `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
@@ -1193,10 +1216,12 @@ curl http://localhost:8000/api/v1/health
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`)
-- `max_models` - Maximum number of models that can be loaded simultaneously (set via `--max-loaded-models`):
+- `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `--max-loaded-models`):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
   - `reranking` - Maximum reranking models
+  - `audio` - Maximum audio models
+  - `image` - Maximum image models
 
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 

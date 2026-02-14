@@ -55,7 +55,7 @@ lemonade-server run MODEL_NAME [options]
 | `--ctx-size [size]`            | Default context size for models. For llamacpp recipes, this sets the `--ctx-size` parameter for the llama server. For other recipes, prompts exceeding this size will be truncated. Can be overridden per-model via the `/api/v1/load` endpoint. | 4096 |
 | `--llamacpp-args [args]`       | Default custom arguments to pass to llama-server. Must not conflict with arguments managed by Lemonade (e.g., `-m`, `--port`, `--ctx-size`, `-ngl`). Can be overridden per-model via the `/api/v1/load` endpoint. Example: `--llamacpp-args "--flash-attn on --no-mmap"` | "" |
 | `--extra-models-dir [path]`    | Experimental feature. Secondary directory to scan for LLM GGUF model files. Audio, embedding, reranking, and non-GGUF files are not supported, yet. | None |
-| `--max-loaded-models [LLMS] [EMBEDDINGS] [RERANKINGS] [AUDIO]` | Maximum number of models to keep loaded simultaneously. Accepts 1, 3, or 4 values for LLM, embedding, reranking, and audio models respectively. Unspecified values default to 1. Example: `--max-loaded-models 3 2 1 1` loads up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model. | `1 1 1 1` |
+| `--max-loaded-models [N]`  | Maximum number of models to keep loaded per type slot (LLMs, audio, image, etc.). Use `-1` for unlimited. Example: `--max-loaded-models 5` allows up to 5 of each model type simultaneously. | `1` |
 | `--save-options` | Only available for the run command. Saves the context size, LlamaCpp backend and custom llama-server arguments as default for running this model. Unspecified values will be saved using their default value. | False |
 
 ### Environment Variables
@@ -114,7 +114,7 @@ If you expose your server over a network you can use the `LEMONADE_API_KEY` envi
 
 ## Options for pull
 
-The `pull` command downloads and installs models. For models already in the [Lemonade Server registry](./server_models.md), only the model name is required. To register and install custom models from Hugging Face, use the registration options below:
+The `pull` command downloads and installs models. For models already in the [Lemonade Server registry](https://lemonade-server.ai/models.html), only the model name is required. To register and install custom models from Hugging Face, use the registration options below:
 
 ```bash
 lemonade-server pull <model_name> [options]
@@ -160,7 +160,7 @@ lemonade-server pull user.nomic-embed \
   --embedding
 ```
 
-For more information about model formats and recipes, see the [API documentation](../lemonade_api.md) and the [server models guide](./server_models.md).
+For more information about model formats and recipes, see the [API documentation](../lemonade_api.md) and the [server models guide](https://lemonade-server.ai/models.html).
 
 ## Lemonade Desktop App
 

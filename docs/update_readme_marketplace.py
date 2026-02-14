@@ -68,7 +68,7 @@ def generate_markdown(apps: list) -> str:
   {icons_html}
 </p>
 
-<p align="center"><em>Want your app featured here? <a href="https://discord.gg/5xXzkMu8Zk">Discord</a> · <a href="https://github.com/lemonade-sdk/lemonade/issues">GitHub Issue</a> · <a href="mailto:lemonade@amd.com">Email</a> · <a href="https://lemonade-server.ai/marketplace">View all apps →</a></em></p>
+<p align="center"><em><a href="https://lemonade-server.ai/marketplace">View all apps →</a></br>Want your app featured here? <a href="https://github.com/lemonade-sdk/marketplace">Just submit a marketplace PR!</a></em></p>
 """
     return markdown.strip()
 

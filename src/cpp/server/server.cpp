@@ -48,9 +48,8 @@ static const json MIME_TYPES = {
 };
 
 Server::Server(int port, const std::string& host, const std::string& log_level,
-               const json& default_options, int max_llm_models,
-               int max_embedding_models, int max_reranking_models, int max_audio_models,
-               int max_image_models, const std::string& extra_models_dir, bool no_broadcast)
+               const json& default_options, int max_loaded_models,
+               const std::string& extra_models_dir, bool no_broadcast)
     : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
       no_broadcast_(no_broadcast), running_(false), udp_beacon_() {
 
@@ -87,9 +86,7 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     model_manager_->set_extra_models_dir(extra_models_dir);
 
     router_ = std::make_unique<Router>(default_options_, log_level,
-                                       model_manager_.get(), max_llm_models,
-                                       max_embedding_models, max_reranking_models, max_audio_models,
-                                       max_image_models);
+                                       model_manager_.get(), max_loaded_models);
 
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
@@ -341,11 +338,11 @@ void Server::setup_static_files(httplib::Server &web_server) {
         for (const auto& [model_name, info] : models_map) {
             filtered_models[model_name] = {
                 {"model_name", info.model_name},
-                {"checkpoint", info.checkpoint},
+                {"checkpoint", info.checkpoint()},
                 {"recipe", info.recipe},
                 {"labels", info.labels},
                 {"suggested", info.suggested},
-                {"mmproj", info.mmproj}
+                {"mmproj", info.mmproj()}
             };
 
             // Add size if available
@@ -1042,7 +1039,7 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
         std::cout << "[Server] Model not cached, downloading from Hugging Face..." << std::endl;
         std::cout << "[Server] This may take several minutes for large models." << std::endl;
-        model_manager_->download_model(requested_model, "", "", false, false, "", true);
+        model_manager_->download_registered_model(info, true);
         std::cout << "[Server] Model download complete: " << requested_model << std::endl;
 
         // CRITICAL: Refresh model info after download to get correct resolved_path
@@ -1139,7 +1136,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"object", "model"},
         {"created", 1234567890},
         {"owned_by", "lemonade"},
-        {"checkpoint", info.checkpoint},
+        {"checkpoint", info.checkpoint()},
         {"recipe", info.recipe},
         {"downloaded", info.downloaded},
         {"suggested", info.suggested},
@@ -2209,7 +2206,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         // Download model if needed (first-time use)
         if (!info.downloaded) {
             std::cout << "[Server] Model not downloaded, downloading..." << std::endl;
-            model_manager_->download_model(model_name);
+            model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
         }
 
@@ -2220,7 +2217,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         nlohmann::json response = {
             {"status", "success"},
             {"model_name", model_name},
-            {"checkpoint", info.checkpoint},
+            {"checkpoint", info.checkpoint()},
             {"recipe", info.recipe}
         };
         res.set_content(response.dump(), "application/json");

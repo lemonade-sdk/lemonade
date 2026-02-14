@@ -61,6 +61,7 @@ export interface RyzenAIOptions {
 
 export interface StableDiffusionOptions {
   recipe: 'sd-cpp';
+  sdcppBackend: StringOption;
   steps: NumericOption;
   cfgScale: NumericOption;
   width: NumericOption;
@@ -161,6 +162,14 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
   },
 
   // Stable Diffusion options
+  sdcppBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'Stable Diffusion backend to use',
+    isBackendOption: true,
+    backendRecipe: 'sd-cpp',
+  },
   steps: {
     type: 'numeric',
     default: 20,
@@ -222,7 +231,7 @@ export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
   'whispercpp': ['whispercppBackend', 'saveOptions'],
   'flm': ['ctxSize', 'saveOptions'],
   'ryzenai-llm': ['ctxSize', 'saveOptions'],
-  'sd-cpp': ['steps', 'cfgScale', 'width', 'height', 'saveOptions'],
+  'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'saveOptions'],
 };
 
 /**
@@ -251,6 +260,7 @@ const FRONTEND_TO_API_MAP: Record<string, string> = {
   llamacppBackend: 'llamacpp_backend',
   llamacppArgs: 'llamacpp_args',
   whispercppBackend: 'whispercpp_backend',
+  sdcppBackend: 'sd-cpp_backend',
   cfgScale: 'cfg_scale',
   saveOptions: 'save_options',
 };
