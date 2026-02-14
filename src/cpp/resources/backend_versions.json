@@ -14,7 +14,25 @@
   },
   "sd-cpp": {
     "cpu": "master-506-1f30df9",
-    "rocm": "master-506-1f30df9"
+    "rocm": "master-505-e212912"
+  },
+  "therock": {
+    "version": "7.11.0",
+    "architectures": [
+      "gfx908",
+      "gfx90a",
+      "gfx942",
+      "gfx1030",
+      "gfx1031",
+      "gfx1032",
+      "gfx1100",
+      "gfx1101",
+      "gfx1102",
+      "gfx1151",
+      "gfx1150",
+      "gfx1200",
+      "gfx1201"
+    ]
   },
   "ryzenai-server": "v1.7.0",
   "flm": {

@@ -316,5 +316,216 @@ namespace lemon::backends {
             std::cout << "[" << spec.log_name() << "] Found executable at: " << exe_path << std::endl;
         }
     }
+
+    bool BackendUtils::is_rocm_installed_system_wide() {
+#ifndef __linux__
+        // Only check on Linux
+        return false;
+#else
+        // Check common ROCm library locations
+        std::vector<std::string> search_paths;
+
+        // Check LD_LIBRARY_PATH first
+        const char* ld_library_path = std::getenv("LD_LIBRARY_PATH");
+        if (ld_library_path && strlen(ld_library_path) > 0) {
+            std::string path_str(ld_library_path);
+            size_t start = 0;
+            size_t end = path_str.find(':');
+            while (end != std::string::npos) {
+                search_paths.push_back(path_str.substr(start, end - start));
+                start = end + 1;
+                end = path_str.find(':', start);
+            }
+            search_paths.push_back(path_str.substr(start));
+        }
+
+        // Add standard system paths
+        search_paths.push_back("/opt/rocm/lib");
+        search_paths.push_back("/opt/rocm/lib64");
+        search_paths.push_back("/usr/lib");
+        search_paths.push_back("/usr/lib64");
+        search_paths.push_back("/usr/lib/x86_64-linux-gnu");
+
+        // Check for key ROCm library
+        for (const auto& path : search_paths) {
+            fs::path lib_path = fs::path(path) / "libamdhip64.so";
+            if (fs::exists(lib_path)) {
+                std::cout << "[BackendUtils] Found system ROCm at: " << lib_path << std::endl;
+                return true;
+            }
+        }
+
+        std::cout << "[BackendUtils] No system-wide ROCm installation detected" << std::endl;
+        return false;
+#endif
+    }
+
+    std::string BackendUtils::get_therock_install_dir(const std::string& arch, const std::string& version) {
+        fs::path therock_base = fs::path(utils::get_downloaded_bin_dir()) / "therock";
+        return (therock_base / (arch + "-" + version)).string();
+    }
+
+    void BackendUtils::cleanup_old_therock_versions(const std::string& current_version) {
+#ifdef __linux__
+        fs::path therock_base = fs::path(utils::get_downloaded_bin_dir()) / "therock";
+
+        if (!fs::exists(therock_base)) {
+            return;  // Nothing to clean up
+        }
+
+        try {
+            for (const auto& entry : fs::directory_iterator(therock_base)) {
+                if (entry.is_directory()) {
+                    std::string dir_name = entry.path().filename().string();
+                    // Directory format is "{arch}-{version}"
+                    size_t dash_pos = dir_name.rfind('-');
+                    if (dash_pos != std::string::npos) {
+                        std::string version = dir_name.substr(dash_pos + 1);
+                        if (version != current_version) {
+                            std::cout << "[BackendUtils] Cleaning up old TheRock version: " << dir_name << std::endl;
+                            fs::remove_all(entry.path());
+                        }
+                    }
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[BackendUtils] Warning: Failed to cleanup old TheRock versions: " << e.what() << std::endl;
+        }
+#endif
+    }
+
+    void BackendUtils::install_therock(const std::string& arch, const std::string& version) {
+#ifndef __linux__
+        throw std::runtime_error("TheRock is only supported on Linux");
+#else
+        std::string install_dir = get_therock_install_dir(arch, version);
+        std::string version_file = (fs::path(install_dir) / "version.txt").string();
+
+        // Check if already installed
+        if (fs::exists(install_dir) && fs::exists(version_file)) {
+            std::string installed_version;
+            std::ifstream vf(version_file);
+            std::getline(vf, installed_version);
+            vf.close();
+
+            if (installed_version == version) {
+                std::cout << "[BackendUtils] TheRock " << arch << "-" << version << " already installed" << std::endl;
+                return;
+            }
+        }
+
+        std::cout << "[BackendUtils] Installing TheRock ROCm " << version << " for " << arch << std::endl;
+
+        // Create install directory
+        fs::create_directories(install_dir);
+
+        // Build URL
+        std::string filename = "therock-dist-linux-" + arch + "-" + version + ".tar.gz";
+        std::string url = "https://repo.amd.com/rocm/tarball/" + filename;
+
+        // Download to temp
+        fs::path cache_dir = fs::temp_directory_path();
+        std::string tarball_path = (cache_dir / filename).string();
+
+        std::cout << "[BackendUtils] Downloading TheRock from: " << url << std::endl;
+        std::cout << "[BackendUtils] Downloading to: " << tarball_path << std::endl;
+
+        auto download_result = utils::HttpClient::download_file(
+            url,
+            tarball_path,
+            utils::create_throttled_progress_callback()
+        );
+
+        if (!download_result.success) {
+            throw std::runtime_error("Failed to download TheRock from: " + url +
+                                    " - " + download_result.error_message);
+        }
+
+        std::cout << std::endl << "[BackendUtils] Download complete!" << std::endl;
+
+        // Verify download
+        if (!fs::exists(tarball_path)) {
+            throw std::runtime_error("Downloaded TheRock tarball does not exist: " + tarball_path);
+        }
+
+        std::uintmax_t file_size = fs::file_size(tarball_path);
+        std::cout << "[BackendUtils] Downloaded tarball size: "
+                << (file_size / 1024 / 1024) << " MB" << std::endl;
+
+        // Extract
+        if (!extract_tarball(tarball_path, install_dir, "TheRock")) {
+            fs::remove(tarball_path);
+            fs::remove_all(install_dir);
+            throw std::runtime_error("Failed to extract TheRock tarball: " + tarball_path);
+        }
+
+        // Verify lib directory exists
+        fs::path lib_dir = fs::path(install_dir) / "lib";
+        if (!fs::exists(lib_dir)) {
+            std::cerr << "[BackendUtils] ERROR: TheRock lib directory not found after extraction" << std::endl;
+            fs::remove(tarball_path);
+            fs::remove_all(install_dir);
+            throw std::runtime_error("TheRock extraction failed: lib directory not found");
+        }
+
+        std::cout << "[BackendUtils] TheRock lib directory verified at: " << lib_dir << std::endl;
+
+        // Save version info
+        std::ofstream vf(version_file);
+        vf << version;
+        vf.close();
+
+        // Delete tarball
+        fs::remove(tarball_path);
+
+        // Cleanup old versions
+        cleanup_old_therock_versions(version);
+
+        std::cout << "[BackendUtils] TheRock installation complete!" << std::endl;
+#endif
+    }
+
+    std::string BackendUtils::get_therock_lib_path(const std::string& rocm_arch) {
+#ifndef __linux__
+        // TheRock only needed on Linux
+        return "";
+#else
+        // Check if system ROCm is available
+        if (is_rocm_installed_system_wide()) {
+            return "";  // Use system ROCm, no need for TheRock
+        }
+
+        // Need TheRock - ensure it's installed
+        std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+        json config = utils::JsonUtils::load_from_file(config_path);
+
+        if (!config.contains("therock") || !config["therock"].contains("version")) {
+            throw std::runtime_error("backend_versions.json is missing 'therock.version'");
+        }
+
+        std::string version = config["therock"]["version"].get<std::string>();
+
+        // Validate architecture is supported
+        if (config["therock"].contains("architectures") && config["therock"]["architectures"].is_array()) {
+            bool arch_supported = false;
+            for (const auto& arch : config["therock"]["architectures"]) {
+                if (arch.is_string() && arch.get<std::string>() == rocm_arch) {
+                    arch_supported = true;
+                    break;
+                }
+            }
+            if (!arch_supported) {
+                throw std::runtime_error("TheRock does not support architecture: " + rocm_arch);
+            }
+        }
+
+        // Install if needed
+        install_therock(rocm_arch, version);
+
+        // Return lib path
+        std::string install_dir = get_therock_install_dir(rocm_arch, version);
+        return (fs::path(install_dir) / "lib").string();
+#endif
+    }
 #endif
 } // namespace lemon::backends
