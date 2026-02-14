@@ -133,6 +133,19 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
             const auto& result = backend_cache[recipe];
             std::string default_backend = result.backends.empty() ? "" : result.backends[0];
 
+            // Check for LEMONADE_LLAMACPP_PREFER_SYSTEM if this is the llamacpp backend option
+            if (opt_name == "llamacpp_backend") {
+                const char* prefer_system_env = std::getenv("LEMONADE_LLAMACPP_PREFER_SYSTEM");
+                if (prefer_system_env && std::string(prefer_system_env) == "true") {
+                    // Check if 'system' backend is actually available
+                    auto it = std::find(result.backends.begin(), result.backends.end(), "system");
+                    if (it != result.backends.end()) {
+                        // If system is preferred and available, make it the default
+                        default_backend = "system";
+                    }
+                }
+            }
+
             // Pre-populate storage with the dynamically detected default so it's
             // available even when the user doesn't explicitly pass the flag.
             // (add_option_function's callback only fires on explicit CLI input,

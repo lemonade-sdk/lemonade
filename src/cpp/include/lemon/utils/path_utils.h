@@ -27,6 +27,13 @@ std::string get_resource_path(const std::string& relative_path);
 std::string find_flm_executable();
 
 /**
+ * Finds an executable in the system's PATH.
+ * @param executable_name The name of the executable to find (e.g., "llama-server", "python").
+ * @return Full path to the executable, or empty string if not found.
+ */
+std::string find_executable_in_path(const std::string& executable_name);
+
+/**
  * Get the cache directory
  */
 std::string get_cache_dir();

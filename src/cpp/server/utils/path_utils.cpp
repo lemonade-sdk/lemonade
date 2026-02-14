@@ -139,6 +139,33 @@ std::string find_flm_executable() {
 #endif
 }
 
+std::string find_executable_in_path(const std::string& executable_name) {
+#ifdef _WIN32
+    char found_path[MAX_PATH];
+    DWORD result = SearchPathA(
+        nullptr,      // Use system PATH
+        executable_name.c_str(), // File to search for
+        nullptr,      // No default extension needed
+        MAX_PATH,
+        found_path,
+        nullptr
+    );
+
+    if (result > 0 && result < MAX_PATH) {
+        return found_path;
+    }
+
+    return "";
+#else
+    // On Linux/Mac, check PATH using which
+    std::string command = "which " + executable_name + " > /dev/null 2>&1";
+    if (system(command.c_str()) == 0) {
+        return executable_name; // Return the executable name itself, relying on PATH for execution
+    }
+    return "";
+#endif
+}
+
 std::string get_cache_dir() {
     const char* cache_dir_env = std::getenv("LEMONADE_CACHE_DIR");
     if (cache_dir_env) {

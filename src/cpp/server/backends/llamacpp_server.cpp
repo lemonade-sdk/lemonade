@@ -170,6 +170,11 @@ LlamaCppServer::~LlamaCppServer() {
 }
 
 void LlamaCppServer::install(const std::string& backend) {
+    if (backend == "system") {
+        std::cout << "[LlamaCpp] Using system-installed llama-server, skipping download." << std::endl;
+        return; // Skip download and installation
+    }
+
     std::string repo;
     std::string filename;
     std::string expected_version = BackendUtils::get_backend_version(SPEC.recipe, backend);

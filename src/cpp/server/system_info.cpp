@@ -100,6 +100,10 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
     }},
+    // llamacpp system (uses system-installed llama-server from PATH)
+    {"llamacpp", "system", {"linux"}, {
+        {"cpu", {"x86_64"}}, // Placeholder, actual check is PATH-based
+    }},
 
     // whisper.cpp - Windows x86_64 only
     {"whispercpp", "npu", {"windows"}, {
@@ -930,11 +934,18 @@ std::string SystemInfo::get_oga_version() {
 }
 
 bool SystemInfo::is_llamacpp_installed(const std::string& backend) {
-    try {
-        BackendUtils::get_backend_binary_path(LlamaCppServer::SPEC, backend);
-        return true;
-    } catch (const std::exception& e) {
-        return false;
+    if (backend == "system") {
+        // For "system" backend, check if "llama-server" exists in PATH
+        std::string llama_server_path = utils::find_executable_in_path("llama-server");
+        return !llama_server_path.empty();
+    } else {
+        // For other backends, use the existing logic
+        try {
+            BackendUtils::get_backend_binary_path(LlamaCppServer::SPEC, backend);
+            return true;
+        } catch (const std::exception& e) {
+            return false;
+        }
     }
 }
 
