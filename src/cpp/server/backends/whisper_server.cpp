@@ -218,8 +218,7 @@ void WhisperServer::load(const std::string& model_name,
     fs::path exe_dir = fs::path(exe_path).parent_path();
 
 #ifndef _WIN32
-    // For Linux, set LD_LIBRARY_PATH to include executable directory
-    // This allows whisper-server to find libwhisper.so.1
+    // set LD_LIBRARY_PATH to include executable directory
     std::string lib_path = exe_dir.string();
 
     const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
