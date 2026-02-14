@@ -159,6 +159,12 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_backend_binary_path(const BackendSpec& spec, const std::string& backend) {
+        if (spec.recipe == "llamacpp" && backend == "system") {
+            // For "system" llamacpp backend, return the binary name directly
+            // The calling code (e.g., ProcessManager::start_process) will resolve it via PATH
+            return spec.binary; // spec.binary for llamacpp is "llama-server"
+        }
+
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
 
         if (!exe_path.empty()) {
