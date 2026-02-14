@@ -60,6 +60,12 @@ public:
 
     // Image generation (OpenAI /v1/images/generations compatible)
     virtual json image_generations(const json& request) = 0;
+
+    // Image editing (OpenAI /v1/images/edits compatible)
+    virtual json image_edits(const json& request) = 0;
+
+    // Image variations (OpenAI /v1/images/variations compatible)
+    virtual json image_variations(const json& request) = 0;
 };
 
 // Helper to check if a server supports a capability

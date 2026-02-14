@@ -38,6 +38,35 @@ namespace fs = std::filesystem;
 
 namespace lemon {
 
+// Helper function to encode binary data to base64
+static std::string base64_encode(const std::string& input) {
+    static const char base64_chars[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz"
+        "0123456789+/";
+
+    std::string output;
+    output.reserve(((input.size() + 2) / 3) * 4);
+
+    int val = 0;
+    int valb = -6;
+    for (unsigned char c : input) {
+        val = (val << 8) + c;
+        valb += 8;
+        while (valb >= 0) {
+            output.push_back(base64_chars[(val >> valb) & 0x3F]);
+            valb -= 6;
+        }
+    }
+    if (valb > -6) {
+        output.push_back(base64_chars[((val << 8) >> (valb + 8)) & 0x3F]);
+    }
+    while (output.size() % 4) {
+        output.push_back('=');
+    }
+    return output;
+}
+
 static const json MIME_TYPES = {
     {"mp3",  "audio/mpeg"},
     {"opus", "audio/opus"},
@@ -240,6 +269,12 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Image endpoints (OpenAI /v1/images/* compatible)
     register_post("images/generations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_image_generations(req, res);
+    });
+    register_post("images/edits", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_image_edits(req, res);
+    });
+    register_post("images/variations", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_image_variations(req, res);
     });
 
     // Responses endpoint
@@ -1936,6 +1971,276 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         std::cerr << "[Server] ERROR in handle_image_generations: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "internal_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_image_edits(const httplib::Request& req, httplib::Response& res) {
+    try {
+        std::cout << "[Server] POST /api/v1/images/edits" << std::endl;
+
+        // OpenAI image edits API uses multipart form data
+        if (!req.is_multipart_form_data()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Request must be multipart/form-data"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Build request JSON for router
+        nlohmann::json request_json;
+
+        // Extract form fields
+        if (req.form.has_field("model")) {
+            request_json["model"] = req.form.get_field("model");
+        }
+        if (req.form.has_field("prompt")) {
+            request_json["prompt"] = req.form.get_field("prompt");
+        }
+        if (req.form.has_field("n")) {
+            request_json["n"] = std::stoi(req.form.get_field("n"));
+        }
+        if (req.form.has_field("size")) {
+            request_json["size"] = req.form.get_field("size");
+        }
+        if (req.form.has_field("response_format")) {
+            request_json["response_format"] = req.form.get_field("response_format");
+        }
+        if (req.form.has_field("user")) {
+            request_json["user"] = req.form.get_field("user");
+        }
+
+        // Extract SD-specific parameters
+        if (req.form.has_field("steps")) {
+            request_json["steps"] = std::stoi(req.form.get_field("steps"));
+        }
+        if (req.form.has_field("cfg_scale")) {
+            request_json["cfg_scale"] = std::stod(req.form.get_field("cfg_scale"));
+        }
+        if (req.form.has_field("seed")) {
+            request_json["seed"] = std::stoll(req.form.get_field("seed"));
+        }
+        if (req.form.has_field("sample_method")) {
+            request_json["sample_method"] = req.form.get_field("sample_method");
+        }
+        if (req.form.has_field("scheduler")) {
+            request_json["scheduler"] = req.form.get_field("scheduler");
+        }
+
+        // Extract image file
+        const auto& files = req.form.files;
+        bool found_image = false;
+        for (const auto& file_pair : files) {
+            if (file_pair.first == "image") {
+                const auto& file = file_pair.second;
+                // Base64 encode the image data for JSON transport
+                request_json["image_data"] = base64_encode(file.content);
+                request_json["image_filename"] = file.filename;
+                found_image = true;
+                std::cout << "[Server] Image file: " << file.filename
+                          << " (" << file.content.size() << " bytes)" << std::endl;
+                break;
+            }
+        }
+
+        if (!found_image) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'image' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Extract optional mask file
+        for (const auto& file_pair : files) {
+            if (file_pair.first == "mask") {
+                const auto& file = file_pair.second;
+                request_json["mask_data"] = base64_encode(file.content);
+                request_json["mask_filename"] = file.filename;
+                std::cout << "[Server] Mask file: " << file.filename
+                          << " (" << file.content.size() << " bytes)" << std::endl;
+                break;
+            }
+        }
+
+        // Validate required fields
+        if (!request_json.contains("prompt")) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'prompt' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Handle model loading
+        if (request_json.contains("model")) {
+            std::string requested_model = request_json["model"];
+            try {
+                auto_load_model_if_needed(requested_model);
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Failed to load image model: " << e.what() << std::endl;
+                auto error_response = create_model_error(requested_model, e.what());
+                std::string error_code = error_response["error"]["code"].get<std::string>();
+                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+                res.set_content(error_response.dump(), "application/json");
+                return;
+            }
+        } else {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'model' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Forward to router
+        auto response = router_->image_edits(request_json);
+
+        // Check for error in response
+        if (response.contains("error")) {
+            res.status = 500;
+        }
+
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_image_edits: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "internal_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_image_variations(const httplib::Request& req, httplib::Response& res) {
+    try {
+        std::cout << "[Server] POST /api/v1/images/variations" << std::endl;
+
+        // OpenAI image variations API uses multipart form data
+        if (!req.is_multipart_form_data()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Request must be multipart/form-data"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Build request JSON for router
+        nlohmann::json request_json;
+
+        // Extract form fields
+        if (req.form.has_field("model")) {
+            request_json["model"] = req.form.get_field("model");
+        }
+        if (req.form.has_field("n")) {
+            request_json["n"] = std::stoi(req.form.get_field("n"));
+        }
+        if (req.form.has_field("size")) {
+            request_json["size"] = req.form.get_field("size");
+        }
+        if (req.form.has_field("response_format")) {
+            request_json["response_format"] = req.form.get_field("response_format");
+        }
+        if (req.form.has_field("user")) {
+            request_json["user"] = req.form.get_field("user");
+        }
+
+        // Extract SD-specific parameters
+        if (req.form.has_field("steps")) {
+            request_json["steps"] = std::stoi(req.form.get_field("steps"));
+        }
+        if (req.form.has_field("cfg_scale")) {
+            request_json["cfg_scale"] = std::stod(req.form.get_field("cfg_scale"));
+        }
+        if (req.form.has_field("seed")) {
+            request_json["seed"] = std::stoll(req.form.get_field("seed"));
+        }
+        if (req.form.has_field("sample_method")) {
+            request_json["sample_method"] = req.form.get_field("sample_method");
+        }
+        if (req.form.has_field("scheduler")) {
+            request_json["scheduler"] = req.form.get_field("scheduler");
+        }
+
+        // Extract image file
+        const auto& files = req.form.files;
+        bool found_image = false;
+        for (const auto& file_pair : files) {
+            if (file_pair.first == "image") {
+                const auto& file = file_pair.second;
+                // Base64 encode the image data for JSON transport
+                request_json["image_data"] = base64_encode(file.content);
+                request_json["image_filename"] = file.filename;
+                found_image = true;
+                std::cout << "[Server] Image file: " << file.filename
+                          << " (" << file.content.size() << " bytes)" << std::endl;
+                break;
+            }
+        }
+
+        if (!found_image) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'image' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Handle model loading
+        if (request_json.contains("model")) {
+            std::string requested_model = request_json["model"];
+            try {
+                auto_load_model_if_needed(requested_model);
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Failed to load image model: " << e.what() << std::endl;
+                auto error_response = create_model_error(requested_model, e.what());
+                std::string error_code = error_response["error"]["code"].get<std::string>();
+                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+                res.set_content(error_response.dump(), "application/json");
+                return;
+            }
+        } else {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'model' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Forward to router
+        auto response = router_->image_variations(request_json);
+
+        // Check for error in response
+        if (response.contains("error")) {
+            res.status = 500;
+        }
+
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_image_variations: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", {
             {"message", e.what()},

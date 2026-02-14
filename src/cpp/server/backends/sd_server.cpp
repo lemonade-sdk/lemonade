@@ -269,5 +269,85 @@ json SDServer::image_generations(const json& request) {
     return forward_request("/v1/images/generations", sd_request, 600);
 }
 
+json SDServer::image_edits(const json& request) {
+    // Build request - sd-server uses OpenAI-compatible format
+    json sd_request = request;
+
+    // sd-server requires extra params (steps, sample_method, scheduler) to be
+    // embedded in the prompt as <sd_cpp_extra_args>JSON</sd_cpp_extra_args>
+    json extra_args;
+    if (request.contains("steps")) {
+        extra_args["steps"] = request["steps"];
+    }
+    if (request.contains("cfg_scale")) {
+        extra_args["cfg_scale"] = request["cfg_scale"];
+    }
+    if (request.contains("seed")) {
+        extra_args["seed"] = request["seed"];
+    }
+    if (request.contains("sample_method")) {
+        extra_args["sample_method"] = request["sample_method"];
+    }
+    if (request.contains("scheduler")) {
+        extra_args["scheduler"] = request["scheduler"];
+    }
+
+    // Append extra args to prompt if any were specified
+    if (!extra_args.empty() && request.contains("prompt")) {
+        std::string prompt = sd_request.value("prompt", "");
+        prompt += " <sd_cpp_extra_args>" + extra_args.dump() + "</sd_cpp_extra_args>";
+        sd_request["prompt"] = prompt;
+    }
+
+    if (is_debug()) {
+        std::cout << "[SDServer] Forwarding image edits request to sd-server: "
+                  << sd_request.dump(2) << std::endl;
+    }
+
+    // Use base class forward_request with 10 minute timeout for image editing
+    return forward_request("/v1/images/edits", sd_request, 600);
+}
+
+json SDServer::image_variations(const json& request) {
+    // Build request - sd-server uses OpenAI-compatible format
+    json sd_request = request;
+
+    // sd-server requires extra params (steps, sample_method, scheduler) to be
+    // embedded in additional fields (no prompt for variations)
+    json extra_args;
+    if (request.contains("steps")) {
+        extra_args["steps"] = request["steps"];
+    }
+    if (request.contains("cfg_scale")) {
+        extra_args["cfg_scale"] = request["cfg_scale"];
+    }
+    if (request.contains("seed")) {
+        extra_args["seed"] = request["seed"];
+    }
+    if (request.contains("sample_method")) {
+        extra_args["sample_method"] = request["sample_method"];
+    }
+    if (request.contains("scheduler")) {
+        extra_args["scheduler"] = request["scheduler"];
+    }
+
+    // For variations, we might need to add extra args directly to the request
+    // since there's no prompt field to embed them in
+    if (!extra_args.empty()) {
+        // Add extra args as top-level fields for variations
+        for (auto& [key, value] : extra_args.items()) {
+            sd_request[key] = value;
+        }
+    }
+
+    if (is_debug()) {
+        std::cout << "[SDServer] Forwarding image variations request to sd-server: "
+                  << sd_request.dump(2) << std::endl;
+    }
+
+    // Use base class forward_request with 10 minute timeout for image variations
+    return forward_request("/v1/images/variations", sd_request, 600);
+}
+
 } // namespace backends
 } // namespace lemon
