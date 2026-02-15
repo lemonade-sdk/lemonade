@@ -1282,6 +1282,21 @@
             "height": 1024
         }
     },
+    "SD-3.5-Medium": {
+        "checkpoint": "stabilityai/stable-diffusion-3.5-medium:sd3.5_medium.safetensors",
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 4.7,
+        "image_defaults": {
+            "steps": 28,
+            "cfg_scale": 4.5,
+            "width": 1024,
+            "height": 1024
+        }
+    },
     "kokoro-v1": {
         "checkpoint": "mikkoph/kokoro-onnx",
         "recipe": "kokoro",
