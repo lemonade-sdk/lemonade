@@ -58,7 +58,7 @@ void SDServer::install(const std::string& backend) {
 #ifdef _WIN32
         filename = "sd-" + short_version + "-bin-win-rocm-x64.zip";
 #elif defined(__linux__)
-        filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm.zip";
+        filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm-7.11.0.zip";
 #else
         throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
 #endif
@@ -147,8 +147,27 @@ void SDServer::load(const std::string& model_name,
     fs::path exe_dir = fs::path(exe_path).parent_path();
 
 #ifndef _WIN32
-    // For Linux, always set LD_LIBRARY_PATH to include executable directory
+    // For Linux, set LD_LIBRARY_PATH to include executable directory
     std::string lib_path = exe_dir.string();
+
+    // For ROCm backend on Linux, also include TheRock if needed
+    if (backend == "rocm") {
+        std::string rocm_arch = lemon::SystemInfo::get_rocm_arch();
+        if (!rocm_arch.empty()) {
+            try {
+                std::string therock_lib = BackendUtils::get_therock_lib_path(rocm_arch);
+                if (!therock_lib.empty()) {
+                    // Prepend TheRock lib path
+                    lib_path = therock_lib + ":" + lib_path;
+                    std::cout << "[SDServer] Using TheRock ROCm libraries from: " << therock_lib << std::endl;
+                } else {
+                    std::cout << "[SDServer] Using system-wide ROCm installation" << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[SDServer] Warning: Failed to setup TheRock: " << e.what() << std::endl;
+            }
+        }
+    }
 
     const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
     if (existing_ld_path && strlen(existing_ld_path) > 0) {

@@ -14,7 +14,34 @@
   },
   "sd-cpp": {
     "cpu": "master-506-1f30df9",
-    "rocm": "master-506-1f30df9"
+    "rocm": "master-505-e212912"
+  },
+  "therock": {
+    "version": "7.11.0",
+    "architectures": [
+      "gfx908",
+      "gfx90a",
+      "gfx942",
+      "gfx1100",
+      "gfx1101",
+      "gfx1102",
+      "gfx1151",
+      "gfx1150",
+      "gfx1200",
+      "gfx1201"
+    ],
+    "url_mapping": {
+      "gfx908": "gfx90X-dcgpu",
+      "gfx90a": "gfx90X-dcgpu",
+      "gfx942": "gfx94X-dcgpu",
+      "gfx1100": "gfx110X-all",
+      "gfx1101": "gfx110X-all",
+      "gfx1102": "gfx110X-all",
+      "gfx1151": "gfx1151",
+      "gfx1150": "gfx1150",
+      "gfx1200": "gfx120X-all",
+      "gfx1201": "gfx120X-all"
+    }
   },
   "ryzenai-server": "v1.7.0",
   "flm": {
