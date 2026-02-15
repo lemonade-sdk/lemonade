@@ -34,7 +34,7 @@ std::string get_current_os() {
 }
 
 std::string normalize_backend_name(const std::string& recipe, const std::string& backend) {
-    if (recipe == "llamacpp" && backend == "rocm") {
+    if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
         // Map "rocm" to the appropriate channel based on config
         std::string channel = "preview";  // default to preview for now
         if (auto* cfg = RuntimeConfig::global()) {
@@ -60,6 +60,13 @@ std::string get_backend_runtime_version(const json& backend_versions,
         backend_versions[recipe].contains(runtime_key) &&
         backend_versions[recipe][runtime_key].is_string()) {
         return backend_versions[recipe][runtime_key].get<std::string>();
+    }
+
+    if (backend_versions.contains("llamacpp") &&
+        backend_versions["llamacpp"].is_object() &&
+        backend_versions["llamacpp"].contains(runtime_key) &&
+        backend_versions["llamacpp"][runtime_key].is_string()) {
+        return backend_versions["llamacpp"][runtime_key].get<std::string>();
     }
 
     throw std::runtime_error("backend_versions.json is missing runtime version for: " + recipe + ":" + runtime_key);
@@ -243,6 +250,54 @@ void uninstall_rocm_stable_runtime_if_needed(const std::string& os) {
     }
 }
 
+void install_therock_if_needed(const std::string& os, const json& backend_versions) {
+    // TheRock is only needed on Linux for ROCm preview channel.
+    if (os != "linux") {
+        return;
+    }
+
+    // Check if system ROCm is available - if so, don't need TheRock
+    if (backends::BackendUtils::is_rocm_installed_system_wide()) {
+        LOG(DEBUG, "BackendManager")
+            << "System ROCm detected, skipping TheRock installation" << std::endl;
+        return;
+    }
+
+    // Get ROCm architecture
+    std::string rocm_arch = SystemInfo::get_rocm_arch();
+    if (rocm_arch.empty()) {
+        LOG(DEBUG, "BackendManager")
+            << "No ROCm architecture detected, skipping TheRock installation" << std::endl;
+        return;
+    }
+
+    // Get TheRock version from backend_versions.json
+    if (!backend_versions.contains("therock") || !backend_versions["therock"].contains("version")) {
+        throw std::runtime_error("backend_versions.json is missing 'therock.version'");
+    }
+    std::string version = backend_versions["therock"]["version"].get<std::string>();
+
+    // Check if this architecture is supported
+    if (backend_versions["therock"].contains("architectures") &&
+        backend_versions["therock"]["architectures"].is_array()) {
+        bool arch_supported = false;
+        for (const auto& arch : backend_versions["therock"]["architectures"]) {
+            if (arch.is_string() && arch.get<std::string>() == rocm_arch) {
+                arch_supported = true;
+                break;
+            }
+        }
+        if (!arch_supported) {
+            LOG(DEBUG, "BackendManager")
+                << "Architecture " << rocm_arch << " not supported by TheRock" << std::endl;
+            return;
+        }
+    }
+
+    // Install TheRock for this architecture
+    backends::BackendUtils::install_therock(rocm_arch, version);
+}
+
 } // namespace
 
 BackendManager::BackendManager() {
@@ -345,8 +400,12 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     backends::BackendUtils::install_from_github(
         *spec, params.version, params.repo, params.filename, resolved_backend, progress_cb);
 
-    if (recipe == "llamacpp" && resolved_backend == "rocm-stable") {
+    if ((recipe == "llamacpp" || recipe == "sd-cpp") && resolved_backend == "rocm-stable") {
         install_rocm_stable_runtime_if_needed(get_current_os(), *spec, backend_versions_, progress_cb);
+    }
+
+    if (recipe == "sd-cpp" && resolved_backend == "rocm-preview") {
+        install_therock_if_needed(get_current_os(), backend_versions_);
     }
 }
 
