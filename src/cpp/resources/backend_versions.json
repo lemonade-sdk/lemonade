@@ -22,9 +22,6 @@
       "gfx908",
       "gfx90a",
       "gfx942",
-      "gfx1030",
-      "gfx1031",
-      "gfx1032",
       "gfx1100",
       "gfx1101",
       "gfx1102",
@@ -32,7 +29,19 @@
       "gfx1150",
       "gfx1200",
       "gfx1201"
-    ]
+    ],
+    "url_mapping": {
+      "gfx908": "gfx90X-dcgpu",
+      "gfx90a": "gfx90X-dcgpu",
+      "gfx942": "gfx94X-dcgpu",
+      "gfx1100": "gfx110X-all",
+      "gfx1101": "gfx110X-all",
+      "gfx1102": "gfx110X-all",
+      "gfx1151": "gfx1151",
+      "gfx1150": "gfx1150",
+      "gfx1200": "gfx120X-all",
+      "gfx1201": "gfx120X-all"
+    }
   },
   "ryzenai-server": "v1.7.0",
   "flm": {

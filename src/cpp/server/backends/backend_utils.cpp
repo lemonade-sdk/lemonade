@@ -419,8 +419,18 @@ namespace lemon::backends {
         // Create install directory
         fs::create_directories(install_dir);
 
-        // Build URL
-        std::string filename = "therock-dist-linux-" + arch + "-" + version + ".tar.gz";
+        // Get the URL variant for this architecture from config
+        std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+        json config = utils::JsonUtils::load_from_file(config_path);
+
+        std::string url_variant = arch;  // default to arch name
+        if (config.contains("therock") && config["therock"].contains("url_mapping") &&
+            config["therock"]["url_mapping"].contains(arch)) {
+            url_variant = config["therock"]["url_mapping"][arch].get<std::string>();
+        }
+
+        // Build URL with the correct variant
+        std::string filename = "therock-dist-linux-" + url_variant + "-" + version + ".tar.gz";
         std::string url = "https://repo.amd.com/rocm/tarball/" + filename;
 
         // Download to temp
