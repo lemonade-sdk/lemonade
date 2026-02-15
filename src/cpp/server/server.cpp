@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/ollama_api.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
@@ -303,6 +304,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         std::cout << "[Server] TEST POST endpoint hit!" << std::endl;
         res.set_content("{\"test\": \"ok\"}", "application/json");
     });
+
+    // Register Ollama-compatible API routes
+    auto ollama_api = std::make_shared<OllamaApi>(router_.get(), model_manager_.get());
+    ollama_api->register_routes(web_server);
 
     // Setup static file serving for web UI
     setup_static_files(web_server);

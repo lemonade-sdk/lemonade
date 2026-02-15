@@ -16,3 +16,6 @@ psutil
 
 # Numerical computing (required for embedding similarity tests)
 numpy
+
+# Ollama client library (used for Ollama API compatibility tests)
+ollama
