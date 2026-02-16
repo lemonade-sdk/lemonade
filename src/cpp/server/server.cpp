@@ -817,13 +817,14 @@ void Server::setup_http_logger(httplib::Server &web_server) {
 
 void Server::run() {
     std::cout << "[Server] Starting on " << host_ << ":" << port_ << std::endl;
-    std::cout << "API listening on " << host_ << ":" << port_ << std::endl;
 
     std::string accessible_host = host_;
     if (host_ == "0.0.0.0") {
         accessible_host = "localhost";
+        std::cout << "API listening on 0.0.0.0:" << port_ << std::endl;
     } else if (host_ == "::") {
         accessible_host = "[::1]";
+        std::cout << "API listening on [::]:" << port_ << std::endl;
     }
 
     std::cout << "API accessible at http://" << accessible_host << ":" << port_ << "/api/v1" << std::endl;
