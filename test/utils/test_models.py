@@ -113,6 +113,9 @@ TEST_AUDIO_URL = (
     "https://raw.githubusercontent.com/lemonade-sdk/assets/main/audio/test_speech.wav"
 )
 
+# Vision model test configuration
+VISION_MODEL = "Gemma-3-4b-it-GGUF"
+
 # Stable Diffusion test configuration
 SD_MODEL = "SD-Turbo"
 

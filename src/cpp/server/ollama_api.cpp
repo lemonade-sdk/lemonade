@@ -1,4 +1,5 @@
 #include "lemon/ollama_api.h"
+#include "lemon/model_types.h"
 #include "lemon/version.h"
 #include <iostream>
 #include <sstream>
@@ -671,6 +672,16 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
             return;
         }
 
+        // Check if this is an image generation model
+        auto model_info = model_manager_->get_model_info(model);
+        ModelType model_type = get_model_type_from_labels(model_info.labels);
+
+        if (model_type == ModelType::IMAGE) {
+            // Route to image generation
+            handle_generate_image(request_json, res, model);
+            return;
+        }
+
         bool stream = request_json.value("stream", true);  // Ollama defaults to streaming
 
         auto openai_req = convert_ollama_to_openai_completion(request_json);
@@ -727,6 +738,96 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
 
     } catch (const std::exception& e) {
         std::cerr << "[OllamaApi] Error in /api/generate: " << e.what() << std::endl;
+        res.status = 500;
+        json error = {{"error", std::string(e.what())}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+// ============================================================================
+// Image generation helper for /api/generate (when model is an image model)
+// ============================================================================
+void OllamaApi::handle_generate_image(const json& request_json, httplib::Response& res, const std::string& model) {
+    try {
+        std::cout << "[OllamaApi] POST /api/generate - Image generation (model: " << model << ")" << std::endl;
+
+        std::string prompt = request_json.value("prompt", "");
+
+        // Extract image generation parameters from top-level or options
+        int width = 512;
+        int height = 512;
+        int steps = 0;
+        double cfg_scale = 0.0;
+        int seed = -1;
+
+        // Check top-level params first, then options
+        if (request_json.contains("width")) {
+            width = request_json["width"].get<int>();
+        } else if (request_json.contains("options") && request_json["options"].contains("width")) {
+            width = request_json["options"]["width"].get<int>();
+        }
+
+        if (request_json.contains("height")) {
+            height = request_json["height"].get<int>();
+        } else if (request_json.contains("options") && request_json["options"].contains("height")) {
+            height = request_json["options"]["height"].get<int>();
+        }
+
+        if (request_json.contains("steps")) {
+            steps = request_json["steps"].get<int>();
+        } else if (request_json.contains("options") && request_json["options"].contains("steps")) {
+            steps = request_json["options"]["steps"].get<int>();
+        }
+
+        if (request_json.contains("cfg_scale")) {
+            cfg_scale = request_json["cfg_scale"].get<double>();
+        } else if (request_json.contains("options") && request_json["options"].contains("cfg_scale")) {
+            cfg_scale = request_json["options"]["cfg_scale"].get<double>();
+        }
+
+        if (request_json.contains("seed")) {
+            seed = request_json["seed"].get<int>();
+        } else if (request_json.contains("options") && request_json["options"].contains("seed")) {
+            seed = request_json["options"]["seed"].get<int>();
+        }
+
+        // Build OpenAI-compatible image generation request
+        json openai_req;
+        openai_req["model"] = model;
+        openai_req["prompt"] = prompt;
+        openai_req["size"] = std::to_string(width) + "x" + std::to_string(height);
+        openai_req["response_format"] = "b64_json";
+
+        if (steps > 0) {
+            openai_req["steps"] = steps;
+        }
+        if (cfg_scale > 0.0) {
+            openai_req["cfg_scale"] = cfg_scale;
+        }
+        if (seed >= 0) {
+            openai_req["seed"] = seed;
+        }
+
+        auto openai_response = router_->image_generations(openai_req);
+
+        // Convert OpenAI response to Ollama format
+        json ollama_res;
+        ollama_res["model"] = model;
+        ollama_res["created_at"] = "2024-01-01T00:00:00Z";
+        ollama_res["response"] = "";
+        ollama_res["done"] = true;
+
+        // Extract base64 image from OpenAI response
+        if (openai_response.contains("data") && !openai_response["data"].empty()) {
+            ollama_res["image"] = openai_response["data"][0].value("b64_json", "");
+        } else {
+            ollama_res["image"] = "";
+        }
+
+        res.set_content(ollama_res.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        std::cerr << "[OllamaApi] Error in image generation: " << e.what() << std::endl;
         res.status = 500;
         json error = {{"error", std::string(e.what())}};
         res.set_content(error.dump(), "application/json");

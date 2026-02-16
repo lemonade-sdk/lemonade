@@ -57,6 +57,32 @@ The additional endpoints are:
 - GET `/api/v1/system-info` - System information and device enumeration
 - GET `/live` - Check server liveness for load balancers and orchestrators
 
+### Ollama-Compatible API
+
+Lemonade supports the [Ollama API](https://github.com/ollama/ollama/blob/main/docs/api.md), allowing applications built for Ollama to work with Lemonade without modification.
+
+To enable auto-detection by Ollama-integrated apps, launch the server on the Ollama default port:
+
+```bash
+lemonade-server serve --port 11434
+```
+
+| Endpoint | Status | Notes |
+|----------|--------|-------|
+| `POST /api/chat` | Supported | Streaming and non-streaming |
+| `POST /api/generate` | Supported | Text completion + image generation |
+| `GET /api/tags` | Supported | Lists downloaded models |
+| `POST /api/show` | Supported | Model details |
+| `DELETE /api/delete` | Supported | |
+| `POST /api/pull` | Supported | Download with progress |
+| `POST /api/embed` | Supported | New embeddings format |
+| `POST /api/embeddings` | Supported | Legacy embeddings |
+| `GET /api/ps` | Supported | Running models |
+| `GET /api/version` | Supported | |
+| `POST /api/create` | Not supported | Returns 501 |
+| `POST /api/copy` | Not supported | Returns 501 |
+| `POST /api/push` | Not supported | Returns 501 |
+
 ## Multi-Model Support
 
 Lemonade Server supports loading multiple models simultaneously, allowing you to keep frequently-used models in memory for faster switching. The server uses a Least Recently Used (LRU) cache policy to automatically manage model eviction when limits are reached.

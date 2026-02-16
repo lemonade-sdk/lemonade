@@ -10,6 +10,7 @@ Usage:
     python test_ollama.py --server-binary /path/to/lemonade-server
 """
 
+import base64
 import json
 import requests
 
@@ -26,6 +27,8 @@ from utils.server_base import (
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
+    VISION_MODEL,
+    SD_MODEL,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
 )
@@ -338,6 +341,83 @@ class OllamaTests(ServerTestBase):
         self.assertIsNotNone(result)
         self.assertIn("message", result)
         self.assertIn("content", result["message"])
+
+    # ========================================================================
+    # Image input/output tests
+    # ========================================================================
+
+    def test_050_chat_with_image_input(self):
+        """Test /api/chat with image input (vision) using a vision model."""
+        # Pull the vision model
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={"model_name": VISION_MODEL, "stream": False},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # 1x1 red PNG (smallest valid PNG)
+        png_b64 = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4"
+            "2mP8/58BAwAI/AL+hc2rNAAAAABJRU5ErkJggg=="
+        )
+
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/chat",
+            json={
+                "model": VISION_MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "What is in this image?",
+                        "images": [png_b64],
+                    }
+                ],
+                "stream": False,
+                "options": {"num_predict": 10},
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("message", data)
+        self.assertIn("content", data["message"])
+
+    def test_051_generate_image_output(self):
+        """Test /api/generate with an image generation model."""
+        # Pull the SD model first
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={"model_name": SD_MODEL, "stream": False},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            json={
+                "model": SD_MODEL,
+                "prompt": "A red circle",
+                "stream": False,
+                "width": 256,
+                "height": 256,
+                "steps": 2,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("image", data)
+        self.assertTrue(len(data["image"]) > 0, "image field should not be empty")
+        self.assertTrue(data["done"])
+        self.assertEqual(data["model"], SD_MODEL)
+
+        # Decode base64 and verify PNG magic bytes
+        image_bytes = base64.b64decode(data["image"])
+        self.assertTrue(
+            image_bytes[:4] == b"\x89PNG",
+            "Decoded image should start with PNG magic bytes",
+        )
 
     def test_042_ollama_lib_chat_streaming(self):
         """Test ollama.chat() streaming via Python library."""

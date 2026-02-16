@@ -6,6 +6,7 @@
 #include <httplib.h>
 #include "router.h"
 #include "model_manager.h"
+#include "model_types.h"
 
 namespace lemon {
 
@@ -25,6 +26,7 @@ private:
     // Endpoint handlers
     void handle_chat(const httplib::Request& req, httplib::Response& res);
     void handle_generate(const httplib::Request& req, httplib::Response& res);
+    void handle_generate_image(const json& request_json, httplib::Response& res, const std::string& model);
     void handle_tags(const httplib::Request& req, httplib::Response& res);
     void handle_show(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
