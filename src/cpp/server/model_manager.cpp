@@ -1396,9 +1396,9 @@ void ModelManager::register_user_model(const std::string& model_name,
     }
 
     model_entry["labels"] = labels;
-    model_entry["suggested"] = true;
+    model_entry["suggested"] = true; // Always set suggested=true for user models
 
-    if (!source.empty()) {// Always set suggested=true for user models
+    if (!source.empty()) {
         model_entry["source"] = source;
     }
 
