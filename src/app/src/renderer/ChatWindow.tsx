@@ -1033,7 +1033,7 @@ const sendMessage = async () => {
     e.stopPropagation(); // Prevent closing when clicking inside the edit area
   };
 
-  // Handle text to sreech conversion using Kokoro
+  // Handle text to speech conversion using Kokoro
   useEffect(() => {
     if(currentAudio) {
       currentAudio.addEventListener('ended', stopAudio);

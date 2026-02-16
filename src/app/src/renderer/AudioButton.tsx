@@ -11,7 +11,7 @@ interface  AudioButtonProps {
   buttonContext: {buttonId: number, audioState: number};
 }
 
-const AudioButton: React.FC<AudioButtonProps> = ({ textMessage, buttonIndex, onClickFunction, buttonContext}) => {
+const AudioButton: React.FC<AudioButtonProps> = React.memo(function AudioButton({ textMessage, buttonIndex, onClickFunction, buttonContext}) {
   const LoadingIcon = () => {
     return (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18px" height="18px"  style={{opacity:1}}>
@@ -64,6 +64,8 @@ const AudioButton: React.FC<AudioButtonProps> = ({ textMessage, buttonIndex, onC
       <button className="message-play-button" onClick={() => onClickFunction(textMessage, buttonIndex)} disabled={buttonContext.audioState == LOADING}>{renderButtonIcon()}</button>
     </div>
   );
-}
+}, (prevProps, nextProps) => {
+  return (nextProps.buttonContext.buttonId === prevProps.buttonContext.buttonId) && (nextProps.buttonContext.audioState === prevProps.buttonContext.audioState) && (nextProps.textMessage == prevProps.textMessage) && (nextProps.onClickFunction == prevProps.onClickFunction);
+});
 
 export default AudioButton;
