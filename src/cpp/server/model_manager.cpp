@@ -1635,7 +1635,14 @@ void ModelManager::download_model(const std::string& model_name,
         register_user_model(model_name, model_data);
     }
 
-    download_registered_model(get_model_info(model_name), do_not_upgrade, progress_callback);
+    auto model_info = get_model_info(model_name);
+
+    if (model_data.contains("recipe_options")) {
+        model_info.recipe_options = RecipeOptions(model_info.recipe, model_data["recipe_options"]);
+        save_model_options(model_info);
+    }
+
+    download_registered_model(model_info, do_not_upgrade, progress_callback);
 }
 
 /**
