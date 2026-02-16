@@ -304,6 +304,12 @@ json SDServer::image_edits(const json& request) {
     // Map n to batch_size (default 1)
     sd_request["batch_size"] = request.value("n", 1);
 
+    // Inject model defaults for sd-server parameters not exposed in OpenAI API
+    int steps = recipe_options_.get_option("steps");
+    float cfg_scale = recipe_options_.get_option("cfg_scale");
+    sd_request["steps"] = steps;
+    sd_request["cfg_scale"] = cfg_scale;
+
     if (is_debug()) {
         // Log without the image data to avoid flooding
         json debug_log = sd_request;
