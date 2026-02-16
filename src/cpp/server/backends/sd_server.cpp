@@ -287,29 +287,22 @@ json SDServer::image_edits(const json& request) {
         sd_request["mask"] = request["mask_data"];
     }
 
-    // Map parameters to sdapi format
-    if (request.contains("steps")) {
-        sd_request["steps"] = request["steps"];
+    // Parse size string (e.g. "1024x1024") into width/height
+    int width = 1024;
+    int height = 1024;
+    if (request.contains("size") && request["size"].is_string()) {
+        std::string size_str = request["size"];
+        auto x_pos = size_str.find('x');
+        if (x_pos != std::string::npos) {
+            width = std::stoi(size_str.substr(0, x_pos));
+            height = std::stoi(size_str.substr(x_pos + 1));
+        }
     }
-    if (request.contains("cfg_scale")) {
-        sd_request["cfg_scale"] = request["cfg_scale"];
-    }
-    if (request.contains("seed")) {
-        sd_request["seed"] = request["seed"];
-    }
-    if (request.contains("sample_method")) {
-        sd_request["sampler_name"] = request["sample_method"];
-    }
-    if (request.contains("scheduler")) {
-        sd_request["scheduler"] = request["scheduler"];
-    }
-    if (request.contains("strength")) {
-        sd_request["denoising_strength"] = request["strength"];
-    }
+    sd_request["width"] = width;
+    sd_request["height"] = height;
 
-    sd_request["batch_size"] = 1;
-    sd_request["width"] = 512;
-    sd_request["height"] = 512;
+    // Map n to batch_size (default 1)
+    sd_request["batch_size"] = request.value("n", 1);
 
     if (is_debug()) {
         // Log without the image data to avoid flooding

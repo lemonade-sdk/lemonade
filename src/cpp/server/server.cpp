@@ -2011,31 +2011,23 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         if (req.form.has_field("size")) {
             request_json["size"] = req.form.get_field("size");
         }
-        if (req.form.has_field("response_format")) {
-            request_json["response_format"] = req.form.get_field("response_format");
+        if (req.form.has_field("output_format")) {
+            request_json["output_format"] = req.form.get_field("output_format");
         }
         if (req.form.has_field("user")) {
             request_json["user"] = req.form.get_field("user");
         }
-
-        // Extract SD-specific parameters
-        if (req.form.has_field("steps")) {
-            request_json["steps"] = std::stoi(req.form.get_field("steps"));
+        if (req.form.has_field("background")) {
+            request_json["background"] = req.form.get_field("background");
         }
-        if (req.form.has_field("cfg_scale")) {
-            request_json["cfg_scale"] = std::stod(req.form.get_field("cfg_scale"));
+        if (req.form.has_field("quality")) {
+            request_json["quality"] = req.form.get_field("quality");
         }
-        if (req.form.has_field("seed")) {
-            request_json["seed"] = std::stoll(req.form.get_field("seed"));
+        if (req.form.has_field("output_compression")) {
+            request_json["output_compression"] = std::stoi(req.form.get_field("output_compression"));
         }
-        if (req.form.has_field("sample_method")) {
-            request_json["sample_method"] = req.form.get_field("sample_method");
-        }
-        if (req.form.has_field("scheduler")) {
-            request_json["scheduler"] = req.form.get_field("scheduler");
-        }
-        if (req.form.has_field("strength")) {
-            request_json["strength"] = std::stod(req.form.get_field("strength"));
+        if (req.form.has_field("input_fidelity")) {
+            request_json["input_fidelity"] = req.form.get_field("input_fidelity");
         }
 
         // Extract image file
