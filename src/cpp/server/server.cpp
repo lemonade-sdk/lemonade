@@ -2158,23 +2158,6 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
             request_json["user"] = req.form.get_field("user");
         }
 
-        // Extract SD-specific parameters
-        if (req.form.has_field("steps")) {
-            request_json["steps"] = std::stoi(req.form.get_field("steps"));
-        }
-        if (req.form.has_field("cfg_scale")) {
-            request_json["cfg_scale"] = std::stod(req.form.get_field("cfg_scale"));
-        }
-        if (req.form.has_field("seed")) {
-            request_json["seed"] = std::stoll(req.form.get_field("seed"));
-        }
-        if (req.form.has_field("sample_method")) {
-            request_json["sample_method"] = req.form.get_field("sample_method");
-        }
-        if (req.form.has_field("scheduler")) {
-            request_json["scheduler"] = req.form.get_field("scheduler");
-        }
-
         // Extract image file
         const auto& files = req.form.files;
         bool found_image = false;
