@@ -21,6 +21,9 @@ using namespace lemon::utils;
 
 namespace lemon {
 
+// Properties which are defined by the user for model registration.
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults"};
+
 // Helper functions for string operations
 static std::string to_lower(const std::string& str) {
     std::string result = str;
@@ -1349,53 +1352,53 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 }
 
 void ModelManager::register_user_model(const std::string& model_name,
-                                      const std::string& checkpoint,
-                                      const std::string& recipe,
-                                      bool reasoning,
-                                      bool vision,
-                                      bool embedding,
-                                      bool reranking,
-                                      const std::string& mmproj,
+                                      const json& model_data,
                                       const std::string& source) {
-
     // Remove "user." prefix if present
     std::string clean_name = model_name;
     if (clean_name.substr(0, 5) == "user.") {
         clean_name = clean_name.substr(5);
     }
 
+    // Filter only known, user-definable model props
     json model_entry;
-    model_entry["checkpoint"] = checkpoint;
-    model_entry["recipe"] = recipe;
-    model_entry["suggested"] = true;  // Always set suggested=true for user models
+    for (const std::string& prop : USER_DEFINED_MODEL_PROPS) {
+        if (model_data.contains(prop)) {
+            model_entry[prop] = model_data[prop];
+        }
+    }
 
-    // Always start with "custom" label (matching Python implementation)
-    std::vector<std::string> labels = {"custom"};
-    if (reasoning) {
-        labels.push_back("reasoning");
+    std::set<std::string> labels = {"custom"};
+    std::vector<std::string> extra_labels = model_data.value("labels", std::vector<std::string>{});
+    labels.insert(extra_labels.begin(), extra_labels.end());
+
+    // legacy label format
+    if (model_data.value("reasoning", false)) {
+        labels.insert("reasoning");
     }
-    if (vision) {
-        labels.push_back("vision");
+    if (model_data.value("vision", false)) {
+        labels.insert("vision");
     }
-    if (embedding) {
-        labels.push_back("embeddings");
+    if (model_data.value("embedding", false)) {
+        labels.insert("embeddings");
     }
-    if (reranking) {
-        labels.push_back("reranking");
+    if (model_data.value("reranking", false)) {
+        labels.insert("reranking");
     }
+
+    std::string recipe = model_data.value("recipe", "");
+
     if (recipe == "sd-cpp") {
-        labels.push_back("image");
+        labels.insert("image");
     }
     if (recipe == "whispercpp") {
-        labels.push_back("audio");
+        labels.insert("audio");
     }
+
     model_entry["labels"] = labels;
+    model_entry["suggested"] = true;
 
-    if (!mmproj.empty()) {
-        model_entry["mmproj"] = mmproj;
-    }
-
-    if (!source.empty()) {
+    if (!source.empty()) {// Always set suggested=true for user models
         model_entry["source"] = source;
     }
 
@@ -1504,19 +1507,11 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
 }
 
 void ModelManager::download_model(const std::string& model_name,
-                                 const std::string& checkpoint,
-                                 const std::string& recipe,
-                                 bool reasoning,
-                                 bool vision,
-                                 bool embedding,
-                                 bool reranking,
-                                 const std::string& mmproj,
+                                 const json& model_data,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback) {
-
-    std::string actual_checkpoint = checkpoint;
-    std::string actual_recipe = recipe;
-    std::string actual_mmproj = mmproj;
+    std::string actual_checkpoint = model_data.contains("checkpoints") ? model_data["checkpoints"].value("main", "") : model_data.value("checkpoint", "");
+    std::string actual_recipe = model_data.value("recipe", "");
 
     // If checkpoint or recipe are provided, this is a model registration
     // and the model name must have the "user." prefix
@@ -1583,19 +1578,13 @@ void ModelManager::download_model(const std::string& model_name,
         std::cout << "Registering new user model: " << model_name << std::endl;
     } else {
         // Model is registered - if checkpoint not provided, look up from registry
+        // otherwise overwrite registration
         if (actual_checkpoint.empty()) {
             auto info = get_model_info(model_name);
             actual_checkpoint = info.checkpoint();
             actual_recipe = info.recipe;
-        }
-
-        // Also look up mmproj if not provided (for vision models)
-        if (actual_mmproj.empty()) {
-            auto info = get_model_info(model_name);
-            actual_mmproj = info.mmproj();
-            if (!actual_mmproj.empty()) {
-                std::cout << "[ModelManager] Found mmproj for vision model: " << actual_mmproj << std::endl;
-            }
+        } else {
+            model_registered = false;
         }
     }
 
@@ -1642,9 +1631,8 @@ void ModelManager::download_model(const std::string& model_name,
     }
 
     // Register user models to user_models.json
-    if (model_name.substr(0, 5) == "user.") {
-        register_user_model(model_name, actual_checkpoint, actual_recipe,
-                          reasoning, vision, embedding, reranking, actual_mmproj);
+    if (model_name.substr(0, 5) == "user." && !model_registered) {
+        register_user_model(model_name, model_data);
     }
 
     download_registered_model(get_model_info(model_name), do_not_upgrade, progress_callback);

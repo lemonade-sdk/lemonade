@@ -73,13 +73,7 @@ private:
     void resolve_and_register_local_model(
         const std::string& dest_path,
         const std::string& model_name,
-        const std::string& recipe,
-        const std::string& variant,
-        const std::string& mmproj,
-        bool reasoning,
-        bool& vision,
-        bool embedding,
-        bool reranking,
+        const json& model_data,
         const std::string& hf_cache);
 
     // Audio endpoint handlers (OpenAI /v1/audio/* compatible)
