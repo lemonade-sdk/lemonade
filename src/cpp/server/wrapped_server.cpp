@@ -149,7 +149,7 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint, const
         if (request.contains("mask_data") && request.contains("mask_filename")) {
             std::string mask_data = base64_decode(request["mask_data"].get<std::string>());
             std::string filename = request["mask_filename"].get<std::string>();
-            items.push_back({"mask[]", mask_data, filename, "image/png"});
+            items.push_back({"mask", mask_data, filename, "image/png"});
         }
 
         // Add text fields
@@ -187,6 +187,9 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint, const
         }
         if (request.contains("scheduler")) {
             items.push_back({"scheduler", request["scheduler"].get<std::string>(), "", ""});
+        }
+        if (request.contains("strength")) {
+            items.push_back({"strength", std::to_string(request["strength"].get<double>()), "", ""});
         }
 
         auto res = cli.Post(endpoint, items);

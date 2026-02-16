@@ -2034,6 +2034,9 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         if (req.form.has_field("scheduler")) {
             request_json["scheduler"] = req.form.get_field("scheduler");
         }
+        if (req.form.has_field("strength")) {
+            request_json["strength"] = std::stod(req.form.get_field("strength"));
+        }
 
         // Extract image file
         const auto& files = req.form.files;

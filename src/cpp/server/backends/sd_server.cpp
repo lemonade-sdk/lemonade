@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <thread>
 #include <chrono>
+#include <ctime>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -270,12 +271,73 @@ json SDServer::image_generations(const json& request) {
 }
 
 json SDServer::image_edits(const json& request) {
-    if (is_debug()) {
-        std::cout << "[SDServer] Forwarding image edits request to sd-server (multipart)" << std::endl;
+    // sd-server's /v1/images/edits puts images into ref_images (EDIT mode),
+    // which does NOT support img2img strength or mask-based inpainting.
+    // Instead, use /sdapi/v1/img2img which properly sets init_image and
+    // triggers the IMG2IMG code path with strength and mask support.
+    json sd_request;
+
+    sd_request["prompt"] = request.value("prompt", "");
+
+    // Image and mask as base64 strings for the JSON body
+    if (request.contains("image_data")) {
+        sd_request["init_images"] = json::array({request["image_data"]});
+    }
+    if (request.contains("mask_data")) {
+        sd_request["mask"] = request["mask_data"];
     }
 
-    // Use multipart forwarding for image edits
-    return forward_multipart_request("/v1/images/edits", request, 600);
+    // Map parameters to sdapi format
+    if (request.contains("steps")) {
+        sd_request["steps"] = request["steps"];
+    }
+    if (request.contains("cfg_scale")) {
+        sd_request["cfg_scale"] = request["cfg_scale"];
+    }
+    if (request.contains("seed")) {
+        sd_request["seed"] = request["seed"];
+    }
+    if (request.contains("sample_method")) {
+        sd_request["sampler_name"] = request["sample_method"];
+    }
+    if (request.contains("scheduler")) {
+        sd_request["scheduler"] = request["scheduler"];
+    }
+    if (request.contains("strength")) {
+        sd_request["denoising_strength"] = request["strength"];
+    }
+
+    sd_request["batch_size"] = 1;
+    sd_request["width"] = 512;
+    sd_request["height"] = 512;
+
+    if (is_debug()) {
+        // Log without the image data to avoid flooding
+        json debug_log = sd_request;
+        if (debug_log.contains("init_images")) debug_log["init_images"] = "[base64 image data]";
+        if (debug_log.contains("mask")) debug_log["mask"] = "[base64 mask data]";
+        std::cout << "[SDServer] Forwarding image edits to /sdapi/v1/img2img: "
+                  << debug_log.dump(2) << std::endl;
+    }
+
+    // Use the img2img endpoint which properly handles init_image + mask + strength
+    auto response = forward_request("/sdapi/v1/img2img", sd_request, 600);
+
+    // Transform sdapi response format {"images": ["b64..."]}
+    // to OpenAI format {"data": [{"b64_json": "..."}]}
+    if (response.contains("images") && response["images"].is_array()) {
+        json openai_response;
+        openai_response["created"] = static_cast<long long>(std::time(nullptr));
+        openai_response["data"] = json::array();
+        for (const auto& img : response["images"]) {
+            json item;
+            item["b64_json"] = img;
+            openai_response["data"].push_back(item);
+        }
+        return openai_response;
+    }
+
+    return response;
 }
 
 json SDServer::image_variations(const json& request) {
