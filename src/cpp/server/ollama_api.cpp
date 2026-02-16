@@ -602,6 +602,27 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
             return;
         }
 
+        // Unload model if empty messages + keep_alive=0 (Ollama unload convention)
+        auto messages = request_json.value("messages", json::array());
+        if (messages.empty() && request_json.contains("keep_alive") &&
+            request_json["keep_alive"] == 0) {
+            std::cout << "[OllamaApi] POST /api/chat - Unloading model: " << model << std::endl;
+            try {
+                router_->unload_model(model);
+            } catch (...) {
+                // Model may not be loaded, that's fine
+            }
+            json ollama_res = {
+                {"model", model},
+                {"created_at", "2024-01-01T00:00:00Z"},
+                {"message", {{"role", "assistant"}, {"content", ""}}},
+                {"done", true},
+                {"done_reason", "unload"}
+            };
+            res.set_content(ollama_res.dump(), "application/json");
+            return;
+        }
+
         // Auto-load the model
         try {
             auto_load_model(model);
@@ -660,6 +681,27 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
         if (model.empty()) {
             res.status = 400;
             res.set_content(R"({"error":"model is required"})", "application/json");
+            return;
+        }
+
+        // Unload model if empty prompt + keep_alive=0 (Ollama unload convention)
+        std::string prompt = request_json.value("prompt", "");
+        if (prompt.empty() && request_json.contains("keep_alive") &&
+            request_json["keep_alive"] == 0) {
+            std::cout << "[OllamaApi] POST /api/generate - Unloading model: " << model << std::endl;
+            try {
+                router_->unload_model(model);
+            } catch (...) {
+                // Model may not be loaded, that's fine
+            }
+            json ollama_res = {
+                {"model", model},
+                {"created_at", "2024-01-01T00:00:00Z"},
+                {"response", ""},
+                {"done", true},
+                {"done_reason", "unload"}
+            };
+            res.set_content(ollama_res.dump(), "application/json");
             return;
         }
 
@@ -1011,6 +1053,7 @@ void OllamaApi::handle_pull(const httplib::Request& req, httplib::Response& res)
                                 progress["status"] = "success";
                             } else {
                                 progress["status"] = "downloading " + p.file;
+                                progress["digest"] = "sha256:" + p.file;
                                 progress["completed"] = static_cast<uint64_t>(p.bytes_downloaded);
                                 progress["total"] = static_cast<uint64_t>(p.bytes_total);
                             }
@@ -1195,7 +1238,7 @@ void OllamaApi::handle_ps(const httplib::Request& req, httplib::Response& res) {
 
         if (loaded.is_array()) {
             for (const auto& m : loaded) {
-                std::string name = m.value("model", "");
+                std::string name = m.value("model_name", "");
                 json entry = {
                     {"name", name + ":latest"},
                     {"model", name + ":latest"},
@@ -1230,7 +1273,7 @@ void OllamaApi::handle_ps(const httplib::Request& req, httplib::Response& res) {
 // GET /api/version — Version info
 // ============================================================================
 void OllamaApi::handle_version(const httplib::Request& req, httplib::Response& res) {
-    json response = {{"version", "0.0.0"}};
+    json response = {{"version", "0.16.1"}};
     res.set_content(response.dump(), "application/json");
 }
 

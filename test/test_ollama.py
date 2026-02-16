@@ -76,7 +76,7 @@ class OllamaTests(ServerTestBase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("version", data)
-        self.assertEqual(data["version"], "0.0.0")
+        self.assertEqual(data["version"], "0.16.1")
 
     def test_002_root_endpoint(self):
         """Test / returns Ollama discovery response."""
@@ -132,7 +132,21 @@ class OllamaTests(ServerTestBase):
         self.assertEqual(response.status_code, 404)
 
     def test_006_ps(self):
-        """Test /api/ps returns running models."""
+        """Test /api/ps returns running models with correct Ollama format."""
+        self.ensure_model_pulled()
+
+        # Load a model first so /api/ps has something to return
+        requests.post(
+            f"{OLLAMA_BASE_URL}/api/chat",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [{"role": "user", "content": "Hi"}],
+                "stream": False,
+                "options": {"num_predict": 1},
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
         response = requests.get(
             f"{OLLAMA_BASE_URL}/api/ps",
             timeout=TIMEOUT_DEFAULT,
@@ -141,6 +155,106 @@ class OllamaTests(ServerTestBase):
         data = response.json()
         self.assertIn("models", data)
         self.assertIsInstance(data["models"], list)
+
+        # Should have at least one loaded model
+        self.assertGreater(
+            len(data["models"]), 0, "Expected at least one running model"
+        )
+
+        model = data["models"][0]
+        # Verify required Ollama fields
+        self.assertIn("name", model)
+        self.assertIn("model", model)
+        self.assertIn("expires_at", model)
+        self.assertIn("size_vram", model)
+        self.assertIn("details", model)
+
+        # Model name must not be empty (regression: was ":latest" due to field mismatch)
+        self.assertTrue(
+            model["name"].replace(":latest", "") != "",
+            f"Model name should not be empty, got: {model['name']}",
+        )
+        self.assertTrue(
+            model["name"].endswith(":latest"),
+            f"Model name should end with ':latest', got: {model['name']}",
+        )
+
+    def test_007_pull_streaming_progress(self):
+        """Test /api/pull streams NDJSON progress with digest field."""
+        self.ensure_model_pulled()
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/pull",
+            json={"name": ENDPOINT_TEST_MODEL, "stream": True},
+            timeout=TIMEOUT_MODEL_OPERATION,
+            stream=True,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        chunks = []
+        for line in response.iter_lines():
+            if line:
+                chunk = json.loads(line.decode("utf-8"))
+                chunks.append(chunk)
+
+        self.assertGreater(len(chunks), 0, "Expected at least one progress chunk")
+
+        # First chunk should be "pulling manifest"
+        self.assertEqual(chunks[0]["status"], "pulling manifest")
+
+        # Last chunk should be "success"
+        self.assertEqual(chunks[-1]["status"], "success")
+
+        # Any downloading chunk must have digest, completed, and total fields
+        download_chunks = [c for c in chunks if "completed" in c]
+        for chunk in download_chunks:
+            self.assertIn(
+                "digest", chunk, "Download progress must include 'digest' field"
+            )
+            self.assertIn("total", chunk)
+            self.assertIn("completed", chunk)
+
+    def test_008_unload_via_generate(self):
+        """Test model unload via /api/generate with keep_alive=0 (Ollama convention)."""
+        self.ensure_model_pulled()
+
+        # Load the model first
+        requests.post(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "prompt": "Hi",
+                "stream": False,
+                "options": {"num_predict": 1},
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        # Verify model is loaded
+        ps_response = requests.get(f"{OLLAMA_BASE_URL}/api/ps", timeout=TIMEOUT_DEFAULT)
+        loaded_names = [m["name"] for m in ps_response.json()["models"]]
+        self.assertTrue(
+            any(ENDPOINT_TEST_MODEL in n for n in loaded_names),
+            "Model should be loaded before unload test",
+        )
+
+        # Unload via empty prompt + keep_alive=0
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            json={"model": ENDPOINT_TEST_MODEL, "prompt": "", "keep_alive": 0},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["done"])
+        self.assertEqual(data["done_reason"], "unload")
+
+        # Verify model is no longer loaded
+        ps_response = requests.get(f"{OLLAMA_BASE_URL}/api/ps", timeout=TIMEOUT_DEFAULT)
+        loaded_names = [m["name"] for m in ps_response.json()["models"]]
+        self.assertFalse(
+            any(ENDPOINT_TEST_MODEL in n for n in loaded_names),
+            "Model should be unloaded after keep_alive=0",
+        )
 
     # ========================================================================
     # Chat completion tests
