@@ -87,7 +87,6 @@ public:
                             bool vision = false,
                             bool embedding = false,
                             bool reranking = false,
-                            bool image = false,
                             const std::string& mmproj = "",
                             const std::string& source = "");
 
@@ -99,7 +98,6 @@ public:
                        bool vision = false,
                        bool embedding = false,
                        bool reranking = false,
-                       bool image = false,
                        const std::string& mmproj = "",
                        bool do_not_upgrade = false,
                        DownloadProgressCallback progress_callback = nullptr);

@@ -2033,7 +2033,6 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         bool vision = request_json.value("vision", false);
         bool embedding = request_json.value("embedding", false);
         bool reranking = request_json.value("reranking", false);
-        bool image = request_json.value("image", false);
         std::string mmproj = request_json.value("mmproj", "");
         bool do_not_upgrade = request_json.value("do_not_upgrade", false);
         bool stream = request_json.value("stream", false);
@@ -2070,7 +2069,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
 
             resolve_and_register_local_model(
                 dest_path, model_name, recipe, "", mmproj,
-                reasoning, vision, embedding, reranking, image, hf_cache
+                reasoning, vision, embedding, reranking, hf_cache
             );
 
             nlohmann::json response = {
@@ -2092,7 +2091,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             res.set_chunked_content_provider(
                 "text/event-stream",
                 [this, model_name, checkpoint, recipe, reasoning, vision,
-                 embedding, reranking, image, mmproj, do_not_upgrade](size_t offset, httplib::DataSink& sink) {
+                 embedding, reranking, mmproj, do_not_upgrade](size_t offset, httplib::DataSink& sink) {
                     if (offset > 0) {
                         return false; // Already sent everything
                     }
@@ -2127,7 +2126,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                         };
 
                         model_manager_->download_model(model_name, checkpoint, recipe,
-                                                      reasoning, vision, embedding, reranking, image,
+                                                      reasoning, vision, embedding, reranking,
                                                       mmproj, do_not_upgrade, progress_cb);
 
                     } catch (const std::exception& e) {
@@ -2147,7 +2146,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         } else {
             // Legacy synchronous mode - blocks until complete
             model_manager_->download_model(model_name, checkpoint, recipe,
-                                          reasoning, vision, embedding, reranking, image, mmproj, do_not_upgrade);
+                                          reasoning, vision, embedding, reranking, mmproj, do_not_upgrade);
 
             nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
             res.set_content(response.dump(), "application/json");
@@ -2408,7 +2407,6 @@ void Server::resolve_and_register_local_model(
     bool& vision,  // May be modified if mmproj found
     bool embedding,
     bool reranking,
-    bool image,
     const std::string& hf_cache) {
 
     std::string resolved_checkpoint;
@@ -2524,7 +2522,6 @@ void Server::resolve_and_register_local_model(
         vision,
         embedding,
         reranking,
-        image,
         resolved_mmproj.empty() ? mmproj : resolved_mmproj,
         "local_upload"
     );

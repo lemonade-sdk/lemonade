@@ -80,7 +80,6 @@ private:
         bool& vision,
         bool embedding,
         bool reranking,
-        bool image,
         const std::string& hf_cache);
 
     // Audio endpoint handlers (OpenAI /v1/audio/* compatible)

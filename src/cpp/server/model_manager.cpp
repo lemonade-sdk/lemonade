@@ -1355,7 +1355,6 @@ void ModelManager::register_user_model(const std::string& model_name,
                                       bool vision,
                                       bool embedding,
                                       bool reranking,
-                                      bool image,
                                       const std::string& mmproj,
                                       const std::string& source) {
 
@@ -1384,8 +1383,11 @@ void ModelManager::register_user_model(const std::string& model_name,
     if (reranking) {
         labels.push_back("reranking");
     }
-    if (image) {
+    if (recipe == "sd-cpp") {
         labels.push_back("image");
+    }
+    if (recipe == "whispercpp") {
+        labels.push_back("audio");
     }
     model_entry["labels"] = labels;
 
@@ -1508,7 +1510,6 @@ void ModelManager::download_model(const std::string& model_name,
                                  bool vision,
                                  bool embedding,
                                  bool reranking,
-                                 bool image,
                                  const std::string& mmproj,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback) {
@@ -1643,7 +1644,7 @@ void ModelManager::download_model(const std::string& model_name,
     // Register user models to user_models.json
     if (model_name.substr(0, 5) == "user.") {
         register_user_model(model_name, actual_checkpoint, actual_recipe,
-                          reasoning, vision, embedding, reranking, image, actual_mmproj);
+                          reasoning, vision, embedding, reranking, actual_mmproj);
     }
 
     download_registered_model(get_model_info(model_name), do_not_upgrade, progress_callback);
