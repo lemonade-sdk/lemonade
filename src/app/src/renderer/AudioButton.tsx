@@ -6,12 +6,13 @@ export const PLAYING = 2;
 
 interface  AudioButtonProps {
   textMessage: any;
+  role: string;
   buttonIndex: number;
-  onClickFunction: (message: any, buttonIndex: number) => void;
+  onClickFunction: (message: any, role: string, buttonIndex: number) => void;
   buttonContext: {buttonId: number, audioState: number};
 }
 
-const AudioButton: React.FC<AudioButtonProps> = React.memo(function AudioButton({ textMessage, buttonIndex, onClickFunction, buttonContext}) {
+const AudioButton: React.FC<AudioButtonProps> = React.memo(function AudioButton({ textMessage, role, buttonIndex, onClickFunction, buttonContext}) {
   const LoadingIcon = () => {
     return (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18px" height="18px"  style={{opacity:1}}>
@@ -52,20 +53,20 @@ const AudioButton: React.FC<AudioButtonProps> = React.memo(function AudioButton(
         case PLAYING:
           return <PausedIcon />;
         default:
-          return <PlayingIcon />;  
+          return <PlayingIcon />;
       }
     } else {
-      return <PlayingIcon />; 
+      return <PlayingIcon />;
     }
   }
 
   return (
     <div key={buttonIndex} className="message-play-button-container">
-      <button className="message-play-button" onClick={() => onClickFunction(textMessage, buttonIndex)} disabled={buttonContext.audioState == LOADING}>{renderButtonIcon()}</button>
+      <button className="message-play-button" onClick={() => onClickFunction(textMessage, role, buttonIndex)} disabled={buttonContext.audioState == LOADING}>{renderButtonIcon()}</button>
     </div>
   );
 }, (prevProps, nextProps) => {
-  return (nextProps.buttonContext.buttonId === prevProps.buttonContext.buttonId) && (nextProps.buttonContext.audioState === prevProps.buttonContext.audioState) && (nextProps.textMessage == prevProps.textMessage) && (nextProps.onClickFunction == prevProps.onClickFunction);
+  return (nextProps.buttonContext.buttonId === prevProps.buttonContext.buttonId) && (nextProps.buttonContext.audioState === prevProps.buttonContext.audioState) && (nextProps.textMessage == prevProps.textMessage) && (nextProps.role === prevProps.role) && (nextProps.onClickFunction == prevProps.onClickFunction);
 });
 
 export default AudioButton;

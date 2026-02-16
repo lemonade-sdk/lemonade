@@ -7,6 +7,7 @@ import {
   createDefaultSettings,
   mergeWithDefaultSettings,
   NUMERIC_SETTING_LIMITS,
+  DEFAULT_TTS_SETTINGS,
 } from './utils/appSettings';
 
 interface SettingsModalProps {
@@ -115,6 +116,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }));
   };
 
+  const handleTTSSettingChange = (key: 'model' | 'userVoice' | 'assistantVoice', value: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      tts: {
+        ...prev.tts,
+        [key]: { value, useDefault: false }
+      }
+    }));
+  };
+
   const handleTextInputChange = (key: 'baseURL' | 'apiKey', value: string) => {
     setSettings((prev) => ({
       ...prev,
@@ -125,7 +136,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }));
   };
 
-  const handleResetField = (key: NumericSettingKey | 'enableThinking' | 'collapseThinkingByDefault' | 'baseURL' | 'apiKey') => {
+  const handleResetField = (key: NumericSettingKey | 'enableThinking' | 'collapseThinkingByDefault' | 'baseURL' | 'apiKey' | 'model' | 'userVoice' | 'assistantVoice') => {
     setSettings((prev) => {
       if (key === 'enableThinking') {
         return {
@@ -143,6 +154,36 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           collapseThinkingByDefault: {
             value: BASE_SETTING_VALUES.collapseThinkingByDefault,
             useDefault: true,
+          },
+        };
+      }
+
+      if (key === 'model') {
+        return {
+          ...prev,
+          tts: {
+            ...prev.tts,
+            model: DEFAULT_TTS_SETTINGS.model
+          },
+        };
+      }
+
+      if (key === 'userVoice') {
+        return {
+          ...prev,
+          tts: {
+            ...prev.tts,
+            userVoice: DEFAULT_TTS_SETTINGS.userVoice
+          },
+        };
+      }
+
+      if (key === 'assistantVoice') {
+        return {
+          ...prev,
+          tts: {
+            ...prev.tts,
+            assistantVoice: DEFAULT_TTS_SETTINGS.assistantVoice
           },
         };
       }
@@ -224,6 +265,45 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 </button>
               </div>
               <input type="text" value={settings['apiKey'].value} onChange={(e) => handleTextInputChange('apiKey', e.target.value)} className="settings-text-input"/>
+            </div>
+            <div className="settings-category-header">
+              <h3>TTS</h3>
+            </div>
+            <div className={`settings-section ${settings.tts.model.useDefault ? "settings-section-default" : ""}`}>
+              <div className="settings-label-row">
+                <label className="settings-label">
+                  <span className="settings-label-text">TTS Model</span>
+                  <span className="settings-description">Use the selected model for TTS conversion.</span>
+                </label>
+                <button type="button" className="settings-field-reset" onClick={() => handleResetField('model')} disabled={settings.tts.model.useDefault}>
+                  Reset
+                </button>
+              </div>
+              <input type="text" value={settings.tts["model"].value} onChange={(e) => handleTTSSettingChange('model', e.target.value)} className="settings-text-input"/>
+            </div>
+            <div className={`settings-section ${settings.tts.userVoice.useDefault ? "settings-section-default" : ""}`}>
+              <div className="settings-label-row">
+                <label className="settings-label">
+                  <span className="settings-label-text">User Voice</span>
+                  <span className="settings-description">Use the selected voice for TTS conversion of user messages.</span>
+                </label>
+                <button type="button" className="settings-field-reset" onClick={() => handleResetField('userVoice')} disabled={settings.tts.userVoice.useDefault}>
+                  Reset
+                </button>
+              </div>
+              <input type="text" value={settings.tts['userVoice'].value} onChange={(e) => handleTTSSettingChange('userVoice', e.target.value)} className="settings-text-input"/>
+            </div>
+            <div className={`settings-section ${settings.tts.assistantVoice.useDefault ? "settings-section-default" : ""}`}>
+              <div className="settings-label-row">
+                <label className="settings-label">
+                  <span className="settings-label-text">Assistant Voice</span>
+                  <span className="settings-description">Use the selected voice for TTS conversion of assistant messages.</span>
+                </label>
+                <button type="button" className="settings-field-reset" onClick={() => handleResetField('assistantVoice')} disabled={settings.tts.assistantVoice.useDefault}>
+                  Reset
+                </button>
+              </div>
+              <input type="text" value={settings.tts['assistantVoice'].value} onChange={(e) => handleTTSSettingChange('assistantVoice', e.target.value)} className="settings-text-input"/>
             </div>
             <div className="settings-category-header">
               <h3>LLM Chat</h3>
