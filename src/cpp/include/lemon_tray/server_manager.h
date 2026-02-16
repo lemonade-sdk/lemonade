@@ -73,6 +73,12 @@ public:
         return (host_ == "0.0.0.0" || host_ == "localhost") ? "127.0.0.1" : host_;
     }
 
+    // Get the host to display in logs (original user-specified value).
+    // Unlike get_connection_host(), this doesn't convert 0.0.0.0 or localhost.
+    std::string get_display_host() const {
+        return host_;
+    }
+
     // API communication (returns JSON or throws exception)
     nlohmann::json get_health();
     nlohmann::json get_models();

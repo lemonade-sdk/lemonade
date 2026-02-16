@@ -61,6 +61,7 @@ int main(int argc, char** argv) {
         std::cout << "  Port: " << config.port << std::endl;
         std::cout << "  Host: " << config.host << std::endl;
         std::cout << "  Log level: " << config.log_level << std::endl;
+        std::cout << "API listening on " << config.host << ":" << config.port << std::endl;
         if (!config.extra_models_dir.empty()) {
             std::cout << "  Extra models dir: " << config.extra_models_dir << std::endl;
         }
