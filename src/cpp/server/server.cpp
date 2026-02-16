@@ -1137,6 +1137,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"created", 1234567890},
         {"owned_by", "lemonade"},
         {"checkpoint", info.checkpoint()},
+        {"checkpoints", info.checkpoints},
         {"recipe", info.recipe},
         {"downloaded", info.downloaded},
         {"suggested", info.suggested},
