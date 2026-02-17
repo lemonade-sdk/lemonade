@@ -2,6 +2,7 @@
 
 #include <string>
 #include <memory>
+#include <functional>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "router.h"
@@ -44,12 +45,15 @@ private:
     json convert_openai_delta_to_ollama(const json& openai_chunk, const std::string& model);
     json convert_ollama_to_openai_chat(const json& ollama_request);
     json convert_ollama_to_openai_completion(const json& ollama_request);
-    void stream_chat_with_adapter(const std::string& openai_body,
-                                  httplib::DataSink& client_sink,
-                                  const std::string& model);
-    void stream_generate_with_adapter(const std::string& openai_body,
-                                      httplib::DataSink& client_sink,
-                                      const std::string& model);
+    // Common SSE → NDJSON streaming adapter
+    using ChunkConverter = std::function<json(const json& openai_chunk)>;
+    using DoneBuilder = std::function<json(int prompt_eval_count, int eval_count)>;
+    using StreamFn = std::function<void(const std::string& body, httplib::DataSink& sink)>;
+    void stream_sse_to_ndjson(const std::string& openai_body,
+                              httplib::DataSink& client_sink,
+                              ChunkConverter convert_chunk,
+                              DoneBuilder build_done,
+                              StreamFn call_router);
 };
 
 } // namespace lemon

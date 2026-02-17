@@ -9,6 +9,118 @@
 
 namespace lemon {
 
+// ============================================================================
+// Helper: extract parameter size from model name
+// e.g. "Qwen3-0.6B-GGUF" → "0.6B", "Gemma-3-4b-it-GGUF" → "4B"
+// ============================================================================
+static std::string extract_parameter_size(const std::string& model_name) {
+    std::string result;
+    size_t i = 0;
+    while (i < model_name.size()) {
+        size_t seg_start = i;
+        while (i < model_name.size() && model_name[i] != '-') i++;
+        std::string segment = model_name.substr(seg_start, i - seg_start);
+        if (i < model_name.size()) i++;  // skip hyphen
+
+        // Match pattern: [0-9.]+[BbMm]
+        if (segment.size() >= 2) {
+            char last = segment.back();
+            if (last == 'B' || last == 'b' || last == 'M' || last == 'm') {
+                bool valid = true;
+                for (size_t j = 0; j < segment.size() - 1; j++) {
+                    if (!std::isdigit(segment[j]) && segment[j] != '.') {
+                        valid = false;
+                        break;
+                    }
+                }
+                if (valid) {
+                    // Normalize suffix to uppercase (e.g. "4b" → "4B")
+                    result = segment.substr(0, segment.size() - 1) +
+                             static_cast<char>(std::toupper(last));
+                }
+            }
+        }
+    }
+    return result;  // returns last match (param size typically follows version numbers)
+}
+
+// ============================================================================
+// Helper: extract quantization level from checkpoint string
+// e.g. "unsloth/Qwen3-0.6B-GGUF:Q4_0" → "Q4_0"
+//      "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M" → "Q4_K_M"
+//      "unsloth/gemma-3-270m-it-GGUF:gemma-3-270m-it-UD-IQ2_M.gguf" → "IQ2_M"
+// ============================================================================
+static std::string extract_quantization_level(const std::string& checkpoint) {
+    // Search in the filename part (after colon) first, fallback to full string
+    std::string search_str = checkpoint;
+    size_t colon_pos = checkpoint.find(':');
+    if (colon_pos != std::string::npos) {
+        search_str = checkpoint.substr(colon_pos + 1);
+    }
+
+    // Look for [I]?Q[0-9][A-Za-z0-9_]* at a word boundary
+    for (size_t i = 0; i < search_str.size(); i++) {
+        size_t start = i;
+        // Optional 'I' prefix (for IQ patterns)
+        if (search_str[i] == 'I' && i + 1 < search_str.size() && search_str[i + 1] == 'Q') {
+            i++;
+        }
+        if (search_str[i] == 'Q' && i + 1 < search_str.size() && std::isdigit(search_str[i + 1])) {
+            // Check word boundary before start
+            if (start > 0 && std::isalnum(search_str[start - 1])) {
+                i = start;  // not a boundary, skip
+                continue;
+            }
+            // Scan to end of quant token
+            size_t end = i + 1;
+            while (end < search_str.size() &&
+                   (std::isdigit(search_str[end]) || std::isalpha(search_str[end]) ||
+                    search_str[end] == '_')) {
+                end++;
+            }
+            return search_str.substr(start, end - start);
+        }
+        i = start;  // reset to start for next iteration's i++
+    }
+    return "";
+}
+
+// ============================================================================
+// Ollama → OpenAI option name mapping (ollama_key → openai_key)
+// Options where both names are the same use identical strings.
+// ============================================================================
+struct OptionMapping { const char* ollama_key; const char* openai_key; };
+
+static const OptionMapping OPTION_MAPPINGS[] = {
+    {"temperature",    "temperature"},
+    {"top_p",          "top_p"},
+    {"seed",           "seed"},
+    {"stop",           "stop"},
+    {"num_predict",    "max_tokens"},
+    {"repeat_penalty", "frequency_penalty"},
+};
+
+// Apply the option mappings from an Ollama request to an OpenAI request.
+// Checks the "options" sub-object first, then top-level keys (top-level wins).
+static void map_ollama_options(const json& ollama_request, json& openai_req) {
+    // From options sub-object
+    if (ollama_request.contains("options") && ollama_request["options"].is_object()) {
+        const auto& opts = ollama_request["options"];
+        for (const auto& m : OPTION_MAPPINGS) {
+            if (opts.contains(m.ollama_key)) {
+                openai_req[m.openai_key] = opts[m.ollama_key];
+            }
+        }
+    }
+
+    // Top-level overrides (Ollama also accepts these at the top level)
+    for (const auto& m : OPTION_MAPPINGS) {
+        if (ollama_request.contains(m.ollama_key)) {
+            openai_req[m.openai_key] = ollama_request[m.ollama_key];
+        }
+    }
+}
+
 OllamaApi::OllamaApi(Router* router, ModelManager* model_manager)
     : router_(router), model_manager_(model_manager) {
 }
@@ -136,28 +248,9 @@ json OllamaApi::build_ollama_model_entry(const std::string& id, const ModelInfo&
     // Determine family from recipe
     std::string family = info.recipe;
 
-    // Determine parameter_size from labels
-    std::string parameter_size = "";
-    std::string quantization_level = "";
-    for (const auto& label : info.labels) {
-        // Look for labels like "7B", "13B", etc.
-        if (!label.empty() && label.back() == 'B' && label.size() <= 5) {
-            bool all_digits = true;
-            for (size_t i = 0; i < label.size() - 1; i++) {
-                if (!std::isdigit(label[i]) && label[i] != '.') {
-                    all_digits = false;
-                    break;
-                }
-            }
-            if (all_digits) {
-                parameter_size = label;
-            }
-        }
-        // Look for quantization labels like "Q4_K_M", "Q8_0", etc.
-        if (label.size() >= 2 && label[0] == 'Q' && std::isdigit(label[1])) {
-            quantization_level = label;
-        }
-    }
+    // Extract parameter size from model name and quantization from checkpoint
+    std::string parameter_size = extract_parameter_size(id);
+    std::string quantization_level = extract_quantization_level(info.checkpoint());
 
     json entry = {
         {"name", id + ":latest"},
@@ -223,22 +316,8 @@ json OllamaApi::convert_ollama_to_openai_chat(const json& ollama_request) {
         openai_req["messages"] = messages;
     }
 
-    // Map options → top-level parameters
-    if (ollama_request.contains("options") && ollama_request["options"].is_object()) {
-        const auto& opts = ollama_request["options"];
-        if (opts.contains("temperature")) openai_req["temperature"] = opts["temperature"];
-        if (opts.contains("top_p")) openai_req["top_p"] = opts["top_p"];
-        if (opts.contains("seed")) openai_req["seed"] = opts["seed"];
-        if (opts.contains("stop")) openai_req["stop"] = opts["stop"];
-        if (opts.contains("num_predict")) openai_req["max_tokens"] = opts["num_predict"];
-        if (opts.contains("repeat_penalty")) openai_req["frequency_penalty"] = opts["repeat_penalty"];
-    }
-
-    // Map top-level options that Ollama also accepts directly
-    if (ollama_request.contains("temperature")) openai_req["temperature"] = ollama_request["temperature"];
-    if (ollama_request.contains("top_p")) openai_req["top_p"] = ollama_request["top_p"];
-    if (ollama_request.contains("seed")) openai_req["seed"] = ollama_request["seed"];
-    if (ollama_request.contains("stop")) openai_req["stop"] = ollama_request["stop"];
+    // Map options (from "options" sub-object and top-level)
+    map_ollama_options(ollama_request, openai_req);
 
     // Map tools if present
     if (ollama_request.contains("tools")) {
@@ -272,21 +351,8 @@ json OllamaApi::convert_ollama_to_openai_completion(const json& ollama_request) 
         openai_req["prompt"] = ollama_request["prompt"];
     }
 
-    // Map options
-    if (ollama_request.contains("options") && ollama_request["options"].is_object()) {
-        const auto& opts = ollama_request["options"];
-        if (opts.contains("temperature")) openai_req["temperature"] = opts["temperature"];
-        if (opts.contains("top_p")) openai_req["top_p"] = opts["top_p"];
-        if (opts.contains("seed")) openai_req["seed"] = opts["seed"];
-        if (opts.contains("stop")) openai_req["stop"] = opts["stop"];
-        if (opts.contains("num_predict")) openai_req["max_tokens"] = opts["num_predict"];
-        if (opts.contains("repeat_penalty")) openai_req["frequency_penalty"] = opts["repeat_penalty"];
-    }
-
-    if (ollama_request.contains("temperature")) openai_req["temperature"] = ollama_request["temperature"];
-    if (ollama_request.contains("top_p")) openai_req["top_p"] = ollama_request["top_p"];
-    if (ollama_request.contains("seed")) openai_req["seed"] = ollama_request["seed"];
-    if (ollama_request.contains("stop")) openai_req["stop"] = ollama_request["stop"];
+    // Map options (from "options" sub-object and top-level)
+    map_ollama_options(ollama_request, openai_req);
 
     openai_req["stream"] = false;
 
@@ -397,11 +463,15 @@ json OllamaApi::convert_openai_delta_to_ollama(const json& openai_chunk, const s
 }
 
 // ============================================================================
-// Streaming adapter: SSE → NDJSON for /api/chat
+// Common streaming adapter: SSE → NDJSON
+// Parses OpenAI SSE stream, converts each chunk via convert_chunk, writes
+// NDJSON to the client, and sends a final done message via build_done.
 // ============================================================================
-void OllamaApi::stream_chat_with_adapter(const std::string& openai_body,
-                                          httplib::DataSink& client_sink,
-                                          const std::string& model) {
+void OllamaApi::stream_sse_to_ndjson(const std::string& openai_body,
+                                      httplib::DataSink& client_sink,
+                                      ChunkConverter convert_chunk,
+                                      DoneBuilder build_done,
+                                      StreamFn call_router) {
     httplib::DataSink adapter_sink;
     std::string sse_buffer;
     int eval_count = 0;
@@ -409,22 +479,19 @@ void OllamaApi::stream_chat_with_adapter(const std::string& openai_body,
 
     adapter_sink.is_writable = client_sink.is_writable;
 
-    adapter_sink.write = [this, &client_sink, &sse_buffer, &model, &eval_count,
-                          &prompt_eval_count](const char* data, size_t len) -> bool {
+    adapter_sink.write = [&client_sink, &sse_buffer, &eval_count,
+                          &prompt_eval_count, &convert_chunk](const char* data, size_t len) -> bool {
         sse_buffer.append(data, len);
 
-        // Process complete lines
         size_t pos;
         while ((pos = sse_buffer.find('\n')) != std::string::npos) {
             std::string line = sse_buffer.substr(0, pos);
             sse_buffer.erase(0, pos + 1);
 
-            // Remove trailing \r
             if (!line.empty() && line.back() == '\r') {
                 line.pop_back();
             }
 
-            // Skip empty lines and non-data lines
             if (line.empty() || line.find("data: ") != 0) {
                 continue;
             }
@@ -446,7 +513,7 @@ void OllamaApi::stream_chat_with_adapter(const std::string& openai_body,
                         eval_count = usage["completion_tokens"].get<int>();
                 }
 
-                auto ollama_chunk = convert_openai_delta_to_ollama(openai_chunk, model);
+                auto ollama_chunk = convert_chunk(openai_chunk);
                 std::string ndjson = ollama_chunk.dump() + "\n";
                 if (!client_sink.write(ndjson.c_str(), ndjson.size())) {
                     return false;
@@ -458,134 +525,14 @@ void OllamaApi::stream_chat_with_adapter(const std::string& openai_body,
         return true;
     };
 
-    adapter_sink.done = [&client_sink, &model, &eval_count, &prompt_eval_count]() {
-        // Write the final done message with stats
-        json done_msg = {
-            {"model", model},
-            {"created_at", "2024-01-01T00:00:00Z"},
-            {"message", {{"role", "assistant"}, {"content", ""}}},
-            {"done", true},
-            {"done_reason", "stop"},
-            {"total_duration", 0},
-            {"load_duration", 0},
-            {"prompt_eval_count", prompt_eval_count},
-            {"prompt_eval_duration", 0},
-            {"eval_count", eval_count},
-            {"eval_duration", 0}
-        };
+    adapter_sink.done = [&client_sink, &eval_count, &prompt_eval_count, &build_done]() {
+        json done_msg = build_done(prompt_eval_count, eval_count);
         std::string ndjson = done_msg.dump() + "\n";
         client_sink.write(ndjson.c_str(), ndjson.size());
         client_sink.done();
     };
 
-    router_->chat_completion_stream(openai_body, adapter_sink);
-}
-
-// ============================================================================
-// Streaming adapter: SSE → NDJSON for /api/generate
-// ============================================================================
-void OllamaApi::stream_generate_with_adapter(const std::string& openai_body,
-                                              httplib::DataSink& client_sink,
-                                              const std::string& model) {
-    httplib::DataSink adapter_sink;
-    std::string sse_buffer;
-    int eval_count = 0;
-    int prompt_eval_count = 0;
-
-    adapter_sink.is_writable = client_sink.is_writable;
-
-    adapter_sink.write = [this, &client_sink, &sse_buffer, &model, &eval_count,
-                          &prompt_eval_count](const char* data, size_t len) -> bool {
-        sse_buffer.append(data, len);
-
-        size_t pos;
-        while ((pos = sse_buffer.find('\n')) != std::string::npos) {
-            std::string line = sse_buffer.substr(0, pos);
-            sse_buffer.erase(0, pos + 1);
-
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
-            }
-
-            if (line.empty() || line.find("data: ") != 0) {
-                continue;
-            }
-
-            std::string json_str = line.substr(6);
-            if (json_str == "[DONE]") {
-                continue;
-            }
-
-            try {
-                auto openai_chunk = json::parse(json_str);
-
-                // Track token counts
-                if (openai_chunk.contains("usage")) {
-                    const auto& usage = openai_chunk["usage"];
-                    if (usage.contains("prompt_tokens"))
-                        prompt_eval_count = usage["prompt_tokens"].get<int>();
-                    if (usage.contains("completion_tokens"))
-                        eval_count = usage["completion_tokens"].get<int>();
-                }
-
-                // Convert to Ollama generate streaming format
-                json ollama_chunk;
-                ollama_chunk["model"] = model;
-                ollama_chunk["created_at"] = "2024-01-01T00:00:00Z";
-                ollama_chunk["done"] = false;
-
-                // Extract text from completion choices
-                if (openai_chunk.contains("choices") && !openai_chunk["choices"].empty()) {
-                    const auto& choice = openai_chunk["choices"][0];
-                    // Completion API uses "text" field
-                    if (choice.contains("text")) {
-                        ollama_chunk["response"] = choice["text"];
-                    }
-                    // Chat completion uses "delta.content"
-                    else if (choice.contains("delta") && choice["delta"].contains("content")) {
-                        ollama_chunk["response"] = choice["delta"]["content"];
-                    } else {
-                        ollama_chunk["response"] = "";
-                    }
-
-                    if (choice.contains("finish_reason") && !choice["finish_reason"].is_null()) {
-                        ollama_chunk["done"] = true;
-                        ollama_chunk["done_reason"] = choice["finish_reason"];
-                    }
-                }
-
-                std::string ndjson = ollama_chunk.dump() + "\n";
-                if (!client_sink.write(ndjson.c_str(), ndjson.size())) {
-                    return false;
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "[OllamaApi] Failed to parse SSE chunk: " << e.what() << std::endl;
-            }
-        }
-        return true;
-    };
-
-    adapter_sink.done = [&client_sink, &model, &eval_count, &prompt_eval_count]() {
-        json done_msg = {
-            {"model", model},
-            {"created_at", "2024-01-01T00:00:00Z"},
-            {"response", ""},
-            {"done", true},
-            {"done_reason", "stop"},
-            {"context", json::array()},
-            {"total_duration", 0},
-            {"load_duration", 0},
-            {"prompt_eval_count", prompt_eval_count},
-            {"prompt_eval_duration", 0},
-            {"eval_count", eval_count},
-            {"eval_duration", 0}
-        };
-        std::string ndjson = done_msg.dump() + "\n";
-        client_sink.write(ndjson.c_str(), ndjson.size());
-        client_sink.done();
-    };
-
-    router_->completion_stream(openai_body, adapter_sink);
+    call_router(openai_body, adapter_sink);
 }
 
 // ============================================================================
@@ -650,7 +597,27 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
                 "application/x-ndjson",
                 [this, openai_body, model](size_t offset, httplib::DataSink& sink) {
                     if (offset > 0) return false;
-                    stream_chat_with_adapter(openai_body, sink, model);
+                    stream_sse_to_ndjson(openai_body, sink,
+                        // Convert each SSE chunk to Ollama chat format
+                        [this, &model](const json& chunk) {
+                            return convert_openai_delta_to_ollama(chunk, model);
+                        },
+                        // Build final done message
+                        [&model](int prompt_eval_count, int eval_count) -> json {
+                            return {
+                                {"model", model}, {"created_at", "2024-01-01T00:00:00Z"},
+                                {"message", {{"role", "assistant"}, {"content", ""}}},
+                                {"done", true}, {"done_reason", "stop"},
+                                {"total_duration", 0}, {"load_duration", 0},
+                                {"prompt_eval_count", prompt_eval_count}, {"prompt_eval_duration", 0},
+                                {"eval_count", eval_count}, {"eval_duration", 0}
+                            };
+                        },
+                        // Router stream function
+                        [this](const std::string& body, httplib::DataSink& s) {
+                            router_->chat_completion_stream(body, s);
+                        }
+                    );
                     return false;
                 }
             );
@@ -738,7 +705,44 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
                 "application/x-ndjson",
                 [this, openai_body, model](size_t offset, httplib::DataSink& sink) {
                     if (offset > 0) return false;
-                    stream_generate_with_adapter(openai_body, sink, model);
+                    stream_sse_to_ndjson(openai_body, sink,
+                        // Convert each SSE chunk to Ollama generate format
+                        [&model](const json& openai_chunk) -> json {
+                            json ollama_chunk = {
+                                {"model", model}, {"created_at", "2024-01-01T00:00:00Z"},
+                                {"done", false}
+                            };
+                            if (openai_chunk.contains("choices") && !openai_chunk["choices"].empty()) {
+                                const auto& choice = openai_chunk["choices"][0];
+                                if (choice.contains("text"))
+                                    ollama_chunk["response"] = choice["text"];
+                                else if (choice.contains("delta") && choice["delta"].contains("content"))
+                                    ollama_chunk["response"] = choice["delta"]["content"];
+                                else
+                                    ollama_chunk["response"] = "";
+                                if (choice.contains("finish_reason") && !choice["finish_reason"].is_null()) {
+                                    ollama_chunk["done"] = true;
+                                    ollama_chunk["done_reason"] = choice["finish_reason"];
+                                }
+                            }
+                            return ollama_chunk;
+                        },
+                        // Build final done message
+                        [&model](int prompt_eval_count, int eval_count) -> json {
+                            return {
+                                {"model", model}, {"created_at", "2024-01-01T00:00:00Z"},
+                                {"response", ""}, {"done", true}, {"done_reason", "stop"},
+                                {"context", json::array()},
+                                {"total_duration", 0}, {"load_duration", 0},
+                                {"prompt_eval_count", prompt_eval_count}, {"prompt_eval_duration", 0},
+                                {"eval_count", eval_count}, {"eval_duration", 0}
+                            };
+                        },
+                        // Router stream function
+                        [this](const std::string& body, httplib::DataSink& s) {
+                            router_->completion_stream(body, s);
+                        }
+                    );
                     return false;
                 }
             );
@@ -923,22 +927,10 @@ void OllamaApi::handle_show(const httplib::Request& req, httplib::Response& res)
 
         auto info = model_manager_->get_model_info(name);
 
-        // Determine family and quantization
+        // Extract model details from name and checkpoint
         std::string family = info.recipe;
-        std::string parameter_size = "";
-        std::string quantization_level = "";
-        for (const auto& label : info.labels) {
-            if (!label.empty() && label.back() == 'B' && label.size() <= 5) {
-                bool all_digits = true;
-                for (size_t i = 0; i < label.size() - 1; i++) {
-                    if (!std::isdigit(label[i]) && label[i] != '.') { all_digits = false; break; }
-                }
-                if (all_digits) parameter_size = label;
-            }
-            if (label.size() >= 2 && label[0] == 'Q' && std::isdigit(label[1])) {
-                quantization_level = label;
-            }
-        }
+        std::string parameter_size = extract_parameter_size(name);
+        std::string quantization_level = extract_quantization_level(info.checkpoint());
 
         json response = {
             {"modelfile", "# Modelfile generated by Lemonade\nFROM " + info.checkpoint()},
