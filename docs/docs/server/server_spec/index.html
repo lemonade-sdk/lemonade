@@ -807,6 +807,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#ollama-compatible-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama-Compatible API
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1917,6 +1928,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#ollama-compatible-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama-Compatible API
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2970,6 +2992,87 @@
 <li>GET <code>/api/v1/system-info</code> - System information and device enumeration</li>
 <li>GET <code>/live</code> - Check server liveness for load balancers and orchestrators</li>
 </ul>
+<h3 id="ollama-compatible-api">Ollama-Compatible API</h3>
+<p>Lemonade supports the <a href="https://github.com/ollama/ollama/blob/main/docs/api.md">Ollama API</a>, allowing applications built for Ollama to work with Lemonade without modification.</p>
+<p>To enable auto-detection by Ollama-integrated apps, launch the server on the Ollama default port:</p>
+<div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">11434</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Status</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST /api/chat</code></td>
+<td>Supported</td>
+<td>Streaming and non-streaming</td>
+</tr>
+<tr>
+<td><code>POST /api/generate</code></td>
+<td>Supported</td>
+<td>Text completion + image generation</td>
+</tr>
+<tr>
+<td><code>GET /api/tags</code></td>
+<td>Supported</td>
+<td>Lists downloaded models</td>
+</tr>
+<tr>
+<td><code>POST /api/show</code></td>
+<td>Supported</td>
+<td>Model details</td>
+</tr>
+<tr>
+<td><code>DELETE /api/delete</code></td>
+<td>Supported</td>
+<td></td>
+</tr>
+<tr>
+<td><code>POST /api/pull</code></td>
+<td>Supported</td>
+<td>Download with progress</td>
+</tr>
+<tr>
+<td><code>POST /api/embed</code></td>
+<td>Supported</td>
+<td>New embeddings format</td>
+</tr>
+<tr>
+<td><code>POST /api/embeddings</code></td>
+<td>Supported</td>
+<td>Legacy embeddings</td>
+</tr>
+<tr>
+<td><code>GET /api/ps</code></td>
+<td>Supported</td>
+<td>Running models</td>
+</tr>
+<tr>
+<td><code>GET /api/version</code></td>
+<td>Supported</td>
+<td></td>
+</tr>
+<tr>
+<td><code>POST /api/create</code></td>
+<td>Not supported</td>
+<td>Returns 501</td>
+</tr>
+<tr>
+<td><code>POST /api/copy</code></td>
+<td>Not supported</td>
+<td>Returns 501</td>
+</tr>
+<tr>
+<td><code>POST /api/push</code></td>
+<td>Not supported</td>
+<td>Returns 501</td>
+</tr>
+</tbody>
+</table>
 <h2 id="multi-model-support">Multi-Model Support</h2>
 <p>Lemonade Server supports loading multiple models simultaneously, allowing you to keep frequently-used models in memory for faster switching. The server uses a Least Recently Used (LRU) cache policy to automatically manage model eviction when limits are reached.</p>
 <h3 id="configuration">Configuration</h3>
