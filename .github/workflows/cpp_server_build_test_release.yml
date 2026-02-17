@@ -758,10 +758,6 @@ jobs:
           echo "=== Lock file status ==="
           ls -la /tmp/lemonade*.lock 2>/dev/null || echo "No lock files found"
 
-      - name: Cleanup
-        if: always()
-        uses: ./.github/actions/cleanup-processes-macos
-
   # ========================================================================
   # CLI AND ENDPOINTS TESTS - Run on GitHub-hosted runners (no GPU needed)
   # ========================================================================
