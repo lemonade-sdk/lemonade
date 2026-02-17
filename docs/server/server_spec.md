@@ -594,11 +594,7 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 
 Realtime Audio Transcription API via WebSocket (OpenAI SDK compatible). Stream audio from a microphone and receive transcriptions in real-time with Voice Activity Detection (VAD).
 
-> **Note:** The WebSocket server runs on HTTP port + 100 (e.g., if HTTP is on port 8000, WebSocket is on port 8100).
->
 > **Limitations:** Only 16kHz mono PCM16 audio format is supported. Uses the same Whisper models as the HTTP transcription endpoint.
->
-> **OpenAI SDK Compatible:** This endpoint follows the OpenAI Realtime API format. If you have existing code using OpenAI's Realtime API, you only need to change the `base_url` to point to your local Lemonade server (`ws://localhost:8100`).
 
 #### Connection
 
