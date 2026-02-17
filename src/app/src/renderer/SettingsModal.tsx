@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, ReactElement } from 'react';
 import {
   AppSettings,
   BASE_SETTING_VALUES,
@@ -6,9 +6,12 @@ import {
   clampNumericSettingValue,
   createDefaultSettings,
   mergeWithDefaultSettings,
-  NUMERIC_SETTING_LIMITS,
   DEFAULT_TTS_SETTINGS,
 } from './utils/appSettings';
+import ConnectionSettings from './tabs/ConnectionSettings';
+import TTSSettings from './tabs/TTSSettings';
+import LLMChatSettings from './tabs/LLMChatSettings';
+import Tabs from './Tabs';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -40,6 +43,12 @@ const numericSettingsConfig: Array<{
     label: 'Repeat Penalty',
     description: 'Penalty for repeating tokens (1 = no penalty, >1 = less repetition)',
   },
+];
+
+const tabs = [
+  { id: 'connection_settings', label: 'Connection' },
+  { id: 'llm_chat_settings', label: 'LLM Chat' },
+  { id: 'tts_settings', label: 'TTS' }
 ];
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
@@ -117,16 +126,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   };
 
   const handleTTSSettingChange = (key: 'model' | 'userVoice' | 'assistantVoice', value: string) => {
-    setSettings((prev) => ({
-      ...prev,
-      tts: {
-        ...prev.tts,
-        [key]: { value, useDefault: false }
-      }
-    }));
+    if(value !== '') {
+      setSettings((prev) => ({
+        ...prev,
+        tts: {
+          ...prev.tts,
+          [key]: { value, useDefault: false }
+        }
+      }));
+    }
   };
 
-  const handleTextInputChange = (key: 'baseURL' | 'apiKey', value: string) => {
+  const handleTextInputChange = (key: string, value: string) => {
     setSettings((prev) => ({
       ...prev,
       [key]: {
@@ -221,6 +232,33 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }
   };
 
+  const getSettingContext = (id: string): ReactElement => {
+    switch(id) {
+      case 'connection_settings':
+        return <ConnectionSettings
+          settings={settings}
+          onValueChangeFunc={handleTextInputChange}
+          onResetFunc={handleResetField}
+        />;
+      case 'llm_chat_settings':
+        return <LLMChatSettings
+          settings={settings}
+          numericSettingsConfig={numericSettingsConfig}
+          onBooleanChangeFunc={handleBooleanChange}
+          onNumericChangeFunc={handleNumericChange}
+          onResetFunc={handleResetField}
+        />;
+      case 'tts_settings':
+        return <TTSSettings
+        settings={settings}
+        onValueChangeFunc={handleTTSSettingChange}
+        onResetFunc={handleResetField}
+        />;
+      default:
+        return <div></div>;
+    }
+  }
+
   if (!isOpen) return null;
 
   return (
@@ -239,197 +277,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           <div className="settings-loading">Loading settings…</div>
         ) : (
           <div className="settings-content">
-            <div className="settings-category-header">
-              <h3>Connection</h3>
-            </div>
-            <div className={`settings-section ${settings.baseURL.useDefault ? "settings-section-default" : ""}`}>
-              <div className="settings-label-row">
-                <label className="settings-label">
-                  <span className="settings-label-text">Base URL</span>
-                  <span className="settings-description">Connect the app to a server at the specified URL.</span>
-                </label>
-                <button type="button" className="settings-field-reset" onClick={() => handleResetField('baseURL')} disabled={settings.baseURL.useDefault}>
-                  Reset
-                </button>
-              </div>
-              <input type="text" value={settings["baseURL"].value} placeholder="http://localhost:8000/" onChange={(e) => handleTextInputChange('baseURL', e.target.value)} className="settings-text-input"/>
-            </div>
-            <div className={`settings-section ${settings.apiKey.useDefault ? "settings-section-default" : ""}`}>
-              <div className="settings-label-row">
-                <label className="settings-label">
-                  <span className="settings-label-text">API Key</span>
-                  <span className="settings-description">If present, API Key will be required to execute any request.</span>
-                </label>
-                <button type="button" className="settings-field-reset" onClick={() => handleResetField('apiKey')} disabled={settings.apiKey.useDefault}>
-                  Reset
-                </button>
-              </div>
-              <input type="text" value={settings['apiKey'].value} onChange={(e) => handleTextInputChange('apiKey', e.target.value)} className="settings-text-input"/>
-            </div>
-            <div className="settings-category-header">
-              <h3>TTS</h3>
-            </div>
-            <div className={`settings-section ${settings.tts.model.useDefault ? "settings-section-default" : ""}`}>
-              <div className="settings-label-row">
-                <label className="settings-label">
-                  <span className="settings-label-text">TTS Model</span>
-                  <span className="settings-description">Use the selected model for TTS conversion.</span>
-                </label>
-                <button type="button" className="settings-field-reset" onClick={() => handleResetField('model')} disabled={settings.tts.model.useDefault}>
-                  Reset
-                </button>
-              </div>
-              <input type="text" value={settings.tts["model"].value} onChange={(e) => handleTTSSettingChange('model', e.target.value)} className="settings-text-input"/>
-            </div>
-            <div className={`settings-section ${settings.tts.userVoice.useDefault ? "settings-section-default" : ""}`}>
-              <div className="settings-label-row">
-                <label className="settings-label">
-                  <span className="settings-label-text">User Voice</span>
-                  <span className="settings-description">Use the selected voice for TTS conversion of user messages.</span>
-                </label>
-                <button type="button" className="settings-field-reset" onClick={() => handleResetField('userVoice')} disabled={settings.tts.userVoice.useDefault}>
-                  Reset
-                </button>
-              </div>
-              <input type="text" value={settings.tts['userVoice'].value} onChange={(e) => handleTTSSettingChange('userVoice', e.target.value)} className="settings-text-input"/>
-            </div>
-            <div className={`settings-section ${settings.tts.assistantVoice.useDefault ? "settings-section-default" : ""}`}>
-              <div className="settings-label-row">
-                <label className="settings-label">
-                  <span className="settings-label-text">Assistant Voice</span>
-                  <span className="settings-description">Use the selected voice for TTS conversion of assistant messages.</span>
-                </label>
-                <button type="button" className="settings-field-reset" onClick={() => handleResetField('assistantVoice')} disabled={settings.tts.assistantVoice.useDefault}>
-                  Reset
-                </button>
-              </div>
-              <input type="text" value={settings.tts['assistantVoice'].value} onChange={(e) => handleTTSSettingChange('assistantVoice', e.target.value)} className="settings-text-input"/>
-            </div>
-            <div className="settings-category-header">
-              <h3>LLM Chat</h3>
-            </div>
-
-            {numericSettingsConfig.map(({ key, label, description }) => {
-              const limits = NUMERIC_SETTING_LIMITS[key];
-              const isDefault = settings[key].useDefault;
-
-              return (
-                <div
-                  key={key}
-                  className={`settings-section ${isDefault ? 'settings-section-default' : ''}`}
-                >
-                  <div className="settings-label-row">
-                    <label className="settings-label">
-                      <span className="settings-label-text">{label}</span>
-                      <span className="settings-description">{description}</span>
-                    </label>
-                    <button
-                      type="button"
-                      className="settings-field-reset"
-                      onClick={() => handleResetField(key)}
-                      disabled={isDefault}
-                    >
-                      Reset
-                    </button>
-                  </div>
-                  <div className="settings-input-group">
-                    <input
-                      type="range"
-                      min={limits.min}
-                      max={limits.max}
-                      step={limits.step}
-                      value={settings[key].value}
-                      onChange={(e) => handleNumericChange(key, parseFloat(e.target.value))}
-                      className={`settings-slider ${isDefault ? 'slider-auto' : ''}`}
-                    />
-                    <input
-                      type="text"
-                      value={isDefault ? 'auto' : settings[key].value}
-                      onChange={(e) => {
-                        if (e.target.value === 'auto' || e.target.value === '') {
-                          return;
-                        }
-                        const parsed = parseFloat(e.target.value);
-                        if (Number.isNaN(parsed)) {
-                          return;
-                        }
-                        handleNumericChange(key, parsed);
-                      }}
-                      onFocus={(e) => {
-                        if (isDefault) {
-                          handleNumericChange(key, settings[key].value);
-                          // Select all text after a brief delay to allow the value to update
-                          setTimeout(() => e.target.select(), 0);
-                        }
-                      }}
-                      className="settings-number-input"
-                      placeholder="auto"
-                    />
-                  </div>
-                </div>
-              );
-            })}
-
-            <div
-              className={`settings-section ${
-                settings.enableThinking.useDefault ? 'settings-section-default' : ''
-              }`}
-            >
-              <div className="settings-label-row">
-                <span className="settings-label-text">Enable Thinking</span>
-                <button
-                  type="button"
-                  className="settings-field-reset"
-                  onClick={() => handleResetField('enableThinking')}
-                  disabled={settings.enableThinking.useDefault}
-                >
-                  Reset
-                </button>
-              </div>
-              <label className="settings-checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={settings.enableThinking.value}
-                  onChange={(e) => handleBooleanChange('enableThinking', e.target.checked)}
-                  className="settings-checkbox"
-                />
-                <div className="settings-checkbox-content">
-                  <span className="settings-description">
-                    Determines whether hybrid reasoning models, such as Qwen3, will use thinking.
-                  </span>
-                </div>
-              </label>
-            </div>
-
-            <div
-              className={`settings-section ${
-                settings.collapseThinkingByDefault.useDefault ? 'settings-section-default' : ''
-              }`}
-            >
-              <div className="settings-label-row">
-                <span className="settings-label-text">Collapse Thinking by Default</span>
-                <button
-                  type="button"
-                  className="settings-field-reset"
-                  onClick={() => handleResetField('collapseThinkingByDefault')}
-                  disabled={settings.collapseThinkingByDefault.useDefault}
-                >
-                  Reset
-                </button>
-              </div>
-              <label className="settings-checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={settings.collapseThinkingByDefault.value}
-                  onChange={(e) => handleBooleanChange('collapseThinkingByDefault', e.target.checked)}
-                  className="settings-checkbox"
-                />
-                <div className="settings-checkbox-content">
-                  <span className="settings-description">
-                    When enabled, thinking sections will be collapsed by default instead of automatically expanded.
-                  </span>
-                </div>
-              </label>
+            <div className="settings-tabs-wrapper">
+              <Tabs>
+                <Tabs.Labels items={tabs.map(({ id, label }) => ({ id, label }))} />
+                <Tabs.Contents items={tabs.map(({ id }) => ({id, content: getSettingContext(id)}))} />
+              </Tabs>
             </div>
           </div>
         )}
