@@ -55,6 +55,15 @@ runs:
 
         echo "Binaries at: $BIN_PATH"
 
+    - name: Stop services before verification
+      shell: bash
+      run: |
+        echo "Stopping any services started by postflight script..."
+        sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
+        sudo launchctl bootout system/com.lemonade.tray 2>/dev/null || true
+        sleep 1
+        echo "Services stopped."
+
     - name: Verify installation
       shell: bash
       run: |
