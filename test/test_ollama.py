@@ -260,7 +260,7 @@ class OllamaTests(ServerTestBase):
     # Chat completion tests
     # ========================================================================
 
-    def test_010_chat_non_streaming(self):
+    def test_009_chat_non_streaming(self):
         """Test /api/chat non-streaming."""
         self.ensure_model_pulled()
         response = requests.post(
@@ -281,7 +281,7 @@ class OllamaTests(ServerTestBase):
         self.assertTrue(data["done"])
         self.assertEqual(data["model"], ENDPOINT_TEST_MODEL)
 
-    def test_011_chat_streaming(self):
+    def test_010_chat_streaming(self):
         """Test /api/chat streaming returns NDJSON."""
         self.ensure_model_pulled()
         response = requests.post(
@@ -309,7 +309,7 @@ class OllamaTests(ServerTestBase):
         last_chunk = chunks[-1]
         self.assertTrue(last_chunk.get("done", False))
 
-    def test_012_chat_missing_model(self):
+    def test_011_chat_missing_model(self):
         """Test /api/chat returns 400 when model is missing."""
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/chat",
@@ -321,7 +321,7 @@ class OllamaTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 400)
 
-    def test_013_chat_not_found_model(self):
+    def test_012_chat_not_found_model(self):
         """Test /api/chat returns 404 for non-existent model."""
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/chat",
@@ -334,7 +334,7 @@ class OllamaTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 404)
 
-    def test_014_chat_with_latest_suffix(self):
+    def test_013_chat_with_latest_suffix(self):
         """Test /api/chat strips :latest suffix from model name."""
         self.ensure_model_pulled()
         response = requests.post(
@@ -355,7 +355,7 @@ class OllamaTests(ServerTestBase):
     # Generate (completion) tests
     # ========================================================================
 
-    def test_020_generate_non_streaming(self):
+    def test_014_generate_non_streaming(self):
         """Test /api/generate non-streaming."""
         self.ensure_model_pulled()
         response = requests.post(
@@ -374,7 +374,7 @@ class OllamaTests(ServerTestBase):
         self.assertTrue(data["done"])
         self.assertEqual(data["model"], ENDPOINT_TEST_MODEL)
 
-    def test_021_generate_streaming(self):
+    def test_015_generate_streaming(self):
         """Test /api/generate streaming returns NDJSON."""
         self.ensure_model_pulled()
         response = requests.post(
@@ -405,7 +405,7 @@ class OllamaTests(ServerTestBase):
     # 501 stubs
     # ========================================================================
 
-    def test_030_create_returns_501(self):
+    def test_016_create_returns_501(self):
         """Test /api/create returns 501."""
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/create",
@@ -414,7 +414,7 @@ class OllamaTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 501)
 
-    def test_031_copy_returns_501(self):
+    def test_017_copy_returns_501(self):
         """Test /api/copy returns 501."""
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/copy",
@@ -423,7 +423,7 @@ class OllamaTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 501)
 
-    def test_032_push_returns_501(self):
+    def test_018_push_returns_501(self):
         """Test /api/push returns 501."""
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/push",
@@ -436,14 +436,14 @@ class OllamaTests(ServerTestBase):
     # Ollama Python library tests (if available)
     # ========================================================================
 
-    def test_040_ollama_lib_list(self):
+    def test_019_ollama_lib_list(self):
         """Test ollama.list() via Python library."""
         client = self.get_ollama_client()
         self.ensure_model_pulled()
         result = client.list()
         self.assertIsNotNone(result)
 
-    def test_041_ollama_lib_chat(self):
+    def test_020_ollama_lib_chat(self):
         """Test ollama.chat() via Python library."""
         client = self.get_ollama_client()
         self.ensure_model_pulled()
@@ -460,7 +460,7 @@ class OllamaTests(ServerTestBase):
     # Image input/output tests
     # ========================================================================
 
-    def test_050_chat_with_image_input(self):
+    def test_021_chat_with_image_input(self):
         """Test /api/chat with image input (vision) using a vision model."""
         # Pull the vision model
         response = requests.post(
@@ -497,7 +497,7 @@ class OllamaTests(ServerTestBase):
         self.assertIn("message", data)
         self.assertIn("content", data["message"])
 
-    def test_051_generate_image_output(self):
+    def test_022_generate_image_output(self):
         """Test /api/generate with an image generation model."""
         # Pull the SD model first
         response = requests.post(
@@ -533,7 +533,7 @@ class OllamaTests(ServerTestBase):
             "Decoded image should start with PNG magic bytes",
         )
 
-    def test_042_ollama_lib_chat_streaming(self):
+    def test_023_ollama_lib_chat_streaming(self):
         """Test ollama.chat() streaming via Python library."""
         client = self.get_ollama_client()
         self.ensure_model_pulled()
