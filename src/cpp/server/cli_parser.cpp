@@ -103,7 +103,7 @@ CLIParser::CLIParser()
 
     // Pull
     CLI::App* pull = app_.add_subcommand("pull", "Download a model");
-    pull->add_option("model", tray_config_.model, "The model to download")
+    pull->add_option("model", tray_config_.model, "The model to download. Can be a name or JSON file")
         ->type_name("MODEL")
         ->required();
     pull->add_option("--checkpoint", tray_config_.checkpoint, "Hugging Face checkpoint (format: org/model:variant) OR an absolute local path to a model directory. When a local path is provided, files are copied to the HuggingFace cache and registered.")

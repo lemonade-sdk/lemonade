@@ -1277,32 +1277,53 @@ int TrayApp::execute_pull_command() {
         try {
             // Build request body with all optional parameters
             // Local imports don't need streaming (no download progress)
-            nlohmann::json request_body = {{"model", tray_config_.model}, {"stream", !local_import}};
+            nlohmann::json request_body;
+
+            // Try to read the model as a JSON file
+            try {
+                fs::path model_desc_path(tray_config_.model);
+                if ((model_desc_path.extension() == ".json") && fs::exists(model_desc_path)) {
+                    std::ifstream json_file(model_desc_path);
+                    json_file >> request_body;
+                }
+            }  catch (const std::exception& e) { /** not a path or valid JSON file */}
+
+            // Current JSON contains the model name as id, remap
+            if (request_body.contains("id")) {
+                request_body["model"] = request_body["id"];
+            }
+
+            // Model was not a JSON file
+            if (!request_body.contains("model")) {
+                request_body["model"] = tray_config_.model;
+                if (!tray_config_.checkpoint.empty() && !local_import) {
+                    // Only send checkpoint for remote downloads (local files already copied)
+                    request_body["checkpoint"] = tray_config_.checkpoint;
+                }
+                if (!tray_config_.recipe.empty()) {
+                    request_body["recipe"] = tray_config_.recipe;
+                }
+                if (tray_config_.is_reasoning) {
+                    request_body["reasoning"] = true;
+                }
+                if (tray_config_.is_vision) {
+                    request_body["vision"] = true;
+                }
+                if (tray_config_.is_embedding) {
+                    request_body["embedding"] = true;
+                }
+                if (tray_config_.is_reranking) {
+                    request_body["reranking"] = true;
+                }
+                if (!tray_config_.mmproj.empty()) {
+                    request_body["mmproj"] = tray_config_.mmproj;
+                }
+            }
 
             if (local_import) {
                 request_body["local_import"] = true;
-            }
-            if (!tray_config_.checkpoint.empty() && !local_import) {
-                // Only send checkpoint for remote downloads (local files already copied)
-                request_body["checkpoint"] = tray_config_.checkpoint;
-            }
-            if (!tray_config_.recipe.empty()) {
-                request_body["recipe"] = tray_config_.recipe;
-            }
-            if (tray_config_.is_reasoning) {
-                request_body["reasoning"] = true;
-            }
-            if (tray_config_.is_vision) {
-                request_body["vision"] = true;
-            }
-            if (tray_config_.is_embedding) {
-                request_body["embedding"] = true;
-            }
-            if (tray_config_.is_reranking) {
-                request_body["reranking"] = true;
-            }
-            if (!tray_config_.mmproj.empty()) {
-                request_body["mmproj"] = tray_config_.mmproj;
+            } else {
+                request_body["stream"] = true;
             }
 
             httplib::Client cli = server_manager->make_http_client(86400, 30);
