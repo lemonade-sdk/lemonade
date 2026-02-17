@@ -49,7 +49,7 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({settings, onValueChangeFunc, o
             Reset
           </button>
         </div>
-        <select className="form-input form-select" defaultValue={settings.tts['userVoice'].value} onChange={(e) => onValueChangeFunc('userVoice', e.target.value)}>
+        <select className="form-input form-select" value={settings.tts['userVoice'].value} onChange={(e) => onValueChangeFunc('userVoice', e.target.value)}>
           {
             voiceOptions.map((voice: string, index: number) => {
               const label = (voice === '') ? 'Select a voice...' : voice;
@@ -68,7 +68,7 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({settings, onValueChangeFunc, o
             Reset
           </button>
         </div>
-        <select className="form-input form-select" defaultValue={settings.tts['assistantVoice'].value} onChange={(e) => onValueChangeFunc('assistantVoice', e.target.value)}>
+        <select className="form-input form-select" value={settings.tts['assistantVoice'].value} onChange={(e) => onValueChangeFunc('assistantVoice', e.target.value)}>
           {
             voiceOptions.map((voice: string, index: number) => {
               const label = (voice === '') ? 'Select a voice...' : voice;
