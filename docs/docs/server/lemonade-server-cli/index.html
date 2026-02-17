@@ -1323,6 +1323,10 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 <td>Secondary directory to scan for GGUF model files</td>
 </tr>
 <tr>
+<td><code>LEMONADE_MAX_LOADED_MODELS</code></td>
+<td>Maximum number of models to keep loaded per type slot (LLMs, audio, image, etc.). Use <code>-1</code> for unlimited, or a positive integer. Default: <code>1</code></td>
+</tr>
+<tr>
 <td><code>LEMONADE_DISABLE_MODEL_FILTERING</code></td>
 <td>Set to <code>1</code> to disable hardware-based model filtering (e.g., RAM amount, NPU availability) and show all models regardless of system capabilities</td>
 </tr>
