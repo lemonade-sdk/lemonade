@@ -643,7 +643,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        test_type: [cli, endpoints, system-info]
+        test_type: [cli, endpoints, system-info, ollama]
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -743,6 +743,9 @@ jobs:
               # Unset LEMONADE_CI_MODE so the server uses mock cache files
               unset LEMONADE_CI_MODE
               $VENV_PYTHON test/server_system_info.py --server-binary "$SERVER_BINARY"
+          elif [ "${{ matrix.test_type }}" = "ollama" ]; then
+              echo "Running Ollama API tests..."
+              $VENV_PYTHON test/test_ollama.py --server-binary "$SERVER_BINARY"
           fi
 
           echo "${{ matrix.test_type }} tests PASSED!"
