@@ -1006,7 +1006,7 @@ if(APPLE)
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${CMAKE_BINARY_DIR}/LICENSE.txt" COPYONLY)
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_BINARY_DIR}/LICENSE.txt")
 
-    set(CPACK_POSTFLIGHT_SERVICES_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst-full-mac")
+    set(CPACK_POSTFLIGHT_RUNTIME_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst-full-mac")
     include(CPack)
 
     set(PACKAGE_DEPENDS prepare_electron_app ${EXECUTABLE_NAME})
