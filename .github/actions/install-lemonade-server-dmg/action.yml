@@ -61,8 +61,17 @@ runs:
         echo "Stopping any services started by postflight script..."
         sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
         sudo launchctl bootout system/com.lemonade.tray 2>/dev/null || true
-        sleep 1
-        echo "Services stopped."
+        sleep 2
+
+        # Clean up PID and lock files left behind by killed processes
+        echo "Cleaning up stale PID and lock files..."
+        sudo rm -f /tmp/lemonade-router.pid
+        sudo rm -f /tmp/lemonade_Router.lock
+        sudo rm -f /tmp/lemonade_Server.lock
+        sudo rm -f /tmp/lemonade_Tray.lock
+        sudo rm -f /tmp/lemonade*.pid /tmp/lemonade*.lock
+
+        echo "Services stopped and cleaned up."
 
     - name: Verify installation
       shell: bash
