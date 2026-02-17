@@ -2171,11 +2171,19 @@ Menu TrayApp::create_menu() {
 
     // Port submenu
     auto port_submenu = std::make_shared<Menu>();
-    std::vector<int> ports = {8000, 8020, 8040, 8060, 8080, 9000};
-    for (int port : ports) {
+    std::vector<std::pair<int, std::string>> ports = {
+        {8000, "Port 8000"},
+        {8020, "Port 8020"},
+        {8040, "Port 8040"},
+        {8060, "Port 8060"},
+        {8080, "Port 8080"},
+        {9000, "Port 9000"},
+        {11434, "Port 11434 (Ollama)"},
+    };
+    for (const auto& [port, label] : ports) {
         bool is_current = (port == server_config_.port);
         port_submenu->add_item(MenuItem::Checkable(
-            "Port " + std::to_string(port),
+            label,
             [this, port]() { on_change_port(port); },
             is_current
         ));
