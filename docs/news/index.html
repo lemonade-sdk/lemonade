@@ -6,6 +6,9 @@
   <title>Lemonade News</title>
   <link rel="icon" href="../assets/favicon.ico">
   <link rel="stylesheet" href="../assets/website-styles.css">
+  <link rel="stylesheet" href="../assets/common.css">
+  <link rel="stylesheet" href="../assets/news.css">
+  <script src="../assets/navbar.js"></script>
   <script src="../assets/news-data.js"></script>
   <script>
     // Function to generate news tiles
@@ -101,6 +104,9 @@
     document.addEventListener('DOMContentLoaded', () => {
       generateNewsTiles();
 
+      // Initialize shared navbar for docs subpages
+      initializeNavbar('../');
+
       // Initialize footer with star count for news page (uses ../ basePath)
       initializeFooter('../');
 
@@ -141,9 +147,10 @@
       const sidebarToggle = document.getElementById('sidebarToggle');
       const newsSidebar = document.getElementById('newsSidebar');
       const sidebarOverlay = document.getElementById('sidebarOverlay');
-      const collapseBtn = document.getElementById('collapseBtn');
-      const expandBtn = document.getElementById('expandBtn');
-      const newsView = document.querySelector('.news-view');
+
+      // Legacy desktop collapse is no longer used in the news layout.
+      newsSidebar.classList.remove('collapsed');
+      localStorage.setItem('sidebarCollapsed', 'false');
 
       // Mobile sidebar toggle
       sidebarToggle.addEventListener('click', () => {
@@ -157,118 +164,71 @@
         sidebarOverlay.classList.remove('active');
       });
 
-      // Desktop sidebar collapse/expand
-      collapseBtn.addEventListener('click', () => {
-        newsSidebar.classList.add('collapsed');
-        newsView.classList.add('sidebar-collapsed');
-        expandBtn.classList.add('show');
-        localStorage.setItem('sidebarCollapsed', 'true');
-      });
-
-      expandBtn.addEventListener('click', () => {
-        newsSidebar.classList.remove('collapsed');
-        newsView.classList.remove('sidebar-collapsed');
-        expandBtn.classList.remove('show');
-        localStorage.setItem('sidebarCollapsed', 'false');
-      });
-
-      // Restore sidebar state from localStorage
-      const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-      if (sidebarCollapsed && window.innerWidth > 768) {
-        newsSidebar.classList.add('collapsed');
-        newsView.classList.add('sidebar-collapsed');
-        expandBtn.classList.add('show');
-      }
-
       // Close sidebar when window is resized to desktop
       window.addEventListener('resize', () => {
         if (window.innerWidth > 768) {
           newsSidebar.classList.remove('mobile-open');
           sidebarOverlay.classList.remove('active');
-
-          // Restore collapsed state on desktop
-          const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-          if (sidebarCollapsed) {
-            newsSidebar.classList.add('collapsed');
-            newsView.classList.add('sidebar-collapsed');
-            expandBtn.classList.add('show');
-          }
         } else {
-          // Reset collapsed state on mobile
           newsSidebar.classList.remove('collapsed');
-          newsView.classList.remove('sidebar-collapsed');
-          expandBtn.classList.remove('show');
         }
       });
     });
   </script>
 </head>
-<body>
-  <!-- Navbar -->
-  <nav class="navbar" id="navbar">
-    <div class="navbar-brand">
-      <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade</a></span>
-    </div>
-    <div class="navbar-links">
-      <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
-      <a href="../docs/">Docs</a>
-      <a href="../docs/server/server_models/">Models</a>
-      <a href="../docs/server/apps/">Featured Apps</a>
-      <a href="index.html">News</a>
-    </div>
-
-    <!-- Place buttons here so they don't overlap the brand -->
-    <button class="sidebar-toggle" id="sidebarToggle">
-      ➤ Filters
-    </button>
-    <button class="expand-btn" id="expandBtn">
-      ➤ Filters
-    </button>
-  </nav>
+<body id="news-page-body">
+  <div class="navbar-placeholder"></div>
 
   <!-- Sidebar Overlay (Mobile) -->
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
   <!-- News Sidebar -->
-  <div class="news-sidebar" id="newsSidebar">
-    <button class="collapse-btn" id="collapseBtn">
-      ← Hide
-    </button>
-
-    <div class="sidebar-header">
-      <h3>🍋 Filters</h3>
-      <p>Filter content by type or sort by date</p>
+  <div class="news-sidebar docs-side-nav" id="newsSidebar">
+    <div class="sidebar-card">
+      <div class="sidebar-header">
+        <h3>Filters</h3>
+        <p>Browse by type and date</p>
+      </div>
     </div>
 
-    <!-- Filter Buttons -->
-    <div class="filter-container">
-      <button class="filter-btn active" data-filter="all">All</button>
-      <button class="filter-btn" data-filter="blog">📝 Blogs</button>
-      <button class="filter-btn" data-filter="video">🎥 Videos</button>
-      <button class="filter-btn" data-filter="tutorial">🎓 Tutorials</button>
-      <button class="filter-btn" data-filter="release">📦 Releases</button>
+    <div class="sidebar-card">
+      <label class="control-label">Type</label>
+      <div class="filter-container">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="blog">Blogs</button>
+        <button class="filter-btn" data-filter="video">Videos</button>
+        <button class="filter-btn" data-filter="tutorial">Tutorials</button>
+        <button class="filter-btn" data-filter="release">Releases</button>
+      </div>
     </div>
 
-    <!-- Sort Dropdown -->
-    <div class="sort-container">
-      <label for="sortSelect" class="sort-label">Sort by:</label>
-      <select id="sortSelect" class="sort-select">
-        <option value="newest">Newest First</option>
-        <option value="oldest">Oldest First</option>
-      </select>
+    <div class="sidebar-card">
+      <label for="sortSelect" class="control-label">Sort</label>
+      <div class="sort-container">
+        <select id="sortSelect" class="sort-select">
+          <option value="newest">Newest First</option>
+          <option value="oldest">Oldest First</option>
+        </select>
+      </div>
     </div>
   </div>
 
   <!-- News View -->
   <div class="news-view">
-    <div class="hero-section">
-      <div class="main-heading">
+    <div class="hero-section docs-page-hero">
+      <div class="main-heading docs-page-title">
         Latest News & Updates
       </div>
-      <div class="subtitle">
+      <div class="subtitle docs-page-subtitle">
         Discover insights, tutorials, and the latest developments from Lemonade
       </div>
     </div>
+    <button class="sidebar-toggle docs-side-toggle" id="sidebarToggle" type="button" aria-label="Open filters">
+      <span class="hamburger-icon" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </span>
+      <span>Filters</span>
+    </button>
 
     <div class="news-posts">
       <!-- News tiles will be generated by JavaScript -->

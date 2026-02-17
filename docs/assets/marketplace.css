@@ -108,11 +108,6 @@ body.embedded .marketplace-hero {
   padding: 12px 0 12px;
 }
 
-/* === Page Background === */
-#marketplace-body {
-  background: var(--mp-bg-page) !important;
-}
-
 [data-theme="dark"] #marketplace-body {
   background: #000000 !important;
 }
@@ -134,41 +129,7 @@ body.embedded .marketplace-hero {
 
 /* === Hero Section === */
 .marketplace-hero {
-  text-align: center;
   padding: 48px 0 48px; /* More spacing before content like news page */
-}
-
-.marketplace-title {
-  /* Match .news-view .main-heading from website-styles.css exactly */
-  font-size: 3.5rem;
-  font-weight: 400;
-  color: #1a1a1a;
-  line-height: 1.05;
-  margin: 0 0 16px 0;
-  letter-spacing: -0.03em;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-[data-theme="dark"] .marketplace-title {
-  color: #ffffff;
-  text-shadow: none;
-}
-
-.marketplace-subtitle {
-  /* Match .news-view .subtitle from website-styles.css exactly */
-  font-size: 1.125rem; /* var(--font-size-lg) = 1.125rem */
-  font-weight: 500;
-  font-family: 'Inter', 'Segoe UI', 'Arial', sans-serif;
-  color: #444444; /* var(--text-secondary) */
-  line-height: 1.6;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-  margin: 0;
-  text-align: center;
-}
-
-[data-theme="dark"] .marketplace-subtitle {
-  color: var(--mp-text-secondary);
-  text-shadow: none;
 }
 
 /* In embedded mode, use compact heading matching app section headers */
@@ -667,7 +628,7 @@ body.embedded .mp-filter-select option {
   }
 
   .marketplace-title {
-    font-size: 1rem;
+    font-size: clamp(1.95rem, 8.2vw, 2.4rem);
   }
 
   .search-container {

@@ -6,28 +6,18 @@
   <title>Local AI Marketplace - Lemonade</title>
   <link rel="icon" href="./favicon.ico">
   <link rel="stylesheet" href="assets/website-styles.css">
+  <link rel="stylesheet" href="assets/common.css">
   <link rel="stylesheet" href="assets/marketplace.css">
 </head>
 <body id="marketplace-body">
   <!-- Navbar (hidden in embedded mode) -->
-  <nav class="navbar" id="navbar">
-    <div class="navbar-brand">
-      <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade</a></span>
-    </div>
-    <div class="navbar-links">
-      <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
-      <a href="docs/">Docs</a>
-      <a href="docs/server/server_models/">Models</a>
-      <a href="marketplace.html" class="active">Marketplace</a>
-      <a href="news/">News</a>
-    </div>
-  </nav>
+  <div class="navbar-placeholder"></div>
 
   <main class="marketplace-main">
     <!-- Hero Section -->
-    <div class="marketplace-hero">
-      <h1 class="marketplace-title">Local AI Marketplace</h1>
-      <p class="marketplace-subtitle">Apps from our partners and community that work great with Lemonade</p>
+    <div class="marketplace-hero docs-page-hero">
+      <h1 class="marketplace-title docs-page-title">Local AI Marketplace</h1>
+      <p class="marketplace-subtitle docs-page-subtitle">Apps from our partners and community that work great with Lemonade</p>
     </div>
 
     <!-- Search and Filters -->
@@ -79,13 +69,17 @@
   <!-- Footer (hidden in embedded mode) -->
   <div class="footer-placeholder"></div>
 
+  <script src="assets/navbar.js"></script>
   <script src="assets/footer.js"></script>
   <script src="assets/marketplace.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function() {
+      if (typeof initializeNavbar === 'function' && !isEmbedded()) {
+        initializeNavbar('./');
+      }
       // Initialize footer if not in embedded mode
       if (!isEmbedded()) {
-        initializeFooter();
+        initializeFooter('../');
       }
       // Load apps
       loadApps();

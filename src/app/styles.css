@@ -1840,6 +1840,35 @@ footer {
     padding: 4px 0;
 }
 
+.message-play-button-container {
+    position: absolute;
+    bottom: -8px;
+    right: -8px;
+    z-index: 22;
+}
+
+.message-play-button {
+    background-color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    min-height: 22px;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.message-play-button:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
 .chat-input-container {
     padding: 12px 15px;
     border-top: 1px solid #1a1a1a;

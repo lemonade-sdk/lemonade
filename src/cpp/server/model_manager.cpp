@@ -46,6 +46,28 @@ static bool contains_ignore_case(const std::string& str, const std::string& subs
     return to_lower(str).find(to_lower(substr)) != std::string::npos;
 }
 
+static std::string checkpoint_to_repo_id(std::string checkpoint) {
+    std::string repo_id = checkpoint;
+
+    size_t colon_pos = checkpoint.find(':');
+    if (colon_pos != std::string::npos) {
+        repo_id = repo_id.substr(0, colon_pos);
+    }
+
+    return repo_id;
+}
+
+static std::string checkpoint_to_variant(std::string checkpoint) {
+    std::string variant = "";
+
+    size_t colon_pos = checkpoint.find(':');
+    if (colon_pos != std::string::npos) {
+        variant = checkpoint.substr(colon_pos + 1);
+    }
+
+    return variant;
+}
+
 // Structure to hold identified GGUF files
 struct GGUFFiles {
     std::map<std::string, std::string> core_files;  // {"variant": "file.gguf", "mmproj": "file.mmproj"}
@@ -56,7 +78,6 @@ struct GGUFFiles {
 static GGUFFiles identify_gguf_models(
     const std::string& checkpoint,
     const std::string& variant,
-    const std::string& mmproj,
     const std::vector<std::string>& repo_files
 ) {
     const std::string hint = R"(
@@ -179,25 +200,6 @@ static GGUFFiles identify_gguf_models(
 
     result.core_files["variant"] = variant_name;
     result.sharded_files = sharded_files;
-
-    // If there is a mmproj file, add it to the core files
-    if (!mmproj.empty()) {
-        bool found = false;
-        for (const auto& f : repo_files) {
-            if (f == mmproj) {
-                found = true;
-                break;
-            }
-        }
-
-        if (!found) {
-            throw std::runtime_error(
-                "The provided mmproj file " + mmproj + " was not found in " + checkpoint + "."
-            );
-        }
-
-        result.core_files["mmproj"] = mmproj;
-    }
 
     return result;
 }
@@ -330,8 +332,8 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
         std::string model_name = std::string(EXTRA_MODEL_PREFIX) + filename;
         ModelInfo info = init_extra_model_info(model_name);
-        info.checkpoint = gguf_path.string();
-        info.resolved_path = gguf_path.string();
+        info.checkpoints["main"] = gguf_path.string();
+        info.resolved_paths["main"] = gguf_path.string();
         info.type = ModelType::LLM;
 
         // Calculate size in GB
@@ -354,12 +356,10 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
         // Find the main model file and mmproj file
         fs::path main_model_path;
-        std::string mmproj_file;
+        fs::path mmproj_file;
         double total_size = 0.0;
 
         for (const auto& gguf_path : gguf_files) {
-            std::string filename = gguf_path.filename().string();
-
             // Calculate total size
             try {
                 uintmax_t file_size = fs::file_size(gguf_path);
@@ -367,8 +367,8 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             } catch (...) {}
 
             // Check if this is an mmproj file (can be anywhere in filename)
-            if (contains_ignore_case(filename, "mmproj")) {
-                mmproj_file = filename;
+            if (contains_ignore_case(gguf_path.filename().string(), "mmproj")) {
+                mmproj_file = gguf_path;
                 continue;
             }
 
@@ -386,13 +386,14 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
         std::string model_name = std::string(EXTRA_MODEL_PREFIX) + dir_name;
         ModelInfo info = init_extra_model_info(model_name);
-        info.checkpoint = dir_path;
-        info.resolved_path = main_model_path.string();
+        info.checkpoints["main"] = dir_path;
+        info.resolved_paths["main"] = main_model_path.string();
         info.size = total_size;
 
         // If mmproj found, set it and add vision label
         if (!mmproj_file.empty()) {
-            info.mmproj = mmproj_file;
+            info.checkpoints["mmproj"] = mmproj_file.filename().string();
+            info.resolved_paths["mmproj"] = mmproj_file.string();
             info.labels.push_back("vision");
         }
 
@@ -406,36 +407,36 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     return discovered;
 }
 
-std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
+std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
     // FLM models use checkpoint as-is (e.g., "gemma3:4b")
     if (info.recipe == "flm") {
-        return info.checkpoint;
+        return checkpoint;
     }
 
     // Local path models use checkpoint as-is (absolute path to file)
     if (info.source == "local_path") {
-        return info.checkpoint;
+        return checkpoint;
     }
 
     std::string hf_cache = get_hf_cache_dir();
 
     // Local uploads: checkpoint is relative path from HF cache
     if (info.source == "local_upload") {
-        std::string normalized = info.checkpoint;
+        std::string normalized = checkpoint;
         std::replace(normalized.begin(), normalized.end(), '\\', '/');
         return hf_cache + "/" + normalized;
     }
 
+    // For now, NPU cache is handled directly in whisper.cpp
+    if (type == "npu_cache") {
+        return "";
+    }
+
     // HuggingFace models: need to find the GGUF file in cache
     // Parse checkpoint to get repo_id and variant
-    std::string repo_id = info.checkpoint;
-    std::string variant;
-
-    size_t colon_pos = info.checkpoint.find(':');
-    if (colon_pos != std::string::npos) {
-        repo_id = info.checkpoint.substr(0, colon_pos);
-        variant = info.checkpoint.substr(colon_pos + 1);
-    }
+    // All files are downloaded in the directory of the main checkpoint
+    std::string repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
+    std::string variant = checkpoint_to_variant(checkpoint);
 
     // Convert org/model to models--org--model
     std::string cache_dir_name = "models--";
@@ -471,25 +472,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
     }
 
     // For whispercpp, find the .bin model file
-    if (info.recipe == "whispercpp") {
-        // If variant specified, only return the exact matching file
-        if (!variant.empty()) {
-            // Try to find the exact variant in snapshots subdirectories
-            if (fs::exists(model_cache_path)) {
-                for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
-                    if (entry.is_regular_file()) {
-                        std::string filename = entry.path().filename().string();
-                        if (filename == variant) {
-                            return entry.path().string();
-                        }
-                    }
-                }
-            }
-            // Variant not found - return empty string to indicate model not downloaded
-            // This prevents returning a wrong model variant (e.g., tiny instead of large)
-            return "";
-        }
-
+    if (info.recipe == "whispercpp" && variant.empty()) {
         // No variant specified - use fallback logic to find any .bin file
         if (!fs::exists(model_cache_path)) {
             return model_cache_path;  // Return directory path even if not found
@@ -518,7 +501,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
     }
 
     // For llamacpp, find the GGUF file with advanced sharded model support
-    if (info.recipe == "llamacpp") {
+    if (info.recipe == "llamacpp" && type == "main") {
         if (!fs::exists(model_cache_path)) {
             return model_cache_path;  // Return directory path even if not found
         }
@@ -604,8 +587,37 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
         return all_gguf_files[0];
     }
 
+    // Everything else
+    if (!variant.empty()) {
+        // Try to find the exact variant in snapshots subdirectories
+        if (fs::exists(model_cache_path)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+                if (entry.is_regular_file()) {
+                    std::string filename = entry.path().filename().string();
+                    if (filename == variant) {
+                        return entry.path().string();
+                    }
+                } else if (entry.is_directory()) {
+                    // variant could be a path
+                    std::string variant_path = (entry.path() / variant).string();
+                    if (fs::exists(variant_path)) {
+                        return variant_path;
+                    }
+                }
+            }
+        }
+        // Variant not found - return empty string to indicate model not downloaded
+        return "";
+    }
+
     // Fallback: return directory path
     return model_cache_path;
+}
+
+void ModelManager::resolve_all_model_paths(ModelInfo& info) {
+    for (auto const& [type, checkpoint] : info.checkpoints) {
+        info.resolved_paths[type] = resolve_model_path(info, type, checkpoint);
+    }
 }
 
 json ModelManager::load_server_models() {
@@ -665,6 +677,27 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     return models_cache_;
 }
 
+static void load_checkpoints(ModelInfo& info, json& model_json) {
+    if (model_json.contains("checkpoints") && model_json["checkpoints"].is_object()) {
+        for (auto& [key, value] : model_json["checkpoints"].items()) {
+            info.checkpoints[key] = value.get<std::string>();
+        }
+    }
+}
+
+static std::string legacy_mmproj_to_checkpoint(std::string main, std::string mmproj) {
+    return checkpoint_to_repo_id(main) + ":" + mmproj;
+}
+
+static void parse_legacy_mmproj(ModelInfo& info, const json& model_json) {
+    std::string mmproj = JsonUtils::get_or_default<std::string>(model_json, "mmproj", "");
+
+    if (!mmproj.empty()) {
+        std::string main = JsonUtils::get_or_default<std::string>(model_json, "checkpoint", "");
+        info.checkpoints["mmproj"] = legacy_mmproj_to_checkpoint(main, mmproj);
+    }
+}
+
 void ModelManager::build_cache() {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
@@ -681,10 +714,11 @@ void ModelManager::build_cache() {
     for (auto& [key, value] : server_models_.items()) {
         ModelInfo info;
         info.model_name = key;
-        info.checkpoint = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
+        info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
+        parse_legacy_mmproj(info, value);
+        load_checkpoints(info, value);
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
-        info.mmproj = JsonUtils::get_or_default<std::string>(value, "mmproj", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
 
         if (value.contains("labels") && value["labels"].is_array()) {
@@ -703,15 +737,11 @@ void ModelManager::build_cache() {
             info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
         }
 
-        // Parse NPU cache fields if present (for whispercpp models)
-        info.npu_cache_repo = JsonUtils::get_or_default<std::string>(value, "npu_cache_repo", "");
-        info.npu_cache_filename = JsonUtils::get_or_default<std::string>(value, "npu_cache_filename", "");
-
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
 
-        info.resolved_path = resolve_model_path(info);
+        resolve_all_model_paths(info);
         all_models[key] = info;
     }
 
@@ -719,10 +749,11 @@ void ModelManager::build_cache() {
     for (auto& [key, value] : user_models_.items()) {
         ModelInfo info;
         info.model_name = "user." + key;
-        info.checkpoint = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
+        info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
+        parse_legacy_mmproj(info, value);
+        load_checkpoints(info, value);
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", true);
-        info.mmproj = JsonUtils::get_or_default<std::string>(value, "mmproj", "");
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
 
@@ -742,15 +773,11 @@ void ModelManager::build_cache() {
             info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
         }
 
-        // Parse NPU cache fields if present (for whispercpp models)
-        info.npu_cache_repo = JsonUtils::get_or_default<std::string>(value, "npu_cache_repo", "");
-        info.npu_cache_filename = JsonUtils::get_or_default<std::string>(value, "npu_cache_filename", "");
-
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
 
-        info.resolved_path = resolve_model_path(info);
+        resolve_all_model_paths(info);
         all_models[info.model_name] = info;
     }
 
@@ -802,16 +829,16 @@ void ModelManager::build_cache() {
     int downloaded_count = 0;
     for (auto& [name, info] : all_models) {
         if (info.recipe == "flm") {
-            info.downloaded = flm_set.count(info.checkpoint) > 0;
+            info.downloaded = flm_set.count(info.checkpoint()) > 0;
         } else {
             // Check if model file/dir exists
-            bool file_exists = !info.resolved_path.empty() && fs::exists(info.resolved_path);
+            bool file_exists = !info.resolved_path().empty() && fs::exists(info.resolved_path());
 
             if (file_exists) {
                 // Also check for incomplete downloads:
                 // 1. Check for .download_manifest.json in snapshot directory
                 // 2. Check for any .partial files
-                fs::path resolved(info.resolved_path);
+                fs::path resolved(info.resolved_path());
 
                 // For directories (OGA models), check within the directory
                 // For files (GGUF models), check in parent directory
@@ -833,7 +860,7 @@ void ModelManager::build_cache() {
                     }
                 } else {
                     // For files, check if the specific file has a .partial version
-                    has_partial = fs::exists(info.resolved_path + ".partial");
+                    has_partial = fs::exists(info.resolved_path() + ".partial");
                 }
 
                 info.downloaded = !has_manifest && !has_partial;
@@ -884,14 +911,13 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     // Build ModelInfo
     ModelInfo info;
     info.model_name = model_name;
-    info.checkpoint = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
+    info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
+    parse_legacy_mmproj(info, *model_json);
+    load_checkpoints(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
     info.recipe_options = RecipeOptions(info.recipe, JsonUtils::get_or_default(recipe_options_, model_name, json::object()));
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
-    info.mmproj = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
-    info.npu_cache_repo = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_repo", "");
-    info.npu_cache_filename = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_filename", "");
 
     if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {
         for (const auto& label : (*model_json)["labels"]) {
@@ -903,7 +929,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     info.type = get_model_type_from_labels(info.labels);
     info.device = get_device_type_from_recipe(info.recipe);
 
-    info.resolved_path = resolve_model_path(info);
+    resolve_all_model_paths(info);
 
     // Check if it should be filtered out by backend availability
     std::map<std::string, ModelInfo> temp_map = {{model_name, info}};
@@ -917,13 +943,13 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     // Check download status
     if (info.recipe == "flm") {
         auto flm_models = get_flm_installed_models();
-        info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint) != flm_models.end();
+        info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint()) != flm_models.end();
     } else {
-        bool file_exists = !info.resolved_path.empty() && fs::exists(info.resolved_path);
+        bool file_exists = !info.resolved_path().empty() && fs::exists(info.resolved_path());
 
         if (file_exists) {
             // Check for incomplete downloads
-            fs::path resolved(info.resolved_path);
+            fs::path resolved(info.resolved_path());
             fs::path snapshot_dir = fs::is_directory(resolved) ? resolved : resolved.parent_path();
 
             fs::path manifest_path = snapshot_dir / ".download_manifest.json";
@@ -938,7 +964,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
                     }
                 }
             } else {
-                has_partial = fs::exists(info.resolved_path + ".partial");
+                has_partial = fs::exists(info.resolved_path() + ".partial");
             }
 
             info.downloaded = !has_manifest && !has_partial;
@@ -980,10 +1006,10 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
         // Recompute resolved_path after download
         // The path changes now that files exist on disk
         if (downloaded) {
-            it->second.resolved_path = resolve_model_path(it->second);
+            resolve_all_model_paths(it->second);
             std::cout << "[ModelManager] Updated '" << model_name
                       << "' downloaded=" << downloaded
-                      << ", resolved_path=" << it->second.resolved_path << std::endl;
+                      << ", resolved_path=" << it->second.resolved_path() << std::endl;
         } else {
             std::cout << "[ModelManager] Updated '" << model_name
                       << "' downloaded=" << downloaded << std::endl;
@@ -1033,12 +1059,12 @@ void ModelManager::refresh_flm_download_status() {
     for (auto& [name, info] : models_cache_) {
         if (info.recipe == "flm") {
             bool was_downloaded = info.downloaded;
-            info.downloaded = flm_set.count(info.checkpoint) > 0;
+            info.downloaded = flm_set.count(info.checkpoint()) > 0;
 
             // Log changes for debugging
             if (was_downloaded != info.downloaded) {
                 std::cout << "[ModelManager] FLM status changed: " << name
-                          << " (checkpoint: " << info.checkpoint << ") -> "
+                          << " (checkpoint: " << info.checkpoint() << ") -> "
                           << (info.downloaded ? "downloaded" : "not downloaded") << std::endl;
             }
         }
@@ -1463,11 +1489,16 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
     return false;
 }
 
-bool ModelManager::is_model_downloaded(const std::string& model_name,
-                                       const std::vector<std::string>* flm_cache) {
-    // This overload is no longer needed with unified cache, but keep for compatibility
-    // Just delegate to the simpler version
-    return is_model_downloaded(model_name);
+void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
+    // Use FLM pull for FLM models, otherwise download from HuggingFace
+    if (info.recipe == "flm") {
+        download_from_flm(info.checkpoint(), do_not_upgrade, progress_callback);
+    } else {
+        download_from_huggingface(info, progress_callback);
+    }
+
+    // Update cache after successful download
+    update_model_in_cache(info.model_name, true);
 }
 
 void ModelManager::download_model(const std::string& model_name,
@@ -1553,14 +1584,14 @@ void ModelManager::download_model(const std::string& model_name,
         // Model is registered - if checkpoint not provided, look up from registry
         if (actual_checkpoint.empty()) {
             auto info = get_model_info(model_name);
-            actual_checkpoint = info.checkpoint;
+            actual_checkpoint = info.checkpoint();
             actual_recipe = info.recipe;
         }
 
         // Also look up mmproj if not provided (for vision models)
         if (actual_mmproj.empty()) {
             auto info = get_model_info(model_name);
-            actual_mmproj = info.mmproj;
+            actual_mmproj = info.mmproj();
             if (!actual_mmproj.empty()) {
                 std::cout << "[ModelManager] Found mmproj for vision model: " << actual_mmproj << std::endl;
             }
@@ -1609,25 +1640,157 @@ void ModelManager::download_model(const std::string& model_name,
         return;
     }
 
-    // Use FLM pull for FLM models, otherwise download from HuggingFace
-    if (actual_recipe == "flm") {
-        download_from_flm(actual_checkpoint, do_not_upgrade, progress_callback);
-    } else if (actual_recipe == "llamacpp" || actual_recipe == "whispercpp" || actual_recipe == "sd-cpp") {
-        // For llamacpp (GGUF), whispercpp (.bin), and sd-cpp (.safetensors) models, use variant-aware download
-        download_from_huggingface(repo_id, variant, actual_mmproj, progress_callback);
-    } else {
-        // For non-GGUF models (ryzenai-llm, etc.), download all files (no variant filtering)
-        download_from_huggingface(repo_id, "", "", progress_callback);
-    }
-
     // Register user models to user_models.json
     if (model_name.substr(0, 5) == "user.") {
         register_user_model(model_name, actual_checkpoint, actual_recipe,
                           reasoning, vision, embedding, reranking, image, actual_mmproj);
     }
 
-    // Update cache after successful download
-    update_model_in_cache(model_name, true);
+    download_registered_model(get_model_info(model_name), do_not_upgrade, progress_callback);
+}
+
+/**
+ * Download everything from download manifest.
+ */
+void ModelManager::download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback) {
+    // Download each file with robust retry and resume support
+    int file_index = 0;
+    std::string download_path = manifest["download_path"].get<std::string>();
+    int total_files = manifest["files_count"].get<int>();
+
+    for (const auto& file_desc : manifest["files"]) {
+        file_index++;
+        std::string filename = file_desc["name"].get<std::string>();
+        std::string file_url = file_desc["url"].get<std::string>();
+        size_t file_size = file_desc["size"].get<size_t>();
+        std::string output_path = download_path + "/" + filename;
+
+        // Create parent directory for file (handles folders in filenames)
+        fs::create_directories(fs::path(output_path).parent_path());
+
+        std::cout << "[ModelManager] Downloading: " << filename << "..." << std::endl;
+
+        // Send progress update if callback provided (and check for cancellation)
+        if (progress_callback) {
+            DownloadProgress progress;
+            progress.file = filename;
+            progress.file_index = file_index;
+            progress.total_files = total_files;
+            progress.bytes_downloaded = 0;
+            progress.bytes_total = file_size;
+            progress.percent = 0;
+            if (!progress_callback(progress)) {
+                std::cout << "[ModelManager] Download cancelled by client" << std::endl;
+                throw std::runtime_error("Download cancelled");
+            }
+        }
+
+        utils::DownloadOptions download_opts;
+        download_opts.max_retries = 10;
+        download_opts.initial_retry_delay_ms = 2000;
+        download_opts.max_retry_delay_ms = 120000;
+        download_opts.resume_partial = true;
+        download_opts.low_speed_limit = 1000;
+        download_opts.low_speed_time = 60;
+        download_opts.connect_timeout = 60;
+
+        // Create progress callback that reports to both console and SSE callback
+        // Returns bool: true = continue, false = cancel
+        utils::ProgressCallback http_progress_cb;
+        if (progress_callback) {
+            http_progress_cb = [&](size_t downloaded, size_t total) -> bool {
+                DownloadProgress progress;
+                progress.file = filename;
+                progress.file_index = file_index;
+                progress.total_files = total_files;
+                progress.bytes_downloaded = downloaded;
+                progress.bytes_total = total;
+                progress.percent = (total > 0) ? static_cast<int>((downloaded * 100) / total) : 0;
+                return progress_callback(progress);  // Propagate cancellation
+            };
+        } else {
+            // Default console progress callback (never cancels)
+            http_progress_cb = utils::create_throttled_progress_callback();
+        }
+
+        auto result = HttpClient::download_file(
+            file_url,
+            output_path,
+            http_progress_cb,
+            headers,
+            download_opts
+        );
+
+        // Check if download was cancelled
+        if (result.cancelled) {
+            std::cout << "[ModelManager] Download cancelled by client" << std::endl;
+            throw std::runtime_error("Download cancelled");
+        }
+
+        if (result.success) {
+            std::cout << "\n[ModelManager] Downloaded: " << filename << std::endl;
+        } else {
+            // Build a detailed error message
+            std::ostringstream error_msg;
+            error_msg << "Failed to download file: " << filename << "\n";
+            error_msg << "URL: " << file_url << "\n";
+            error_msg << result.error_message;
+
+            // If there's a partial file, provide helpful information
+            if (fs::exists(output_path)) {
+                size_t partial_size = fs::file_size(output_path);
+                if (partial_size > 0) {
+                    error_msg << "\n\n[INFO] Partial download preserved at: " << output_path;
+                    error_msg << "\n[INFO] Partial size: " << std::fixed << std::setprecision(1)
+                                << (partial_size / (1024.0 * 1024.0)) << " MB";
+                    error_msg << "\n[INFO] Run the command again to resume from where it left off.";
+                }
+            }
+
+            throw std::runtime_error(error_msg.str());
+        }
+    }
+
+    // Validate all expected files exist after download
+    std::cout << "[ModelManager] Validating downloaded files..." << std::endl;
+    bool all_valid = true;
+    for (const auto& file_desc : manifest["files"]) {
+        std::string filename = file_desc["name"].get<std::string>();
+        size_t expected_size = file_desc["size"].get<size_t>();
+
+        std::string expected_path = download_path + "/" + filename;
+        std::string partial_path = expected_path + ".partial";
+
+        // Check for .partial file (incomplete download)
+        if (fs::exists(partial_path)) {
+            all_valid = false;
+            std::cerr << "[ModelManager] Incomplete file found: " << filename << ".partial" << std::endl;
+            continue;
+        }
+
+        if (!fs::exists(expected_path)) {
+            all_valid = false;
+            std::cerr << "[ModelManager] Missing file: " << filename << std::endl;
+            continue;
+        }
+
+        // Verify file size if we have expected size
+        if (expected_size > 0) {
+            size_t actual_size = fs::file_size(expected_path);
+            if (actual_size != expected_size) {
+                all_valid = false;
+                std::cerr << "[ModelManager] Size mismatch for " << filename
+                            << ": expected " << expected_size << " bytes, got " << actual_size << " bytes" << std::endl;
+            }
+        }
+    }
+
+    if (!all_valid) {
+        throw std::runtime_error(
+            "Download validation failed. Some files are incomplete or missing. "
+            "Run the command again to resume."
+        );
+    }
 }
 
 // Download model files from HuggingFace
@@ -1643,10 +1806,11 @@ void ModelManager::download_model(const std::string& model_name,
 //   - FLM backend: ✅ Downloads FLM models via 'flm pull' command
 //   - llama-server backend: ❌ Cannot download (expects GGUF files pre-cached)
 //   - ryzenai-server backend: ❌ Cannot download (expects ONNX files pre-cached)
-void ModelManager::download_from_huggingface(const std::string& repo_id,
-                                            const std::string& variant,
-                                            const std::string& mmproj,
+void ModelManager::download_from_huggingface(const ModelInfo& info,
                                             DownloadProgressCallback progress_callback) {
+    std::string main_repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
+    std::string main_variant = checkpoint_to_variant(info.checkpoint("main"));
+
     // Get Hugging Face cache directory
     std::string hf_cache = get_hf_cache_dir();
 
@@ -1654,7 +1818,7 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
     fs::create_directories(hf_cache);
 
     std::string cache_dir_name = "models--";
-    for (char c : repo_id) {
+    for (char c : main_repo_id) {
         if (c == '/') {
             cache_dir_name += "--";
         } else {
@@ -1672,123 +1836,147 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
         headers["Authorization"] = "Bearer " + std::string(hf_token);
     }
 
+    std::map<std::string, std::vector<std::string>> files_to_download;
+
     // Query HuggingFace API to get list of all files in the repository
     // NOTE: This API call happens EVERY time this function is called, regardless of
     // whether files are cached. The do_not_upgrade check should happen in the caller
     // (download_model) to avoid this API call when using cached models.
-    std::string api_url = "https://huggingface.co/api/models/" + repo_id;
+    std::string api_url = "https://huggingface.co/api/models/" + main_repo_id;
 
-    try {
-        std::cout << "[ModelManager] Fetching repository file list from Hugging Face..." << std::endl;
-        auto response = HttpClient::get(api_url, headers);
+    std::cout << "[ModelManager] Fetching repository file list from Hugging Face..." << std::endl;
+    auto response = HttpClient::get(api_url, headers);
 
-        if (response.status_code != 200) {
-            throw std::runtime_error(
-                "Failed to fetch model info from Hugging Face API (status: " +
-                std::to_string(response.status_code) + ")"
-            );
+    if (response.status_code != 200) {
+        throw std::runtime_error(
+            "Failed to fetch model info from Hugging Face API (status: " +
+            std::to_string(response.status_code) + ")"
+        );
+    }
+
+    auto model_info = JsonUtils::parse(response.body);
+
+    if (!model_info.contains("siblings") || !model_info["siblings"].is_array()) {
+        throw std::runtime_error("Invalid model info response from Hugging Face API");
+    }
+
+    // Extract commit hash (sha) from the API response
+    std::string commit_hash;
+    if (model_info.contains("sha") && model_info["sha"].is_string()) {
+        commit_hash = model_info["sha"].get<std::string>();
+        std::cout << "[ModelManager] Using commit hash: " << commit_hash << std::endl;
+    } else {
+        // Fallback to "main" if sha is not available
+        commit_hash = "main";
+        std::cout << "[ModelManager] Warning: No commit hash found in API response, using 'main'" << std::endl;
+    }
+
+    // Create snapshot directory using commit hash
+    std::string snapshot_path = model_cache_path + "/snapshots/" + commit_hash;
+    fs::create_directories(snapshot_path);
+
+    // Create refs/main file pointing to this commit (matching huggingface_hub behavior)
+    std::string refs_dir = model_cache_path + "/refs";
+    fs::create_directories(refs_dir);
+    std::string refs_main_path = refs_dir + "/main";
+    std::ofstream refs_file(refs_main_path);
+    if (refs_file.is_open()) {
+        refs_file << commit_hash;
+        refs_file.close();
+    }
+
+    // Extract list of all files in the repository
+    std::vector<std::string> repo_files;
+    for (const auto& file : model_info["siblings"]) {
+        if (file.contains("rfilename")) {
+            repo_files.push_back(file["rfilename"].get<std::string>());
         }
+    }
 
-        auto model_info = JsonUtils::parse(response.body);
+    std::cout << "[ModelManager] Repository contains " << repo_files.size() << " files" << std::endl;
 
-        if (!model_info.contains("siblings") || !model_info["siblings"].is_array()) {
-            throw std::runtime_error("Invalid model info response from Hugging Face API");
-        }
+    // Check if this is a GGUF model (variant provided) or non-GGUF (variant empty)
+    if (!main_variant.empty()) {
+        // Check if variant is a safetensors file (for sd-cpp models)
+        bool is_safetensors = main_variant.size() > 12 &&
+            main_variant.substr(main_variant.size() - 12) == ".safetensors";
 
-        // Extract commit hash (sha) from the API response
-        std::string commit_hash;
-        if (model_info.contains("sha") && model_info["sha"].is_string()) {
-            commit_hash = model_info["sha"].get<std::string>();
-            std::cout << "[ModelManager] Using commit hash: " << commit_hash << std::endl;
-        } else {
-            // Fallback to "main" if sha is not available
-            commit_hash = "main";
-            std::cout << "[ModelManager] Warning: No commit hash found in API response, using 'main'" << std::endl;
-        }
-
-        // Create snapshot directory using commit hash
-        std::string snapshot_path = model_cache_path + "/snapshots/" + commit_hash;
-        fs::create_directories(snapshot_path);
-
-        // Create refs/main file pointing to this commit (matching huggingface_hub behavior)
-        std::string refs_dir = model_cache_path + "/refs";
-        fs::create_directories(refs_dir);
-        std::string refs_main_path = refs_dir + "/main";
-        std::ofstream refs_file(refs_main_path);
-        if (refs_file.is_open()) {
-            refs_file << commit_hash;
-            refs_file.close();
-        }
-
-        // Extract list of all files in the repository
-        std::vector<std::string> repo_files;
-        for (const auto& file : model_info["siblings"]) {
-            if (file.contains("rfilename")) {
-                repo_files.push_back(file["rfilename"].get<std::string>());
-            }
-        }
-
-        std::cout << "[ModelManager] Repository contains " << repo_files.size() << " files" << std::endl;
-
-        std::vector<std::string> files_to_download;
-
-        // Check if this is a GGUF model (variant provided) or non-GGUF (variant empty)
-        if (!variant.empty() || !mmproj.empty()) {
-            // Check if variant is a safetensors file (for sd-cpp models)
-            bool is_safetensors = variant.size() > 12 &&
-                variant.substr(variant.size() - 12) == ".safetensors";
-
-            if (is_safetensors) {
-                // For safetensors files, just download the specified file directly
-                if (std::find(repo_files.begin(), repo_files.end(), variant) != repo_files.end()) {
-                    files_to_download.push_back(variant);
-                    std::cout << "[ModelManager] Found safetensors file: " << variant << std::endl;
-                } else {
-                    throw std::runtime_error("Safetensors file not found in repository: " + variant);
-                }
+        if (is_safetensors) {
+            // For safetensors files, just download the specified file directly
+            if (std::find(repo_files.begin(), repo_files.end(), main_variant) != repo_files.end()) {
+                files_to_download[main_repo_id].push_back(main_variant);
+                std::cout << "[ModelManager] Found safetensors file: " << main_variant << std::endl;
             } else {
-                // GGUF model: Use identify_gguf_models to determine which files to download
-                GGUFFiles gguf_files = identify_gguf_models(repo_id, variant, mmproj, repo_files);
-
-                // Combine core files and sharded files into one list
-                for (const auto& [key, filename] : gguf_files.core_files) {
-                    files_to_download.push_back(filename);
-                }
-                for (const auto& filename : gguf_files.sharded_files) {
-                    files_to_download.push_back(filename);
-                }
-            }
-
-            // Also download essential config files if they exist
-            std::vector<std::string> config_files = {
-                "config.json",
-                "tokenizer.json",
-                "tokenizer_config.json",
-                "tokenizer.model"
-            };
-            for (const auto& config_file : config_files) {
-                if (std::find(repo_files.begin(), repo_files.end(), config_file) != repo_files.end()) {
-                    if (std::find(files_to_download.begin(), files_to_download.end(), config_file) == files_to_download.end()) {
-                        files_to_download.push_back(config_file);
-                    }
-                }
+                throw std::runtime_error("Safetensors file not found in repository: " + main_variant);
             }
         } else {
-            // Non-GGUF model (ONNX, etc.): Download all files in repository
-            files_to_download = repo_files;
+            // GGUF model: Use identify_gguf_models to determine which files to download
+            GGUFFiles gguf_files = identify_gguf_models(main_repo_id, main_variant, repo_files);
+
+            // Combine core files and sharded files into one list
+            for (const auto& [key, filename] : gguf_files.core_files) {
+                files_to_download[main_repo_id].push_back(filename);
+            }
+            for (const auto& filename : gguf_files.sharded_files) {
+                files_to_download[main_repo_id].push_back(filename);
+            }
         }
 
-        std::cout << "[ModelManager] Identified " << files_to_download.size() << " files to download:" << std::endl;
-        for (const auto& filename : files_to_download) {
+        // Also download essential config files if they exist
+        std::vector<std::string> config_files = {
+            "config.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "tokenizer.model"
+        };
+        for (const auto& config_file : config_files) {
+            if (std::find(repo_files.begin(), repo_files.end(), config_file) != repo_files.end()) {
+                if (std::find(files_to_download[main_repo_id].begin(), files_to_download[main_repo_id].end(), config_file) == files_to_download[main_repo_id].end()) {
+                    files_to_download[main_repo_id].push_back(config_file);
+                }
+            }
+        }
+    } else {
+        // Non-GGUF model (ONNX, etc.): Download all files in repository
+        files_to_download[main_repo_id].insert(files_to_download[main_repo_id].end(), repo_files.begin(), repo_files.end());
+    }
+
+    for (auto const& [type, checkpoint] : info.checkpoints) {
+        std::string repo_id = checkpoint_to_repo_id(checkpoint);
+        std::string variant = checkpoint_to_variant(checkpoint);
+        files_to_download.emplace(repo_id, std::vector<std::string>{});
+
+        // main must be processed first. NPU Cache are currently handled by whisper
+        if (type != "main" && type != "npu_cache") {
+            if (variant.empty()) {
+                throw std::runtime_error("Additional checkpoints must contain exact variants");
+            }
+
+            files_to_download[repo_id].push_back(variant);
+        }
+    }
+
+
+    int total_files = 0;
+    std::cout << "[ModelManager] Identified files to download:" << std::endl;
+
+    for (auto const& [repo_id, files] : files_to_download) {
+        for (const auto& filename : files) {
+            total_files++;
             std::cout << "  - " << filename << std::endl;
         }
+    }
 
-        // Create download manifest to track incomplete downloads
-        // This allows us to detect partially downloaded models
-        std::string manifest_path = snapshot_path + "/.download_manifest.json";
+    std::cout << "  Total file count: " << total_files << std::endl;
 
-        // Fetch file sizes from the tree API (the models API doesn't include sizes)
-        std::map<std::string, size_t> file_sizes;
+    // Create download manifest to track incomplete downloads
+    // This allows us to detect partially downloaded models
+    std::string manifest_path = snapshot_path + "/.download_manifest.json";
+
+    // Fetch file sizes from the tree API (the models API doesn't include sizes)
+    std::map<std::string, size_t> file_sizes;
+
+    for (auto const& [repo_id, files] : files_to_download) {
         std::string tree_url = "https://huggingface.co/api/models/" + repo_id + "/tree/main";
         auto tree_response = HttpClient::get(tree_url, headers);
 
@@ -1797,7 +1985,7 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
             if (tree_info.is_array()) {
                 for (const auto& file : tree_info) {
                     if (file.contains("path") && file.contains("size")) {
-                        std::string fpath = file["path"].get<std::string>();
+                        std::string fpath = repo_id + ':' + file["path"].get<std::string>();
                         size_t fsize = file["size"].get<size_t>();
                         file_sizes[fpath] = fsize;
                     }
@@ -1806,185 +1994,54 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
             std::cout << "[ModelManager] Retrieved file sizes for " << file_sizes.size() << " files" << std::endl;
         } else {
             std::cout << "[ModelManager] Warning: Could not fetch file sizes (tree API returned "
-                      << tree_response.status_code << ")" << std::endl;
+                        << tree_response.status_code << ")" << std::endl;
         }
+    }
 
-        // Create manifest with expected files
-        json manifest;
-        manifest["repo_id"] = repo_id;
-        manifest["commit_hash"] = commit_hash;
-        manifest["files"] = json::array();
-        for (const auto& filename : files_to_download) {
+    // Create manifest with expected files
+    json manifest;
+    manifest["repo_id"] = main_repo_id;
+    manifest["commit_hash"] = commit_hash;
+    manifest["download_path"] = snapshot_path;
+    manifest["files_count"] = total_files;
+    manifest["files"] = json::array();
+    for (auto const& [repo_id, files] : files_to_download) {
+        for (const auto& filename : files) {
             json file_entry;
+            std::string size_key = repo_id + ':' + filename;
             file_entry["name"] = filename;
-            file_entry["size"] = file_sizes.count(filename) ? file_sizes[filename] : 0;
+            file_entry["url"] = "https://huggingface.co/" + repo_id + "/resolve/main/" + filename;
+            file_entry["size"] = file_sizes.count(size_key) ? file_sizes[size_key] : 0;
             manifest["files"].push_back(file_entry);
         }
-
-        // Write manifest (indicates download in progress)
-        JsonUtils::save_to_file(manifest, manifest_path);
-        std::cout << "[ModelManager] Created download manifest" << std::endl;
-
-        // Download each file with robust retry and resume support
-        int file_index = 0;
-        int total_files = static_cast<int>(files_to_download.size());
-
-        for (const auto& filename : files_to_download) {
-            file_index++;
-            std::string file_url = "https://huggingface.co/" + repo_id +
-                                 "/resolve/main/" + filename;
-            std::string output_path = snapshot_path + "/" + filename;
-
-            // Create parent directory for file (handles folders in filenames)
-            fs::create_directories(fs::path(output_path).parent_path());
-
-            std::cout << "[ModelManager] Downloading: " << filename << "..." << std::endl;
-
-            // Send progress update if callback provided (and check for cancellation)
-            if (progress_callback) {
-                DownloadProgress progress;
-                progress.file = filename;
-                progress.file_index = file_index;
-                progress.total_files = total_files;
-                progress.bytes_downloaded = 0;
-                progress.bytes_total = file_sizes.count(filename) ? file_sizes[filename] : 0;
-                progress.percent = 0;
-                if (!progress_callback(progress)) {
-                    std::cout << "[ModelManager] Download cancelled by client" << std::endl;
-                    throw std::runtime_error("Download cancelled");
-                }
-            }
-
-            utils::DownloadOptions download_opts;
-            download_opts.max_retries = 10;
-            download_opts.initial_retry_delay_ms = 2000;
-            download_opts.max_retry_delay_ms = 120000;
-            download_opts.resume_partial = true;
-            download_opts.low_speed_limit = 1000;
-            download_opts.low_speed_time = 60;
-            download_opts.connect_timeout = 60;
-
-            // Create progress callback that reports to both console and SSE callback
-            // Returns bool: true = continue, false = cancel
-            utils::ProgressCallback http_progress_cb;
-            if (progress_callback) {
-                http_progress_cb = [&](size_t downloaded, size_t total) -> bool {
-                    DownloadProgress progress;
-                    progress.file = filename;
-                    progress.file_index = file_index;
-                    progress.total_files = total_files;
-                    progress.bytes_downloaded = downloaded;
-                    progress.bytes_total = total;
-                    progress.percent = (total > 0) ? static_cast<int>((downloaded * 100) / total) : 0;
-                    return progress_callback(progress);  // Propagate cancellation
-                };
-            } else {
-                // Default console progress callback (never cancels)
-                http_progress_cb = utils::create_throttled_progress_callback();
-            }
-
-            auto result = HttpClient::download_file(
-                file_url,
-                output_path,
-                http_progress_cb,
-                headers,
-                download_opts
-            );
-
-            // Check if download was cancelled
-            if (result.cancelled) {
-                std::cout << "[ModelManager] Download cancelled by client" << std::endl;
-                throw std::runtime_error("Download cancelled");
-            }
-
-            if (result.success) {
-                std::cout << "\n[ModelManager] Downloaded: " << filename << std::endl;
-            } else {
-                // Build a detailed error message
-                std::ostringstream error_msg;
-                error_msg << "Failed to download file: " << filename << "\n";
-                error_msg << "URL: " << file_url << "\n";
-                error_msg << result.error_message;
-
-                // If there's a partial file, provide helpful information
-                if (fs::exists(output_path)) {
-                    size_t partial_size = fs::file_size(output_path);
-                    if (partial_size > 0) {
-                        error_msg << "\n\n[INFO] Partial download preserved at: " << output_path;
-                        error_msg << "\n[INFO] Partial size: " << std::fixed << std::setprecision(1)
-                                  << (partial_size / (1024.0 * 1024.0)) << " MB";
-                        error_msg << "\n[INFO] Run the command again to resume from where it left off.";
-                    }
-                }
-
-                throw std::runtime_error(error_msg.str());
-            }
-        }
-
-        // Validate all expected files exist after download
-        std::cout << "[ModelManager] Validating downloaded files..." << std::endl;
-        bool all_valid = true;
-        for (const auto& filename : files_to_download) {
-            std::string expected_path = snapshot_path + "/" + filename;
-            std::string partial_path = expected_path + ".partial";
-
-            // Check for .partial file (incomplete download)
-            if (fs::exists(partial_path)) {
-                all_valid = false;
-                std::cerr << "[ModelManager] Incomplete file found: " << filename << ".partial" << std::endl;
-                continue;
-            }
-
-            if (!fs::exists(expected_path)) {
-                all_valid = false;
-                std::cerr << "[ModelManager] Missing file: " << filename << std::endl;
-                continue;
-            }
-
-            // Verify file size if we have expected size
-            if (file_sizes.count(filename) && file_sizes[filename] > 0) {
-                size_t actual_size = fs::file_size(expected_path);
-                size_t expected_size = file_sizes[filename];
-                if (actual_size != expected_size) {
-                    all_valid = false;
-                    std::cerr << "[ModelManager] Size mismatch for " << filename
-                              << ": expected " << expected_size << " bytes, got " << actual_size << " bytes" << std::endl;
-                }
-            }
-        }
-
-        if (!all_valid) {
-            throw std::runtime_error(
-                "Download validation failed. Some files are incomplete or missing. "
-                "Run the command again to resume."
-            );
-        }
-
-        // All files validated - remove manifest to mark download as complete
-        if (fs::exists(manifest_path)) {
-            fs::remove(manifest_path);
-            std::cout << "[ModelManager] Removed download manifest (download complete)" << std::endl;
-        }
-
-        // Send completion event
-        // Note: We ignore the return value here since the download is already complete
-        // If the client disconnected, the write will simply fail silently
-        if (progress_callback) {
-            DownloadProgress progress;
-            progress.complete = true;
-            progress.file_index = total_files;
-            progress.total_files = total_files;
-            progress.percent = 100;
-            (void)progress_callback(progress);  // Ignore return - download already complete
-        }
-
-        std::cout << "[ModelManager] ✓ All files downloaded and validated successfully!" << std::endl;
-        std::cout << "[ModelManager DEBUG] Download location: " << snapshot_path << std::endl;
-
-    } catch (const std::exception& e) {
-        // Don't log here - let the caller (Server) handle error logging
-        throw;
     }
+
+    // Write manifest (indicates download in progress)
+    JsonUtils::save_to_file(manifest, manifest_path);
+    std::cout << "[ModelManager] Created download manifest" << std::endl;
+
+    download_from_manifest(manifest, headers, progress_callback);
+
+    // All files validated - remove manifest to mark download as complete
+    if (fs::exists(manifest_path)) {
+        fs::remove(manifest_path);
+        std::cout << "[ModelManager] Removed download manifest (download complete)" << std::endl;
+    }
+
+    // Send completion event
+    // Note: We ignore the return value here since the download is already complete
+    // If the client disconnected, the write will simply fail silently
+    if (progress_callback) {
+        DownloadProgress progress;
+        progress.complete = true;
+        progress.file_index = total_files;
+        progress.total_files = total_files;
+        progress.percent = 100;
+        (void)progress_callback(progress);  // Ignore return - download already complete
+    }
+
+    std::cout << "[ModelManager] ✓ All files downloaded and validated successfully!" << std::endl;
+    std::cout << "[ModelManager DEBUG] Download location: " << snapshot_path << std::endl;
 }
 
 void ModelManager::download_from_flm(const std::string& checkpoint,
@@ -2212,21 +2269,21 @@ void ModelManager::delete_model(const std::string& model_name) {
     auto info = get_model_info(model_name);
 
     std::cout << "[ModelManager] Deleting model: " << model_name << std::endl;
-    std::cout << "[ModelManager] Checkpoint: " << info.checkpoint << std::endl;
+    std::cout << "[ModelManager] Checkpoint: " << info.checkpoint() << std::endl;
     std::cout << "[ModelManager] Recipe: " << info.recipe << std::endl;
 
     // Handle extra models (from --extra-models-dir) - these are user-managed external files
     if (model_name.substr(0, 6) == "extra.") {
         throw std::runtime_error("Cannot delete extra models via API. Models in --extra-models-dir are user-managed. "
-                                 "Delete the file directly from: " + info.checkpoint);
+                                 "Delete the file directly from: " + info.checkpoint());
     }
 
     // Handle FLM models separately
     if (info.recipe == "flm") {
-        std::cout << "[ModelManager] Deleting FLM model: " << info.checkpoint << std::endl;
+        std::cout << "[ModelManager] Deleting FLM model: " << info.checkpoint() << std::endl;
 
         // Validate checkpoint is not empty
-        if (info.checkpoint.empty()) {
+        if (info.checkpoint().empty()) {
             throw std::runtime_error("FLM model has empty checkpoint field, cannot delete");
         }
 
@@ -2239,7 +2296,7 @@ void ModelManager::delete_model(const std::string& model_name) {
 #endif
 
         // Prepare arguments for 'flm remove' command
-        std::vector<std::string> args = {"remove", info.checkpoint};
+        std::vector<std::string> args = {"remove", info.checkpoint()};
 
         std::cout << "[ProcessManager] Starting process: \"" << flm_path << "\"";
         for (const auto& arg : args) {
@@ -2289,13 +2346,13 @@ void ModelManager::delete_model(const std::string& model_name) {
     }
 
     // Use resolved_path to find the model directory to delete
-    if (info.resolved_path.empty()) {
+    if (info.resolved_path().empty()) {
         throw std::runtime_error("Model has no resolved_path, cannot determine files to delete");
     }
 
     // Find the models--* directory from resolved_path
     // resolved_path could be a file or directory, we need to find the models-- ancestor
-    fs::path path_obj(info.resolved_path);
+    fs::path path_obj(info.resolved_path());
     std::string model_cache_path;
 
     // Walk up the directory tree to find models--* directory
@@ -2309,7 +2366,7 @@ void ModelManager::delete_model(const std::string& model_name) {
     }
 
     if (model_cache_path.empty()) {
-        throw std::runtime_error("Could not find models-- directory in path: " + info.resolved_path);
+        throw std::runtime_error("Could not find models-- directory in path: " + info.resolved_path());
     }
 
     std::cout << "[ModelManager] Cache path: " << model_cache_path << std::endl;
@@ -2388,13 +2445,12 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
 
     // Parse model info from JSON
     info.model_name = model_name;
-    info.checkpoint = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
+    info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
+    parse_legacy_mmproj(info, *model_json);
+    load_checkpoints(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", false);
-    info.mmproj = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
-    info.npu_cache_repo = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_repo", "");
-    info.npu_cache_filename = JsonUtils::get_or_default<std::string>(*model_json, "npu_cache_filename", "");
 
     // Parse labels array
     if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {
