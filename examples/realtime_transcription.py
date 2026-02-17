@@ -76,7 +76,7 @@ def transcribe_microphone(model: str, server_url: str):
 
     # Get WebSocket port from /health endpoint
     try:
-        health_url = server_url.replace("/api/v1", "") + "/api/v1/health"
+        health_url = server_url + "/health"
         with urllib.request.urlopen(health_url, timeout=10) as resp:
             health = json.loads(resp.read().decode())
             ws_port = health.get("websocket_port")
