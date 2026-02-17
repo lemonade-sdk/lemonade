@@ -125,7 +125,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }));
   };
 
-  const handleTTSSettingChange = (key: 'model' | 'userVoice' | 'assistantVoice', value: string) => {
+  const handleTTSSettingChange = (key: string, value: string | boolean) => {
     if(value !== '') {
       setSettings((prev) => ({
         ...prev,

@@ -3,7 +3,7 @@ import { AppSettings } from '../utils/appSettings';
 
 interface  TTSSettingsProps {
   settings: AppSettings,
-  onValueChangeFunc: (key: string | any, value: string) => void;
+  onValueChangeFunc: (key: string | any, value: string | boolean) => void;
   onResetFunc: (key: any) => void
 }
 
@@ -76,6 +76,48 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({settings, onValueChangeFunc, o
             })
           }
         </select>
+      </div>
+      <div className={`settings-section ${settings.tts.enableTTS.useDefault ? 'settings-section-default' : ''}`}>
+        <div className="settings-label-row">
+          <span className="settings-label-text">Enable TTS</span>
+          <button type="button" className="settings-field-reset" onClick={() => onResetFunc('enableTTS')} disabled={settings.tts.enableTTS.useDefault}>
+            Reset
+          </button>
+        </div>
+        <label className="settings-checkbox-label">
+          <input
+            type="checkbox"
+            checked={settings.tts.enableTTS.value}
+            onChange={(e) => onValueChangeFunc('enableTTS', e.target.checked)}
+            className="settings-checkbox"
+          />
+          <div className="settings-checkbox-content">
+            <span className="settings-description">
+              Enables TTS conversion for all messages.
+            </span>
+          </div>
+        </label>
+      </div>
+      <div className={`settings-section ${settings.tts.enableUserTTS.useDefault ? 'settings-section-default' : ''}`}>
+        <div className="settings-label-row">
+          <span className="settings-label-text">Enable User TTS</span>
+          <button type="button" className="settings-field-reset" onClick={() => onResetFunc('enableUserTTS')} disabled={settings.tts.enableUserTTS.useDefault}>
+            Reset
+          </button>
+        </div>
+        <label className="settings-checkbox-label">
+          <input
+            type="checkbox"
+            checked={settings.tts.enableUserTTS.value}
+            onChange={(e) => onValueChangeFunc('enableUserTTS', e.target.checked)}
+            className="settings-checkbox"
+          />
+          <div className="settings-checkbox-content">
+            <span className="settings-description">
+              Enables TTS conversion for user messages.
+            </span>
+          </div>
+        </label>
       </div>
     </div>
   );

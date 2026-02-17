@@ -32,6 +32,8 @@ export interface TTSSettings {
   model: StringSetting;
   userVoice: StringSetting;
   assistantVoice: StringSetting;
+  enableTTS: BooleanSetting;
+  enableUserTTS: BooleanSetting;
 }
 
 export interface AppSettings {
@@ -87,7 +89,9 @@ export const DEFAULT_LAYOUT_SETTINGS: LayoutSettings = {
 export const DEFAULT_TTS_SETTINGS: TTSSettings = {
   model: { value: 'kokoro-v1', useDefault: true },
   userVoice: { value: 'fable', useDefault: true },
-  assistantVoice: { value: 'alloy', useDefault: true }
+  assistantVoice: { value: 'alloy', useDefault: true },
+  enableTTS: { value: true, useDefault: true },
+  enableUserTTS: { value: true, useDefault: true }
 };
 
 export const createDefaultSettings = (): AppSettings => ({
@@ -263,8 +267,8 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
     ttsKeys.forEach((key) => {
       if (rawTTS[key] && typeof rawTTS[key] === 'object') {
         const useDefault = (typeof rawTTS[key].useDefault === 'boolean') ? rawTTS[key].useDefault : defaults.tts[key].useDefault;
-        const value = useDefault ? defaults.tts[key].value : (typeof rawTTS[key].value === 'string') ? rawTTS[key].value : defaults.tts[key].value;
-        defaults.tts[key] = { value, useDefault };
+        const value = useDefault ? defaults.tts[key].value : (typeof rawTTS[key].value === 'string' || typeof rawTTS[key].value === 'boolean') ? rawTTS[key].value : defaults.tts[key].value;
+        (defaults.tts[key] as (StringSetting | BooleanSetting)) = { value, useDefault };
       }
     });
   }
