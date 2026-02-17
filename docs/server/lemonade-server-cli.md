@@ -72,6 +72,7 @@ These settings can also be provided via environment variables that Lemonade Serv
 | `LEMONADE_CTX_SIZE`                | Default context size for models                                                                                                                         |
 | `LEMONADE_LLAMACPP_ARGS`           | Custom arguments to pass to llama-server                                                                                                                |
 | `LEMONADE_EXTRA_MODELS_DIR`        | Secondary directory to scan for GGUF model files                                                                                                        |
+| `LEMONADE_MAX_LOADED_MODELS`       | Maximum number of models to keep loaded per type slot (LLMs, audio, image, etc.). Use `-1` for unlimited, or a positive integer. Default: `1`           |
 | `LEMONADE_DISABLE_MODEL_FILTERING` | Set to `1` to disable hardware-based model filtering (e.g., RAM amount, NPU availability) and show all models regardless of system capabilities         |
 | `LEMONADE_ENABLE_DGPU_GTT`         | Set to `1` to include GTT for hardware-based model filtering |
 
