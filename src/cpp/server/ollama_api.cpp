@@ -332,6 +332,11 @@ json OllamaApi::convert_ollama_to_openai_chat(const json& ollama_request) {
         openai_req["response_format"] = {{"type", "json_object"}};
     }
 
+    // Map think parameter → enable_thinking (controls reasoning output)
+    if (ollama_request.contains("think")) {
+        openai_req["enable_thinking"] = ollama_request["think"];
+    }
+
     // Stream flag is handled by the caller
     openai_req["stream"] = false;
 
@@ -379,6 +384,11 @@ json OllamaApi::convert_openai_chat_to_ollama(const json& openai_response, const
                           ? message["role"].get<std::string>() : "assistant";
             msg["content"] = (message.contains("content") && message["content"].is_string())
                              ? message["content"].get<std::string>() : "";
+
+            // Map reasoning_content → thinking (Ollama uses "thinking" for reasoning models)
+            if (message.contains("reasoning_content") && message["reasoning_content"].is_string()) {
+                msg["thinking"] = message["reasoning_content"].get<std::string>();
+            }
 
             // Forward tool_calls if present
             if (message.contains("tool_calls")) {
@@ -446,6 +456,11 @@ json OllamaApi::convert_openai_delta_to_ollama(const json& openai_chunk, const s
                           ? delta["role"].get<std::string>() : "assistant";
             msg["content"] = (delta.contains("content") && delta["content"].is_string())
                              ? delta["content"].get<std::string>() : "";
+
+            // Map reasoning_content → thinking (Ollama uses "thinking" for reasoning models)
+            if (delta.contains("reasoning_content") && delta["reasoning_content"].is_string()) {
+                msg["thinking"] = delta["reasoning_content"].get<std::string>();
+            }
 
             if (delta.contains("tool_calls")) {
                 msg["tool_calls"] = delta["tool_calls"];
