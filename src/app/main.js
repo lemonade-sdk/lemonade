@@ -552,7 +552,7 @@ ipcMain.handle('get-version', async () => {
 });
 
 ipcMain.handle('discover-server-port', async () => {
-  let baseURL = getBaseURLFromConfig();
+  let baseURL = await getBaseURLFromConfig();
   if (baseURL) {
     console.log('Port discovery skipped - using explicit server URL:', baseURL);
     ensureTrayRunning();
