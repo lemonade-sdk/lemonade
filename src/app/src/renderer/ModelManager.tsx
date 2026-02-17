@@ -851,7 +851,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                                       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                                     </svg>
                                   </button>
-                                  {!['sd-cpp'].includes(model.info.recipe) && <button
+                                  <button
                                     className="model-action-btn load-btn"
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -868,7 +868,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                                       <circle cx="8" cy="8.5" r="2.5" stroke="currentColor"
                                               strokeWidth="1.2"/>
                                     </svg>
-                                  </button>}
+                                  </button>
                                 </>
                               )}
 
@@ -902,7 +902,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                                       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                                     </svg>
                                   </button>
-                                  {!['sd-cpp'].includes(model.info.recipe) && <button
+                                  <button
                                     className="model-action-btn load-btn"
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -919,7 +919,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                                       <circle cx="8" cy="8.5" r="2.5" stroke="currentColor"
                                               strokeWidth="1.2"/>
                                     </svg>
-                                  </button>}
+                                  </button>
                                 </>
                               )}
                             </span>

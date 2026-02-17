@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MarkdownMessage from './MarkdownMessage';
+import AudioButton, { LOADING, PAUSED, PLAYING } from './AudioButton'
 // @ts-ignore - SVG assets live outside of the TypeScript rootDir for Electron packaging
 import logoSvg from '../../assets/logo.svg';
 import {
@@ -108,6 +109,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     timestamp: number;
   }>>([]);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+
+  // Text to speech state
+  const [audioState, setAudioState] = useState<number>(0);
+  const [pressedAudioButton, setPressedAudioButton] = useState<number>(-1);
+  const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
 
   // Image generation settings
   interface ImageSettings {
@@ -281,10 +287,29 @@ useEffect(() => {
     setIsUserAtBottom(true);
   };
 
+const excludeTextToSpeechModel = (data: any) => {
+  const loadedModels = data.all_models_loaded;
+  const loadedModel = loadedModels.find((model: any) => model.model_name === data?.model_loaded);
+  
+  let isTextToSpeechModel = (loadedModel?.recipe === 'kokoro');
+
+  if(isTextToSpeechModel) {
+    for (const model of data.all_models_loaded) {
+      if (model.type === 'llm') {
+        data.model_loaded = model.model_name;
+        break;
+      }
+    }
+  }
+
+  return data;
+}
+
 const fetchLoadedModel = async () => {
   try {
     const response = await serverFetch('/health');
     const data = await response.json();
+    excludeTextToSpeechModel(data);
 
     if (data?.model_loaded) {
       setCurrentLoadedModel(data.model_loaded);
@@ -334,6 +359,14 @@ const fetchLoadedModel = async () => {
     return modelInfo?.recipe === 'whispercpp';
   };
 
+  const isSpeechModel = (): boolean => {
+    if (!selectedModel) return false;
+
+    const modelInfo = modelsData[selectedModel];
+
+    return modelInfo?.recipe === 'kokoro';
+  };
+
   const isImageGenerationModel = (): boolean => {
     if (!selectedModel) return false;
 
@@ -349,11 +382,12 @@ const fetchLoadedModel = async () => {
            modelInfo?.labels?.includes('image') || false;
   };
 
-  const getModelType = (): 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' => {
+  const getModelType = (): 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'speech' => {
     if (isEmbeddingModel()) return 'embedding';
     if (isRerankingModel()) return 'reranking';
     if (isTranscriptionModel()) return 'transcription';
     if (isImageGenerationModel()) return 'image';
+    if(isSpeechModel()) return 'speech';
     return 'llm';
   };
 
@@ -999,6 +1033,90 @@ const sendMessage = async () => {
     e.stopPropagation(); // Prevent closing when clicking inside the edit area
   };
 
+  // Handle text to speech conversion using Kokoro
+  useEffect(() => {
+    if(currentAudio) {
+      currentAudio.addEventListener('ended', stopAudio);
+      currentAudio.addEventListener('error', stopAudio);
+
+      currentAudio.play().catch(e => console.error("Playback prevented:", currentAudio));
+    }
+
+    return () => {
+      currentAudio?.removeEventListener('ended', stopAudio);
+      currentAudio?.removeEventListener('error', stopAudio);
+    }
+  }, [currentAudio, audioState]);
+
+  const playAudio = (audioUrl: string) => {
+    setCurrentAudio(new Audio(audioUrl));
+    setAudioState(PLAYING);
+  }
+
+  const stopAudio = () => {
+    if (currentAudio) {
+      currentAudio.pause();
+      if (currentAudio.src.startsWith('blob:')) {
+        URL.revokeObjectURL(currentAudio.src);
+      }
+        
+      setCurrentAudio(null);
+    }
+
+    setPressedAudioButton(-1);
+    setAudioState(PAUSED);
+  }
+
+  const handleTextToSpeech = async (message: MessageContent) => {
+    const textToSpeechModel = 'kokoro-v1';
+
+    setAudioState(LOADING);
+
+    if(message instanceof Array) {
+      message = message.map(function(item) {return (item.type == "text") ? item.text : ''}).toString();
+    }
+
+
+    try {
+      const requestBody: any = {
+        model: textToSpeechModel,
+        input: message,
+        voice: 'alloy'
+      };
+
+      const response = await serverFetch('/audio/speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const respBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(respBlob);
+      playAudio(audioUrl);
+      setAudioState(PLAYING);
+    } catch(err: any) {
+      console.log(`Error: ${err}`);
+      stopAudio();
+    }
+  }
+
+  const handleAudioButtonClick = async (message: MessageContent, btnIndex: number) => {
+    let b = pressedAudioButton;
+
+    stopAudio();
+
+    if (b === btnIndex) {
+      return;
+    }
+
+    setPressedAudioButton(btnIndex);
+    await handleTextToSpeech(message);
+  }
+
   const submitEdit = async () => {
     if ((!editingValue.trim() && editingImages.length === 0) || editingIndex === null || isLoading) return;
 
@@ -1400,6 +1518,7 @@ const sendMessage = async () => {
                     : modelType === 'reranking' ? 'Lemonade Reranking'
                     : modelType === 'transcription' ? 'Lemonade Transcriber'
                     : modelType === 'image' ? 'Lemonade Image Generator'
+                    : modelType === 'speech' ? 'Lemonade Text to Speech'
                     : 'LLM Chat';
 
   // Reusable components
@@ -1929,7 +2048,7 @@ const sendMessage = async () => {
       )}
 
       {/* LLM Chat UI (default) */}
-      {modelType === 'llm' && (
+      {(modelType === 'llm' || modelType === 'speech') && (
         <>
           <div
             className="chat-messages"
@@ -1946,7 +2065,8 @@ const sendMessage = async () => {
                   className={`chat-message ${message.role === 'user' ? 'user-message' : 'assistant-message'} ${
                     message.role === 'user' && !isLoading ? 'editable' : ''
                   } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''}`}
-                >
+                  >
+                  <AudioButton textMessage={message.content} buttonIndex={index} onClickFunction={handleAudioButtonClick} buttonContext={{buttonId: pressedAudioButton, audioState: audioState}} />
                   {editingIndex === index ? (
                     <div className="edit-message-wrapper" onClick={handleEditContainerClick}>
                       {editingImages.length > 0 && (

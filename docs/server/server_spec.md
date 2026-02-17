@@ -177,6 +177,28 @@ Chat Completions API. You provide a list of messages and receive a completion. T
           }'
     ```
 
+#### Image understanding input format (OpenAI-compatible)
+
+To send images to `chat/completions`, pass a `messages[*].content` array that mixes `text` and `image_url` items. The image can be provided as a base64 data URL (for example, from `FileReader.readAsDataURL(...)` in web apps).
+
+```bash
+curl -X POST http://localhost:8000/api/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "Qwen2.5-VL-7B-Instruct",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {"type": "text", "text": "What is in this image?"},
+              {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."}}
+            ]
+          }
+        ],
+        "stream": false
+      }'
+```
+
 #### Response format
 
 === "Non-streaming responses"
@@ -768,7 +790,7 @@ Retrieve a specific model by its ID. Returns the same model object format as the
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_id` | Yes | The ID of the model to retrieve. Must match one of the model IDs from the [models list](./server_models.md). |
+| `model_id` | Yes | The ID of the model to retrieve. Must match one of the model IDs from the [models list](https://lemonade-server.ai/models.html). |
 
 #### Example request
 
@@ -833,7 +855,7 @@ The Lemonade Server built-in model registry has a collection of model names that
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_name` | Yes | [Lemonade Server model name](./server_models.md) to install. |
+| `model_name` | Yes | [Lemonade Server model name](https://lemonade-server.ai/models.html) to install. |
 
 Example request:
 
@@ -866,7 +888,7 @@ The `recipe` field defines which software framework and device will be used to l
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_name` | Yes | Namespaced [Lemonade Server model name](./server_models.md) to register and install. |
+| `model_name` | Yes | Namespaced [Lemonade Server model name](https://lemonade-server.ai/models.html) to register and install. |
 | `checkpoint` | Yes | HuggingFace checkpoint to install. |
 | `recipe` | Yes | Lemonade API recipe to load the model with. |
 | `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). Adds 'reasoning' label. |
@@ -929,7 +951,7 @@ Delete a model by removing it from local storage. If the model is currently load
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_name` | Yes | [Lemonade Server model name](./server_models.md) to delete. |
+| `model_name` | Yes | [Lemonade Server model name](https://lemonade-server.ai/models.html) to delete. |
 
 Example request:
 
@@ -961,7 +983,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 
 | Parameter | Required | Applies to | Description |
 |-----------|----------|------------|-------------|
-| `model_name` | Yes | All | [Lemonade Server model name](./server_models.md) to load. |
+| `model_name` | Yes | All | [Lemonade Server model name](https://lemonade-server.ai/models.html) to load. |
 | `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. |
 | `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
