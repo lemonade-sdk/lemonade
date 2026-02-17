@@ -1293,6 +1293,11 @@ int TrayApp::execute_pull_command() {
                 request_body["model"] = request_body["id"];
             }
 
+            // If checkpoints is available remove checkpoint
+            if (request_body.contains("checkpoints")) {
+                request_body.erase("checkpoint");
+            }
+
             // Model was not a JSON file
             if (!request_body.contains("model")) {
                 request_body["model"] = tray_config_.model;
