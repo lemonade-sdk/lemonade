@@ -157,20 +157,15 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
         std::cout << "[Router] Creating Kokoro backend" << std::endl;
         new_server = std::make_unique<backends::KokoroServer>(log_level_, model_manager_);
     } else if (model_info.recipe == "sd-cpp") {
-        // Pass sd-cpp_backend from default_options_ to SDServer
-        std::string backend = "cpu";  // default
-        if (default_options_.contains("sd-cpp_backend") && default_options_["sd-cpp_backend"].is_string()) {
-            backend = default_options_["sd-cpp_backend"].get<std::string>();
-        }
-        std::cout << "[Router] Creating SDServer backend (backend: " << backend << ")" << std::endl;
-        new_server = std::make_unique<backends::SDServer>(log_level_, model_manager_, backend);
+        std::cout << "[Router] Creating SDServer backend" << std::endl;
+        new_server = std::make_unique<backends::SDServer>(log_level_, model_manager_);
     } else if (model_info.recipe == "flm") {
         std::cout << "[Router] Creating FastFlowLM backend" << std::endl;
         new_server = std::make_unique<backends::FastFlowLMServer>(log_level_, model_manager_);
     } else if (model_info.recipe == "ryzenai-llm") {
         std::cout << "[Router] Creating RyzenAI-Server backend" << std::endl;
 
-        std::string model_path = model_info.resolved_path;
+        std::string model_path = model_info.resolved_path();
         std::cout << "[Router] Using model path: " << model_path << std::endl;
 
         auto* ryzenai_server = new RyzenAIServer(model_info.model_name,
@@ -208,7 +203,7 @@ void Router::load_model(const std::string& model_name,
     is_loading_ = true;
 
     std::cout << "[Router] Loading model: " << model_name
-              << " (checkpoint: " << model_info.checkpoint
+              << " (checkpoint: " << model_info.checkpoint()
               << ", recipe: " << model_info.recipe
               << ", type: " << model_type_to_string(model_info.type)
               << ", device: " << device_type_to_string(model_info.device) << ")" << std::endl;
@@ -258,7 +253,7 @@ void Router::load_model(const std::string& model_name,
         std::unique_ptr<WrappedServer> new_server = create_backend_server(model_info);
 
         // Set model metadata
-        new_server->set_model_metadata(model_name, model_info.checkpoint, model_type, device_type, effective_options);
+        new_server->set_model_metadata(model_name, model_info.checkpoint(), model_type, device_type, effective_options);
         new_server->update_access_time();
 
         // CRITICAL: Release lock before slow backend startup
@@ -326,7 +321,7 @@ void Router::load_model(const std::string& model_name,
 
             // Create new server for retry
             std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
-            retry_server->set_model_metadata(model_name, model_info.checkpoint, model_type, device_type, effective_options);
+            retry_server->set_model_metadata(model_name, model_info.checkpoint(), model_type, device_type, effective_options);
             retry_server->update_access_time();
 
             // Release lock for retry

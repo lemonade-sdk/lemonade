@@ -67,7 +67,7 @@ If you want to install models on behalf of your users, the following tools are a
 - LLMs that are already available in lemonade:
   - Run `lemonade-server list`.
   - Use the [models endpoint](./server_spec.md#get-apiv1models).
-  - [A human-readable list of supported models](./server_models.md). Do not modify this file in an existing install (see `user_models.json` below).
+  - [A human-readable list of supported models](https://lemonade-server.ai/models.html). Do not modify this file in an existing install (see `user_models.json` below).
   - [A JSON file that defines the list of built-in models](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/server_models.json).
   - `lemonade-server pull MODEL` on the command line interface.
 
@@ -237,7 +237,7 @@ The Lemonade Server systemd service is configured to read settings from `/etc/le
 sudo nano /etc/lemonade/lemonade.conf
 ```
 
-Secrets, like the LEMONADE_API_KEY secret, are defined in `/etc/lemonade/secrets.conf` 
+Secrets, like the LEMONADE_API_KEY secret, are defined in `/etc/lemonade/secrets.conf`
 
 ```bash
 sudo nano /etc/lemonade/secrets.conf

@@ -216,6 +216,10 @@ public:
     // Clear cache
     void clear();
 
+    // Perform cleanup tasks needed when upgrading from older versions
+    // (e.g., deleting stale backend binaries)
+    void perform_upgrade_cleanup();
+
     // Get cache file path
     std::string get_cache_file_path() const { return cache_file_path_; }
 

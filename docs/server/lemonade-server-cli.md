@@ -114,7 +114,7 @@ If you expose your server over a network you can use the `LEMONADE_API_KEY` envi
 
 ## Options for pull
 
-The `pull` command downloads and installs models. For models already in the [Lemonade Server registry](./server_models.md), only the model name is required. To register and install custom models from Hugging Face, use the registration options below:
+The `pull` command downloads and installs models. For models already in the [Lemonade Server registry](https://lemonade-server.ai/models.html), only the model name is required. To register and install custom models from Hugging Face, use the registration options below:
 
 ```bash
 lemonade-server pull <model_name> [options]
@@ -160,7 +160,7 @@ lemonade-server pull user.nomic-embed \
   --embedding
 ```
 
-For more information about model formats and recipes, see the [API documentation](../lemonade_api.md) and the [server models guide](./server_models.md).
+For more information about model formats and recipes, see the [API documentation](../lemonade_api.md) and the [server models guide](https://lemonade-server.ai/models.html).
 
 ## Lemonade Desktop App
 

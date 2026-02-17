@@ -133,6 +133,8 @@ namespace lemon::backends {
     std::string BackendUtils::find_external_backend_binary(const std::string& recipe, const std::string& backend) {
         std::string upper = backend == "" ? recipe : (recipe + "_" + backend);
         std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
+        // turn SD-CPP into SDCPP since '-' is not valid in ENV names
+        upper.erase(remove_if(upper.begin(), upper.end(), [](const char& c) { return c == '-'; }), upper.end());
         std::string env = "LEMONADE_" + upper + "_BIN";
         const char* backend_bin_env = std::getenv(env.c_str());
         if (!backend_bin_env) {
