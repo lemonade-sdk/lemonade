@@ -620,10 +620,10 @@ Realtime Audio Transcription API via WebSocket (OpenAI SDK compatible). Stream a
 
 #### Connection
 
-Connect to the WebSocket endpoint with the model name (OpenAI SDK compatible):
+The WebSocket server runs on a dynamically assigned port. Discover the port via the [`/api/v1/health`](#get-apiv1health) endpoint (`websocket_port` field), then connect with the model name:
 
 ```
-ws://localhost:8100/realtime?model=Whisper-Tiny
+ws://localhost:<websocket_port>/realtime?model=Whisper-Tiny
 ```
 
 Upon connection, the server sends a `session.created` message with a session ID.
@@ -647,7 +647,8 @@ Upon connection, the server sends a `session.created` message with a session ID.
 | `input_audio_buffer.speech_stopped` | VAD detected speech end, transcription triggered |
 | `input_audio_buffer.committed` | Audio buffer committed for transcription |
 | `input_audio_buffer.cleared` | Audio buffer cleared |
-| `conversation.item.input_audio_transcription.completed` | Transcription result |
+| `conversation.item.input_audio_transcription.delta` | Interim/partial transcription (replaceable) |
+| `conversation.item.input_audio_transcription.completed` | Final transcription result |
 | `error` | Error message |
 
 #### Example: Configure Session
@@ -1343,6 +1344,7 @@ curl http://localhost:8000/api/v1/health
   - `reranking` - Maximum reranking models
   - `audio` - Maximum audio models
   - `image` - Maximum image models
+- `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned.
 
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
