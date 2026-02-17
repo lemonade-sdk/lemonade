@@ -77,7 +77,6 @@ def create_variations_with_openai_client(image_path, num_variations=1, backend="
             image=image_file,
             size="512x512",
             n=num_variations,
-            response_format="b64_json",
         )
 
     # Save the variations
@@ -118,10 +117,6 @@ def create_variations_with_requests(image_path, num_variations=1, backend="cpu")
             "model": "SD-Turbo",
             "size": "512x512",
             "n": str(num_variations),
-            "response_format": "b64_json",
-            # Optional SD-specific parameters
-            "steps": "4",
-            "cfg_scale": "1.0",
         }
 
         response = requests.post(

@@ -71,9 +71,6 @@ def edit_image_with_openai_client(image_path, backend="cpu"):
             prompt="Add a red barn and mountains in the background, photorealistic",
             size="512x512",
             n=1,
-            response_format="b64_json",
-            # SD-specific parameters (passed through as extra_body if supported)
-            # These may vary depending on sd-cpp backend capabilities
         )
 
     # Save the edited image
@@ -110,10 +107,7 @@ def edit_image_with_requests(image_path, backend="cpu"):
             "prompt": "Add a red barn and mountains in the background, photorealistic",
             "size": "512x512",
             "n": "1",
-            "response_format": "b64_json",
-            # Optional SD-specific parameters
-            "steps": "4",
-            "cfg_scale": "1.0",
+            "output_format": "b64_json",
         }
 
         response = requests.post(
