@@ -1116,6 +1116,23 @@ const sendMessage = async () => {
     await handleTextToSpeech(message, role);
   }
 
+  const renderAudioButton = (role: string, message: MessageContent, btnIndex: number) => {
+    let isTextContent = (typeof message === 'object') ? (message.filter((chunk) => chunk.type === 'text').length != 0) : true;
+
+    return (appSettings?.tts.enableTTS.value) &&
+      isTextContent &&
+      ((role == 'assistant') ||
+      (role == 'user' && appSettings?.tts.enableUserTTS.value)) ?
+      <AudioButton
+      role={role}
+      textMessage={message}
+      buttonIndex={btnIndex}
+      onClickFunction={handleAudioButtonClick}
+      buttonContext={{buttonId: pressedAudioButton, audioState: audioState}}
+      /> :
+      ''
+  };
+
   const submitEdit = async () => {
     if ((!editingValue.trim() && editingImages.length === 0) || editingIndex === null || isLoading) return;
 
@@ -2065,7 +2082,7 @@ const sendMessage = async () => {
                     message.role === 'user' && !isLoading ? 'editable' : ''
                   } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''}`}
                   >
-                  <AudioButton role={message.role} textMessage={message.content} buttonIndex={index} onClickFunction={handleAudioButtonClick} buttonContext={{buttonId: pressedAudioButton, audioState: audioState}} />
+                   {renderAudioButton(message.role, message.content, index)}
                   {editingIndex === index ? (
                     <div className="edit-message-wrapper" onClick={handleEditContainerClick}>
                       {editingImages.length > 0 && (
