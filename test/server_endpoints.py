@@ -745,7 +745,25 @@ class EndpointTests(ServerTestBase):
             f"[OK] /system-info: OS={data['OS Version'][:30]}..., recipes={len(recipes)}"
         )
 
-    def test_019_stats_endpoint(self):
+    def test_019_web_app_root(self):
+        """Test that GET / returns HTML for the web app (browser-accessible UI)."""
+        response = requests.get(f"http://localhost:{PORT}/", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+        content_type = response.headers.get("Content-Type", "")
+        self.assertIn(
+            "text/html",
+            content_type,
+            f"Expected text/html at /, got: {content_type}",
+        )
+        body = response.text
+        self.assertIn(
+            "<html",
+            body.lower(),
+            "Response body does not look like HTML",
+        )
+        print(f"[OK] GET / returned HTML ({len(body)} bytes)")
+
+    def test_020_stats_endpoint(self):
         """Test the /stats endpoint returns performance metrics."""
         # First, make an inference request to populate stats
         requests.post(
