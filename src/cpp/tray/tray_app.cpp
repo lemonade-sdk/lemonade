@@ -1125,6 +1125,45 @@ std::pair<int, int> TrayApp::get_server_info() {
         // Stale PID file, remove it
         remove("/tmp/lemonade-router.pid");
     }
+
+#ifdef __APPLE__
+    // macOS port-based fallback (no systemd available)
+    {
+        httplib::Client cli("localhost", server_config_.port);
+        cli.set_connection_timeout(1);
+        auto res = cli.Get("/api/version");
+        if (res) {
+            int found_pid = 0;
+
+            // Try lsof first
+            std::string cmd = "lsof -ti tcp:" + std::to_string(server_config_.port) + " 2>/dev/null | head -1";
+            FILE* pipe = popen(cmd.c_str(), "r");
+            if (pipe) {
+                char buf[64];
+                if (fgets(buf, sizeof(buf), pipe)) {
+                    found_pid = std::atoi(buf);
+                }
+                pclose(pipe);
+            }
+
+            // Try pgrep as fallback
+            if (found_pid <= 0) {
+                pipe = popen("pgrep -x lemonade-router 2>/dev/null | head -1", "r");
+                if (pipe) {
+                    char buf[64];
+                    if (fgets(buf, sizeof(buf), pipe)) {
+                        found_pid = std::atoi(buf);
+                    }
+                    pclose(pipe);
+                }
+            }
+
+            if (found_pid > 0) {
+                return {found_pid, server_config_.port};
+            }
+        }
+    }
+#endif
 #endif
 
     return {0, 0};  // Server not found
@@ -1825,6 +1864,12 @@ int TrayApp::execute_stop_command() {
 #else
     // Unix: Use the PID we already got from get_server_info() (this is the router)
     int router_pid = pid;
+#ifdef __APPLE__
+    if (router_pid <= 0) {
+        std::cerr << "Error: Could not determine router PID" << std::endl;
+        return 1;
+    }
+#endif
     std::cout << "Found router process (PID: " << router_pid << ")" << std::endl;
 
     // Find parent tray app if it exists

@@ -302,6 +302,12 @@ MOCK_HARDWARE_CONFIGS = {
                 "amd_dgpu": [],
                 "nvidia_dgpu": [],
                 "npu": {"name": "None", "available": False},
+                "metal": {
+                    "name": "Apple M3 Max",
+                    "available": True,
+                    "vram_gb": 64.0,
+                    "driver_version": "Metal",
+                },
             },
         },
         "expected_supported": {

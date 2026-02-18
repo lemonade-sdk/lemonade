@@ -377,6 +377,52 @@ jobs:
           path: build/lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
+  build-lemonade-macos-dmg:
+    name: Build Lemonade macOS .dmg (with Electron App)
+    runs-on: macos-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Get version from CMakeLists.txt
+        id: get_version
+        uses: ./.github/actions/get-version
+
+      - name: Setup macOS Keychain
+        uses: ./.github/actions/setup-macos-keychain
+        with:
+          dev-signing-key: ${{ secrets.MACOS_DEV_SIGNING_IDENTITY_KEY }}
+          inst-signing-key: ${{ secrets.MACOS_INST_SIGNING_IDENTITY_KEY }}
+          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          api-key: ${{ secrets.MACOS_APP_CONNECT_KEY_GERAMY }}
+          api-key-id: '3WFZZ8F948'
+          api-issuer-id: '2e545619-8206-4d14-9ba9-ef23eff841b2'
+
+      - name: Build macOS .dmg
+        uses: ./.github/actions/build-macos-dmg
+        with:
+          include-electron: 'true'
+
+      - name: Upload .pkg package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-macos-pkg
+          path: build/*.pkg
+          retention-days: 7
+
+      - name: Cleanup keychain
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "$SIGNING_KEYCHAIN_PATH" ] && [ -f "$SIGNING_KEYCHAIN_PATH" ]; then
+            echo "Cleaning up temporary keychain..."
+            security delete-keychain "$SIGNING_KEYCHAIN_PATH" 2>/dev/null || true
+          fi
+
   # ========================================================================
   # TEST JOBS - Inference tests on self-hosted runners
   # ========================================================================
@@ -629,6 +675,89 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
 
+  test-dmg-inference:
+    name: Test .dmg - ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    needs: build-lemonade-macos-dmg
+    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # LLM - Llamacpp Metal backend
+          - name: llamacpp (metal)
+            test_type: llm
+            wrapped_server: llamacpp
+            backend: metal
+            runner: macos-latest
+    env:
+      LEMONADE_CI_MODE: "True"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-macos-dmg.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set HF_HOME environment variable
+        run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+
+      - name: Install Lemonade Server (.pkg)
+        uses: ./.github/actions/install-lemonade-server-dmg
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Run tests
+        env:
+          HF_HOME: ${{ env.HF_HOME }}
+        run: |
+          set -e
+
+          VENV_PYTHON=".venv/bin/python"
+
+          echo "Running ${{ matrix.name }} tests..."
+
+          case "${{ matrix.test_type }}" in
+            llm)
+              $VENV_PYTHON test/server_llm.py --wrapped-server ${{ matrix.wrapped_server }} --backend ${{ matrix.backend }} --server-binary /usr/local/bin/lemonade-server
+              ;;
+          esac
+
+          echo "${{ matrix.name }} tests PASSED!"
+
+      - name: Print server logs on failure
+        if: failure()
+        run: |
+          echo "=== Server Log (if exists) ==="
+          if [ -f /var/log/lemonade/lemonade-server.out.log ]; then
+            echo "Last 100 lines of lemonade-server.out.log:"
+            tail -100 /var/log/lemonade/lemonade-server.out.log
+          fi
+          if [ -f /var/log/lemonade/lemonade-server.err.log ]; then
+            echo "Last 100 lines of lemonade-server.err.log:"
+            tail -100 /var/log/lemonade/lemonade-server.err.log
+          fi
+
+          echo ""
+          echo "=== Temp logs ==="
+          for f in /tmp/lemonade*.log; do
+            if [ -f "$f" ]; then
+              echo "--- $f ---"
+              tail -50 "$f"
+            fi
+          done 2>/dev/null || echo "No temp log files found"
+
+          echo ""
+          echo "=== Lock file status ==="
+          ls -la /tmp/lemonade*.lock 2>/dev/null || echo "No lock files found"
+
   # ========================================================================
   # CLI AND ENDPOINTS TESTS - Run on GitHub-hosted runners (no GPU needed)
   # ========================================================================
@@ -639,10 +768,11 @@ jobs:
     needs:
       - build-lemonade-server-installer
       - build-lemonade-server-deb
+      - build-lemonade-macos-dmg
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         test_type: [cli, endpoints, system-info, ollama]
     env:
       LEMONADE_CI_MODE: "True"
@@ -704,6 +834,30 @@ jobs:
           echo "VENV_PYTHON=.venv/Scripts/python.exe" >> $Env:GITHUB_ENV
           echo "SERVER_BINARY=$Env:LEMONADE_INSTALL_PATH\bin\lemonade-server.exe" >> $Env:GITHUB_ENV
 
+      # ---- macOS Setup ----
+      - name: Download .pkg package
+        if: runner.os == 'macOS'
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-macos-pkg
+          path: .
+
+      - name: Install Lemonade Server (.pkg)
+        id: install-pkg
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/install-lemonade-server-dmg
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+          download-artifact: 'false'
+
+      - name: Set environment (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+          echo "VENV_PYTHON=.venv/bin/python" >> $GITHUB_ENV
+          echo "SERVER_BINARY=${{ steps.install-pkg.outputs.bin-path }}/lemonade-server" >> $GITHUB_ENV
+
       # ---- Common Setup ----
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -720,6 +874,26 @@ jobs:
           echo "Stopping lemonade-server systemd service..."
           sudo systemctl stop lemonade-server || true
           sudo systemctl status lemonade-server || true
+
+      - name: Stop LaunchDaemon before tests (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          echo "Stopping lemonade-server LaunchDaemon..."
+          sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
+          CURRENT_UID=$(id -u)
+          launchctl bootout gui/"$CURRENT_UID"/com.lemonade.tray 2>/dev/null || true
+          sleep 2
+
+          # Clean up PID and lock files left behind by killed processes
+          echo "Cleaning up stale PID and lock files..."
+          sudo rm -f /tmp/lemonade-router.pid
+          sudo rm -f /tmp/lemonade_Router.lock
+          sudo rm -f /tmp/lemonade_Server.lock
+          sudo rm -f /tmp/lemonade_Tray.lock
+          sudo rm -f /tmp/lemonade*.pid /tmp/lemonade*.lock
+
+          echo "LaunchDaemon stopped and cleaned up."
 
       - name: Run ${{ matrix.test_type }} tests
         shell: bash
@@ -761,6 +935,7 @@ jobs:
       - sign-msi-installers
       - build-lemonade-server-deb
       - build-lemonade-deb-full
+      - build-lemonade-macos-dmg
       - test-cli-endpoints
     if: startsWith(github.ref, 'refs/tags/v')
     env:
@@ -789,6 +964,12 @@ jobs:
           name: lemonade-deb-full
           path: .
 
+      - name: Download Lemonade macOS .pkg Package
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-macos-pkg
+          path: .
+
       - name: Verify release artifacts
         run: |
           echo "Release artifacts:"
@@ -796,6 +977,7 @@ jobs:
           ls -lh lemonade.msi
           ls -lh lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb
           ls -lh lemonade_${LEMONADE_VERSION}_amd64.deb
+          ls -lh *.pkg
 
       - name: Generate release notes
         id: release-notes
@@ -815,4 +997,5 @@ jobs:
             lemonade.msi
             lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
             lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
+            *.pkg
           fail_on_unmatched_files: true

@@ -2291,7 +2291,63 @@ NPUInfo MacOSSystemInfo::get_npu_device() {
     return npu;
 }
 
+json MacOSSystemInfo::get_system_info_dict() {
+    json info = SystemInfo::get_system_info_dict();  // Get base fields (includes OS Version)
+    info["Processor"] = get_processor_name();
+    info["Physical Memory"] = get_physical_memory();
+    return info;
+}
 
+std::string MacOSSystemInfo::get_os_version() {
+    std::string result = "macOS";
+
+    // Get macOS product version (e.g., "14.3.1")
+    FILE* pipe = popen("sw_vers -productVersion 2>/dev/null", "r");
+    if (pipe) {
+        char buffer[128];
+        if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            std::string version = buffer;
+            // Trim trailing newline
+            while (!version.empty() && (version.back() == '\n' || version.back() == '\r')) {
+                version.pop_back();
+            }
+            if (!version.empty()) {
+                result += " " + version;
+            }
+        }
+        pclose(pipe);
+    }
+
+    // Append Darwin kernel version
+    char kernel_buf[256];
+    size_t size = sizeof(kernel_buf);
+    if (sysctlbyname("kern.osrelease", kernel_buf, &size, nullptr, 0) == 0) {
+        result += " Darwin Kernel Version " + std::string(kernel_buf);
+    }
+
+    return result;
+}
+
+std::string MacOSSystemInfo::get_processor_name() {
+    char buffer[256];
+    size_t size = sizeof(buffer);
+    if (sysctlbyname("machdep.cpu.brand_string", buffer, &size, nullptr, 0) == 0) {
+        return std::string(buffer);
+    }
+    return "Unknown Apple Processor";
+}
+
+std::string MacOSSystemInfo::get_physical_memory() {
+    uint64_t mem_bytes = 0;
+    size_t size = sizeof(mem_bytes);
+    if (sysctlbyname("hw.memsize", &mem_bytes, &size, nullptr, 0) == 0) {
+        double mem_gb = mem_bytes / (1024.0 * 1024.0 * 1024.0);
+        // Round to nearest integer for clean display
+        int rounded_gb = static_cast<int>(mem_gb + 0.5);
+        return std::to_string(rounded_gb) + " GB";
+    }
+    return "Unknown";
+}
 
 #endif // __APPLE__
 

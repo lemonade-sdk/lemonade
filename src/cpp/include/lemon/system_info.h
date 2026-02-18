@@ -189,6 +189,14 @@ public:
     std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
     NPUInfo get_npu_device() override;
 
+    // Override to add macOS-specific fields
+    json get_system_info_dict() override;
+    std::string get_os_version() override;
+
+    // macOS-specific methods
+    std::string get_processor_name();
+    std::string get_physical_memory();
+
     std::vector<GPUInfo> detect_metal_gpus();
 };
 

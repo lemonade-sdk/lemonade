@@ -1,0 +1,122 @@
+name: 'Setup macOS Keychain for Signing'
+description: 'Import Developer ID certificates and store notarization credentials using App Store Connect API key'
+inputs:
+  dev-signing-key:
+    description: 'Base64-encoded Developer ID Application certificate (.p12)'
+    required: true
+  inst-signing-key:
+    description: 'Base64-encoded Developer ID Installer certificate (.p12)'
+    required: true
+  certificate-password:
+    description: 'Password for the .p12 files'
+    required: true
+  api-key:
+    description: 'App Store Connect API key (.p8 content, base64-encoded)'
+    required: true
+  api-key-id:
+    description: 'App Store Connect API key ID'
+    required: true
+  api-issuer-id:
+    description: 'App Store Connect Issuer ID'
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Import certificates and store notarization credentials
+      shell: bash
+      run: |
+        set -e
+
+        echo "========================================"
+        echo "Setting up macOS Keychain for signing..."
+        echo "========================================"
+
+        # Create a temporary keychain
+        KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+        KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+
+        echo "Creating temporary keychain..."
+        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+        # Import Developer ID Application certificate
+        echo "Importing Developer ID Application certificate..."
+        DEV_CERT_PATH="$RUNNER_TEMP/dev_certificate.p12"
+        echo "${{ inputs.dev-signing-key }}" | base64 --decode > "$DEV_CERT_PATH"
+
+        security import "$DEV_CERT_PATH" \
+          -k "$KEYCHAIN_PATH" \
+          -P "${{ inputs.certificate-password }}" \
+          -T /usr/bin/codesign \
+          -T /usr/bin/productbuild \
+          -T /usr/bin/pkgbuild
+
+        rm -f "$DEV_CERT_PATH"
+
+        # Import Developer ID Installer certificate
+        echo "Importing Developer ID Installer certificate..."
+        INST_CERT_PATH="$RUNNER_TEMP/inst_certificate.p12"
+        echo "${{ inputs.inst-signing-key }}" | base64 --decode > "$INST_CERT_PATH"
+
+        security import "$INST_CERT_PATH" \
+          -k "$KEYCHAIN_PATH" \
+          -P "${{ inputs.certificate-password }}" \
+          -T /usr/bin/codesign \
+          -T /usr/bin/productbuild \
+          -T /usr/bin/pkgbuild
+
+        rm -f "$INST_CERT_PATH"
+
+        # Set partition list to allow codesign access without UI prompt
+        security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+        # Add temporary keychain to search list (prepend so it takes priority)
+        security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+        # Extract certificate fingerprints for CMake
+        echo "Extracting certificate fingerprints..."
+
+        # Get Developer ID Application identity
+        DEV_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" | head -1 | awk '{print $2}')
+        if [ -z "$DEV_IDENTITY" ]; then
+            echo "ERROR: Developer ID Application certificate not found in keychain!"
+            security find-identity -v "$KEYCHAIN_PATH"
+            exit 1
+        fi
+        echo "Developer ID Application: $DEV_IDENTITY"
+
+        # Get Developer ID Installer identity
+        INST_IDENTITY=$(security find-identity -v "$KEYCHAIN_PATH" | grep "Developer ID Installer" | head -1 | awk '{print $2}')
+        if [ -z "$INST_IDENTITY" ]; then
+            echo "ERROR: Developer ID Installer certificate not found in keychain!"
+            security find-identity -v "$KEYCHAIN_PATH"
+            exit 1
+        fi
+        echo "Developer ID Installer: $INST_IDENTITY"
+
+        # Export for CMake (CMakeLists.txt reads these at lines 861 and 869)
+        echo "DEVELOPER_ID_APPLICATION_IDENTITY=$DEV_IDENTITY" >> $GITHUB_ENV
+        echo "DEVELOPER_ID_INSTALLER_IDENTITY=$INST_IDENTITY" >> $GITHUB_ENV
+
+        # Write the App Store Connect API key to a file for notarytool
+        echo "Setting up App Store Connect API key for notarization..."
+        API_KEY_PATH="$RUNNER_TEMP/AuthKey_${{ inputs.api-key-id }}.p8"
+        echo "${{ inputs.api-key }}" | base64 --decode > "$API_KEY_PATH"
+
+        # Store notarization credentials in keychain profile "AC_PASSWORD"
+        # using App Store Connect API key (recommended by Apple for CI)
+        # This matches the CMake notarize target at CMakeLists.txt:1026
+        xcrun notarytool store-credentials "AC_PASSWORD" \
+          --key "$API_KEY_PATH" \
+          --key-id "${{ inputs.api-key-id }}" \
+          --issuer "${{ inputs.api-issuer-id }}"
+
+        rm -f "$API_KEY_PATH"
+
+        # Export keychain path for cleanup
+        echo "SIGNING_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> $GITHUB_ENV
+
+        echo "========================================"
+        echo "Keychain setup complete!"
+        echo "========================================"

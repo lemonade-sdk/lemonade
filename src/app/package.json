@@ -96,6 +96,8 @@
         "dmg"
       ],
       "category": "public.app-category.business",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
       "entitlements": "../../src/cpp/server/entitlements.plist",
       "entitlementsInherit": "../../src/cpp/server/entitlements.plist"
     },

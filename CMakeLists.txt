@@ -90,6 +90,13 @@ set(USE_SYSTEM_ZSTD ${ZSTD_FOUND})
 set(USE_SYSTEM_CLI11 ${CLI11_INCLUDE_DIRS})
 set(USE_SYSTEM_HTTPLIB ${HTTPLIB_FOUND})
 
+# On macOS, always statically link dependencies to avoid Homebrew dylib issues
+if(APPLE)
+    set(USE_SYSTEM_ZSTD OFF)
+    set(USE_SYSTEM_CURL OFF)
+    set(USE_SYSTEM_HTTPLIB OFF)
+endif()
+
 if(USE_SYSTEM_JSON)
     message(STATUS "Using system nlohmann_json (>= ${MIN_NLOHMANN_JSON_VERSION})")
 else()
@@ -963,7 +970,7 @@ if(APPLE)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         install(CODE "
             execute_process(
-                COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-9.2.0-Darwin/Runtime/usr/local/bin/${EXECUTABLE_NAME}\"
+                COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/${EXECUTABLE_NAME}\"
                 RESULT_VARIABLE SIGN_RESULT
             )
             if(NOT SIGN_RESULT EQUAL 0)
@@ -981,7 +988,7 @@ if(APPLE)
         if(CMAKE_BUILD_TYPE STREQUAL "Release")
             install(CODE "
                 execute_process(
-                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-9.2.0-Darwin/Runtime/usr/local/bin/lemonade-server\"
+                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/lemonade-server\"
                     RESULT_VARIABLE SIGN_RESULT
                 )
                 if(NOT SIGN_RESULT EQUAL 0)
@@ -1034,7 +1041,7 @@ if(APPLE)
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${CMAKE_BINARY_DIR}/LICENSE.txt" COPYONLY)
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_BINARY_DIR}/LICENSE.txt")
 
-    set(CPACK_POSTFLIGHT_SERVICES_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst-full-mac")
+    set(CPACK_POSTFLIGHT_RUNTIME_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst-full-mac")
     include(CPack)
 
     set(PACKAGE_DEPENDS prepare_electron_app ${EXECUTABLE_NAME})
