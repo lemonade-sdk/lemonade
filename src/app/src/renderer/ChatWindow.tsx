@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import MarkdownMessage from './MarkdownMessage';
 import AudioButton, { LOADING, PAUSED, PLAYING } from './AudioButton'
 // @ts-ignore - SVG assets live outside of the TypeScript rootDir for Electron packaging
@@ -8,9 +8,11 @@ import {
   buildChatRequestOverrides,
   mergeWithDefaultSettings,
 } from './utils/appSettings';
-import { serverFetch } from './utils/serverConfig';
+import { serverFetch, getServerBaseUrl } from './utils/serverConfig';
 import { downloadTracker } from './utils/downloadTracker';
 import { useModels, DEFAULT_MODEL_ID } from './hooks/useModels';
+import { useAudioCapture } from './hooks/useAudioCapture';
+import { TranscriptionWebSocket } from './utils/websocketClient';
 
 interface ImageContent {
   type: 'image_url';
@@ -100,6 +102,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   }>>([]);
   const [isProcessingTranscription, setIsProcessingTranscription] = useState(false);
   const audioFileInputRef = useRef<HTMLInputElement>(null);
+  // Live microphone recording state
+  const [isLiveRecording, setIsLiveRecording] = useState(false);
+  const [isLiveConnected, setIsLiveConnected] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const audioLevelRef = useRef(0);
+  const wsClientRef = useRef<TranscriptionWebSocket | null>(null);
+  const isLiveRecordingRef = useRef(false);
+  const isSpeakingRef = useRef(false);
+  const liveTranscriptRef = useRef('');
 
   // Image generation model state
   const [imagePrompt, setImagePrompt] = useState('');
@@ -1269,6 +1283,19 @@ const sendMessage = async () => {
     if (audioFileInputRef.current) {
       audioFileInputRef.current.value = '';
     }
+    // Stop live recording if active
+    if (isLiveRecording) {
+      stopRecording();
+      wsClientRef.current?.close();
+      wsClientRef.current = null;
+      setIsLiveRecording(false);
+      setIsLiveConnected(false);
+      setIsSpeaking(false);
+      setAudioLevel(0);
+      audioLevelRef.current = 0;
+    }
+    setLiveTranscript('');
+    setLiveError(null);
   };
 
   const handleEmbedding = async () => {
@@ -1393,6 +1420,116 @@ const sendMessage = async () => {
     const file = files[0];
     setTranscriptionFile(file);
   };
+
+  // Live transcription callbacks — same pattern as StreamingTranscription component
+  const handleAudioChunk = useCallback((base64: string) => {
+    wsClientRef.current?.sendAudio(base64);
+  }, []);
+
+  const handleAudioLevel = useCallback((level: number) => {
+    const smoothed = audioLevelRef.current * 0.7 + level * 0.3;
+    audioLevelRef.current = smoothed;
+    setAudioLevel(smoothed);
+  }, []);
+
+  const { isRecording: isMicActive, startRecording, stopRecording, error: micError } =
+    useAudioCapture(handleAudioChunk, handleAudioLevel);
+
+  const handleLiveTranscription = useCallback((text: string, isFinal: boolean) => {
+    // Ignore events after recording stopped - handleMicStop already saved the transcript
+    if (!isLiveRecordingRef.current) return;
+
+    const trimmedText = text.trim();
+    if (!trimmedText) return;
+
+    // Both delta and completed contain the FULL text for the current utterance.
+    // - Delta: replace display with accumulated + delta (interim for current utterance)
+    // - Completed: append this utterance to accumulated, update display
+    const accumulated = liveTranscriptRef.current;
+    if (isFinal) {
+      // Final result: add this utterance to accumulated (previous finals)
+      const next = accumulated ? `${accumulated} ${trimmedText}` : trimmedText;
+      liveTranscriptRef.current = next;
+      setLiveTranscript(next);
+    } else {
+      // Interim result: show accumulated + this interim (replaces previous interim)
+      const display = accumulated ? `${accumulated} ${trimmedText}` : trimmedText;
+      setLiveTranscript(display);
+    }
+  }, []);
+
+  const handleSpeechEvent = useCallback((event: 'started' | 'stopped') => {
+    isSpeakingRef.current = event === 'started';
+    setIsSpeaking(event === 'started');
+  }, []);
+
+  // Exactly mirrors StreamingTranscription's handleStart
+  const handleMicStart = useCallback(async () => {
+    setLiveError(null);
+    setLiveTranscript('');
+    liveTranscriptRef.current = '';
+
+    try {
+      const serverUrl = getServerBaseUrl();
+      wsClientRef.current = await TranscriptionWebSocket.connect(serverUrl, selectedModel, {
+        onTranscription: handleLiveTranscription,
+        onSpeechEvent: handleSpeechEvent,
+        onError: (err) => setLiveError(err),
+        onConnected: () => setIsLiveConnected(true),
+        onDisconnected: () => setIsLiveConnected(false),
+      });
+
+      await new Promise(r => setTimeout(r, 500));
+      await startRecording();
+      isLiveRecordingRef.current = true;
+      setIsLiveRecording(true);
+    } catch (err) {
+      setLiveError(err instanceof Error ? err.message : 'Failed to connect');
+    }
+  }, [selectedModel, handleLiveTranscription, handleSpeechEvent, startRecording]);
+
+  // Stop recording and push transcript to history.
+  // With interim transcriptions, we already have the text — no need to commit.
+  const handleMicStop = useCallback(() => {
+    stopRecording();
+    isLiveRecordingRef.current = false;
+
+    // Get the displayed transcript (includes last interim) via DOM or state
+    // liveTranscriptRef has accumulated finals; current interim is only in display
+    // For simplicity, read from state synchronously by capturing current value
+    setLiveTranscript(currentDisplay => {
+      const finalText = currentDisplay.trim();
+      if (finalText) {
+        setTranscriptionHistory(h => [...h, { filename: 'Live Recording', text: finalText }]);
+      }
+      return ''; // Clear display
+    });
+    liveTranscriptRef.current = '';
+
+    if (wsClientRef.current) {
+      // Clear buffer without committing — we already have the transcript from interims
+      wsClientRef.current.clearAudio();
+
+      const wsToClose = wsClientRef.current;
+      wsClientRef.current = null;
+      setIsLiveConnected(false);
+      setTimeout(() => {
+        wsToClose.close();
+      }, 3000);
+    }
+
+    setIsLiveRecording(false);
+    setIsSpeaking(false);
+    setAudioLevel(0);
+    audioLevelRef.current = 0;
+  }, [stopRecording]);
+
+  // Cleanup WebSocket on unmount
+  useEffect(() => {
+    return () => {
+      wsClientRef.current?.close();
+    };
+  }, []);
 
   const handleTranscription = async () => {
     if (!transcriptionFile || isProcessingTranscription) return;
@@ -1798,21 +1935,42 @@ const sendMessage = async () => {
       {modelType === 'transcription' && (
         <>
           <div className="chat-messages" ref={messagesContainerRef}>
-            {transcriptionHistory.length === 0 && <EmptyState title="Lemonade Transcriber" />}
+            {transcriptionHistory.length === 0 && !isLiveRecording && <EmptyState title="Lemonade Transcriber" />}
 
             {transcriptionHistory.map((item, index) => (
               <div key={index} className="transcription-history-item">
                 <div className="transcription-file-info">
                   <div className="transcription-label">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ marginRight: '8px' }}>
-                      <path
-                        d="M12 15V3M12 15L8 11M12 15L16 11M2 17L2.621 19.485C2.725 19.871 2.777 20.064 2.873 20.213C2.958 20.345 3.073 20.454 3.209 20.531C3.364 20.618 3.558 20.658 3.947 20.737L11.053 22.147C11.442 22.226 11.636 22.266 11.791 22.179C11.927 22.102 12.042 21.993 12.127 21.861C12.223 21.712 12.275 21.519 12.379 21.133L13 18.5M22 17L21.379 19.485C21.275 19.871 21.223 20.064 21.127 20.213C21.042 20.345 20.927 20.454 20.791 20.531C20.636 20.618 20.442 20.658 20.053 20.737L12.947 22.147C12.558 22.226 12.364 22.266 12.209 22.179C12.073 22.102 11.958 21.993 11.873 21.861C11.777 21.712 11.725 21.519 11.621 21.133L11 18.5"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
+                    {item.filename === 'Live Recording' ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ marginRight: '8px' }}>
+                        <path
+                          d="M12 1C11.2044 1 10.4413 1.31607 9.87868 1.87868C9.31607 2.44129 9 3.20435 9 4V12C9 12.7956 9.31607 13.5587 9.87868 14.1213C10.4413 14.6839 11.2044 15 12 15C12.7956 15 13.5587 14.6839 14.1213 14.1213C14.6839 13.5587 15 12.7956 15 12V4C15 3.20435 14.6839 2.44129 14.1213 1.87868C13.5587 1.31607 12.7956 1 12 1Z"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M19 10V12C19 13.8565 18.2625 15.637 16.9497 16.9497C15.637 18.2625 13.8565 19 12 19C10.1435 19 8.36301 18.2625 7.05025 16.9497C5.7375 15.637 5 13.8565 5 12V10"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path d="M12 19V23" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M8 23H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ marginRight: '8px' }}>
+                        <path
+                          d="M12 15V3M12 15L8 11M12 15L16 11M2 17L2.621 19.485C2.725 19.871 2.777 20.064 2.873 20.213C2.958 20.345 3.073 20.454 3.209 20.531C3.364 20.618 3.558 20.658 3.947 20.737L11.053 22.147C11.442 22.226 11.636 22.266 11.791 22.179C11.927 22.102 12.042 21.993 12.127 21.861C12.223 21.712 12.275 21.519 12.379 21.133L13 18.5M22 17L21.379 19.485C21.275 19.871 21.223 20.064 21.127 20.213C21.042 20.345 20.927 20.454 20.791 20.531C20.636 20.618 20.442 20.658 20.053 20.737L12.947 22.147C12.558 22.226 12.364 22.266 12.209 22.179C12.073 22.102 11.958 21.993 11.873 21.861C11.777 21.712 11.725 21.519 11.621 21.133L11 18.5"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    )}
                     {item.filename}
                   </div>
                 </div>
@@ -1827,6 +1985,42 @@ const sendMessage = async () => {
                 </div>
               </div>
             ))}
+
+            {isLiveRecording && (
+              <div className="transcription-history-item">
+                <div className="transcription-file-info">
+                  <div className="transcription-label">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ marginRight: '8px' }}>
+                      <path
+                        d="M12 1C11.2044 1 10.4413 1.31607 9.87868 1.87868C9.31607 2.44129 9 3.20435 9 4V12C9 12.7956 9.31607 13.5587 9.87868 14.1213C10.4413 14.6839 11.2044 15 12 15C12.7956 15 13.5587 14.6839 14.1213 14.1213C14.6839 13.5587 15 12.7956 15 12V4C15 3.20435 14.6839 2.44129 14.1213 1.87868C13.5587 1.31607 12.7956 1 12 1Z"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M19 10V12C19 13.8565 18.2625 15.637 16.9497 16.9497C15.637 18.2625 13.8565 19 12 19C10.1435 19 8.36301 18.2625 7.05025 16.9497C5.7375 15.637 5 13.8565 5 12V10"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path d="M12 19V23" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M8 23H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    Live Recording
+                  </div>
+                </div>
+                <div className="transcription-result-container">
+                  <div className="transcription-result-header">
+                    <h4>Transcription</h4>
+                  </div>
+                  <div className="transcription-result">
+                    {liveTranscript || (isLiveRecording ? 'Listening... Start speaking to see transcription.' : '')}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {isProcessingTranscription && (
               <div className="chat-message assistant-message">
@@ -1847,7 +2041,26 @@ const sendMessage = async () => {
               />
 
               <div className="transcription-file-display">
-                {transcriptionFile ? (
+                {isLiveRecording ? (
+                  <div className="live-status">
+                    {!isLiveConnected ? (
+                      <span className="status-indicator">
+                        <span className="dot connecting" />
+                        Connecting...
+                      </span>
+                    ) : (
+                      <div className="level-meter">
+                        <div
+                          className="level-fill"
+                          style={{
+                            width: `${audioLevel * 100}%`,
+                            backgroundColor: audioLevel > 0.7 ? '#f44336' : audioLevel > 0.3 ? '#4caf50' : '#555',
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ) : transcriptionFile ? (
                   <div className="transcription-file-info-display">
                     <span className="file-name">{transcriptionFile.name}</span>
                     <span className="file-size-indicator">
@@ -1864,7 +2077,7 @@ const sendMessage = async () => {
                   <button
                     className="audio-file-button"
                     onClick={() => audioFileInputRef.current?.click()}
-                    disabled={isProcessingTranscription}
+                    disabled={isProcessingTranscription || isLiveRecording}
                     title="Choose audio file"
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -1877,15 +2090,43 @@ const sendMessage = async () => {
                       />
                     </svg>
                   </button>
-                  <ModelSelector disabled={isProcessingTranscription} />
+                  <button
+                    className={`audio-file-button${isLiveRecording ? ' recording' : ''}`}
+                    onClick={isLiveRecording ? handleMicStop : handleMicStart}
+                    disabled={isProcessingTranscription}
+                    title={isLiveRecording ? 'Stop recording' : 'Start live recording'}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M12 1C10.34 1 9 2.34 9 4V12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12V4C15 2.34 13.66 1 12 1Z"
+                        fill={isLiveRecording ? '#ef4444' : 'none'}
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M19 10V12C19 15.87 15.87 19 12 19C8.13 19 5 15.87 5 12V10M12 19V23M8 23H16"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                  <ModelSelector disabled={isProcessingTranscription || isLiveRecording} />
                 </div>
                 <SendButton
                   onClick={handleTranscription}
-                  disabled={!transcriptionFile || isProcessingTranscription}
+                  disabled={!transcriptionFile || isProcessingTranscription || isLiveRecording}
                 />
               </div>
             </div>
           </div>
+
+          {(liveError || micError) && (
+            <div className="transcription-error">{liveError || micError}</div>
+          )}
         </>
       )}
 

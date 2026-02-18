@@ -17,5 +17,8 @@ psutil
 # Numerical computing (required for embedding similarity tests)
 numpy
 
+# WebSocket client (required for realtime transcription tests)
+websockets
+
 # Ollama client library (used for Ollama API compatibility tests)
 ollama
