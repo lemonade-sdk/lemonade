@@ -245,7 +245,7 @@ static std::string get_current_os() {
 
 // Forward declarations for helper functions used in device detection
 std::string identify_rocm_arch_from_name(const std::string& device_name);
-std::string identify_npu_arch(const std::string& processor_name);
+std::string identify_npu_arch();
 
 // Get device family from device name
 // cpu_name is required for NPU detection (pass empty string for other device types)
@@ -266,10 +266,7 @@ static std::string get_device_family(const std::string& device_type, const std::
     }
 
     if (device_type == "npu") {
-        // Use the processor name to identify NPU architecture
-        // The device_name for NPU is typically "AMD NPU" which isn't useful,
-        // so we need the processor name (always available from cached devices)
-        return identify_npu_arch(cpu_name);
+        return identify_npu_arch();
     }
 
     if (device_type == "metal") {
@@ -1037,32 +1034,56 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     return "";
 }
 
-// Identify NPU architecture from processor name
-// Returns the NPU family (e.g., "XDNA2") or empty string if not an NPU-capable processor
+// Identify NPU architecture by checking for known PCI device IDs
+// Returns the NPU family (e.g., "XDNA2") or empty string if no NPU found
 // This is the single source of truth for NPU family detection
-std::string identify_npu_arch(const std::string& processor_name) {
-    std::string processor_lower = processor_name;
-    std::transform(processor_lower.begin(), processor_lower.end(), processor_lower.begin(), ::tolower);
-
-    // Must be a Ryzen AI processor
-    if (processor_lower.find("ryzen ai") == std::string::npos) {
+std::string identify_npu_arch() {
+#ifdef _WIN32
+    wmi::WMIConnection wmi_conn;
+    if (!wmi_conn.is_valid()) {
         return "";
     }
 
-    // XDNA2 architecture: Ryzen AI 300-series, 400-series, Z2 series
-    // Pattern: "ryzen ai" followed by 3xx, 4xx, or Z2
-    // Examples:
-    //   - AMD Ryzen AI 9 HX 375
-    //   - AMD Ryzen AI 9 365
-    //   - AMD Ryzen AI 7 350
-    //   - AMD Ryzen AI Max+ 395 (400-series when available)
-    //   - AMD Ryzen AI Z2 Extreme
-    std::regex xdna2_pattern(R"(ryzen ai.*((\b[34]\d{2}\b)|(\bz2\b)))", std::regex::icase);
-    if (std::regex_search(processor_lower, xdna2_pattern)) {
+    // XDNA2 NPU: AMD vendor 1022, device 17F0
+    bool found_xdna2 = false;
+    wmi_conn.query(
+        L"SELECT PNPDeviceID FROM Win32_PnPEntity WHERE PNPDeviceID LIKE '%VEN_1022&DEV_17F0%'",
+        [&found_xdna2](IWbemClassObject* pObj) {
+            found_xdna2 = true;
+        });
+
+    if (found_xdna2) {
         return "XDNA2";
     }
+#else
+    // Linux/macOS: scan sysfs for PCI devices
+    const std::string pci_path = "/sys/bus/pci/devices";
+    if (fs::exists(pci_path)) {
+        for (const auto& entry : fs::directory_iterator(pci_path)) {
+            std::string vendor_file = entry.path().string() + "/vendor";
+            std::string device_file = entry.path().string() + "/device";
 
-    // Future: Add XDNA3, XDNA4, etc. as new architectures are released
+            if (!fs::exists(vendor_file) || !fs::exists(device_file)) continue;
+
+            std::ifstream vendor_stream(vendor_file);
+            std::ifstream device_stream(device_file);
+            std::string vendor_id, device_id;
+
+            if (std::getline(vendor_stream, vendor_id) && std::getline(device_stream, device_id)) {
+                // sysfs files contain hex values like "0x1022" and "0x17f0"
+                std::transform(vendor_id.begin(), vendor_id.end(), vendor_id.begin(), ::tolower);
+                std::transform(device_id.begin(), device_id.end(), device_id.begin(), ::tolower);
+
+                // XDNA2 NPU: AMD vendor 0x1022, device 0x17f0
+                if (vendor_id == "0x1022" && device_id == "0x17f0") {
+                    return "XDNA2";
+                }
+            }
+        }
+    }
+#endif
+
+    // Future: Add XDNA3, XDNA4, etc. with their PCI device IDs
 
     return "";
 }
@@ -1276,40 +1297,15 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_dgpu_devices() {
     return gpus;
 }
 
-bool WindowsSystemInfo::is_supported_ryzen_ai_processor() {
-    // Check if the processor has a supported NPU architecture
-    // Uses identify_npu_arch() as the single source of truth
-
-    wmi::WMIConnection wmi;
-    if (!wmi.is_valid()) {
-        // If we can't connect to WMI, we can't verify the processor
-        return false;
-    }
-
-    std::string processor_name;
-    wmi.query(L"SELECT * FROM Win32_Processor", [&processor_name](IWbemClassObject* pObj) {
-        if (processor_name.empty()) {  // Only get first processor
-            processor_name = wmi::get_property_string(pObj, L"Name");
-        }
-    });
-
-    if (processor_name.empty()) {
-        return false;
-    }
-
-    // Use identify_npu_arch as the single source of truth for NPU support
-    std::string npu_arch = identify_npu_arch(processor_name);
-    return !npu_arch.empty();
-}
-
 NPUInfo WindowsSystemInfo::get_npu_device() {
     NPUInfo npu;
     npu.name = "AMD NPU";
     npu.available = false;
 
-    // First, check if the processor is a supported Ryzen AI processor
-    if (!is_supported_ryzen_ai_processor()) {
-        npu.error = "NPU requires AMD Ryzen AI 300-series processor";
+    // Check for XDNA NPU hardware via PCI device ID
+    std::string npu_arch = identify_npu_arch();
+    if (npu_arch.empty()) {
+        npu.error = "No XDNA NPU hardware detected";
         return npu;
     }
 
@@ -1319,7 +1315,7 @@ NPUInfo WindowsSystemInfo::get_npu_device() {
         npu.power_mode = get_npu_power_mode();
         npu.available = true;
     } else {
-        npu.error = "No NPU device found";
+        npu.error = "NPU hardware found but driver not installed";
     }
 
     return npu;
@@ -1902,7 +1898,16 @@ NPUInfo LinuxSystemInfo::get_npu_device() {
     NPUInfo npu;
     npu.name = "AMD NPU";
     npu.available = false;
-    npu.error = "NPU detection not yet implemented for Linux";
+
+    // Check for XDNA NPU hardware via PCI device ID
+    std::string npu_arch = identify_npu_arch();
+    if (npu_arch.empty()) {
+        npu.error = "No XDNA NPU hardware detected";
+        return npu;
+    }
+
+    // TODO: check for NPU driver on Linux
+    npu.available = true;
     return npu;
 }
 
