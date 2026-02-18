@@ -193,7 +193,7 @@ void SDServer::load(const std::string& model_name,
     std::cout << "[SDServer] Process started with PID: " << process_handle_.pid << std::endl;
 
     // Wait for server to be ready
-    if (!wait_for_ready("/", 60, 500)) {
+    if (!wait_for_ready("/")) {
         unload();
         throw std::runtime_error("sd-server failed to start or become ready");
     }
