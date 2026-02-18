@@ -1037,10 +1037,61 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     return "";
 }
 
+static std::string identify_npu_arch_from_sysfs() {
+    fs::path accel_path = "/sys/class/accel";
+    if (!fs::exists(accel_path) || !fs::is_directory(accel_path)) {
+        return "";
+    }
+
+    for (const auto& entry : fs::directory_iterator(accel_path)) {
+        if (!entry.is_directory() && !entry.is_symlink()) {
+            continue;
+        }
+
+        fs::path driver_link = entry.path() / "device" / "driver";
+        if (fs::exists(driver_link)) {
+            fs::path driver_path = fs::read_symlink(driver_link);
+            std::string driver_name = driver_path.filename().string();
+
+            if (driver_name != "amdxdna") {
+                continue;
+            }
+        } else {
+            continue;
+        }
+
+        fs::path vbnv_file = entry.path() / "device" / "vbnv";
+        if (!fs::exists(vbnv_file)) {
+            continue;
+        }
+
+        std::ifstream vbnv_stream(vbnv_file);
+        if (!vbnv_stream.is_open()) {
+            continue;
+        }
+
+        std::string vbnv_content;
+        std::getline(vbnv_stream, vbnv_content);
+        vbnv_stream.close();
+
+        if (vbnv_content.find("RyzenAI-npu4") != std::string::npos ||
+            vbnv_content.find("RyzenAI-npu5") != std::string::npos ||
+            vbnv_content.find("RyzenAI-npu6") != std::string::npos) {
+            return "XDNA2";
+        }
+    }
+    return "";
+}
+
+
 // Identify NPU architecture from processor name
 // Returns the NPU family (e.g., "XDNA2") or empty string if not an NPU-capable processor
 // This is the single source of truth for NPU family detection
 std::string identify_npu_arch(const std::string& processor_name) {
+    std::string sysfs_arch = identify_npu_arch_from_sysfs();
+    if (!sysfs_arch.empty())
+        return sysfs_arch;
+
     std::string processor_lower = processor_name;
     std::transform(processor_lower.begin(), processor_lower.end(), processor_lower.begin(), ::tolower);
 
@@ -1902,7 +1953,51 @@ NPUInfo LinuxSystemInfo::get_npu_device() {
     NPUInfo npu;
     npu.name = "AMD NPU";
     npu.available = false;
-    npu.error = "NPU detection not yet implemented for Linux";
+
+    fs::path accel_path = "/sys/class/accel";
+    if (!fs::exists(accel_path) || !fs::is_directory(accel_path)) {
+        npu.error = "No NPU device found";
+        return npu;
+    }
+
+    for (const auto& entry : fs::directory_iterator(accel_path)) {
+        if (!entry.is_directory() && !entry.is_symlink()) {
+            continue;
+        }
+        fs::path driver_link = entry.path() / "device" / "driver";
+        if (!fs::exists(driver_link)) {
+            continue;
+        }
+        fs::path driver_path = fs::read_symlink(driver_link);
+        std::string driver_name = driver_path.filename().string();
+
+        if (driver_name != "amdxdna") {
+            continue;
+        }
+
+        npu.available = true;
+
+        fs::path vbnv_file = entry.path() / "device" / "vbnv";
+        if (fs::exists(vbnv_file)) {
+            std::ifstream vbnv_stream(vbnv_file);
+            if (vbnv_stream.is_open()) {
+                std::string vbnv_content;
+                std::getline(vbnv_stream, vbnv_content);
+                vbnv_stream.close();
+
+                if (!vbnv_content.empty()) {
+                    npu.name = "AMD NPU (" + vbnv_content + ")";
+                }
+            }
+        }
+
+        break;
+    }
+
+    if (!npu.available) {
+        npu.error = "No NPU device found with amdxdna driver";
+    }
+
     return npu;
 }
 

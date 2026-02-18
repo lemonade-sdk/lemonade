@@ -19,7 +19,8 @@
   "ryzenai-server": "v1.7.0",
   "flm": {
     "version": "v0.9.33",
-    "min_npu_driver": "32.0.203.304"
+    "min_npu_driver": "32.0.203.304",
+    "min_kernel_version": "7.0"
   },
   "kokoro": {
     "cpu": "b14"
