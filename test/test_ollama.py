@@ -462,6 +462,8 @@ class OllamaTests(ServerTestBase):
 
     def test_021_chat_with_image_input(self):
         """Test /api/chat with image input (vision) using a vision model."""
+        if sys.platform == "darwin":
+            self.skipTest("Vision model not supported on macOS")
         # Pull the vision model
         response = requests.post(
             f"{self.base_url}/pull",
