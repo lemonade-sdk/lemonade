@@ -90,6 +90,13 @@ set(USE_SYSTEM_ZSTD ${ZSTD_FOUND})
 set(USE_SYSTEM_CLI11 ${CLI11_INCLUDE_DIRS})
 set(USE_SYSTEM_HTTPLIB ${HTTPLIB_FOUND})
 
+# On macOS, always statically link dependencies to avoid Homebrew dylib issues
+if(APPLE)
+    set(USE_SYSTEM_ZSTD OFF)
+    set(USE_SYSTEM_CURL OFF)
+    set(USE_SYSTEM_HTTPLIB OFF)
+endif()
+
 if(USE_SYSTEM_JSON)
     message(STATUS "Using system nlohmann_json (>= ${MIN_NLOHMANN_JSON_VERSION})")
 else()
