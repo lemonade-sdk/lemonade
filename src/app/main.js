@@ -2,8 +2,9 @@ const { app, BrowserWindow, ipcMain, shell, session, screen } = require('electro
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { exec, spawn, spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const strict = require('assert/strict');
+const dgram = require('dgram');
 
 const DEFAULT_MIN_WIDTH = 400;
 const DEFAULT_MIN_HEIGHT = 600;
@@ -456,86 +457,101 @@ function gracefulKillBlocking(processPattern) {
     }
 }
 
+/**
+ * Discovers the lemonade server using UDP broadcast beacons.
+ * The server broadcasts its presence on UDP port 8000 with a JSON payload
+ * containing the service name, hostname, and URL.
+ *
+ * This works for both local and remote servers on the same network.
+ */
 const discoverServerPort = () => {
-  //This is the default port to try macos lemonade server on.
   const DEFAULT_PORT = 8000;
-  const StatusResponseWaitMs = 5000;
+  const BEACON_PORT = 8000;
+  const DISCOVERY_TIMEOUT_MS = 5000;
 
   return new Promise((resolve) => {
-    // Always ensure tray is running on macOS, regardless of server status
+    // Always ensure tray is running on macOS
     ensureTrayRunning().then(() => {
-      exec('lemonade-server status', { timeout: StatusResponseWaitMs }, (error, stdout, stderr) => {
-        if (error || (stdout && stdout.trim().includes('not running'))) {
-          // Server not running, tray should start it
-          if (process.platform === 'darwin') {
-            console.warn('Server not running, tray should start it. Waiting...');
-            setTimeout(() => {
-              exec('lemonade-server status', { timeout: StatusResponseWaitMs }, (error3, stdout3, stderr3) => {
-                if (error3 || (stdout3 && stdout3.trim().includes('not running'))) {
-                  console.warn('Server still not running after waiting, using default port 8000');
-                  resolve(DEFAULT_PORT);
-                  return;
-                }
+      const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+      let discovered = false;
+      let timeoutId = null;
 
-                // Parse the response
-                try {
-                  const output = stdout3.trim();
-                  const portMatch = output.match(/port[:\s]+(\d+)/i) ||
-                                   output.match(/localhost:(\d+)/i) ||
-                                   output.match(/127\.0\.0\.1:(\d+)/i);
-
-                  if (portMatch && portMatch[1]) {
-                    const port = parseInt(portMatch[1], 10);
-                    //Verify parsing since ports can not be less than 0 and not more than 65536 because they are a uint16
-                    if (!isNaN(port) && port > 0 && port < 65536) {
-                      console.log('Discovered server port after tray start:', port);
-                      resolve(port);
-                      return;
-                    }
-                  }
-
-                  console.warn('Could not parse port from status output:', output);
-                  resolve(DEFAULT_PORT);
-                } catch (parseError) {
-                  console.error('Error parsing status:', parseError);
-                  resolve(DEFAULT_PORT);
-                }
-              });
-            }, 10000); // Wait 10 seconds for tray to start server
-            return;
-          } else {
-            // On non-macOS platforms, just fall back to default
-            console.warn('Failed to discover server port:', error);
-            resolve(DEFAULT_PORT);
-            return;
-          }
+      const cleanup = () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
         }
-
         try {
-          // Parse the output to find the port
-          const output = stdout.trim();
+          socket.close();
+        } catch (e) {
+          // Socket may already be closed
+        }
+      };
 
-          // Try regex pattern to extract port number
-          const portMatch = output.match(/port[:\s]+(\d+)/i) ||
-                           output.match(/localhost:(\d+)/i) ||
-                           output.match(/127\.0\.0\.1:(\d+)/i);
-
-          if (portMatch && portMatch[1]) {
-            const port = parseInt(portMatch[1], 10);
-            if (!isNaN(port) && port > 0 && port < 65536) {
-              console.log('Discovered server port:', port);
-              resolve(port);
-              return;
-            }
-          }
-
-          console.warn('Could not parse port from lemonade-server status output:', output);
-          resolve(DEFAULT_PORT);
-        } catch (parseError) {
-          console.error('Error parsing server status:', parseError);
+      socket.on('error', (err) => {
+        console.error('UDP discovery socket error:', err);
+        cleanup();
+        if (!discovered) {
+          discovered = true;
+          console.log('Falling back to default port due to socket error');
           resolve(DEFAULT_PORT);
         }
       });
+
+      socket.on('message', (msg, rinfo) => {
+        if (discovered) return;
+
+        try {
+          const payload = JSON.parse(msg.toString());
+
+          // Verify this is a lemonade service beacon
+          if (payload.service === 'lemonade' && payload.url) {
+            console.log(`Discovered lemonade server via UDP beacon from ${rinfo.address}:${rinfo.port}:`, payload);
+
+            // Extract port from the URL (format: http://IP:PORT/api/v1/)
+            const urlMatch = payload.url.match(/:(\d+)\//);
+            if (urlMatch && urlMatch[1]) {
+              const port = parseInt(urlMatch[1], 10);
+              if (!isNaN(port) && port > 0 && port < 65536) {
+                discovered = true;
+                cleanup();
+                console.log('Discovered server port via network beacon:', port);
+                resolve(port);
+                return;
+              }
+            }
+          }
+        } catch (parseError) {
+          // Not a valid JSON beacon, ignore
+        }
+      });
+
+      socket.on('listening', () => {
+        const address = socket.address();
+        console.log(`UDP discovery listening on ${address.address}:${address.port}`);
+      });
+
+      // Set timeout for discovery
+      timeoutId = setTimeout(() => {
+        if (!discovered) {
+          discovered = true;
+          cleanup();
+          console.log('UDP discovery timeout, falling back to default port');
+          resolve(DEFAULT_PORT);
+        }
+      }, DISCOVERY_TIMEOUT_MS);
+
+      // Bind to the beacon port to receive broadcasts
+      try {
+        socket.bind(BEACON_PORT);
+      } catch (bindError) {
+        console.error('Failed to bind UDP socket:', bindError);
+        cleanup();
+        if (!discovered) {
+          discovered = true;
+          resolve(DEFAULT_PORT);
+        }
+      }
     });
   });
 };
