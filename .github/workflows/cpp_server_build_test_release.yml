@@ -437,62 +437,41 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # LLM - Llamacpp backends
-          - name: llamacpp (vulkan)
-            test_type: llm
-            wrapped_server: llamacpp
-            backend: vulkan
+          - name: llamacpp
+            script: server_llm.py
+            extra_args: "--wrapped-server llamacpp"
+            backends: "vulkan rocm"
             runner: [rai300_400, Windows]
-          - name: llamacpp (rocm)
-            test_type: llm
-            wrapped_server: llamacpp
-            backend: rocm
-            runner: [stx-halo, Windows]
-          # LLM - RyzenAI backends
-          - name: ryzenai (cpu)
-            test_type: llm
-            wrapped_server: ryzenai
-            backend: cpu
+          - name: ryzenai
+            script: server_llm.py
+            extra_args: "--wrapped-server ryzenai"
+            backends: "cpu hybrid npu"
             runner: [rai300_400, Windows]
-          - name: ryzenai (hybrid)
-            test_type: llm
-            wrapped_server: ryzenai
-            backend: hybrid
-            runner: [rai300_400, Windows]
-          - name: ryzenai (npu)
-            test_type: llm
-            wrapped_server: ryzenai
-            backend: npu
-            runner: [rai300_400, Windows]
-          # LLM - FLM
           - name: flm
-            test_type: llm
-            wrapped_server: flm
-            backend: ""
+            script: server_llm.py
+            extra_args: "--wrapped-server flm"
+            backends: ""
             runner: [rai300_400, Windows]
-          # Whisper
-          - name: whisper (cpu)
-            test_type: whisper
-            backend: cpu
+          - name: whisper
+            script: server_whisper.py
+            extra_args: ""
+            backends: "cpu npu"
             runner: [rai300_400, Windows]
-          - name: whisper (npu)
-            test_type: whisper
-            backend: npu
+          - name: stable-diffusion
+            script: server_sd.py
+            extra_args: ""
+            backends: "cpu"
             runner: [rai300_400, Windows]
-          # Stable Diffusion (CPU)
-          - name: stable-diffusion (cpu)
-            test_type: sd
-            backend: cpu
-            runner: [rai300_400, Windows]
-          # Stable Diffusion (ROCm)
-          - name: stable-diffusion (rocm)
-            test_type: sd
-            backend: rocm
-            runner: [stx-halo, Windows]
-          # Text to speech
           - name: text-to-speech
-            test_type: tts
+            script: server_tts.py
+            extra_args: ""
+            backends: ""
             runner: [rai300_400, Windows]
+          - name: stable-diffusion (stx-halo)
+            script: server_sd.py
+            extra_args: ""
+            backends: "rocm"
+            runner: [stx-halo, Windows]
     env:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
@@ -529,37 +508,22 @@ jobs:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           $ErrorActionPreference = "Stop"
-
           $venvPython = ".\.venv\Scripts\python.exe"
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
+          $extraArgs = "${{ matrix.extra_args }}" -split " " | Where-Object { $_ }
+          $backends = "${{ matrix.backends }}" -split " " | Where-Object { $_ }
 
-          Write-Host "Running ${{ matrix.name }} tests..." -ForegroundColor Cyan
-
-          switch ("${{ matrix.test_type }}") {
-              "llm" {
-                  if ("${{ matrix.backend }}") {
-                      & $venvPython test/server_llm.py --wrapped-server ${{ matrix.wrapped_server }} --backend ${{ matrix.backend }} --server-binary $serverExe
-                  } else {
-                      & $venvPython test/server_llm.py --wrapped-server ${{ matrix.wrapped_server }} --server-binary $serverExe
-                  }
-              }
-              "whisper" {
-                  & $venvPython test/server_whisper.py --backend ${{ matrix.backend }} --server-binary $serverExe
-              }
-              "sd" {
-                  & $venvPython test/server_sd.py --backend ${{ matrix.backend }} --server-binary $serverExe
-              }
-              "tts" {
-                  & $venvPython test/server_tts.py --server-binary $serverExe
-              }
+          if ($backends.Count -eq 0) {
+            Write-Host "Running test/${{ matrix.script }} ${{ matrix.extra_args }}" -ForegroundColor Cyan
+            & $venvPython test/${{ matrix.script }} @extraArgs --server-binary $serverExe
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            foreach ($backend in $backends) {
+              Write-Host "Running test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $backend" -ForegroundColor Cyan
+              & $venvPython test/${{ matrix.script }} @extraArgs --backend $backend --server-binary $serverExe
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
           }
-
-          if ($LASTEXITCODE -ne 0) {
-              Write-Host "ERROR: ${{ matrix.name }} tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
-              exit $LASTEXITCODE
-          }
-
-          Write-Host "${{ matrix.name }} tests PASSED!" -ForegroundColor Green
 
       - name: Cleanup
         if: always()
@@ -567,7 +531,7 @@ jobs:
 
   test-deb-inference:
     name: Test .deb - ${{ matrix.name }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: [rai300_400, Linux]
     needs: build-lemonade-server-deb
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
     if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
@@ -575,29 +539,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # LLM - Llamacpp backends
-          - name: llamacpp (vulkan)
-            test_type: llm
-            backend: vulkan
-            runner: [rai300_400, Linux]
-          - name: llamacpp (rocm)
-            test_type: llm
-            backend: rocm
-            runner: [stx-halo, Linux]
-          # Stable Diffusion (ROCm)
-          - name: stable-diffusion (rocm)
-            test_type: sd
-            backend: rocm
-            runner: [stx-halo, Linux]
-          # Stable Diffusion (CPU)
-          - name: stable-diffusion (cpu)
-            test_type: sd
-            backend: cpu
-            runner: [rai300_400, Linux]
-          # Text to speech
+          - name: llamacpp
+            script: server_llm.py
+            extra_args: "--wrapped-server llamacpp"
+            backends: "vulkan rocm"
+          - name: stable-diffusion
+            script: server_sd.py
+            extra_args: ""
+            backends: "cpu rocm"
           - name: text-to-speech
-            test_type: tts
-            runner: [rai300_400, Linux]
+            script: server_tts.py
+            extra_args: ""
+            backends: ""
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -628,25 +581,16 @@ jobs:
         env:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
-          set -e  # Exit on error
-
-          VENV_PYTHON=".venv/bin/python"
-
-          echo "Running ${{ matrix.name }} tests..."
-
-          case "${{ matrix.test_type }}" in
-            llm)
-              $VENV_PYTHON test/server_llm.py --wrapped-server llamacpp --backend ${{ matrix.backend }} --server-binary lemonade-server
-              ;;
-            sd)
-              $VENV_PYTHON test/server_sd.py --backend ${{ matrix.backend }} --server-binary lemonade-server
-              ;;
-            tts)
-              $VENV_PYTHON test/server_tts.py --server-binary lemonade-server
-              ;;
-          esac
-
-          echo "${{ matrix.name }} tests PASSED!"
+          set -e
+          if [ -z "${{ matrix.backends }}" ]; then
+            echo "Running test/${{ matrix.script }} ${{ matrix.extra_args }}"
+            .venv/bin/python test/${{ matrix.script }} ${{ matrix.extra_args }} --server-binary lemonade-server
+          else
+            for backend in ${{ matrix.backends }}; do
+              echo "Running test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $backend"
+              .venv/bin/python test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $backend --server-binary lemonade-server
+            done
+          fi
 
       - name: Print server logs on failure
         if: failure()
@@ -676,21 +620,11 @@ jobs:
         uses: ./.github/actions/cleanup-processes-linux
 
   test-dmg-inference:
-    name: Test .dmg - ${{ matrix.name }}
-    runs-on: ${{ matrix.runner }}
+    name: Test .dmg - llamacpp (metal)
+    runs-on: macos-latest
     needs: build-lemonade-macos-dmg
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
     if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # LLM - Llamacpp Metal backend
-          - name: llamacpp (metal)
-            test_type: llm
-            wrapped_server: llamacpp
-            backend: metal
-            runner: macos-latest
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -714,23 +648,12 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      - name: Run tests
+      - name: Test llamacpp (metal)
         env:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           set -e
-
-          VENV_PYTHON=".venv/bin/python"
-
-          echo "Running ${{ matrix.name }} tests..."
-
-          case "${{ matrix.test_type }}" in
-            llm)
-              $VENV_PYTHON test/server_llm.py --wrapped-server ${{ matrix.wrapped_server }} --backend ${{ matrix.backend }} --server-binary /usr/local/bin/lemonade-server
-              ;;
-          esac
-
-          echo "${{ matrix.name }} tests PASSED!"
+          .venv/bin/python test/server_llm.py --wrapped-server llamacpp --backend metal --server-binary /usr/local/bin/lemonade-server
 
       - name: Print server logs on failure
         if: failure()
