@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import MarkdownMessage from './MarkdownMessage';
+import AudioButton, { LOADING, PAUSED, PLAYING } from './AudioButton'
 // @ts-ignore - SVG assets live outside of the TypeScript rootDir for Electron packaging
 import logoSvg from '../../assets/logo.svg';
 import {
@@ -12,6 +13,7 @@ import { downloadTracker } from './utils/downloadTracker';
 import { useModels, DEFAULT_MODEL_ID } from './hooks/useModels';
 import { useAudioCapture } from './hooks/useAudioCapture';
 import { TranscriptionWebSocket } from './utils/websocketClient';
+import { voiceOptions } from './tabs/TTSSettings';
 
 interface ImageContent {
   type: 'image_url';
@@ -122,6 +124,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     timestamp: number;
   }>>([]);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+
+  // Text to speech state
+  const [currentVoice, setVoice] = useState('');
+  const [audioState, setAudioState] = useState<number>(0);
+  const [pressedAudioButton, setPressedAudioButton] = useState<number>(-1);
+  const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
+  const [ttsMessageHistory, setTTSMessageHistory] = useState<MessageContent[]>([]);
+  const [isProcessingTTS, setIsProcessingTTS] = useState(false);
 
   // Image generation settings
   interface ImageSettings {
@@ -244,6 +254,12 @@ useEffect(() => {
     }
   }, [editingIndex, editingValue]);
 
+  useEffect(() => {
+    if(appSettings) {
+      setVoice(appSettings?.tts.userVoice.value);
+    }
+  }, [appSettings]);
+
   // Load model-specific image defaults when the selected model changes
   useEffect(() => {
     if (isImageGenerationModel() && selectedModel) {
@@ -348,6 +364,14 @@ const fetchLoadedModel = async () => {
     return modelInfo?.recipe === 'whispercpp';
   };
 
+  const isSpeechModel = (): boolean => {
+    if (!selectedModel) return false;
+
+    const modelInfo = modelsData[selectedModel];
+
+    return modelInfo?.recipe === 'kokoro';
+  };
+
   const isImageGenerationModel = (): boolean => {
     if (!selectedModel) return false;
 
@@ -363,11 +387,12 @@ const fetchLoadedModel = async () => {
            modelInfo?.labels?.includes('image') || false;
   };
 
-  const getModelType = (): 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' => {
+  const getModelType = (): 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'speech' => {
     if (isEmbeddingModel()) return 'embedding';
     if (isRerankingModel()) return 'reranking';
     if (isTranscriptionModel()) return 'transcription';
     if (isImageGenerationModel()) return 'image';
+    if(isSpeechModel()) return 'speech';
     return 'llm';
   };
 
@@ -832,6 +857,13 @@ const sendMessage = async () => {
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleMessageToSpeech();
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputValue(e.target.value);
     adjustTextareaHeight(e.target);
@@ -950,6 +982,24 @@ const sendMessage = async () => {
     }
   };
 
+  const handleEditAudioMessage = (index: number, e: React.MouseEvent) => {
+    if (isProcessingTTS) {
+      return;
+    }
+
+    e.stopPropagation();
+
+    const message = ttsMessageHistory[index];
+    setEditingIndex(index);
+
+    if (typeof message === 'string') {
+      setEditingValue(message);
+    } else {
+      const textContent = message.find(item => item.type === 'text');
+      setEditingValue(textContent ? textContent.text : '');
+    }
+  };
+
   const handleEditInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setEditingValue(e.target.value);
     // Auto-grow the textarea
@@ -1012,6 +1062,130 @@ const sendMessage = async () => {
   const handleEditContainerClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent closing when clicking inside the edit area
   };
+
+  // Handle text to speech conversion using Kokoro
+  useEffect(() => {
+    if(currentAudio) {
+      currentAudio.addEventListener('ended', stopAudio);
+      currentAudio.addEventListener('error', stopAudio);
+
+      currentAudio.play().catch(e => console.error("Playback prevented:", currentAudio));
+    }
+
+    return () => {
+      currentAudio?.removeEventListener('ended', stopAudio);
+      currentAudio?.removeEventListener('error', stopAudio);
+    }
+  }, [currentAudio, audioState]);
+
+  const playAudio = (audioUrl: string) => {
+    setCurrentAudio(new Audio(audioUrl));
+    setAudioState(PLAYING);
+  }
+
+  const stopAudio = () => {
+    if (currentAudio) {
+      currentAudio.pause();
+      if (currentAudio.src.startsWith('blob:')) {
+        URL.revokeObjectURL(currentAudio.src);
+      }
+
+      setCurrentAudio(null);
+    }
+
+    setPressedAudioButton(-1);
+    setAudioState(PAUSED);
+  }
+
+  const handleTextToSpeech = async (message: MessageContent, ttsVoice: string) => {
+    const textToSpeechModel = appSettings?.tts.model.value;
+
+    setAudioState(LOADING);
+
+    if(message instanceof Array) {
+      message = message.map(function(item) {return (item.type == "text") ? item.text : ''}).toString();
+    }
+
+    try {
+      const requestBody: any = {
+        model: textToSpeechModel,
+        input: message,
+        voice: ttsVoice
+      };
+
+      const response = await serverFetch('/audio/speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const respBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(respBlob);
+      playAudio(audioUrl);
+      setAudioState(PLAYING);
+    } catch(err: any) {
+      console.log(`Error: ${err}`);
+      stopAudio();
+    }
+  }
+
+  const handleAudioButtonClick = async (message: MessageContent, btnIndex: number, role?: string) => {
+    let b = pressedAudioButton;
+    let voice = currentVoice;
+
+    stopAudio();
+
+    if (b === btnIndex) {
+      return;
+    }
+
+    if(role && appSettings) {
+      voice = (role === 'assistant') ? appSettings?.tts.assistantVoice.value : appSettings?.tts.userVoice.value;
+    }
+
+    setPressedAudioButton(btnIndex);
+    await handleTextToSpeech(message, voice);
+  }
+
+  const renderAudioButton = (role: string, message: MessageContent, btnIndex: number) => {
+    let isTextContent = (typeof message === 'object') ? (message.filter((chunk) => chunk.type === 'text').length != 0) : true;
+
+    return (appSettings?.tts.enableTTS.value) &&
+      isTextContent &&
+      ((role == 'assistant') ||
+      (role == 'user' && appSettings?.tts.enableUserTTS.value)) ?
+      <AudioButton
+      role={role}
+      textMessage={message}
+      buttonIndex={btnIndex}
+      onClickFunction={handleAudioButtonClick}
+      buttonContext={{buttonId: pressedAudioButton, audioState: audioState}}
+      /> :
+      ''
+  };
+
+const handleMessageToSpeech = async () => {
+  if (!inputValue.trim() || isProcessingTTS) return;
+
+  setIsProcessingTTS(true);
+
+  try {
+    await handleTextToSpeech(inputValue, currentVoice);
+    setTTSMessageHistory(prev => [...prev, inputValue]);
+  } catch (error: any) {
+    console.error('Failed to proccess message:', error);
+    alert(`Failed to proccess message: ${error.message || 'Unknown error'}`);
+  } finally {
+    setIsProcessingTTS(false);
+    setInputValue('');
+  }
+};
+
+
 
   const submitEdit = async () => {
     if ((!editingValue.trim() && editingImages.length === 0) || editingIndex === null || isLoading) return;
@@ -1112,10 +1286,36 @@ const sendMessage = async () => {
     }
   };
 
+  const submitAudioMessageEdit = async () => {
+    if (!editingValue.trim() || editingIndex === null || isProcessingTTS) {
+      return;
+    }
+
+    setIsUserAtBottom(true);
+    userScrolledAwayRef.current = false;
+
+    let ttsMessages = ttsMessageHistory;
+    ttsMessages[editingIndex] = editingValue;
+
+    setTTSMessageHistory(ttsMessages);
+    setEditingIndex(null);
+    setEditingValue('');
+  };
+
   const handleEditKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       submitEdit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelEdit();
+    }
+  };
+
+  const handleAudioEditKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitAudioMessageEdit();
     } else if (e.key === 'Escape') {
       e.preventDefault();
       cancelEdit();
@@ -1537,6 +1737,7 @@ const sendMessage = async () => {
                     : modelType === 'reranking' ? 'Lemonade Reranking'
                     : modelType === 'transcription' ? 'Lemonade Transcriber'
                     : modelType === 'image' ? 'Lemonade Image Generator'
+                    : modelType === 'speech' ? 'Lemonade Text to Speech'
                     : 'LLM Chat';
 
   // Reusable components
@@ -2169,6 +2370,90 @@ const sendMessage = async () => {
         </>
       )}
 
+      {/* TTS UI */}
+      {modelType === 'speech' && (
+        <>
+          <div className="chat-messages" ref={messagesContainerRef} onScroll={handleScroll}>
+            {ttsMessageHistory.length === 0 && <EmptyState title="Lemonade Text to Speech" />}
+            {ttsMessageHistory.map((message, index) => {
+              return (
+                <div key={index} className="chat-message user-message">
+                  <AudioButton textMessage={message} buttonIndex={index} onClickFunction={handleAudioButtonClick} buttonContext={{ buttonId: pressedAudioButton, audioState: audioState }} />
+                  {editingIndex === index ? (
+                    <div className="edit-message-wrapper" onClick={handleEditContainerClick}>
+                      <div className="edit-message-content">
+                        <textarea ref={editTextareaRef} className="edit-message-input" value={editingValue} onChange={handleEditInputChange} onKeyDown={handleAudioEditKeyPress} autoFocus rows={1} />
+                        <div className="edit-message-controls">
+                          <button className="edit-send-button" onClick={submitAudioMessageEdit} disabled={!editingValue.trim() && editingImages.length === 0} title="Send edited message">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                              <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" transform="translate(-1, 1)" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div onClick={(e) => !isLoading && handleEditAudioMessage(index, e)} style={{ cursor: !isLoading ? 'pointer' : 'default' }}>
+                      {renderMessageContent(message, '', index, false)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {isProcessingTTS && (
+              <div className="model-loading-indicator">
+                <span className="model-loading-text">Converting text to speech...</span>
+              </div>
+            )}
+
+            {isModelLoading && (
+              <div className="model-loading-indicator">
+                <span className="model-loading-text">Loading tts model...</span>
+              </div>
+            )}
+            <div ref={messagesEndRef} /></div>
+          <div className="chat-input-container">
+            <div className="chat-input-voice-selector">
+              <select className="form-input form-select" value={currentVoice} onChange={(e) => setVoice(e.target.value)}>
+                {
+                  voiceOptions.map((voice: string, index: number) => {
+                    const label = (voice === '') ? 'Select a voice...' : voice;
+                    return <option key={index} value={voice} disabled={(voice === '')}>{label}</option>;
+                  })
+                }
+              </select>
+            </div>
+            <div className="chat-input-wrapper">
+              <textarea
+                ref={inputTextareaRef}
+                className="chat-input"
+                value={inputValue}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder={isProcessingTTS ? "Converting text to speech.." : "Type your message..."}
+                rows={1}
+                disabled={isProcessingTTS}
+              />
+              <div className="chat-controls">
+                <div className="chat-controls-left">
+                  <ModelSelector disabled={isProcessingTTS} />
+                </div>
+                {(audioState == PLAYING) ? (
+                  <button className="chat-stop-button" onClick={stopAudio} title="Stop audio">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <rect x="6" y="6" width="12" height="12" fill="currentColor" rx="2" />
+                    </svg>
+                  </button>
+                ) : (
+                  <SendButton onClick={handleMessageToSpeech} disabled={!inputValue.trim()} />
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* LLM Chat UI (default) */}
       {modelType === 'llm' && (
         <>
@@ -2187,7 +2472,8 @@ const sendMessage = async () => {
                   className={`chat-message ${message.role === 'user' ? 'user-message' : 'assistant-message'} ${
                     message.role === 'user' && !isLoading ? 'editable' : ''
                   } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''}`}
-                >
+                  >
+                   {renderAudioButton(message.role, message.content, index)}
                   {editingIndex === index ? (
                     <div className="edit-message-wrapper" onClick={handleEditContainerClick}>
                       {editingImages.length > 0 && (
