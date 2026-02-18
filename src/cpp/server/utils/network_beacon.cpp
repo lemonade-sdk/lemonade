@@ -9,6 +9,7 @@
 #ifdef _WIN32
     #include <ws2tcpip.h>
     #pragma comment(lib, "ws2_32.lib")
+    #define INVALID_SOCKET_NB INVALID_SOCKET
 #else
     #include <arpa/inet.h>
     #include <netinet/in.h>
@@ -16,10 +17,10 @@
     #include <unistd.h>
 
     #define closesocket close
-    #define SOCKET_ERROR -1
+    #define INVALID_SOCKET_NB -1
 #endif
 
-NetworkBeacon::NetworkBeacon() : _socket(INVALID_SOCKET), _isInitialized(false), _netThreadRunning(false) {
+NetworkBeacon::NetworkBeacon() : _socket(INVALID_SOCKET_NB), _isInitialized(false), _netThreadRunning(false) {
 #ifdef _WIN32
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
@@ -35,9 +36,9 @@ NetworkBeacon::~NetworkBeacon() {
 }
 
 void NetworkBeacon::cleanup() {
-    if (_socket != INVALID_SOCKET) {
+    if (_socket != INVALID_SOCKET_NB) {
         closesocket(_socket);
-        _socket = INVALID_SOCKET;
+        _socket = INVALID_SOCKET_NB;
     }
 #ifdef _WIN32
     if (_isInitialized) {
@@ -48,11 +49,11 @@ void NetworkBeacon::cleanup() {
 }
 
 void NetworkBeacon::createSocket() {
-    if (_socket != INVALID_SOCKET) {
+    if (_socket != INVALID_SOCKET_NB) {
         closesocket(_socket);
     }
     _socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (_socket == INVALID_SOCKET) {
+    if (_socket == INVALID_SOCKET_NB) {
         throw std::runtime_error("Could not create socket");
     }
 }

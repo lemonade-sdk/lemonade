@@ -14,7 +14,7 @@ runs:
         set -e
 
         # Extract version from CMakeLists.txt
-        VERSION=$(grep -Po 'project\(lemon_cpp VERSION \K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
+        VERSION=$(sed -n 's/^project(lemon_cpp VERSION \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' CMakeLists.txt)
 
         if [ -z "$VERSION" ]; then
           echo "ERROR: Could not extract version from CMakeLists.txt"

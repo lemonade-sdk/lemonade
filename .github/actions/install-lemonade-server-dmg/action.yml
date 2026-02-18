@@ -1,0 +1,99 @@
+name: 'Install Lemonade Server (.pkg)'
+description: 'Downloads and installs Lemonade Server from a .pkg, then verifies installation'
+inputs:
+  version:
+    description: 'Version string for the package (e.g., 9.3.1)'
+    required: true
+  artifact-name:
+    description: 'Name of the artifact to download'
+    required: false
+    default: 'lemonade-macos-pkg'
+  download-artifact:
+    description: 'Whether to download the artifact (set to false if already downloaded)'
+    required: false
+    default: 'true'
+
+outputs:
+  bin-path:
+    description: 'Path to the installed binaries directory'
+    value: ${{ steps.install.outputs.bin-path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Download .pkg package
+      if: ${{ inputs.download-artifact == 'true' }}
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: .
+
+    - name: Install .pkg
+      id: install
+      shell: bash
+      run: |
+        set -e
+
+        echo "Looking for .pkg file..."
+
+        PKG_FILE=$(find . -maxdepth 1 -name "*.pkg" -type f | head -1)
+
+        if [ -z "$PKG_FILE" ]; then
+            echo "ERROR: No .pkg file found in current directory!"
+            ls -la
+            exit 1
+        fi
+
+        echo "Installing: $PKG_FILE"
+        sudo installer -pkg "$PKG_FILE" -target /
+        echo "Installation complete"
+
+        # Binaries are installed at /usr/local/bin
+        BIN_PATH="/usr/local/bin"
+        echo "$BIN_PATH" >> $GITHUB_PATH
+        echo "bin-path=$BIN_PATH" >> $GITHUB_OUTPUT
+
+        echo "Binaries at: $BIN_PATH"
+
+    - name: Stop services before verification
+      shell: bash
+      run: |
+        echo "Stopping any services started by postflight script..."
+        sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
+        sudo launchctl bootout system/com.lemonade.tray 2>/dev/null || true
+        sleep 2
+
+        # Clean up PID and lock files left behind by killed processes
+        echo "Cleaning up stale PID and lock files..."
+        sudo rm -f /tmp/lemonade-router.pid
+        sudo rm -f /tmp/lemonade_Router.lock
+        sudo rm -f /tmp/lemonade_Server.lock
+        sudo rm -f /tmp/lemonade_Tray.lock
+        sudo rm -f /tmp/lemonade*.pid /tmp/lemonade*.lock
+
+        echo "Services stopped and cleaned up."
+
+    - name: Verify installation
+      shell: bash
+      run: |
+        set -e
+
+        BIN_PATH="${{ steps.install.outputs.bin-path }}"
+        echo "Verifying installation at: $BIN_PATH"
+
+        if [ -x "$BIN_PATH/lemonade-server" ]; then
+            echo "Found: lemonade-server"
+            "$BIN_PATH/lemonade-server" --version
+        else
+            echo "ERROR: lemonade-server not found at $BIN_PATH"
+            exit 1
+        fi
+
+        if [ -x "$BIN_PATH/lemonade-router" ]; then
+            echo "Found: lemonade-router"
+            "$BIN_PATH/lemonade-router" --version
+        else
+            echo "WARNING: lemonade-router not found at $BIN_PATH"
+        fi
+
+        echo "Installation verification complete!"
