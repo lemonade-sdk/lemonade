@@ -425,6 +425,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#building-an-appimage-linux-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building an AppImage (Linux Only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#platform-specific-notes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1478,6 +1489,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#building-an-appimage-linux-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building an AppImage (Linux Only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#platform-specific-notes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2041,6 +2063,22 @@ managers and create the build directory.</p>
 - <strong>Linux installed</strong>: <code>/usr/local/share/lemonade-server/app/lemonade</code>
 - <strong>Linux development</strong>: <code>../app/linux-unpacked/lemonade</code> (from build/)</p>
 <p>If not found, the "Open app" menu option is hidden but everything else works.</p>
+<h3 id="building-an-appimage-linux-only">Building an AppImage (Linux Only)</h3>
+<p>To create a standalone AppImage package that can run on any Linux distribution:</p>
+<div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>default<span class="w"> </span>--target<span class="w"> </span>appimage
+</code></pre></div>
+<p>This will:
+1. Copy the Electron app source to a separate build directory
+2. Set the package.json version to match the CMake project version
+3. Install npm dependencies
+4. Build the renderer with production optimizations
+5. Package the application as an AppImage using electron-builder</p>
+<p>The generated AppImage will be located in:
+- <code>build/app-appimage/Lemonade-&lt;version&gt;-&lt;arch&gt;.AppImage</code></p>
+<p>The AppImage is a self-contained executable that includes all dependencies and can be run on any Linux distribution without installation. Simply make it executable and run it:</p>
+<div class="highlight"><pre><span></span><code>chmod<span class="w"> </span>+x<span class="w"> </span>build/app-appimage/Lemonade-*.AppImage
+./build/app-appimage/Lemonade-*.AppImage
+</code></pre></div>
 <h3 id="platform-specific-notes">Platform-Specific Notes</h3>
 <p><strong>Windows:</strong>
 - The build uses static linking to minimize DLL dependencies
