@@ -48,6 +48,7 @@
     "katex": "^0.16.25",
     "markdown-it": "^14.1.0",
     "markdown-it-texmath": "^1.0.0",
+    "openai": "^4.85.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

@@ -1033,7 +1033,14 @@ std::pair<int, int> TrayApp::get_server_info() {
         return false;
     };
 
-    // Try IPv4 first
+    // Collect all listening ports for lemonade-router.exe.
+    // The router listens on multiple ports (HTTP + WebSocket), so we must
+    // identify the HTTP port rather than returning whichever appears first
+    // in the TCP table (which is non-deterministic).
+    int router_pid = 0;
+    std::set<int> candidate_ports;
+
+    // Scan IPv4 connections
     DWORD size = 0;
     GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0);
 
@@ -1046,12 +1053,13 @@ std::pair<int, int> TrayApp::get_server_info() {
             int port = ntohs((u_short)pTcpTable->table[i].dwLocalPort);
 
             if (is_lemonade_router(pid)) {
-                return {static_cast<int>(pid), port};
+                router_pid = static_cast<int>(pid);
+                candidate_ports.insert(port);
             }
         }
     }
 
-    // Try IPv6 if not found in IPv4
+    // Also scan IPv6 connections
     size = 0;
     GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET6, TCP_TABLE_OWNER_PID_LISTENER, 0);
 
@@ -1064,9 +1072,35 @@ std::pair<int, int> TrayApp::get_server_info() {
             int port = ntohs((u_short)pTcp6Table->table[i].dwLocalPort);
 
             if (is_lemonade_router(pid)) {
-                return {static_cast<int>(pid), port};
+                router_pid = static_cast<int>(pid);
+                candidate_ports.insert(port);
             }
         }
+    }
+
+    if (router_pid != 0 && !candidate_ports.empty()) {
+        if (candidate_ports.size() == 1) {
+            return {router_pid, *candidate_ports.begin()};
+        }
+
+        // Multiple ports found (HTTP + WebSocket).
+        // Hit /api/v1/health on each to find the HTTP port.
+        for (int port : candidate_ports) {
+            try {
+                httplib::Client cli("127.0.0.1", port);
+                cli.set_connection_timeout(1);
+                cli.set_read_timeout(1);
+                auto res = cli.Get("/live");
+                if (res && res->status == 200) {
+                    return {router_pid, port};
+                }
+            } catch (...) {
+                // Not the HTTP port, try next
+            }
+        }
+
+        // Health check failed on all ports, return first as fallback
+        return {router_pid, *candidate_ports.begin()};
     }
 #else
     if (is_any_systemd_service_active()) {
@@ -2216,11 +2250,19 @@ Menu TrayApp::create_menu() {
 
     // Port submenu
     auto port_submenu = std::make_shared<Menu>();
-    std::vector<int> ports = {8000, 8020, 8040, 8060, 8080, 9000};
-    for (int port : ports) {
+    std::vector<std::pair<int, std::string>> ports = {
+        {8000, "Port 8000"},
+        {8020, "Port 8020"},
+        {8040, "Port 8040"},
+        {8060, "Port 8060"},
+        {8080, "Port 8080"},
+        {9000, "Port 9000"},
+        {11434, "Port 11434 (Ollama)"},
+    };
+    for (const auto& [port, label] : ports) {
         bool is_current = (port == server_config_.port);
         port_submenu->add_item(MenuItem::Checkable(
-            "Port " + std::to_string(port),
+            label,
             [this, port]() { on_change_port(port); },
             is_current
         ));
