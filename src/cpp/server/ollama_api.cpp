@@ -179,11 +179,6 @@ void OllamaApi::register_routes(httplib::Server& server) {
         self->handle_version(req, res);
     });
 
-    // Also support HEAD on /api/version and / for Ollama client discovery
-    server.Get("/", [](const httplib::Request& req, httplib::Response& res) {
-        res.set_content("Ollama is running", "text/plain");
-    });
-
     // 501 stubs for unsupported endpoints
     auto not_supported = [](const httplib::Request&, httplib::Response& res) {
         res.status = 501;
