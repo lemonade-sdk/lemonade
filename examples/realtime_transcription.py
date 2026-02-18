@@ -8,13 +8,14 @@ Requirements:
     pip install openai pyaudio websockets
 
 Usage:
-    python realtime_transcription.py --mic
-    python realtime_transcription.py --mic --model Whisper-Small
+    python realtime_transcription.py
+    python realtime_transcription.py --model Whisper-Small
 """
 
 import argparse
 import asyncio
 import base64
+import struct
 import sys
 import os
 
@@ -50,8 +51,35 @@ except ImportError:
     print("Install it with: pip install websockets")
     sys.exit(1)
 
-SAMPLE_RATE = 16000
-CHUNK_SIZE = 4096
+TARGET_RATE = 16000  # Whisper expects 16kHz mono PCM16
+CHUNK_SIZE = 4096    # Samples per read at native rate (~85ms at 48kHz)
+
+
+def downsample_to_16k(pcm16_bytes, native_rate):
+    """Downsample PCM16 audio from native_rate to 16kHz using linear interpolation.
+
+    Matches the resampling approach used in the Electron app's useAudioCapture hook.
+    """
+    if native_rate == TARGET_RATE:
+        return pcm16_bytes
+
+    n_samples = len(pcm16_bytes) // 2
+    samples = struct.unpack(f'<{n_samples}h', pcm16_bytes)
+
+    ratio = native_rate / TARGET_RATE
+    output_length = int(n_samples / ratio)
+    output = bytearray(output_length * 2)
+
+    for i in range(output_length):
+        src_idx = i * ratio
+        idx_floor = int(src_idx)
+        idx_ceil = min(idx_floor + 1, n_samples - 1)
+        frac = src_idx - idx_floor
+        sample = samples[idx_floor] * (1 - frac) + samples[idx_ceil] * frac
+        clamped = max(-32768, min(32767, int(sample)))
+        struct.pack_into('<h', output, i * 2, clamped)
+
+    return bytes(output)
 
 
 def transcribe_microphone(model: str, server_url: str):
@@ -103,12 +131,16 @@ def transcribe_microphone(model: str, server_url: str):
             event = await asyncio.wait_for(conn.recv(), timeout=10)
             print(f"Session: {event.session.id}")
 
-            # Initialize microphone
+            # Initialize microphone at its native sample rate
             pa = pyaudio.PyAudio()
+            device_info = pa.get_default_input_device_info()
+            native_rate = int(device_info['defaultSampleRate'])
+            print(f"Microphone native sample rate: {native_rate} Hz")
+
             stream = pa.open(
                 format=pyaudio.paInt16,
                 channels=1,
-                rate=SAMPLE_RATE,
+                rate=native_rate,
                 input=True,
                 frames_per_buffer=CHUNK_SIZE
             )
@@ -122,6 +154,8 @@ def transcribe_microphone(model: str, server_url: str):
                 try:
                     while True:
                         data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
+                        # Downsample from native rate to 16kHz (matching Electron app)
+                        data = downsample_to_16k(data, native_rate)
                         await conn.input_audio_buffer.append(
                             audio=base64.b64encode(data).decode()
                         )
@@ -202,11 +236,6 @@ def main():
         description="Realtime transcription using OpenAI-compatible API"
     )
     parser.add_argument(
-        "--mic", "-m",
-        action="store_true",
-        help="Stream from microphone"
-    )
-    parser.add_argument(
         "--model",
         default="Whisper-Tiny",
         help="Whisper model (default: Whisper-Tiny)"
@@ -218,14 +247,7 @@ def main():
     )
 
     args = parser.parse_args()
-
-    if args.mic:
-        transcribe_microphone(args.model, args.server)
-    else:
-        parser.print_help()
-        print("\nExample:")
-        print("  python realtime_transcription.py --mic")
-        print("  python realtime_transcription.py --mic --model Whisper-Small")
+    transcribe_microphone(args.model, args.server)
 
 
 if __name__ == "__main__":

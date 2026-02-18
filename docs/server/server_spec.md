@@ -719,7 +719,7 @@ See the [`examples/`](../../examples/) directory for a complete, runnable exampl
 
 ```bash
 # Stream from microphone
-python examples/realtime_transcription.py --mic --model Whisper-Tiny
+python examples/realtime_transcription.py --model Whisper-Tiny
 ```
 
 #### Integration Notes

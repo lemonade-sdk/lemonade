@@ -34,10 +34,10 @@ Uses the OpenAI-compatible WebSocket API for real-time speech-to-text.
 pip install openai websockets pyaudio
 
 # Stream from microphone
-python realtime_transcription.py --mic
+python realtime_transcription.py
 
 # Use a different model
-python realtime_transcription.py --mic --model Whisper-Small
+python realtime_transcription.py --model Whisper-Small
 ```
 
 ### LLM Demos
