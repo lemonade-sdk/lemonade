@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, session, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -552,7 +552,7 @@ ipcMain.handle('get-version', async () => {
 });
 
 ipcMain.handle('discover-server-port', async () => {
-  let baseURL = getBaseURLFromConfig();
+  let baseURL = await getBaseURLFromConfig();
   if (baseURL) {
     console.log('Port discovery skipped - using explicit server URL:', baseURL);
     ensureTrayRunning();
@@ -773,6 +773,12 @@ function createWindow() {
 app.on('ready', () => {
   ensureTrayRunning();
   createWindow();
+
+  // Allow microphone access for streaming audio transcription.
+  // Only 'media' is auto-approved; all other permissions use Electron's default (deny).
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(permission === 'media');
+  });
 
   // Window control handlers
   ipcMain.on('minimize-window', () => {
