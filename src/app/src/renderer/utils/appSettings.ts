@@ -28,6 +28,14 @@ export interface LayoutSettings {
   logsHeight: number;
 }
 
+export interface TTSSettings {
+  model: StringSetting;
+  userVoice: StringSetting;
+  assistantVoice: StringSetting;
+  enableTTS: BooleanSetting;
+  enableUserTTS: BooleanSetting;
+}
+
 export interface AppSettings {
   temperature: NumericSetting;
   topK: NumericSetting;
@@ -38,6 +46,7 @@ export interface AppSettings {
   baseURL: StringSetting;
   apiKey: StringSetting;
   layout: LayoutSettings;
+  tts: TTSSettings;
 }
 
 type BaseSettingValues = Record<NumericSettingKey, number> & {
@@ -77,6 +86,14 @@ export const DEFAULT_LAYOUT_SETTINGS: LayoutSettings = {
   logsHeight: 200,
 };
 
+export const DEFAULT_TTS_SETTINGS: TTSSettings = {
+  model: { value: 'kokoro-v1', useDefault: true },
+  userVoice: { value: 'fable', useDefault: true },
+  assistantVoice: { value: 'alloy', useDefault: true },
+  enableTTS: { value: false, useDefault: true },
+  enableUserTTS: { value: false, useDefault: true }
+};
+
 export const createDefaultSettings = (): AppSettings => ({
   temperature: { value: BASE_SETTING_VALUES.temperature, useDefault: true },
   topK: { value: BASE_SETTING_VALUES.topK, useDefault: true },
@@ -87,6 +104,7 @@ export const createDefaultSettings = (): AppSettings => ({
   baseURL: { value: BASE_SETTING_VALUES.baseURL, useDefault: true },
   apiKey: { value: BASE_SETTING_VALUES.apiKey, useDefault: true },
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
+  tts: {...DEFAULT_TTS_SETTINGS}
 });
 
 export const cloneSettings = (settings: AppSettings): AppSettings => ({
@@ -99,6 +117,7 @@ export const cloneSettings = (settings: AppSettings): AppSettings => ({
   baseURL: { ...settings.baseURL },
   apiKey: { ...settings.apiKey },
   layout: { ...settings.layout },
+  tts: { ...settings.tts },
 });
 
 export const clampNumericSettingValue = (key: NumericSettingKey, value: number): number => {
@@ -238,6 +257,20 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
     if (typeof rawLayout.logsHeight === 'number') {
       defaults.layout.logsHeight = rawLayout.logsHeight;
     }
+  }
+
+  // Merge TTS settings
+  const rawTTS = incoming.tts;
+  if (rawTTS && typeof rawTTS === 'object') {
+    const ttsKeys = Object.keys(rawTTS) as (keyof TTSSettings)[];
+
+    ttsKeys.forEach((key) => {
+      if (rawTTS[key] && typeof rawTTS[key] === 'object') {
+        const useDefault = (typeof rawTTS[key].useDefault === 'boolean') ? rawTTS[key].useDefault : defaults.tts[key].useDefault;
+        const value = useDefault ? defaults.tts[key].value : (typeof rawTTS[key].value === 'string' || typeof rawTTS[key].value === 'boolean') ? rawTTS[key].value : defaults.tts[key].value;
+        (defaults.tts[key] as (StringSetting | BooleanSetting)) = { value, useDefault };
+      }
+    });
   }
 
   return defaults;
