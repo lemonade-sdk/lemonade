@@ -1361,6 +1361,7 @@ int TrayApp::execute_pull_command() {
                 }
             } catch (const std::ifstream::failure& e) {
                 std::cerr << "Error: " << tray_config_.model << " could not be read." << std::endl;
+                return 1;
             } catch(const nlohmann::json::exception& e) {
                 std::cerr << "Error: " << tray_config_.model << " is not a valid JSON file." << std::endl;
                 return 1;
