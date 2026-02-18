@@ -304,7 +304,7 @@ useEffect(() => {
 const excludeTextToSpeechModel = (data: any) => {
   const loadedModels = data.all_models_loaded;
   const loadedModel = loadedModels.find((model: any) => model.model_name === data?.model_loaded);
-  
+
   let isTextToSpeechModel = (loadedModel?.recipe === 'kokoro');
 
   if(isTextToSpeechModel) {
@@ -1073,7 +1073,7 @@ const sendMessage = async () => {
       if (currentAudio.src.startsWith('blob:')) {
         URL.revokeObjectURL(currentAudio.src);
       }
-        
+
       setCurrentAudio(null);
     }
 
@@ -1081,8 +1081,8 @@ const sendMessage = async () => {
     setAudioState(PAUSED);
   }
 
-  const handleTextToSpeech = async (message: MessageContent) => {
-    const textToSpeechModel = 'kokoro-v1';
+  const handleTextToSpeech = async (message: MessageContent, role: string) => {
+    const textToSpeechModel = appSettings?.tts.model.value;
 
     setAudioState(LOADING);
 
@@ -1090,12 +1090,11 @@ const sendMessage = async () => {
       message = message.map(function(item) {return (item.type == "text") ? item.text : ''}).toString();
     }
 
-
     try {
       const requestBody: any = {
         model: textToSpeechModel,
         input: message,
-        voice: 'alloy'
+        voice: (role == 'assistant') ? appSettings?.tts.assistantVoice.value : appSettings?.tts.userVoice.value
       };
 
       const response = await serverFetch('/audio/speech', {
@@ -1118,7 +1117,7 @@ const sendMessage = async () => {
     }
   }
 
-  const handleAudioButtonClick = async (message: MessageContent, btnIndex: number) => {
+  const handleAudioButtonClick = async (message: MessageContent, role: string, btnIndex: number) => {
     let b = pressedAudioButton;
 
     stopAudio();
@@ -1128,8 +1127,25 @@ const sendMessage = async () => {
     }
 
     setPressedAudioButton(btnIndex);
-    await handleTextToSpeech(message);
+    await handleTextToSpeech(message, role);
   }
+
+  const renderAudioButton = (role: string, message: MessageContent, btnIndex: number) => {
+    let isTextContent = (typeof message === 'object') ? (message.filter((chunk) => chunk.type === 'text').length != 0) : true;
+
+    return (appSettings?.tts.enableTTS.value) &&
+      isTextContent &&
+      ((role == 'assistant') ||
+      (role == 'user' && appSettings?.tts.enableUserTTS.value)) ?
+      <AudioButton
+      role={role}
+      textMessage={message}
+      buttonIndex={btnIndex}
+      onClickFunction={handleAudioButtonClick}
+      buttonContext={{buttonId: pressedAudioButton, audioState: audioState}}
+      /> :
+      ''
+  };
 
   const submitEdit = async () => {
     if ((!editingValue.trim() && editingImages.length === 0) || editingIndex === null || isLoading) return;
@@ -2307,7 +2323,7 @@ const sendMessage = async () => {
                     message.role === 'user' && !isLoading ? 'editable' : ''
                   } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''}`}
                   >
-                  <AudioButton textMessage={message.content} buttonIndex={index} onClickFunction={handleAudioButtonClick} buttonContext={{buttonId: pressedAudioButton, audioState: audioState}} />
+                   {renderAudioButton(message.role, message.content, index)}
                   {editingIndex === index ? (
                     <div className="edit-message-wrapper" onClick={handleEditContainerClick}>
                       {editingImages.length > 0 && (

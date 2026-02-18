@@ -3107,6 +3107,45 @@ footer {
     background: #666;
 }
 
+.settings-tabs-wrapper {
+  min-height: 450px;
+  height: max-content;
+}
+
+.settings-tab-controls {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  margin: 0;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #333;
+  box-sizing: border-box;
+}
+
+.settings-tab-control {
+  min-width: 120px;
+  padding-bottom: 8px;
+  background-color: transparent;
+  border: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-sizing: border-box;
+}
+
+.settings-tab-control.active {
+    color: #fff;
+    border-bottom: 1px solid #fff;
+}
+
+.settings-tab-content {
+  padding: 15px 5px 0 5px;
+  box-sizing: border-box;
+}
+
 .settings-category-header {
     padding-bottom: 12px;
     border-bottom: 1px solid #333;
@@ -3120,6 +3159,13 @@ footer {
     color: #aaa;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+}
+
+.settings-section-container {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .settings-section {
