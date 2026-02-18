@@ -103,7 +103,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 
     // whisper.cpp - Windows x86_64 only
     {"whispercpp", "npu", {"windows"}, {
-        {"npu", {"XDNA2"}},
+        {"amd_npu", {"XDNA2"}},
     }},
     {"whispercpp", "cpu", {"windows"}, {
         {"cpu", {"x86_64"}},
@@ -132,12 +132,12 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 
     // FLM - Windows NPU (XDNA2)
     {"flm", "default", {"windows"}, {
-        {"npu", {"XDNA2"}},
+        {"amd_npu", {"XDNA2"}},
     }},
 
     // RyzenAI LLM - Windows NPU (XDNA2)
     {"ryzenai-llm", "default", {"windows"}, {
-        {"npu", {"XDNA2"}},
+        {"amd_npu", {"XDNA2"}},
     }},
 };
 
@@ -159,7 +159,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
 
     // NPU architectures
-    {"XDNA2", "AMD Ryzen AI 300/400 series or Z2 Extreme NPU"},
+    {"XDNA2", "AMD XDNA 2"},
 };
 
 // Maps device types to human-readable names (for error messages)
@@ -167,7 +167,7 @@ static const std::map<std::string, std::string> DEVICE_TYPE_NAMES = {
     {"cpu", "CPU"},
     {"amd_igpu", "AMD iGPU"},
     {"amd_dgpu", "AMD dGPU"},
-    {"npu", "NPU"},
+    {"amd_npu", "AMD NPU"},
     {"nvidia_dgpu", "NVIDIA GPU"},
     {"metal", "MacOS Metal GPU"}
 };
@@ -226,7 +226,7 @@ std::string SystemInfo::get_unsupported_backend_error(const std::string& recipe,
 
 // Detected device with its family
 struct DetectedDevice {
-    std::string type;      // "cpu", "amd_igpu", "amd_dgpu", "npu"
+    std::string type;      // "cpu", "amd_igpu", "amd_dgpu", "amd_npu"
     std::string name;      // Full device name
     std::string family;    // "x86_64", "gfx1150", "XDNA2", etc.
     bool present;
@@ -245,39 +245,7 @@ static std::string get_current_os() {
 
 // Forward declarations for helper functions used in device detection
 std::string identify_rocm_arch_from_name(const std::string& device_name);
-std::string identify_npu_arch(const std::string& processor_name);
-
-// Get device family from device name
-// cpu_name is required for NPU detection (pass empty string for other device types)
-static std::string get_device_family(const std::string& device_type, const std::string& device_name,
-                                      const std::string& cpu_name) {
-    if (device_type == "cpu") {
-        #if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
-        return "x86_64";
-        #elif defined(__aarch64__) || defined(_M_ARM64)
-        return "arm64";
-        #else
-        return "unknown";
-        #endif
-    }
-
-    if (device_type == "amd_igpu" || device_type == "amd_dgpu") {
-        return identify_rocm_arch_from_name(device_name);
-    }
-
-    if (device_type == "npu") {
-        // Use the processor name to identify NPU architecture
-        // The device_name for NPU is typically "AMD NPU" which isn't useful,
-        // so we need the processor name (always available from cached devices)
-        return identify_npu_arch(cpu_name);
-    }
-
-    if (device_type == "metal") {
-        return "metal";
-    }
-
-    return "";
-}
+std::string identify_npu_arch();
 
 // Check if device matches constraints (empty constraint set = all families allowed)
 static bool device_matches_constraint(const std::string& device_family,
@@ -377,6 +345,13 @@ json SystemInfo::get_device_dict() {
             {"threads", cpu.threads},
             {"available", cpu.available}
         };
+        #if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
+        devices["cpu"]["family"] = "x86_64";
+        #elif defined(__aarch64__) || defined(_M_ARM64)
+        devices["cpu"]["family"] = "arm64";
+        #else
+        devices["cpu"]["family"] = "unknown";
+        #endif
         if (!cpu.error.empty()) {
             devices["cpu"]["error"] = cpu.error;
         }
@@ -399,6 +374,7 @@ json SystemInfo::get_device_dict() {
             {"virtual_mem_gb", amd_igpu.virtual_gb},
             {"available", amd_igpu.available}
         };
+        devices["amd_igpu"]["family"] = identify_rocm_arch_from_name(amd_igpu.name);
         if (!amd_igpu.error.empty()) {
             devices["amd_igpu"]["error"] = amd_igpu.error;
         }
@@ -428,6 +404,7 @@ json SystemInfo::get_device_dict() {
             if (!gpu.driver_version.empty()) {
                 gpu_json["driver_version"] = gpu.driver_version;
             }
+            gpu_json["family"] = identify_rocm_arch_from_name(gpu.name);
             if (!gpu.error.empty()) {
                 gpu_json["error"] = gpu.error;
             }
@@ -464,28 +441,31 @@ json SystemInfo::get_device_dict() {
     }
 
     // Get NPU info - with fault tolerance
+    // Use CPU processor name as the NPU device name (e.g., "AMD Ryzen AI 9 HX 375")
     try {
         auto npu = get_npu_device();
-        devices["npu"] = {
-            {"name", npu.name},
+        std::string cpu_name = devices.contains("cpu") ? devices["cpu"].value("name", "") : "";
+        devices["amd_npu"] = {
+            {"name", cpu_name.empty() ? npu.name : cpu_name},
             {"available", npu.available}
         };
+        devices["amd_npu"]["family"] = identify_npu_arch();
         if (!npu.power_mode.empty()) {
-            devices["npu"]["power_mode"] = npu.power_mode;
+            devices["amd_npu"]["power_mode"] = npu.power_mode;
         }
         if (!npu.error.empty()) {
-            devices["npu"]["error"] = npu.error;
+            devices["amd_npu"]["error"] = npu.error;
         }
     } catch (const std::exception& e) {
         #ifdef _WIN32
         // On Windows, assume NPU may be available - trust the user
-        devices["npu"] = {
+        devices["amd_npu"] = {
             {"name", "Unknown"},
             {"available", true},
             {"error", std::string("Detection exception: ") + e.what()}
         };
         #else
-        devices["npu"] = {
+        devices["amd_npu"] = {
             {"name", "Unknown"},
             {"available", false},
             {"error", std::string("Detection exception: ") + e.what()}
@@ -513,6 +493,7 @@ json SystemInfo::get_device_dict() {
                 if (!gpu.driver_version.empty()) {
                     devices["metal"]["driver_version"] = gpu.driver_version;
                 }
+                devices["metal"]["family"] = "metal";
                 if (!gpu.error.empty()) {
                     devices["metal"]["error"] = gpu.error;
                 }
@@ -565,20 +546,15 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
     std::vector<DetectedDevice> detected_devices;
 
-    // Get CPU name for NPU family detection
-    std::string cpu_name;
-    if (devices.contains("cpu") && devices["cpu"].is_object()) {
-        cpu_name = devices["cpu"].value("name", "");
-    }
-
-    // Build detected_devices from devices JSON
+    // Build detected_devices from devices JSON, reading cached "family" fields
     // CPU is always present
     if (devices.contains("cpu")) {
         const auto& cpu = devices["cpu"];
         std::string name = cpu.value("name", "CPU");
-        detected_devices.push_back({"cpu", name, get_device_family("cpu", "", ""), true});
+        std::string family = cpu.value("family", "");
+        detected_devices.push_back({"cpu", name, family, true});
     } else {
-        detected_devices.push_back({"cpu", "CPU", get_device_family("cpu", "", ""), true});
+        detected_devices.push_back({"cpu", "CPU", "", true});
     }
 
     // AMD iGPU
@@ -586,11 +562,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
         const auto& igpu = devices["amd_igpu"];
         if (igpu.value("available", false)) {
             std::string name = igpu.value("name", "");
+            std::string family = igpu.value("family", "");
             if (!name.empty()) {
                 detected_devices.push_back({
                     "amd_igpu",
                     name,
-                    get_device_family("amd_igpu", name, ""),
+                    family,
                     true
                 });
             }
@@ -602,11 +579,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
         for (const auto& gpu : devices["amd_dgpu"]) {
             if (gpu.value("available", false)) {
                 std::string name = gpu.value("name", "");
+                std::string family = gpu.value("family", "");
                 if (!name.empty()) {
                     detected_devices.push_back({
                         "amd_dgpu",
                         name,
-                        get_device_family("amd_dgpu", name, ""),
+                        family,
                         true
                     });
                 }
@@ -614,31 +592,33 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
     }
 
-    // NPU - use CPU name for family detection
-    if (devices.contains("npu") && devices["npu"].is_object()) {
-        const auto& npu = devices["npu"];
+    // AMD NPU
+    if (devices.contains("amd_npu") && devices["amd_npu"].is_object()) {
+        const auto& npu = devices["amd_npu"];
         if (npu.value("available", false)) {
             std::string name = npu.value("name", "");
+            std::string family = npu.value("family", "");
             detected_devices.push_back({
-                "npu",
+                "amd_npu",
                 name,
-                get_device_family("npu", name, cpu_name),
+                family,
                 true
             });
         }
     }
 
-    // Metal - use metal for family detection
+    // Metal
     if (devices.contains("metal")) {
         if (devices["metal"].is_object()) {
             // Single Metal device (legacy format)
             const auto& metal = devices["metal"];
             if (metal.value("available", false)) {
                 std::string name = metal.value("name", "");
+                std::string family = metal.value("family", "");
                 detected_devices.push_back({
                     "metal",
                     name,
-                    get_device_family("metal", name, cpu_name),
+                    family,
                     true
                 });
             }
@@ -647,11 +627,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
             for (const auto& metal : devices["metal"]) {
                 if (metal.value("available", false)) {
                     std::string name = metal.value("name", "");
+                    std::string family = metal.value("family", "");
                     if (!name.empty()) {
                         detected_devices.push_back({
                             "metal",
                             name,
-                            get_device_family("metal", name, cpu_name),
+                            family,
                             true
                         });
                     }
@@ -1037,6 +1018,8 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     return "";
 }
 
+// Linux: identify NPU architecture from sysfs accel subsystem
+// Checks /sys/class/accel/*/device/driver for amdxdna, then reads vbnv for NPU generation
 static std::string identify_npu_arch_from_sysfs() {
     fs::path accel_path = "/sys/class/accel";
     if (!fs::exists(accel_path) || !fs::is_directory(accel_path)) {
@@ -1083,37 +1066,37 @@ static std::string identify_npu_arch_from_sysfs() {
     return "";
 }
 
-
-// Identify NPU architecture from processor name
-// Returns the NPU family (e.g., "XDNA2") or empty string if not an NPU-capable processor
+// Identify NPU architecture by checking for known hardware
+// Windows: PCI device ID via WMI; Linux: amdxdna driver in sysfs accel subsystem
+// Returns the NPU family (e.g., "XDNA2") or empty string if no NPU found
 // This is the single source of truth for NPU family detection
-std::string identify_npu_arch(const std::string& processor_name) {
-    std::string sysfs_arch = identify_npu_arch_from_sysfs();
-    if (!sysfs_arch.empty())
-        return sysfs_arch;
-
-    std::string processor_lower = processor_name;
-    std::transform(processor_lower.begin(), processor_lower.end(), processor_lower.begin(), ::tolower);
-
-    // Must be a Ryzen AI processor
-    if (processor_lower.find("ryzen ai") == std::string::npos) {
+std::string identify_npu_arch() {
+#ifdef _WIN32
+    wmi::WMIConnection wmi_conn;
+    if (!wmi_conn.is_valid()) {
         return "";
     }
 
-    // XDNA2 architecture: Ryzen AI 300-series, 400-series, Z2 series
-    // Pattern: "ryzen ai" followed by 3xx, 4xx, or Z2
-    // Examples:
-    //   - AMD Ryzen AI 9 HX 375
-    //   - AMD Ryzen AI 9 365
-    //   - AMD Ryzen AI 7 350
-    //   - AMD Ryzen AI Max+ 395 (400-series when available)
-    //   - AMD Ryzen AI Z2 Extreme
-    std::regex xdna2_pattern(R"(ryzen ai.*((\b[34]\d{2}\b)|(\bz2\b)))", std::regex::icase);
-    if (std::regex_search(processor_lower, xdna2_pattern)) {
+    // XDNA2 NPU: AMD vendor 1022, device 17F0
+    bool found_xdna2 = false;
+    wmi_conn.query(
+        L"SELECT PNPDeviceID FROM Win32_PnPEntity WHERE PNPDeviceID LIKE '%VEN_1022&DEV_17F0%'",
+        [&found_xdna2](IWbemClassObject* pObj) {
+            found_xdna2 = true;
+        });
+
+    if (found_xdna2) {
         return "XDNA2";
     }
+#else
+    // Linux: check amdxdna driver + vbnv for NPU generation
+    std::string sysfs_arch = identify_npu_arch_from_sysfs();
+    if (!sysfs_arch.empty()) {
+        return sysfs_arch;
+    }
+#endif
 
-    // Future: Add XDNA3, XDNA4, etc. as new architectures are released
+    // Future: Add XDNA3, XDNA4, etc. with their PCI device IDs
 
     return "";
 }
@@ -1327,40 +1310,15 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_dgpu_devices() {
     return gpus;
 }
 
-bool WindowsSystemInfo::is_supported_ryzen_ai_processor() {
-    // Check if the processor has a supported NPU architecture
-    // Uses identify_npu_arch() as the single source of truth
-
-    wmi::WMIConnection wmi;
-    if (!wmi.is_valid()) {
-        // If we can't connect to WMI, we can't verify the processor
-        return false;
-    }
-
-    std::string processor_name;
-    wmi.query(L"SELECT * FROM Win32_Processor", [&processor_name](IWbemClassObject* pObj) {
-        if (processor_name.empty()) {  // Only get first processor
-            processor_name = wmi::get_property_string(pObj, L"Name");
-        }
-    });
-
-    if (processor_name.empty()) {
-        return false;
-    }
-
-    // Use identify_npu_arch as the single source of truth for NPU support
-    std::string npu_arch = identify_npu_arch(processor_name);
-    return !npu_arch.empty();
-}
-
 NPUInfo WindowsSystemInfo::get_npu_device() {
     NPUInfo npu;
     npu.name = "AMD NPU";
     npu.available = false;
 
-    // First, check if the processor is a supported Ryzen AI processor
-    if (!is_supported_ryzen_ai_processor()) {
-        npu.error = "NPU requires AMD Ryzen AI 300-series processor";
+    // Check for XDNA NPU hardware via PCI device ID
+    std::string npu_arch = identify_npu_arch();
+    if (npu_arch.empty()) {
+        npu.error = "No XDNA NPU hardware detected";
         return npu;
     }
 
@@ -1370,7 +1328,7 @@ NPUInfo WindowsSystemInfo::get_npu_device() {
         npu.power_mode = get_npu_power_mode();
         npu.available = true;
     } else {
-        npu.error = "No NPU device found";
+        npu.error = "NPU hardware found but driver not installed";
     }
 
     return npu;
