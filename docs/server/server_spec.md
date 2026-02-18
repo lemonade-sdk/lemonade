@@ -1441,18 +1441,21 @@ curl "http://localhost:8000/api/v1/system-info"
       "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
       "cores": 12,
       "threads": 24,
-      "available": true
+      "available": true,
+      "family": "x86_64"
     },
     "amd_igpu": {
       "name": "AMD Radeon(TM) 890M Graphics",
       "vram_gb": 0.5,
-      "available": true
+      "available": true,
+      "family": "gfx1150"
     },
     "amd_dgpu": [],
-    "npu": {
-      "name": "AMD NPU",
+    "amd_npu": {
+      "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
       "power_mode": "Default",
-      "available": true
+      "available": true,
+      "family": "XDNA2"
     }
   },
   "recipes": {
@@ -1502,7 +1505,7 @@ curl "http://localhost:8000/api/v1/system-info"
     "flm": {
       "backends": {
         "default": {
-          "devices": ["npu"],
+          "devices": ["amd_npu"],
           "supported": true,
           "available": true,
           "version": "1.2.0"
@@ -1512,7 +1515,7 @@ curl "http://localhost:8000/api/v1/system-info"
     "ryzenai-llm": {
       "backends": {
         "default": {
-          "devices": ["npu"],
+          "devices": ["amd_npu"],
           "supported": true,
           "available": true
         }
@@ -1538,7 +1541,7 @@ curl "http://localhost:8000/api/v1/system-info"
   - `amd_igpu` - AMD integrated GPU (if present)
   - `amd_dgpu` - Array of AMD discrete GPUs (if present)
   - `nvidia_dgpu` - Array of NVIDIA discrete GPUs (if present)
-  - `npu` - NPU device (if present)
+  - `amd_npu` - AMD NPU device (if present)
 
 - `recipes` - Software recipes and their backend support status
   - Each recipe (e.g., `llamacpp`, `whispercpp`, `flm`) contains:

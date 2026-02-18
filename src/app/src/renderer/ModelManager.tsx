@@ -277,7 +277,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         'llamacpp': 'Llama.cpp GPU',
         'ryzenai-llm': 'Ryzen AI LLM',
         'whispercpp': 'Whisper.cpp',
-        'sd-cpp': 'StableDiffusion.cpp'
+        'sd-cpp': 'StableDiffusion.cpp',
+        'kokoro': 'Kokoro'
       };
       return recipeLabels[key] || key;
     } else {
