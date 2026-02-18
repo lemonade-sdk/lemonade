@@ -1033,7 +1033,14 @@ std::pair<int, int> TrayApp::get_server_info() {
         return false;
     };
 
-    // Try IPv4 first
+    // Collect all listening ports for lemonade-router.exe.
+    // The router listens on multiple ports (HTTP + WebSocket), so we must
+    // identify the HTTP port rather than returning whichever appears first
+    // in the TCP table (which is non-deterministic).
+    int router_pid = 0;
+    std::set<int> candidate_ports;
+
+    // Scan IPv4 connections
     DWORD size = 0;
     GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0);
 
@@ -1046,12 +1053,13 @@ std::pair<int, int> TrayApp::get_server_info() {
             int port = ntohs((u_short)pTcpTable->table[i].dwLocalPort);
 
             if (is_lemonade_router(pid)) {
-                return {static_cast<int>(pid), port};
+                router_pid = static_cast<int>(pid);
+                candidate_ports.insert(port);
             }
         }
     }
 
-    // Try IPv6 if not found in IPv4
+    // Also scan IPv6 connections
     size = 0;
     GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET6, TCP_TABLE_OWNER_PID_LISTENER, 0);
 
@@ -1064,9 +1072,35 @@ std::pair<int, int> TrayApp::get_server_info() {
             int port = ntohs((u_short)pTcp6Table->table[i].dwLocalPort);
 
             if (is_lemonade_router(pid)) {
-                return {static_cast<int>(pid), port};
+                router_pid = static_cast<int>(pid);
+                candidate_ports.insert(port);
             }
         }
+    }
+
+    if (router_pid != 0 && !candidate_ports.empty()) {
+        if (candidate_ports.size() == 1) {
+            return {router_pid, *candidate_ports.begin()};
+        }
+
+        // Multiple ports found (HTTP + WebSocket).
+        // Hit /api/v1/health on each to find the HTTP port.
+        for (int port : candidate_ports) {
+            try {
+                httplib::Client cli("127.0.0.1", port);
+                cli.set_connection_timeout(1);
+                cli.set_read_timeout(1);
+                auto res = cli.Get("/live");
+                if (res && res->status == 200) {
+                    return {router_pid, port};
+                }
+            } catch (...) {
+                // Not the HTTP port, try next
+            }
+        }
+
+        // Health check failed on all ports, return first as fallback
+        return {router_pid, *candidate_ports.begin()};
     }
 #else
     if (is_any_systemd_service_active()) {
@@ -1091,6 +1125,45 @@ std::pair<int, int> TrayApp::get_server_info() {
         // Stale PID file, remove it
         remove("/tmp/lemonade-router.pid");
     }
+
+#ifdef __APPLE__
+    // macOS port-based fallback (no systemd available)
+    {
+        httplib::Client cli("localhost", server_config_.port);
+        cli.set_connection_timeout(1);
+        auto res = cli.Get("/api/version");
+        if (res) {
+            int found_pid = 0;
+
+            // Try lsof first
+            std::string cmd = "lsof -ti tcp:" + std::to_string(server_config_.port) + " 2>/dev/null | head -1";
+            FILE* pipe = popen(cmd.c_str(), "r");
+            if (pipe) {
+                char buf[64];
+                if (fgets(buf, sizeof(buf), pipe)) {
+                    found_pid = std::atoi(buf);
+                }
+                pclose(pipe);
+            }
+
+            // Try pgrep as fallback
+            if (found_pid <= 0) {
+                pipe = popen("pgrep -x lemonade-router 2>/dev/null | head -1", "r");
+                if (pipe) {
+                    char buf[64];
+                    if (fgets(buf, sizeof(buf), pipe)) {
+                        found_pid = std::atoi(buf);
+                    }
+                    pclose(pipe);
+                }
+            }
+
+            if (found_pid > 0) {
+                return {found_pid, server_config_.port};
+            }
+        }
+    }
+#endif
 #endif
 
     return {0, 0};  // Server not found
@@ -1817,6 +1890,12 @@ int TrayApp::execute_stop_command() {
 #else
     // Unix: Use the PID we already got from get_server_info() (this is the router)
     int router_pid = pid;
+#ifdef __APPLE__
+    if (router_pid <= 0) {
+        std::cerr << "Error: Could not determine router PID" << std::endl;
+        return 1;
+    }
+#endif
     std::cout << "Found router process (PID: " << router_pid << ")" << std::endl;
 
     // Find parent tray app if it exists
@@ -2197,11 +2276,19 @@ Menu TrayApp::create_menu() {
 
     // Port submenu
     auto port_submenu = std::make_shared<Menu>();
-    std::vector<int> ports = {8000, 8020, 8040, 8060, 8080, 9000};
-    for (int port : ports) {
+    std::vector<std::pair<int, std::string>> ports = {
+        {8000, "Port 8000"},
+        {8020, "Port 8020"},
+        {8040, "Port 8040"},
+        {8060, "Port 8060"},
+        {8080, "Port 8080"},
+        {9000, "Port 9000"},
+        {11434, "Port 11434 (Ollama)"},
+    };
+    for (const auto& [port, label] : ports) {
         bool is_current = (port == server_config_.port);
         port_submenu->add_item(MenuItem::Checkable(
-            "Port " + std::to_string(port),
+            label,
             [this, port]() { on_change_port(port); },
             is_current
         ));
@@ -2212,7 +2299,8 @@ Menu TrayApp::create_menu() {
     auto ctx_submenu = std::make_shared<Menu>();
     std::vector<std::pair<std::string, int>> ctx_sizes = {
         {"4K", 4096}, {"8K", 8192}, {"16K", 16384},
-        {"32K", 32768}, {"64K", 65536}, {"128K", 131072}
+        {"32K", 32768}, {"64K", 65536}, {"128K", 131072},
+        {"256K", 262144}
     };
     for (const auto& [label, size] : ctx_sizes) {
         bool is_current = (size == server_config_.recipe_options["ctx_size"]);
