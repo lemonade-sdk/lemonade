@@ -80,13 +80,12 @@ class OllamaTests(ServerTestBase):
         self.assertEqual(data["version"], "0.16.1")
 
     def test_002_root_endpoint(self):
-        """Test / returns Ollama discovery response."""
+        """Test / is reachable (serves the web app UI)."""
         response = requests.get(
             f"{OLLAMA_BASE_URL}/",
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Ollama is running", response.text)
 
     def test_003_tags(self):
         """Test /api/tags returns model list."""
@@ -463,6 +462,8 @@ class OllamaTests(ServerTestBase):
 
     def test_021_chat_with_image_input(self):
         """Test /api/chat with image input (vision) using a vision model."""
+        if sys.platform == "darwin":
+            self.skipTest("Vision model not supported on macOS")
         # Pull the vision model
         response = requests.post(
             f"{self.base_url}/pull",
