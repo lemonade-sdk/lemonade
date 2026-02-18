@@ -1099,8 +1099,8 @@ static bool is_npu_available(const json& hardware) {
     }
 
     // Use provided hardware info
-    if (hardware.contains("npu") && hardware["npu"].is_object()) {
-        return hardware["npu"].value("available", false);
+    if (hardware.contains("amd_npu") && hardware["amd_npu"].is_object()) {
+        return hardware["amd_npu"].value("available", false);
     }
 
     return false;

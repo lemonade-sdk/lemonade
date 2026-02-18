@@ -103,7 +103,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 
     // whisper.cpp - Windows x86_64 only
     {"whispercpp", "npu", {"windows"}, {
-        {"npu", {"XDNA2"}},
+        {"amd_npu", {"XDNA2"}},
     }},
     {"whispercpp", "cpu", {"windows"}, {
         {"cpu", {"x86_64"}},
@@ -132,12 +132,12 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 
     // FLM - Windows NPU (XDNA2)
     {"flm", "default", {"windows"}, {
-        {"npu", {"XDNA2"}},
+        {"amd_npu", {"XDNA2"}},
     }},
 
     // RyzenAI LLM - Windows NPU (XDNA2)
     {"ryzenai-llm", "default", {"windows"}, {
-        {"npu", {"XDNA2"}},
+        {"amd_npu", {"XDNA2"}},
     }},
 };
 
@@ -167,7 +167,7 @@ static const std::map<std::string, std::string> DEVICE_TYPE_NAMES = {
     {"cpu", "CPU"},
     {"amd_igpu", "AMD iGPU"},
     {"amd_dgpu", "AMD dGPU"},
-    {"npu", "NPU"},
+    {"amd_npu", "AMD NPU"},
     {"nvidia_dgpu", "NVIDIA GPU"},
     {"metal", "MacOS Metal GPU"}
 };
@@ -226,7 +226,7 @@ std::string SystemInfo::get_unsupported_backend_error(const std::string& recipe,
 
 // Detected device with its family
 struct DetectedDevice {
-    std::string type;      // "cpu", "amd_igpu", "amd_dgpu", "npu"
+    std::string type;      // "cpu", "amd_igpu", "amd_dgpu", "amd_npu"
     std::string name;      // Full device name
     std::string family;    // "x86_64", "gfx1150", "XDNA2", etc.
     bool present;
@@ -246,35 +246,6 @@ static std::string get_current_os() {
 // Forward declarations for helper functions used in device detection
 std::string identify_rocm_arch_from_name(const std::string& device_name);
 std::string identify_npu_arch();
-
-// Get device family from device name
-// cpu_name is required for NPU detection (pass empty string for other device types)
-static std::string get_device_family(const std::string& device_type, const std::string& device_name,
-                                      const std::string& cpu_name) {
-    if (device_type == "cpu") {
-        #if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
-        return "x86_64";
-        #elif defined(__aarch64__) || defined(_M_ARM64)
-        return "arm64";
-        #else
-        return "unknown";
-        #endif
-    }
-
-    if (device_type == "amd_igpu" || device_type == "amd_dgpu") {
-        return identify_rocm_arch_from_name(device_name);
-    }
-
-    if (device_type == "npu") {
-        return identify_npu_arch();
-    }
-
-    if (device_type == "metal") {
-        return "metal";
-    }
-
-    return "";
-}
 
 // Check if device matches constraints (empty constraint set = all families allowed)
 static bool device_matches_constraint(const std::string& device_family,
@@ -374,6 +345,13 @@ json SystemInfo::get_device_dict() {
             {"threads", cpu.threads},
             {"available", cpu.available}
         };
+        #if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
+        devices["cpu"]["family"] = "x86_64";
+        #elif defined(__aarch64__) || defined(_M_ARM64)
+        devices["cpu"]["family"] = "arm64";
+        #else
+        devices["cpu"]["family"] = "unknown";
+        #endif
         if (!cpu.error.empty()) {
             devices["cpu"]["error"] = cpu.error;
         }
@@ -396,6 +374,7 @@ json SystemInfo::get_device_dict() {
             {"virtual_mem_gb", amd_igpu.virtual_gb},
             {"available", amd_igpu.available}
         };
+        devices["amd_igpu"]["family"] = identify_rocm_arch_from_name(amd_igpu.name);
         if (!amd_igpu.error.empty()) {
             devices["amd_igpu"]["error"] = amd_igpu.error;
         }
@@ -425,6 +404,7 @@ json SystemInfo::get_device_dict() {
             if (!gpu.driver_version.empty()) {
                 gpu_json["driver_version"] = gpu.driver_version;
             }
+            gpu_json["family"] = identify_rocm_arch_from_name(gpu.name);
             if (!gpu.error.empty()) {
                 gpu_json["error"] = gpu.error;
             }
@@ -461,28 +441,31 @@ json SystemInfo::get_device_dict() {
     }
 
     // Get NPU info - with fault tolerance
+    // Use CPU processor name as the NPU device name (e.g., "AMD Ryzen AI 9 HX 375")
     try {
         auto npu = get_npu_device();
-        devices["npu"] = {
-            {"name", npu.name},
+        std::string cpu_name = devices.contains("cpu") ? devices["cpu"].value("name", "") : "";
+        devices["amd_npu"] = {
+            {"name", cpu_name.empty() ? npu.name : cpu_name},
             {"available", npu.available}
         };
+        devices["amd_npu"]["family"] = identify_npu_arch();
         if (!npu.power_mode.empty()) {
-            devices["npu"]["power_mode"] = npu.power_mode;
+            devices["amd_npu"]["power_mode"] = npu.power_mode;
         }
         if (!npu.error.empty()) {
-            devices["npu"]["error"] = npu.error;
+            devices["amd_npu"]["error"] = npu.error;
         }
     } catch (const std::exception& e) {
         #ifdef _WIN32
         // On Windows, assume NPU may be available - trust the user
-        devices["npu"] = {
+        devices["amd_npu"] = {
             {"name", "Unknown"},
             {"available", true},
             {"error", std::string("Detection exception: ") + e.what()}
         };
         #else
-        devices["npu"] = {
+        devices["amd_npu"] = {
             {"name", "Unknown"},
             {"available", false},
             {"error", std::string("Detection exception: ") + e.what()}
@@ -510,6 +493,7 @@ json SystemInfo::get_device_dict() {
                 if (!gpu.driver_version.empty()) {
                     devices["metal"]["driver_version"] = gpu.driver_version;
                 }
+                devices["metal"]["family"] = "metal";
                 if (!gpu.error.empty()) {
                     devices["metal"]["error"] = gpu.error;
                 }
@@ -562,20 +546,15 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
     std::vector<DetectedDevice> detected_devices;
 
-    // Get CPU name for NPU family detection
-    std::string cpu_name;
-    if (devices.contains("cpu") && devices["cpu"].is_object()) {
-        cpu_name = devices["cpu"].value("name", "");
-    }
-
-    // Build detected_devices from devices JSON
+    // Build detected_devices from devices JSON, reading cached "family" fields
     // CPU is always present
     if (devices.contains("cpu")) {
         const auto& cpu = devices["cpu"];
         std::string name = cpu.value("name", "CPU");
-        detected_devices.push_back({"cpu", name, get_device_family("cpu", "", ""), true});
+        std::string family = cpu.value("family", "");
+        detected_devices.push_back({"cpu", name, family, true});
     } else {
-        detected_devices.push_back({"cpu", "CPU", get_device_family("cpu", "", ""), true});
+        detected_devices.push_back({"cpu", "CPU", "", true});
     }
 
     // AMD iGPU
@@ -583,11 +562,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
         const auto& igpu = devices["amd_igpu"];
         if (igpu.value("available", false)) {
             std::string name = igpu.value("name", "");
+            std::string family = igpu.value("family", "");
             if (!name.empty()) {
                 detected_devices.push_back({
                     "amd_igpu",
                     name,
-                    get_device_family("amd_igpu", name, ""),
+                    family,
                     true
                 });
             }
@@ -599,11 +579,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
         for (const auto& gpu : devices["amd_dgpu"]) {
             if (gpu.value("available", false)) {
                 std::string name = gpu.value("name", "");
+                std::string family = gpu.value("family", "");
                 if (!name.empty()) {
                     detected_devices.push_back({
                         "amd_dgpu",
                         name,
-                        get_device_family("amd_dgpu", name, ""),
+                        family,
                         true
                     });
                 }
@@ -611,31 +592,33 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
     }
 
-    // NPU - use CPU name for family detection
-    if (devices.contains("npu") && devices["npu"].is_object()) {
-        const auto& npu = devices["npu"];
+    // AMD NPU
+    if (devices.contains("amd_npu") && devices["amd_npu"].is_object()) {
+        const auto& npu = devices["amd_npu"];
         if (npu.value("available", false)) {
             std::string name = npu.value("name", "");
+            std::string family = npu.value("family", "");
             detected_devices.push_back({
-                "npu",
+                "amd_npu",
                 name,
-                get_device_family("npu", name, cpu_name),
+                family,
                 true
             });
         }
     }
 
-    // Metal - use metal for family detection
+    // Metal
     if (devices.contains("metal")) {
         if (devices["metal"].is_object()) {
             // Single Metal device (legacy format)
             const auto& metal = devices["metal"];
             if (metal.value("available", false)) {
                 std::string name = metal.value("name", "");
+                std::string family = metal.value("family", "");
                 detected_devices.push_back({
                     "metal",
                     name,
-                    get_device_family("metal", name, cpu_name),
+                    family,
                     true
                 });
             }
@@ -644,11 +627,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
             for (const auto& metal : devices["metal"]) {
                 if (metal.value("available", false)) {
                     std::string name = metal.value("name", "");
+                    std::string family = metal.value("family", "");
                     if (!name.empty()) {
                         detected_devices.push_back({
                             "metal",
                             name,
-                            get_device_family("metal", name, cpu_name),
+                            family,
                             true
                         });
                     }
