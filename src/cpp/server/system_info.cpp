@@ -1034,7 +1034,56 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     return "";
 }
 
-// Identify NPU architecture by checking for known PCI device IDs
+// Linux: identify NPU architecture from sysfs accel subsystem
+// Checks /sys/class/accel/*/device/driver for amdxdna, then reads vbnv for NPU generation
+static std::string identify_npu_arch_from_sysfs() {
+    fs::path accel_path = "/sys/class/accel";
+    if (!fs::exists(accel_path) || !fs::is_directory(accel_path)) {
+        return "";
+    }
+
+    for (const auto& entry : fs::directory_iterator(accel_path)) {
+        if (!entry.is_directory() && !entry.is_symlink()) {
+            continue;
+        }
+
+        fs::path driver_link = entry.path() / "device" / "driver";
+        if (fs::exists(driver_link)) {
+            fs::path driver_path = fs::read_symlink(driver_link);
+            std::string driver_name = driver_path.filename().string();
+
+            if (driver_name != "amdxdna") {
+                continue;
+            }
+        } else {
+            continue;
+        }
+
+        fs::path vbnv_file = entry.path() / "device" / "vbnv";
+        if (!fs::exists(vbnv_file)) {
+            continue;
+        }
+
+        std::ifstream vbnv_stream(vbnv_file);
+        if (!vbnv_stream.is_open()) {
+            continue;
+        }
+
+        std::string vbnv_content;
+        std::getline(vbnv_stream, vbnv_content);
+        vbnv_stream.close();
+
+        if (vbnv_content.find("RyzenAI-npu4") != std::string::npos ||
+            vbnv_content.find("RyzenAI-npu5") != std::string::npos ||
+            vbnv_content.find("RyzenAI-npu6") != std::string::npos) {
+            return "XDNA2";
+        }
+    }
+    return "";
+}
+
+// Identify NPU architecture by checking for known hardware
+// Windows: PCI device ID via WMI; Linux: amdxdna driver in sysfs accel subsystem
 // Returns the NPU family (e.g., "XDNA2") or empty string if no NPU found
 // This is the single source of truth for NPU family detection
 std::string identify_npu_arch() {
@@ -1056,30 +1105,10 @@ std::string identify_npu_arch() {
         return "XDNA2";
     }
 #else
-    // Linux/macOS: scan sysfs for PCI devices
-    const std::string pci_path = "/sys/bus/pci/devices";
-    if (fs::exists(pci_path)) {
-        for (const auto& entry : fs::directory_iterator(pci_path)) {
-            std::string vendor_file = entry.path().string() + "/vendor";
-            std::string device_file = entry.path().string() + "/device";
-
-            if (!fs::exists(vendor_file) || !fs::exists(device_file)) continue;
-
-            std::ifstream vendor_stream(vendor_file);
-            std::ifstream device_stream(device_file);
-            std::string vendor_id, device_id;
-
-            if (std::getline(vendor_stream, vendor_id) && std::getline(device_stream, device_id)) {
-                // sysfs files contain hex values like "0x1022" and "0x17f0"
-                std::transform(vendor_id.begin(), vendor_id.end(), vendor_id.begin(), ::tolower);
-                std::transform(device_id.begin(), device_id.end(), device_id.begin(), ::tolower);
-
-                // XDNA2 NPU: AMD vendor 0x1022, device 0x17f0
-                if (vendor_id == "0x1022" && device_id == "0x17f0") {
-                    return "XDNA2";
-                }
-            }
-        }
+    // Linux: check amdxdna driver + vbnv for NPU generation
+    std::string sysfs_arch = identify_npu_arch_from_sysfs();
+    if (!sysfs_arch.empty()) {
+        return sysfs_arch;
     }
 #endif
 
@@ -1899,15 +1928,50 @@ NPUInfo LinuxSystemInfo::get_npu_device() {
     npu.name = "AMD NPU";
     npu.available = false;
 
-    // Check for XDNA NPU hardware via PCI device ID
-    std::string npu_arch = identify_npu_arch();
-    if (npu_arch.empty()) {
-        npu.error = "No XDNA NPU hardware detected";
+    fs::path accel_path = "/sys/class/accel";
+    if (!fs::exists(accel_path) || !fs::is_directory(accel_path)) {
+        npu.error = "No NPU device found";
         return npu;
     }
 
-    // TODO: check for NPU driver on Linux
-    npu.available = true;
+    for (const auto& entry : fs::directory_iterator(accel_path)) {
+        if (!entry.is_directory() && !entry.is_symlink()) {
+            continue;
+        }
+        fs::path driver_link = entry.path() / "device" / "driver";
+        if (!fs::exists(driver_link)) {
+            continue;
+        }
+        fs::path driver_path = fs::read_symlink(driver_link);
+        std::string driver_name = driver_path.filename().string();
+
+        if (driver_name != "amdxdna") {
+            continue;
+        }
+
+        npu.available = true;
+
+        fs::path vbnv_file = entry.path() / "device" / "vbnv";
+        if (fs::exists(vbnv_file)) {
+            std::ifstream vbnv_stream(vbnv_file);
+            if (vbnv_stream.is_open()) {
+                std::string vbnv_content;
+                std::getline(vbnv_stream, vbnv_content);
+                vbnv_stream.close();
+
+                if (!vbnv_content.empty()) {
+                    npu.name = "AMD NPU (" + vbnv_content + ")";
+                }
+            }
+        }
+
+        break;
+    }
+
+    if (!npu.available) {
+        npu.error = "No NPU device found with amdxdna driver";
+    }
+
     return npu;
 }
 
