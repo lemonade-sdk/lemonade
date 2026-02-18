@@ -12,6 +12,7 @@ Usage:
 
 import base64
 import json
+import sys
 import requests
 
 try:
@@ -499,6 +500,8 @@ class OllamaTests(ServerTestBase):
 
     def test_022_generate_image_output(self):
         """Test /api/generate with an image generation model."""
+        if sys.platform == "darwin":
+            self.skipTest("sd-cpp not supported on macOS")
         # Pull the SD model first
         response = requests.post(
             f"{self.base_url}/pull",
