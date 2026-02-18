@@ -686,7 +686,7 @@ jobs:
   # ========================================================================
 
   test-cli-endpoints:
-    name: Test CLI/Endpoints (${{ matrix.os }})
+    name: Test ${{ matrix.test_type }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs:
       - build-lemonade-server-installer
@@ -696,6 +696,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        test_type: [cli, endpoints, system-info, ollama]
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -788,7 +789,7 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      # ---- Pre-test: stop background services ----
+      # ---- Run Tests ----
       - name: Stop systemd service before tests (Linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -817,52 +818,34 @@ jobs:
 
           echo "LaunchDaemon stopped and cleaned up."
 
-      # ---- Run Tests ----
-      - name: Run CLI tests
+      - name: Run ${{ matrix.test_type }} tests
         shell: bash
         env:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
-          set -e
-          echo "Running CLI tests..."
-          $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY"
-          $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --ephemeral
-          $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --listen-all
-          $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --api-key
-          echo "CLI tests PASSED!"
+          set -e  # Exit on error
 
-      - name: Run endpoint tests
-        shell: bash
-        env:
-          HF_HOME: ${{ env.HF_HOME }}
-        run: |
-          set -e
-          echo "Running endpoint tests..."
-          $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY"
-          $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY" --server-per-test
-          echo "Endpoint tests PASSED!"
+          if [ "${{ matrix.test_type }}" = "cli" ]; then
+              echo "Running CLI tests..."
+              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY"
+              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --ephemeral
+              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --listen-all
+              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --api-key
+          elif [ "${{ matrix.test_type }}" = "endpoints" ]; then
+              echo "Running endpoint tests..."
+              $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY"
+              $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY" --server-per-test
+          elif [ "${{ matrix.test_type }}" = "system-info" ]; then
+              echo "Running system-info mock hardware tests..."
+              # Unset LEMONADE_CI_MODE so the server uses mock cache files
+              unset LEMONADE_CI_MODE
+              $VENV_PYTHON test/server_system_info.py --server-binary "$SERVER_BINARY"
+          elif [ "${{ matrix.test_type }}" = "ollama" ]; then
+              echo "Running Ollama API tests..."
+              $VENV_PYTHON test/test_ollama.py --server-binary "$SERVER_BINARY"
+          fi
 
-      - name: Run system-info tests
-        shell: bash
-        env:
-          HF_HOME: ${{ env.HF_HOME }}
-        run: |
-          set -e
-          echo "Running system-info mock hardware tests..."
-          # Unset LEMONADE_CI_MODE so the server uses mock cache files
-          unset LEMONADE_CI_MODE
-          $VENV_PYTHON test/server_system_info.py --server-binary "$SERVER_BINARY"
-          echo "System-info tests PASSED!"
-
-      - name: Run Ollama API tests
-        shell: bash
-        env:
-          HF_HOME: ${{ env.HF_HOME }}
-        run: |
-          set -e
-          echo "Running Ollama API tests..."
-          $VENV_PYTHON test/test_ollama.py --server-binary "$SERVER_BINARY"
-          echo "Ollama API tests PASSED!"
+          echo "${{ matrix.test_type }} tests PASSED!"
 
   # ========================================================================
   # RELEASE JOB - Add artifacts to GitHub release
