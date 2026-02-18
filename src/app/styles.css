@@ -1876,6 +1876,11 @@ footer {
     flex-shrink: 0;
 }
 
+.chat-input-voice-selector {
+  padding: 8px 0;
+  box-sizing: border-box;
+}
+
 .chat-input-wrapper {
     display: flex;
     flex-direction: column;

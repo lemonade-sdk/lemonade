@@ -13,6 +13,7 @@ import { downloadTracker } from './utils/downloadTracker';
 import { useModels, DEFAULT_MODEL_ID } from './hooks/useModels';
 import { useAudioCapture } from './hooks/useAudioCapture';
 import { TranscriptionWebSocket } from './utils/websocketClient';
+import { voiceOptions } from './tabs/TTSSettings';
 
 interface ImageContent {
   type: 'image_url';
@@ -125,9 +126,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
   // Text to speech state
+  const [currentVoice, setVoice] = useState('');
   const [audioState, setAudioState] = useState<number>(0);
   const [pressedAudioButton, setPressedAudioButton] = useState<number>(-1);
   const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
+  const [ttsMessageHistory, setTTSMessageHistory] = useState<MessageContent[]>([]);
+  const [isProcessingTTS, setIsProcessingTTS] = useState(false);
 
   // Image generation settings
   interface ImageSettings {
@@ -250,6 +254,12 @@ useEffect(() => {
     }
   }, [editingIndex, editingValue]);
 
+  useEffect(() => {
+    if(appSettings) {
+      setVoice(appSettings?.tts.userVoice.value);
+    }
+  }, [appSettings]);
+
   // Load model-specific image defaults when the selected model changes
   useEffect(() => {
     if (isImageGenerationModel() && selectedModel) {
@@ -301,29 +311,10 @@ useEffect(() => {
     setIsUserAtBottom(true);
   };
 
-const excludeTextToSpeechModel = (data: any) => {
-  const loadedModels = data.all_models_loaded;
-  const loadedModel = loadedModels.find((model: any) => model.model_name === data?.model_loaded);
-
-  let isTextToSpeechModel = (loadedModel?.recipe === 'kokoro');
-
-  if(isTextToSpeechModel) {
-    for (const model of data.all_models_loaded) {
-      if (model.type === 'llm') {
-        data.model_loaded = model.model_name;
-        break;
-      }
-    }
-  }
-
-  return data;
-}
-
 const fetchLoadedModel = async () => {
   try {
     const response = await serverFetch('/health');
     const data = await response.json();
-    excludeTextToSpeechModel(data);
 
     if (data?.model_loaded) {
       setCurrentLoadedModel(data.model_loaded);
@@ -866,6 +857,13 @@ const sendMessage = async () => {
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleMessageToSpeech();
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputValue(e.target.value);
     adjustTextareaHeight(e.target);
@@ -984,6 +982,24 @@ const sendMessage = async () => {
     }
   };
 
+  const handleEditAudioMessage = (index: number, e: React.MouseEvent) => {
+    if (isProcessingTTS) {
+      return;
+    }
+
+    e.stopPropagation();
+
+    const message = ttsMessageHistory[index];
+    setEditingIndex(index);
+
+    if (typeof message === 'string') {
+      setEditingValue(message);
+    } else {
+      const textContent = message.find(item => item.type === 'text');
+      setEditingValue(textContent ? textContent.text : '');
+    }
+  };
+
   const handleEditInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setEditingValue(e.target.value);
     // Auto-grow the textarea
@@ -1081,7 +1097,7 @@ const sendMessage = async () => {
     setAudioState(PAUSED);
   }
 
-  const handleTextToSpeech = async (message: MessageContent, role: string) => {
+  const handleTextToSpeech = async (message: MessageContent, ttsVoice: string) => {
     const textToSpeechModel = appSettings?.tts.model.value;
 
     setAudioState(LOADING);
@@ -1094,7 +1110,7 @@ const sendMessage = async () => {
       const requestBody: any = {
         model: textToSpeechModel,
         input: message,
-        voice: (role == 'assistant') ? appSettings?.tts.assistantVoice.value : appSettings?.tts.userVoice.value
+        voice: ttsVoice
       };
 
       const response = await serverFetch('/audio/speech', {
@@ -1117,8 +1133,9 @@ const sendMessage = async () => {
     }
   }
 
-  const handleAudioButtonClick = async (message: MessageContent, role: string, btnIndex: number) => {
+  const handleAudioButtonClick = async (message: MessageContent, btnIndex: number, role?: string) => {
     let b = pressedAudioButton;
+    let voice = currentVoice;
 
     stopAudio();
 
@@ -1126,8 +1143,12 @@ const sendMessage = async () => {
       return;
     }
 
+    if(role && appSettings) {
+      voice = (role === 'assistant') ? appSettings?.tts.assistantVoice.value : appSettings?.tts.userVoice.value;
+    }
+
     setPressedAudioButton(btnIndex);
-    await handleTextToSpeech(message, role);
+    await handleTextToSpeech(message, voice);
   }
 
   const renderAudioButton = (role: string, message: MessageContent, btnIndex: number) => {
@@ -1146,6 +1167,25 @@ const sendMessage = async () => {
       /> :
       ''
   };
+
+const handleMessageToSpeech = async () => {
+  if (!inputValue.trim() || isProcessingTTS) return;
+
+  setIsProcessingTTS(true);
+
+  try {
+    await handleTextToSpeech(inputValue, currentVoice);
+    setTTSMessageHistory(prev => [...prev, inputValue]);
+  } catch (error: any) {
+    console.error('Failed to proccess message:', error);
+    alert(`Failed to proccess message: ${error.message || 'Unknown error'}`);
+  } finally {
+    setIsProcessingTTS(false);
+    setInputValue('');
+  }
+};
+
+
 
   const submitEdit = async () => {
     if ((!editingValue.trim() && editingImages.length === 0) || editingIndex === null || isLoading) return;
@@ -1246,10 +1286,36 @@ const sendMessage = async () => {
     }
   };
 
+  const submitAudioMessageEdit = async () => {
+    if (!editingValue.trim() || editingIndex === null || isProcessingTTS) {
+      return;
+    }
+
+    setIsUserAtBottom(true);
+    userScrolledAwayRef.current = false;
+
+    let ttsMessages = ttsMessageHistory;
+    ttsMessages[editingIndex] = editingValue;
+
+    setTTSMessageHistory(ttsMessages);
+    setEditingIndex(null);
+    setEditingValue('');
+  };
+
   const handleEditKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       submitEdit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelEdit();
+    }
+  };
+
+  const handleAudioEditKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitAudioMessageEdit();
     } else if (e.key === 'Escape') {
       e.preventDefault();
       cancelEdit();
@@ -2304,8 +2370,92 @@ const sendMessage = async () => {
         </>
       )}
 
+      {/* TTS UI */}
+      {modelType === 'speech' && (
+        <>
+          <div className="chat-messages" ref={messagesContainerRef} onScroll={handleScroll}>
+            {ttsMessageHistory.length === 0 && <EmptyState title="Lemonade Text to Speech" />}
+            {ttsMessageHistory.map((message, index) => {
+              return (
+                <div key={index} className="chat-message user-message">
+                  <AudioButton textMessage={message} buttonIndex={index} onClickFunction={handleAudioButtonClick} buttonContext={{ buttonId: pressedAudioButton, audioState: audioState }} />
+                  {editingIndex === index ? (
+                    <div className="edit-message-wrapper" onClick={handleEditContainerClick}>
+                      <div className="edit-message-content">
+                        <textarea ref={editTextareaRef} className="edit-message-input" value={editingValue} onChange={handleEditInputChange} onKeyDown={handleAudioEditKeyPress} autoFocus rows={1} />
+                        <div className="edit-message-controls">
+                          <button className="edit-send-button" onClick={submitAudioMessageEdit} disabled={!editingValue.trim() && editingImages.length === 0} title="Send edited message">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                              <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" transform="translate(-1, 1)" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div onClick={(e) => !isLoading && handleEditAudioMessage(index, e)} style={{ cursor: !isLoading ? 'pointer' : 'default' }}>
+                      {renderMessageContent(message, '', index, false)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {isProcessingTTS && (
+              <div className="model-loading-indicator">
+                <span className="model-loading-text">Converting text to speech...</span>
+              </div>
+            )}
+
+            {isModelLoading && (
+              <div className="model-loading-indicator">
+                <span className="model-loading-text">Loading tts model...</span>
+              </div>
+            )}
+            <div ref={messagesEndRef} /></div>
+          <div className="chat-input-container">
+            <div className="chat-input-voice-selector">
+              <select className="form-input form-select" value={currentVoice} onChange={(e) => setVoice(e.target.value)}>
+                {
+                  voiceOptions.map((voice: string, index: number) => {
+                    const label = (voice === '') ? 'Select a voice...' : voice;
+                    return <option key={index} value={voice} disabled={(voice === '')}>{label}</option>;
+                  })
+                }
+              </select>
+            </div>
+            <div className="chat-input-wrapper">
+              <textarea
+                ref={inputTextareaRef}
+                className="chat-input"
+                value={inputValue}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder={isProcessingTTS ? "Converting text to speech.." : "Type your message..."}
+                rows={1}
+                disabled={isProcessingTTS}
+              />
+              <div className="chat-controls">
+                <div className="chat-controls-left">
+                  <ModelSelector disabled={isProcessingTTS} />
+                </div>
+                {(audioState == PLAYING) ? (
+                  <button className="chat-stop-button" onClick={stopAudio} title="Stop audio">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <rect x="6" y="6" width="12" height="12" fill="currentColor" rx="2" />
+                    </svg>
+                  </button>
+                ) : (
+                  <SendButton onClick={handleMessageToSpeech} disabled={!inputValue.trim()} />
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* LLM Chat UI (default) */}
-      {(modelType === 'llm' || modelType === 'speech') && (
+      {modelType === 'llm' && (
         <>
           <div
             className="chat-messages"

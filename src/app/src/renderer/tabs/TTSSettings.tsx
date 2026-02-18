@@ -7,7 +7,7 @@ interface  TTSSettingsProps {
   onResetFunc: (key: any) => void
 }
 
-const voiceOptions: string[] = [
+export const voiceOptions: string[] = [
   '',
   'ash',
   'ballad',

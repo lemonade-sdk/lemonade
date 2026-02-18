@@ -6,9 +6,9 @@ export const PLAYING = 2;
 
 interface  AudioButtonProps {
   textMessage: any;
-  role: string;
+  role?: string;
   buttonIndex: number;
-  onClickFunction: (message: any, role: string, buttonIndex: number) => void;
+  onClickFunction: (message: any, buttonIndex: number, role?: string) => void;
   buttonContext: {buttonId: number, audioState: number};
 }
 
@@ -62,7 +62,7 @@ const AudioButton: React.FC<AudioButtonProps> = React.memo(function AudioButton(
 
   return (
     <div key={buttonIndex} className="message-play-button-container">
-      <button className="message-play-button" onClick={() => onClickFunction(textMessage, role, buttonIndex)} disabled={buttonContext.audioState == LOADING}>{renderButtonIcon()}</button>
+      <button className="message-play-button" onClick={() => onClickFunction(textMessage, buttonIndex, role)} disabled={buttonContext.audioState == LOADING}>{renderButtonIcon()}</button>
     </div>
   );
 }, (prevProps, nextProps) => {

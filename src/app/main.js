@@ -132,8 +132,8 @@ const DEFAULT_TTS_SETTINGS = Object.freeze({
   model: { value: 'kokoro-v1', useDefault: true },
   userVoice: { value: 'fable', useDefault: true },
   assistantVoice: { value: 'alloy', useDefault: true },
-  enableTTS: { value: true, useDefault: true },
-  enableUserTTS: { value: true, useDefault: true }
+  enableTTS: { value: false, useDefault: true },
+  enableUserTTS: { value: false, useDefault: true }
 });
 
 const createDefaultAppSettings = () => ({
