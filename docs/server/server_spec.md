@@ -1314,6 +1314,8 @@ curl http://localhost:8000/api/v1/health
 ```json
 {
   "status": "ok",
+  "version":"9.3.3",
+  "websocket_port":9000,
   "model_loaded": "Llama-3.2-1B-Instruct-Hybrid",
   "all_models_loaded": [
     {
@@ -1344,9 +1346,12 @@ curl http://localhost:8000/api/v1/health
     }
   ],
   "max_models": {
-    "llm": 3,
-    "embedding": 1,
-    "reranking": 1
+    "audio":1,
+    "embedding":1,
+    "image":1,
+    "llm":1,
+    "reranking":1,
+    "tts":1
   }
 }
 ```
@@ -1354,6 +1359,7 @@ curl http://localhost:8000/api/v1/health
 **Field Descriptions:**
 
 - `status` - Server health status, always `"ok"`
+- `version` - Version number of Lemonade Server
 - `model_loaded` - Model name of the most recently accessed model
 - `all_models_loaded` - Array of all currently loaded models with details:
   - `model_name` - Name of the loaded model
@@ -1368,8 +1374,9 @@ curl http://localhost:8000/api/v1/health
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
   - `reranking` - Maximum reranking models
-  - `audio` - Maximum audio models
+  - `audio` - Maximum speech-to-text models
   - `image` - Maximum image models
+  - `tts` - Maximum text-to-speech models
 - `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned.
 
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
