@@ -10,7 +10,8 @@ enum class ModelType {
     EMBEDDING,  // Embedding models
     RERANKING,  // Reranking models
     AUDIO,      // Audio models (speech-to-text transcription)
-    IMAGE       // Image generation models (text-to-image)
+    IMAGE,      // Image generation models (text-to-image)
+    TTS         // Text to speech models
 };
 
 // Device type flags for tracking hardware usage
@@ -44,6 +45,7 @@ inline std::string model_type_to_string(ModelType type) {
         case ModelType::RERANKING: return "reranking";
         case ModelType::AUDIO: return "audio";
         case ModelType::IMAGE: return "image";
+        case ModelType::TTS: return "tts";
         default: return "unknown";
     }
 }
@@ -81,6 +83,9 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
         if (label == "image") {
             return ModelType::IMAGE;
         }
+        if (label == "tts") {
+            return ModelType::TTS;
+        }
     }
     return ModelType::LLM;
 }
@@ -97,6 +102,8 @@ inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
         return DEVICE_CPU;  // Whisper.cpp runs on CPU (with optional GPU acceleration)
     } else if (recipe == "sd-cpp") {
         return DEVICE_CPU;  // stable-diffusion.cpp uses CPU (AVX2) by default
+    } else if (recipe == "kokoro") {
+        return DEVICE_CPU;  // Kokoros runs on CPU
     }
     return DEVICE_NONE;
 }
