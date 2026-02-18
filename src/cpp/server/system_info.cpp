@@ -159,7 +159,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
 
     // NPU architectures
-    {"XDNA2", "AMD Ryzen AI 300/400 series or Z2 Extreme NPU"},
+    {"XDNA2", "AMD XDNA 2"},
 };
 
 // Maps device types to human-readable names (for error messages)
