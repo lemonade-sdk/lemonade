@@ -1510,7 +1510,19 @@ void ModelManager::download_model(const std::string& model_name,
                                  const json& model_data,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback) {
-    std::string actual_checkpoint = model_data.contains("checkpoints") ? model_data["checkpoints"].value("main", "") : model_data.value("checkpoint", "");
+    std::string actual_checkpoint;
+
+    if (model_data.contains("checkpoints")) {
+        json checkpoints = model_data["checkpoints"];
+        if (!checkpoints.is_object() || !checkpoints.contains("main")) {
+            throw std::runtime_error("If present, the `checkpoints` property must be an object and must contain `main`");
+        }
+
+        actual_checkpoint = checkpoints.value("main", "");
+    } else {
+        actual_checkpoint = model_data.value("checkpoint", "");
+    }
+
     std::string actual_recipe = model_data.value("recipe", "");
 
     // If checkpoint or recipe are provided, this is a model registration

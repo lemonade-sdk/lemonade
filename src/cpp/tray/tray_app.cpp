@@ -1359,7 +1359,12 @@ int TrayApp::execute_pull_command() {
                     std::ifstream json_file(model_desc_path);
                     json_file >> request_body;
                 }
-            }  catch (const std::exception& e) { /** not a path or valid JSON file */}
+            } catch (const std::ifstream::failure& e) {
+                std::cerr << "Error: " << tray_config_.model << " could not be read." << std::endl;
+            } catch(const nlohmann::json::exception& e) {
+                std::cerr << "Error: " << tray_config_.model << " is not a valid JSON file." << std::endl;
+                return 1;
+            } catch (const std::exception& e) { /** malformed path. Since the exception thrown by the path constructor is implementation defined, we must catch all. */}
 
             // Current JSON contains the model name as id, remap
             if (request_body.contains("id")) {
