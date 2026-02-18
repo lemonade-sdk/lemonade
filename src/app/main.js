@@ -128,6 +128,14 @@ const LAYOUT_SIZE_LIMITS = Object.freeze({
   logsHeight: { min: 100, max: 400 },
 });
 
+const DEFAULT_TTS_SETTINGS = Object.freeze({
+  model: { value: 'kokoro-v1', useDefault: true },
+  userVoice: { value: 'fable', useDefault: true },
+  assistantVoice: { value: 'alloy', useDefault: true },
+  enableTTS: { value: false, useDefault: true },
+  enableUserTTS: { value: false, useDefault: true }
+});
+
 const createDefaultAppSettings = () => ({
   temperature: { ...DEFAULT_APP_SETTINGS.temperature },
   topK: { ...DEFAULT_APP_SETTINGS.topK },
@@ -135,9 +143,10 @@ const createDefaultAppSettings = () => ({
   repeatPenalty: { ...DEFAULT_APP_SETTINGS.repeatPenalty },
   enableThinking: { ...DEFAULT_APP_SETTINGS.enableThinking },
   collapseThinkingByDefault: { ...DEFAULT_APP_SETTINGS.collapseThinkingByDefault },
-  baseURL: { ...DEFAULT_APP_SETTINGS.baseURL},
-  apiKey: { ...DEFAULT_APP_SETTINGS.apiKey},
+  baseURL: { ...DEFAULT_APP_SETTINGS.baseURL },
+  apiKey: { ...DEFAULT_APP_SETTINGS.apiKey },
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
+  tts: {...DEFAULT_TTS_SETTINGS }
 });
 
 const clampValue = (value, min, max) => {
@@ -250,6 +259,19 @@ const sanitizeAppSettings = (incoming = {}) => {
       const value = rawLayout[key];
       if (typeof value === 'number' && Number.isFinite(value)) {
         sanitized.layout[key] = Math.min(Math.max(Math.round(value), min), max);
+      }
+    });
+  }
+
+  // Sanitize TTS settings
+  const rawTTS = incoming.tts;
+  if (rawTTS && typeof rawTTS === 'object') {
+    const ttsKeys = Object.keys(rawTTS);
+    ttsKeys.forEach((key) => {
+      if (rawTTS[key] && typeof rawTTS[key] === 'object') {
+        const useDefault = (typeof rawTTS[key].useDefault === 'boolean') ? rawTTS[key].useDefault : sanitized.tts[key].useDefault;
+        const value = useDefault ? sanitized.tts[key].value : (typeof rawTTS[key].value === 'string' || typeof rawTTS[key].value === 'boolean') ? rawTTS[key].value : sanitized.tts[key].value;
+        sanitized.tts[key] = { value, useDefault };
       }
     });
   }
