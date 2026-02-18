@@ -272,6 +272,23 @@ if(NOT USE_SYSTEM_HTTPLIB)
     endif()
 endif()
 
+# === IXWebSocket (for WebSocket support, Windows only) ===
+if(WIN32)
+    set(MIN_IXWEBSOCKET_VERSION "11.4.4")
+    FetchContent_Declare(ixwebsocket
+        GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
+        GIT_TAG v${MIN_IXWEBSOCKET_VERSION}
+    )
+    # Disable TLS and ZLIB for simpler setup (localhost only, no compression needed)
+    set(USE_TLS OFF CACHE INTERNAL "")
+    set(USE_OPEN_SSL OFF CACHE INTERNAL "")
+    set(USE_MBED_TLS OFF CACHE INTERNAL "")
+    set(USE_ZLIB OFF CACHE INTERNAL "")
+    set(IXWEBSOCKET_INSTALL OFF CACHE INTERNAL "")
+    FetchContent_MakeAvailable(ixwebsocket)
+    message(STATUS "IXWebSocket will be fetched (v${MIN_IXWEBSOCKET_VERSION})")
+endif()
+
 
 # Use brotli for compression on macOS
 if(APPLE)
@@ -544,6 +561,10 @@ set(SOURCES
     src/cpp/server/backends/sd_server.cpp
     src/cpp/server/backends/backend_utils.cpp
     src/cpp/server/ollama_api.cpp
+    $<$<PLATFORM_ID:Windows>:src/cpp/server/streaming_audio_buffer.cpp>
+    $<$<PLATFORM_ID:Windows>:src/cpp/server/vad.cpp>
+    $<$<PLATFORM_ID:Windows>:src/cpp/server/realtime_session.cpp>
+    $<$<PLATFORM_ID:Windows>:src/cpp/server/websocket_server.cpp>
 )
 
 # Add platform-specific source files
@@ -622,6 +643,12 @@ endif()
 
 if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
     target_include_directories(${EXECUTABLE_NAME} PRIVATE ${HTTPLIB_INCLUDE_DIRS})
+endif()
+
+# IXWebSocket for WebSocket support (Windows only)
+if(WIN32)
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ixwebsocket)
+    target_compile_definitions(${EXECUTABLE_NAME} PRIVATE LEMON_HAS_WEBSOCKET)
 endif()
 
 # Enable ARC (Automatic Reference Counting) for macOS Objective-C++ files

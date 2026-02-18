@@ -6,6 +6,9 @@
 #include "lemon/streaming_proxy.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
+#ifdef LEMON_HAS_WEBSOCKET
+#include "lemon/websocket_server.h"
+#endif
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -98,6 +101,11 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
 
     setup_routes(*http_server_);
     setup_routes(*http_server_v6_);
+
+#ifdef LEMON_HAS_WEBSOCKET
+    // Initialize WebSocket server (binds to OS-assigned port, exposed via /health)
+    websocket_server_ = std::make_unique<WebSocketServer>(router_.get());
+#endif
 }
 
 Server::~Server() {
@@ -827,6 +835,18 @@ void Server::run() {
     std::string ipv6 = resolve_host_to_ip(AF_INET6, host_);
 
     running_ = true;
+
+#ifdef LEMON_HAS_WEBSOCKET
+    // Start WebSocket server for realtime transcription
+    if (websocket_server_) {
+        if (websocket_server_->start()) {
+            std::cout << "[Server] WebSocket server started on port " << (port_ + 100) << std::endl;
+        } else {
+            std::cerr << "[Server] Warning: Failed to start WebSocket server" << std::endl;
+        }
+    }
+#endif
+
     if (!ipv4.empty()) {
         // setup ipv4 thread
         setup_http_logger(*http_server_);
@@ -879,6 +899,14 @@ void Server::stop() {
         http_server_v6_->stop();
         http_server_->stop();
         running_ = false;
+
+#ifdef LEMON_HAS_WEBSOCKET
+        // Stop WebSocket server
+        if (websocket_server_) {
+            std::cout << "[Server] Stopping WebSocket server..." << std::endl;
+            websocket_server_->stop();
+        }
+#endif
 
         // Explicitly clean up router (unload models, stop backend servers)
         if (router_) {
@@ -1087,6 +1115,13 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
         {"sse", true},
         {"websocket", false}  // WebSocket support not yet implemented
     };
+
+#ifdef LEMON_HAS_WEBSOCKET
+    // Add WebSocket server port for realtime API
+    if (websocket_server_ && websocket_server_->is_running()) {
+        response["websocket_port"] = websocket_server_->get_port();
+    }
+#endif
 
     res.set_content(response.dump(), "application/json");
 }

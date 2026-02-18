@@ -1,7 +1,8 @@
 """
 Whisper audio transcription tests for Lemonade Server.
 
-Tests the /audio/transcriptions endpoint with Whisper models.
+Tests the /audio/transcriptions endpoint (HTTP) and the
+/api/v1/realtime WebSocket endpoint with Whisper models.
 
 Usage:
     python server_whisper.py
@@ -10,11 +11,18 @@ Usage:
     python server_whisper.py --server-binary /path/to/lemonade-server
 """
 
+import asyncio
+import base64
 import os
+import struct
 import sys
 import tempfile
+import time
+import wave
+
 import requests
 import urllib.request
+from openai import AsyncOpenAI
 
 from utils.server_base import (
     ServerTestBase,
@@ -27,6 +35,7 @@ from utils.test_models import (
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
 )
+
 
 # Global variable to store the backend to test
 WHISPER_BACKEND = None
@@ -192,9 +201,9 @@ class WhisperTests(ServerTestBase):
         if WHISPER_BACKEND and WHISPER_BACKEND != "npu":
             self.skipTest(f"Skipping NPU test (testing {WHISPER_BACKEND} backend)")
             return
-        
+
         print("\n[INFO] Testing NPU backend (requires NPU hardware)")
-        
+
         # Load model with NPU backend
         load_response = requests.post(
             f"{self.base_url}/load",
@@ -204,14 +213,14 @@ class WhisperTests(ServerTestBase):
             },
             timeout=TIMEOUT_MODEL_OPERATION,
         )
-        
+
         if load_response.status_code != 200:
             print(f"[SKIP] NPU backend not available: {load_response.text}")
             self.skipTest("NPU backend not available (NPU hardware required)")
             return
-        
+
         print(f"[OK] Model loaded with NPU backend")
-        
+
         # Verify transcription works with NPU backend
         with open(self._test_audio_path, "rb") as audio_file:
             files = {"file": ("test_speech.wav", audio_file, "audio/wav")}
@@ -238,6 +247,185 @@ class WhisperTests(ServerTestBase):
         )
 
         print(f"[OK] NPU transcription result: {result['text']}")
+
+    # =========================================================================
+    # WebSocket Realtime Transcription Tests
+    # =========================================================================
+
+    def _load_pcm16_from_wav(self):
+        """
+        Read the test WAV file and return raw PCM16 mono 16kHz bytes.
+
+        Handles resampling and channel conversion so the data matches
+        what the StreamingAudioBuffer expects (16kHz, mono, int16).
+        """
+        with wave.open(self._test_audio_path, "rb") as wav:
+            n_channels = wav.getnchannels()
+            sampwidth = wav.getsampwidth()
+            framerate = wav.getframerate()
+            n_frames = wav.getnframes()
+            raw_data = wav.readframes(n_frames)
+
+        # Decode raw bytes into int16 samples
+        if sampwidth == 2:
+            samples = list(struct.unpack(f"<{len(raw_data) // 2}h", raw_data))
+        elif sampwidth == 1:
+            # 8-bit unsigned -> 16-bit signed
+            samples = [((b - 128) * 256) for b in raw_data]
+        else:
+            self.fail(f"Unsupported sample width: {sampwidth}")
+
+        # Convert stereo to mono
+        if n_channels == 2:
+            samples = [
+                (samples[i] + samples[i + 1]) // 2
+                for i in range(0, len(samples), 2)
+            ]
+
+        # Resample to 16kHz if needed
+        target_rate = 16000
+        if framerate != target_rate:
+            ratio = framerate / target_rate
+            new_len = int(len(samples) / ratio)
+            samples = [
+                samples[min(int(i * ratio), len(samples) - 1)]
+                for i in range(new_len)
+            ]
+
+        return struct.pack(f"<{len(samples)}h", *samples)
+
+    def _get_websocket_port(self):
+        """Fetch WebSocket port from /health endpoint."""
+        response = requests.get(f"{self.base_url}/health", timeout=10)
+        self.assertEqual(response.status_code, 200, "Failed to fetch /health")
+        health = response.json()
+        ws_port = health.get("websocket_port")
+        self.assertIsNotNone(ws_port, "Server did not provide websocket_port in /health")
+        return ws_port
+
+    def _make_openai_client(self):
+        """Create an AsyncOpenAI client configured for the local server."""
+        ws_port = self._get_websocket_port()
+        return AsyncOpenAI(
+            api_key="unused",
+            base_url=f"http://localhost:{PORT}/api/v1",
+            websocket_base_url=f"ws://localhost:{ws_port}",
+        )
+
+    def test_006_realtime_websocket_connect(self):
+        """Test WebSocket connection and session creation via OpenAI SDK."""
+        asyncio.run(self._test_006_realtime_websocket_connect())
+
+    async def _test_006_realtime_websocket_connect(self):
+        ws_port = self._get_websocket_port()
+        print(f"[INFO] WebSocket port from /health: {ws_port}")
+
+        client = self._make_openai_client()
+        print(f"[INFO] Connecting via OpenAI SDK (ws://localhost:{ws_port})")
+        async with client.beta.realtime.connect(model=WHISPER_MODEL) as conn:
+            # Should receive session.created on connect
+            event = await asyncio.wait_for(conn.recv(), timeout=10)
+            self.assertEqual(
+                event.type,
+                "session.created",
+                f"Expected session.created, got {event.type}",
+            )
+            self.assertTrue(
+                hasattr(event, "session"),
+                "session.created should contain session info",
+            )
+            print(f"[OK] Session created: {event.session}")
+
+            # Send session update with model
+            await conn.session.update(session={"model": WHISPER_MODEL})
+
+            # Should receive session.updated
+            event = await asyncio.wait_for(conn.recv(), timeout=10)
+            self.assertEqual(
+                event.type,
+                "session.updated",
+                f"Expected session.updated, got {event.type}",
+            )
+            print(f"[OK] Session updated with model {WHISPER_MODEL}")
+
+        print("[OK] WebSocket connection lifecycle passed")
+
+    def test_007_realtime_websocket_transcription(self):
+        """Test full realtime transcription via OpenAI SDK: send audio chunks, receive transcript."""
+        asyncio.run(self._test_007_realtime_websocket_transcription())
+
+    async def _test_007_realtime_websocket_transcription(self):
+        self.assertIsNotNone(
+            self._test_audio_path, "Test audio file not downloaded"
+        )
+
+        # Load audio as PCM16 mono 16kHz
+        pcm_data = self._load_pcm16_from_wav()
+        self.assertGreater(len(pcm_data), 0, "PCM data should not be empty")
+        print(
+            f"[INFO] Loaded {len(pcm_data)} bytes of PCM16 audio "
+            f"({len(pcm_data) // 2} samples, "
+            f"{len(pcm_data) // 2 / 16000:.1f}s)"
+        )
+
+        # Split into ~256ms chunks (4096 samples * 2 bytes = 8192 bytes)
+        chunk_size = 8192
+        chunks = [
+            pcm_data[i : i + chunk_size]
+            for i in range(0, len(pcm_data), chunk_size)
+        ]
+        print(f"[INFO] Split into {len(chunks)} chunks")
+
+        client = self._make_openai_client()
+
+        async with client.beta.realtime.connect(model=WHISPER_MODEL) as conn:
+            # Wait for session created
+            event = await asyncio.wait_for(conn.recv(), timeout=10)
+            self.assertEqual(event.type, "session.created")
+
+            # Configure model
+            await conn.session.update(session={"model": WHISPER_MODEL})
+            event = await asyncio.wait_for(conn.recv(), timeout=10)
+            self.assertEqual(event.type, "session.updated")
+
+            # Send all audio chunks
+            print(f"[INFO] Sending {len(chunks)} audio chunks...")
+            for chunk in chunks:
+                b64 = base64.b64encode(chunk).decode("ascii")
+                await conn.input_audio_buffer.append(audio=b64)
+                # Small delay to simulate real-time streaming
+                await asyncio.sleep(0.01)
+
+            # Commit the audio buffer to force transcription
+            print("[INFO] Committing audio buffer...")
+            await conn.input_audio_buffer.commit()
+
+            # Collect messages until we get the transcription result
+            transcript = None
+            deadline = time.time() + TIMEOUT_MODEL_OPERATION
+            while time.time() < deadline:
+                try:
+                    event = await asyncio.wait_for(conn.recv(), timeout=30)
+                    print(f"[INFO] Received message: {event.type}")
+
+                    if (
+                        event.type
+                        == "conversation.item.input_audio_transcription.completed"
+                    ):
+                        transcript = getattr(event, "transcript", "")
+                        break
+                except asyncio.TimeoutError:
+                    break
+
+        self.assertIsNotNone(
+            transcript, "Should receive a transcription result"
+        )
+        self.assertGreater(
+            len(transcript.strip()),
+            0,
+            "Transcription should not be empty",
+        )
+        print(f"[OK] WebSocket transcription result: {transcript}")
 
 
 if __name__ == "__main__":

@@ -4602,6 +4602,100 @@ footer {
     margin: 0;
 }
 
+/* ========================================
+   Streaming Transcription Styles
+   ======================================== */
+
+/* Mic Button */
+.mic-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: transparent;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #888;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.mic-button:hover:not(:disabled):not(.recording) {
+    border-color: #555;
+    color: #ccc;
+}
+
+.mic-button.recording {
+    background: rgba(244, 67, 54, 0.15);
+    border-color: #f44336;
+    color: #f44336;
+    animation: mic-pulse 1.5s ease-in-out infinite;
+}
+
+.mic-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+@keyframes mic-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* Live Recording Status */
+.live-status {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+    color: #888;
+}
+
+.live-status .status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.live-status .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.live-status .dot.connected { background-color: #4caf50; }
+.live-status .dot.connecting { background-color: #ff9800; }
+.live-status .dot.speaking { background-color: #2196f3; }
+
+.live-status .level-meter {
+    height: 6px;
+    background-color: #121212;
+    border-radius: 3px;
+    overflow: hidden;
+    min-width: 80px;
+    max-width: 160px;
+    flex: 1;
+}
+
+.live-status .level-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.08s ease-out;
+}
+
+/* Transcription Error */
+.transcription-error {
+    padding: 8px 12px;
+    margin: 0 16px 8px;
+    background-color: rgba(244, 67, 54, 0.1);
+    border: 1px solid rgba(244, 67, 54, 0.3);
+    border-radius: 4px;
+    color: #f44336;
+    font-size: 13px;
+}
+
 /* Image Generation */
 .image-generation-item {
     margin-bottom: 24px;
