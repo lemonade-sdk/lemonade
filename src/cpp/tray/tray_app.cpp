@@ -2171,11 +2171,19 @@ Menu TrayApp::create_menu() {
 
     // Port submenu
     auto port_submenu = std::make_shared<Menu>();
-    std::vector<int> ports = {8000, 8020, 8040, 8060, 8080, 9000};
-    for (int port : ports) {
+    std::vector<std::pair<int, std::string>> ports = {
+        {8000, "Port 8000"},
+        {8020, "Port 8020"},
+        {8040, "Port 8040"},
+        {8060, "Port 8060"},
+        {8080, "Port 8080"},
+        {9000, "Port 9000"},
+        {11434, "Port 11434 (Ollama)"},
+    };
+    for (const auto& [port, label] : ports) {
         bool is_current = (port == server_config_.port);
         port_submenu->add_item(MenuItem::Checkable(
-            "Port " + std::to_string(port),
+            label,
             [this, port]() { on_change_port(port); },
             is_current
         ));
@@ -2186,7 +2194,8 @@ Menu TrayApp::create_menu() {
     auto ctx_submenu = std::make_shared<Menu>();
     std::vector<std::pair<std::string, int>> ctx_sizes = {
         {"4K", 4096}, {"8K", 8192}, {"16K", 16384},
-        {"32K", 32768}, {"64K", 65536}, {"128K", 131072}
+        {"32K", 32768}, {"64K", 65536}, {"128K", 131072},
+        {"256K", 262144}
     };
     for (const auto& [label, size] : ctx_sizes) {
         bool is_current = (size == server_config_.recipe_options["ctx_size"]);
