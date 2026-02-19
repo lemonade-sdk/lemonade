@@ -13,8 +13,8 @@
     "npu": "v1.8.2"
   },
   "sd-cpp": {
-    "cpu": "master-506-1f30df9",
-    "rocm": "master-505-e212912"
+    "cpu": "master-509-846e9fe",
+    "rocm": "master-509-846e9fe"
   },
   "therock": {
     "version": "7.11.0",

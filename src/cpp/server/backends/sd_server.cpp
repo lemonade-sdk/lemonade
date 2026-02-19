@@ -30,7 +30,7 @@ SDServer::~SDServer() {
 }
 
 void SDServer::install(const std::string& backend) {
-    std::string repo = "superm1/stable-diffusion.cpp";
+    std::string repo = "lemonade-sdk/stable-diffusion.cpp";
     std::string filename;
     std::string expected_version = BackendUtils::get_backend_version(SPEC.recipe, backend);
 
@@ -56,7 +56,7 @@ void SDServer::install(const std::string& backend) {
         }
 
 #ifdef _WIN32
-        filename = "sd-" + short_version + "-bin-win-rocm-x64.zip";
+        filename = "sd-" + short_version + "-bin-win-rocm-7.1.1-x64.zip";
 #elif defined(__linux__)
         filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm-7.11.0.zip";
 #else
