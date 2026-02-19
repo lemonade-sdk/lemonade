@@ -701,17 +701,17 @@ file(GLOB_RECURSE RESOURCE_FILES
 # Create a custom target that depends on resource files
 # This ensures resources are copied when source files change
 add_custom_command(
-    OUTPUT ${CMAKE_BINARY_DIR}/resources/.resource_timestamp
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/resources.stamp
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources
         ${CMAKE_BINARY_DIR}/resources
-    COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/resources/.resource_timestamp
+    COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/resources.stamp
     DEPENDS ${RESOURCE_FILES}
     COMMENT "Copying resources to build directory"
 )
 
 add_custom_target(copy_resources ALL
-    DEPENDS ${CMAKE_BINARY_DIR}/resources/.resource_timestamp
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/resources.stamp
 )
 
 # Copy resources to the runtime directory after build
