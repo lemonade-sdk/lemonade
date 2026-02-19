@@ -914,7 +914,9 @@ void OllamaApi::handle_tags(const httplib::Request& req, httplib::Response& res)
 void OllamaApi::handle_show(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = json::parse(req.body);
-        std::string name = normalize_model_name(request_json.value("name", request_json.value("model", "")));
+
+        std::string name = normalize_model_name((!request_json.value("model", "").empty() && request_json.value("name", "").empty()) ?
+        request_json.value("model", "") : request_json.value("name", ""));
 
         if (name.empty()) {
             res.status = 400;
