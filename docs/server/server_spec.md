@@ -86,6 +86,16 @@ lemonade-server serve --port 11434
 | `POST /api/copy` | Not supported | Returns 501 |
 | `POST /api/push` | Not supported | Returns 501 |
 
+### Anthropic-Compatible API (Initial)
+
+Lemonade supports an initial Anthropic Messages compatibility endpoint for applications that call Claude-style APIs.
+
+| Endpoint | Status | Notes |
+|----------|--------|-------|
+| `POST /v1/messages` | Supported | Supports both streaming and non-streaming. Query params like `?beta=true` are accepted. |
+
+Current scope focuses on message generation parity for common fields (`model`, `messages`, `system`, `max_tokens`, `temperature`, `stream`, and basic `tools`). Unsupported or unimplemented Anthropic-specific fields are ignored and surfaced via warning logs/headers.
+
 ## Multi-Model Support
 
 Lemonade Server supports loading multiple models simultaneously, allowing you to keep frequently-used models in memory for faster switching. The server uses a Least Recently Used (LRU) cache policy to automatically manage model eviction when limits are reached.

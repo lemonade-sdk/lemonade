@@ -550,6 +550,94 @@ class OllamaTests(ServerTestBase):
         chunks = list(stream)
         self.assertGreater(len(chunks), 0)
 
+    # ========================================================================
+    # Anthropic-compatible /v1/messages tests
+    # ========================================================================
+
+    def test_024_anthropic_messages_non_streaming(self):
+        """Test Anthropic-compatible non-streaming messages endpoint."""
+        self.ensure_model_pulled()
+
+        payload = {
+            "model": ENDPOINT_TEST_MODEL,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "Say hello"}],
+                }
+            ],
+            "system": [
+                {
+                    "type": "text",
+                    "text": "You are a concise assistant.",
+                }
+            ],
+            "max_tokens": 16,
+            "stream": False,
+        }
+
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/v1/messages?beta=true",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        data = response.json()
+        self.assertEqual(data.get("type"), "message")
+        self.assertEqual(data.get("role"), "assistant")
+        self.assertEqual(data.get("model"), ENDPOINT_TEST_MODEL)
+        self.assertIn("content", data)
+        self.assertIsInstance(data["content"], list)
+        self.assertGreater(len(data["content"]), 0)
+        self.assertEqual(data["content"][0].get("type"), "text")
+        self.assertIn("usage", data)
+        self.assertIn("input_tokens", data["usage"])
+        self.assertIn("output_tokens", data["usage"])
+
+    def test_025_anthropic_messages_streaming(self):
+        """Test Anthropic-compatible streaming messages endpoint."""
+        self.ensure_model_pulled()
+
+        payload = {
+            "model": ENDPOINT_TEST_MODEL,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "Say hello"}],
+                }
+            ],
+            "max_tokens": 16,
+            "stream": True,
+        }
+
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/v1/messages?beta=true",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+            stream=True,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        event_types = []
+        data_lines = 0
+        for raw_line in response.iter_lines():
+            if not raw_line:
+                continue
+
+            line = raw_line.decode("utf-8")
+            if line.startswith("event: "):
+                event_types.append(line[len("event: ") :])
+            elif line.startswith("data: "):
+                data_lines += 1
+                payload_json = json.loads(line[len("data: ") :])
+                self.assertIn("type", payload_json)
+
+        self.assertGreater(data_lines, 0, "Expected at least one data event")
+        self.assertIn("message_start", event_types)
+        self.assertIn("content_block_start", event_types)
+        self.assertIn("message_stop", event_types)
+
 
 if __name__ == "__main__":
     parse_args()
