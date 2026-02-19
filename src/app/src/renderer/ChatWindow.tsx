@@ -421,6 +421,9 @@ const fetchLoadedModel = async () => {
 
       if (item.type.indexOf('image') !== -1) {
         event.preventDefault();
+
+        if (!isVisionModel()) break;
+
         const file = item.getAsFile();
         if (!file) continue;
 
@@ -681,6 +684,8 @@ const downloadModelForChat = async (modelName: string): Promise<boolean> => {
 
 const sendMessage = async () => {
     if ((!inputValue.trim() && uploadedImages.length === 0) || isLoading || isDownloadingForChat) return;
+
+    if (uploadedImages.length > 0 && !isVisionModel()) return;
 
     // Cancel any existing request
     if (abortControllerRef.current) {
