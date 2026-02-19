@@ -562,7 +562,7 @@ jobs:
 
   test-deb-inference:
     name: Test .deb - ${{ matrix.name }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: [rai300_400, Linux]
     needs: build-lemonade-deb
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
     if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
