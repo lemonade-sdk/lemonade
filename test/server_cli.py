@@ -366,7 +366,7 @@ class PersistentServerCLITests(CLITestBase):
                     {
                         "id": USER_MODEL_NAME,
                         "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
-                        "recipe": "sd-cpp",
+                        "recipe": "llamacpp",
                     }
                 )
             )

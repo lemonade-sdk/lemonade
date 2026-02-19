@@ -19,6 +19,7 @@ Usage:
 """
 
 import json
+import platform
 import os
 import requests
 from openai import NotFoundError
@@ -807,6 +808,12 @@ class EndpointTests(ServerTestBase):
         # 200 = deleted, 422 = not found (both are acceptable)
         self.assertIn(delete_response.status_code, [200, 422])
 
+        recipe = "sd-cpp"
+        ## sd-cpp currently unavailable on MacOS
+        if platform.system() == "Darwin":
+            recipe = "llamacpp"
+        recipe_backend = f"{recipe}_backend"
+
         # Verify model is not in downloaded list
         models_response = requests.get(
             f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
@@ -827,8 +834,8 @@ class EndpointTests(ServerTestBase):
                     "text_encoder": USER_MODEL_TE_CHECKPOINT,
                     "vae": USER_MODEL_VAE_CHECKPOINT,
                 },
-                "recipe": "sd-cpp",
-                "recipe_options": {"sd-cpp_backend": "cpu"},
+                "recipe": recipe,
+                "recipe_options": {recipe_backend: "cpu"},
                 "stream": False,
             },
             timeout=TIMEOUT_MODEL_OPERATION,
@@ -869,7 +876,7 @@ class EndpointTests(ServerTestBase):
         )
         self.assertIn("recipe", model_data)
         self.assertEqual(
-            model_data["recipe"], "sd-cpp", "Model recipe should be sd-cpp"
+            model_data["recipe"], recipe, f"Model recipe should be {recipe}"
         )
 
         self.assertIn("labels", model_data)
@@ -877,11 +884,11 @@ class EndpointTests(ServerTestBase):
         self.assertIn("image", model_data["labels"])
 
         self.assertIn("recipe_options", model_data)
-        self.assertIn("sd-cpp_backend", model_data["recipe_options"])
+        self.assertIn(recipe_backend, model_data["recipe_options"])
         self.assertEqual(
-            model_data["recipe_options"]["sd-cpp_backend"],
+            model_data["recipe_options"][recipe_backend],
             "cpu",
-            "sd-cpp_backend should be cpu",
+            f"{recipe_backend} should be cpu",
         )
 
         print(f"[OK] Pull (multicheckpoint): model={USER_MODEL_NAME}")
