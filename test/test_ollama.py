@@ -30,6 +30,7 @@ from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     VISION_MODEL,
     SD_MODEL,
+    SAMPLE_TOOL,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
 )
@@ -637,6 +638,50 @@ class OllamaTests(ServerTestBase):
         self.assertIn("message_start", event_types)
         self.assertIn("content_block_start", event_types)
         self.assertIn("message_stop", event_types)
+
+    def test_026_anthropic_messages_tool_calling(self):
+        """Test Anthropic-compatible tool calling maps to tool_use blocks."""
+        self.ensure_model_pulled()
+
+        anthropic_tool = {
+            "name": SAMPLE_TOOL["function"]["name"],
+            "description": SAMPLE_TOOL["function"].get("description", ""),
+            "input_schema": SAMPLE_TOOL["function"].get("parameters", {}),
+        }
+
+        payload = {
+            "model": ENDPOINT_TEST_MODEL,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Run the calculator_calculate tool with expression set to 1+1",
+                        }
+                    ],
+                }
+            ],
+            "tools": [anthropic_tool],
+            "tool_choice": {"type": "any"},
+            "max_tokens": 64,
+            "stream": False,
+        }
+
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/v1/messages?beta=true",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        data = response.json()
+        self.assertIn("content", data)
+        tool_use_blocks = [b for b in data["content"] if b.get("type") == "tool_use"]
+        self.assertGreater(
+            len(tool_use_blocks), 0, "Expected at least one tool_use block"
+        )
+        self.assertEqual(data.get("stop_reason"), "tool_use")
 
 
 if __name__ == "__main__":
