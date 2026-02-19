@@ -30,10 +30,6 @@ public:
     // WrappedServer interface
     void install(const std::string& backend = "") override;
 
-    std::string download_model(const std::string& checkpoint,
-                              const std::string& mmproj = "",
-                              bool do_not_upgrade = false) override;
-
     void load(const std::string& model_name,
              const ModelInfo& model_info,
              const RecipeOptions& options,
@@ -52,7 +48,6 @@ public:
 private:
     // NPU compiled cache handling
     void download_npu_compiled_cache(const std::string& model_path,
-                                      const std::string& checkpoint,
                                       const ModelInfo& model_info,
                                       bool do_not_upgrade);
 
@@ -69,6 +64,12 @@ private:
     json forward_multipart_audio_request(const std::string& file_path,
                                          const json& params,
                                          bool translate);
+
+    // Forward audio data directly (no file I/O) using multipart form-data
+    json forward_multipart_audio_data(const std::string& audio_data,
+                                      const std::string& filename,
+                                      const json& params,
+                                      bool translate);
 
     std::string model_path_;
     std::filesystem::path temp_dir_;  // Directory for temporary audio files

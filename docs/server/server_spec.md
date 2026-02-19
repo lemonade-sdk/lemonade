@@ -25,8 +25,9 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/completions` - Text Completions (prompt -> completion)
 - POST `/api/v1/embeddings` - Embeddings (text -> vector representations)
 - POST `/api/v1/responses` - Chat Completions (prompt|messages -> event)
-- POST `/api/v1/audio/transcriptions` - Audio Transcription (audio -> text)
+- POST `/api/v1/audio/transcriptions` - Audio Transcription (audio file -> text)
 - POST `/api/v1/audio/speech` - Text to speech (text -> audio)
+- WS `/realtime` - Realtime Audio Transcription (streaming audio -> text, OpenAI SDK compatible)
 - POST `/api/v1/images/generations` - Image Generation (prompt -> image)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
@@ -57,23 +58,49 @@ The additional endpoints are:
 - GET `/api/v1/system-info` - System information and device enumeration
 - GET `/live` - Check server liveness for load balancers and orchestrators
 
+### Ollama-Compatible API
+
+Lemonade supports the [Ollama API](https://github.com/ollama/ollama/blob/main/docs/api.md), allowing applications built for Ollama to work with Lemonade without modification.
+
+To enable auto-detection by Ollama-integrated apps, launch the server on the Ollama default port:
+
+```bash
+lemonade-server serve --port 11434
+```
+
+| Endpoint | Status | Notes |
+|----------|--------|-------|
+| `POST /api/chat` | Supported | Streaming and non-streaming |
+| `POST /api/generate` | Supported | Text completion + image generation |
+| `GET /api/tags` | Supported | Lists downloaded models |
+| `POST /api/show` | Supported | Model details |
+| `DELETE /api/delete` | Supported | |
+| `POST /api/pull` | Supported | Download with progress |
+| `POST /api/embed` | Supported | New embeddings format |
+| `POST /api/embeddings` | Supported | Legacy embeddings |
+| `GET /api/ps` | Supported | Running models |
+| `GET /api/version` | Supported | |
+| `POST /api/create` | Not supported | Returns 501 |
+| `POST /api/copy` | Not supported | Returns 501 |
+| `POST /api/push` | Not supported | Returns 501 |
+
 ## Multi-Model Support
 
 Lemonade Server supports loading multiple models simultaneously, allowing you to keep frequently-used models in memory for faster switching. The server uses a Least Recently Used (LRU) cache policy to automatically manage model eviction when limits are reached.
 
 ### Configuration
 
-Use the `--max-loaded-models` option to specify how many models to keep loaded:
+Use the `--max-loaded-models` option to specify how many models to keep loaded per type slot:
 
 ```bash
-# Load up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model
-lemonade-server serve --max-loaded-models 3 2 1 1
-
-# Load up to 5 LLMs (embeddings, reranking, and audio default to 1 each)
+# Allow up to 5 models of each type (5 LLMs, 5 embedding, 5 reranking, 5 audio, 5 image)
 lemonade-server serve --max-loaded-models 5
+
+# Unlimited models (no LRU eviction)
+lemonade-server serve --max-loaded-models -1
 ```
 
-**Default:** `1 1 1 1` (one model of each type)
+**Default:** `1` (one model of each type). Use `-1` for unlimited.
 
 ### Model Types
 
@@ -82,8 +109,9 @@ Models are categorized into these types:
 - **Embedding** - Models for generating text embeddings (identified by the `embeddings` label)
 - **Reranking** - Models for document reranking (identified by the `reranking` label)
 - **Audio** - Models for audio transcription using Whisper (identified by the `audio` label)
+- **Image** - Models for image generation (identified by the `image` label)
 
-Each type has its own independent limit and LRU cache.
+Each type has its own independent LRU cache, all sharing the same slot limit set by `--max-loaded-models`.
 
 ### Device Constraints
 
@@ -175,6 +203,28 @@ Chat Completions API. You provide a list of messages and receive a completion. T
             "stream": false
           }'
     ```
+
+#### Image understanding input format (OpenAI-compatible)
+
+To send images to `chat/completions`, pass a `messages[*].content` array that mixes `text` and `image_url` items. The image can be provided as a base64 data URL (for example, from `FileReader.readAsDataURL(...)` in web apps).
+
+```bash
+curl -X POST http://localhost:8000/api/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "Qwen2.5-VL-7B-Instruct",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {"type": "text", "text": "What is in this image?"},
+              {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."}}
+            ]
+          }
+        ],
+        "stream": false
+      }'
+```
 
 #### Response format
 
@@ -588,6 +638,127 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 
 
 
+### `WS /realtime` <sub>![Status](https://img.shields.io/badge/status-partial-yellow)</sub>
+
+Realtime Audio Transcription API via WebSocket (OpenAI SDK compatible). Stream audio from a microphone and receive transcriptions in real-time with Voice Activity Detection (VAD).
+
+> **Limitations:** Only 16kHz mono PCM16 audio format is supported. Uses the same Whisper models as the HTTP transcription endpoint.
+
+#### Connection
+
+The WebSocket server runs on a dynamically assigned port. Discover the port via the [`/api/v1/health`](#get-apiv1health) endpoint (`websocket_port` field), then connect with the model name:
+
+```
+ws://localhost:<websocket_port>/realtime?model=Whisper-Tiny
+```
+
+Upon connection, the server sends a `session.created` message with a session ID.
+
+#### Client → Server Messages
+
+| Message Type | Description |
+|--------------|-------------|
+| `session.update` | Configure the session (set model, VAD settings) |
+| `input_audio_buffer.append` | Send audio data (base64-encoded PCM16) |
+| `input_audio_buffer.commit` | Force transcription of buffered audio |
+| `input_audio_buffer.clear` | Clear audio buffer without transcribing |
+
+#### Server → Client Messages
+
+| Message Type | Description |
+|--------------|-------------|
+| `session.created` | Session established, contains session ID |
+| `session.updated` | Session configuration updated |
+| `input_audio_buffer.speech_started` | VAD detected speech start |
+| `input_audio_buffer.speech_stopped` | VAD detected speech end, transcription triggered |
+| `input_audio_buffer.committed` | Audio buffer committed for transcription |
+| `input_audio_buffer.cleared` | Audio buffer cleared |
+| `conversation.item.input_audio_transcription.delta` | Interim/partial transcription (replaceable) |
+| `conversation.item.input_audio_transcription.completed` | Final transcription result |
+| `error` | Error message |
+
+#### Example: Configure Session
+
+```json
+{
+  "type": "session.update",
+  "session": {
+    "model": "Whisper-Tiny"
+  }
+}
+```
+
+#### Example: Send Audio
+
+```json
+{
+  "type": "input_audio_buffer.append",
+  "audio": "<base64-encoded PCM16 audio>"
+}
+```
+
+Audio should be:
+- 16kHz sample rate
+- Mono (single channel)
+- 16-bit signed integer (PCM16)
+- Base64 encoded
+- Sent in chunks (~85ms recommended)
+
+#### Example: Transcription Result
+
+```json
+{
+  "type": "conversation.item.input_audio_transcription.completed",
+  "transcript": "Hello, this is a test transcription."
+}
+```
+
+#### VAD Configuration
+
+VAD settings can be configured via `session.update`:
+
+```json
+{
+  "type": "session.update",
+  "session": {
+    "model": "Whisper-Tiny",
+    "turn_detection": {
+      "threshold": 0.01,
+      "silence_duration_ms": 800,
+      "prefix_padding_ms": 250
+    }
+  }
+}
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `threshold` | 0.01 | RMS energy threshold for speech detection |
+| `silence_duration_ms` | 800 | Silence duration to trigger speech end |
+| `prefix_padding_ms` | 250 | Minimum speech duration before triggering |
+
+#### Code Examples
+
+See the [`examples/`](../../examples/) directory for a complete, runnable example:
+
+- **[`realtime_transcription.py`](../../examples/realtime_transcription.py)** - Python CLI for microphone streaming
+
+```bash
+# Stream from microphone
+python examples/realtime_transcription.py --model Whisper-Tiny
+```
+
+#### Integration Notes
+
+- **Audio Format**: Server expects 16kHz mono PCM16. Higher sample rates must be downsampled client-side.
+- **Chunk Size**: Send audio in ~85-256ms chunks for optimal latency/efficiency.
+- **VAD Behavior**: Server automatically detects speech boundaries and triggers transcription on speech end.
+- **Manual Commit**: Use `input_audio_buffer.commit` to force transcription (e.g., when user clicks "stop").
+- **Clear Buffer**: Use `input_audio_buffer.clear` to discard audio without transcribing.
+- **Chunking**: We are still tuning the chunking to balance latency vs. accuracy.
+
+
+
 ### `POST /api/v1/images/generations` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Image Generation API. You provide a text prompt and receive a generated image. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend.
@@ -767,7 +938,7 @@ Retrieve a specific model by its ID. Returns the same model object format as the
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_id` | Yes | The ID of the model to retrieve. Must match one of the model IDs from the [models list](./server_models.md). |
+| `model_id` | Yes | The ID of the model to retrieve. Must match one of the model IDs from the [models list](https://lemonade-server.ai/models.html). |
 
 #### Example request
 
@@ -832,7 +1003,7 @@ The Lemonade Server built-in model registry has a collection of model names that
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_name` | Yes | [Lemonade Server model name](./server_models.md) to install. |
+| `model_name` | Yes | [Lemonade Server model name](https://lemonade-server.ai/models.html) to install. |
 
 Example request:
 
@@ -865,7 +1036,7 @@ The `recipe` field defines which software framework and device will be used to l
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_name` | Yes | Namespaced [Lemonade Server model name](./server_models.md) to register and install. |
+| `model_name` | Yes | Namespaced [Lemonade Server model name](https://lemonade-server.ai/models.html) to register and install. |
 | `checkpoint` | Yes | HuggingFace checkpoint to install. |
 | `recipe` | Yes | Lemonade API recipe to load the model with. |
 | `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). Adds 'reasoning' label. |
@@ -928,7 +1099,7 @@ Delete a model by removing it from local storage. If the model is currently load
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_name` | Yes | [Lemonade Server model name](./server_models.md) to delete. |
+| `model_name` | Yes | [Lemonade Server model name](https://lemonade-server.ai/models.html) to delete. |
 
 Example request:
 
@@ -960,7 +1131,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 
 | Parameter | Required | Applies to | Description |
 |-----------|----------|------------|-------------|
-| `model_name` | Yes | All | [Lemonade Server model name](./server_models.md) to load. |
+| `model_name` | Yes | All | [Lemonade Server model name](https://lemonade-server.ai/models.html) to load. |
 | `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. |
 | `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
@@ -1143,6 +1314,8 @@ curl http://localhost:8000/api/v1/health
 ```json
 {
   "status": "ok",
+  "version":"9.3.3",
+  "websocket_port":9000,
   "model_loaded": "Llama-3.2-1B-Instruct-Hybrid",
   "all_models_loaded": [
     {
@@ -1173,9 +1346,12 @@ curl http://localhost:8000/api/v1/health
     }
   ],
   "max_models": {
-    "llm": 3,
-    "embedding": 1,
-    "reranking": 1
+    "audio":1,
+    "embedding":1,
+    "image":1,
+    "llm":1,
+    "reranking":1,
+    "tts":1
   }
 }
 ```
@@ -1183,6 +1359,7 @@ curl http://localhost:8000/api/v1/health
 **Field Descriptions:**
 
 - `status` - Server health status, always `"ok"`
+- `version` - Version number of Lemonade Server
 - `model_loaded` - Model name of the most recently accessed model
 - `all_models_loaded` - Array of all currently loaded models with details:
   - `model_name` - Name of the loaded model
@@ -1193,10 +1370,14 @@ curl http://localhost:8000/api/v1/health
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`)
-- `max_models` - Maximum number of models that can be loaded simultaneously (set via `--max-loaded-models`):
+- `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `--max-loaded-models`):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
   - `reranking` - Maximum reranking models
+  - `audio` - Maximum speech-to-text models
+  - `image` - Maximum image models
+  - `tts` - Maximum text-to-speech models
+- `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned.
 
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -1260,18 +1441,21 @@ curl "http://localhost:8000/api/v1/system-info"
       "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
       "cores": 12,
       "threads": 24,
-      "available": true
+      "available": true,
+      "family": "x86_64"
     },
     "amd_igpu": {
       "name": "AMD Radeon(TM) 890M Graphics",
       "vram_gb": 0.5,
-      "available": true
+      "available": true,
+      "family": "gfx1150"
     },
     "amd_dgpu": [],
-    "npu": {
-      "name": "AMD NPU",
+    "amd_npu": {
+      "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
       "power_mode": "Default",
-      "available": true
+      "available": true,
+      "family": "XDNA2"
     }
   },
   "recipes": {
@@ -1321,7 +1505,7 @@ curl "http://localhost:8000/api/v1/system-info"
     "flm": {
       "backends": {
         "default": {
-          "devices": ["npu"],
+          "devices": ["amd_npu"],
           "supported": true,
           "available": true,
           "version": "1.2.0"
@@ -1331,7 +1515,7 @@ curl "http://localhost:8000/api/v1/system-info"
     "ryzenai-llm": {
       "backends": {
         "default": {
-          "devices": ["npu"],
+          "devices": ["amd_npu"],
           "supported": true,
           "available": true
         }
@@ -1357,7 +1541,7 @@ curl "http://localhost:8000/api/v1/system-info"
   - `amd_igpu` - AMD integrated GPU (if present)
   - `amd_dgpu` - Array of AMD discrete GPUs (if present)
   - `nvidia_dgpu` - Array of NVIDIA discrete GPUs (if present)
-  - `npu` - NPU device (if present)
+  - `amd_npu` - AMD NPU device (if present)
 
 - `recipes` - Software recipes and their backend support status
   - Each recipe (e.g., `llamacpp`, `whispercpp`, `flm`) contains:

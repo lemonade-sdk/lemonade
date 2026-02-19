@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 9.3.1)
+project(lemon_cpp VERSION 9.3.4)
 
 # Enable Objective-C++ for macOS Metal support
 if(APPLE)
@@ -89,6 +89,13 @@ set(USE_SYSTEM_CURL ${CURL_FOUND})
 set(USE_SYSTEM_ZSTD ${ZSTD_FOUND})
 set(USE_SYSTEM_CLI11 ${CLI11_INCLUDE_DIRS})
 set(USE_SYSTEM_HTTPLIB ${HTTPLIB_FOUND})
+
+# On macOS, always statically link dependencies to avoid Homebrew dylib issues
+if(APPLE)
+    set(USE_SYSTEM_ZSTD OFF)
+    set(USE_SYSTEM_CURL OFF)
+    set(USE_SYSTEM_HTTPLIB OFF)
+endif()
 
 if(USE_SYSTEM_JSON)
     message(STATUS "Using system nlohmann_json (>= ${MIN_NLOHMANN_JSON_VERSION})")
@@ -270,6 +277,23 @@ if(NOT USE_SYSTEM_HTTPLIB)
             ${zstd_SOURCE_DIR}/lib/common
         )
     endif()
+endif()
+
+# === IXWebSocket (for WebSocket support, Windows only) ===
+if(WIN32)
+    set(MIN_IXWEBSOCKET_VERSION "11.4.4")
+    FetchContent_Declare(ixwebsocket
+        GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
+        GIT_TAG v${MIN_IXWEBSOCKET_VERSION}
+    )
+    # Disable TLS and ZLIB for simpler setup (localhost only, no compression needed)
+    set(USE_TLS OFF CACHE INTERNAL "")
+    set(USE_OPEN_SSL OFF CACHE INTERNAL "")
+    set(USE_MBED_TLS OFF CACHE INTERNAL "")
+    set(USE_ZLIB OFF CACHE INTERNAL "")
+    set(IXWEBSOCKET_INSTALL OFF CACHE INTERNAL "")
+    FetchContent_MakeAvailable(ixwebsocket)
+    message(STATUS "IXWebSocket will be fetched (v${MIN_IXWEBSOCKET_VERSION})")
 endif()
 
 
@@ -543,6 +567,11 @@ set(SOURCES
     src/cpp/server/backends/kokoro_server.cpp
     src/cpp/server/backends/sd_server.cpp
     src/cpp/server/backends/backend_utils.cpp
+    src/cpp/server/ollama_api.cpp
+    $<$<PLATFORM_ID:Windows>:src/cpp/server/streaming_audio_buffer.cpp>
+    $<$<PLATFORM_ID:Windows>:src/cpp/server/vad.cpp>
+    $<$<PLATFORM_ID:Windows>:src/cpp/server/realtime_session.cpp>
+    $<$<PLATFORM_ID:Windows>:src/cpp/server/websocket_server.cpp>
 )
 
 # Add platform-specific source files
@@ -621,6 +650,12 @@ endif()
 
 if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
     target_include_directories(${EXECUTABLE_NAME} PRIVATE ${HTTPLIB_INCLUDE_DIRS})
+endif()
+
+# IXWebSocket for WebSocket support (Windows only)
+if(WIN32)
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ixwebsocket)
+    target_compile_definitions(${EXECUTABLE_NAME} PRIVATE LEMON_HAS_WEBSOCKET)
 endif()
 
 # Enable ARC (Automatic Reference Counting) for macOS Objective-C++ files
@@ -935,7 +970,7 @@ if(APPLE)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         install(CODE "
             execute_process(
-                COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-9.2.0-Darwin/Runtime/usr/local/bin/${EXECUTABLE_NAME}\"
+                COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/${EXECUTABLE_NAME}\"
                 RESULT_VARIABLE SIGN_RESULT
             )
             if(NOT SIGN_RESULT EQUAL 0)
@@ -953,7 +988,7 @@ if(APPLE)
         if(CMAKE_BUILD_TYPE STREQUAL "Release")
             install(CODE "
                 execute_process(
-                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-9.2.0-Darwin/Runtime/usr/local/bin/lemonade-server\"
+                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/lemonade-server\"
                     RESULT_VARIABLE SIGN_RESULT
                 )
                 if(NOT SIGN_RESULT EQUAL 0)
@@ -1006,7 +1041,7 @@ if(APPLE)
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${CMAKE_BINARY_DIR}/LICENSE.txt" COPYONLY)
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_BINARY_DIR}/LICENSE.txt")
 
-    set(CPACK_POSTFLIGHT_SERVICES_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst-full-mac")
+    set(CPACK_POSTFLIGHT_RUNTIME_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst-full-mac")
     include(CPack)
 
     set(PACKAGE_DEPENDS prepare_electron_app ${EXECUTABLE_NAME})
@@ -1277,4 +1312,34 @@ if(UNIX AND NOT APPLE)
     # RPM specific variables defined within
     include(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/CPackRPM.cmake)
     include(CPack)
+
+    # ============================================================
+    # AppImage Build Target (Linux only)
+    # ============================================================
+    if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
+        # Set the build directory and source directory for AppImage
+        set(APPIMAGE_BUILD_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/app-appimage-src")
+        set(APPIMAGE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/app-appimage")
+
+        add_custom_target(appimage
+            COMMAND ${CMAKE_COMMAND} -E echo "Copying Electron app source to AppImage build directory..."
+            COMMAND ${CMAKE_COMMAND} -E remove_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${ELECTRON_APP_SOURCE_DIR}" "${APPIMAGE_BUILD_SOURCE_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E echo "Setting version to ${PROJECT_VERSION}..."
+            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} version ${PROJECT_VERSION} --no-git-tag-version --allow-same-version
+            COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for AppImage build..."
+            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci
+            COMMAND ${CMAKE_COMMAND} -E echo "Building AppImage with electron-builder..."
+            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} run build:renderer:prod
+            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_EXECUTABLE} exec -- electron-builder --linux AppImage --config.directories.output=${APPIMAGE_BUILD_DIR}
+            COMMAND ${CMAKE_COMMAND} -E echo "AppImage build complete. Output in ${APPIMAGE_BUILD_DIR}"
+            COMMENT "Building Electron app as AppImage"
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        )
+
+        message(STATUS "AppImage build target available: cmake --build . --target appimage")
+    else()
+        message(STATUS "Node.js or npm not found - AppImage build target disabled")
+    endif()
 endif()

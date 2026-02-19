@@ -1,10 +1,14 @@
 #include "lemon/server.h"
+#include "lemon/ollama_api.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
+#ifdef LEMON_HAS_WEBSOCKET
+#include "lemon/websocket_server.h"
+#endif
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -48,9 +52,8 @@ static const json MIME_TYPES = {
 };
 
 Server::Server(int port, const std::string& host, const std::string& log_level,
-               const json& default_options, int max_llm_models,
-               int max_embedding_models, int max_reranking_models, int max_audio_models,
-               int max_image_models, const std::string& extra_models_dir, bool no_broadcast)
+               const json& default_options, int max_loaded_models,
+               const std::string& extra_models_dir, bool no_broadcast)
     : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
       no_broadcast_(no_broadcast), running_(false), udp_beacon_() {
 
@@ -87,9 +90,7 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     model_manager_->set_extra_models_dir(extra_models_dir);
 
     router_ = std::make_unique<Router>(default_options_, log_level,
-                                       model_manager_.get(), max_llm_models,
-                                       max_embedding_models, max_reranking_models, max_audio_models,
-                                       max_image_models);
+                                       model_manager_.get(), max_loaded_models);
 
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
@@ -100,6 +101,11 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
 
     setup_routes(*http_server_);
     setup_routes(*http_server_v6_);
+
+#ifdef LEMON_HAS_WEBSOCKET
+    // Initialize WebSocket server (binds to OS-assigned port, exposed via /health)
+    websocket_server_ = std::make_unique<WebSocketServer>(router_.get());
+#endif
 }
 
 Server::~Server() {
@@ -307,6 +313,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         res.set_content("{\"test\": \"ok\"}", "application/json");
     });
 
+    // Register Ollama-compatible API routes
+    auto ollama_api = std::make_shared<OllamaApi>(router_.get(), model_manager_.get());
+    ollama_api->register_routes(web_server);
+
     // Setup static file serving for web UI
     setup_static_files(web_server);
 
@@ -341,11 +351,11 @@ void Server::setup_static_files(httplib::Server &web_server) {
         for (const auto& [model_name, info] : models_map) {
             filtered_models[model_name] = {
                 {"model_name", info.model_name},
-                {"checkpoint", info.checkpoint},
+                {"checkpoint", info.checkpoint()},
                 {"recipe", info.recipe},
                 {"labels", info.labels},
                 {"suggested", info.suggested},
-                {"mmproj", info.mmproj}
+                {"mmproj", info.mmproj()}
             };
 
             // Add size if available
@@ -825,6 +835,18 @@ void Server::run() {
     std::string ipv6 = resolve_host_to_ip(AF_INET6, host_);
 
     running_ = true;
+
+#ifdef LEMON_HAS_WEBSOCKET
+    // Start WebSocket server for realtime transcription
+    if (websocket_server_) {
+        if (websocket_server_->start()) {
+            std::cout << "[Server] WebSocket server started on port " << (port_ + 100) << std::endl;
+        } else {
+            std::cerr << "[Server] Warning: Failed to start WebSocket server" << std::endl;
+        }
+    }
+#endif
+
     if (!ipv4.empty()) {
         // setup ipv4 thread
         setup_http_logger(*http_server_);
@@ -877,6 +899,14 @@ void Server::stop() {
         http_server_v6_->stop();
         http_server_->stop();
         running_ = false;
+
+#ifdef LEMON_HAS_WEBSOCKET
+        // Stop WebSocket server
+        if (websocket_server_) {
+            std::cout << "[Server] Stopping WebSocket server..." << std::endl;
+            websocket_server_->stop();
+        }
+#endif
 
         // Explicitly clean up router (unload models, stop backend servers)
         if (router_) {
@@ -1042,7 +1072,7 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
         std::cout << "[Server] Model not cached, downloading from Hugging Face..." << std::endl;
         std::cout << "[Server] This may take several minutes for large models." << std::endl;
-        model_manager_->download_model(requested_model, "", "", false, false, "", true);
+        model_manager_->download_registered_model(info, true);
         std::cout << "[Server] Model download complete: " << requested_model << std::endl;
 
         // CRITICAL: Refresh model info after download to get correct resolved_path
@@ -1085,6 +1115,13 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
         {"sse", true},
         {"websocket", false}  // WebSocket support not yet implemented
     };
+
+#ifdef LEMON_HAS_WEBSOCKET
+    // Add WebSocket server port for realtime API
+    if (websocket_server_ && websocket_server_->is_running()) {
+        response["websocket_port"] = websocket_server_->get_port();
+    }
+#endif
 
     res.set_content(response.dump(), "application/json");
 }
@@ -1139,7 +1176,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"object", "model"},
         {"created", 1234567890},
         {"owned_by", "lemonade"},
-        {"checkpoint", info.checkpoint},
+        {"checkpoint", info.checkpoint()},
         {"recipe", info.recipe},
         {"downloaded", info.downloaded},
         {"suggested", info.suggested},
@@ -2209,7 +2246,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         // Download model if needed (first-time use)
         if (!info.downloaded) {
             std::cout << "[Server] Model not downloaded, downloading..." << std::endl;
-            model_manager_->download_model(model_name);
+            model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
         }
 
@@ -2220,7 +2257,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         nlohmann::json response = {
             {"status", "success"},
             {"model_name", model_name},
-            {"checkpoint", info.checkpoint},
+            {"checkpoint", info.checkpoint()},
             {"recipe", info.recipe}
         };
         res.set_content(response.dump(), "application/json");

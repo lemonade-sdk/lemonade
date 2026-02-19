@@ -127,6 +127,31 @@ The tray app searches for the Electron app in these locations:
 
 If not found, the "Open app" menu option is hidden but everything else works.
 
+### Building an AppImage (Linux Only)
+
+To create a standalone AppImage package that can run on any Linux distribution:
+
+```bash
+cmake --build --preset default --target appimage
+```
+
+This will:
+1. Copy the Electron app source to a separate build directory
+2. Set the package.json version to match the CMake project version
+3. Install npm dependencies
+4. Build the renderer with production optimizations
+5. Package the application as an AppImage using electron-builder
+
+The generated AppImage will be located in:
+- `build/app-appimage/Lemonade-<version>-<arch>.AppImage`
+
+The AppImage is a self-contained executable that includes all dependencies and can be run on any Linux distribution without installation. Simply make it executable and run it:
+
+```bash
+chmod +x build/app-appimage/Lemonade-*.AppImage
+./build/app-appimage/Lemonade-*.AppImage
+```
+
 ### Platform-Specific Notes
 
 **Windows:**
@@ -546,7 +571,7 @@ A pure HTTP server that:
 - Router maintains multiple WrappedServer instances simultaneously
 - Separate LRU caches for LLM, embedding, reranking, and audio model types
 - NPU exclusivity: only one model can use NPU at a time
-- Configurable limits via `--max-loaded-models` (default: 1 1 1 1)
+- Configurable limits via `--max-loaded-models N` (default: 1)
 - Automatic eviction of least-recently-used models when limits reached
 - Thread-safe model loading with serialization to prevent races
 - Protection against evicting models actively serving inference requests
@@ -635,8 +660,7 @@ The `lemonade-router` executable is a pure HTTP server without any command-based
 #   --ctx-size SIZE          Context size (default: 4096)
 #   --log-level LEVEL        Log level: critical, error, warning, info, debug, trace
 #   --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal
-#   --max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO]
-#                            Maximum models to keep loaded (default: 1 1 1 1)
+#   --max-loaded-models N    Maximum models per type slot (default: 1)
 #   --version, -v            Show version
 #   --help, -h               Show help
 ```
@@ -686,7 +710,7 @@ The `lemonade-server` executable is the command-line interface for terminal user
 - `--log-file PATH` - Custom log file location
 - `--server-binary PATH` - Path to lemonade-router executable
 - `--no-tray` - Run without tray (headless mode)
-- `--max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO]` - Maximum number of models to keep loaded simultaneously (default: 1 1 1 1)
+- `--max-loaded-models N` - Maximum number of models to keep loaded per type slot (default: 1)
 
 **Note:** `lemonade-router` is always launched with `--log-level debug` for optimal troubleshooting. Use `--log-level debug` on `lemonade-server` commands to see client-side debug output.
 

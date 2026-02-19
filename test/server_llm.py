@@ -59,8 +59,8 @@ class LLMTests(ServerTestBase):
     features not supported by the current wrapped server.
     """
 
-    # Enable multi-model support (2 LLMs, 1 embedding, 1 reranking, 1 other)
-    additional_server_args = ["--max-loaded-models", "2", "1", "1", "1"]
+    # Enable multi-model support (2 of each type)
+    additional_server_args = ["--max-loaded-models", "2"]
 
     # =========================================================================
     # CHAT COMPLETIONS TESTS
@@ -688,7 +688,7 @@ class LLMTests(ServerTestBase):
 
     @skip_if_unsupported("multi_model")
     def test_021_lru_eviction(self):
-        """Test LRU eviction when loading a third model with max_llm_models=2."""
+        """Test LRU eviction when loading a third model with max_loaded_models=2."""
         requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
         model1 = self.get_test_model("llm")

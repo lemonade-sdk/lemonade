@@ -15,6 +15,7 @@ static const json DEFAULTS = {
     {"llamacpp_backend", "vulkan"},  // Will be overridden dynamically
 #endif
     {"llamacpp_args", ""},
+    {"sd-cpp_backend", "cpu"},  // sd.cpp backend selection (cpu or rocm)
     {"whispercpp_backend", "npu"},
     // Image generation defaults (for sd-cpp recipe)
     {"steps", 20},
@@ -43,6 +44,14 @@ static const json CLI_OPTIONS = {
         {"type_name", "ARGS"},
         {"envname", "LEMONADE_LLAMACPP_ARGS"},
         {"help", "Custom arguments to pass to llama-server (must not conflict with managed args)"}
+    }},
+    // sd.cpp backend selection option
+    {"--sdcpp", {
+        {"option_name", "sd-cpp_backend"},
+        {"type_name", "BACKEND"},
+        {"allowed_values", {"cpu", "rocm"}},
+        {"envname", "LEMONADE_SDCPP"},
+        {"help", "SD.cpp backend to use (cpu for CPU, rocm for AMD GPU)"}
     }},
     // ASR options
     {"--whispercpp", {
@@ -87,7 +96,7 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     } else if (recipe == "ryzenai-llm" || recipe == "flm") {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
-        return {"steps", "cfg_scale", "width", "height"};
+        return {"sd-cpp_backend", "steps", "cfg_scale", "width", "height"};
     } else {
         return {};
     }
@@ -123,6 +132,14 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
             }
             const auto& result = backend_cache[recipe];
             std::string default_backend = result.backends.empty() ? "" : result.backends[0];
+
+            // Pre-populate storage with the dynamically detected default so it's
+            // available even when the user doesn't explicitly pass the flag.
+            // (add_option_function's callback only fires on explicit CLI input,
+            // and default_val only affects help text display.)
+            if (!default_backend.empty()) {
+                storage[opt_name] = default_backend;
+            }
 
             o = app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val(default_backend);

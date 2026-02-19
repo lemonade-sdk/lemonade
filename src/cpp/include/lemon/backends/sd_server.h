@@ -32,10 +32,6 @@ public:
     // WrappedServer interface
     void install(const std::string& backend = "") override;
 
-    std::string download_model(const std::string& checkpoint,
-                              const std::string& mmproj = "",
-                              bool do_not_upgrade = false) override;
-
     void load(const std::string& model_name,
              const ModelInfo& model_info,
              const RecipeOptions& options,
@@ -50,10 +46,6 @@ public:
 
     // IImageServer implementation
     json image_generations(const json& request) override;
-
-private:
-    // Server state (port_ and process_handle_ inherited from WrappedServer)
-    std::string model_path_;
 };
 
 } // namespace backends

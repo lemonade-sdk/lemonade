@@ -85,7 +85,7 @@ AI Dev Gallery supports various AI scenarios through its sample applications wit
 ## Additional Resources
 
 - [AI Dev Gallery Website](https://aka.ms/ai-dev-gallery)
-- [Lemonade Server Models](../server_models.md)
+- [Lemonade Server Models](https://lemonade-server.ai/models.html)
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->

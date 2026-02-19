@@ -79,11 +79,7 @@ bool ServerManager::start_server(
     bool show_console,
     bool is_ephemeral,
     const std::string& host,
-    int max_llm_models,
-    int max_embedding_models,
-    int max_reranking_models,
-    int max_audio_models,
-    int max_image_models,
+    int max_loaded_models,
     const std::string& extra_models_dir)
 {
     if (is_server_running()) {
@@ -94,11 +90,7 @@ bool ServerManager::start_server(
     server_binary_path_ = server_binary_path;
     port_ = port;
     recipe_options_ = recipe_options;
-    max_llm_models_ = max_llm_models;
-    max_embedding_models_ = max_embedding_models;
-    max_reranking_models_ = max_reranking_models;
-    max_audio_models_ = max_audio_models;
-    max_image_models_ = max_image_models;
+    max_loaded_models_ = max_loaded_models;
     log_file_ = log_file;
     log_level_ = log_level;
     show_console_ = show_console;
@@ -198,8 +190,8 @@ bool ServerManager::start_server(
                 std::cout << "Connect your apps to the endpoint above." << std::endl;
                 std::cout << "Documentation: https://lemonade-server.ai/" << std::endl;
             }
-            
-            server_started_ = true;    
+
+            server_started_ = true;
             return true;
 
         } catch (const std::exception& e) {
@@ -271,7 +263,7 @@ bool ServerManager::stop_server() {
 bool ServerManager::restart_server() {
     stop_server();
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    return start_server(server_binary_path_, port_, recipe_options_, log_file_, log_level_, show_console_, false, host_, max_llm_models_, max_embedding_models_, max_reranking_models_, max_audio_models_, max_image_models_, extra_models_dir_);
+    return start_server(server_binary_path_, port_, recipe_options_, log_file_, log_level_, show_console_, false, host_, max_loaded_models_, extra_models_dir_);
 }
 
 bool ServerManager::is_server_running() const {
@@ -399,9 +391,7 @@ bool ServerManager::spawn_process() {
     }
 
     // Multi-model support
-    cmdline += " --max-loaded-models " + std::to_string(max_llm_models_) + " " +
-               std::to_string(max_embedding_models_) + " " + std::to_string(max_reranking_models_) + " " +
-               std::to_string(max_audio_models_) + " " + std::to_string(max_image_models_);
+    cmdline += " --max-loaded-models " + std::to_string(max_loaded_models_);
     // Extra models directory
     if (!extra_models_dir_.empty()) {
         cmdline += " --extra-models-dir \"" + extra_models_dir_ + "\"";
@@ -609,16 +599,8 @@ bool ServerManager::spawn_process() {
 
         // Multi-model support
         args.push_back("--max-loaded-models");
-        std::string max_llm_str = std::to_string(max_llm_models_);
-        std::string max_emb_str = std::to_string(max_embedding_models_);
-        std::string max_rer_str = std::to_string(max_reranking_models_);
-        std::string max_aud_str = std::to_string(max_audio_models_);
-        std::string max_img_str = std::to_string(max_image_models_);
-        args.push_back(max_llm_str.c_str());
-        args.push_back(max_emb_str.c_str());
-        args.push_back(max_rer_str.c_str());
-        args.push_back(max_aud_str.c_str());
-        args.push_back(max_img_str.c_str());
+        std::string max_models_str = std::to_string(max_loaded_models_);
+        args.push_back(max_models_str.c_str());
 
         // Extra models directory
         if (!extra_models_dir_.empty()) {
@@ -677,11 +659,11 @@ bool ServerManager::terminate_process() {
 
 bool ServerManager::is_process_alive() const {
     if (server_pid_ <= 0) return false;
-    
+
     // Send signal 0 to check if process exists (works on Mac and Linux)
     if (kill(server_pid_, 0) == 0) {
         // Process exists.
-        
+
 #ifdef __linux__
         // Linux: Check for Zombie state via /proc
         std::string stat_path = "/proc/" + std::to_string(server_pid_) + "/stat";

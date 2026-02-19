@@ -13,6 +13,9 @@
 #include <httplib.h>
 #include "router.h"
 #include "model_manager.h"
+#ifdef LEMON_HAS_WEBSOCKET
+#include "websocket_server.h"
+#endif
 #include "lemon/utils/network_beacon.h"
 
 namespace lemon {
@@ -23,11 +26,7 @@ public:
            const std::string& host,
            const std::string& log_level,
            const json& default_options,
-           int max_llm_models,
-           int max_embedding_models,
-           int max_reranking_models,
-           int max_audio_models,
-           int max_image_models,
+           int max_loaded_models,
            const std::string& extra_models_dir,
            bool no_broadcast);
 
@@ -123,6 +122,9 @@ private:
 
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
+#ifdef LEMON_HAS_WEBSOCKET
+    std::unique_ptr<WebSocketServer> websocket_server_;
+#endif
 
     bool running_;
 
