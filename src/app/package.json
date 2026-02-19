@@ -12,7 +12,8 @@
     "build": "npm run build:renderer:prod && electron-builder",
     "build:win": "npm run build:renderer:prod && electron-builder --win",
     "build:mac": "npm run build:renderer:prod && electron-builder --mac",
-    "build:linux": "npm run build:renderer:prod && electron-builder --linux"
+    "build:linux": "npm run build:renderer:prod && electron-builder --linux",
+    "build:appimage": "npm run build:renderer:prod && electron-builder --linux AppImage"
   },
   "keywords": [
     "electron",
@@ -29,7 +30,7 @@
     "copy-webpack-plugin": "^13.0.1",
     "css-loader": "^7.1.2",
     "electron": "^39.2.4",
-    "electron-builder": "^24.9.1",
+    "electron-builder": "^26.8.1",
     "glob": ">=10.5.0",
     "html-webpack-plugin": "^5.6.4",
     "node-forge": ">=1.3.2",
@@ -56,6 +57,9 @@
     "appId": "com.lemonade.app",
     "productName": "Lemonade",
     "publish": null,
+    "toolsets": {
+      "appimage": "1.0.2"
+    },
     "directories": {
       "output": "dist-app"
     },
@@ -105,7 +109,22 @@
       "target": [
         "dir"
       ],
-      "category": "Utility"
+      "category": "Utility",
+      "icon": "../../src/app/assets/logo.svg",
+      "desktop": {
+        "entry": {
+          "Name": "Lemonade App",
+          "Comment": "Local LLMs with GPU and NPU acceleration - Desktop Application",
+          "GenericName": "AI Model Manager",
+          "Keywords": "AI;LLM;GPU;NPU;Machine Learning;",
+          "Categories": "Development;Utility;"
+        }
+      }
+    },
+    "appImage": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "synopsis": "Local LLM server with GPU and NPU acceleration",
+      "category": "Development"
     },
     "nsis": {
       "oneClick": false,
