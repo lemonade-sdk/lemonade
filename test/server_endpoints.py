@@ -881,7 +881,9 @@ class EndpointTests(ServerTestBase):
 
         self.assertIn("labels", model_data)
         self.assertIn("custom", model_data["labels"])
-        self.assertIn("image", model_data["labels"])
+
+        if recipe == "sd-cpp":
+            self.assertIn("image", model_data["labels"])
 
         self.assertIn("recipe_options", model_data)
         self.assertIn(recipe_backend, model_data["recipe_options"])
