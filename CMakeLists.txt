@@ -687,21 +687,43 @@ endif()
 # Resources
 # ============================================================
 
-# Copy resources to the build directory during configuration
 # Resources are self-contained in src/cpp/resources/:
 #   - static/index.html, static/favicon.ico (web UI)
 #   - server_models.json (model registry)
 #   - backend_versions.json (backend version configuration)
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/
-     DESTINATION ${CMAKE_BINARY_DIR}/resources)
 
-# Copy resources to the runtime directoriy after build
+# Collect resource files for dependency tracking
+file(GLOB_RECURSE RESOURCE_FILES
+    CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/*"
+)
+
+# Create a custom target that depends on resource files
+# This ensures resources are copied when source files change
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/resources.stamp
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources
+        ${CMAKE_BINARY_DIR}/resources
+    COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/resources.stamp
+    DEPENDS ${RESOURCE_FILES}
+    COMMENT "Copying resources to build directory"
+)
+
+add_custom_target(copy_resources ALL
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/resources.stamp
+)
+
+# Copy resources to the runtime directory after build
 add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_BINARY_DIR}/resources
         $<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/resources
     COMMENT "Copying resources to output directory"
 )
+
+# Ensure resources are copied before building the executable
+add_dependencies(${EXECUTABLE_NAME} copy_resources)
 
 # ============================================================
 # Electron App Integration (Cross-Platform)
@@ -1102,6 +1124,13 @@ if(UNIX AND NOT APPLE)
     # Install resources (all files including KaTeX fonts)
     install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/
         DESTINATION share/lemonade-server/resources
+    )
+
+    # Install example scripts
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/examples/
+        DESTINATION share/lemonade-server/examples
+        USE_SOURCE_PERMISSIONS
+        PATTERN "*.sh" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
     )
 
     # Configure systemd service file with correct paths
