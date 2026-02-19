@@ -685,8 +685,6 @@ const downloadModelForChat = async (modelName: string): Promise<boolean> => {
 const sendMessage = async () => {
     if ((!inputValue.trim() && uploadedImages.length === 0) || isLoading || isDownloadingForChat) return;
 
-    if (uploadedImages.length > 0 && !isVisionModel()) return;
-
     // Cancel any existing request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
