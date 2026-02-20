@@ -82,6 +82,13 @@ void WhisperServer::install(const std::string& backend) {
 #else
         throw std::runtime_error("Unsupported platform for whisper.cpp");
 #endif
+    } else if (backend == "vulkan") {
+#if defined(__linux__)
+        repo = "lemonade-sdk/whisper.cpp-npu";
+        filename = "whisper-" + expected_version + "-linux-vulkan-x86_64.tar.gz";
+#else
+        throw std::runtime_error("Vulkan whisper.cpp backend is currently supported only on Linux");
+#endif
     } else {
         throw std::runtime_error("[WhisperServer] Unknown backend: " + backend);
     }

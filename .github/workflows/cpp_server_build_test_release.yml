@@ -553,6 +553,10 @@ jobs:
             test_type: whisper
             backend: cpu
             runner: [rai300_400, Linux]
+          - name: whisper (vulkan)
+            test_type: whisper
+            backend: vulkan
+            runner: [rai300_400, Linux]
           # Text to speech
           - name: text-to-speech
             test_type: tts

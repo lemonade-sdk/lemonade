@@ -101,11 +101,14 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"cpu", {"x86_64"}},
     }},
 
-    // whisper.cpp - NPU Windows only, CPU Windows/Linux
+    // whisper.cpp - NPU Windows only, CPU Windows/Linux, Vulkan Linux only
     {"whispercpp", "npu", {"windows"}, {
         {"npu", {"XDNA2"}},
     }},
     {"whispercpp", "cpu", {"windows", "linux"}, {
+        {"cpu", {"x86_64"}},
+    }},
+    {"whispercpp", "vulkan", {"linux"}, {
         {"cpu", {"x86_64"}},
     }},
 
