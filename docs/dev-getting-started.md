@@ -235,7 +235,7 @@ cpack
 
 **Package Output:**
 
-Creates `lemonade-server-minimal_<VERSION>_amd64.deb` (e.g., `lemonade-server-minimal_9.0.3_amd64.deb`) which:
+Creates `lemonade-server_<VERSION>_amd64.deb` (e.g., `lemonade-server_9.0.3_amd64.deb`) which:
 - Installs to `/opt/bin/` (executables)
 - Installs resources to `/opt/share/lemonade-server/`
 - Creates desktop entry in `/opt/share/applications/`
@@ -247,7 +247,7 @@ Creates `lemonade-server-minimal_<VERSION>_amd64.deb` (e.g., `lemonade-server-mi
 
 ```bash
 # Replace <VERSION> with the actual version (e.g., 9.0.0)
-sudo apt install ./lemonade-server-minimal_<VERSION>_amd64.deb
+sudo apt install ./lemonade-server_<VERSION>_amd64.deb
 ```
 
 **Uninstallation:**
@@ -283,20 +283,20 @@ cpack -G RPM
 
 **Package Output:**
 
-Creates `lemonade-server-minimal-<VERSION>.x86_64.rpm` (e.g., `lemonade-server-minimal-9.1.2.x86_64.rpm`) and
+Creates `lemonade-server-<VERSION>.x86_64.rpm` (e.g., `lemonade-server-9.1.2.x86_64.rpm`) and
 resources are installed as per DEB version above
 
 **Installation:**
 
 ```bash
 # Replace <VERSION> with the actual version (e.g., 9.0.0)
-sudo dnf install ./lemonade-server-minimal-<VERSION>.x86_64.rpm
+sudo dnf install ./lemonade-server-<VERSION>.x86_64.rpm
 ```
 
 **Uninstallation:**
 
 ```bash
-sudo dnf remove lemonade-server-minimal
+sudo dnf remove lemonade-server
 ```
 
 **Post-Installation:**
