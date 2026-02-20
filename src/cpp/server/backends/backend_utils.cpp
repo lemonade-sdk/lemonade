@@ -213,7 +213,6 @@ namespace lemon::backends {
         }
 
         std::string version = recipe_config[backend].get<std::string>();
-        std::cout << "[BackendUtils] Using " << backend_id << " version from config: " << version << std::endl;
         return version;
     }
 

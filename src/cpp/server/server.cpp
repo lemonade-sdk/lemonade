@@ -2522,10 +2522,21 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         return;
     }
 
-    // Get system info - this function handles all errors internally and never throws
+    // Hardware info is cached statically (never changes within a process lifetime)
     nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache();
 
-    // Always re-compute recipes (backend availability changes after install/uninstall)
+    // Check if BackendManager already has a cached recipes section
+    // (populated on first request, then kept current by install/uninstall)
+    if (backend_manager_) {
+        json cached_recipes = backend_manager_->get_recipes_cache();
+        if (!cached_recipes.empty()) {
+            system_info["recipes"] = cached_recipes;
+            res.set_content(system_info.dump(), "application/json");
+            return;
+        }
+    }
+
+    // First request: compute recipes from scratch (expensive — filesystem scans, etc.)
     try {
         auto sys_info = create_system_info();
         if (system_info.contains("devices")) {
@@ -2535,31 +2546,33 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         // Keep whatever recipes were cached if recomputation fails
     }
 
-    // Add release_url, download_filename, and version from BackendManager (single source of truth)
+    // Enrich with release_url, download_filename, and version from BackendManager
     if (backend_manager_ && system_info.contains("recipes")) {
         for (auto& [recipe_name, recipe_info] : system_info["recipes"].items()) {
             if (!recipe_info.contains("backends")) continue;
             for (auto& [backend_name, backend_info] : recipe_info["backends"].items()) {
                 try {
-                    std::string url = backend_manager_->get_release_url(recipe_name, backend_name);
-                    if (!url.empty()) {
-                        backend_info["release_url"] = url;
+                    auto enrichment = backend_manager_->get_backend_enrichment(recipe_name, backend_name);
+                    if (!enrichment.release_url.empty()) {
+                        backend_info["release_url"] = enrichment.release_url;
                     }
-                    std::string filename = backend_manager_->get_download_filename(recipe_name, backend_name);
-                    if (!filename.empty()) {
-                        backend_info["download_filename"] = filename;
+                    if (!enrichment.download_filename.empty()) {
+                        backend_info["download_filename"] = enrichment.download_filename;
                     }
-                    // Always provide the configured version (from backend_versions.json)
-                    // so UI can show version+link even for not-installed backends
+                    // Always provide the configured version so UI can show version+link
+                    // even for not-installed backends
                     if (!backend_info.contains("version") || backend_info["version"].get<std::string>().empty()) {
-                        std::string ver = backend_manager_->get_latest_version(recipe_name, backend_name);
-                        if (!ver.empty()) {
-                            backend_info["version"] = ver;
+                        if (!enrichment.version.empty()) {
+                            backend_info["version"] = enrichment.version;
                         }
                     }
                 } catch (...) {}
             }
         }
+
+        // Store in BackendManager's cache — subsequent requests return instantly,
+        // install/uninstall do targeted updates to keep it current.
+        backend_manager_->set_recipes_cache(system_info["recipes"]);
     }
 
     res.set_content(system_info.dump(), "application/json");

@@ -2,6 +2,7 @@
 
 #include <string>
 #include <functional>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include "model_manager.h"  // For DownloadProgressCallback
 
@@ -32,13 +33,39 @@ public:
     // Get the platform-specific download filename for a recipe/backend (empty if N/A)
     std::string get_download_filename(const std::string& recipe, const std::string& backend);
 
+    // Enrichment data for a backend (all fields computed in a single call)
+    struct BackendEnrichment {
+        std::string release_url;
+        std::string download_filename;
+        std::string version;
+    };
+
+    // Get all enrichment data for a backend in one call (avoids repeated config lookups)
+    BackendEnrichment get_backend_enrichment(const std::string& recipe, const std::string& backend);
+
+    // Recipes cache: populated by Server on first system-info request,
+    // then kept up-to-date by install_backend/uninstall_backend with targeted updates.
+    void set_recipes_cache(const json& recipes);
+    json get_recipes_cache();
+
 private:
+    // Update a single backend entry in the cached recipes JSON
+    void update_recipes_cache_entry(const std::string& recipe, const std::string& backend, bool installed);
+
+    json cached_recipes_;
+    std::mutex cache_mutex_;
+    // Cached backend_versions.json (loaded once at construction)
+    json backend_versions_;
+
     // Installation parameters for a backend
     struct InstallParams {
         std::string repo;
         std::string filename;
         std::string version;
     };
+
+    // Get version for a recipe/backend from the cached config
+    std::string get_version_from_config(const std::string& recipe, const std::string& backend);
 
     // Get the install parameters for a recipe/backend combination
     InstallParams get_install_params(const std::string& recipe, const std::string& backend);

@@ -64,6 +64,15 @@ const BACKEND_INFO: Record<string, { displayName: string; description: string }>
   },
 };
 
+const RECIPE_ORDER = new Map([
+  'llamacpp',
+  'whispercpp',
+  'sd-cpp',
+  'kokoro',
+  'flm',
+  'ryzenai-llm',
+].map((recipe, index) => [recipe, index]));
+
 const getRecipeDisplayName = (recipe: string): string =>
   RECIPE_INFO[recipe]?.displayName || recipe;
 
@@ -213,7 +222,12 @@ const BackendManager: React.FC<BackendManagerProps> = ({ onBack }) => {
   const supportedRecipes: [string, Recipe][] = recipes
     ? Object.entries(recipes).filter(([, recipe]) =>
         Object.values(recipe.backends).some(b => b.supported)
-      )
+      ).sort(([a], [b]) => {
+        const aOrder = RECIPE_ORDER.get(a) ?? Number.MAX_SAFE_INTEGER;
+        const bOrder = RECIPE_ORDER.get(b) ?? Number.MAX_SAFE_INTEGER;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+        return a.localeCompare(b);
+      })
     : [];
 
   return (

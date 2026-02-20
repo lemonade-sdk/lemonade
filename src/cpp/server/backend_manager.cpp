@@ -13,12 +13,32 @@
 #include <iostream>
 #include <filesystem>
 #include <fstream>
+#include <thread>
+#include <chrono>
 
 namespace fs = std::filesystem;
 
 namespace lemon {
 
 BackendManager::BackendManager() {
+    try {
+        std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+        backend_versions_ = utils::JsonUtils::load_from_file(config_path);
+    } catch (const std::exception& e) {
+        std::cerr << "[BackendManager] Warning: Could not load backend_versions.json: " << e.what() << std::endl;
+        backend_versions_ = json::object();
+    }
+}
+
+std::string BackendManager::get_version_from_config(const std::string& recipe, const std::string& backend) {
+    if (!backend_versions_.contains(recipe) || !backend_versions_[recipe].is_object()) {
+        throw std::runtime_error("backend_versions.json is missing '" + recipe + "' section");
+    }
+    const auto& recipe_config = backend_versions_[recipe];
+    if (!recipe_config.contains(backend) || !recipe_config[backend].is_string()) {
+        throw std::runtime_error("backend_versions.json is missing version for: " + recipe + ":" + backend);
+    }
+    return recipe_config[backend].get<std::string>();
 }
 
 // ============================================================================
@@ -178,13 +198,11 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
 
     if (recipe == "ryzenai-llm") {
         // ryzenai-server has its version at top level in backend_versions.json
-        std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-        json config = utils::JsonUtils::load_from_file(config_path);
-        if (config.contains("ryzenai-server") && config["ryzenai-server"].is_string()) {
-            version = config["ryzenai-server"].get<std::string>();
-        } else if (config.contains("ryzenai-server") && config["ryzenai-server"].is_object()
-                   && config["ryzenai-server"].contains("default")) {
-            version = config["ryzenai-server"]["default"].get<std::string>();
+        if (backend_versions_.contains("ryzenai-server") && backend_versions_["ryzenai-server"].is_string()) {
+            version = backend_versions_["ryzenai-server"].get<std::string>();
+        } else if (backend_versions_.contains("ryzenai-server") && backend_versions_["ryzenai-server"].is_object()
+                   && backend_versions_["ryzenai-server"].contains("default")) {
+            version = backend_versions_["ryzenai-server"]["default"].get<std::string>();
         } else {
             throw std::runtime_error("backend_versions.json is missing 'ryzenai-server' version");
         }
@@ -196,8 +214,8 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
         throw std::runtime_error("FLM uses a special installer and cannot be installed via get_install_params");
     }
 
-    // Standard recipes use BackendUtils::get_backend_version
-    version = backends::BackendUtils::get_backend_version(recipe, backend);
+    // Standard recipes: look up version from cached config
+    version = get_version_from_config(recipe, backend);
 
     if (recipe == "llamacpp") return get_llamacpp_params(backend, version);
     if (recipe == "whispercpp") return get_whispercpp_params(backend, version);
@@ -246,6 +264,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
             p.complete = true;
             progress_cb(p);
         }
+        update_recipes_cache_entry(recipe, backend, true);
         return;
     }
 
@@ -257,6 +276,8 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     backends::BackendUtils::install_from_github(
         spec, params.version, params.repo, params.filename, backend_dir, progress_cb);
+
+    update_recipes_cache_entry(recipe, backend, true);
 }
 
 void BackendManager::install_flm(const std::string& backend) {
@@ -290,11 +311,23 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
     std::string install_dir = backends::BackendUtils::get_install_directory(dir_name, backend_dir);
 
     if (fs::exists(install_dir)) {
-        fs::remove_all(install_dir);
+        // On Windows, antivirus scanning or indexing can briefly lock files after extraction.
+        // Retry a few times with a short delay to handle transient locks.
+        std::error_code ec;
+        for (int attempt = 0; attempt < 5; ++attempt) {
+            fs::remove_all(install_dir, ec);
+            if (!ec || !fs::exists(install_dir)) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+        if (ec && fs::exists(install_dir)) {
+            throw std::runtime_error("Failed to remove " + install_dir + ": " + ec.message());
+        }
         std::cout << "[BackendManager] Removed: " << install_dir << std::endl;
     } else {
         std::cout << "[BackendManager] Nothing to uninstall at: " << install_dir << std::endl;
     }
+
+    update_recipes_cache_entry(recipe, backend, false);
 }
 
 // ============================================================================
@@ -344,24 +377,20 @@ std::string BackendManager::get_installed_version(const std::string& recipe, con
 std::string BackendManager::get_latest_version(const std::string& recipe, const std::string& backend) {
     try {
         if (recipe == "ryzenai-llm") {
-            std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-            json config = utils::JsonUtils::load_from_file(config_path);
-            if (config.contains("ryzenai-server") && config["ryzenai-server"].is_string()) {
-                return config["ryzenai-server"].get<std::string>();
+            if (backend_versions_.contains("ryzenai-server") && backend_versions_["ryzenai-server"].is_string()) {
+                return backend_versions_["ryzenai-server"].get<std::string>();
             }
             return "";
         }
 
         if (recipe == "flm") {
-            std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-            json config = utils::JsonUtils::load_from_file(config_path);
-            if (config.contains("flm") && config["flm"].contains("version")) {
-                return config["flm"]["version"].get<std::string>();
+            if (backend_versions_.contains("flm") && backend_versions_["flm"].contains("version")) {
+                return backend_versions_["flm"]["version"].get<std::string>();
             }
             return "";
         }
 
-        return backends::BackendUtils::get_backend_version(recipe, backend);
+        return get_version_from_config(recipe, backend);
     } catch (...) {
         return "";
     }
@@ -439,6 +468,73 @@ std::string BackendManager::get_download_filename(const std::string& recipe, con
         return params.filename;
     } catch (...) {
         return "";
+    }
+}
+
+BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const std::string& recipe, const std::string& backend) {
+    BackendEnrichment result;
+    try {
+        if (recipe == "flm") {
+            result.version = get_latest_version(recipe, backend);
+            if (!result.version.empty()) {
+                result.release_url = "https://github.com/FastFlowLM/FastFlowLM/releases/tag/" + result.version;
+            }
+            return result;
+        }
+
+        if (recipe == "ryzenai-llm") {
+            result.version = get_latest_version(recipe, backend);
+            if (!result.version.empty()) {
+                result.release_url = "https://github.com/lemonade-sdk/ryzenai-server/releases/tag/" + result.version;
+            }
+            result.download_filename = "ryzenai-server.zip";
+            return result;
+        }
+
+        // Standard recipes: one get_install_params() call gives us everything
+        auto params = get_install_params(recipe, backend);
+        result.release_url = "https://github.com/" + params.repo + "/releases/tag/" + params.version;
+        result.download_filename = params.filename;
+        result.version = params.version;
+    } catch (...) {}
+    return result;
+}
+
+// ============================================================================
+// Recipes cache
+// ============================================================================
+
+void BackendManager::set_recipes_cache(const json& recipes) {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    cached_recipes_ = recipes;
+}
+
+json BackendManager::get_recipes_cache() {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    return cached_recipes_;
+}
+
+void BackendManager::update_recipes_cache_entry(const std::string& recipe, const std::string& backend, bool installed) {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    if (cached_recipes_.empty()) return;
+
+    if (!cached_recipes_.contains(recipe) ||
+        !cached_recipes_[recipe].contains("backends") ||
+        !cached_recipes_[recipe]["backends"].contains(backend)) {
+        return;
+    }
+
+    auto& info = cached_recipes_[recipe]["backends"][backend];
+    info["available"] = installed;
+
+    if (installed) {
+        // Update version and enrichment from config (no disk I/O — uses cached backend_versions_)
+        auto enrichment = get_backend_enrichment(recipe, backend);
+        if (!enrichment.version.empty()) info["version"] = enrichment.version;
+        if (!enrichment.release_url.empty()) info["release_url"] = enrichment.release_url;
+        if (!enrichment.download_filename.empty()) info["download_filename"] = enrichment.download_filename;
+    } else {
+        info.erase("version");
     }
 }
 
