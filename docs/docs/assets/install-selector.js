@@ -181,59 +181,86 @@ function renderDownload() {
     if (installType) installType.style.display = 'table-row';
 
     if (distro === 'ubuntu') {
-      // Ubuntu: Show snap and deb package commands
-      let snapCommands, debFile;
-      if (type === 'app') {
-        // For App + Server, need to install both snaps
-        // Install server first, then the desktop app (which connects to the server)
-        snapCommands = [
-          'sudo snap install lemonade-server',
-          'sudo snap install lemonade'
-        ];
-        debFile = `lemonade_${version}_amd64.deb`;
-      } else {
-        // For Server Only, just need the server snap
-        snapCommands = [
-          'sudo snap install lemonade-server',
-        ];
-        debFile = `lemonade-server-minimal_${version}_amd64.deb`;
-      }
+      // Ubuntu: Show structured server + frontend installation
+      const debFile = `lemonade-server_${version}_amd64.deb`;
+      const appImageFile = `Lemonade-${version}-x86_64.AppImage`;
       const downloadUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${debFile}`;
+      const appImageUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${appImageFile}`;
 
       if (downloadArea) {
         downloadArea.style.display = 'none';
       }
       if (installCmdDiv) {
         installCmdDiv.style.display = 'block';
-        const commands = [
+        const debCommands = [
           `wget ${downloadUrl}`,
           `sudo apt install ./${debFile}`
         ];
 
+        let frontendSection = '';
+        if (type === 'app') {
+          frontendSection = `
+            <div class="lmn-install-section-title">Step 2: Choose your frontend</div>
+            <div class="lmn-install-method-header">Option 1: Web App (default, available at <a href="http://localhost:8000" target="_blank">http://localhost:8000</a>)</div>
+            <div class="lmn-note">The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.</div>
+
+            <div class="lmn-install-method-header">Option 2: AppImage (portable desktop app, no installation required)</div>
+            <pre><code class="language-bash" id="lmn-install-appimage-block"></code></pre>
+
+            <div class="lmn-install-method-header">Option 3: Snap (fully sandboxed desktop app)</div>
+            <pre><code class="language-bash" id="lmn-install-snap-app-block"></code></pre>
+          `;
+        }
+
         installCmdDiv.innerHTML = `
-          <div class="lmn-install-method-header">Install via Debian package:</div>
+          <div class="lmn-install-section-title">Step 1: Install lemonade-server</div>
+          <div class="lmn-install-method-header">Via Debian package:</div>
           <pre><code class="language-bash" id="lmn-install-pre-block"></code></pre>
-          <div class="lmn-install-method-header">Or install via Snap (for a fully sandboxed portable experience):</div>
-          <pre><code class="language-bash" id="lmn-install-snap-block"></code></pre>
+          <div class="lmn-install-method-header">Or via Snap:</div>
+          <pre><code class="language-bash" id="lmn-install-snap-server-block"></code></pre>
+          ${frontendSection}
         `;
 
         setTimeout(() => {
           // Render deb commands
           const pre = document.getElementById('lmn-install-pre-block');
           if (pre) {
-            pre.innerHTML = commands.map((line, idx) => {
+            pre.innerHTML = debCommands.map((line, idx) => {
               const safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
               return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyInstallLine(event, ${idx})">📋</button></div>`;
             }).join('');
           }
 
-          // Render snap command(s)
-          const snapPre = document.getElementById('lmn-install-snap-block');
-          if (snapPre) {
-            snapPre.innerHTML = snapCommands.map((cmd, idx) => {
-              const safeLine = cmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-              return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopySnapLine(event, ${idx})">📋</button></div>`;
-            }).join('');
+          // Render server snap command
+          const serverSnapPre = document.getElementById('lmn-install-snap-server-block');
+          if (serverSnapPre) {
+            const serverSnapCmd = 'sudo snap install lemonade-server';
+            const safeLine = serverSnapCmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            serverSnapPre.innerHTML = `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyServerSnapLine(event)">📋</button></div>`;
+          }
+
+          // Render AppImage commands if App + Server selected
+          if (type === 'app') {
+            const appImagePre = document.getElementById('lmn-install-appimage-block');
+            if (appImagePre) {
+              const appImageCommands = [
+                `wget ${appImageUrl}`,
+                `chmod +x ${appImageFile}`,
+                `./${appImageFile}`
+              ];
+              appImagePre.innerHTML = appImageCommands.map((cmd, idx) => {
+                const safeLine = cmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyAppImageLine(event, ${idx})">📋</button></div>`;
+              }).join('');
+            }
+
+            // Render app snap command
+            const appSnapPre = document.getElementById('lmn-install-snap-app-block');
+            if (appSnapPre) {
+              const appSnapCmd = 'sudo snap install lemonade';
+              const safeLine = appSnapCmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              appSnapPre.innerHTML = `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyAppSnapLine(event)">📋</button></div>`;
+            }
           }
         }, 0);
       }
@@ -342,13 +369,41 @@ function renderDownload() {
   }
 }
 
-window.lmnCopySnapLine = function(e, idx) {
+window.lmnCopyAppImageLine = function(e, idx) {
   e.stopPropagation();
-  const pre = document.getElementById('lmn-install-snap-block');
+  const pre = document.getElementById('lmn-install-appimage-block');
   if (!pre) return;
   const lines = Array.from(pre.querySelectorAll('.lmn-command-line span')).map(span => span.textContent);
   if (lines[idx] !== undefined) {
     navigator.clipboard.writeText(lines[idx]);
+    const btn = e.currentTarget;
+    const old = btn.textContent;
+    btn.textContent = '✔';
+    setTimeout(() => { btn.textContent = old; }, 900);
+  }
+};
+
+window.lmnCopyServerSnapLine = function(e) {
+  e.stopPropagation();
+  const pre = document.getElementById('lmn-install-snap-server-block');
+  if (!pre) return;
+  const line = pre.querySelector('.lmn-command-line span');
+  if (line) {
+    navigator.clipboard.writeText(line.textContent);
+    const btn = e.currentTarget;
+    const old = btn.textContent;
+    btn.textContent = '✔';
+    setTimeout(() => { btn.textContent = old; }, 900);
+  }
+};
+
+window.lmnCopyAppSnapLine = function(e) {
+  e.stopPropagation();
+  const pre = document.getElementById('lmn-install-snap-app-block');
+  if (!pre) return;
+  const line = pre.querySelector('.lmn-command-line span');
+  if (line) {
+    navigator.clipboard.writeText(line.textContent);
     const btn = e.currentTarget;
     const old = btn.textContent;
     btn.textContent = '✔';

@@ -2139,7 +2139,7 @@ managers and create the build directory.</p>
 cpack
 </code></pre></div>
 <p><strong>Package Output:</strong></p>
-<p>Creates <code>lemonade-server-minimal_&lt;VERSION&gt;_amd64.deb</code> (e.g., <code>lemonade-server-minimal_9.0.3_amd64.deb</code>) which:
+<p>Creates <code>lemonade-server_&lt;VERSION&gt;_amd64.deb</code> (e.g., <code>lemonade-server_9.0.3_amd64.deb</code>) which:
 - Installs to <code>/opt/bin/</code> (executables)
 - Installs resources to <code>/opt/share/lemonade-server/</code>
 - Creates desktop entry in <code>/opt/share/applications/</code>
@@ -2148,7 +2148,7 @@ cpack
 - Includes postinst script that creates writable <code>/opt/share/lemonade-server/llama/</code> directory</p>
 <p><strong>Installation:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Replace &lt;VERSION&gt; with the actual version (e.g., 9.0.0)</span>
-sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>./lemonade-server-minimal_&lt;VERSION&gt;_amd64.deb
+sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>./lemonade-server_&lt;VERSION&gt;_amd64.deb
 </code></pre></div>
 <p><strong>Uninstallation:</strong></p>
 <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>dpkg<span class="w"> </span>-r<span class="w"> </span>lemonade-server
@@ -2171,14 +2171,14 @@ lemonade-server<span class="w"> </span>serve
 cpack<span class="w"> </span>-G<span class="w"> </span>RPM
 </code></pre></div>
 <p><strong>Package Output:</strong></p>
-<p>Creates <code>lemonade-server-minimal-&lt;VERSION&gt;.x86_64.rpm</code> (e.g., <code>lemonade-server-minimal-9.1.2.x86_64.rpm</code>) and
+<p>Creates <code>lemonade-server-&lt;VERSION&gt;.x86_64.rpm</code> (e.g., <code>lemonade-server-9.1.2.x86_64.rpm</code>) and
 resources are installed as per DEB version above</p>
 <p><strong>Installation:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Replace &lt;VERSION&gt; with the actual version (e.g., 9.0.0)</span>
-sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>./lemonade-server-minimal-&lt;VERSION&gt;.x86_64.rpm
+sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>./lemonade-server-&lt;VERSION&gt;.x86_64.rpm
 </code></pre></div>
 <p><strong>Uninstallation:</strong></p>
-<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>dnf<span class="w"> </span>remove<span class="w"> </span>lemonade-server-minimal
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>dnf<span class="w"> </span>remove<span class="w"> </span>lemonade-server
 </code></pre></div>
 <p><strong>Post-Installation:</strong></p>
 <p>Same as .deb above</p>
