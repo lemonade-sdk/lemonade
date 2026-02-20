@@ -4963,7 +4963,7 @@ footer {
 .center-panel-menu-cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 255px), 1fr));
-    gap: clamp(8px, 2vw, 16px);
+    gap: clamp(12px, 2.6vw, 20px);
     width: 100%;
     align-items: stretch;
 }
@@ -5062,7 +5062,7 @@ footer {
 .pinned-apps-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: clamp(5px, 1.4vw, 8px);
+    gap: clamp(4px, 1.1vw, 6px);
     padding: 2px 0;
 }
 
@@ -5076,8 +5076,8 @@ footer {
     background: rgba(255, 255, 255, 0.016);
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 11px;
-    min-height: clamp(58px, 10vw, 74px);
-    padding: clamp(5px, 1.5vw, 8px);
+    min-height: clamp(54px, 9vw, 66px);
+    padding: clamp(4px, 1.2vw, 6px);
     transition: background 0.2s ease, border-color 0.2s ease;
 }
 
@@ -5095,8 +5095,8 @@ footer {
 }
 
 .pinned-app-icon {
-    width: clamp(32px, 6vw, 44px);
-    height: clamp(32px, 6vw, 44px);
+    width: clamp(30px, 5.2vw, 40px);
+    height: clamp(30px, 5.2vw, 40px);
     border-radius: 9px;
     object-fit: cover;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
@@ -5192,7 +5192,7 @@ footer {
 .backend-manager-preview {
     display: grid;
     grid-template-rows: repeat(5, minmax(0, 1fr));
-    gap: clamp(5px, 1.4vw, 8px);
+    gap: clamp(4px, 1.1vw, 6px);
     padding: 2px 0;
     height: 100%;
 }
@@ -5202,9 +5202,9 @@ footer {
     align-items: center;
     gap: clamp(6px, 1.2vw, 9px);
     color: rgba(255, 255, 255, 0.76);
-    font-size: clamp(0.7rem, 1.5vw, 0.82rem);
+    font-size: clamp(0.68rem, 1.35vw, 0.78rem);
     line-height: 1.2;
-    padding: clamp(7px, 1.6vw, 10px) clamp(7px, 1.8vw, 12px);
+    padding: clamp(6px, 1.25vw, 8px) clamp(7px, 1.5vw, 10px);
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 11px;
     background: rgba(255, 255, 255, 0.016);
@@ -5219,8 +5219,8 @@ footer {
 }
 
 .backend-preview-icon {
-    width: clamp(14px, 2.2vw, 18px);
-    height: clamp(14px, 2.2vw, 18px);
+    width: clamp(13px, 1.9vw, 16px);
+    height: clamp(13px, 1.9vw, 16px);
     border-radius: 0;
     border: none;
     background: transparent;
@@ -5239,6 +5239,32 @@ footer {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+@container (max-width: 760px) {
+    .center-panel-menu-title,
+    .center-panel-menu-subtitle {
+        width: 100%;
+        max-width: 500px;
+        margin-inline: auto;
+    }
+
+    .center-panel-menu-cards {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    .center-panel-menu-card {
+        width: 100%;
+        max-width: 440px;
+        margin-inline: auto;
+    }
+
+    .pinned-apps-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        width: 100%;
+    }
 }
 
 

@@ -235,7 +235,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ onBack }) => {
               </svg>
             </button>
           )}
-          <h3>Backend Manager</h3>
+          <h3>Backends</h3>
         </div>
       </div>
 
