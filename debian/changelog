@@ -1,4 +1,4 @@
-lemonade (9.3.5) UNRELEASED; urgency=medium
+lemonade (@@VERSION@@) UNRELEASED; urgency=medium
 
   * New upstream version
 
