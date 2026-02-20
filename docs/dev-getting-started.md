@@ -61,10 +61,10 @@ Lemonade consists of these main executables:
 
 ### Build Steps
 A helper script is available that will set up the build environment on popular
-Linux distributions.  This will prompt to install dependencies via native package
-managers and create the build directory.
+Linux distributions and macOS.  This will prompt to install dependencies via native
+package managers and create the build directory.
 
-**Linux**
+**Linux / macOS**
 ```bash
 ./setup.sh
 ```
@@ -76,7 +76,7 @@ managers and create the build directory.
 
 Build by running:
 
-**Linux**
+**Linux / macOS**
 ```bash
 cmake --build --preset default
 ```
@@ -173,10 +173,10 @@ chmod +x build/app-appimage/Lemonade-*.AppImage
   - Downloaded backends (llama-server, ryzenai-server): `~/.cache/lemonade/bin/`
   - Model downloads: `~/.cache/huggingface/` (follows HF conventions)
 
-**macOS:**
+**macOS (beta):**
 - Uses native system frameworks (Cocoa, Foundation)
 - ARM Macs use Metal backend by default for llama.cpp
-- ⚠️ **Note:** macOS build is currently a stub implementation and not fully functional
+- macOS support is currently in beta; a signed and notarized `.pkg` installer is available from the [releases page](https://github.com/lemonade-sdk/lemonade/releases/latest)
 
 ## Building Installers
 

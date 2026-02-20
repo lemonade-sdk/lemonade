@@ -22,7 +22,7 @@ To identify if Lemonade Server is installed on a system, you can use the [`lemon
 lemonade-server --version
 ```
 
->Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (lemonade-server-minimal.msi) and Debian Installer (lemonade-server_<VERSION>_amd64.deb).
+>Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (lemonade-server-minimal.msi), Debian Installer (lemonade-server_<VERSION>_amd64.deb), or macOS Installer (Lemonade-<VERSION>-Darwin.pkg).
 
 ### Checking Server Status
 
@@ -101,7 +101,7 @@ By default, the server runs on port 8000. Optionally, you can specify a custom p
 lemonade-server serve --port 8123
 ```
 
-You can also prevent the server from showing a system tray icon by using the `--no-tray` flag (Windows only):
+You can also prevent the server from showing a system tray icon by using the `--no-tray` flag (Windows and macOS):
 
 ```bash
 lemonade-server serve --no-tray
@@ -261,6 +261,29 @@ sudo systemctl edit lemonade-server
 
 This creates an override file that takes precedence over the original service file and persists across updates.
 
+
+## macOS Installation (Beta)
+
+**Available Installer:**
+- `Lemonade-<VERSION>-Darwin.pkg` - Signed and notarized macOS installer package
+
+**GUI Installation:**
+
+Double-click the `.pkg` file to launch the installer, or run:
+
+```bash
+sudo installer -pkg Lemonade-<VERSION>-Darwin.pkg -target /
+```
+
+**Silent Installation:**
+
+```bash
+sudo installer -pkg Lemonade-<VERSION>-Darwin.pkg -target /
+```
+
+The macOS installer places binaries in `/usr/local/bin`, so `lemonade-server` is available in PATH immediately after installation.
+
+> **Note:** macOS support is currently in beta. The llama.cpp backend with Metal acceleration is supported on Apple Silicon Macs.
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->

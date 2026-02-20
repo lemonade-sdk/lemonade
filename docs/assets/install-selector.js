@@ -14,6 +14,8 @@ const ALLOWLIST = [
   // Docker: llama.cpp only (CPU, GPU)
   { os: 'docker', fw: 'llama', dev: 'cpu' },
   { os: 'docker', fw: 'llama', dev: 'gpu' },
+  // macOS (beta): llama.cpp only (GPU via Metal)
+  { os: 'macos', fw: 'llama', dev: 'gpu' },
 ];
 
 const NPU_DRIVER_URL = 'https://account.amd.com/en/forms/downloads/ryzenai-eula-public-xef.html?filename=NPU_RAI1.5_280_WHQL.zip';
@@ -137,14 +139,30 @@ function renderDownload() {
   const installCmdDiv = document.getElementById('lmn-install-commands');
   const version = window.lmnLatestVersion || 'VERSION';
 
-  // Handle macOS "Coming soon"
+  // Handle macOS (beta)
   if (os === 'macos') {
-    if (downloadArea) downloadArea.style.display = 'none';
-    if (installType) installType.style.display = 'table-row';
-    if (installCmdDiv) installCmdDiv.style.display = 'none';
     if (osDistro) osDistro.style.display = 'none';
+    if (installType) installType.style.display = 'none';
+
+    const pkgFile = `Lemonade-${version}-Darwin.pkg`;
+    const link = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${pkgFile}`;
+
+    if (downloadArea) {
+      downloadArea.style.display = 'block';
+      const linkEl = document.getElementById('lmn-link');
+      if (linkEl) {
+        linkEl.href = link;
+        linkEl.textContent = 'Download Lemonade Installer (.pkg)';
+      }
+    }
+    if (installCmdDiv) installCmdDiv.style.display = 'none';
+
+    let notes = '';
+    notes += `<div class="lmn-note"><strong>Note:</strong> macOS support is currently in beta. The installer is signed and notarized for Apple Silicon Macs with Metal GPU acceleration.</div>`;
+    notes += `<div class="lmn-note lmn-source-note">To build from source, see the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md#building-from-source-on-macos-for-m-series--arm64-family" target="_blank">Developer Guide</a>.</div>`;
+
     if (cmdDiv) {
-      cmdDiv.innerHTML = `<div class="lmn-coming-soon">Coming soon!</div>`;
+      cmdDiv.innerHTML = notes;
     }
     return;
   }
@@ -447,10 +465,9 @@ function renderQuickStart() {
 
   if (!exploreDiv || !exploreSection) return;
 
-  // Hide quick start for macOS
+  // macOS quick start
   if (os === 'macos') {
-    exploreSection.style.display = 'none';
-    return;
+    exploreSection.style.display = 'block';
   }
 
   let commands = ['lemonade-server -h'];

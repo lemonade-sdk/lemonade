@@ -9,6 +9,8 @@
     <img src="https://img.shields.io/badge/Windows-11-0078D6?logo=windows&logoColor=white" alt="Windows 11" /></a>
   <a href="https://lemonade-server.ai/install_options.html#ubuntu" title="Ubuntu 24.04 & 25.04 Supported">
     <img src="https://img.shields.io/badge/Ubuntu-24.04%20%7C%2025.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu 24.04 | 25.04" /></a>
+  <a href="https://lemonade-server.ai/install_options.html#macos" title="macOS (beta)">
+    <img src="https://img.shields.io/badge/macOS-beta-999999?logo=apple&logoColor=white" alt="macOS (beta)" /></a>
   <a href="https://snapcraft.io/lemonade-server">
     <img src="https://snapcraft.io/lemonade-server/badge.svg" alt="Get it from the Snap Store" /></a>
   <a href="https://lemonade-server.ai/install_options.html#arch" title="Arch Linux Supported">
@@ -45,7 +47,7 @@ Apps like [n8n](https://n8n.io/integrations/lemonade-model/), [VS Code Copilot](
 
 ## Getting Started
 
-1. **Install**: [Windows](https://lemonade-server.ai/install_options.html#windows) · [Linux](https://lemonade-server.ai/install_options.html#linux) · [Docker](https://lemonade-server.ai/install_options.html#docker) · [Source](./docs/dev-getting-started.md)
+1. **Install**: [Windows](https://lemonade-server.ai/install_options.html#windows) · [Linux](https://lemonade-server.ai/install_options.html#linux) · [macOS (beta)](https://lemonade-server.ai/install_options.html#macos) · [Docker](https://lemonade-server.ai/install_options.html#docker) · [Source](./docs/dev-getting-started.md)
 2. **Get Models**: Browse and download with the [Model Manager](#model-library)
 3. **Generate**: Try models with the built-in interfaces for chat, image gen, speech gen, and more
 4. **Mobile**: Take your lemonade to go: [iOS](https://apps.apple.com/us/app/lemonade-mobile/id6757372210) · [Android](https://play.google.com/store/apps/details?id=com.lemonade.mobile.chat.ai&pli=1) · [Source](https://github.com/lemonade-sdk/lemonade-mobile)
@@ -123,8 +125,8 @@ Lemonade supports multiple recipes (LLM, speech, TTS, and image generation), and
   </thead>
   <tbody>
     <tr>
-      <td rowspan="5"><strong>LLM</strong></td>
-      <td rowspan="3"><code>llamacpp</code></td>
+      <td rowspan="6"><strong>LLM</strong></td>
+      <td rowspan="4"><code>llamacpp</code></td>
       <td><code>vulkan</code></td>
       <td>GPU</td>
       <td>Windows, Linux</td>
@@ -138,6 +140,11 @@ Lemonade supports multiple recipes (LLM, speech, TTS, and image generation), and
       <td><code>cpu</code></td>
       <td><code>x86_64</code></td>
       <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>metal</code></td>
+      <td>Apple Silicon GPU</td>
+      <td>macOS (beta)</td>
     </tr>
     <tr>
       <td><code>flm</code></td>
@@ -228,11 +235,11 @@ lemonade-server recipes
 
 | Under Development          | Under Consideration         | Recently Completed      |
 |---------------------------|-----------------------------|------------------------|
-| macOS                     | vLLM support                | Image generation       |
-| MLX support               | Enhanced custom model usage | Speech-to-text         |
-| More whisper.cpp backends |                             | Text-to-speech         |
-| More SD.cpp backends      |                             | Apps marketplace       |
-|                           |                             |                        |
+| MLX support               | vLLM support                | macOS (beta)           |
+| More whisper.cpp backends | Enhanced custom model usage  | Image generation       |
+| More SD.cpp backends      |                              | Speech-to-text         |
+|                           |                              | Text-to-speech         |
+|                           |                              | Apps marketplace       |
 
 ## Integrate Lemonade Server with Your Application
 

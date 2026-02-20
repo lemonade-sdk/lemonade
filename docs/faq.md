@@ -31,10 +31,10 @@
 
 ### 3. **Is Linux supported? What about macOS?**
 
-   Yes, Linux is supported!
+   Yes, both Linux and macOS are supported!
 
-   - **Linux**: Visit https://lemonade-server.ai/ and check the "Developer Setup" section for installation instructions.
-   - **macOS**: Not supported right now, but it is on the roadmap.
+   - **Linux**: Visit https://lemonade-server.ai/install_options.html#linux for installation instructions.
+   - **macOS (beta)**: A macOS installer (.pkg) is available for Apple Silicon Macs. Visit https://lemonade-server.ai/install_options.html#macos to download. macOS support uses the llama.cpp backend with Metal acceleration.
 
    Visit the [Supported Configurations](https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations) section to see the support matrix for CPU, GPU, and NPU.
 
