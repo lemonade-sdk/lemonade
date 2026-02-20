@@ -22,7 +22,7 @@ To identify if Lemonade Server is installed on a system, you can use the [`lemon
 lemonade-server --version
 ```
 
->Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (lemonade-server-minimal.msi), Debian Installer (lemonade-server-minimal_<VERSION>_amd64.deb), or macOS Installer (Lemonade-<VERSION>-Darwin.pkg).
+>Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (lemonade-server-minimal.msi), Debian Installer (lemonade-server_<VERSION>_amd64.deb), or macOS Installer (Lemonade-<VERSION>-Darwin.pkg).
 
 ### Checking Server Status
 
