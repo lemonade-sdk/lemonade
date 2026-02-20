@@ -2116,6 +2116,19 @@ body.install-options {
   font-size: 1.1em;
 }
 
+.lmn-install-section-title {
+  font-size: 1.2rem;
+  color: #333;
+  font-weight: 700;
+  margin: 2em 0 1em 0;
+  padding-bottom: 0.5em;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.lmn-install-section-title:first-child {
+  margin-top: 0;
+}
+
 .lmn-install-method-header {
   font-size: 1.05rem;
   color: #555;

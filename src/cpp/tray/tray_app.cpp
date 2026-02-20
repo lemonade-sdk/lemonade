@@ -2758,7 +2758,7 @@ void TrayApp::launch_electron_app() {
     // Try to find the app if we haven't already
     if (electron_app_path_.empty()) {
         if (!find_electron_app()) {
-            std::cerr << "Error: Cannot launch Electron app - not found" << std::endl;
+            open_web_app();
             return;
         }
     }

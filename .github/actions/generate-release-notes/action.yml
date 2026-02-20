@@ -104,7 +104,7 @@ runs:
           echo "| Operating System | Server + App | Server Only |"
           echo "|------------------|--------------|-------------|"
           echo "| **Windows** | [lemonade.msi](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade.msi) | [lemonade-server-minimal.msi](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server-minimal.msi) |"
-          echo "| **Ubuntu** | [lemonade_${VERSION}_amd64.deb](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade_${VERSION}_amd64.deb) | [lemonade-server-minimal_${VERSION}_amd64.deb](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server-minimal_${VERSION}_amd64.deb) |"
+          echo "| **Ubuntu** | [lemonade-server_${VERSION}_amd64.deb](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server_${VERSION}_amd64.deb) |"
           echo "| **macOS (beta)** | [Lemonade-${VERSION}-Darwin.pkg](https://github.com/$REPO/releases/download/$TAG_NAME/Lemonade-${VERSION}-Darwin.pkg) | -- |"
           echo ""
           echo "> **Other platforms?** See our [Installation Options](https://lemonade-server.ai/install_options.html) for [Docker](https://lemonade-server.ai/install_options.html#docker), [Arch](https://lemonade-server.ai/install_options.html#arch), [Fedora](https://lemonade-server.ai/install_options.html#fedora), [Debian](https://lemonade-server.ai/install_options.html#debian), and more."

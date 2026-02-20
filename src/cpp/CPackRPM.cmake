@@ -13,7 +13,7 @@ set(CPACK_RPM_PACKAGE_REQUIRES "libcurl, openssl, zlib")
 
 # Architecture and file name
 set(CPACK_RPM_PACKAGE_ARCHITECTURE "x86_64")
-set(CPACK_PACKAGE_FILE_NAME "lemonade-server-minimal-${CPACK_PACKAGE_VERSION}.${CPACK_RPM_PACKAGE_ARCHITECTURE}")
+set(CPACK_PACKAGE_FILE_NAME "lemonade-server-${CPACK_PACKAGE_VERSION}.${CPACK_RPM_PACKAGE_ARCHITECTURE}")
 
 # Provide script hooks (optional)
 set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/postinst")

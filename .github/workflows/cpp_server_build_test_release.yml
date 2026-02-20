@@ -323,8 +323,8 @@ jobs:
             signed-msi/lemonade.msi
           retention-days: 7
 
-  build-lemonade-server-deb:
-    name: Build Lemonade Server .deb Package
+  build-lemonade-deb:
+    name: Build Lemonade .deb Package
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -338,43 +338,14 @@ jobs:
         id: get_version
         uses: ./.github/actions/get-version
 
-      - name: Build Linux .deb package (minimal)
+      - name: Build Linux .deb package
         uses: ./.github/actions/build-linux-deb
-        with:
-          include-electron: 'false'
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v4
         with:
-          name: lemonade-server-deb
-          path: build/lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
-          retention-days: 7
-
-  build-lemonade-deb-full:
-    name: Build Lemonade Full .deb Package (with Electron App)
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.get_version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          clean: true
-          fetch-depth: 0
-
-      - name: Get version from CMakeLists.txt
-        id: get_version
-        uses: ./.github/actions/get-version
-
-      - name: Build Linux .deb package (full with Electron)
-        uses: ./.github/actions/build-linux-deb
-        with:
-          include-electron: 'true'
-
-      - name: Upload full .deb package
-        uses: actions/upload-artifact@v4
-        with:
-          name: lemonade-deb-full
-          path: build/lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
+          name: lemonade-deb
+          path: build/lemonade-server_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
   build-lemonade-macos-dmg:
@@ -592,7 +563,7 @@ jobs:
   test-deb-inference:
     name: Test .deb - ${{ matrix.name }}
     runs-on: [rai300_400, Linux]
-    needs: build-lemonade-server-deb
+    needs: build-lemonade-deb
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
     if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
     strategy:
@@ -615,7 +586,7 @@ jobs:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -625,8 +596,8 @@ jobs:
       - name: Set HF_HOME environment variable
         run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
 
-      - name: Install Lemonade Server (.deb)
-        uses: ./.github/actions/install-lemonade-server-deb
+      - name: Install Lemonade (.deb)
+        uses: ./.github/actions/install-lemonade-deb
         with:
           version: ${{ env.LEMONADE_VERSION }}
 
@@ -750,7 +721,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs:
       - build-lemonade-server-installer
-      - build-lemonade-server-deb
+      - build-lemonade-deb
       - build-lemonade-macos-dmg
     strategy:
       fail-fast: false
@@ -761,7 +732,7 @@ jobs:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -770,14 +741,14 @@ jobs:
         if: runner.os == 'Linux'
         uses: actions/download-artifact@v4
         with:
-          name: lemonade-server-deb
+          name: lemonade-deb
           path: .
 
-      - name: Install Lemonade Server (.deb)
+      - name: Install Lemonade (.deb)
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          DEB_FILE="lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb"
+          DEB_FILE="lemonade-server_${{ env.LEMONADE_VERSION }}_amd64.deb"
           echo "Installing .deb package: $DEB_FILE"
           sudo apt install ./"$DEB_FILE"
 
@@ -916,14 +887,13 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - sign-msi-installers
-      - build-lemonade-server-deb
-      - build-lemonade-deb-full
+      - build-lemonade-deb
       - build-lemonade-macos-dmg
       - build-lemonade-appimage
       - test-cli-endpoints
     if: startsWith(github.ref, 'refs/tags/v')
     env:
-      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
     steps:
       - name: Checkout for release notes action
         uses: actions/checkout@v4
@@ -936,16 +906,10 @@ jobs:
           name: Lemonade_Server_MSI_Signed
           path: .
 
-      - name: Download Lemonade Server .deb Package (Linux - Minimal)
+      - name: Download Lemonade .deb Package
         uses: actions/download-artifact@v4
         with:
-          name: lemonade-server-deb
-          path: .
-
-      - name: Download Lemonade Full .deb Package (Linux - with Electron App)
-        uses: actions/download-artifact@v4
-        with:
-          name: lemonade-deb-full
+          name: lemonade-deb
           path: .
 
       - name: Download Lemonade macOS .pkg Package
@@ -965,8 +929,7 @@ jobs:
           echo "Release artifacts:"
           ls -lh lemonade-server-minimal.msi
           ls -lh lemonade.msi
-          ls -lh lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb
-          ls -lh lemonade_${LEMONADE_VERSION}_amd64.deb
+          ls -lh lemonade-server_${LEMONADE_VERSION}_amd64.deb
           ls -lh *.pkg
           ls -lh Lemonade-${LEMONADE_VERSION}-x86_64.AppImage
 
@@ -986,8 +949,7 @@ jobs:
           files: |
             lemonade-server-minimal.msi
             lemonade.msi
-            lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
-            lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
+            lemonade-server_${{ env.LEMONADE_VERSION }}_amd64.deb
             *.pkg
             Lemonade-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
           fail_on_unmatched_files: true
