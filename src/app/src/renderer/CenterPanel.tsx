@@ -220,21 +220,7 @@ const CenterPanel: React.FC<CenterPanelProps> = memo(({ isVisible, currentView, 
 
       {/* Backend Manager View */}
       {currentView === 'backend-manager' && (
-        <>
-          <div className="center-panel-back-header">
-            <button
-              className="center-panel-back-btn"
-              onClick={handleBackToMenu}
-              title="Back to menu"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="19" y1="12" x2="5" y2="12"/>
-                <polyline points="12 19 5 12 12 5"/>
-              </svg>
-            </button>
-          </div>
-          <BackendManager />
-        </>
+        <BackendManager onBack={handleBackToMenu} />
       )}
     </div>
   );

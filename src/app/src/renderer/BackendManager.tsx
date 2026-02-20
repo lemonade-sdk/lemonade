@@ -9,27 +9,27 @@ import { Recipe, BackendInfo } from './utils/systemData';
 const RECIPE_INFO: Record<string, { displayName: string; description: string }> = {
   'llamacpp': {
     displayName: 'Llama.cpp',
-    description: 'Cross-platform LLM inference engine for text generation and chat.',
+    description: 'Cross-platform LLM inference.',
   },
   'whispercpp': {
     displayName: 'Whisper.cpp',
-    description: 'Speech-to-text transcription powered by OpenAI Whisper.',
+    description: 'Fast speech-to-text inference.',
   },
   'sd-cpp': {
     displayName: 'StableDiffusion.cpp',
-    description: 'Image generation using Stable Diffusion models.',
+    description: 'Stable Diffusion image generation.',
   },
   'kokoro': {
     displayName: 'Kokoro TTS',
-    description: 'High-quality text-to-speech synthesis.',
+    description: 'Lightweight text-to-speech engine.',
   },
   'flm': {
     displayName: 'FastFlowLM',
-    description: 'Optimized LLM inference for AMD Ryzen AI NPUs.',
+    description: 'NPU-optimized LLM inference.',
   },
   'ryzenai-llm': {
     displayName: 'Ryzen AI LLM',
-    description: 'LLM inference using AMD Ryzen AI acceleration.',
+    description: 'Ryzen AI accelerated LLM runtime.',
   },
 };
 
@@ -127,7 +127,11 @@ function getAssetSizeMb(releaseUrl?: string, filename?: string): string {
   return `${Math.round(bytes / 1048576)} MB`;
 }
 
-const BackendManager: React.FC = () => {
+interface BackendManagerProps {
+  onBack?: () => void;
+}
+
+const BackendManager: React.FC<BackendManagerProps> = ({ onBack }) => {
   const { systemInfo, refresh } = useSystem();
   const { toasts, removeToast, showError, showSuccess } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -218,8 +222,21 @@ const BackendManager: React.FC = () => {
       <ConfirmDialog />
 
       <div className="backend-manager-header">
-        <h3>Backend Manager</h3>
-        <p>Install and manage AI inference backends</p>
+        <div className="backend-manager-header-top">
+          {onBack && (
+            <button
+              className="backend-manager-back-btn"
+              onClick={onBack}
+              title="Back to menu"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"/>
+                <polyline points="12 19 5 12 12 5"/>
+              </svg>
+            </button>
+          )}
+          <h3>Backend Manager</h3>
+        </div>
       </div>
 
       <div className="backend-manager-content">
@@ -277,9 +294,6 @@ const BackendManager: React.FC = () => {
                               <span className="backend-size">{sizeText}</span>
                             </>
                           )}
-                        </div>
-                        <div className="backend-card-desc">
-                          {getBackendDescription(backendName)}
                         </div>
                       </div>
                       <div className="backend-card-actions">
