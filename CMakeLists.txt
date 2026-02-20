@@ -23,6 +23,13 @@ endif()
 
 # Include GNUInstallDirs for standard installation directories
 include(GNUInstallDirs)
+     # Install man pages
+     install(FILES
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-server.1
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-router.1
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-install.1
+          DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
+     )
 # ============================================================
 # Electron source paths (used by both runtime and installers)
 # ============================================================
