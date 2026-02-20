@@ -1,0 +1,18 @@
+#!/bin/sh
+
+if [ "$1" = "configure" ]; then
+	# Create the lemonade user and group if they don't exist
+	if ! getent group lemonade > /dev/null; then
+		groupadd lemonade
+	fi
+
+	if ! getent passwd lemonade > /dev/null; then
+		useradd -m -r -g lemonade -d /var/lib/lemonade -s /usr/sbin/nologin lemonade
+	fi
+
+	# Add lemonade user to render group for GPU access
+	usermod -a -G render lemonade
+fi
+
+
+#DEBHELPER#
