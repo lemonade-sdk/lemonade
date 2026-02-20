@@ -64,8 +64,8 @@ static std::string get_install_directory() {
     return (fs::path(utils::get_downloaded_bin_dir()) / "ryzenai-server").string();
 }
 
-RyzenAIServer::RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager)
-    : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager),
+RyzenAIServer::RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager, BackendManager* backend_manager)
+    : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager, backend_manager),
       model_name_(model_name),
       is_loaded_(false) {
 }

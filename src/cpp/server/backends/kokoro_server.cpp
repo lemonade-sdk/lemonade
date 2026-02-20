@@ -27,8 +27,8 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-KokoroServer::KokoroServer(const std::string& log_level, ModelManager* model_manager)
-    : WrappedServer("kokoro-server", log_level, model_manager) {
+KokoroServer::KokoroServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
+    : WrappedServer("kokoro-server", log_level, model_manager, backend_manager) {
 
 }
 
@@ -38,6 +38,12 @@ KokoroServer::~KokoroServer() {
 
 // WrappedServer interface
 void KokoroServer::install(const std::string& backend) {
+    if (backend_manager_) {
+        backend_manager_->install_backend(SPEC.recipe, backend);
+        return;
+    }
+
+    // Fallback: direct install
     std::string repo = "lemonade-sdk/Kokoros";
     std::string filename;
     std::string expected_version = BackendUtils::get_backend_version(SPEC.recipe, backend);
@@ -45,7 +51,7 @@ void KokoroServer::install(const std::string& backend) {
 #ifdef _WIN32
     filename = "kokoros-windows-x86_64.tar.gz";
 #elif defined(__linux__)
-    filename = "kokoros-linux-x86_64.tar.gz";  // Linux binary
+    filename = "kokoros-linux-x86_64.tar.gz";
 #else
     throw std::runtime_error("Unsupported platform for kokoros");
 #endif

@@ -115,6 +115,8 @@ class EndpointTests(ServerTestBase):
             "reranking",
             "audio/transcriptions",
             "images/generations",
+            "install",
+            "uninstall",
         ]
 
         session = requests.Session()
@@ -894,6 +896,192 @@ class EndpointTests(ServerTestBase):
         )
 
         print(f"[OK] Pull (multicheckpoint): model={USER_MODEL_NAME}")
+
+    def _get_test_backend(self):
+        """Get a lightweight test backend based on platform."""
+        import sys
+
+        if sys.platform == "darwin":
+            return "llamacpp", "metal"
+        else:
+            return "llamacpp", "cpu"
+
+    def test_022_install_backend_non_streaming(self):
+        """Test installing a backend via /install endpoint (non-streaming)."""
+        recipe, backend = self._get_test_backend()
+
+        # First uninstall to get clean state
+        requests.post(
+            f"{self.base_url}/uninstall",
+            json={"recipe": recipe, "backend": backend},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        # Install (non-streaming)
+        response = requests.post(
+            f"{self.base_url}/install",
+            json={"recipe": recipe, "backend": backend, "stream": False},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["recipe"], recipe)
+        self.assertEqual(data["backend"], backend)
+        print(f"[OK] Non-streaming install of {recipe}:{backend}")
+
+    def test_023_install_backend_streaming(self):
+        """Test installing a backend with SSE streaming progress."""
+        recipe, backend = self._get_test_backend()
+
+        # Uninstall first to force a fresh download
+        requests.post(
+            f"{self.base_url}/uninstall",
+            json={"recipe": recipe, "backend": backend},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        # Install with streaming
+        response = requests.post(
+            f"{self.base_url}/install",
+            json={"recipe": recipe, "backend": backend, "stream": True},
+            timeout=TIMEOUT_MODEL_OPERATION,
+            stream=True,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Parse SSE events
+        got_progress = False
+        got_complete = False
+        for line in response.iter_lines(decode_unicode=True):
+            if not line:
+                continue
+            if line.startswith("event: progress"):
+                got_progress = True
+            elif line.startswith("event: complete"):
+                got_complete = True
+            elif line.startswith("event: error"):
+                self.fail(f"Received error event: {line}")
+
+        self.assertTrue(got_complete, "Expected 'complete' SSE event")
+        print(
+            f"[OK] Streaming install of {recipe}:{backend} (progress events: {got_progress})"
+        )
+
+    def test_024_install_already_installed(self):
+        """Test that installing an already-installed backend returns quickly."""
+        recipe, backend = self._get_test_backend()
+
+        response = requests.post(
+            f"{self.base_url}/install",
+            json={"recipe": recipe, "backend": backend, "stream": False},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "success")
+        print(
+            f"[OK] Re-install of already-installed {recipe}:{backend} returned quickly"
+        )
+
+    def test_025_uninstall_backend(self):
+        """Test uninstalling a backend via /uninstall endpoint."""
+        recipe, backend = self._get_test_backend()
+
+        # Ensure installed first
+        requests.post(
+            f"{self.base_url}/install",
+            json={"recipe": recipe, "backend": backend, "stream": False},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        # Verify via system-info
+        response = requests.get(f"{self.base_url}/system-info", timeout=TIMEOUT_DEFAULT)
+        info = response.json()
+        self.assertTrue(
+            info["recipes"][recipe]["backends"][backend].get("available", False),
+            f"Expected {recipe}:{backend} to be available before uninstall",
+        )
+
+        # Uninstall
+        response = requests.post(
+            f"{self.base_url}/uninstall",
+            json={"recipe": recipe, "backend": backend},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "success")
+        print(f"[OK] Uninstalled {recipe}:{backend}")
+
+    def test_026_uninstall_not_installed(self):
+        """Test uninstalling a backend that isn't installed."""
+        recipe, backend = self._get_test_backend()
+
+        # Uninstall twice - second time should still return 200
+        requests.post(
+            f"{self.base_url}/uninstall",
+            json={"recipe": recipe, "backend": backend},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        response = requests.post(
+            f"{self.base_url}/uninstall",
+            json={"recipe": recipe, "backend": backend},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+        print(f"[OK] Uninstalling non-installed {recipe}:{backend} returns 200")
+
+    def test_027_reinstall_after_uninstall(self):
+        """Test full cycle: install, verify, uninstall, verify, reinstall."""
+        recipe, backend = self._get_test_backend()
+
+        # Re-install to leave system in clean state for other tests
+        response = requests.post(
+            f"{self.base_url}/install",
+            json={"recipe": recipe, "backend": backend, "stream": False},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+        print(f"[OK] Reinstalled {recipe}:{backend} - system in clean state")
+
+    def test_028_install_missing_params(self):
+        """Test that /install returns 400 for missing parameters."""
+        response = requests.post(
+            f"{self.base_url}/install",
+            json={"recipe": "llamacpp"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400)
+        print("[OK] /install returns 400 for missing 'backend' parameter")
+
+    def test_029_system_info_release_url(self):
+        """Test that system-info includes release_url for backends."""
+        response = requests.get(f"{self.base_url}/system-info", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+
+        # Check that at least one backend has a release_url
+        found_url = False
+        if "recipes" in data:
+            for recipe_name, recipe_info in data["recipes"].items():
+                if "backends" in recipe_info:
+                    for backend_name, backend_info in recipe_info["backends"].items():
+                        if "release_url" in backend_info:
+                            found_url = True
+                            url = backend_info["release_url"]
+                            self.assertTrue(
+                                url.startswith("https://github.com/"),
+                                f"Expected GitHub URL, got: {url}",
+                            )
+                            break
+                if found_url:
+                    break
+
+        self.assertTrue(
+            found_url, "Expected at least one backend with release_url in system-info"
+        )
+        print("[OK] system-info contains release_url for backends")
 
 
 if __name__ == "__main__":

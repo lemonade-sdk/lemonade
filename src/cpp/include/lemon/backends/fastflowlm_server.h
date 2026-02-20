@@ -8,7 +8,8 @@ namespace backends {
 
 class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer {
 public:
-    FastFlowLMServer(const std::string& log_level = "info", ModelManager* model_manager = nullptr);
+    FastFlowLMServer(const std::string& log_level = "info", ModelManager* model_manager = nullptr,
+                     BackendManager* backend_manager = nullptr);
 
     ~FastFlowLMServer() override;
 

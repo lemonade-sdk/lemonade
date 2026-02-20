@@ -18,8 +18,8 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-SDServer::SDServer(const std::string& log_level, ModelManager* model_manager)
-    : WrappedServer("sd-server", log_level, model_manager) {
+SDServer::SDServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
+    : WrappedServer("sd-server", log_level, model_manager, backend_manager) {
     if (is_debug()) {
         std::cout << "[SDServer] Created with log_level=" << log_level << std::endl;
     }
@@ -30,11 +30,16 @@ SDServer::~SDServer() {
 }
 
 void SDServer::install(const std::string& backend) {
+    if (backend_manager_) {
+        backend_manager_->install_backend(SPEC.recipe, backend);
+        return;
+    }
+
+    // Fallback: direct install
     std::string repo = "superm1/stable-diffusion.cpp";
     std::string filename;
     std::string expected_version = BackendUtils::get_backend_version(SPEC.recipe, backend);
 
-    // Transform version for URL (master-NNN-HASH -> master-HASH)
     std::string short_version = expected_version;
     size_t first_dash = expected_version.find('-');
     if (first_dash != std::string::npos) {
@@ -45,16 +50,13 @@ void SDServer::install(const std::string& backend) {
         }
     }
 
-    // ROCm backend selection for AMD GPU support
     if (backend == "rocm") {
-        // Validate ROCm architecture support
         std::string target_arch = lemon::SystemInfo::get_rocm_arch();
         if (target_arch.empty()) {
             throw std::runtime_error(
                 lemon::SystemInfo::get_unsupported_backend_error("sd-cpp", "rocm")
             );
         }
-
 #ifdef _WIN32
         filename = "sd-" + short_version + "-bin-win-rocm-x64.zip";
 #elif defined(__linux__)
@@ -62,9 +64,7 @@ void SDServer::install(const std::string& backend) {
 #else
         throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
 #endif
-        std::cout << "[SDServer] Using ROCm GPU backend" << std::endl;
     } else {
-        // CPU build (default)
 #ifdef _WIN32
         filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
 #elif defined(__linux__)

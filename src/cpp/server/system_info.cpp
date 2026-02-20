@@ -296,7 +296,6 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
     return false;
 }
 
-// Generic version check
 static std::string get_recipe_version(const std::string& recipe, const std::string& backend) {
     if (recipe == "llamacpp") {
         return SystemInfo::get_llamacpp_version(backend);
@@ -770,6 +769,9 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 backend["version"] = version;
             }
         }
+
+        // Note: release_url and download_size_mb are added by Server::handle_system_info()
+        // using BackendManager as the single source of truth for repo/version mappings.
 
         // Add to the appropriate recipe/backend structure
         if (recipes.contains(def.recipe)) {

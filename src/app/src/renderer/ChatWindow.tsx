@@ -10,7 +10,9 @@ import {
 } from './utils/appSettings';
 import { serverFetch, getServerBaseUrl } from './utils/serverConfig';
 import { downloadTracker } from './utils/downloadTracker';
+import { ensureBackendForRecipe } from './utils/backendInstaller';
 import { useModels, DEFAULT_MODEL_ID } from './hooks/useModels';
+import { useSystem } from './hooks/useSystem';
 import { useAudioCapture } from './hooks/useAudioCapture';
 import { TranscriptionWebSocket } from './utils/websocketClient';
 import { voiceOptions } from './tabs/TTSSettings';
@@ -52,6 +54,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     userHasSelectedModel,
     setUserHasSelectedModel,
   } = useModels();
+  const { systemInfo } = useSystem();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -736,6 +739,12 @@ const sendMessage = async () => {
       const downloadSuccess = await downloadModelForChat(selectedModel);
 
       if (downloadSuccess) {
+        // Ensure the backend is installed before auto-load (shows in Download Manager)
+        const modelRecipe = modelsData[selectedModel]?.recipe;
+        if (modelRecipe) {
+          await ensureBackendForRecipe(modelRecipe, systemInfo?.recipes);
+        }
+
         // Model downloaded successfully - close download manager
         window.dispatchEvent(new CustomEvent('download:chatComplete'));
 

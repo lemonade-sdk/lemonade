@@ -10,6 +10,7 @@
 #include "utils/process_manager.h"
 #include "server_capabilities.h"
 #include "model_manager.h"
+#include "backend_manager.h"
 #include "recipe_options.h"
 
 namespace lemon {
@@ -48,9 +49,11 @@ struct Telemetry {
 
 class WrappedServer : public ICompletionServer {
 public:
-    WrappedServer(const std::string& server_name, const std::string& log_level = "info", ModelManager* model_manager = nullptr)
+    WrappedServer(const std::string& server_name, const std::string& log_level = "info",
+                  ModelManager* model_manager = nullptr, BackendManager* backend_manager = nullptr)
         : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level),
-          model_manager_(model_manager), last_access_time_(std::chrono::steady_clock::now()),
+          model_manager_(model_manager), backend_manager_(backend_manager),
+          last_access_time_(std::chrono::steady_clock::now()),
           is_busy_(false) {}
 
     virtual ~WrappedServer() = default;
@@ -180,6 +183,7 @@ protected:
     Telemetry telemetry_;
     std::string log_level_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
+    BackendManager* backend_manager_;  // Non-owning pointer to BackendManager
 
     // Multi-model support fields
     std::string model_name_;

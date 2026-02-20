@@ -4,7 +4,9 @@ import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch } from './utils/serverConfig';
 import { downloadTracker } from './utils/downloadTracker';
+import { ensureBackendForRecipe } from './utils/backendInstaller';
 import { useModels } from './hooks/useModels';
+import { useSystem } from './hooks/useSystem';
 import ModelOptionsModal from "./ModelOptionsModal";
 import { RecipeOptions, recipeOptionsToApi } from "./recipes/recipeOptions";
 
@@ -38,6 +40,7 @@ const createEmptyModelForm = () => ({
 const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) => {
   // Get shared model data from context
   const { modelsData, suggestedModels, refresh: refreshModels } = useModels();
+  const { systemInfo, refresh: refreshSystem } = useSystem();
 
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['all']));
   const [organizationMode, setOrganizationMode] = useState<'recipe' | 'category'>('recipe');
@@ -561,6 +564,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
       // Dispatch event to notify other components
       window.dispatchEvent(new CustomEvent('modelLoadStart', { detail: { modelId: modelName } }));
+
+      // Ensure the backend is installed before loading (shows in Download Manager)
+      if (modelData.recipe) {
+        await ensureBackendForRecipe(modelData.recipe, systemInfo?.recipes);
+        // Refresh system info so backend status is up to date
+        await refreshSystem();
+      }
 
       const response = await serverFetch('/load', {
         method: 'POST',

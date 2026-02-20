@@ -14,9 +14,10 @@ interface App {
 
 interface CenterPanelMenuProps {
   onOpenMarketplace: () => void;
+  onOpenBackendManager: () => void;
 }
 
-const CenterPanelMenu: React.FC<CenterPanelMenuProps> = memo(({ onOpenMarketplace }) => {
+const CenterPanelMenu: React.FC<CenterPanelMenuProps> = memo(({ onOpenMarketplace, onOpenBackendManager }) => {
   const [pinnedApps, setPinnedApps] = useState<App[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -58,7 +59,6 @@ const CenterPanelMenu: React.FC<CenterPanelMenuProps> = memo(({ onOpenMarketplac
     <div className="center-panel-menu">
       <div className="center-panel-menu-content">
         <h2 className="center-panel-menu-title">Welcome to Lemonade</h2>
-        <p className="center-panel-menu-subtitle">Your local AI control center</p>
 
         <div className="center-panel-menu-cards">
           {/* Marketplace Card */}
@@ -69,7 +69,6 @@ const CenterPanelMenu: React.FC<CenterPanelMenuProps> = memo(({ onOpenMarketplac
             <div className="menu-card-header">
               <div className="menu-card-title-section">
                 <h3 className="menu-card-title">Marketplace</h3>
-                <p className="menu-card-description">Discover local AI apps from our partners and community</p>
               </div>
             </div>
 
@@ -109,12 +108,41 @@ const CenterPanelMenu: React.FC<CenterPanelMenuProps> = memo(({ onOpenMarketplac
                 })
               )}
             </div>
+          </button>
 
-            <div className="menu-card-action">
-              <span>Open Marketplace</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="9 18 15 12 9 6"/>
-              </svg>
+          {/* Backend Manager Card */}
+          <button
+            className="center-panel-menu-card backend-manager-card"
+            onClick={onOpenBackendManager}
+          >
+            <div className="menu-card-header">
+              <div className="menu-card-title-section">
+                <h3 className="menu-card-title">Backend Manager</h3>
+              </div>
+            </div>
+
+            <div className="backend-manager-preview">
+              <div className="backend-preview-item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <rect x="4" y="4" width="16" height="16" rx="2" />
+                  <path d="M9 9h6M9 12h6M9 15h4" />
+                </svg>
+                <span>Llama.cpp</span>
+              </div>
+              <div className="backend-preview-item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <rect x="4" y="4" width="16" height="16" rx="2" />
+                  <path d="M9 9h6M9 12h6M9 15h4" />
+                </svg>
+                <span>Whisper.cpp</span>
+              </div>
+              <div className="backend-preview-item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <rect x="4" y="4" width="16" height="16" rx="2" />
+                  <path d="M9 9h6M9 12h6M9 15h4" />
+                </svg>
+                <span>More...</span>
+              </div>
             </div>
           </button>
         </div>

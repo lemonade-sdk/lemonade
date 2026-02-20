@@ -51,6 +51,8 @@ export interface BackendInfo {
   available: boolean;
   version?: string;
   error?: string;
+  release_url?: string;
+  download_filename?: string;
 }
 
 interface SystemData {

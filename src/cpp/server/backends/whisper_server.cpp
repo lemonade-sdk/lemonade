@@ -29,8 +29,8 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-WhisperServer::WhisperServer(const std::string& log_level, ModelManager* model_manager)
-    : WrappedServer("whisper-server", log_level, model_manager) {
+WhisperServer::WhisperServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
+    : WrappedServer("whisper-server", log_level, model_manager, backend_manager) {
 
     // Create temp directory for audio files
     temp_dir_ = fs::temp_directory_path() / "lemonade_audio";
@@ -52,26 +52,25 @@ WhisperServer::~WhisperServer() {
 }
 
 void WhisperServer::install(const std::string& backend) {
+    if (backend_manager_) {
+        backend_manager_->install_backend(SPEC.recipe, backend);
+        return;
+    }
+
+    // Fallback: direct install
     std::string repo;
     std::string filename;
     std::string expected_version = BackendUtils::get_backend_version(SPEC.recipe, backend);
 
-    // Determine download URL
     if (backend == "npu") {
-        // NPU support from lemonade-sdk/whisper.cpp-npu
         repo = "lemonade-sdk/whisper.cpp-npu";
-
 #ifdef _WIN32
         filename = "whisper-" + expected_version + "-windows-npu-x64.zip";
 #else
         throw std::runtime_error("NPU whisper.cpp only supported on Windows");
 #endif
-        std::cout << "[WhisperServer] Using NPU backend" << std::endl;
-
     } else if (backend == "cpu") {
-        // CPU-only builds from ggml-org/whisper.cpp
         repo = "ggml-org/whisper.cpp";
-
 #ifdef _WIN32
         filename = "whisper-bin-x64.zip";
 #elif defined(__linux__)

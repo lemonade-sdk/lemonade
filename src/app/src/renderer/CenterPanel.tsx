@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, memo, useCallback } from 'react';
 import CenterPanelMenu from './CenterPanelMenu';
+import BackendManager from './BackendManager';
 
-export type CenterPanelView = 'menu' | 'marketplace';
+export type CenterPanelView = 'menu' | 'marketplace' | 'backend-manager';
 
 interface CenterPanelProps {
   isVisible: boolean;
@@ -124,6 +125,11 @@ const CenterPanel: React.FC<CenterPanelProps> = memo(({ isVisible, currentView, 
     onViewChange('marketplace');
   }, [onViewChange]);
 
+  // Handle opening backend manager from menu
+  const handleOpenBackendManager = useCallback(() => {
+    onViewChange('backend-manager');
+  }, [onViewChange]);
+
   // Handle going back to menu from marketplace
   const handleBackToMenu = useCallback(() => {
     onViewChange('menu');
@@ -146,7 +152,10 @@ const CenterPanel: React.FC<CenterPanelProps> = memo(({ isVisible, currentView, 
 
       {/* Menu View */}
       {currentView === 'menu' && (
-        <CenterPanelMenu onOpenMarketplace={handleOpenMarketplace} />
+        <CenterPanelMenu
+          onOpenMarketplace={handleOpenMarketplace}
+          onOpenBackendManager={handleOpenBackendManager}
+        />
       )}
 
       {/* Marketplace View */}
@@ -206,6 +215,25 @@ const CenterPanel: React.FC<CenterPanelProps> = memo(({ isVisible, currentView, 
               loading="lazy"
             />
           )}
+        </>
+      )}
+
+      {/* Backend Manager View */}
+      {currentView === 'backend-manager' && (
+        <>
+          <div className="center-panel-back-header">
+            <button
+              className="center-panel-back-btn"
+              onClick={handleBackToMenu}
+              title="Back to menu"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"/>
+                <polyline points="12 19 5 12 12 5"/>
+              </svg>
+            </button>
+          </div>
+          <BackendManager />
         </>
       )}
     </div>

@@ -161,8 +161,8 @@ static std::string validate_custom_args(const std::string& custom_args_str,
     return "";  // Valid
 }
 
-LlamaCppServer::LlamaCppServer(const std::string& log_level, ModelManager* model_manager)
-    : WrappedServer("llama-server", log_level, model_manager) {
+LlamaCppServer::LlamaCppServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
+    : WrappedServer("llama-server", log_level, model_manager, backend_manager) {
 }
 
 LlamaCppServer::~LlamaCppServer() {
@@ -170,21 +170,24 @@ LlamaCppServer::~LlamaCppServer() {
 }
 
 void LlamaCppServer::install(const std::string& backend) {
+    if (backend_manager_) {
+        backend_manager_->install_backend(SPEC.recipe, backend);
+        return;
+    }
+
+    // Fallback: direct install (when no BackendManager is available)
     std::string repo;
     std::string filename;
     std::string expected_version = BackendUtils::get_backend_version(SPEC.recipe, backend);
 
     if (backend == "rocm") {
-        // ROCm support from lemonade-sdk/llamacpp-rocm
         repo = "lemonade-sdk/llamacpp-rocm";
         std::string target_arch = lemon::SystemInfo::get_rocm_arch();
-
         if (target_arch.empty()) {
             throw std::runtime_error(
                 lemon::SystemInfo::get_unsupported_backend_error("llamacpp", "rocm")
             );
         }
-
 #ifdef _WIN32
         filename = "llama-" + expected_version + "-windows-rocm-" + target_arch + "-x64.zip";
 #elif defined(__linux__)
@@ -192,21 +195,15 @@ void LlamaCppServer::install(const std::string& backend) {
 #else
         throw std::runtime_error("ROCm llamacpp only supported on Windows and Linux");
 #endif
-        std::cout << "[LlamaCpp] Detected ROCm architecture: " << target_arch << std::endl;
-
     } else if (backend == "metal") {
-        // Metal support for macOS Apple Silicon from ggml-org/llama.cpp
         repo = "ggml-org/llama.cpp";
 #ifdef __APPLE__
         filename = "llama-" + expected_version + "-bin-macos-arm64.tar.gz";
 #else
         throw std::runtime_error("Metal llamacpp only supported on macOS");
 #endif
-
     } else if (backend == "cpu") {
-        // CPU-only builds from ggml-org/llama.cpp
         repo = "ggml-org/llama.cpp";
-
 #ifdef _WIN32
         filename = "llama-" + expected_version + "-bin-win-cpu-x64.zip";
 #elif defined(__linux__)
@@ -214,9 +211,7 @@ void LlamaCppServer::install(const std::string& backend) {
 #else
         throw std::runtime_error("CPU llamacpp not supported on this platform");
 #endif
-
-    } else {  // vulkan
-        // Vulkan support from ggml-org/llama.cpp
+    } else {
         repo = "ggml-org/llama.cpp";
 #ifdef _WIN32
         filename = "llama-" + expected_version + "-bin-win-vulkan-x64.zip";

@@ -20,7 +20,8 @@ public:
     );
 
     LlamaCppServer(const std::string& log_level = "info",
-                   ModelManager* model_manager = nullptr);
+                   ModelManager* model_manager = nullptr,
+                   BackendManager* backend_manager = nullptr);
 
     ~LlamaCppServer() override;
 

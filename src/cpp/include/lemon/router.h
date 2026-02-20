@@ -9,6 +9,7 @@
 #include <httplib.h>
 #include "wrapped_server.h"
 #include "model_manager.h"
+#include "backend_manager.h"
 
 namespace lemon {
 
@@ -19,7 +20,8 @@ public:
     Router(const json& default_options = json::object(),
            const std::string& log_level = "info",
            ModelManager* model_manager = nullptr,
-           int max_loaded_models = 1);
+           int max_loaded_models = 1,
+           BackendManager* backend_manager = nullptr);
 
     ~Router();
 
@@ -92,6 +94,7 @@ private:
     json default_options_;
     std::string log_level_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
+    BackendManager* backend_manager_;  // Non-owning pointer to BackendManager
 
     // Multi-model limit (applies to each type slot)
     int max_loaded_models_;

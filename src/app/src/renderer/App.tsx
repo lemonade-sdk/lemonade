@@ -265,6 +265,12 @@ const App: React.FC = () => {
     setCenterPanelView('marketplace');
   }, []);
 
+  // Open backend manager directly (from View menu)
+  const handleOpenBackendManager = useCallback(() => {
+    setIsCenterPanelVisible(true);
+    setCenterPanelView('backend-manager');
+  }, []);
+
   const handleCloseDownloadManager = useCallback(() => {
     setIsDownloadManagerVisible(false);
   }, []);
@@ -281,6 +287,7 @@ const App: React.FC = () => {
           onToggleCenterPanel={handleToggleCenterPanel}
           centerPanelView={centerPanelView}
           onOpenMarketplace={handleOpenMarketplace}
+          onOpenBackendManager={handleOpenBackendManager}
           isLogsVisible={isLogsVisible}
           onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
           isDownloadManagerVisible={isDownloadManagerVisible}

@@ -1,9 +1,16 @@
 #pragma once
 
 #include <string>
+#include <functional>
 #include <filesystem>
 
 namespace fs = std::filesystem;
+
+// Forward declare DownloadProgressCallback to avoid heavy model_manager.h include
+namespace lemon {
+    struct DownloadProgress;
+    using DownloadProgressCallback = std::function<bool(const DownloadProgress&)>;
+}
 
 namespace lemon::backends {
     struct BackendSpec {
@@ -45,8 +52,9 @@ namespace lemon::backends {
 
         // Excluding from lemonade-server to avoid having to compile in additional transitive dependencies
     #ifndef LEMONADE_TRAY
-        /** Download and install the specified version of the backend from github */
-        static void install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& backend);
+        /** Download and install the specified version of the backend from github.
+         *  If progress_cb is provided, it receives download progress events instead of console output. */
+        static void install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& backend, DownloadProgressCallback progress_cb = nullptr);
 
         /** Get the latest version number for the given recipe/backend */
         static std::string get_backend_version(const std::string& recipe, const std::string& backend);

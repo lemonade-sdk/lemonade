@@ -9,7 +9,8 @@ namespace lemon {
 
 class RyzenAIServer : public WrappedServer {
 public:
-    RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager = nullptr);
+    RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager = nullptr,
+                  BackendManager* backend_manager = nullptr);
     ~RyzenAIServer() override;
 
     // Installation and availability

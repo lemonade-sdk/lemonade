@@ -15,6 +15,7 @@ interface TitleBarProps {
   onToggleCenterPanel: () => void;
   centerPanelView: CenterPanelView;
   onOpenMarketplace: () => void;
+  onOpenBackendManager: () => void;
   isLogsVisible: boolean;
   onToggleLogs: () => void;
   isDownloadManagerVisible: boolean;
@@ -30,6 +31,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
   onToggleCenterPanel,
   centerPanelView,
   onOpenMarketplace,
+  onOpenBackendManager,
   isLogsVisible,
   onToggleLogs,
   isDownloadManagerVisible,
@@ -180,6 +182,17 @@ const TitleBar: React.FC<TitleBarProps> = ({
                           }}
                         >
                           <span>{isCenterPanelVisible && centerPanelView === 'marketplace' ? '✓ ' : ''}Marketplace</span>
+                        </div>
+                        <div
+                          className="menu-option"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenBackendManager();
+                            setActiveMenu(null);
+                            setIsCenterPanelSubmenuOpen(false);
+                          }}
+                        >
+                          <span>{isCenterPanelVisible && centerPanelView === 'backend-manager' ? '✓ ' : ''}Backend Manager</span>
                         </div>
                       </div>
                     )}

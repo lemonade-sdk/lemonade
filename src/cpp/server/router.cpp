@@ -15,9 +15,9 @@
 namespace lemon {
 
 Router::Router(const json& default_options, const std::string& log_level, ModelManager* model_manager,
-               int max_loaded_models)
+               int max_loaded_models, BackendManager* backend_manager)
     : default_options_(default_options), log_level_(log_level), model_manager_(model_manager),
-      max_loaded_models_(max_loaded_models) {
+      max_loaded_models_(max_loaded_models), backend_manager_(backend_manager) {
 
     if (max_loaded_models_ == -1) {
         std::cout << "[Router] Max loaded models per type: unlimited" << std::endl;
@@ -152,16 +152,16 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
 
     if (model_info.recipe == "whispercpp") {
         std::cout << "[Router] Creating WhisperServer backend" << std::endl;
-        new_server = std::make_unique<backends::WhisperServer>(log_level_, model_manager_);
+        new_server = std::make_unique<backends::WhisperServer>(log_level_, model_manager_, backend_manager_);
     } else if (model_info.recipe == "kokoro") {
         std::cout << "[Router] Creating Kokoro backend" << std::endl;
-        new_server = std::make_unique<backends::KokoroServer>(log_level_, model_manager_);
+        new_server = std::make_unique<backends::KokoroServer>(log_level_, model_manager_, backend_manager_);
     } else if (model_info.recipe == "sd-cpp") {
         std::cout << "[Router] Creating SDServer backend" << std::endl;
-        new_server = std::make_unique<backends::SDServer>(log_level_, model_manager_);
+        new_server = std::make_unique<backends::SDServer>(log_level_, model_manager_, backend_manager_);
     } else if (model_info.recipe == "flm") {
         std::cout << "[Router] Creating FastFlowLM backend" << std::endl;
-        new_server = std::make_unique<backends::FastFlowLMServer>(log_level_, model_manager_);
+        new_server = std::make_unique<backends::FastFlowLMServer>(log_level_, model_manager_, backend_manager_);
     } else if (model_info.recipe == "ryzenai-llm") {
         std::cout << "[Router] Creating RyzenAI-Server backend" << std::endl;
 
@@ -169,12 +169,12 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
         std::cout << "[Router] Using model path: " << model_path << std::endl;
 
         auto* ryzenai_server = new RyzenAIServer(model_info.model_name,
-                                                  log_level_ == "debug", model_manager_);
+                                                  log_level_ == "debug", model_manager_, backend_manager_);
         ryzenai_server->set_model_path(model_path);
         new_server.reset(ryzenai_server);
     } else {
         std::cout << "[Router] Creating LlamaCpp backend" << std::endl;
-        new_server = std::make_unique<backends::LlamaCppServer>(log_level_, model_manager_);
+        new_server = std::make_unique<backends::LlamaCppServer>(log_level_, model_manager_, backend_manager_);
     }
 
     return new_server;
