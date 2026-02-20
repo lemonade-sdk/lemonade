@@ -129,6 +129,15 @@ static void add_warning(std::vector<std::string>& warnings, const std::string& w
     }
 }
 
+static std::string join_strings(const std::vector<std::string>& parts, const char* sep = "\n") {
+    std::ostringstream os;
+    for (size_t i = 0; i < parts.size(); ++i) {
+        if (i > 0) os << sep;
+        os << parts[i];
+    }
+    return os.str();
+}
+
 static std::string join_text_blocks(const json& value, std::vector<std::string>& warnings, const std::string& field_name) {
     if (value.is_string()) {
         return value.get<std::string>();
@@ -155,85 +164,7 @@ static std::string join_text_blocks(const json& value, std::vector<std::string>&
         add_warning(warnings, "Ignored unsupported '" + field_name + "' block type: " + type);
     }
 
-    std::ostringstream joined;
-    for (size_t i = 0; i < parts.size(); ++i) {
-        if (i > 0) {
-            joined << "\n";
-        }
-        joined << parts[i];
-    }
-    return joined.str();
-}
-
-static json convert_anthropic_content_to_openai(const json& content, std::vector<std::string>& warnings) {
-    if (content.is_string()) {
-        return content;
-    }
-
-    if (!content.is_array()) {
-        add_warning(warnings, "Ignored message content with unsupported type");
-        return "";
-    }
-
-    json content_parts = json::array();
-    std::vector<std::string> text_parts;
-    bool has_non_text = false;
-
-    for (const auto& block : content) {
-        if (!block.is_object()) {
-            add_warning(warnings, "Ignored non-object message content block");
-            continue;
-        }
-
-        std::string type = block.value("type", "");
-        if (type == "text" && block.contains("text") && block["text"].is_string()) {
-            const std::string text = block["text"].get<std::string>();
-            content_parts.push_back({{"type", "text"}, {"text", text}});
-            text_parts.push_back(text);
-            continue;
-        }
-
-        if (type == "image" && block.contains("source") && block["source"].is_object()) {
-            const auto& source = block["source"];
-            std::string source_type = source.value("type", "");
-            std::string media_type = source.value("media_type", "");
-            std::string data = source.value("data", "");
-
-            if (source_type == "base64" && !media_type.empty() && !data.empty()) {
-                has_non_text = true;
-                content_parts.push_back({
-                    {"type", "image_url"},
-                    {"image_url", {{"url", "data:" + media_type + ";base64," + data}}}
-                });
-                continue;
-            }
-        }
-
-        if (type == "tool_result") {
-            add_warning(warnings, "Ignored Anthropic 'tool_result' content block");
-        } else if (type == "tool_use") {
-            add_warning(warnings, "Ignored Anthropic 'tool_use' content block");
-        } else {
-            add_warning(warnings, "Ignored unsupported message content block type: " + type);
-        }
-    }
-
-    if (content_parts.empty()) {
-        return "";
-    }
-
-    if (!has_non_text) {
-        std::ostringstream joined;
-        for (size_t i = 0; i < text_parts.size(); ++i) {
-            if (i > 0) {
-                joined << "\n";
-            }
-            joined << text_parts[i];
-        }
-        return joined.str();
-    }
-
-    return content_parts;
+    return join_strings(parts);
 }
 
 static std::string map_finish_reason_to_anthropic_stop_reason(const json& choice) {
@@ -282,14 +213,7 @@ static std::string stringify_anthropic_tool_result_content(const json& content,
             add_warning(warnings, "Ignored unsupported block type in tool_result.content: " + type);
         }
 
-        std::ostringstream joined;
-        for (size_t i = 0; i < parts.size(); ++i) {
-            if (i > 0) {
-                joined << "\n";
-            }
-            joined << parts[i];
-        }
-        return joined.str();
+        return join_strings(parts);
     }
 
     if (content.is_object()) {
@@ -734,12 +658,7 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
 
             if (!content_parts.empty()) {
                 if (!has_non_text) {
-                    std::ostringstream joined;
-                    for (size_t i = 0; i < text_parts.size(); ++i) {
-                        if (i > 0) joined << "\n";
-                        joined << text_parts[i];
-                    }
-                    openai_msg["content"] = joined.str();
+                    openai_msg["content"] = join_strings(text_parts);
                 } else {
                     openai_msg["content"] = content_parts;
                 }
@@ -751,19 +670,12 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
                 openai_msg["tool_calls"] = assistant_tool_calls;
             }
 
-            bool has_content = false;
-            if (openai_msg["content"].is_string()) {
-                has_content = !openai_msg["content"].get<std::string>().empty();
-            } else if (openai_msg["content"].is_array()) {
-                has_content = !openai_msg["content"].empty();
-            }
-
+            bool has_content = !content_parts.empty();
             bool has_tool_calls = !assistant_tool_calls.empty();
-            bool has_tool_results = !tool_result_messages.empty();
 
-            // For user role with only tool_result blocks, avoid emitting an empty user placeholder.
-            bool emit_user_message = !(role == "user" && !has_content && !has_tool_calls && has_tool_results);
-            if (emit_user_message && (role == "assistant" || has_content || has_tool_calls)) {
+            // Skip empty user messages that only contain tool_result blocks
+            bool is_tool_result_only = (role == "user" && !has_content && !has_tool_calls && !tool_result_messages.empty());
+            if (!is_tool_result_only && (role == "assistant" || has_content || has_tool_calls)) {
                 messages.push_back(openai_msg);
             }
 
@@ -919,12 +831,7 @@ json OllamaApi::convert_openai_chat_to_anthropic(const json& openai_response,
                         text_blocks.push_back(block["text"].get<std::string>());
                     }
                 }
-                std::ostringstream joined;
-                for (size_t i = 0; i < text_blocks.size(); ++i) {
-                    if (i > 0) joined << "\n";
-                    joined << text_blocks[i];
-                }
-                response_text = joined.str();
+                response_text = join_strings(text_blocks);
             }
 
             if (message.contains("tool_calls") && message["tool_calls"].is_array()) {
