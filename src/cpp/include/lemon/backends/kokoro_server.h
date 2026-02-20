@@ -11,15 +11,20 @@ namespace backends {
 
 class KokoroServer : public WrappedServer, public ITextToSpeechServer {
 public:
+#ifndef LEMONADE_TRAY
+    static InstallParams get_install_params(const std::string& backend, const std::string& version);
+#endif
+
     inline static const BackendSpec SPEC = BackendSpec(
-        // recipe
             "kokoro",
-        // executable
     #ifdef _WIN32
             "koko.exe"
     #else
             "koko"
     #endif
+#ifndef LEMONADE_TRAY
+        , get_install_params
+#endif
     );
 
     explicit KokoroServer(const std::string& log_level,
@@ -27,9 +32,6 @@ public:
                           BackendManager* backend_manager = nullptr);
 
     ~KokoroServer() override;
-
-    // WrappedServer interface
-    void install(const std::string& backend) override;
 
     void load(const std::string& model_name,
              const ModelInfo& model_info,

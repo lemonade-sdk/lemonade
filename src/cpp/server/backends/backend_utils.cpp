@@ -21,46 +21,58 @@
 using json = nlohmann::json;
 
 namespace lemon::backends {
+
+#ifdef _WIN32
+    // Resolve the full path to Windows' built-in bsdtar (System32\tar.exe).
+    // This avoids picking up GNU tar from Git, which can't handle zip files
+    // and misinterprets drive letter colons as remote host specifiers.
+    // Returns "tar" as fallback if SystemRoot isn't set.
+    static std::string get_native_tar_path() {
+        const char* system_root = std::getenv("SystemRoot");
+        if (system_root) {
+            return std::string(system_root) + "\\System32\\tar.exe";
+        }
+        return "tar";
+    }
+
+    static bool is_native_tar_available() {
+        std::string tar_path = get_native_tar_path();
+        return system((tar_path + " --version >nul 2>&1").c_str()) == 0;
+    }
+#endif
+
+    static void ensure_directory(const std::string& dir) {
+#ifdef _WIN32
+        std::string cmd = "if not exist \"" + dir + "\" mkdir \"" + dir + "\" >nul 2>&1";
+#else
+        std::string cmd = "mkdir -p \"" + dir + "\"";
+#endif
+        system(cmd.c_str());
+    }
+
     bool BackendUtils::extract_zip(const std::string& zip_path, const std::string& dest_dir, const std::string& backend_name) {
         std::string command;
+        ensure_directory(dest_dir);
 #ifdef _WIN32
-        std::string mkdir_cmd = "if not exist \"" + dest_dir + "\" mkdir \"" + dest_dir + "\" >nul 2>&1";
-        system(mkdir_cmd.c_str());
-#else
-        std::string mkdir_cmd = "mkdir -p \"" + dest_dir + "\"";
-        system(mkdir_cmd.c_str());
-#endif
-#ifdef _WIN32
-        {
-            // Use the full path to System32\tar.exe (bsdtar) to avoid picking up
-            // GNU tar from Git, which cannot handle zip files.
-            std::string tar_path = "tar";
+        if (is_native_tar_available()) {
+            std::cout << "[" << backend_name << "] Extracting ZIP with native tar to " << dest_dir << std::endl;
+            command = get_native_tar_path() + " -xf \"" + zip_path + "\" -C \"" + dest_dir + "\"";
+        } else {
+            std::cout << "[" << backend_name << "] Extracting ZIP via PowerShell to " << dest_dir << std::endl;
+            std::string powershell_path = "powershell";
             const char* system_root = std::getenv("SystemRoot");
             if (system_root) {
-                tar_path = std::string(system_root) + "\\System32\\tar.exe";
+                powershell_path = std::string(system_root) + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
             }
-            int tar_check = system((tar_path + " --version >nul 2>&1").c_str());
-            if (tar_check == 0) {
-                std::cout << "[" << backend_name << "] Extracting ZIP with native tar to " << dest_dir << std::endl;
-                command = tar_path + " -xf \"" + zip_path + "\" -C \"" + dest_dir + "\"";
-            } else {
-                std::cout << "[" << backend_name << "] Extracting ZIP via PowerShell to " << dest_dir << std::endl;
-                std::string powershell_path = "powershell";
-                if (system_root) {
-                    powershell_path = std::string(system_root) + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
-                }
-                command = powershell_path + " -Command \"Expand-Archive -Path '" + zip_path +
-                        "' -DestinationPath '" + dest_dir + "' -Force\"";
-            }
+            command = powershell_path + " -Command \"Expand-Archive -Path '" + zip_path +
+                    "' -DestinationPath '" + dest_dir + "' -Force\"";
         }
 #elif defined(__APPLE__) || defined(__linux__)
-        // macOS & Linux Logic
         std::cout << "[" << backend_name << "] Extracting zip to " << dest_dir << std::endl;
         command = "unzip -o -q \"" + zip_path + "\" -d \"" + dest_dir + "\"";
 #endif
         int result = system(command.c_str());
         if (result != 0) {
-            // Adjust error message based on platform context
             #ifdef _WIN32
                 std::cerr << "[" << backend_name << "] Extraction failed with code: " << result << std::endl;
             #else
@@ -73,47 +85,18 @@ namespace lemon::backends {
 
     bool BackendUtils::extract_tarball(const std::string& tarball_path, const std::string& dest_dir, const std::string& backend_name) {
         std::string command;
-        int result;
-#ifdef _WIN32
-        // Windows: Use 'if not exist' to avoid errors if it already exists
-        std::string mkdir_cmd = "if not exist \"" + dest_dir + "\" mkdir \"" + dest_dir + "\" >nul 2>&1";
-        if (system(mkdir_cmd.c_str()) != 0) {
-            std::cerr << "[" << backend_name << "] Failed to create directory: " << dest_dir << std::endl;
-            return false;
-        }
-#else
-        // Linux/macOS: 'mkdir -p' creates parents and is silent if exists
-        std::string mkdir_cmd = "mkdir -p \"" + dest_dir + "\"";
-        if (system(mkdir_cmd.c_str()) != 0) {
-            std::cerr << "[" << backend_name << "] Failed to create directory: " << dest_dir << std::endl;
-            return false;
-        }
-#endif
+        ensure_directory(dest_dir);
         std::cout << "[" << backend_name << "] Extracting tarball to " << dest_dir << std::endl;
 #ifdef _WIN32
-        {
-            // Use the full path to System32\tar.exe (bsdtar) to avoid picking up
-            // GNU tar from Git, which misinterprets drive letter colons as remote hosts.
-            std::string tar_path = "tar";
-            const char* system_root = std::getenv("SystemRoot");
-            if (system_root) {
-                tar_path = std::string(system_root) + "\\System32\\tar.exe";
-            }
-            int tar_check = system((tar_path + " --version >nul 2>&1").c_str());
-            if (tar_check != 0) {
-                std::cerr << "[" << backend_name << "] Error: 'tar' command not found. Windows 10 (17063+) required." << std::endl;
-                return false;
-            }
-            command = tar_path + " -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
+        if (!is_native_tar_available()) {
+            std::cerr << "[" << backend_name << "] Error: 'tar' command not found. Windows 10 (17063+) required." << std::endl;
+            return false;
         }
-#elif defined(__APPLE__)
-        command = "tar -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
-
+        command = get_native_tar_path() + " -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
 #else
-        // Linux (uses GNU tar by default)
         command = "tar -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
 #endif
-        result = system(command.c_str());
+        int result = system(command.c_str());
         if (result != 0) {
             std::cerr << "[" << backend_name << "] Extraction failed with code: " << result << std::endl;
             return false;

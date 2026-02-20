@@ -57,25 +57,18 @@ private:
     // Cached backend_versions.json (loaded once at construction)
     json backend_versions_;
 
-    // Installation parameters for a backend
+    // Get version for a recipe/backend from the cached config
+    std::string get_version_from_config(const std::string& recipe, const std::string& backend);
+
+    // Install parameters for a backend (repo + filename + version)
     struct InstallParams {
         std::string repo;
         std::string filename;
         std::string version;
     };
 
-    // Get version for a recipe/backend from the cached config
-    std::string get_version_from_config(const std::string& recipe, const std::string& backend);
-
     // Get the install parameters for a recipe/backend combination
     InstallParams get_install_params(const std::string& recipe, const std::string& backend);
-
-    // Get install params for each recipe type
-    InstallParams get_llamacpp_params(const std::string& backend, const std::string& version);
-    InstallParams get_whispercpp_params(const std::string& backend, const std::string& version);
-    InstallParams get_sdcpp_params(const std::string& backend, const std::string& version);
-    InstallParams get_kokoro_params(const std::string& backend, const std::string& version);
-    InstallParams get_ryzenai_params(const std::string& backend, const std::string& version);
 
     // FLM has special install logic (uses installer exe)
     void install_flm(const std::string& backend);

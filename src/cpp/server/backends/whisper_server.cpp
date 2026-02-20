@@ -1,5 +1,6 @@
 #include "lemon/backends/whisper_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backend_manager.h"
 #include "lemon/audio_types.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
@@ -51,40 +52,32 @@ WhisperServer::~WhisperServer() {
     }
 }
 
-void WhisperServer::install(const std::string& backend) {
-    if (backend_manager_) {
-        backend_manager_->install_backend(SPEC.recipe, backend);
-        return;
-    }
-
-    // Fallback: direct install
-    std::string repo;
-    std::string filename;
-    std::string expected_version = BackendUtils::get_backend_version(SPEC.recipe, backend);
+InstallParams WhisperServer::get_install_params(const std::string& backend, const std::string& version) {
+    InstallParams params;
 
     if (backend == "npu") {
-        repo = "lemonade-sdk/whisper.cpp-npu";
+        params.repo = "lemonade-sdk/whisper.cpp-npu";
 #ifdef _WIN32
-        filename = "whisper-" + expected_version + "-windows-npu-x64.zip";
+        params.filename = "whisper-" + version + "-windows-npu-x64.zip";
 #else
         throw std::runtime_error("NPU whisper.cpp only supported on Windows");
 #endif
     } else if (backend == "cpu") {
-        repo = "ggml-org/whisper.cpp";
+        params.repo = "ggml-org/whisper.cpp";
 #ifdef _WIN32
-        filename = "whisper-bin-x64.zip";
+        params.filename = "whisper-bin-x64.zip";
 #elif defined(__linux__)
-        filename = "whisper-bin-x64.zip";
+        params.filename = "whisper-bin-x64.zip";
 #elif defined(__APPLE__)
-        filename = "whisper-bin-arm64.zip";
+        params.filename = "whisper-bin-arm64.zip";
 #else
         throw std::runtime_error("Unsupported platform for whisper.cpp");
 #endif
     } else {
-        throw std::runtime_error("[WhisperServer] Unknown backend: " + backend);
+        throw std::runtime_error("[WhisperServer] Unknown whisper backend: " + backend);
     }
 
-    BackendUtils::install_from_github(SPEC, expected_version, repo, filename, backend);
+    return params;
 }
 
 // Helper to determine NPU compiled cache info based on model info from server_models.json
@@ -175,7 +168,7 @@ void WhisperServer::load(const std::string& model_name,
 
     std::string whispercpp_backend = options.get_option("whispercpp_backend");
 
-    install(whispercpp_backend);
+    backend_manager_->install_backend(SPEC.recipe, whispercpp_backend);
 
     std::string model_path = model_info.resolved_path();
     if (model_path.empty()) {

@@ -13,7 +13,9 @@ public:
 
     ~FastFlowLMServer() override;
 
-    void install(const std::string& backend = "") override;
+    // FLM has special install logic (NPU driver checks, Windows installer, PATH refresh)
+    // Not virtual - FLM-specific, not part of WrappedServer interface
+    void install(const std::string& backend = "");
 
     std::string download_model(const std::string& checkpoint,
                               bool do_not_upgrade = false);

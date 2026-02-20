@@ -13,10 +13,20 @@ namespace lemon {
 }
 
 namespace lemon::backends {
+    struct InstallParams {
+        std::string repo;      // GitHub "org/repo"
+        std::string filename;  // Release asset filename
+    };
+
     struct BackendSpec {
         const std::string recipe;
         const std::string binary;
-        BackendSpec(const std::string r, const std::string b): recipe(r), binary(b) {}
+
+        using InstallParamsFn = InstallParams(*)(const std::string& backend, const std::string& version);
+        InstallParamsFn install_params_fn;  // nullptr for FLM (special installer)
+
+        BackendSpec(std::string r, std::string b, InstallParamsFn fn = nullptr)
+            : recipe(std::move(r)), binary(std::move(b)), install_params_fn(fn) {}
 
         std::string log_name() const { return recipe + " Server"; };
     };

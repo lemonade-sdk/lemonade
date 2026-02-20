@@ -113,9 +113,6 @@ public:
     DeviceType get_device_type() const { return device_type_; }
     RecipeOptions get_recipe_options() const { return recipe_options_; }
 
-    // Install the backend server
-    virtual void install(const std::string& backend = "") = 0;
-
     // Load a model and start the server
     virtual void load(const std::string& model_name,
                      const ModelInfo& model_info,

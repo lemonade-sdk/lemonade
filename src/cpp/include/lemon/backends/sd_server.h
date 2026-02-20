@@ -13,15 +13,20 @@ namespace backends {
 
 class SDServer : public WrappedServer, public IImageServer {
 public:
+#ifndef LEMONADE_TRAY
+    static InstallParams get_install_params(const std::string& backend, const std::string& version);
+#endif
+
     inline static const BackendSpec SPEC = BackendSpec(
-        // recipe
             "sd-cpp",
-        // executable
     #ifdef _WIN32
             "sd-server.exe"
     #else
             "sd-server"
     #endif
+#ifndef LEMONADE_TRAY
+        , get_install_params
+#endif
     );
 
     explicit SDServer(const std::string& log_level = "info",
@@ -29,9 +34,6 @@ public:
                       BackendManager* backend_manager = nullptr);
 
     ~SDServer() override;
-
-    // WrappedServer interface
-    void install(const std::string& backend = "") override;
 
     void load(const std::string& model_name,
              const ModelInfo& model_info,
