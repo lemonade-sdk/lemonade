@@ -2017,16 +2017,16 @@
  - Ninja build system (optional, recommended)</p>
 <h3 id="build-steps">Build Steps</h3>
 <p>A helper script is available that will set up the build environment on popular
-Linux distributions.  This will prompt to install dependencies via native package
-managers and create the build directory.</p>
-<p><strong>Linux</strong>
+Linux distributions and macOS.  This will prompt to install dependencies via native
+package managers and create the build directory.</p>
+<p><strong>Linux / macOS</strong>
 <div class="highlight"><pre><span></span><code>./setup.sh
 </code></pre></div></p>
 <p><strong>Windows</strong>
 <div class="highlight"><pre><span></span><code>./setup.ps1
 </code></pre></div></p>
 <p>Build by running:</p>
-<p><strong>Linux</strong>
+<p><strong>Linux / macOS</strong>
 <div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>default
 </code></pre></div></p>
 <p><strong>Windows</strong>
@@ -2097,10 +2097,10 @@ managers and create the build directory.</p>
   - Installed binaries: <code>/opt/bin</code>
   - Downloaded backends (llama-server, ryzenai-server): <code>~/.cache/lemonade/bin/</code>
   - Model downloads: <code>~/.cache/huggingface/</code> (follows HF conventions)</p>
-<p><strong>macOS:</strong>
+<p><strong>macOS (beta):</strong>
 - Uses native system frameworks (Cocoa, Foundation)
 - ARM Macs use Metal backend by default for llama.cpp
-- ⚠️ <strong>Note:</strong> macOS build is currently a stub implementation and not fully functional</p>
+- macOS support is currently in beta; a signed and notarized <code>.pkg</code> installer is available from the <a href="https://github.com/lemonade-sdk/lemonade/releases/latest">releases page</a></p>
 <h2 id="building-installers">Building Installers</h2>
 <h3 id="windows-installer-wixmsi">Windows Installer (WiX/MSI)</h3>
 <p><strong>Prerequisites:</strong>

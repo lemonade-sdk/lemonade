@@ -2,7 +2,7 @@
 
 🍋 Lemonade Server is a server interface that uses the standard Open AI API, allowing applications to integrate with local LLMs. This means that you can easily replace cloud-based LLMs with private and free LLMs that run locally on your own PC's NPU and GPU.
 
-Lemonade Server is available as a standalone tool with a [one-click Windows GUI installer](https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi).
+Lemonade Server is available as a standalone tool with a [one-click Windows GUI installer](https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi). Installers are also available for [Linux](https://lemonade-server.ai/install_options.html#linux) and [macOS (beta)](https://lemonade-server.ai/install_options.html#macos).
 
 ## Intro Video
 

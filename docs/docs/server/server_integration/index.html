@@ -967,6 +967,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#macos-installation-beta" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        macOS Installation (Beta)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1233,6 +1244,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#macos-installation-beta" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        macOS Installation (Beta)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1271,7 +1293,7 @@
 <div class="highlight"><pre><span></span><code>lemonade-server --version
 </code></pre></div>
 <blockquote>
-<p>Note: The <code>lemonade-server</code> CLI command is added to PATH when using the Windows Installer (lemonade-server-minimal.msi) and Debian Installer (lemonade-server_<VERSION>_amd64.deb).</p>
+<p>Note: The <code>lemonade-server</code> CLI command is added to PATH when using the Windows Installer (lemonade-server-minimal.msi), Debian Installer (lemonade-server_<VERSION>_amd64.deb), or macOS Installer (Lemonade-<VERSION>-Darwin.pkg).</p>
 </blockquote>
 <h3 id="checking-server-status">Checking Server Status</h3>
 <p>To identify whether or not the server is running anywhere on the system you may use the <code>status</code> command of <code>lemonade-server</code>.</p>
@@ -1328,7 +1350,7 @@
 <p>By default, the server runs on port 8000. Optionally, you can specify a custom port using the --port argument:</p>
 <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">8123</span>
 </code></pre></div>
-<p>You can also prevent the server from showing a system tray icon by using the <code>--no-tray</code> flag (Windows only):</p>
+<p>You can also prevent the server from showing a system tray icon by using the <code>--no-tray</code> flag (Windows and macOS):</p>
 <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve<span class="w"> </span>--no-tray
 </code></pre></div>
 <p>You can also run the server as a background process using a subprocess or any preferred method.</p>
@@ -1434,6 +1456,20 @@ sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w">
 <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>edit<span class="w"> </span>lemonade-server
 </code></pre></div>
 <p>This creates an override file that takes precedence over the original service file and persists across updates.</p>
+<h2 id="macos-installation-beta">macOS Installation (Beta)</h2>
+<p><strong>Available Installer:</strong>
+- <code>Lemonade-&lt;VERSION&gt;-Darwin.pkg</code> - Signed and notarized macOS installer package</p>
+<p><strong>GUI Installation:</strong></p>
+<p>Double-click the <code>.pkg</code> file to launch the installer, or run:</p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>installer<span class="w"> </span>-pkg<span class="w"> </span>Lemonade-&lt;VERSION&gt;-Darwin.pkg<span class="w"> </span>-target<span class="w"> </span>/
+</code></pre></div>
+<p><strong>Silent Installation:</strong></p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>installer<span class="w"> </span>-pkg<span class="w"> </span>Lemonade-&lt;VERSION&gt;-Darwin.pkg<span class="w"> </span>-target<span class="w"> </span>/
+</code></pre></div>
+<p>The macOS installer places binaries in <code>/usr/local/bin</code>, so <code>lemonade-server</code> is available in PATH immediately after installation.</p>
+<blockquote>
+<p><strong>Note:</strong> macOS support is currently in beta. The llama.cpp backend with Metal acceleration is supported on Apple Silicon Macs.</p>
+</blockquote>
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->
 
