@@ -29,7 +29,7 @@ public:
 
     explicit KokoroServer(const std::string& log_level,
                           ModelManager* model_manager,
-                          BackendManager* backend_manager = nullptr);
+                          BackendManager* backend_manager);
 
     ~KokoroServer() override;
 

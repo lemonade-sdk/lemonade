@@ -25,9 +25,9 @@ public:
 #endif
     );
 
-    LlamaCppServer(const std::string& log_level = "info",
-                   ModelManager* model_manager = nullptr,
-                   BackendManager* backend_manager = nullptr);
+    LlamaCppServer(const std::string& log_level,
+                   ModelManager* model_manager,
+                   BackendManager* backend_manager);
 
     ~LlamaCppServer() override;
 

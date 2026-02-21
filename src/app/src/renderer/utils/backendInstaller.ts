@@ -73,9 +73,10 @@ export async function installBackend(
               throw new Error(errorMsg);
             }
           } catch (parseError) {
-            if (parseError instanceof Error && parseError.message !== 'Unknown error') {
-              // Re-throw if it's our own error from the error event
-              if (currentEventType === 'error') throw parseError;
+            // Re-throw application errors (e.g. from 'error' events); only
+            // swallow JSON parse failures so the stream can continue.
+            if (!(parseError instanceof SyntaxError)) {
+              throw parseError;
             }
             console.error('Failed to parse SSE data:', line, parseError);
           }

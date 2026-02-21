@@ -17,11 +17,11 @@ using json = nlohmann::json;
 
 class Router {
 public:
-    Router(const json& default_options = json::object(),
-           const std::string& log_level = "info",
-           ModelManager* model_manager = nullptr,
-           int max_loaded_models = 1,
-           BackendManager* backend_manager = nullptr);
+    Router(const json& default_options,
+           const std::string& log_level,
+           ModelManager* model_manager,
+           int max_loaded_models,
+           BackendManager* backend_manager);
 
     ~Router();
 

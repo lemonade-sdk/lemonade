@@ -29,8 +29,8 @@ public:
 #endif
     );
 
-    RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager = nullptr,
-                  BackendManager* backend_manager = nullptr);
+    RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager,
+                  BackendManager* backend_manager);
     ~RyzenAIServer() override;
 
     // Installation and availability
