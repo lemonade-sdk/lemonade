@@ -89,18 +89,9 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
                                      DownloadProgressCallback progress_cb) {
     std::cout << "[BackendManager] Installing " << recipe << ":" << backend << std::endl;
 
-    // FLM special case - uses installer exe
+    // FLM special case - uses installer exe with its own install logic
     if (recipe == "flm") {
-        install_flm(backend);
-        if (progress_cb) {
-            DownloadProgress p;
-            p.file = "flm-setup.exe";
-            p.file_index = 1;
-            p.total_files = 1;
-            p.percent = 100;
-            p.complete = true;
-            progress_cb(p);
-        }
+        backends::FastFlowLMServer::install_if_needed(progress_cb);
         update_recipes_cache_entry(recipe, backend, true);
         return;
     }
@@ -115,15 +106,6 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         spec, params.version, params.repo, params.filename, backend_dir, progress_cb);
 
     update_recipes_cache_entry(recipe, backend, true);
-}
-
-void BackendManager::install_flm(const std::string& backend) {
-    // FLM install is complex (driver checks, installer exe, etc.)
-    // We delegate to FastFlowLMServer's static install logic
-    // For now, create a temporary FastFlowLMServer just to call install()
-    // This is a stopgap - ideally we'd extract the FLM install logic to a shared place
-    backends::FastFlowLMServer flm_server("info", nullptr);
-    flm_server.install(backend);
 }
 
 void BackendManager::uninstall_backend(const std::string& recipe, const std::string& backend) {

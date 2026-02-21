@@ -70,8 +70,6 @@ private:
     // Get the install parameters for a recipe/backend combination
     InstallParams get_install_params(const std::string& recipe, const std::string& backend);
 
-    // FLM has special install logic (uses installer exe)
-    void install_flm(const std::string& backend);
 };
 
 } // namespace lemon
