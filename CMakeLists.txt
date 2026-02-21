@@ -23,6 +23,12 @@ endif()
 
 # Include GNUInstallDirs for standard installation directories
 include(GNUInstallDirs)
+     # Install man pages
+     install(FILES
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-server.1
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-router.1
+          DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
+     )
 # ============================================================
 # Electron source paths (used by both runtime and installers)
 # ============================================================
@@ -45,6 +51,7 @@ endif()
 # ============================================================
 get_filename_component(WEB_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/web-app" ABSOLUTE)
 set(WEB_APP_BUILD_DIR "${CMAKE_BINARY_DIR}/resources/web-app")
+option(USE_SYSTEM_NODEJS_MODULES "Use system nodejs modules and fonts" ON)
 
 # C++ Standard
 set(CMAKE_CXX_STANDARD 17)
@@ -794,8 +801,22 @@ else()
     option(BUILD_WEB_APP "Build the Web app automatically" ON)
 endif()
 
+# Check if webpack is available for system-package mode
+if(USE_SYSTEM_NODEJS_MODULES)
+    find_program(WEBPACK_EXECUTABLE webpack)
+    if(WEBPACK_EXECUTABLE)
+        message(STATUS "Using system webpack: ${WEBPACK_EXECUTABLE}")
+        set(CAN_BUILD_WEB_APP TRUE)
+    endif()
+endif()
+
+# Can also build with npm if available
+if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
+    set(CAN_BUILD_WEB_APP TRUE)
+endif()
+
 # Custom target to build the Web app with proper dependency tracking
-if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
+if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
     # Create a stamp file to track build state
     set(WEB_APP_STAMP "${CMAKE_CURRENT_BINARY_DIR}/web-app.stamp")
     set(WEB_APP_BUILD_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/web-app-src")
@@ -819,10 +840,12 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
             -DWEB_APP_BUILD_SOURCE_DIR=${WEB_APP_BUILD_SOURCE_DIR}
             -DWEB_APP_BUILD_DIR=${WEB_APP_BUILD_DIR}
             -DNPM_EXECUTABLE=${NPM_EXECUTABLE}
+            -DWEBPACK_EXECUTABLE=${WEBPACK_EXECUTABLE}
+            -DUSE_SYSTEM_NODEJS_MODULES=${USE_SYSTEM_NODEJS_MODULES}
             -DWEB_APP_STAMP=${WEB_APP_STAMP}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/src/web-app/BuildWebApp.cmake
         DEPENDS ${WEB_APP_SOURCES}
-        COMMENT "Building Web app with npm"
+        COMMENT "Building Web app"
     )
 
     # Add custom target that depends on the stamp file
@@ -879,15 +902,19 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
         endif()
     endif()
 else()
-    if(NOT NODE_EXECUTABLE OR NOT NPM_EXECUTABLE)
-        message(STATUS "Node.js or npm not found - Web app build target disabled")
+    if(NOT CAN_BUILD_WEB_APP)
+        if(USE_SYSTEM_NODEJS_MODULES)
+            message(STATUS "Web app build disabled - webpack not found (install webpack package)")
+        else()
+            message(STATUS "Web app build disabled - Node.js or npm not found")
+        endif()
     else()
         message(STATUS "Web app automatic build disabled (enable with -DBUILD_WEB_APP=ON)")
     endif()
 endif()
 
 # Add manual web-app target for platforms where automatic build is disabled
-if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND NOT BUILD_WEB_APP)
+if(CAN_BUILD_WEB_APP AND NOT BUILD_WEB_APP)
     add_custom_target(web-app
         COMMAND ${CMAKE_COMMAND} -E echo "Building Web app..."
         COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} install
@@ -1088,249 +1115,39 @@ if(APPLE)
         )
         add_dependencies(notarize package-macos)
     endif()
+endif()  # Close: if(APPLE)
+
+# ============================================================
+# Debian Environment Detection
+# ============================================================
+# Check if running in a Debian environment and adjust build settings accordingly
+set(IS_DEBIAN_SYSTEM FALSE)
+if(UNIX AND NOT APPLE)
+    # Check for dpkg (most reliable indicator)
+    find_program(DPKG_EXECUTABLE dpkg)
+    if(DPKG_EXECUTABLE)
+        set(IS_DEBIAN_SYSTEM TRUE)
+        message(STATUS "Debian system detected (dpkg found)")
+        # On Debian, set install prefix to /usr and enable system packages by default
+        if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+            set(CMAKE_INSTALL_PREFIX "/usr" CACHE PATH "Install prefix" FORCE)
+            message(STATUS "Setting CMAKE_INSTALL_PREFIX to /usr for Debian system")
+        endif()
+        # Enable system packages by default on Debian
+        if(NOT DEFINED USE_SYSTEM_NODEJS_MODULES)
+            set(USE_SYSTEM_NODEJS_MODULES ON CACHE BOOL "Use system nodejs modules and fonts" FORCE)
+            message(STATUS "Enabling USE_SYSTEM_NODEJS_MODULES for Debian system")
+        endif()
+    else()
+        message(STATUS "Non-Debian Linux system detected (dpkg not found)")
+    endif()
 endif()
 
 # ============================================================
-# CPack Configuration for .deb Package (Linux only)
+# CPack Configuration (macOS and Windows only)
+# Debian systems use dpkg-buildpackage instead
 # ============================================================
-if(UNIX AND NOT APPLE)
-    set(CPACK_GENERATOR "DEB")
-    set(CPACK_SET_DESTDIR ON)
-    set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-    set(CPACK_PACKAGE_VENDOR "Lemonade")
-    set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
-    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lemonade Local LLM Server")
-    set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server with support for multiple backends including llama.cpp, FastFlowLM, and RyzenAI.")
-
-    # Debian-specific settings
-    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Lemonade Team <lemonade@amd.com>")
-    set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
-    set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
-    set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
-
-    # Installation paths - use ~/.local for user install (no sudo needed)
-    # Set via environment: cmake -DCPACK_PACKAGING_INSTALL_PREFIX=$HOME/.local ..
-    # Default to /opt to match the install prefix used by the project.
-    if(NOT DEFINED CPACK_PACKAGING_INSTALL_PREFIX)
-        set(CPACK_PACKAGING_INSTALL_PREFIX "/opt")
-    endif()
-
-    # Only install our executables (not curl/development files)
-    # Note: lemonade-server installation is handled in tray/CMakeLists.txt
-    install(TARGETS ${EXECUTABLE_NAME}
-        RUNTIME DESTINATION bin
-    )
-
-    # Install resources (all files including KaTeX fonts)
-    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/
-        DESTINATION share/lemonade-server/resources
-    )
-
-    # Install example scripts
-    install(DIRECTORY ${CMAKE_SOURCE_DIR}/examples/
-        DESTINATION share/lemonade-server/examples
-        USE_SOURCE_PERMISSIONS
-        PATTERN "*.sh" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-    )
-
-    # Configure systemd service file with correct paths
-    configure_file(
-        ${CMAKE_SOURCE_DIR}/data/lemonade-server.service.in
-        ${CMAKE_BINARY_DIR}/lemonade-server.service
-        @ONLY
-    )
-
-    # Install systemd service and configuration files
-    install(FILES ${CMAKE_BINARY_DIR}/lemonade-server.service
-        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system
-    )
-    # Create symlink in standard systemd search path only if not installing to /usr
-    # (if prefix is /usr, the service is already in the standard location)
-    if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
-        install(CODE "
-            file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/lib/systemd/system\")
-            execute_process(
-                COMMAND ${CMAKE_COMMAND} -E create_symlink
-                    ${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemonade-server.service
-                    \"\$ENV{DESTDIR}/usr/lib/systemd/system/lemonade-server.service\"
-            )
-        ")
-    endif()
-    install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.conf
-        DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/lemonade
-        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE WORLD_READ
-    )
-
-    install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
-        DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/lemonade
-        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE
-    )
-
-    # Create symlinks for KaTeX fonts if they exist on the system
-    # Check if fonts-katex package fonts are available
-    set(KATEX_FONTS_DIR "/usr/share/fonts/truetype/katex")
-    if(EXISTS "${KATEX_FONTS_DIR}")
-        message(STATUS "KaTeX fonts found at ${KATEX_FONTS_DIR}, creating symlinks")
-
-        # Ensure web-app directory exists in build directory
-        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/resources/web-app")
-
-        set(KATEX_FONTS
-            "KaTeX_AMS-Regular.ttf" "KaTeX_AMS-Regular.woff" "KaTeX_AMS-Regular.woff2"
-            "KaTeX_Caligraphic-Bold.ttf" "KaTeX_Caligraphic-Bold.woff" "KaTeX_Caligraphic-Bold.woff2"
-            "KaTeX_Caligraphic-Regular.ttf" "KaTeX_Caligraphic-Regular.woff" "KaTeX_Caligraphic-Regular.woff2"
-            "KaTeX_Fraktur-Bold.ttf" "KaTeX_Fraktur-Bold.woff" "KaTeX_Fraktur-Bold.woff2"
-            "KaTeX_Fraktur-Regular.ttf" "KaTeX_Fraktur-Regular.woff" "KaTeX_Fraktur-Regular.woff2"
-            "KaTeX_Main-Bold.ttf" "KaTeX_Main-Bold.woff" "KaTeX_Main-Bold.woff2"
-            "KaTeX_Main-BoldItalic.ttf" "KaTeX_Main-BoldItalic.woff" "KaTeX_Main-BoldItalic.woff2"
-            "KaTeX_Main-Italic.ttf" "KaTeX_Main-Italic.woff" "KaTeX_Main-Italic.woff2"
-            "KaTeX_Main-Regular.ttf" "KaTeX_Main-Regular.woff" "KaTeX_Main-Regular.woff2"
-            "KaTeX_Math-BoldItalic.ttf" "KaTeX_Math-BoldItalic.woff" "KaTeX_Math-BoldItalic.woff2"
-            "KaTeX_Math-Italic.ttf" "KaTeX_Math-Italic.woff" "KaTeX_Math-Italic.woff2"
-            "KaTeX_SansSerif-Bold.ttf" "KaTeX_SansSerif-Bold.woff" "KaTeX_SansSerif-Bold.woff2"
-            "KaTeX_SansSerif-Italic.ttf" "KaTeX_SansSerif-Italic.woff" "KaTeX_SansSerif-Italic.woff2"
-            "KaTeX_SansSerif-Regular.ttf" "KaTeX_SansSerif-Regular.woff" "KaTeX_SansSerif-Regular.woff2"
-            "KaTeX_Script-Regular.ttf" "KaTeX_Script-Regular.woff" "KaTeX_Script-Regular.woff2"
-            "KaTeX_Size1-Regular.ttf" "KaTeX_Size1-Regular.woff" "KaTeX_Size1-Regular.woff2"
-            "KaTeX_Size2-Regular.ttf" "KaTeX_Size2-Regular.woff" "KaTeX_Size2-Regular.woff2"
-            "KaTeX_Size3-Regular.ttf" "KaTeX_Size3-Regular.woff" "KaTeX_Size3-Regular.woff2"
-            "KaTeX_Size4-Regular.ttf" "KaTeX_Size4-Regular.woff" "KaTeX_Size4-Regular.woff2"
-            "KaTeX_Typewriter-Regular.ttf" "KaTeX_Typewriter-Regular.woff" "KaTeX_Typewriter-Regular.woff2"
-        )
-
-        foreach(font ${KATEX_FONTS})
-            set(FONT_LINK "${CMAKE_BINARY_DIR}/resources/web-app/${font}")
-            set(FONT_TARGET "${KATEX_FONTS_DIR}/${font}")
-            # Only create symlink if the target font exists
-            if(EXISTS "${FONT_TARGET}")
-                # Remove existing file/symlink if present
-                if(EXISTS "${FONT_LINK}" OR IS_SYMLINK "${FONT_LINK}")
-                    file(REMOVE "${FONT_LINK}")
-                endif()
-                # Create symlink in build directory
-                file(CREATE_LINK "${FONT_TARGET}" "${FONT_LINK}" SYMBOLIC)
-            endif()
-        endforeach()
-    else()
-        message(STATUS "KaTeX fonts not found at ${KATEX_FONTS_DIR}, using bundled fonts")
-    endif()
-
-    # Check if Electron app is available for full package
-    option(BUILD_ELECTRON_APP "Build and include Electron app in deb package" OFF)
-
-    # Build electron app if requested and target is available
-    if(BUILD_ELECTRON_APP AND TARGET electron-app)
-        message(STATUS "BUILD_ELECTRON_APP is ON - building Electron app...")
-        execute_process(
-            COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target electron-app
-            RESULT_VARIABLE ELECTRON_BUILD_RESULT
-        )
-        if(NOT ELECTRON_BUILD_RESULT EQUAL 0)
-            message(FATAL_ERROR "Failed to build Electron app")
-        endif()
-    endif()
-
-    if(BUILD_ELECTRON_APP AND EXISTS "${ELECTRON_APP_UNPACKED_DIR}/${ELECTRON_EXE_NAME}")
-        message(STATUS "Electron app found at ${ELECTRON_APP_UNPACKED_DIR}")
-        message(STATUS "Building full deb package with Electron app")
-
-        # Full package name
-        set(CPACK_PACKAGE_NAME "lemonade-server")
-
-        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libsecret-1-0, libasound2t64, fonts-katex")
-        set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
-
-        # Install Electron app
-        install(DIRECTORY "${ELECTRON_APP_UNPACKED_DIR}/"
-            DESTINATION share/lemonade-server/app
-            USE_SOURCE_PERMISSIONS
-            PATTERN "*.so" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-        )
-
-        if (NOT WIN32 AND NOT APPLE)
-            if (EXISTS "${ELECTRON_APP_UNPACKED_DIR}/chrome-sandbox")
-                install(FILES "${ELECTRON_APP_UNPACKED_DIR}/chrome-sandbox"
-                    DESTINATION share/lemonade-server/app
-                    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE SETUID
-                )
-            endif()
-
-            if (EXISTS "${ELECTRON_APP_UNPACKED_DIR}/chrome_crashpad_handler")
-                install(FILES "${ELECTRON_APP_UNPACKED_DIR}/chrome_crashpad_handler"
-                    DESTINATION share/lemonade-server/app
-                    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-                )
-            endif()
-        endif()
-
-        if (NOT WIN32 AND NOT APPLE)
-            # Install .desktop file for electron app
-            install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-app.desktop
-                DESTINATION share/applications
-            )
-            # Create symlink in standard applications path only if not installing to /usr
-            if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
-                install(CODE "
-                    file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/applications\")
-                    execute_process(
-                        COMMAND ${CMAKE_COMMAND} -E create_symlink
-                            ${CMAKE_INSTALL_PREFIX}/share/applications/lemonade-app.desktop
-                            \"\$ENV{DESTDIR}/usr/share/applications/lemonade-app.desktop\"
-                    )
-                ")
-            endif()
-            install(FILES ${CMAKE_SOURCE_DIR}/src/app/assets/logo.svg
-                DESTINATION share/pixmaps
-                RENAME lemonade-app.svg
-            )
-
-            # Create symlink in standard pixmaps path only if not installing to /usr
-            if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
-                install(CODE "
-                    file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/pixmaps\")
-                    execute_process(
-                        COMMAND ${CMAKE_COMMAND} -E create_symlink
-                            ${CMAKE_INSTALL_PREFIX}/share/pixmaps/lemonade-app.svg
-                            \"\$ENV{DESTDIR}/usr/share/pixmaps/lemonade-app.svg\"
-                    )
-                ")
-            endif()
-            # Create symlink in standard bin path only if not installing to /usr
-            if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
-                install(CODE "
-                    file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
-                    execute_process(
-                        COMMAND ${CMAKE_COMMAND} -E create_symlink
-                            \"\${CMAKE_INSTALL_PREFIX}/share/lemonade-server/app/lemonade\"
-                            \"\$ENV{DESTDIR}/usr/bin/lemonade-app\"
-                    )
-                ")
-            else()
-                install(CODE "
-                    file(CREATE_LINK
-                        \"\${CMAKE_INSTALL_PREFIX}/share/lemonade-server/app/lemonade\"
-                        \"\${CMAKE_INSTALL_PREFIX}/bin/lemonade-app\"
-                        SYMBOLIC)
-                ")
-            endif()
-        endif()
-
-    else()
-        set(CPACK_PACKAGE_NAME "lemonade-server")
-        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, fonts-katex")
-        set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "chromium-browser | google-chrome-stable | chromium")
-        set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
-    endif()
-    # Post-install script for debian package
-    set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst")
-
-    # RPM specific variables defined within
-    include(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/CPackRPM.cmake)
-    include(CPack)
-
-    # ============================================================
-    # AppImage Build Target (Linux only)
-    # ============================================================
+if(NOT (UNIX AND NOT APPLE AND IS_DEBIAN_SYSTEM))
     if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
         # Set the build directory and source directory for AppImage
         set(APPIMAGE_BUILD_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/app-appimage-src")
