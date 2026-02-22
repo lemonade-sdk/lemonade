@@ -323,8 +323,8 @@ jobs:
             signed-msi/lemonade.msi
           retention-days: 7
 
-  build-lemonade-server-deb:
-    name: Build Lemonade Server .deb Package
+  build-lemonade-deb:
+    name: Build Lemonade .deb Package
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -338,20 +338,64 @@ jobs:
         id: get_version
         uses: ./.github/actions/get-version
 
-      - name: Build Linux .deb package (minimal)
+      - name: Build Linux .deb package
         uses: ./.github/actions/build-linux-deb
-        with:
-          include-electron: 'false'
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v4
         with:
-          name: lemonade-server-deb
-          path: build/lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
+          name: lemonade-deb
+          path: build/lemonade-server_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
-  build-lemonade-deb-full:
-    name: Build Lemonade Full .deb Package (with Electron App)
+  build-lemonade-macos-dmg:
+    name: Build Lemonade macOS .dmg (with Electron App)
+    runs-on: macos-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Get version from CMakeLists.txt
+        id: get_version
+        uses: ./.github/actions/get-version
+
+      - name: Setup macOS Keychain
+        uses: ./.github/actions/setup-macos-keychain
+        with:
+          dev-signing-key: ${{ secrets.MACOS_DEV_SIGNING_IDENTITY_KEY }}
+          inst-signing-key: ${{ secrets.MACOS_INST_SIGNING_IDENTITY_KEY }}
+          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          api-key: ${{ secrets.MACOS_APP_CONNECT_KEY_GERAMY }}
+          api-key-id: '3WFZZ8F948'
+          api-issuer-id: '2e545619-8206-4d14-9ba9-ef23eff841b2'
+
+      - name: Build macOS .dmg
+        uses: ./.github/actions/build-macos-dmg
+        with:
+          include-electron: 'true'
+
+      - name: Upload .pkg package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-macos-pkg
+          path: build/*.pkg
+          retention-days: 7
+
+      - name: Cleanup keychain
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "$SIGNING_KEYCHAIN_PATH" ] && [ -f "$SIGNING_KEYCHAIN_PATH" ]; then
+            echo "Cleaning up temporary keychain..."
+            security delete-keychain "$SIGNING_KEYCHAIN_PATH" 2>/dev/null || true
+          fi
+
+  build-lemonade-appimage:
+    name: Build Lemonade AppImage
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -365,17 +409,50 @@ jobs:
         id: get_version
         uses: ./.github/actions/get-version
 
-      - name: Build Linux .deb package (full with Electron)
-        uses: ./.github/actions/build-linux-deb
-        with:
-          include-electron: 'true'
+      - name: Run setup.sh to configure environment
+        shell: bash
+        run: |
+          set -e
+          echo "Running setup.sh to configure build environment..."
+          bash setup.sh
+          echo "Build environment configured successfully!"
 
-      - name: Upload full .deb package
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build AppImage
+        shell: bash
+        run: |
+          set -e
+
+          echo "Building Lemonade AppImage..."
+          cmake --build --preset default --target appimage
+
+          # Verify AppImage was created
+          APPIMAGE_FILE="build/app-appimage/Lemonade-${LEMONADE_VERSION}-x86_64.AppImage"
+          if [ ! -f "$APPIMAGE_FILE" ]; then
+              echo "ERROR: AppImage not created!"
+              echo "Contents of build/app-appimage directory:"
+              ls -lh build/app-appimage/ || echo "Directory does not exist"
+              exit 1
+          fi
+
+          echo "AppImage created successfully!"
+          ls -lh "$APPIMAGE_FILE"
+
+          # Verify it's executable
+          chmod +x "$APPIMAGE_FILE"
+          "$APPIMAGE_FILE" --appimage-help | head -5
+
+      - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lemonade-deb-full
-          path: build/lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
+          name: lemonade-appimage
+          path: build/app-appimage/Lemonade-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
           retention-days: 7
+
 
   # ========================================================================
   # TEST JOBS - Inference tests on self-hosted runners
@@ -391,62 +468,41 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # LLM - Llamacpp backends
-          - name: llamacpp (vulkan)
-            test_type: llm
-            wrapped_server: llamacpp
-            backend: vulkan
+          - name: llamacpp
+            script: server_llm.py
+            extra_args: "--wrapped-server llamacpp"
+            backends: "vulkan rocm"
             runner: [rai300_400, Windows]
-          - name: llamacpp (rocm)
-            test_type: llm
-            wrapped_server: llamacpp
-            backend: rocm
-            runner: [stx-halo, Windows]
-          # LLM - RyzenAI backends
-          - name: ryzenai (cpu)
-            test_type: llm
-            wrapped_server: ryzenai
-            backend: cpu
+          - name: ryzenai
+            script: server_llm.py
+            extra_args: "--wrapped-server ryzenai"
+            backends: "cpu hybrid npu"
             runner: [rai300_400, Windows]
-          - name: ryzenai (hybrid)
-            test_type: llm
-            wrapped_server: ryzenai
-            backend: hybrid
-            runner: [rai300_400, Windows]
-          - name: ryzenai (npu)
-            test_type: llm
-            wrapped_server: ryzenai
-            backend: npu
-            runner: [rai300_400, Windows]
-          # LLM - FLM
           - name: flm
-            test_type: llm
-            wrapped_server: flm
-            backend: ""
+            script: server_llm.py
+            extra_args: "--wrapped-server flm"
+            backends: ""
             runner: [rai300_400, Windows]
-          # Whisper
-          - name: whisper (cpu)
-            test_type: whisper
-            backend: cpu
+          - name: whisper
+            script: server_whisper.py
+            extra_args: ""
+            backends: "cpu npu"
             runner: [rai300_400, Windows]
-          - name: whisper (npu)
-            test_type: whisper
-            backend: npu
+          - name: stable-diffusion
+            script: server_sd.py
+            extra_args: ""
+            backends: "cpu"
             runner: [rai300_400, Windows]
-          # Stable Diffusion (CPU)
-          - name: stable-diffusion (cpu)
-            test_type: sd
-            backend: cpu
-            runner: [rai300_400, Windows]
-          # Stable Diffusion (ROCm)
-          - name: stable-diffusion (rocm)
-            test_type: sd
-            backend: rocm
-            runner: [stx-halo, Windows]
-          # Text to speech
           - name: text-to-speech
-            test_type: tts
+            script: server_tts.py
+            extra_args: ""
+            backends: ""
             runner: [rai300_400, Windows]
+          - name: stable-diffusion (stx-halo)
+            script: server_sd.py
+            extra_args: ""
+            backends: "rocm"
+            runner: [stx-halo, Windows]
     env:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
@@ -483,37 +539,22 @@ jobs:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           $ErrorActionPreference = "Stop"
-
           $venvPython = ".\.venv\Scripts\python.exe"
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
+          $extraArgs = "${{ matrix.extra_args }}" -split " " | Where-Object { $_ }
+          $backends = "${{ matrix.backends }}" -split " " | Where-Object { $_ }
 
-          Write-Host "Running ${{ matrix.name }} tests..." -ForegroundColor Cyan
-
-          switch ("${{ matrix.test_type }}") {
-              "llm" {
-                  if ("${{ matrix.backend }}") {
-                      & $venvPython test/server_llm.py --wrapped-server ${{ matrix.wrapped_server }} --backend ${{ matrix.backend }} --server-binary $serverExe
-                  } else {
-                      & $venvPython test/server_llm.py --wrapped-server ${{ matrix.wrapped_server }} --server-binary $serverExe
-                  }
-              }
-              "whisper" {
-                  & $venvPython test/server_whisper.py --backend ${{ matrix.backend }} --server-binary $serverExe
-              }
-              "sd" {
-                  & $venvPython test/server_sd.py --backend ${{ matrix.backend }} --server-binary $serverExe
-              }
-              "tts" {
-                  & $venvPython test/server_tts.py --server-binary $serverExe
-              }
+          if ($backends.Count -eq 0) {
+            Write-Host "Running test/${{ matrix.script }} ${{ matrix.extra_args }}" -ForegroundColor Cyan
+            & $venvPython test/${{ matrix.script }} @extraArgs --server-binary $serverExe
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            foreach ($backend in $backends) {
+              Write-Host "Running test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $backend" -ForegroundColor Cyan
+              & $venvPython test/${{ matrix.script }} @extraArgs --backend $backend --server-binary $serverExe
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
           }
-
-          if ($LASTEXITCODE -ne 0) {
-              Write-Host "ERROR: ${{ matrix.name }} tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
-              exit $LASTEXITCODE
-          }
-
-          Write-Host "${{ matrix.name }} tests PASSED!" -ForegroundColor Green
 
       - name: Cleanup
         if: always()
@@ -521,42 +562,31 @@ jobs:
 
   test-deb-inference:
     name: Test .deb - ${{ matrix.name }}
-    runs-on: ${{ matrix.runner }}
-    needs: build-lemonade-server-deb
+    runs-on: [rai300_400, Linux]
+    needs: build-lemonade-deb
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
     if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          # LLM - Llamacpp backends
-          - name: llamacpp (vulkan)
-            test_type: llm
-            backend: vulkan
-            runner: [rai300_400, Linux]
-          - name: llamacpp (rocm)
-            test_type: llm
-            backend: rocm
-            runner: [stx-halo, Linux]
-          # Stable Diffusion (ROCm)
-          - name: stable-diffusion (rocm)
-            test_type: sd
-            backend: rocm
-            runner: [stx-halo, Linux]
-          # Stable Diffusion (CPU)
-          - name: stable-diffusion (cpu)
-            test_type: sd
-            backend: cpu
-            runner: [rai300_400, Linux]
-          # Text to speech
+          - name: llamacpp
+            script: server_llm.py
+            extra_args: "--wrapped-server llamacpp"
+            backends: "vulkan rocm"
+          - name: stable-diffusion
+            script: server_sd.py
+            extra_args: ""
+            backends: "cpu rocm"
           - name: text-to-speech
-            test_type: tts
-            runner: [rai300_400, Linux]
+            script: server_tts.py
+            extra_args: ""
+            backends: ""
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -566,8 +596,8 @@ jobs:
       - name: Set HF_HOME environment variable
         run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
 
-      - name: Install Lemonade Server (.deb)
-        uses: ./.github/actions/install-lemonade-server-deb
+      - name: Install Lemonade (.deb)
+        uses: ./.github/actions/install-lemonade-deb
         with:
           version: ${{ env.LEMONADE_VERSION }}
 
@@ -582,25 +612,16 @@ jobs:
         env:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
-          set -e  # Exit on error
-
-          VENV_PYTHON=".venv/bin/python"
-
-          echo "Running ${{ matrix.name }} tests..."
-
-          case "${{ matrix.test_type }}" in
-            llm)
-              $VENV_PYTHON test/server_llm.py --wrapped-server llamacpp --backend ${{ matrix.backend }} --server-binary lemonade-server
-              ;;
-            sd)
-              $VENV_PYTHON test/server_sd.py --backend ${{ matrix.backend }} --server-binary lemonade-server
-              ;;
-            tts)
-              $VENV_PYTHON test/server_tts.py --server-binary lemonade-server
-              ;;
-          esac
-
-          echo "${{ matrix.name }} tests PASSED!"
+          set -e
+          if [ -z "${{ matrix.backends }}" ]; then
+            echo "Running test/${{ matrix.script }} ${{ matrix.extra_args }}"
+            .venv/bin/python test/${{ matrix.script }} ${{ matrix.extra_args }} --server-binary lemonade-server
+          else
+            for backend in ${{ matrix.backends }}; do
+              echo "Running test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $backend"
+              .venv/bin/python test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $backend --server-binary lemonade-server
+            done
+          fi
 
       - name: Print server logs on failure
         if: failure()
@@ -629,6 +650,68 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
 
+  test-dmg-inference:
+    name: Test .dmg - llamacpp (metal)
+    runs-on: macos-latest
+    needs: build-lemonade-macos-dmg
+    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
+    env:
+      LEMONADE_CI_MODE: "True"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-macos-dmg.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set HF_HOME environment variable
+        run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+
+      - name: Install Lemonade Server (.pkg)
+        uses: ./.github/actions/install-lemonade-server-dmg
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Test llamacpp (metal)
+        env:
+          HF_HOME: ${{ env.HF_HOME }}
+        run: |
+          set -e
+          .venv/bin/python test/server_llm.py --wrapped-server llamacpp --backend metal --server-binary /usr/local/bin/lemonade-server
+
+      - name: Print server logs on failure
+        if: failure()
+        run: |
+          echo "=== Server Log (if exists) ==="
+          if [ -f /var/log/lemonade/lemonade-server.out.log ]; then
+            echo "Last 100 lines of lemonade-server.out.log:"
+            tail -100 /var/log/lemonade/lemonade-server.out.log
+          fi
+          if [ -f /var/log/lemonade/lemonade-server.err.log ]; then
+            echo "Last 100 lines of lemonade-server.err.log:"
+            tail -100 /var/log/lemonade/lemonade-server.err.log
+          fi
+
+          echo ""
+          echo "=== Temp logs ==="
+          for f in /tmp/lemonade*.log; do
+            if [ -f "$f" ]; then
+              echo "--- $f ---"
+              tail -50 "$f"
+            fi
+          done 2>/dev/null || echo "No temp log files found"
+
+          echo ""
+          echo "=== Lock file status ==="
+          ls -la /tmp/lemonade*.lock 2>/dev/null || echo "No lock files found"
+
   # ========================================================================
   # CLI AND ENDPOINTS TESTS - Run on GitHub-hosted runners (no GPU needed)
   # ========================================================================
@@ -638,17 +721,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs:
       - build-lemonade-server-installer
-      - build-lemonade-server-deb
+      - build-lemonade-deb
+      - build-lemonade-macos-dmg
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        test_type: [cli, endpoints, system-info]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        test_type: [cli, endpoints, system-info, ollama]
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -657,14 +741,14 @@ jobs:
         if: runner.os == 'Linux'
         uses: actions/download-artifact@v4
         with:
-          name: lemonade-server-deb
+          name: lemonade-deb
           path: .
 
-      - name: Install Lemonade Server (.deb)
+      - name: Install Lemonade (.deb)
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          DEB_FILE="lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb"
+          DEB_FILE="lemonade-server_${{ env.LEMONADE_VERSION }}_amd64.deb"
           echo "Installing .deb package: $DEB_FILE"
           sudo apt install ./"$DEB_FILE"
 
@@ -704,6 +788,30 @@ jobs:
           echo "VENV_PYTHON=.venv/Scripts/python.exe" >> $Env:GITHUB_ENV
           echo "SERVER_BINARY=$Env:LEMONADE_INSTALL_PATH\bin\lemonade-server.exe" >> $Env:GITHUB_ENV
 
+      # ---- macOS Setup ----
+      - name: Download .pkg package
+        if: runner.os == 'macOS'
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-macos-pkg
+          path: .
+
+      - name: Install Lemonade Server (.pkg)
+        id: install-pkg
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/install-lemonade-server-dmg
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+          download-artifact: 'false'
+
+      - name: Set environment (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+          echo "VENV_PYTHON=.venv/bin/python" >> $GITHUB_ENV
+          echo "SERVER_BINARY=${{ steps.install-pkg.outputs.bin-path }}/lemonade-server" >> $GITHUB_ENV
+
       # ---- Common Setup ----
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -720,6 +828,26 @@ jobs:
           echo "Stopping lemonade-server systemd service..."
           sudo systemctl stop lemonade-server || true
           sudo systemctl status lemonade-server || true
+
+      - name: Stop LaunchDaemon before tests (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          echo "Stopping lemonade-server LaunchDaemon..."
+          sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
+          CURRENT_UID=$(id -u)
+          launchctl bootout gui/"$CURRENT_UID"/com.lemonade.tray 2>/dev/null || true
+          sleep 2
+
+          # Clean up PID and lock files left behind by killed processes
+          echo "Cleaning up stale PID and lock files..."
+          sudo rm -f /tmp/lemonade-router.pid
+          sudo rm -f /tmp/lemonade_Router.lock
+          sudo rm -f /tmp/lemonade_Server.lock
+          sudo rm -f /tmp/lemonade_Tray.lock
+          sudo rm -f /tmp/lemonade*.pid /tmp/lemonade*.lock
+
+          echo "LaunchDaemon stopped and cleaned up."
 
       - name: Run ${{ matrix.test_type }} tests
         shell: bash
@@ -743,6 +871,9 @@ jobs:
               # Unset LEMONADE_CI_MODE so the server uses mock cache files
               unset LEMONADE_CI_MODE
               $VENV_PYTHON test/server_system_info.py --server-binary "$SERVER_BINARY"
+          elif [ "${{ matrix.test_type }}" = "ollama" ]; then
+              echo "Running Ollama API tests..."
+              $VENV_PYTHON test/test_ollama.py --server-binary "$SERVER_BINARY"
           fi
 
           echo "${{ matrix.test_type }} tests PASSED!"
@@ -756,12 +887,13 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - sign-msi-installers
-      - build-lemonade-server-deb
-      - build-lemonade-deb-full
+      - build-lemonade-deb
+      - build-lemonade-macos-dmg
+      - build-lemonade-appimage
       - test-cli-endpoints
     if: startsWith(github.ref, 'refs/tags/v')
     env:
-      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
     steps:
       - name: Checkout for release notes action
         uses: actions/checkout@v4
@@ -774,16 +906,22 @@ jobs:
           name: Lemonade_Server_MSI_Signed
           path: .
 
-      - name: Download Lemonade Server .deb Package (Linux - Minimal)
+      - name: Download Lemonade .deb Package
         uses: actions/download-artifact@v4
         with:
-          name: lemonade-server-deb
+          name: lemonade-deb
           path: .
 
-      - name: Download Lemonade Full .deb Package (Linux - with Electron App)
+      - name: Download Lemonade macOS .pkg Package
         uses: actions/download-artifact@v4
         with:
-          name: lemonade-deb-full
+          name: lemonade-macos-pkg
+          path: .
+
+      - name: Download Lemonade AppImage (Linux)
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-appimage
           path: .
 
       - name: Verify release artifacts
@@ -791,8 +929,9 @@ jobs:
           echo "Release artifacts:"
           ls -lh lemonade-server-minimal.msi
           ls -lh lemonade.msi
-          ls -lh lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb
-          ls -lh lemonade_${LEMONADE_VERSION}_amd64.deb
+          ls -lh lemonade-server_${LEMONADE_VERSION}_amd64.deb
+          ls -lh *.pkg
+          ls -lh Lemonade-${LEMONADE_VERSION}-x86_64.AppImage
 
       - name: Generate release notes
         id: release-notes
@@ -810,6 +949,7 @@ jobs:
           files: |
             lemonade-server-minimal.msi
             lemonade.msi
-            lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
-            lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
+            lemonade-server_${{ env.LEMONADE_VERSION }}_amd64.deb
+            *.pkg
+            Lemonade-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
           fail_on_unmatched_files: true

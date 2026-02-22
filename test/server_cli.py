@@ -28,7 +28,10 @@ import time
 import socket
 import sys
 import os
+import re
 import argparse
+import urllib.request
+import urllib.error
 
 from utils.test_models import (
     PORT,
@@ -489,6 +492,83 @@ class EphemeralCLITests(CLITestBase):
             )
 
         print("[OK] Recipes command works without server running")
+
+    def test_007_status_reports_http_port_not_websocket(self):
+        """Test that status reports the HTTP port, not the WebSocket port.
+
+        Regression test: the router listens on both an HTTP port and a
+        WebSocket port (allocated from 9000+).  get_server_info() used to
+        return whichever port appeared first in the OS TCP table, which is
+        non-deterministic.  When the HTTP port was above the WS range
+        (e.g. 11434) the status command could return 9000 instead, causing
+        the Electron app to connect to the wrong port.
+
+        This test starts the server on port 11434 (above the WS range)
+        and verifies that `status` returns 11434 and that the reported
+        port responds to a normal HTTP request.
+        """
+        TEST_PORT = 11434
+        self.assertFalse(is_server_running(TEST_PORT), "Server should not be running")
+
+        # Start server on port 11434 (above the WebSocket port range 9000+)
+        cmd = [_config["server_binary"], "serve", "--port", str(TEST_PORT)]
+        if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
+            cmd.append("--no-tray")
+
+        server_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        try:
+            self.assertTrue(
+                wait_for_server_start(port=TEST_PORT, timeout=60),
+                f"Server should start on port {TEST_PORT}",
+            )
+            time.sleep(3)  # Let WebSocket server bind its port too
+
+            # Run `lemonade-server status` and extract the reported port
+            result = self.assertCommandSucceeds(["status"])
+            output = result.stdout + result.stderr
+
+            port_match = (
+                re.search(r"port[:\s]+(\d+)", output, re.IGNORECASE)
+                or re.search(r"localhost:(\d+)", output, re.IGNORECASE)
+                or re.search(r"127\.0\.0\.1:(\d+)", output, re.IGNORECASE)
+            )
+            self.assertIsNotNone(
+                port_match, f"Could not parse port from status output: {output}"
+            )
+            reported_port = int(port_match.group(1))
+
+            # The reported port must be the HTTP port, not the WebSocket port
+            self.assertEqual(
+                reported_port,
+                TEST_PORT,
+                f"Status reported port {reported_port} but server was started on "
+                f"{TEST_PORT}. get_server_info() may be returning the WebSocket port.",
+            )
+
+            # Double-check: the reported port must respond to HTTP
+            try:
+                url = f"http://127.0.0.1:{reported_port}/live"
+                req = urllib.request.Request(url, method="GET")
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    status_code = resp.getcode()
+            except urllib.error.URLError as e:
+                self.fail(f"Port {reported_port} did not respond to HTTP /live: {e}")
+
+            self.assertEqual(status_code, 200)
+            print(f"[OK] Status correctly reports HTTP port {reported_port}")
+
+        finally:
+            server_process.terminate()
+            try:
+                server_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                server_process.kill()
 
 
 def run_cli_tests():

@@ -429,7 +429,8 @@ json Router::get_max_model_limits() const {
         {"embedding", max_loaded_models_},
         {"reranking", max_loaded_models_},
         {"audio", max_loaded_models_},
-        {"image", max_loaded_models_}
+        {"image", max_loaded_models_},
+        {"tts", max_loaded_models_}
     };
 }
 
