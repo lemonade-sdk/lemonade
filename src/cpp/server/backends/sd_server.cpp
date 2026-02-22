@@ -237,12 +237,18 @@ json SDServer::image_generations(const json& request) {
     // sd-server requires extra params (steps, sample_method, scheduler) to be
     // embedded in the prompt as <sd_cpp_extra_args>JSON</sd_cpp_extra_args>
     // See PR #1173: https://github.com/leejet/stable-diffusion.cpp/pull/1173
-    // Always inject model defaults from recipe_options so sd-server uses the
-    // correct values even when clients send OpenAI-compliant requests without
-    // these backend-specific parameters.
+    // Use request values if present (e.g. from webapp), fall back to recipe_options defaults.
     json extra_args;
-    extra_args["steps"] = static_cast<int>(recipe_options_.get_option("steps"));
-    extra_args["cfg_scale"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
+    if (request.contains("steps")) {
+        extra_args["steps"] = request["steps"].get<int>();
+    } else {
+        extra_args["steps"] = static_cast<int>(recipe_options_.get_option("steps"));
+    }
+    if (request.contains("cfg_scale")) {
+        extra_args["cfg_scale"] = request["cfg_scale"].get<float>();
+    } else {
+        extra_args["cfg_scale"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
+    }
 
     // Append extra args to prompt
     {
