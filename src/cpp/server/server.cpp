@@ -2152,6 +2152,14 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
 
         res.set_content(response.dump(), "application/json");
 
+    } catch (const nlohmann::json::exception& e) {
+        std::cerr << "[Server] JSON parse error in handle_image_edits: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Invalid JSON: " + std::string(e.what())},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         std::cerr << "[Server] ERROR in handle_image_edits: " << e.what() << std::endl;
         res.status = 500;
@@ -2257,6 +2265,14 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
 
         res.set_content(response.dump(), "application/json");
 
+    } catch (const nlohmann::json::exception& e) {
+        std::cerr << "[Server] JSON parse error in handle_image_variations: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Invalid JSON: " + std::string(e.what())},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         std::cerr << "[Server] ERROR in handle_image_variations: " << e.what() << std::endl;
         res.status = 500;
