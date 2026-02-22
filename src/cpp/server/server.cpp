@@ -2051,8 +2051,8 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         if (req.form.has_field("size")) {
             request_json["size"] = req.form.get_field("size");
         }
-        if (req.form.has_field("output_format")) {
-            request_json["output_format"] = req.form.get_field("output_format");
+        if (req.form.has_field("response_format")) {
+            request_json["response_format"] = req.form.get_field("response_format");
         }
         if (req.form.has_field("user")) {
             request_json["user"] = req.form.get_field("user");

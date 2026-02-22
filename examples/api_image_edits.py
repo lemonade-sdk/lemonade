@@ -107,7 +107,7 @@ def edit_image_with_requests(image_path, backend="cpu"):
             "prompt": "Add a red barn and mountains in the background, photorealistic",
             "size": "512x512",
             "n": "1",
-            "output_format": "b64_json",
+            "response_format": "b64_json",
         }
 
         response = requests.post(
