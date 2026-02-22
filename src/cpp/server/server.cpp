@@ -2046,7 +2046,28 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
             request_json["prompt"] = req.form.get_field("prompt");
         }
         if (req.form.has_field("n")) {
-            request_json["n"] = std::stoi(req.form.get_field("n"));
+            int n;
+            try {
+                n = std::stoi(req.form.get_field("n"));
+            } catch (const std::exception&) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Invalid value for 'n': must be an integer"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            if (n < 1 || n > 10) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Invalid value for 'n': must be between 1 and 10"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            request_json["n"] = n;
         }
         if (req.form.has_field("size")) {
             request_json["size"] = req.form.get_field("size");
@@ -2064,7 +2085,19 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
             request_json["quality"] = req.form.get_field("quality");
         }
         if (req.form.has_field("output_compression")) {
-            request_json["output_compression"] = std::stoi(req.form.get_field("output_compression"));
+            int output_compression;
+            try {
+                output_compression = std::stoi(req.form.get_field("output_compression"));
+            } catch (const std::exception&) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Invalid value for 'output_compression': must be an integer"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            request_json["output_compression"] = output_compression;
         }
         if (req.form.has_field("input_fidelity")) {
             request_json["input_fidelity"] = req.form.get_field("input_fidelity");
@@ -2194,7 +2227,28 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
             request_json["model"] = req.form.get_field("model");
         }
         if (req.form.has_field("n")) {
-            request_json["n"] = std::stoi(req.form.get_field("n"));
+            int n;
+            try {
+                n = std::stoi(req.form.get_field("n"));
+            } catch (const std::exception&) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Invalid value for 'n': must be an integer"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            if (n < 1 || n > 10) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Invalid value for 'n': must be between 1 and 10"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            request_json["n"] = n;
         }
         if (req.form.has_field("size")) {
             request_json["size"] = req.form.get_field("size");
