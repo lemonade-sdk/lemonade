@@ -2198,7 +2198,7 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         res.status = 500;
         nlohmann::json error = {{"error", {
             {"message", e.what()},
-            {"type", "internal_error"}
+            {"type", "server_error"}
         }}};
         res.set_content(error.dump(), "application/json");
     }
@@ -2332,7 +2332,7 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
         res.status = 500;
         nlohmann::json error = {{"error", {
             {"message", e.what()},
-            {"type", "internal_error"}
+            {"type", "server_error"}
         }}};
         res.set_content(error.dump(), "application/json");
     }
