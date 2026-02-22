@@ -267,141 +267,86 @@ json SDServer::image_generations(const json& request) {
 }
 
 json SDServer::image_edits(const json& request) {
-    // sd-server's /v1/images/edits puts images into ref_images (EDIT mode),
-    // which does NOT support img2img strength or mask-based inpainting.
-    // Instead, use /sdapi/v1/img2img which properly sets init_image and
-    // triggers the IMG2IMG code path with strength and mask support.
-    json sd_request;
+    // Use sd-server's /v1/images/edits endpoint (EDIT mode).
+    // Images are placed into ref_images, which works well with editing models
+    // like Qwen-Edit and Flux Klein 4b/9b.
+    // The endpoint expects multipart/form-data (like the OpenAI API).
 
-    sd_request["prompt"] = request.value("prompt", "");
+    // Use request values if present, fall back to recipe_options defaults.
+    json extra_args;
+    if (request.contains("steps")) {
+        extra_args["steps"] = request["steps"].get<int>();
+    } else {
+        extra_args["steps"] = static_cast<int>(recipe_options_.get_option("steps"));
+    }
+    if (request.contains("cfg_scale")) {
+        extra_args["cfg_scale"] = request["cfg_scale"].get<float>();
+    } else {
+        extra_args["cfg_scale"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
+    }
 
-    // Image and mask as base64 strings for the JSON body
+    // Append extra args to prompt (same pattern as image_generations)
+    std::string prompt = request.value("prompt", "");
+    prompt += " <sd_cpp_extra_args>" + extra_args.dump() + "</sd_cpp_extra_args>";
+
+    std::vector<MultipartField> fields;
+    fields.push_back({"prompt", prompt, "", ""});
+    fields.push_back({"n", std::to_string(request.value("n", 1)), "", ""});
+    if (request.contains("size")) {
+        fields.push_back({"size", request["size"].get<std::string>(), "", ""});
+    }
+
+    // Decode base64 image data back to binary for multipart upload
     if (request.contains("image_data")) {
-        sd_request["init_images"] = json::array({request["image_data"]});
+        std::string image_binary = JsonUtils::base64_decode(
+            request["image_data"].get<std::string>());
+        fields.push_back({"image[]", image_binary, "image.png", "image/png"});
     }
     if (request.contains("mask_data")) {
-        sd_request["mask"] = request["mask_data"];
+        std::string mask_binary = JsonUtils::base64_decode(
+            request["mask_data"].get<std::string>());
+        fields.push_back({"mask", mask_binary, "mask.png", "image/png"});
     }
-
-    // Parse size string (e.g. "1024x1024") into width/height
-    int width = 1024;
-    int height = 1024;
-    if (request.contains("size") && request["size"].is_string()) {
-        std::string size_str = request["size"];
-        auto x_pos = size_str.find('x');
-        if (x_pos != std::string::npos) {
-            width = std::stoi(size_str.substr(0, x_pos));
-            height = std::stoi(size_str.substr(x_pos + 1));
-        }
-    }
-    sd_request["width"] = width;
-    sd_request["height"] = height;
-
-    // Map n to batch_size (default 1)
-    sd_request["batch_size"] = request.value("n", 1);
-
-    // Inject model defaults for sd-server parameters not exposed in OpenAI API
-    int steps = recipe_options_.get_option("steps");
-    float cfg_scale = recipe_options_.get_option("cfg_scale");
-    sd_request["steps"] = steps;
-    sd_request["cfg_scale"] = cfg_scale;
-    sd_request["denoising_strength"] = 0.75;
 
     if (is_debug()) {
-        // Log without the image data to avoid flooding
-        json debug_log = sd_request;
-        if (debug_log.contains("init_images")) debug_log["init_images"] = "[base64 image data]";
-        if (debug_log.contains("mask")) debug_log["mask"] = "[base64 mask data]";
-        std::cout << "[SDServer] Forwarding image edits to /sdapi/v1/img2img: "
-                  << debug_log.dump(2) << std::endl;
+        std::cout << "[SDServer] Forwarding image edits to /v1/images/edits (multipart)"
+                  << " prompt=" << prompt
+                  << " n=" << request.value("n", 1)
+                  << " size=" << request.value("size", "")
+                  << std::endl;
     }
 
-    // Use the img2img endpoint which properly handles init_image + mask + strength
-    auto response = forward_request("/sdapi/v1/img2img", sd_request, 600);
-
-    // Transform sdapi response format {"images": ["b64..."]}
-    // to OpenAI format {"data": [{"b64_json": "..."}]}
-    if (response.contains("images") && response["images"].is_array()) {
-        json openai_response;
-        openai_response["created"] = static_cast<long long>(std::time(nullptr));
-        openai_response["data"] = json::array();
-        for (const auto& img : response["images"]) {
-            json item;
-            item["b64_json"] = img;
-            openai_response["data"].push_back(item);
-        }
-        return openai_response;
-    }
-
-    return response;
+    return forward_multipart_request("/v1/images/edits", fields, 600);
 }
 
 json SDServer::image_variations(const json& request) {
-    // Image variations uses img2img with high denoising strength
-    // to generate variations of the input image.
+    // Use sd-server's /v1/images/variations endpoint.
     // Note: OpenAI variations API does NOT accept a prompt parameter.
-    json sd_request;
+    // The endpoint expects multipart/form-data (like the OpenAI API).
 
-    // Use empty prompt for variations (OpenAI API doesn't support prompt here)
-    sd_request["prompt"] = "";
+    std::vector<MultipartField> fields;
+    fields.push_back({"prompt", "variation", "", ""});  // variations have no user prompt; use placeholder to satisfy non-empty check
+    fields.push_back({"n", std::to_string(request.value("n", 1)), "", ""});
+    if (request.contains("size")) {
+        fields.push_back({"size", request["size"].get<std::string>(), "", ""});
+    }
 
-    // Image as base64 string for the JSON body
+    // Decode base64 image data back to binary for multipart upload
     if (request.contains("image_data")) {
-        sd_request["init_images"] = json::array({request["image_data"]});
+        std::string image_binary = JsonUtils::base64_decode(
+            request["image_data"].get<std::string>());
+        fields.push_back({"image[]", image_binary, "image.png", "image/png"});
     }
-
-    // Parse size string (e.g. "1024x1024") into width/height
-    int width = 1024;
-    int height = 1024;
-    if (request.contains("size") && request["size"].is_string()) {
-        std::string size_str = request["size"];
-        auto x_pos = size_str.find('x');
-        if (x_pos != std::string::npos) {
-            width = std::stoi(size_str.substr(0, x_pos));
-            height = std::stoi(size_str.substr(x_pos + 1));
-        }
-    }
-    sd_request["width"] = width;
-    sd_request["height"] = height;
-
-    // Map n to batch_size (default 1)
-    sd_request["batch_size"] = request.value("n", 1);
-
-    // Inject model defaults for sd-server parameters not exposed in OpenAI API
-    int steps = recipe_options_.get_option("steps");
-    float cfg_scale = recipe_options_.get_option("cfg_scale");
-    sd_request["steps"] = steps;
-    sd_request["cfg_scale"] = cfg_scale;
-
-    // Use high denoising strength for variations (0.7-0.9 gives good variation)
-    sd_request["denoising_strength"] = 0.75;
 
     if (is_debug()) {
-        // Log without the image data to avoid flooding
-        json debug_log = sd_request;
-        if (debug_log.contains("init_images")) debug_log["init_images"] = "[base64 image data]";
-        std::cout << "[SDServer] Forwarding image variations to /sdapi/v1/img2img: "
-                  << debug_log.dump(2) << std::endl;
+        std::cout << "[SDServer] Forwarding image variations to /v1/images/edits (multipart)"
+                  << " prompt=variation"
+                  << " n=" << request.value("n", 1)
+                  << " size=" << request.value("size", "")
+                  << std::endl;
     }
 
-    // Use the img2img endpoint with high denoising for variations
-    auto response = forward_request("/sdapi/v1/img2img", sd_request, 600);
-
-    // Transform sdapi response format {"images": ["b64..."]}
-    // to OpenAI format {"data": [{"b64_json": "..."}]}
-    if (response.contains("images") && response["images"].is_array()) {
-        json openai_response;
-        openai_response["created"] = static_cast<long long>(std::time(nullptr));
-        openai_response["data"] = json::array();
-        for (const auto& img : response["images"]) {
-            json item;
-            item["b64_json"] = img;
-            openai_response["data"].push_back(item);
-        }
-        return openai_response;
-    }
-
-    return response;
+    return forward_multipart_request("/v1/images/edits", fields, 600);
 }
 
 } // namespace backends

@@ -42,34 +42,6 @@ namespace fs = std::filesystem;
 
 namespace lemon {
 
-// Helper function to encode binary data to base64
-static std::string base64_encode(const std::string& input) {
-    static const char base64_chars[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz"
-        "0123456789+/";
-
-    std::string output;
-    output.reserve(((input.size() + 2) / 3) * 4);
-
-    int val = 0;
-    int valb = -6;
-    for (unsigned char c : input) {
-        val = (val << 8) + c;
-        valb += 8;
-        while (valb >= 0) {
-            output.push_back(base64_chars[(val >> valb) & 0x3F]);
-            valb -= 6;
-        }
-    }
-    if (valb > -6) {
-        output.push_back(base64_chars[((val << 8) >> (valb + 8)) & 0x3F]);
-    }
-    while (output.size() % 4) {
-        output.push_back('=');
-    }
-    return output;
-}
 
 static const json MIME_TYPES = {
     {"mp3",  "audio/mpeg"},
@@ -2110,7 +2082,7 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
             if (file_pair.first == "image") {
                 const auto& file = file_pair.second;
                 // Base64 encode the image data for JSON transport
-                request_json["image_data"] = base64_encode(file.content);
+                request_json["image_data"] = utils::JsonUtils::base64_encode(file.content);
                 request_json["image_filename"] = file.filename;
                 found_image = true;
                 std::cout << "[Server] Image file: " << file.filename
@@ -2133,7 +2105,7 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         for (const auto& file_pair : files) {
             if (file_pair.first == "mask") {
                 const auto& file = file_pair.second;
-                request_json["mask_data"] = base64_encode(file.content);
+                request_json["mask_data"] = utils::JsonUtils::base64_encode(file.content);
                 request_json["mask_filename"] = file.filename;
                 std::cout << "[Server] Mask file: " << file.filename
                           << " (" << file.content.size() << " bytes)" << std::endl;
@@ -2267,7 +2239,7 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
             if (file_pair.first == "image") {
                 const auto& file = file_pair.second;
                 // Base64 encode the image data for JSON transport
-                request_json["image_data"] = base64_encode(file.content);
+                request_json["image_data"] = utils::JsonUtils::base64_encode(file.content);
                 request_json["image_filename"] = file.filename;
                 found_image = true;
                 std::cout << "[Server] Image file: " << file.filename
