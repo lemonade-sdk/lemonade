@@ -66,7 +66,7 @@ def edit_image_with_openai_client(image_path, backend="cpu"):
     # Read the image file
     with open(image_path, "rb") as image_file:
         response = client.images.edit(
-            model="SD-Turbo",  # or another editing model like Klein-4B if available
+            model="Flux-2-Klein-4B",  # or another editing model
             image=image_file,
             prompt="Add a red barn and mountains in the background, photorealistic",
             size="512x512",

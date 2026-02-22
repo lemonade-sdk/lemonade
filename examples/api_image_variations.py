@@ -73,7 +73,7 @@ def create_variations_with_openai_client(image_path, num_variations=1, backend="
     # Read the image file
     with open(image_path, "rb") as image_file:
         response = client.images.create_variation(
-            model="SD-Turbo",  # or another model
+            model="Flux-2-Klein-4B",  # or another model
             image=image_file,
             size="512x512",
             n=num_variations,
