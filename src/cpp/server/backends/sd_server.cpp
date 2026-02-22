@@ -299,6 +299,7 @@ json SDServer::image_edits(const json& request) {
     float cfg_scale = recipe_options_.get_option("cfg_scale");
     sd_request["steps"] = steps;
     sd_request["cfg_scale"] = cfg_scale;
+    sd_request["denoising_strength"] = 0.75;
 
     if (is_debug()) {
         // Log without the image data to avoid flooding
