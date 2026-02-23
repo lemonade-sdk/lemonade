@@ -11,7 +11,7 @@
 namespace lemon {
 namespace backends {
 
-class SDServer : public WrappedServer, public IImageServer {
+class SDServer : public WrappedServer, public IImageServer, public IImageUpscaleServer {
 public:
     inline static const BackendSpec SPEC = BackendSpec(
         // recipe
@@ -46,6 +46,9 @@ public:
 
     // IImageServer implementation
     json image_generations(const json& request) override;
+
+    // IImageUpscaleServer implementation
+    json image_upscale(const json& request) override;
 };
 
 } // namespace backends

@@ -621,6 +621,18 @@ json Router::image_generations(const json& request) {
     });
 }
 
+json Router::image_upscale(const json& request) {
+    return execute_inference(request, [&](WrappedServer* server) {
+        auto upscale_server = dynamic_cast<IImageUpscaleServer*>(server);
+        if (!upscale_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Image upscale", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return upscale_server->image_upscale(request);
+    });
+}
+
 json Router::get_stats() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = get_most_recent_server();

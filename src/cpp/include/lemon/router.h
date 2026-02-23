@@ -68,6 +68,7 @@ public:
 
     // Image endpoints (OpenAI /v1/images/* compatible)
     json image_generations(const json& request);
+    json image_upscale(const json& request);
 
     // Forward streaming requests to the appropriate wrapped server
     void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);
