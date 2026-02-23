@@ -279,6 +279,8 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
             if (!result.version.empty()) {
                 result.release_url = "https://github.com/FastFlowLM/FastFlowLM/releases/tag/" + result.version;
             }
+            // FLM installer artifact used by install_flm_if_needed().
+            result.download_filename = "flm-setup.exe";
             return result;
         }
 
@@ -318,15 +320,16 @@ void BackendManager::update_recipes_cache_entry(const std::string& recipe, const
     auto& info = cached_recipes_[recipe]["backends"][backend];
     info["available"] = installed;
 
-    if (installed) {
-        // Update version and enrichment from config (no disk I/O — uses cached backend_versions_)
-        auto enrichment = get_backend_enrichment(recipe, backend);
-        if (!enrichment.version.empty()) info["version"] = enrichment.version;
-        if (!enrichment.release_url.empty()) info["release_url"] = enrichment.release_url;
-        if (!enrichment.download_filename.empty()) info["download_filename"] = enrichment.download_filename;
+    // Keep enrichment fields current for both installed and uninstalled states.
+    // Version should remain visible in /system-info even when a backend is not installed.
+    auto enrichment = get_backend_enrichment(recipe, backend);
+    if (!enrichment.version.empty()) {
+        info["version"] = enrichment.version;
     } else {
         info.erase("version");
     }
+    if (!enrichment.release_url.empty()) info["release_url"] = enrichment.release_url;
+    if (!enrichment.download_filename.empty()) info["download_filename"] = enrichment.download_filename;
 }
 
 } // namespace lemon

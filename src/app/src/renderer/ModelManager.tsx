@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Boxes, ChevronRight, Clock3, Cpu, SlidersHorizontal, Store } from 'lucide-react';
+import { BookOpen, Boxes, ChevronRight, Clock3, Cpu, ExternalLink, SlidersHorizontal, Store } from 'lucide-react';
 import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -53,6 +53,19 @@ const RECIPE_DISPLAY_NAMES: Record<string, string> = {
   'kokoro': 'Kokoro',
 };
 
+interface GithubReleaseRef {
+  owner: string;
+  repo: string;
+  tag: string;
+}
+
+const parseGithubReleaseUrl = (url?: string): GithubReleaseRef | null => {
+  if (!url) return null;
+  const match = url.match(/github\.com\/([^/]+)\/([^/]+)\/releases\/tag\/(.+)$/);
+  if (!match) return null;
+  return { owner: match[1], repo: match[2], tag: match[3] };
+};
+
 // Registration data for new custom models
 interface ModelRegistrationData {
   checkpoint: string;
@@ -92,6 +105,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
   const [installingBackends, setInstallingBackends] = useState<Set<string>>(new Set());
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
+  const [hoveredBackend, setHoveredBackend] = useState<string | null>(null);
   const [showModelOptionsModal, setShowModelOptionsModal] = useState(false);
   const [newModel, setNewModel] = useState(createEmptyModelForm);
   const [marketplaceApps, setMarketplaceApps] = useState<MarketplaceApp[]>([]);
@@ -99,6 +113,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   const [marketplaceLoading, setMarketplaceLoading] = useState(true);
   const [marketplaceError, setMarketplaceError] = useState<string | null>(null);
   const [selectedMarketplaceCategory, setSelectedMarketplaceCategory] = useState<string>('all');
+  const [backendAssetSizes, setBackendAssetSizes] = useState<Record<string, number>>({});
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -233,6 +248,87 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     }
     window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
+
+  useEffect(() => {
+    const recipes = systemInfo?.recipes;
+    if (currentView !== 'backends' || !recipes) return;
+
+    const pendingByRelease = new Map<string, Set<string>>();
+    Object.values(recipes).forEach((recipe: Recipe) => {
+      Object.values(recipe.backends).forEach((backend: BackendInfo) => {
+        const releaseUrl = backend.release_url;
+        const filename = backend.download_filename;
+        if (!releaseUrl || !filename) return;
+        if (typeof backend.download_size_mb === 'number' || typeof backend.download_size_bytes === 'number') return;
+
+        const cacheKey = `${releaseUrl}:${filename}`;
+        if (typeof backendAssetSizes[cacheKey] === 'number') return;
+        if (!releaseUrl.includes('github.com/')) return;
+
+        if (!pendingByRelease.has(releaseUrl)) {
+          pendingByRelease.set(releaseUrl, new Set());
+        }
+        pendingByRelease.get(releaseUrl)!.add(filename);
+      });
+    });
+
+    if (pendingByRelease.size === 0) return;
+
+    let isCancelled = false;
+
+    const fetchReleaseAssets = async () => {
+      const discoveredSizes: Record<string, number> = {};
+
+      await Promise.all(
+        Array.from(pendingByRelease.entries()).map(async ([releaseUrl, fileNames]) => {
+          const parsed = parseGithubReleaseUrl(releaseUrl);
+          if (!parsed) return;
+
+          try {
+            const response = await fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}/releases/tags/${parsed.tag}`);
+            if (!response.ok) return;
+            const data = await response.json();
+            const assets = Array.isArray(data?.assets) ? data.assets : [];
+            assets.forEach((asset: any) => {
+              if (fileNames.has(asset?.name) && typeof asset?.size === 'number') {
+                discoveredSizes[`${releaseUrl}:${asset.name}`] = asset.size;
+              }
+            });
+          } catch {
+            // Size fallback is best-effort and should not block rendering.
+          }
+        })
+      );
+
+      if (isCancelled || Object.keys(discoveredSizes).length === 0) return;
+      setBackendAssetSizes((prev) => ({ ...prev, ...discoveredSizes }));
+    };
+
+    fetchReleaseAssets();
+    return () => {
+      isCancelled = true;
+    };
+  }, [backendAssetSizes, currentView, systemInfo?.recipes]);
+
+  const getBackendSizeLabel = useCallback((backendInfo: BackendInfo): string | null => {
+    if (typeof backendInfo.download_size_mb === 'number' && backendInfo.download_size_mb > 0) {
+      return `${Math.round(backendInfo.download_size_mb)} MB`;
+    }
+
+    if (typeof backendInfo.download_size_bytes === 'number' && backendInfo.download_size_bytes > 0) {
+      return `${Math.round(backendInfo.download_size_bytes / (1024 * 1024))} MB`;
+    }
+
+    if (backendInfo.release_url && backendInfo.download_filename) {
+      const bytes = backendAssetSizes[`${backendInfo.release_url}:${backendInfo.download_filename}`];
+      if (typeof bytes === 'number' && bytes > 0) {
+        return `${Math.round(bytes / (1024 * 1024))} MB`;
+      }
+      return '...';
+    }
+
+    return null;
+  }, [backendAssetSizes]);
 
   // Auto-expand the single category if only one is available
   useEffect(() => {
@@ -1086,8 +1182,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     return (
       <div className="left-panel-row-list">
         {filteredMarketplaceApps.map((app) => (
-          <div key={app.id} className="left-panel-row-item">
-            <div className="left-panel-row-main">
+          <div key={app.id} className="left-panel-row-item marketplace-app-card">
+            <div className="left-panel-row-main marketplace-app-main">
               <div className="left-panel-app-icon-wrap">
                 {app.logo ? (
                   <img className="left-panel-app-icon" src={app.logo} alt={app.name} />
@@ -1095,33 +1191,39 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                   <span className="left-panel-app-fallback">{app.name.charAt(0).toUpperCase()}</span>
                 )}
               </div>
-              <div className="left-panel-row-text">
-                <div className="left-panel-row-title">
-                  {app.name}
-                  {app.pinned && <span className="left-panel-row-badge">Featured</span>}
+              <div className="left-panel-row-text marketplace-app-content">
+                <div className="marketplace-title-row">
+                  <div className="left-panel-row-title marketplace-app-title">{app.name}</div>
+                  {Array.isArray(app.category) && app.category.length > 0 && (
+                    <div className="marketplace-app-categories">{app.category[0]}</div>
+                  )}
                 </div>
-                <div className="left-panel-row-meta">{app.description || 'No description available'}</div>
+                <div className="left-panel-row-meta marketplace-app-description">{app.description || 'No description available'}</div>
+                {(app.links?.guide || app.links?.video || app.links?.app) && (
+                  <div className="left-panel-row-actions marketplace-app-actions">
+                    {app.links?.app && (
+                      <button className="left-panel-link-btn primary" title="Visit app" onClick={() => openExternalLink(app.links?.app)}>
+                        <ExternalLink size={12} strokeWidth={1.9} />
+                        <span>Visit</span>
+                      </button>
+                    )}
+                    {app.links?.guide && (
+                      <button className="left-panel-link-btn" title="Open guide" onClick={() => openExternalLink(app.links?.guide)}>
+                        <BookOpen size={12} strokeWidth={1.9} />
+                        <span>Guide</span>
+                      </button>
+                    )}
+                    {app.links?.video && (
+                      <button className="left-panel-link-btn" title="Watch video" onClick={() => openExternalLink(app.links?.video)}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polygon points="6 4 20 12 6 20 6 4" fill="currentColor" />
+                        </svg>
+                        <span>Video</span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
-            </div>
-            <div className="left-panel-row-actions">
-              {app.links?.guide && (
-                <button className="model-action-btn load-btn" title="Open guide" onClick={() => openExternalLink(app.links?.guide)}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 20h9" />
-                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                  </svg>
-                </button>
-              )}
-              {app.links?.app && (
-                <button className="model-action-btn download-btn" title="Open app" onClick={() => openExternalLink(app.links?.app)}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M14 3h7v7" />
-                    <path d="M10 14 21 3" />
-                    <path d="M21 14v7h-7" />
-                    <path d="M3 10 14 21" />
-                  </svg>
-                </button>
-              )}
             </div>
           </div>
         ))}
@@ -1159,45 +1261,74 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
               {backends.map(([backendName, info]) => {
                 const key = `${recipeName}:${backendName}`;
                 const isInstalling = installingBackends.has(key);
+                const isHovered = hoveredBackend === key;
+                const sizeLabel = getBackendSizeLabel(info);
                 return (
-                  <div className="model-item" key={key}>
+                  <div
+                    className="model-item backend-row-item"
+                    key={key}
+                    onMouseEnter={() => setHoveredBackend(key)}
+                    onMouseLeave={() => setHoveredBackend(null)}
+                  >
                     <div className="model-item-content">
-                      <div className="model-info-left">
-                        <span className="model-name">
+                      <div className="model-info-left backend-row-main">
+                        <span className="model-name backend-name">
                           <span className={`model-status-indicator ${info.available ? 'available' : 'not-downloaded'}`}>●</span>
                           {backendName}
                         </span>
-                        <span className="model-size">{info.version || 'Not installed'}</span>
+                        <div className="backend-inline-meta">
+                          {info.release_url ? (
+                            <button
+                              className="backend-version-link"
+                              onClick={() => openExternalLink(info.release_url)}
+                              title="Open backend release page"
+                            >
+                              {info.version || 'Not installed'}
+                            </button>
+                          ) : info.version ? (
+                            <span className="backend-version">{info.version}</span>
+                          ) : (
+                            <span className="backend-version">Not installed</span>
+                          )}
+                          {sizeLabel && (
+                            <>
+                              <span className="backend-meta-separator">•</span>
+                              <span className="backend-size">{sizeLabel}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <span className="model-actions">
-                        {info.available ? (
-                          <button
-                            className="model-action-btn delete-btn"
-                            title="Uninstall backend"
-                            onClick={() => handleUninstallBackend(recipeName, backendName)}
-                          >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <polyline points="3 6 5 6 21 6" />
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                            </svg>
-                          </button>
-                        ) : (
-                          <button
-                            className="model-action-btn download-btn"
-                            title="Install backend"
-                            disabled={isInstalling}
-                            onClick={() => handleInstallBackend(recipeName, backendName)}
-                          >
-                            {isInstalling ? '…' : (
+                      {isHovered && (
+                        <span className="model-actions">
+                          {info.available ? (
+                            <button
+                              className="model-action-btn delete-btn"
+                              title="Uninstall backend"
+                              onClick={() => handleUninstallBackend(recipeName, backendName)}
+                            >
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                <polyline points="7 10 12 15 17 10" />
-                                <line x1="12" y1="15" x2="12" y2="3" />
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                               </svg>
-                            )}
-                          </button>
-                        )}
-                      </span>
+                            </button>
+                          ) : (
+                            <button
+                              className="model-action-btn download-btn"
+                              title="Install backend"
+                              disabled={isInstalling}
+                              onClick={() => handleInstallBackend(recipeName, backendName)}
+                            >
+                              {isInstalling ? '…' : (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                  <polyline points="7 10 12 15 17 10" />
+                                  <line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
+                              )}
+                            </button>
+                          )}
+                        </span>
+                      )}
                     </div>
                   </div>
                 );

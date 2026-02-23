@@ -53,6 +53,8 @@ export interface BackendInfo {
   error?: string;
   release_url?: string;
   download_filename?: string;
+  download_size_mb?: number;
+  download_size_bytes?: number;
 }
 
 interface SystemData {
