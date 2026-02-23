@@ -48,13 +48,15 @@ const numericSettingsConfig: Array<{
 const tabs = [
   { id: 'connection_settings', label: 'Connection' },
   { id: 'llm_chat_settings', label: 'LLM Chat' },
-  { id: 'tts_settings', label: 'TTS' }
+  { id: 'tts_settings', label: 'TTS' },
+  { id: 'help_settings', label: 'Help' }
 ];
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [settings, setSettings] = useState<AppSettings>(createDefaultSettings());
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [version, setVersion] = useState<string>('Unknown');
 
   useEffect(() => {
     if (!isOpen) {
@@ -93,6 +95,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     };
 
     fetchSettings();
+    if (window.api?.getVersion) {
+      window.api.getVersion().then((v) => {
+        if (isMounted && v) {
+          setVersion(v);
+        }
+      }).catch((error) => {
+        console.error('Failed to load app version:', error);
+      });
+    }
 
     return () => {
       isMounted = false;
@@ -232,6 +243,66 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }
   };
 
+  const openExternal = (url: string) => {
+    if (window.api?.openExternal) {
+      window.api.openExternal(url);
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const renderHelpSettings = () => (
+    <div className="settings-section-container">
+      <div className="settings-section">
+        <div className="settings-label-row">
+          <label className="settings-label">
+            <span className="settings-label-text">Resources</span>
+            <span className="settings-description">Documentation, release notes, and project home.</span>
+          </label>
+        </div>
+        <div className="settings-help-actions">
+          <button type="button" className="settings-link-button" onClick={() => openExternal('https://lemonade-server.ai/docs/')}>
+            Open Documentation
+          </button>
+          <button type="button" className="settings-link-button" onClick={() => openExternal('https://github.com/lemonade-sdk/lemonade/releases')}>
+            Open Release Notes
+          </button>
+          <button type="button" className="settings-link-button" onClick={() => openExternal('https://github.com/lemonade-sdk/lemonade')}>
+            Open GitHub Repo
+          </button>
+        </div>
+      </div>
+      <div className="settings-section">
+        <div className="settings-label-row">
+          <label className="settings-label">
+            <span className="settings-label-text">About</span>
+            <span className="settings-description">Lemonade local AI control center.</span>
+          </label>
+        </div>
+        <div className="settings-help-about">
+          <div className="settings-help-about-row">
+            <span className="settings-help-about-key">Version</span>
+            <span className="settings-help-about-value">{version}</span>
+          </div>
+        </div>
+      </div>
+      <div className="settings-section">
+        <div className="settings-label-row">
+          <label className="settings-label">
+            <span className="settings-label-text">Keyboard Shortcuts</span>
+            <span className="settings-description">Quick access keys for the main workspace.</span>
+          </label>
+        </div>
+        <div className="settings-help-shortcuts">
+          <div className="settings-help-shortcut-row"><span>Toggle Left Panel</span><code>Ctrl+Shift+M</code></div>
+          <div className="settings-help-shortcut-row"><span>Focus Models</span><code>Ctrl+Shift+P</code></div>
+          <div className="settings-help-shortcut-row"><span>Toggle Chat</span><code>Ctrl+Shift+H</code></div>
+          <div className="settings-help-shortcut-row"><span>Toggle Logs</span><code>Ctrl+Shift+L</code></div>
+        </div>
+      </div>
+    </div>
+  );
+
   const getSettingContext = (id: string): ReactElement => {
     switch(id) {
       case 'connection_settings':
@@ -254,10 +325,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         onValueChangeFunc={handleTTSSettingChange}
         onResetFunc={handleResetField}
         />;
+      case 'help_settings':
+        return renderHelpSettings();
       default:
         return <div></div>;
     }
-  }
+  };
 
   if (!isOpen) return null;
 
