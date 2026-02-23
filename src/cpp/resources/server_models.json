@@ -1306,5 +1306,25 @@
             "vision"
         ],
         "size": 3.74
+    },
+    "RealESRGAN-x4plus": {
+        "checkpoint": "ac-pill/upscale_models:RealESRGAN_x4plus.pth",
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "upscale",
+            "image"
+        ],
+        "size": 0.067
+    },
+    "RealESRGAN-x4plus-anime": {
+        "checkpoint": "ac-pill/upscale_models:RealESRGAN_x4plus_anime_6B.pth",
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "upscale",
+            "image"
+        ],
+        "size": 0.018
     }
 }

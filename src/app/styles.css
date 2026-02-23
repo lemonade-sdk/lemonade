@@ -5120,3 +5120,150 @@ footer {
     cursor: not-allowed;
     pointer-events: none;
 }
+
+/* Image Upscaler */
+.upscale-container {
+    position: relative;
+}
+
+.upscale-container.drag-over {
+    background: rgba(76, 175, 80, 0.08);
+    outline: 2px dashed #4caf50;
+    outline-offset: -4px;
+}
+
+.upscale-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+    margin: 24px;
+    border: 2px dashed #444;
+    border-radius: 12px;
+    color: #888;
+    text-align: center;
+    gap: 12px;
+}
+
+.upscale-dropzone svg {
+    color: #666;
+}
+
+.upscale-dropzone p {
+    margin: 0;
+    font-size: 14px;
+}
+
+.upscale-hint {
+    font-size: 12px !important;
+    color: #666 !important;
+}
+
+.upscale-item {
+    margin: 12px 16px;
+    padding: 12px;
+    background: #1a1a1a;
+    border-radius: 8px;
+    border: 1px solid #333;
+}
+
+.upscale-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #333;
+}
+
+.upscale-filename {
+    font-size: 13px;
+    color: #ccc;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 300px;
+}
+
+.upscale-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.upscale-status {
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.upscale-status.pending {
+    color: #888;
+}
+
+.upscale-status.processing {
+    color: #4caf50;
+}
+
+.upscale-status.error {
+    color: #f44336;
+}
+
+.upscale-remove-button {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.upscale-remove-button:hover {
+    color: #f44336;
+    background: rgba(244, 67, 54, 0.1);
+}
+
+.upscale-comparison {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+}
+
+.upscale-image-panel {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+}
+
+.upscale-panel-label {
+    display: block;
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.upscale-image {
+    width: 100%;
+    max-height: 400px;
+    object-fit: contain;
+    border-radius: 6px;
+    background: #111;
+    display: block;
+}
+
+.upscale-controls {
+    flex-direction: row;
+    align-items: center;
+}
+
+.upscale-progress {
+    font-size: 12px;
+    color: #4caf50;
+    white-space: nowrap;
+}
