@@ -12,6 +12,7 @@ import RerankingPanel from './components/panels/RerankingPanel';
 import TranscriptionPanel from './components/panels/TranscriptionPanel';
 import ImageGenerationPanel from './components/panels/ImageGenerationPanel';
 import TTSPanel from './components/panels/TTSPanel';
+import UpscalePanel from './components/panels/UpscalePanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
 import { RefreshIcon } from './components/Icons';
 import { isExperienceModel, getExperienceComponents } from './utils/experienceModels';
@@ -36,7 +37,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [resetKey, setResetKey] = useState(0);
 
-  type ModelType = 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'speech';
+  type ModelType = 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'upscale' | 'speech';
 
   const modelType = useMemo((): ModelType => {
     if (!selectedModel) return 'llm';
@@ -46,6 +47,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     if (info.labels?.includes('embeddings') || (info as any)?.embedding) return 'embedding';
     if (info.labels?.includes('reranking') || (info as any)?.reranking) return 'reranking';
     if (info.labels?.includes('transcription')) return 'transcription';
+    if (info.labels?.includes('upscale')) return 'upscale';
     if (info.labels?.includes('image')) return 'image';
     if (info.labels?.includes('speech')) return 'speech';
     return 'llm';
@@ -212,6 +214,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     : activeModelType === 'reranking' ? 'Lemonade Reranking'
     : activeModelType === 'transcription' ? 'Lemonade Transcriber'
     : activeModelType === 'image' ? 'Lemonade Image Generator'
+    : activeModelType === 'upscale' ? 'Lemonade Image Upscaler'
     : activeModelType === 'speech' ? 'Lemonade Text to Speech'
     : 'LLM Chat';
 
@@ -249,6 +252,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
       {activeModelType === 'reranking' && <RerankingPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'transcription' && <TranscriptionPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'image' && <ImageGenerationPanel key={resetKey} {...sharedProps} />}
+      {activeModelType === 'upscale' && <UpscalePanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'speech' && <TTSPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'llm' && (
         <LLMChatPanel

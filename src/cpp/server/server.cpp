@@ -278,6 +278,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_image_variations(req, res);
     });
 
+    register_post("images/upscale", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_image_upscale(req, res);
+    });
+
     // Responses endpoint
     register_post("responses", [this](const httplib::Request& req, httplib::Response& res) {
         handle_responses(req, res);
@@ -2315,6 +2319,61 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
         nlohmann::json error = {{"error", {
             {"message", e.what()},
             {"type", "server_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_image_upscale(const httplib::Request& req, httplib::Response& res) {
+    try {
+        LOG(INFO, "Server") << "POST /api/v1/images/upscale" << std::endl;
+
+        auto request_json = nlohmann::json::parse(req.body);
+
+        if (!request_json.contains("image") || !request_json["image"].is_string()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'image' field (base64 encoded) in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        if (!request_json.contains("model")) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'model' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        if (!load_image_model(request_json, res)) return;
+
+        auto response = router_->image_upscale(request_json);
+
+        if (response.contains("error")) {
+            res.status = 500;
+        }
+
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const nlohmann::json::exception& e) {
+        LOG(ERROR, "Server") << "JSON parse error in handle_image_upscale: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Invalid JSON: " + std::string(e.what())},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_image_upscale: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "internal_error"}
         }}};
         res.set_content(error.dump(), "application/json");
     }
