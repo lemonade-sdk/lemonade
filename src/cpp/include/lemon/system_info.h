@@ -147,7 +147,6 @@ private:
     std::string get_npu_power_mode();
     double get_gpu_vram_dxdiag(const std::string& gpu_name);
     double get_gpu_vram_wmi(uint64_t adapter_ram);
-    bool is_supported_ryzen_ai_processor();
 };
 
 // Linux implementation
@@ -188,6 +187,14 @@ public:
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
     std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
     NPUInfo get_npu_device() override;
+
+    // Override to add macOS-specific fields
+    json get_system_info_dict() override;
+    std::string get_os_version() override;
+
+    // macOS-specific methods
+    std::string get_processor_name();
+    std::string get_physical_memory();
 
     std::vector<GPUInfo> detect_metal_gpus();
 };

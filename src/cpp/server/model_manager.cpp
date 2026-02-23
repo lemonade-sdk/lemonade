@@ -1099,8 +1099,8 @@ static bool is_npu_available(const json& hardware) {
     }
 
     // Use provided hardware info
-    if (hardware.contains("npu") && hardware["npu"].is_object()) {
-        return hardware["npu"].value("available", false);
+    if (hardware.contains("amd_npu") && hardware["amd_npu"].is_object()) {
+        return hardware["amd_npu"].value("available", false);
     }
 
     return false;
@@ -1609,8 +1609,9 @@ void ModelManager::download_model(const std::string& model_name,
     }
 
     // Check if this recipe is supported on the current system
+    bool disable_filtering = parse_TF_env_var("LEMONADE_DISABLE_MODEL_FILTERING");
     std::string unsupported_reason = SystemInfo::check_recipe_supported(actual_recipe);
-    if (!unsupported_reason.empty()) {
+    if (!unsupported_reason.empty() && !disable_filtering) {
         throw std::runtime_error(
             "Model '" + model_name + "' cannot be used on this system (recipe: " + actual_recipe + "): " +
             unsupported_reason

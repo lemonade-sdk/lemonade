@@ -1285,9 +1285,9 @@
     "kokoro-v1": {
         "checkpoint": "mikkoph/kokoro-onnx",
         "recipe": "kokoro",
-        "suggested": false,
+        "suggested": true,
         "labels": [
-            "audio",
+            "tts",
             "speech"
         ],
         "size": 0.34

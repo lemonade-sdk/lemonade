@@ -61,10 +61,10 @@ Lemonade consists of these main executables:
 
 ### Build Steps
 A helper script is available that will set up the build environment on popular
-Linux distributions.  This will prompt to install dependencies via native package
-managers and create the build directory.
+Linux distributions and macOS.  This will prompt to install dependencies via native
+package managers and create the build directory.
 
-**Linux**
+**Linux / macOS**
 ```bash
 ./setup.sh
 ```
@@ -76,7 +76,7 @@ managers and create the build directory.
 
 Build by running:
 
-**Linux**
+**Linux / macOS**
 ```bash
 cmake --build --preset default
 ```
@@ -127,6 +127,31 @@ The tray app searches for the Electron app in these locations:
 
 If not found, the "Open app" menu option is hidden but everything else works.
 
+### Building an AppImage (Linux Only)
+
+To create a standalone AppImage package that can run on any Linux distribution:
+
+```bash
+cmake --build --preset default --target appimage
+```
+
+This will:
+1. Copy the Electron app source to a separate build directory
+2. Set the package.json version to match the CMake project version
+3. Install npm dependencies
+4. Build the renderer with production optimizations
+5. Package the application as an AppImage using electron-builder
+
+The generated AppImage will be located in:
+- `build/app-appimage/Lemonade-<version>-<arch>.AppImage`
+
+The AppImage is a self-contained executable that includes all dependencies and can be run on any Linux distribution without installation. Simply make it executable and run it:
+
+```bash
+chmod +x build/app-appimage/Lemonade-*.AppImage
+./build/app-appimage/Lemonade-*.AppImage
+```
+
 ### Platform-Specific Notes
 
 **Windows:**
@@ -148,10 +173,10 @@ If not found, the "Open app" menu option is hidden but everything else works.
   - Downloaded backends (llama-server, ryzenai-server): `~/.cache/lemonade/bin/`
   - Model downloads: `~/.cache/huggingface/` (follows HF conventions)
 
-**macOS:**
+**macOS (beta):**
 - Uses native system frameworks (Cocoa, Foundation)
 - ARM Macs use Metal backend by default for llama.cpp
-- ⚠️ **Note:** macOS build is currently a stub implementation and not fully functional
+- macOS support is currently in beta; a signed and notarized `.pkg` installer is available from the [releases page](https://github.com/lemonade-sdk/lemonade/releases/latest)
 
 ## Building Installers
 
@@ -210,7 +235,7 @@ cpack
 
 **Package Output:**
 
-Creates `lemonade-server-minimal_<VERSION>_amd64.deb` (e.g., `lemonade-server-minimal_9.0.3_amd64.deb`) which:
+Creates `lemonade-server_<VERSION>_amd64.deb` (e.g., `lemonade-server_9.0.3_amd64.deb`) which:
 - Installs to `/opt/bin/` (executables)
 - Installs resources to `/opt/share/lemonade-server/`
 - Creates desktop entry in `/opt/share/applications/`
@@ -222,7 +247,7 @@ Creates `lemonade-server-minimal_<VERSION>_amd64.deb` (e.g., `lemonade-server-mi
 
 ```bash
 # Replace <VERSION> with the actual version (e.g., 9.0.0)
-sudo apt install ./lemonade-server-minimal_<VERSION>_amd64.deb
+sudo apt install ./lemonade-server_<VERSION>_amd64.deb
 ```
 
 **Uninstallation:**
@@ -258,20 +283,20 @@ cpack -G RPM
 
 **Package Output:**
 
-Creates `lemonade-server-minimal-<VERSION>.x86_64.rpm` (e.g., `lemonade-server-minimal-9.1.2.x86_64.rpm`) and
+Creates `lemonade-server-<VERSION>.x86_64.rpm` (e.g., `lemonade-server-9.1.2.x86_64.rpm`) and
 resources are installed as per DEB version above
 
 **Installation:**
 
 ```bash
 # Replace <VERSION> with the actual version (e.g., 9.0.0)
-sudo dnf install ./lemonade-server-minimal-<VERSION>.x86_64.rpm
+sudo dnf install ./lemonade-server-<VERSION>.x86_64.rpm
 ```
 
 **Uninstallation:**
 
 ```bash
-sudo dnf remove lemonade-server-minimal
+sudo dnf remove lemonade-server
 ```
 
 **Post-Installation:**
