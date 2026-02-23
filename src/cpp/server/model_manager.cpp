@@ -1898,17 +1898,22 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
     // Check if this is a GGUF model (variant provided) or non-GGUF (variant empty)
     if (!main_variant.empty()) {
-        // Check if variant is a safetensors file (for sd-cpp models)
-        bool is_safetensors = main_variant.size() > 12 &&
-            main_variant.substr(main_variant.size() - 12) == ".safetensors";
+        // Check if variant is a known non-GGUF file type (safetensors, pth, ckpt)
+        auto ends_with = [](const std::string& s, const std::string& suffix) {
+            return s.size() >= suffix.size() &&
+                   s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+        };
+        bool is_direct_file = ends_with(main_variant, ".safetensors") ||
+                              ends_with(main_variant, ".pth") ||
+                              ends_with(main_variant, ".ckpt");
 
-        if (is_safetensors) {
-            // For safetensors files, just download the specified file directly
+        if (is_direct_file) {
+            // For non-GGUF model files, download the specified file directly
             if (std::find(repo_files.begin(), repo_files.end(), main_variant) != repo_files.end()) {
                 files_to_download[main_repo_id].push_back(main_variant);
-                std::cout << "[ModelManager] Found safetensors file: " << main_variant << std::endl;
+                std::cout << "[ModelManager] Found model file: " << main_variant << std::endl;
             } else {
-                throw std::runtime_error("Safetensors file not found in repository: " + main_variant);
+                throw std::runtime_error("Model file not found in repository: " + main_variant);
             }
         } else {
             // GGUF model: Use identify_gguf_models to determine which files to download
