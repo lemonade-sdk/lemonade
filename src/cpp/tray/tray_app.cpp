@@ -1350,32 +1350,64 @@ int TrayApp::execute_pull_command() {
         try {
             // Build request body with all optional parameters
             // Local imports don't need streaming (no download progress)
-            nlohmann::json request_body = {{"model", tray_config_.model}, {"stream", !local_import}};
+            nlohmann::json request_body;
+
+            // Try to read the model as a JSON file
+            try {
+                fs::path model_desc_path(tray_config_.model);
+                if ((model_desc_path.extension() == ".json") && fs::exists(model_desc_path)) {
+                    std::ifstream json_file(model_desc_path);
+                    json_file >> request_body;
+                }
+            } catch (const std::ifstream::failure& e) {
+                std::cerr << "Error: " << tray_config_.model << " could not be read." << std::endl;
+                return 1;
+            } catch(const nlohmann::json::exception& e) {
+                std::cerr << "Error: " << tray_config_.model << " is not a valid JSON file." << std::endl;
+                return 1;
+            } catch (const std::exception& e) { /** malformed path. Since the exception thrown by the path constructor is implementation defined, we must catch all. */}
+
+            // Current JSON contains the model name as id, remap
+            if (request_body.contains("id")) {
+                request_body["model"] = request_body["id"];
+            }
+
+            // If checkpoints is available remove checkpoint
+            if (request_body.contains("checkpoints")) {
+                request_body.erase("checkpoint");
+            }
+
+            // Model was not a JSON file
+            if (!request_body.contains("model")) {
+                request_body["model"] = tray_config_.model;
+                if (!tray_config_.checkpoint.empty() && !local_import) {
+                    // Only send checkpoint for remote downloads (local files already copied)
+                    request_body["checkpoint"] = tray_config_.checkpoint;
+                }
+                if (!tray_config_.recipe.empty()) {
+                    request_body["recipe"] = tray_config_.recipe;
+                }
+                if (tray_config_.is_reasoning) {
+                    request_body["reasoning"] = true;
+                }
+                if (tray_config_.is_vision) {
+                    request_body["vision"] = true;
+                }
+                if (tray_config_.is_embedding) {
+                    request_body["embedding"] = true;
+                }
+                if (tray_config_.is_reranking) {
+                    request_body["reranking"] = true;
+                }
+                if (!tray_config_.mmproj.empty()) {
+                    request_body["mmproj"] = tray_config_.mmproj;
+                }
+            }
 
             if (local_import) {
                 request_body["local_import"] = true;
-            }
-            if (!tray_config_.checkpoint.empty() && !local_import) {
-                // Only send checkpoint for remote downloads (local files already copied)
-                request_body["checkpoint"] = tray_config_.checkpoint;
-            }
-            if (!tray_config_.recipe.empty()) {
-                request_body["recipe"] = tray_config_.recipe;
-            }
-            if (tray_config_.is_reasoning) {
-                request_body["reasoning"] = true;
-            }
-            if (tray_config_.is_vision) {
-                request_body["vision"] = true;
-            }
-            if (tray_config_.is_embedding) {
-                request_body["embedding"] = true;
-            }
-            if (tray_config_.is_reranking) {
-                request_body["reranking"] = true;
-            }
-            if (!tray_config_.mmproj.empty()) {
-                request_body["mmproj"] = tray_config_.mmproj;
+            } else {
+                request_body["stream"] = true;
             }
 
             httplib::Client cli = server_manager->make_http_client(86400, 30);

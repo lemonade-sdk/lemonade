@@ -22,25 +22,29 @@ Usage:
     python server_cli.py --server-binary /path/to/lemonade-server
 """
 
-import unittest
-import subprocess
-import time
-import socket
-import sys
+import argparse
+import json
 import os
 import re
-import argparse
-import urllib.request
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
 import urllib.error
+import urllib.request
 
+from utils.server_base import _stop_server_via_systemd
 from utils.test_models import (
-    PORT,
     ENDPOINT_TEST_MODEL,
-    TIMEOUT_MODEL_OPERATION,
+    PORT,
     TIMEOUT_DEFAULT,
+    TIMEOUT_MODEL_OPERATION,
+    USER_MODEL_MAIN_CHECKPOINT,
+    USER_MODEL_NAME,
     get_default_server_binary,
 )
-from utils.server_base import _stop_server_via_systemd
 
 # Global configuration
 _config = {
@@ -352,6 +356,48 @@ class PersistentServerCLITests(CLITestBase):
         )
 
         print(f"[OK] Recipes command output shows recipe/backend status")
+
+    def test_007_pull_json(self):
+        """Test pull command to download a model via JSON file"""
+        json_file = os.path.join(tempfile.gettempdir(), "lemonade_pull_json.json")
+        with open(json_file, "w") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "id": USER_MODEL_NAME,
+                        "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                        "recipe": "llamacpp",
+                    }
+                )
+            )
+
+        result = self.assertCommandSucceeds(
+            ["pull", json_file], timeout=TIMEOUT_MODEL_OPERATION
+        )
+        # Pull should succeed
+        output = result.stdout.lower() + result.stderr.lower()
+        self.assertFalse(
+            "error" in output and "failed" in output,
+            f"Pull should not report errors: {result.stdout}",
+        )
+
+    def test_008_pull_malformed_json(self):
+        """Test pull command to download a model via JSON file"""
+        json_file = os.path.join(
+            tempfile.gettempdir(), "lemonade_pull_malformed_json.json"
+        )
+        with open(json_file, "w") as f:
+            f.write('{"checkpoint:')
+
+        result = self.assertCommandFails(
+            ["pull", json_file], timeout=TIMEOUT_MODEL_OPERATION
+        )
+        # Pull should fail
+        output = result.stdout.lower() + result.stderr.lower()
+        self.assertTrue(
+            "error" in output,
+            f"Pull should fail: {result.stdout}",
+        )
 
 
 class EphemeralCLITests(CLITestBase):
