@@ -105,10 +105,13 @@ std::string JsonUtils::base64_decode(const std::string& input) {
         "abcdefghijklmnopqrstuvwxyz"
         "0123456789+/";
 
-    std::vector<int> lookup(256, -1);
-    for (int i = 0; i < 64; i++) {
-        lookup[static_cast<unsigned char>(base64_chars[i])] = i;
-    }
+    static const auto lookup = []() {
+        std::vector<int> tbl(256, -1);
+        for (int i = 0; i < 64; i++) {
+            tbl[static_cast<unsigned char>(base64_chars[i])] = i;
+        }
+        return tbl;
+    }();
 
     std::string output;
     int val = 0;

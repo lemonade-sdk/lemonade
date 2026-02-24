@@ -11,7 +11,6 @@
 #include <filesystem>
 #include <thread>
 #include <chrono>
-#include <ctime>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -249,6 +248,9 @@ json SDServer::image_generations(const json& request) {
     } else {
         extra_args["cfg_scale"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
     }
+    if (request.contains("seed")) {
+        extra_args["seed"] = request["seed"].get<int>();
+    }
 
     // Append extra args to prompt
     {
@@ -283,6 +285,9 @@ json SDServer::image_edits(const json& request) {
         extra_args["cfg_scale"] = request["cfg_scale"].get<float>();
     } else {
         extra_args["cfg_scale"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
+    }
+    if (request.contains("seed")) {
+        extra_args["seed"] = request["seed"].get<int>();
     }
 
     // Append extra args to prompt (same pattern as image_generations)

@@ -1992,11 +1992,83 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
     }
 }
 
+bool Server::parse_n_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out) {
+    if (!req.form.has_field("n")) {
+        return true;
+    }
+    int n;
+    try {
+        n = std::stoi(req.form.get_field("n"));
+    } catch (const std::exception&) {
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Invalid value for 'n': must be an integer"},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+        return false;
+    }
+    if (n < 1 || n > 10) {
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Invalid value for 'n': must be between 1 and 10"},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+        return false;
+    }
+    out["n"] = n;
+    return true;
+}
+
+bool Server::extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out) {
+    for (const auto& file_pair : req.form.files) {
+        if (file_pair.first == "image") {
+            const auto& file = file_pair.second;
+            out["image_data"] = utils::JsonUtils::base64_encode(file.content);
+            out["image_filename"] = file.filename;
+            std::cout << "[Server] Image file: " << file.filename
+                      << " (" << file.content.size() << " bytes)" << std::endl;
+            return true;
+        }
+    }
+    res.status = 400;
+    nlohmann::json error = {{"error", {
+        {"message", "Missing 'image' field in request"},
+        {"type", "invalid_request_error"}
+    }}};
+    res.set_content(error.dump(), "application/json");
+    return false;
+}
+
+bool Server::load_image_model(const nlohmann::json& request_json, httplib::Response& res) {
+    if (!request_json.contains("model")) {
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Missing 'model' field in request"},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+        return false;
+    }
+    std::string requested_model = request_json["model"];
+    try {
+        auto_load_model_if_needed(requested_model);
+    } catch (const std::exception& e) {
+        std::cerr << "[Server ERROR] Failed to load image model: " << e.what() << std::endl;
+        auto error_response = create_model_error(requested_model, e.what());
+        std::string error_code = error_response["error"]["code"].get<std::string>();
+        res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+        res.set_content(error_response.dump(), "application/json");
+        return false;
+    }
+    return true;
+}
+
 void Server::handle_image_edits(const httplib::Request& req, httplib::Response& res) {
     try {
         std::cout << "[Server] POST /api/v1/images/edits" << std::endl;
 
-        // OpenAI image edits API uses multipart form data
         if (!req.is_multipart_form_data()) {
             res.status = 400;
             nlohmann::json error = {{"error", {
@@ -2007,55 +2079,18 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
             return;
         }
 
-        // Build request JSON for router
         nlohmann::json request_json;
 
-        // Extract form fields
-        if (req.form.has_field("model")) {
-            request_json["model"] = req.form.get_field("model");
-        }
-        if (req.form.has_field("prompt")) {
-            request_json["prompt"] = req.form.get_field("prompt");
-        }
-        if (req.form.has_field("n")) {
-            int n;
-            try {
-                n = std::stoi(req.form.get_field("n"));
-            } catch (const std::exception&) {
-                res.status = 400;
-                nlohmann::json error = {{"error", {
-                    {"message", "Invalid value for 'n': must be an integer"},
-                    {"type", "invalid_request_error"}
-                }}};
-                res.set_content(error.dump(), "application/json");
-                return;
-            }
-            if (n < 1 || n > 10) {
-                res.status = 400;
-                nlohmann::json error = {{"error", {
-                    {"message", "Invalid value for 'n': must be between 1 and 10"},
-                    {"type", "invalid_request_error"}
-                }}};
-                res.set_content(error.dump(), "application/json");
-                return;
-            }
-            request_json["n"] = n;
-        }
-        if (req.form.has_field("size")) {
-            request_json["size"] = req.form.get_field("size");
-        }
-        if (req.form.has_field("response_format")) {
-            request_json["response_format"] = req.form.get_field("response_format");
-        }
-        if (req.form.has_field("user")) {
-            request_json["user"] = req.form.get_field("user");
-        }
-        if (req.form.has_field("background")) {
-            request_json["background"] = req.form.get_field("background");
-        }
-        if (req.form.has_field("quality")) {
-            request_json["quality"] = req.form.get_field("quality");
-        }
+        // Extract common form fields
+        if (req.form.has_field("model"))            request_json["model"]            = req.form.get_field("model");
+        if (req.form.has_field("prompt"))           request_json["prompt"]           = req.form.get_field("prompt");
+        if (req.form.has_field("size"))             request_json["size"]             = req.form.get_field("size");
+        if (req.form.has_field("response_format"))  request_json["response_format"]  = req.form.get_field("response_format");
+        if (req.form.has_field("user"))             request_json["user"]             = req.form.get_field("user");
+        if (req.form.has_field("background"))       request_json["background"]       = req.form.get_field("background");
+        if (req.form.has_field("quality"))          request_json["quality"]          = req.form.get_field("quality");
+        if (req.form.has_field("input_fidelity"))   request_json["input_fidelity"]   = req.form.get_field("input_fidelity");
+
         if (req.form.has_field("output_compression")) {
             int output_compression;
             try {
@@ -2071,38 +2106,12 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
             }
             request_json["output_compression"] = output_compression;
         }
-        if (req.form.has_field("input_fidelity")) {
-            request_json["input_fidelity"] = req.form.get_field("input_fidelity");
-        }
 
-        // Extract image file
-        const auto& files = req.form.files;
-        bool found_image = false;
-        for (const auto& file_pair : files) {
-            if (file_pair.first == "image") {
-                const auto& file = file_pair.second;
-                // Base64 encode the image data for JSON transport
-                request_json["image_data"] = utils::JsonUtils::base64_encode(file.content);
-                request_json["image_filename"] = file.filename;
-                found_image = true;
-                std::cout << "[Server] Image file: " << file.filename
-                          << " (" << file.content.size() << " bytes)" << std::endl;
-                break;
-            }
-        }
-
-        if (!found_image) {
-            res.status = 400;
-            nlohmann::json error = {{"error", {
-                {"message", "Missing 'image' field in request"},
-                {"type", "invalid_request_error"}
-            }}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
+        if (!parse_n_from_form(req, res, request_json))      return;
+        if (!extract_image_from_form(req, res, request_json)) return;
 
         // Extract optional mask file
-        for (const auto& file_pair : files) {
+        for (const auto& file_pair : req.form.files) {
             if (file_pair.first == "mask") {
                 const auto& file = file_pair.second;
                 request_json["mask_data"] = utils::JsonUtils::base64_encode(file.content);
@@ -2113,7 +2122,6 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
             }
         }
 
-        // Validate required fields
         if (!request_json.contains("prompt")) {
             res.status = 400;
             nlohmann::json error = {{"error", {
@@ -2124,37 +2132,12 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
             return;
         }
 
-        // Handle model loading
-        if (request_json.contains("model")) {
-            std::string requested_model = request_json["model"];
-            try {
-                auto_load_model_if_needed(requested_model);
-            } catch (const std::exception& e) {
-                std::cerr << "[Server ERROR] Failed to load image model: " << e.what() << std::endl;
-                auto error_response = create_model_error(requested_model, e.what());
-                std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
-                res.set_content(error_response.dump(), "application/json");
-                return;
-            }
-        } else {
-            res.status = 400;
-            nlohmann::json error = {{"error", {
-                {"message", "Missing 'model' field in request"},
-                {"type", "invalid_request_error"}
-            }}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
+        if (!load_image_model(request_json, res)) return;
 
-        // Forward to router
         auto response = router_->image_edits(request_json);
-
-        // Check for error in response
         if (response.contains("error")) {
             res.status = 500;
         }
-
         res.set_content(response.dump(), "application/json");
 
     } catch (const nlohmann::json::exception& e) {
@@ -2180,7 +2163,6 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
     try {
         std::cout << "[Server] POST /api/v1/images/variations" << std::endl;
 
-        // OpenAI image variations API uses multipart form data
         if (!req.is_multipart_form_data()) {
             res.status = 400;
             nlohmann::json error = {{"error", {
@@ -2191,104 +2173,22 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
             return;
         }
 
-        // Build request JSON for router
         nlohmann::json request_json;
 
-        // Extract form fields
-        if (req.form.has_field("model")) {
-            request_json["model"] = req.form.get_field("model");
-        }
-        if (req.form.has_field("n")) {
-            int n;
-            try {
-                n = std::stoi(req.form.get_field("n"));
-            } catch (const std::exception&) {
-                res.status = 400;
-                nlohmann::json error = {{"error", {
-                    {"message", "Invalid value for 'n': must be an integer"},
-                    {"type", "invalid_request_error"}
-                }}};
-                res.set_content(error.dump(), "application/json");
-                return;
-            }
-            if (n < 1 || n > 10) {
-                res.status = 400;
-                nlohmann::json error = {{"error", {
-                    {"message", "Invalid value for 'n': must be between 1 and 10"},
-                    {"type", "invalid_request_error"}
-                }}};
-                res.set_content(error.dump(), "application/json");
-                return;
-            }
-            request_json["n"] = n;
-        }
-        if (req.form.has_field("size")) {
-            request_json["size"] = req.form.get_field("size");
-        }
-        if (req.form.has_field("response_format")) {
-            request_json["response_format"] = req.form.get_field("response_format");
-        }
-        if (req.form.has_field("user")) {
-            request_json["user"] = req.form.get_field("user");
-        }
+        // Extract common form fields
+        if (req.form.has_field("model"))            request_json["model"]            = req.form.get_field("model");
+        if (req.form.has_field("size"))             request_json["size"]             = req.form.get_field("size");
+        if (req.form.has_field("response_format"))  request_json["response_format"]  = req.form.get_field("response_format");
+        if (req.form.has_field("user"))             request_json["user"]             = req.form.get_field("user");
 
-        // Extract image file
-        const auto& files = req.form.files;
-        bool found_image = false;
-        for (const auto& file_pair : files) {
-            if (file_pair.first == "image") {
-                const auto& file = file_pair.second;
-                // Base64 encode the image data for JSON transport
-                request_json["image_data"] = utils::JsonUtils::base64_encode(file.content);
-                request_json["image_filename"] = file.filename;
-                found_image = true;
-                std::cout << "[Server] Image file: " << file.filename
-                          << " (" << file.content.size() << " bytes)" << std::endl;
-                break;
-            }
-        }
+        if (!parse_n_from_form(req, res, request_json))      return;
+        if (!extract_image_from_form(req, res, request_json)) return;
+        if (!load_image_model(request_json, res))             return;
 
-        if (!found_image) {
-            res.status = 400;
-            nlohmann::json error = {{"error", {
-                {"message", "Missing 'image' field in request"},
-                {"type", "invalid_request_error"}
-            }}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-
-        // Handle model loading
-        if (request_json.contains("model")) {
-            std::string requested_model = request_json["model"];
-            try {
-                auto_load_model_if_needed(requested_model);
-            } catch (const std::exception& e) {
-                std::cerr << "[Server ERROR] Failed to load image model: " << e.what() << std::endl;
-                auto error_response = create_model_error(requested_model, e.what());
-                std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
-                res.set_content(error_response.dump(), "application/json");
-                return;
-            }
-        } else {
-            res.status = 400;
-            nlohmann::json error = {{"error", {
-                {"message", "Missing 'model' field in request"},
-                {"type", "invalid_request_error"}
-            }}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-
-        // Forward to router
         auto response = router_->image_variations(request_json);
-
-        // Check for error in response
         if (response.contains("error")) {
             res.status = 500;
         }
-
         res.set_content(response.dump(), "application/json");
 
     } catch (const nlohmann::json::exception& e) {
