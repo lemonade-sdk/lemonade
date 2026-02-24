@@ -570,35 +570,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # LLM - Llamacpp backends
-          - name: llamacpp (vulkan)
-            test_type: llm
-            backend: vulkan
-            runner: [rai300_400, Linux]
-          - name: llamacpp (rocm)
-            test_type: llm
-            backend: rocm
-            runner: [stx-halo, Linux]
-          # Stable Diffusion (ROCm)
-          - name: stable-diffusion (rocm)
-            test_type: sd
-            backend: rocm
-            runner: [stx-halo, Linux]
-          # Stable Diffusion (CPU)
-          - name: stable-diffusion (cpu)
-            test_type: sd
-            backend: cpu
-            runner: [rai300_400, Linux]
-          # Whisper
-          - name: whisper (cpu)
-            test_type: whisper
-            backend: cpu
-            runner: [rai300_400, Linux]
-          - name: whisper (vulkan)
-            test_type: whisper
-            backend: vulkan
-            runner: [rai300_400, Linux]
-          # Text to speech
+          - name: llamacpp
+            script: server_llm.py
+            extra_args: "--wrapped-server llamacpp"
+            backends: "vulkan rocm"
+          - name: stable-diffusion
+            script: server_sd.py
+            extra_args: ""
+            backends: "cpu rocm"
+          - name: whisper
+            script: server_whisper.py
+            extra_args: ""
+            backends: "cpu vulkan"
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""
@@ -633,28 +616,16 @@ jobs:
         env:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
-          set -e  # Exit on error
-
-          VENV_PYTHON=".venv/bin/python"
-
-          echo "Running ${{ matrix.name }} tests..."
-
-          case "${{ matrix.test_type }}" in
-            llm)
-              $VENV_PYTHON test/server_llm.py --wrapped-server llamacpp --backend ${{ matrix.backend }} --server-binary lemonade-server
-              ;;
-            sd)
-              $VENV_PYTHON test/server_sd.py --backend ${{ matrix.backend }} --server-binary lemonade-server
-              ;;
-            whisper)
-              $VENV_PYTHON test/server_whisper.py --backend ${{ matrix.backend }} --server-binary lemonade-server
-              ;;
-            tts)
-              $VENV_PYTHON test/server_tts.py --server-binary lemonade-server
-              ;;
-          esac
-
-          echo "${{ matrix.name }} tests PASSED!"
+          set -e
+          if [ -z "${{ matrix.backends }}" ]; then
+            echo "Running test/${{ matrix.script }} ${{ matrix.extra_args }}"
+            .venv/bin/python test/${{ matrix.script }} ${{ matrix.extra_args }} --server-binary lemonade-server
+          else
+            for backend in ${{ matrix.backends }}; do
+              echo "Running test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $backend"
+              .venv/bin/python test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $backend --server-binary lemonade-server
+            done
+          fi
 
       - name: Print server logs on failure
         if: failure()
