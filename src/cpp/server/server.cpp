@@ -1177,6 +1177,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"created", 1234567890},
         {"owned_by", "lemonade"},
         {"checkpoint", info.checkpoint()},
+        {"checkpoints", info.checkpoints},
         {"recipe", info.recipe},
         {"downloaded", info.downloaded},
         {"suggested", info.suggested},
@@ -2069,12 +2070,6 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         // Extract optional parameters
         std::string checkpoint = request_json.value("checkpoint", "");
         std::string recipe = request_json.value("recipe", "");
-        bool reasoning = request_json.value("reasoning", false);
-        bool vision = request_json.value("vision", false);
-        bool embedding = request_json.value("embedding", false);
-        bool reranking = request_json.value("reranking", false);
-        bool image = request_json.value("image", false);
-        std::string mmproj = request_json.value("mmproj", "");
         bool do_not_upgrade = request_json.value("do_not_upgrade", false);
         bool stream = request_json.value("stream", false);
 
@@ -2109,8 +2104,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             std::cout << "[Server] Local import mode - resolving files in: " << dest_path << std::endl;
 
             resolve_and_register_local_model(
-                dest_path, model_name, recipe, "", mmproj,
-                reasoning, vision, embedding, reranking, image, hf_cache
+                dest_path, model_name, request_json, hf_cache
             );
 
             nlohmann::json response = {
@@ -2131,8 +2125,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
 
             res.set_chunked_content_provider(
                 "text/event-stream",
-                [this, model_name, checkpoint, recipe, reasoning, vision,
-                 embedding, reranking, image, mmproj, do_not_upgrade](size_t offset, httplib::DataSink& sink) {
+                [this, model_name, request_json, do_not_upgrade](size_t offset, httplib::DataSink& sink) {
                     if (offset > 0) {
                         return false; // Already sent everything
                     }
@@ -2166,9 +2159,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                             return true;  // Continue download
                         };
 
-                        model_manager_->download_model(model_name, checkpoint, recipe,
-                                                      reasoning, vision, embedding, reranking, image,
-                                                      mmproj, do_not_upgrade, progress_cb);
+                        model_manager_->download_model(model_name, request_json, do_not_upgrade, progress_cb);
 
                     } catch (const std::exception& e) {
                         // Send error event (only if it's not a cancellation)
@@ -2186,8 +2177,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                 });
         } else {
             // Legacy synchronous mode - blocks until complete
-            model_manager_->download_model(model_name, checkpoint, recipe,
-                                          reasoning, vision, embedding, reranking, image, mmproj, do_not_upgrade);
+            model_manager_->download_model(model_name, request_json, do_not_upgrade);
 
             nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
             res.set_content(response.dump(), "application/json");
@@ -2433,23 +2423,16 @@ void Server::handle_params(const httplib::Request& req, httplib::Response& res) 
 // Parameters:
 //   - dest_path: Directory where model files are located (already copied/uploaded)
 //   - model_name: Model name with "user." prefix
-//   - recipe: Inference recipe (llamacpp, ryzenai-llm, whispercpp)
-//   - variant: Optional variant hint for GGUF file selection
-//   - mmproj: Optional mmproj filename hint
-//   - reasoning, vision, embedding, reranking, image: Model labels
+//   - model_data: Request content
 //   - hf_cache: HuggingFace cache directory for computing relative paths
 void Server::resolve_and_register_local_model(
     const std::string& dest_path,
     const std::string& model_name,
-    const std::string& recipe,
-    const std::string& variant,
-    const std::string& mmproj,
-    bool reasoning,
-    bool& vision,  // May be modified if mmproj found
-    bool embedding,
-    bool reranking,
-    bool image,
+    const json& model_data,
     const std::string& hf_cache) {
+    std::string mmproj = model_data.value("mmproj", "");
+    std::string recipe = model_data.value("recipe", "");
+    bool vision = model_data.value("vision", false);
 
     std::string resolved_checkpoint;
     std::string resolved_mmproj;
@@ -2469,21 +2452,6 @@ void Server::resolve_and_register_local_model(
     // For llamacpp models, find the GGUF file
     else if (recipe == "llamacpp") {
         std::string gguf_file_found;
-
-        // If variant is specified, look for that specific file
-        if (!variant.empty()) {
-            std::string search_term = variant;
-            if (variant.find(".gguf") == std::string::npos) {
-                search_term = variant + ".gguf";
-            }
-
-            for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
-                if (entry.is_regular_file() && entry.path().filename() == search_term) {
-                    gguf_file_found = entry.path().string();
-                    break;
-                }
-            }
-        }
 
         // If no variant or variant not found, search for any .gguf file (excluding mmproj)
         if (gguf_file_found.empty()) {
@@ -2555,17 +2523,16 @@ void Server::resolve_and_register_local_model(
 
     std::cout << "[Server] Registering model with checkpoint: " << checkpoint_to_register << std::endl;
 
+    auto actual_model_data = model_data;
+    actual_model_data["checkpoint"] = checkpoint_to_register;
+    if (!resolved_mmproj.empty()) {
+        actual_model_data["mmproj"] = resolved_mmproj;
+    }
+
     // Register the model with source to mark how it was added
     model_manager_->register_user_model(
         model_name,
-        checkpoint_to_register,
-        recipe,
-        reasoning,
-        vision,
-        embedding,
-        reranking,
-        image,
-        resolved_mmproj.empty() ? mmproj : resolved_mmproj,
+        actual_model_data,
         "local_upload"
     );
 

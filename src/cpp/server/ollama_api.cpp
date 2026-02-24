@@ -1057,8 +1057,7 @@ void OllamaApi::handle_pull(const httplib::Request& req, httplib::Response& res)
                             return true;
                         };
 
-                        model_manager_->download_model(name, "", "", false, false, false, false, false, "",
-                                                       false, progress_cb);
+                        model_manager_->download_model(name, json::object(), false, progress_cb);
 
                         // Final success
                         std::string success = json({{"status", "success"}}).dump() + "\n";
@@ -1079,7 +1078,7 @@ void OllamaApi::handle_pull(const httplib::Request& req, httplib::Response& res)
             );
         } else {
             // Non-streaming: block until complete
-            model_manager_->download_model(name);
+            model_manager_->download_model(name, json::object());
             json response = {{"status", "success"}};
             res.set_content(response.dump(), "application/json");
         }

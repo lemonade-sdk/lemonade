@@ -103,14 +103,14 @@ CLIParser::CLIParser()
 
     // Pull
     CLI::App* pull = app_.add_subcommand("pull", "Download a model");
-    pull->add_option("model", tray_config_.model, "The model to download")
+    pull->add_option("model", tray_config_.model, "The model to download. Can be a name or JSON file")
         ->type_name("MODEL")
         ->required();
     pull->add_option("--checkpoint", tray_config_.checkpoint, "Hugging Face checkpoint (format: org/model:variant) OR an absolute local path to a model directory. When a local path is provided, files are copied to the HuggingFace cache and registered.")
         ->type_name("CHECKPOINT");
     pull->add_option("--recipe", tray_config_.recipe, "Inference recipe to use. Required when using a local path.")
         ->type_name("RECIPE")
-        ->check(CLI::IsMember({"llamacpp", "flm", "ryzenai-llm", "whispercpp"}));
+        ->check(CLI::IsMember({"llamacpp", "flm", "ryzenai-llm", "whispercpp", "sd-cpp"}));
     pull->add_flag("--reasoning", tray_config_.is_reasoning, "Mark model as a reasoning model (e.g., DeepSeek-R1). Adds 'reasoning' label to model metadata.");
     pull->add_flag("--vision", tray_config_.is_vision, "Mark model as a vision model (multimodal). Adds 'vision' label to model metadata.");
     pull->add_flag("--embedding", tray_config_.is_embedding, "Mark model as an embedding model. Adds 'embeddings' label to model metadata. For use with /api/v1/embeddings endpoint.");

@@ -122,6 +122,17 @@ SD_MODEL = "SD-Turbo"
 # Text-to-Speech test configuration
 TTS_MODEL = "kokoro-v1"
 
+# User models. The combinations of files seen here do not work but we will only test download
+USER_MODEL_NAME = "user.Dummy-Model"
+USER_MODEL_MAIN_CHECKPOINT = (
+    "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf"
+)
+USER_MODEL_TE_CHECKPOINT = (
+    "mradermacher/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct.Q2_K.gguf"
+)
+# Using a file not at repo top-level
+USER_MODEL_VAE_CHECKPOINT = "Comfy-Org/z_image:split_files/vae/ae.safetensors"
+
 # Models that should be pre-downloaded for offline testing
 MODELS_FOR_OFFLINE_CACHE = [
     "Qwen3-0.6B-GGUF",
