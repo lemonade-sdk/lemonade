@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { BookOpen, Boxes, ChevronRight, Clock3, Cpu, ExternalLink, Settings as SettingsIcon, SlidersHorizontal, Store } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { BookOpen, Boxes, ChevronRight, Cpu, ExternalLink, Settings as SettingsIcon, SlidersHorizontal, Store } from 'lucide-react';
 import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -21,7 +21,7 @@ interface ModelManagerProps {
   onViewChange: (view: LeftPanelView) => void;
 }
 
-export type LeftPanelView = 'models' | 'marketplace' | 'backends' | 'history' | 'settings';
+export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'settings';
 
 interface MarketplaceApp {
   id: string;
@@ -97,8 +97,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['all']));
   const [organizationMode, setOrganizationMode] = useState<'recipe' | 'category'>('recipe');
   const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
-  const [showMarketplacePinnedOnly, setShowMarketplacePinnedOnly] = useState(false);
-  const [showBackendAvailableOnly, setShowBackendAvailableOnly] = useState(false);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [showAddModelForm, setShowAddModelForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -115,6 +113,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   const [marketplaceError, setMarketplaceError] = useState<string | null>(null);
   const [selectedMarketplaceCategory, setSelectedMarketplaceCategory] = useState<string>('all');
   const [backendAssetSizes, setBackendAssetSizes] = useState<Record<string, number>>({});
+  const filterAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -240,6 +239,26 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    setShowFilterPanel(false);
+  }, [currentView]);
+
+  useEffect(() => {
+    if (!showFilterPanel) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (filterAnchorRef.current?.contains(target)) return;
+      setShowFilterPanel(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, [showFilterPanel]);
 
   const openExternalLink = useCallback((url?: string) => {
     if (!url) return;
@@ -939,7 +958,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
 
   const filteredMarketplaceApps = marketplaceApps
     .filter((app) => {
-      if (showMarketplacePinnedOnly && !app.pinned) return false;
       if (selectedMarketplaceCategory !== 'all') {
         return Array.isArray(app.category) && app.category.includes(selectedMarketplaceCategory);
       }
@@ -973,24 +991,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
 
   const viewTitle = currentView === 'models'
     ? 'Model Manager'
-    : currentView === 'marketplace'
-      ? 'Marketplace'
-      : currentView === 'backends'
-        ? 'Backend Manager'
-        : currentView === 'history'
-          ? 'Chat History'
-          : 'Settings';
+    : currentView === 'backends'
+      ? 'Backend Manager'
+      : currentView === 'marketplace'
+        ? 'Marketplace'
+        : 'Settings';
 
   const searchPlaceholder = currentView === 'models'
-    ? 'Search models...'
-    : currentView === 'marketplace'
-      ? 'Search apps...'
-      : currentView === 'backends'
-        ? 'Search backends...'
-        : currentView === 'history'
-          ? 'Search history...'
-          : 'Search settings...';
-  const showInlineFilterButton = currentView !== 'history' && currentView !== 'settings';
+    ? 'Filter models...'
+    : currentView === 'backends'
+      ? 'Filter backends...'
+      : currentView === 'marketplace'
+        ? 'Filter marketplace...'
+        : 'Filter settings...';
+  const showInlineFilterButton = currentView === 'models' || currentView === 'marketplace';
 
   const renderModelsView = () => (
     <>
@@ -1182,7 +1196,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       return <div className="left-panel-empty-state">Marketplace unavailable: {marketplaceError}</div>;
     }
     if (filteredMarketplaceApps.length === 0) {
-      return <div className="left-panel-empty-state">No apps match your current filters.</div>;
+      return <div className="left-panel-empty-state">No apps match your current filter.</div>;
     }
 
     return (
@@ -1242,7 +1256,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     const visibleGroups = groupedBackends
       .map(([recipeName, backends]) => {
         const filteredBackends = backends.filter(([backendName, info]) => {
-          if (showBackendAvailableOnly && !info.available) return false;
           if (!query) return true;
           const haystack = `${recipeName} ${backendName} ${info.version || ''}`.toLowerCase();
           return haystack.includes(query);
@@ -1252,7 +1265,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       .filter(([, backends]) => backends.length > 0);
 
     if (visibleGroups.length === 0) {
-      return <div className="left-panel-empty-state">No backends match your current filters.</div>;
+      return <div className="left-panel-empty-state">No backends match your current filter.</div>;
     }
 
     return (
@@ -1355,14 +1368,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
           <button className={`left-panel-mode-btn ${currentView === 'models' ? 'active' : ''}`} onClick={() => onViewChange('models')} title="Models" aria-label="Models">
             <Boxes size={14} strokeWidth={1.9} />
           </button>
-          <button className={`left-panel-mode-btn ${currentView === 'marketplace' ? 'active' : ''}`} onClick={() => onViewChange('marketplace')} title="Marketplace" aria-label="Marketplace">
-            <Store size={14} strokeWidth={1.9} />
-          </button>
           <button className={`left-panel-mode-btn ${currentView === 'backends' ? 'active' : ''}`} onClick={() => onViewChange('backends')} title="Backends" aria-label="Backends">
             <Cpu size={14} strokeWidth={1.9} />
           </button>
-          <button className={`left-panel-mode-btn ${currentView === 'history' ? 'active' : ''}`} onClick={() => onViewChange('history')} title="History (coming soon)" aria-label="History (coming soon)">
-            <Clock3 size={14} strokeWidth={1.9} />
+          <button className={`left-panel-mode-btn ${currentView === 'marketplace' ? 'active' : ''}`} onClick={() => onViewChange('marketplace')} title="Marketplace" aria-label="Marketplace">
+            <Store size={14} strokeWidth={1.9} />
           </button>
           <div className="left-panel-mode-rail-spacer" />
           <button className={`left-panel-mode-btn ${currentView === 'settings' ? 'active' : ''}`} onClick={() => onViewChange('settings')} title="Settings" aria-label="Settings">
@@ -1370,12 +1380,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
           </button>
         </div>
 
-        <div className="left-panel-main">
+        <div className={`left-panel-main ${showFilterPanel ? 'filter-menu-open' : ''}`}>
           <div className="model-manager-header">
             <div className="left-panel-header-top">
               <h3>{viewTitle}</h3>
             </div>
-            <div className={`model-search ${showInlineFilterButton ? 'with-inline-filter' : ''}`}>
+            <div ref={filterAnchorRef} className={`model-search ${showInlineFilterButton ? 'with-inline-filter' : ''}`}>
               <input
                 type="text"
                 className="model-search-input"
@@ -1393,61 +1403,65 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                   <SlidersHorizontal size={13} strokeWidth={2} />
                 </button>
               )}
-            </div>
-          </div>
-
-          {showFilterPanel && showInlineFilterButton && (
-            <div className="left-panel-filter-drawer">
-              {currentView === 'models' && (
-                <>
+              {currentView === 'marketplace' && showFilterPanel && (
+                <div className="left-panel-filter-popover marketplace-filter-popover">
+                  <div className="marketplace-filter-list">
+                    <button
+                      type="button"
+                      className={`marketplace-filter-option ${selectedMarketplaceCategory === 'all' ? 'active' : ''}`}
+                      onClick={() => {
+                        setSelectedMarketplaceCategory('all');
+                        setShowFilterPanel(false);
+                      }}
+                    >
+                      All
+                    </button>
+                    {marketplaceCategories.map((category) => (
+                      <button
+                        key={category.id}
+                        type="button"
+                        className={`marketplace-filter-option ${selectedMarketplaceCategory === category.id ? 'active' : ''}`}
+                        onClick={() => {
+                          setSelectedMarketplaceCategory(category.id);
+                          setShowFilterPanel(false);
+                        }}
+                      >
+                        {category.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {currentView === 'models' && showFilterPanel && (
+                <div className="left-panel-filter-popover model-filter-popover">
                   <div className="organization-toggle">
-                    <button className={`toggle-button ${organizationMode === 'recipe' ? 'active' : ''}`} onClick={() => setOrganizationMode('recipe')}>
+                    <button className={`toggle-button ${organizationMode === 'recipe' ? 'active' : ''}`} onClick={() => {
+                      setOrganizationMode('recipe');
+                      setShowFilterPanel(false);
+                    }}>
                       By Recipe
                     </button>
-                    <button className={`toggle-button ${organizationMode === 'category' ? 'active' : ''}`} onClick={() => setOrganizationMode('category')}>
+                    <button className={`toggle-button ${organizationMode === 'category' ? 'active' : ''}`} onClick={() => {
+                      setOrganizationMode('category');
+                      setShowFilterPanel(false);
+                    }}>
                       By Category
                     </button>
                   </div>
                   <label className="toggle-switch-label">
                     <span className="toggle-label-text">Downloaded only</span>
                     <div className="toggle-switch">
-                      <input type="checkbox" checked={showDownloadedOnly} onChange={(e) => setShowDownloadedOnly(e.target.checked)} />
+                      <input type="checkbox" checked={showDownloadedOnly} onChange={(e) => {
+                        setShowDownloadedOnly(e.target.checked);
+                        setShowFilterPanel(false);
+                      }} />
                       <span className="toggle-slider"></span>
                     </div>
                   </label>
-                </>
-              )}
-              {currentView === 'marketplace' && (
-                <>
-                  <div className="left-panel-filter-row">
-                    <span className="toggle-label-text">Category</span>
-                    <select className="left-panel-filter-select" value={selectedMarketplaceCategory} onChange={(e) => setSelectedMarketplaceCategory(e.target.value)}>
-                      <option value="all">All</option>
-                      {marketplaceCategories.map((category) => (
-                        <option key={category.id} value={category.id}>{category.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <label className="toggle-switch-label">
-                    <span className="toggle-label-text">Featured only</span>
-                    <div className="toggle-switch">
-                      <input type="checkbox" checked={showMarketplacePinnedOnly} onChange={(e) => setShowMarketplacePinnedOnly(e.target.checked)} />
-                      <span className="toggle-slider"></span>
-                    </div>
-                  </label>
-                </>
-              )}
-              {currentView === 'backends' && (
-                <label className="toggle-switch-label">
-                  <span className="toggle-label-text">Installed only</span>
-                  <div className="toggle-switch">
-                    <input type="checkbox" checked={showBackendAvailableOnly} onChange={(e) => setShowBackendAvailableOnly(e.target.checked)} />
-                    <span className="toggle-slider"></span>
-                  </div>
-                </label>
+                </div>
               )}
             </div>
-          )}
+          </div>
 
           {currentView === 'models' && (
             <div className="loaded-model-section widget">
@@ -1466,7 +1480,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                         <span className="loaded-model-meta">{getRecipeLabel(recipe)}</span>
                       </div>
                     </div>
-                    <button className="eject-model-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
+                    <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M9 11L12 8L15 11" />
                         <path d="M12 8V16" />
@@ -1491,9 +1505,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
             )}
             {currentView === 'marketplace' && renderMarketplaceView()}
             {currentView === 'backends' && renderBackendsView()}
-            {currentView === 'history' && (
-              <div className="left-panel-empty-state">Chat history will be available in a future update.</div>
-            )}
             {currentView === 'settings' && <SettingsPanel isVisible={true} searchQuery={searchQuery} />}
           </div>
 

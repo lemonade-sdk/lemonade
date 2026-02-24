@@ -914,9 +914,24 @@ footer {
     width: 100%;
     min-height: 0;
     height: 100%;
+    position: relative;
     --mm-stack-gap: 8px;
     --mm-section-pad-x: 8px;
     --mm-section-pad-y: 8px;
+}
+
+.left-panel-main .loaded-model-section,
+.left-panel-main .model-manager-content,
+.left-panel-main .model-manager-footer {
+    transition: opacity 0.14s ease, filter 0.14s ease;
+}
+
+.left-panel-main.filter-menu-open .loaded-model-section,
+.left-panel-main.filter-menu-open .model-manager-content,
+.left-panel-main.filter-menu-open .model-manager-footer {
+    opacity: 0.48;
+    filter: saturate(0.72) brightness(0.9);
+    pointer-events: none;
 }
 
 .model-manager-header {
@@ -1069,7 +1084,87 @@ footer {
 
 .left-panel-inline-filter-btn.active {
     color: #f1f1f1;
-    background: rgba(250, 204, 21, 0.16);
+    background: rgba(255, 255, 255, 0.16);
+}
+
+.left-panel-filter-popover {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 170px;
+    padding: 7px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    background: rgba(10, 10, 10, 0.96);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.38), 0 14px 28px rgba(0, 0, 0, 0.46);
+    z-index: 40;
+    animation: filter-popover-in 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes filter-popover-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.model-filter-popover {
+    display: grid;
+    gap: 10px;
+    min-width: 220px;
+}
+
+.marketplace-filter-list {
+    display: grid;
+    gap: 3px;
+}
+
+.marketplace-filter-option {
+    width: 100%;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #c2c2c2;
+    text-align: left;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    padding: 6px 7px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.marketplace-filter-option:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #f2f2f2;
+}
+
+.marketplace-filter-option.active {
+    border-color: rgba(255, 255, 255, 0.11);
+    background: rgba(255, 255, 255, 0.075);
+    color: #ffffff;
+}
+
+.model-filter-popover .organization-toggle {
+    padding: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.model-filter-popover .toggle-button {
+    font-size: 0.63rem;
+    padding: 5px 7px;
+}
+
+.model-filter-popover .toggle-switch-label {
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.model-filter-popover .toggle-label-text {
+    color: #7e7e7e;
+    letter-spacing: 0.3px;
 }
 
 .model-search-input {
@@ -1238,36 +1333,10 @@ footer {
     letter-spacing: 0.35px;
 }
 
-.eject-model-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2px;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    color: #575757;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    width: 21px;
-    height: 21px;
+.active-model-eject-button svg {
     flex-shrink: 0;
-}
-
-.eject-model-button:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.1);
-    color: #bfbfbf;
-}
-
-.eject-model-button:active {
-    transform: scale(0.95);
-}
-
-.eject-model-button svg {
-    flex-shrink: 0;
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
 }
 
 .downloaded-filter {
@@ -1896,15 +1965,15 @@ footer {
 }
 
 .left-panel-link-btn.primary {
-    border-color: #4f6880;
-    color: #bbdaf1;
-    background: rgba(94, 147, 192, 0.16);
+    border-color: #444;
+    color: #efefef;
+    background: rgba(255, 255, 255, 0.08);
 }
 
 .left-panel-link-btn.primary:hover {
-    color: #d2e9fa;
-    border-color: #6f93b5;
-    background: rgba(94, 147, 192, 0.26);
+    color: #ffffff;
+    border-color: #5a5a5a;
+    background: rgba(255, 255, 255, 0.15);
 }
 
 .backend-row-item {

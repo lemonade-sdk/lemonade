@@ -21,7 +21,7 @@ export interface StringSetting {
 export interface LayoutSettings {
   isChatVisible: boolean;
   isModelManagerVisible: boolean;
-  leftPanelView: 'models' | 'marketplace' | 'backends' | 'history' | 'settings';
+  leftPanelView: 'models' | 'marketplace' | 'backends' | 'settings';
   isLogsVisible: boolean;
   modelManagerWidth: number;
   chatWidth: number;
@@ -241,7 +241,7 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
     if (typeof rawLayout.isModelManagerVisible === 'boolean') {
       defaults.layout.isModelManagerVisible = rawLayout.isModelManagerVisible;
     }
-    if (rawLayout.leftPanelView === 'models' || rawLayout.leftPanelView === 'marketplace' || rawLayout.leftPanelView === 'backends' || rawLayout.leftPanelView === 'history' || rawLayout.leftPanelView === 'settings') {
+    if (rawLayout.leftPanelView === 'models' || rawLayout.leftPanelView === 'marketplace' || rawLayout.leftPanelView === 'backends' || rawLayout.leftPanelView === 'settings') {
       defaults.layout.leftPanelView = rawLayout.leftPanelView;
     }
     if (typeof rawLayout.isLogsVisible === 'boolean') {
