@@ -19,6 +19,7 @@ Usage:
 """
 
 import json
+import platform
 import os
 import requests
 from openai import NotFoundError
@@ -35,6 +36,10 @@ from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
+    USER_MODEL_MAIN_CHECKPOINT,
+    USER_MODEL_NAME,
+    USER_MODEL_TE_CHECKPOINT,
+    USER_MODEL_VAE_CHECKPOINT,
 )
 
 
@@ -792,6 +797,103 @@ class EndpointTests(ServerTestBase):
         self.assertIsInstance(data, dict)
 
         print(f"[OK] /stats endpoint returned: {list(data.keys())}")
+
+    def test_021_pull_multi(self):
+        # First delete model if it exists to ensure we're actually testing pull
+        delete_response = requests.post(
+            f"{self.base_url}/delete",
+            json={"model_name": USER_MODEL_NAME},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        # 200 = deleted, 422 = not found (both are acceptable)
+        self.assertIn(delete_response.status_code, [200, 422])
+
+        recipe = "sd-cpp"
+        ## sd-cpp currently unavailable on MacOS
+        if platform.system() == "Darwin":
+            recipe = "llamacpp"
+        recipe_backend = f"{recipe}_backend"
+
+        # Verify model is not in downloaded list
+        models_response = requests.get(
+            f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+        )
+        models_data = models_response.json()
+        model_ids = [m["id"] for m in models_data["data"]]
+        self.assertNotIn(
+            USER_MODEL_NAME, model_ids, "Model should be deleted before pull test"
+        )
+
+        # Now pull the model
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": USER_MODEL_NAME,
+                "checkpoints": {
+                    "main": USER_MODEL_MAIN_CHECKPOINT,
+                    "text_encoder": USER_MODEL_TE_CHECKPOINT,
+                    "vae": USER_MODEL_VAE_CHECKPOINT,
+                },
+                "recipe": recipe,
+                "recipe_options": {recipe_backend: "cpu"},
+                "stream": False,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        data = response.json()
+        self.assertIn("status", data)
+        self.assertEqual(data["status"], "success")
+
+        # Verify model is now in downloaded list
+        models_response = requests.get(
+            f"{self.base_url}/models/" + USER_MODEL_NAME, timeout=TIMEOUT_DEFAULT
+        )
+        model_data = models_response.json()
+        self.assertIn("id", model_data)
+        self.assertEqual(
+            model_data["id"], USER_MODEL_NAME, "Model should be downloaded after pull"
+        )
+        self.assertIn("checkpoints", model_data)
+        self.assertIn("main", model_data["checkpoints"])
+        self.assertEqual(
+            model_data["checkpoints"]["main"],
+            USER_MODEL_MAIN_CHECKPOINT,
+            "Main checkpoint not matching",
+        )
+        self.assertIn("text_encoder", model_data["checkpoints"])
+        self.assertEqual(
+            model_data["checkpoints"]["text_encoder"],
+            USER_MODEL_TE_CHECKPOINT,
+            "Text encoder checkpoint not matching",
+        )
+        self.assertIn("vae", model_data["checkpoints"])
+        self.assertEqual(
+            model_data["checkpoints"]["vae"],
+            USER_MODEL_VAE_CHECKPOINT,
+            "VAE checkpoint not matching",
+        )
+        self.assertIn("recipe", model_data)
+        self.assertEqual(
+            model_data["recipe"], recipe, f"Model recipe should be {recipe}"
+        )
+
+        self.assertIn("labels", model_data)
+        self.assertIn("custom", model_data["labels"])
+
+        if recipe == "sd-cpp":
+            self.assertIn("image", model_data["labels"])
+
+        self.assertIn("recipe_options", model_data)
+        self.assertIn(recipe_backend, model_data["recipe_options"])
+        self.assertEqual(
+            model_data["recipe_options"][recipe_backend],
+            "cpu",
+            f"{recipe_backend} should be cpu",
+        )
+
+        print(f"[OK] Pull (multicheckpoint): model={USER_MODEL_NAME}")
 
 
 if __name__ == "__main__":
