@@ -58,8 +58,8 @@ void WhisperServer::install(const std::string& backend) {
 
     // Determine download URL
     if (backend == "npu") {
-        // NPU support from lemonade-sdk/whisper.cpp-npu
-        repo = "lemonade-sdk/whisper.cpp-npu";
+        // NPU support from lemonade-sdk/whisper.cpp-builds
+        repo = "lemonade-sdk/whisper.cpp-builds";
 
 #ifdef _WIN32
         filename = "whisper-" + expected_version + "-windows-npu-x64.zip";
@@ -73,7 +73,7 @@ void WhisperServer::install(const std::string& backend) {
         repo = "ggml-org/whisper.cpp";
         filename = "whisper-bin-x64.zip";
 #elif defined(__linux__)
-        repo = "lemonade-sdk/whisper.cpp-npu";
+        repo = "lemonade-sdk/whisper.cpp-builds";
         filename = "whisper-" + expected_version + "-linux-cpu-x86_64.tar.gz";
 #elif defined(__APPLE__)
         // CPU-only builds from ggml-org/whisper.cpp
@@ -84,7 +84,7 @@ void WhisperServer::install(const std::string& backend) {
 #endif
     } else if (backend == "vulkan") {
 #if defined(__linux__)
-        repo = "lemonade-sdk/whisper.cpp-npu";
+        repo = "lemonade-sdk/whisper.cpp-builds";
         filename = "whisper-" + expected_version + "-linux-vulkan-x86_64.tar.gz";
 #else
         throw std::runtime_error("Vulkan whisper.cpp backend is currently supported only on Linux");
