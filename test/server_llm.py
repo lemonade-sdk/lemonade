@@ -20,7 +20,9 @@ Usage:
 """
 
 import asyncio
+import sys
 import time
+import unittest
 import requests
 import numpy as np
 
@@ -622,6 +624,7 @@ class LLMTests(ServerTestBase):
     # MULTI-MODEL TESTS
     # =========================================================================
 
+    @unittest.skipIf(sys.platform == "darwin", "Multi-model not supported on macOS")
     @skip_if_unsupported("multi_model")
     def test_019_multi_model_load(self):
         """Test loading multiple models simultaneously."""
@@ -661,6 +664,7 @@ class LLMTests(ServerTestBase):
         self.assertIn(model1, model_names)
         self.assertIn(model2, model_names)
 
+    @unittest.skipIf(sys.platform == "darwin", "Multi-model not supported on macOS")
     @skip_if_unsupported("multi_model")
     def test_020_multi_model_unload_specific(self):
         """Test unloading a specific model by name."""
@@ -686,6 +690,7 @@ class LLMTests(ServerTestBase):
         result = response.json()
         self.assertEqual(result["status"], "success")
 
+    @unittest.skipIf(sys.platform == "darwin", "Multi-model not supported on macOS")
     @skip_if_unsupported("multi_model")
     def test_021_lru_eviction(self):
         """Test LRU eviction when loading a third model with max_loaded_models=2."""
@@ -744,6 +749,7 @@ class LLMTests(ServerTestBase):
         self.assertIn(model3, model_names)
         self.assertNotIn(model1, model_names)
 
+    @unittest.skipIf(sys.platform == "darwin", "Multi-model not supported on macOS")
     @skip_if_unsupported("multi_model")
     def test_022_unload_all_models(self):
         """Test unloading all models without specifying model_name."""
