@@ -53,9 +53,17 @@ runs:
         echo "Building lemonade-router and lemonade-server for macOS..."
 
         # Reconfigure if Electron app is included (setup.sh already did basic config)
+        EXTRA_CMAKE_ARGS=""
+        if [ "${{ inputs.skip-packaging }}" == "true" ]; then
+            echo "No signing identity available — using ad-hoc signing"
+            EXTRA_CMAKE_ARGS="-DSIGNING_IDENTITY=- -DINSTALLER_IDENTITY=-"
+        fi
+
         if [ "${{ inputs.include-electron }}" == "true" ]; then
             echo "Reconfiguring CMake with Electron app enabled..."
-            cmake --preset default -DBUILD_ELECTRON_APP=ON
+            cmake --preset default -DBUILD_ELECTRON_APP=ON $EXTRA_CMAKE_ARGS
+        elif [ -n "$EXTRA_CMAKE_ARGS" ]; then
+            cmake --preset default $EXTRA_CMAKE_ARGS
         fi
 
         # Build (BUILD_ELECTRON_APP will trigger electron build automatically)
