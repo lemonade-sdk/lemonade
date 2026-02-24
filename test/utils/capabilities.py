@@ -6,6 +6,7 @@ Tests use the skip_if_unsupported decorator to skip tests for unsupported featur
 """
 
 from functools import wraps
+import sys
 import unittest
 
 # Global state for current test configuration
@@ -147,6 +148,10 @@ def supports(feature: str, wrapped_server: str = None) -> bool:
     """
     Check if the current (or specified) wrapped server supports a feature.
     """
+    # Multi-model testing is not supported on macOS
+    if feature == "multi_model" and sys.platform == "darwin":
+        return False
+
     caps = get_capabilities(wrapped_server)
     return caps.get("supports", {}).get(feature, False)
 
