@@ -10,7 +10,7 @@ interface SystemContextValue {
 
 // Programmatic structure: recipe -> list of supported backends
 export interface SupportedRecipes {
-  [recipeName: string]: string[]; // e.g., { llamacpp: ['vulkan', 'rocm', 'cpu'], 'ryzenai-llm': ['default'] }
+  [recipeName: string]: string[]; // e.g., { llamacpp: ['vulkan', 'rocm', 'cpu'], 'ryzenai-llm': ['npu'] }
 }
 
 const SystemContext = createContext<SystemContextValue | null>(null);

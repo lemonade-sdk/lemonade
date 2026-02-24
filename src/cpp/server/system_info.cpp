@@ -131,12 +131,12 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     }},
 
     // FLM - Windows NPU (XDNA2)
-    {"flm", "default", {"windows"}, {
+    {"flm", "npu", {"windows"}, {
         {"amd_npu", {"XDNA2"}},
     }},
 
     // RyzenAI LLM - Windows NPU (XDNA2)
-    {"ryzenai-llm", "default", {"windows"}, {
+    {"ryzenai-llm", "npu", {"windows"}, {
         {"amd_npu", {"XDNA2"}},
     }},
 };
@@ -202,9 +202,7 @@ std::string SystemInfo::get_unsupported_backend_error(const std::string& recipe,
 
             // Build error message
             error = "No compatible device detected for " + recipe;
-            if (backend != "default") {
-                error += " (" + backend + " backend)";
-            }
+            error += " (" + backend + " backend)";
             if (!family_names.empty()) {
                 error += ". Requires: ";
                 for (size_t i = 0; i < family_names.size(); i++) {
@@ -909,7 +907,7 @@ std::string SystemInfo::get_sdcpp_version(const std::string& backend) {
 
 std::string SystemInfo::get_oga_version() {
     fs::path bin_dir = utils::get_downloaded_bin_dir();
-    return read_version_file(bin_dir / "ryzenai-server" / "version.txt");
+    return read_version_file(bin_dir / "ryzenai-server" / "npu" / "version.txt");
 }
 
 bool SystemInfo::is_llamacpp_installed(const std::string& backend) {
@@ -1174,7 +1172,7 @@ bool SystemInfo::is_ryzenai_serve_available() {
     }
 
     // 2. Check in install directory (where download_and_install() places it)
-    fs::path install_dir = fs::path(utils::get_downloaded_bin_dir()) / "ryzenai-server";
+    fs::path install_dir = fs::path(utils::get_downloaded_bin_dir()) / "ryzenai-server" / "npu";
     #ifdef _WIN32
     fs::path exe_path = install_dir / "ryzenai-server.exe";
     #else

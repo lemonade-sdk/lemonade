@@ -64,18 +64,7 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     }
 
     const auto& spec = get_spec_for_recipe(recipe);
-    std::string version;
-
-    if (recipe == "ryzenai-llm") {
-        // ryzenai-server version is at top level in backend_versions.json (string, not nested object)
-        if (backend_versions_.contains("ryzenai-server") && backend_versions_["ryzenai-server"].is_string()) {
-            version = backend_versions_["ryzenai-server"].get<std::string>();
-        } else {
-            throw std::runtime_error("backend_versions.json is missing 'ryzenai-server' version");
-        }
-    } else {
-        version = get_version_from_config(recipe, backend);
-    }
+    std::string version = get_version_from_config(recipe, backend);
 
     if (!spec.install_params_fn) {
         throw std::runtime_error("No install params function for recipe: " + recipe);
@@ -99,11 +88,8 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     auto params = get_install_params(recipe, backend);
     const auto& spec = get_spec_for_recipe(recipe);
 
-    // For ryzenai-llm, the backend field in install_from_github is "default" (no backend variants)
-    std::string backend_dir = (recipe == "ryzenai-llm") ? "" : backend;
-
     backends::BackendUtils::install_from_github(
-        spec, params.version, params.repo, params.filename, backend_dir, progress_cb);
+        spec, params.version, params.repo, params.filename, backend, progress_cb);
 
     update_recipes_cache_entry(recipe, backend, true);
 }
@@ -116,10 +102,8 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
     }
 
     const auto& spec = get_spec_for_recipe(recipe);
-    // For ryzenai-llm, backend is empty (no variants)
-    std::string backend_dir = (recipe == "ryzenai-llm") ? "" : backend;
 
-    std::string install_dir = backends::BackendUtils::get_install_directory(spec.recipe, backend_dir);
+    std::string install_dir = backends::BackendUtils::get_install_directory(spec.recipe, backend);
 
     if (fs::exists(install_dir)) {
         // On Windows, antivirus scanning or indexing can briefly lock files after extraction.
@@ -152,9 +136,7 @@ bool BackendManager::is_installed(const std::string& recipe, const std::string& 
 
     try {
         const auto& spec = get_spec_for_recipe(recipe);
-        // For ryzenai-llm, backend is empty (no variants)
-        std::string backend_dir = (recipe == "ryzenai-llm") ? "" : backend;
-        std::string path = backends::BackendUtils::get_backend_binary_path(spec, backend_dir);
+        std::string path = backends::BackendUtils::get_backend_binary_path(spec, backend);
         return !path.empty();
     } catch (...) {
         return false;
@@ -168,9 +150,7 @@ std::string BackendManager::get_installed_version(const std::string& recipe, con
 
     try {
         const auto& spec = get_spec_for_recipe(recipe);
-        // For ryzenai-llm, backend is empty (no variants)
-        std::string backend_dir = (recipe == "ryzenai-llm") ? "" : backend;
-        std::string version_file = backends::BackendUtils::get_installed_version_file(spec, backend_dir);
+        std::string version_file = backends::BackendUtils::get_installed_version_file(spec, backend);
         if (fs::exists(version_file)) {
             std::ifstream vf(version_file);
             std::string version;
@@ -184,20 +164,6 @@ std::string BackendManager::get_installed_version(const std::string& recipe, con
 
 std::string BackendManager::get_latest_version(const std::string& recipe, const std::string& backend) {
     try {
-        if (recipe == "ryzenai-llm") {
-            if (backend_versions_.contains("ryzenai-server") && backend_versions_["ryzenai-server"].is_string()) {
-                return backend_versions_["ryzenai-server"].get<std::string>();
-            }
-            return "";
-        }
-
-        if (recipe == "flm") {
-            if (backend_versions_.contains("flm") && backend_versions_["flm"].contains("version")) {
-                return backend_versions_["flm"]["version"].get<std::string>();
-            }
-            return "";
-        }
-
         return get_version_from_config(recipe, backend);
     } catch (...) {
         return "";

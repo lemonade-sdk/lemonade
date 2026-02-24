@@ -37,7 +37,7 @@ RyzenAIServer::~RyzenAIServer() {
 
 bool RyzenAIServer::is_available() {
     try {
-        return !backends::BackendUtils::get_backend_binary_path(SPEC, "").empty();
+        return !backends::BackendUtils::get_backend_binary_path(SPEC, "npu").empty();
     } catch (...) {
         return false;
     }
@@ -51,10 +51,10 @@ void RyzenAIServer::load(const std::string& model_name,
     int ctx_size = options.get_option("ctx_size");
 
     // Install/check RyzenAI-Server (will download if not found)
-    backend_manager_->install_backend("ryzenai-llm", "");
+    backend_manager_->install_backend("ryzenai-llm", "npu");
 
     // Get the path to ryzenai-server
-    std::string ryzenai_server_path = backends::BackendUtils::get_backend_binary_path(SPEC, "");
+    std::string ryzenai_server_path = backends::BackendUtils::get_backend_binary_path(SPEC, "npu");
     if (ryzenai_server_path.empty()) {
         throw std::runtime_error("RyzenAI-Server executable not found even after installation attempt");
     }

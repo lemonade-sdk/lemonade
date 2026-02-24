@@ -333,12 +333,12 @@ std::string FastFlowLMServer::get_flm_required_version() {
 
         const auto& flm_config = config["flm"];
 
-        if (!flm_config.contains("version") || !flm_config["version"].is_string()) {
-            std::cerr << "[FastFlowLM] backend_versions.json is missing 'flm.version'" << std::endl;
+        if (!flm_config.contains("npu") || !flm_config["npu"].is_string()) {
+            std::cerr << "[FastFlowLM] backend_versions.json is missing 'flm.npu'" << std::endl;
             return "v0.9.23";  // Fallback default
         }
 
-        return flm_config["version"].get<std::string>();
+        return flm_config["npu"].get<std::string>();
 
     } catch (const std::exception& e) {
         std::cerr << "[FastFlowLM] Error reading backend_versions.json: " << e.what() << std::endl;
