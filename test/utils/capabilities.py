@@ -43,6 +43,7 @@ WRAPPED_SERVER_CAPABILITIES = {
             "tool_calls": False,
             "tool_calls_streaming": False,
             "multi_model": True,
+            "multi_model_metal": False,
             "stop_parameter": True,
             "echo_parameter": False,
             "generation_parameters": False,
@@ -144,12 +145,26 @@ def get_capabilities(wrapped_server: str = None):
     return WRAPPED_SERVER_CAPABILITIES[wrapped_server]
 
 
-def supports(feature: str, wrapped_server: str = None) -> bool:
+def supports(feature: str, wrapped_server: str = None, backend: str = None) -> bool:
     """
     Check if the current (or specified) wrapped server supports a feature.
+
+    Checks for a backend-specific override (e.g., 'multi_model_metal')
+    before falling back to the generic feature key.
     """
+    if backend is None:
+        backend = _current_backend
+
     caps = get_capabilities(wrapped_server)
-    return caps.get("supports", {}).get(feature, False)
+    support_map = caps.get("supports", {})
+
+    # Try backend-specific override first (e.g., multi_model_metal)
+    if backend:
+        backend_specific_key = f"{feature}_{backend}"
+        if backend_specific_key in support_map:
+            return support_map[backend_specific_key]
+
+    return support_map.get(feature, False)
 
 
 def get_test_model(
