@@ -27,5 +27,5 @@
   "kokoro": {
     "cpu": "b14"
   },
-  "clear_bin_if_lemonade_below": "9.3.2"
+  "clear_bin_if_lemonade_below": "9.3.5"
 }
