@@ -5,6 +5,10 @@ inputs:
     description: 'Whether to include the Electron app (full build)'
     required: false
     default: 'true'
+  skip-packaging:
+    description: 'Skip .pkg packaging and notarization (for unsigned local builds)'
+    required: false
+    default: 'false'
 outputs:
   artifact-name:
     description: 'The name of the generated .dmg file'
@@ -124,6 +128,7 @@ runs:
         echo "Web app built and copied successfully!"
 
     - name: Build .pkg and notarize
+      if: inputs.skip-packaging != 'true'
       id: build-dmg
       shell: bash
       run: |
