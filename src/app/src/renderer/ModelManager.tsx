@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BookOpen, Boxes, ChevronRight, Clock3, Cpu, ExternalLink, SlidersHorizontal, Store } from 'lucide-react';
+import { BookOpen, Boxes, ChevronRight, Clock3, Cpu, ExternalLink, Settings as SettingsIcon, SlidersHorizontal, Store } from 'lucide-react';
 import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -12,6 +12,7 @@ import { useSystem } from './hooks/useSystem';
 import ModelOptionsModal from "./ModelOptionsModal";
 import { RecipeOptions, recipeOptionsToApi } from "./recipes/recipeOptions";
 import { BackendInfo, Recipe } from './utils/systemData';
+import SettingsPanel from './SettingsPanel';
 
 interface ModelManagerProps {
   isVisible: boolean;
@@ -20,7 +21,7 @@ interface ModelManagerProps {
   onViewChange: (view: LeftPanelView) => void;
 }
 
-export type LeftPanelView = 'models' | 'marketplace' | 'backends' | 'history';
+export type LeftPanelView = 'models' | 'marketplace' | 'backends' | 'history' | 'settings';
 
 interface MarketplaceApp {
   id: string;
@@ -976,7 +977,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       ? 'Marketplace'
       : currentView === 'backends'
         ? 'Backend Manager'
-        : 'Chat History';
+        : currentView === 'history'
+          ? 'Chat History'
+          : 'Settings';
 
   const searchPlaceholder = currentView === 'models'
     ? 'Search models...'
@@ -984,7 +987,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       ? 'Search apps...'
       : currentView === 'backends'
         ? 'Search backends...'
-        : 'Search history...';
+        : currentView === 'history'
+          ? 'Search history...'
+          : 'Search settings...';
+  const showInlineFilterButton = currentView !== 'history' && currentView !== 'settings';
 
   const renderModelsView = () => (
     <>
@@ -1358,6 +1364,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
           <button className={`left-panel-mode-btn ${currentView === 'history' ? 'active' : ''}`} onClick={() => onViewChange('history')} title="History (coming soon)" aria-label="History (coming soon)">
             <Clock3 size={14} strokeWidth={1.9} />
           </button>
+          <div className="left-panel-mode-rail-spacer" />
+          <button className={`left-panel-mode-btn ${currentView === 'settings' ? 'active' : ''}`} onClick={() => onViewChange('settings')} title="Settings" aria-label="Settings">
+            <SettingsIcon size={14} strokeWidth={1.9} />
+          </button>
         </div>
 
         <div className="left-panel-main">
@@ -1365,7 +1375,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
             <div className="left-panel-header-top">
               <h3>{viewTitle}</h3>
             </div>
-            <div className={`model-search ${currentView !== 'history' ? 'with-inline-filter' : ''}`}>
+            <div className={`model-search ${showInlineFilterButton ? 'with-inline-filter' : ''}`}>
               <input
                 type="text"
                 className="model-search-input"
@@ -1373,7 +1383,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
-              {currentView !== 'history' && (
+              {showInlineFilterButton && (
                 <button
                   className={`left-panel-inline-filter-btn ${showFilterPanel ? 'active' : ''}`}
                   onClick={() => setShowFilterPanel(prev => !prev)}
@@ -1386,7 +1396,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
             </div>
           </div>
 
-          {showFilterPanel && currentView !== 'history' && (
+          {showFilterPanel && showInlineFilterButton && (
             <div className="left-panel-filter-drawer">
               {currentView === 'models' && (
                 <>
@@ -1484,6 +1494,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
             {currentView === 'history' && (
               <div className="left-panel-empty-state">Chat history will be available in a future update.</div>
             )}
+            {currentView === 'settings' && <SettingsPanel isVisible={true} searchQuery={searchQuery} />}
           </div>
 
           {currentView === 'models' && (

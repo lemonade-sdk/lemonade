@@ -183,10 +183,6 @@ body {
     background: #c50e1f;
 }
 
-.title-bar-button.settings:hover {
-    background: rgba(255, 255, 255, 0.1);
-}
-
 .title-bar-logo.center-logo {
     margin: 0;
     height: 14px;
@@ -863,6 +859,10 @@ footer {
     padding: 10px 4px;
     flex-shrink: 0;
     position: relative;
+}
+
+.left-panel-mode-rail-spacer {
+    margin-top: auto;
 }
 
 .left-panel-mode-btn {
@@ -3574,6 +3574,74 @@ footer {
     justify-content: center;
     z-index: 10000;
     animation: fadeIn 0.2s ease;
+}
+
+.settings-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+}
+
+.settings-panel .settings-content {
+    max-height: none;
+    padding: 6px 0 8px;
+    gap: 0;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.settings-panel .settings-content::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+}
+
+.settings-panel .settings-footer {
+    padding: 12px 16px;
+    border-top: 1px solid #1a1a1a;
+    background: #000000;
+}
+
+.settings-categories {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.settings-category-content {
+    padding: 4px 12px 8px;
+}
+
+.settings-panel .settings-section-container {
+    gap: 8px;
+}
+
+.settings-panel .settings-section {
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.015);
+    padding: 10px 10px 11px;
+}
+
+.settings-panel .settings-section-default {
+    opacity: 0.9;
+}
+
+.settings-panel .settings-label-row {
+    gap: 10px;
+}
+
+.settings-panel .settings-description {
+    color: #848484;
+}
+
+.settings-panel .settings-field-reset {
+    color: #7f7f7f;
+}
+
+.settings-panel .settings-field-reset:hover:not(:disabled) {
+    color: #d8d8d8;
 }
 
 @keyframes fadeIn {
