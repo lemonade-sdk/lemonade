@@ -36,6 +36,12 @@ public:
         }
         return default_value;
     }
+
+    // Encode binary data to base64 string
+    static std::string base64_encode(const std::string& input);
+
+    // Decode base64 string to binary data
+    static std::string base64_decode(const std::string& input);
 };
 
 } // namespace utils
