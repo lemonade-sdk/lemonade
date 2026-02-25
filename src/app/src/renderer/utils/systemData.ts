@@ -79,3 +79,30 @@ const fetchSystemInfoFromAPI = async (): Promise<SystemData> => {
 export const fetchSystemInfoData = async (): Promise<SystemData> => {
   return fetchSystemInfoFromAPI();
 };
+
+export interface SystemCheck {
+  id: string;
+  severity: 'error' | 'warning' | 'info';
+  platform: string;
+  title: string;
+  message: string;
+  fix_url?: string;
+}
+
+export const fetchSystemChecks = async (): Promise<SystemCheck[]> => {
+  const { serverFetch } = await import('./serverConfig');
+
+  try {
+    const response = await serverFetch('/system-checks');
+    if (!response.ok) {
+      throw new Error(`Failed to fetch system checks: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data as SystemCheck[];
+  } catch (error) {
+    console.error('Failed to fetch system checks from API:', error);
+    // Default to empty array if the check fails
+    return [];
+  }
+};

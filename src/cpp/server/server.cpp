@@ -303,6 +303,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_system_stats(req, res);
     });
 
+    register_get("system-checks", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_system_checks(req, res);
+    });
+
     register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
         handle_log_level(req, res);
     });
@@ -2580,6 +2584,48 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
     // Get system info - this function handles all errors internally and never throws
     nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache();
     res.set_content(system_info.dump(), "application/json");
+}
+
+void Server::handle_system_checks(const httplib::Request& req, httplib::Response& res) {
+    // For HEAD requests, just return 200 OK without processing
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+
+    nlohmann::json response = nlohmann::json::array();
+
+#ifdef __linux__
+    // Check for Strix Halo kernel CWSR fix on Linux
+    bool needs_kernel_fix = lemon::needs_gfx1151_cwsr_fix();
+    if (needs_kernel_fix) {
+        nlohmann::json issue;
+        issue["id"] = "linux_strix_halo_kernel";
+        issue["severity"] = "error";
+        issue["platform"] = "linux";
+        issue["title"] = "Missing Strix Halo Kernel Fix";
+        issue["message"] = "Your kernel is missing a critical fix that may cause stability issues on Strix Halo systems.";
+        issue["fix_url"] = "https://lemonade-server.ai/gfx1151_linux.html";
+        response.push_back(issue);
+    }
+#endif
+
+#ifdef _WIN32
+    // TODO: Add NPU driver checks for Windows
+    // Example structure for future implementation:
+    // if (needs_npu_driver_update()) {
+    //     nlohmann::json issue;
+    //     issue["id"] = "windows_npu_driver";
+    //     issue["severity"] = "warning";
+    //     issue["platform"] = "windows";
+    //     issue["title"] = "NPU Driver Update Available";
+    //     issue["message"] = "A newer NPU driver is recommended for optimal performance.";
+    //     issue["fix_url"] = "https://lemonade-server.ai/driver_install.html";
+    //     response.push_back(issue);
+    // }
+#endif
+
+    res.set_content(response.dump(), "application/json");
 }
 
 // Helper: Get CPU usage percentage

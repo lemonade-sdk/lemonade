@@ -5,6 +5,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch } from './utils/serverConfig';
 import { downloadTracker } from './utils/downloadTracker';
 import { useModels } from './hooks/useModels';
+import { useSystem } from './hooks/useSystem';
 import ModelOptionsModal from "./ModelOptionsModal";
 import { RecipeOptions, recipeOptionsToApi } from "./recipes/recipeOptions";
 
@@ -38,6 +39,9 @@ const createEmptyModelForm = () => ({
 const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) => {
   // Get shared model data from context
   const { modelsData, suggestedModels, refresh: refreshModels } = useModels();
+
+  // Get system context for lazy loading system info
+  const { ensureSystemInfoLoaded } = useSystem();
 
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['all']));
   const [organizationMode, setOrganizationMode] = useState<'recipe' | 'category'>('recipe');
@@ -344,6 +348,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
   const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData) => {
     try {
+      // Trigger system info load on first model download (lazy loading)
+      await ensureSystemInfoLoaded();
+
       // For registered models, verify metadata exists; for new models, we're registering now
       if (!registrationData && !modelsData[modelName]) {
         showError('Model metadata is unavailable. Please refresh and try again.');
@@ -515,7 +522,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         return newSet;
       });
     }
-  }, [modelsData, showError, showSuccess, showWarning, fetchCurrentLoadedModel]);
+  }, [modelsData, showError, showSuccess, showWarning, fetchCurrentLoadedModel, ensureSystemInfoLoaded]);
 
   // Separate useEffect for download resume/retry to avoid stale closure issues
   useEffect(() => {
