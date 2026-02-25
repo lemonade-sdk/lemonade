@@ -58,8 +58,6 @@ const TitleBar: React.FC<TitleBarProps> = ({
             onToggleModelManager();
             setActiveMenu(null);
             break;
-          case 'p':
-            break;
           case 'h':
             event.preventDefault();
             onToggleChat();

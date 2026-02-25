@@ -13,6 +13,7 @@ import { RecipeOptions, recipeOptionsToApi } from "./recipes/recipeOptions";
 import SettingsPanel from './SettingsPanel';
 import BackendManager from './BackendManager';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
+import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 
 interface ModelManagerProps {
   isVisible: boolean;
@@ -22,15 +23,6 @@ interface ModelManagerProps {
 }
 
 export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'settings';
-
-const RECIPE_DISPLAY_NAMES: Record<string, string> = {
-  'flm': 'FastFlowLM NPU',
-  'llamacpp': 'Llama.cpp GPU',
-  'ryzenai-llm': 'Ryzen AI LLM',
-  'whispercpp': 'Whisper.cpp',
-  'sd-cpp': 'StableDiffusion.cpp',
-  'kokoro': 'Kokoro',
-};
 
 // Registration data for new custom models
 interface ModelRegistrationData {

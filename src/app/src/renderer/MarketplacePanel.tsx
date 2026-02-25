@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, ExternalLink } from 'lucide-react';
 import { MarketplaceApp, MarketplaceCategory, APPS_JSON_URL } from './utils/marketplace';
 
@@ -13,6 +13,8 @@ const MarketplacePanel: React.FC<MarketplacePanelProps> = ({ searchQuery, select
   const [marketplaceCategories, setMarketplaceCategories] = useState<MarketplaceCategory[]>([]);
   const [marketplaceLoading, setMarketplaceLoading] = useState(true);
   const [marketplaceError, setMarketplaceError] = useState<string | null>(null);
+  const onCategoriesLoadedRef = useRef(onCategoriesLoaded);
+  onCategoriesLoadedRef.current = onCategoriesLoaded;
 
   useEffect(() => {
     let isMounted = true;
@@ -34,7 +36,7 @@ const MarketplacePanel: React.FC<MarketplacePanelProps> = ({ searchQuery, select
         const categories: MarketplaceCategory[] = Array.isArray(data?.categories) ? data.categories : [];
         setMarketplaceApps(apps);
         setMarketplaceCategories(categories);
-        onCategoriesLoaded?.(categories);
+        onCategoriesLoadedRef.current?.(categories);
       } catch (error) {
         if (!isMounted) return;
         setMarketplaceError(error instanceof Error ? error.message : 'Unknown error');

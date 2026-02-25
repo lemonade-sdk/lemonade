@@ -1,10 +1,10 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useSystem } from './hooks/useSystem';
 import { useConfirmDialog } from './ConfirmDialog';
-import { useToast } from './Toast';
 import { serverFetch } from './utils/serverConfig';
 import { installBackend } from './utils/backendInstaller';
 import { Recipe, BackendInfo } from './utils/systemData';
+import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 
 const RECIPE_ORDER = new Map([
   'llamacpp',
@@ -14,15 +14,6 @@ const RECIPE_ORDER = new Map([
   'flm',
   'ryzenai-llm',
 ].map((recipe, index) => [recipe, index]));
-
-const RECIPE_DISPLAY_NAMES: Record<string, string> = {
-  'flm': 'FastFlowLM NPU',
-  'llamacpp': 'Llama.cpp GPU',
-  'ryzenai-llm': 'Ryzen AI LLM',
-  'whispercpp': 'Whisper.cpp',
-  'sd-cpp': 'StableDiffusion.cpp',
-  'kokoro': 'Kokoro',
-};
 
 interface GithubReleaseRef {
   owner: string;
