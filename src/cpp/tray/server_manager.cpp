@@ -561,10 +561,6 @@ bool ServerManager::spawn_process() {
     }
 
     if (pid == 0) {
-        // Create new session so router isn't in the daemon's process group.
-        // This prevents launchd cleanup signals from propagating to child processes.
-        setsid();
-
         if (!log_file_.empty() && log_file_ != "-") {
             int log_fd = open(log_file_.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (log_fd >= 0) {

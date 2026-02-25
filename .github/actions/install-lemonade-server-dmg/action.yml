@@ -61,7 +61,21 @@ runs:
         echo "Stopping any services started by postflight script..."
         sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
         sudo launchctl bootout system/com.lemonade.tray 2>/dev/null || true
-        sleep 2
+
+        # Wait for processes to actually exit (up to 10 seconds)
+        echo "Waiting for lemonade processes to exit..."
+        for i in $(seq 1 20); do
+          if ! pgrep -x "lemonade-server|lemonade-router" > /dev/null 2>&1; then
+            echo "All lemonade processes have exited."
+            break
+          fi
+          sleep 0.5
+        done
+
+        # Force kill any stragglers
+        pkill -9 -x lemonade-server 2>/dev/null || true
+        pkill -9 -x lemonade-router 2>/dev/null || true
+        sleep 1
 
         # Clean up PID and lock files left behind by killed processes
         echo "Cleaning up stale PID and lock files..."
