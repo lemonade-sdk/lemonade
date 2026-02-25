@@ -72,6 +72,9 @@ private:
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_logs_stream(const httplib::Request& req, httplib::Response& res);
+#ifdef HAVE_SYSTEMD
+    void handle_logs_stream_journald(const httplib::Request& req, httplib::Response& res);
+#endif
 
     // Backend management endpoint handlers
     void handle_install(const httplib::Request& req, httplib::Response& res);

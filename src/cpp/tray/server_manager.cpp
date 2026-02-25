@@ -561,8 +561,7 @@ bool ServerManager::spawn_process() {
     }
 
     if (pid == 0) {
-        // Child process - redirect stdout/stderr to log file if specified, or /dev/null if not
-        if (!log_file_.empty()) {
+        if (!log_file_.empty() && log_file_ != "-") {
             int log_fd = open(log_file_.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (log_fd >= 0) {
                 dup2(log_fd, STDOUT_FILENO);
@@ -571,8 +570,7 @@ bool ServerManager::spawn_process() {
             } else {
                 std::cerr << "Failed to open log file: " << log_file_ << std::endl;
             }
-        } else {
-            // Redirect to /dev/null to suppress output (for ephemeral servers)
+        } else if (log_file_.empty()) {
             int null_fd = open("/dev/null", O_WRONLY);
             if (null_fd >= 0) {
                 dup2(null_fd, STDOUT_FILENO);
@@ -580,6 +578,7 @@ bool ServerManager::spawn_process() {
                 close(null_fd);
             }
         }
+        // log_file_ == "-": keep stdout/stderr connected for systemd
 
         std::vector<const char*> args;
         args.push_back(server_binary_path_.c_str());
@@ -778,6 +777,14 @@ bool ServerManager::terminate_router_tree() {
 }
 
 void ServerManager::write_pid_file() {
+    // Skip PID file when running under systemd, unless explicitly disabled
+    // LEMONADE_DISABLE_SYSTEMD_JOURNAL can be set in CI to force PID file creation
+    const char* journal_stream = std::getenv("JOURNAL_STREAM");
+    const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
+    if (journal_stream && !disable_journal) {
+        return;  // Systemd tracks PID itself
+    }
+
     std::string pid_file_path = "/tmp/lemonade-router.pid";
     DEBUG_LOG(this, "write_pid_file() called - PID: " << server_pid_ << ", Port: " << port_);
 
@@ -794,11 +801,17 @@ void ServerManager::write_pid_file() {
 }
 
 void ServerManager::remove_pid_file() {
+    // Skip PID file when running under systemd, unless explicitly disabled
+    const char* journal_stream = std::getenv("JOURNAL_STREAM");
+    const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
+    if (journal_stream && !disable_journal) {
+        return;
+    }
+
     std::string pid_file_path = "/tmp/lemonade-router.pid";
     if (remove(pid_file_path.c_str()) == 0) {
         DEBUG_LOG(this, "Removed PID file: " << pid_file_path);
     }
-    // Silently ignore if file doesn't exist
 }
 
 #endif
