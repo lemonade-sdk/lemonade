@@ -1,5 +1,6 @@
 #include "lemon/backends/whisper_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backend_manager.h"
 #include "lemon/audio_types.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
@@ -29,8 +30,8 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-WhisperServer::WhisperServer(const std::string& log_level, ModelManager* model_manager)
-    : WrappedServer("whisper-server", log_level, model_manager) {
+WhisperServer::WhisperServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
+    : WrappedServer("whisper-server", log_level, model_manager, backend_manager) {
 
     // Create temp directory for audio files
     temp_dir_ = fs::temp_directory_path() / "lemonade_audio";
@@ -51,49 +52,39 @@ WhisperServer::~WhisperServer() {
     }
 }
 
-void WhisperServer::install(const std::string& backend) {
-    std::string repo;
-    std::string filename;
-    std::string expected_version = BackendUtils::get_backend_version(SPEC.recipe, backend);
+InstallParams WhisperServer::get_install_params(const std::string& backend, const std::string& version) {
+    InstallParams params;
 
-    // Determine download URL
     if (backend == "npu") {
-        // NPU support from lemonade-sdk/whisper.cpp-npu
-        repo = "lemonade-sdk/whisper.cpp-npu";
-
+        params.repo = "lemonade-sdk/whisper.cpp-npu";
 #ifdef _WIN32
-        filename = "whisper-" + expected_version + "-windows-npu-x64.zip";
+        params.filename = "whisper-" + version + "-windows-npu-x64.zip";
 #else
         throw std::runtime_error("NPU whisper.cpp only supported on Windows");
 #endif
-        std::cout << "[WhisperServer] Using NPU backend" << std::endl;
-
     } else if (backend == "cpu") {
+        params.repo = "ggml-org/whisper.cpp";
 #ifdef _WIN32
-        repo = "ggml-org/whisper.cpp";
-        filename = "whisper-bin-x64.zip";
+        params.filename = "whisper-bin-x64.zip";
 #elif defined(__linux__)
-        repo = "lemonade-sdk/whisper.cpp-npu";
-        filename = "whisper-" + expected_version + "-linux-cpu-x86_64.tar.gz";
+        params.filename = "whisper-bin-x64.zip";
 #elif defined(__APPLE__)
-        // CPU-only builds from ggml-org/whisper.cpp
-        repo = "ggml-org/whisper.cpp";
-        filename = "whisper-bin-arm64.zip";
+        params.filename = "whisper-bin-arm64.zip";
 #else
         throw std::runtime_error("Unsupported platform for whisper.cpp");
 #endif
     } else if (backend == "vulkan") {
 #if defined(__linux__)
-        repo = "lemonade-sdk/whisper.cpp-npu";
-        filename = "whisper-" + expected_version + "-linux-vulkan-x86_64.tar.gz";
+        params.repo = "lemonade-sdk/whisper.cpp-npu";
+        params.filename = "whisper-" + version + "-linux-vulkan-x86_64.tar.gz";
 #else
         throw std::runtime_error("Vulkan whisper.cpp backend is currently supported only on Linux");
 #endif
     } else {
-        throw std::runtime_error("[WhisperServer] Unknown backend: " + backend);
+        throw std::runtime_error("[WhisperServer] Unknown whisper backend: " + backend);
     }
 
-    BackendUtils::install_from_github(SPEC, expected_version, repo, filename, backend);
+    return params;
 }
 
 // Helper to determine NPU compiled cache info based on model info from server_models.json
@@ -184,7 +175,7 @@ void WhisperServer::load(const std::string& model_name,
 
     std::string whispercpp_backend = options.get_option("whispercpp_backend");
 
-    install(whispercpp_backend);
+    backend_manager_->install_backend(SPEC.recipe, whispercpp_backend);
 
     std::string model_path = model_info.resolved_path();
     if (model_path.empty()) {

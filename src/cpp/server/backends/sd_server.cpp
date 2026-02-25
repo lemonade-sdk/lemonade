@@ -1,5 +1,6 @@
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backend_manager.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/path_utils.h"
@@ -18,8 +19,53 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-SDServer::SDServer(const std::string& log_level, ModelManager* model_manager)
-    : WrappedServer("sd-server", log_level, model_manager) {
+InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version) {
+    InstallParams params;
+    params.repo = "superm1/stable-diffusion.cpp";
+
+    // Transform version for URL (master-NNN-HASH -> master-HASH)
+    std::string short_version = version;
+    size_t first_dash = version.find('-');
+    if (first_dash != std::string::npos) {
+        size_t second_dash = version.find('-', first_dash + 1);
+        if (second_dash != std::string::npos) {
+            short_version = version.substr(0, first_dash) + "-" +
+                           version.substr(second_dash + 1);
+        }
+    }
+
+    if (backend == "rocm") {
+        std::string target_arch = SystemInfo::get_rocm_arch();
+        if (target_arch.empty()) {
+            throw std::runtime_error(
+                SystemInfo::get_unsupported_backend_error("sd-cpp", "rocm")
+            );
+        }
+#ifdef _WIN32
+        params.filename = "sd-" + short_version + "-bin-win-rocm-x64.zip";
+#elif defined(__linux__)
+        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm.zip";
+#else
+        throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
+#endif
+    } else {
+        // CPU build (default)
+#ifdef _WIN32
+        params.filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
+#elif defined(__linux__)
+        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
+#elif defined(__APPLE__)
+        params.filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.2-arm64.zip";
+#else
+        throw std::runtime_error("Unsupported platform for stable-diffusion.cpp");
+#endif
+    }
+
+    return params;
+}
+
+SDServer::SDServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
+    : WrappedServer("sd-server", log_level, model_manager, backend_manager) {
     if (is_debug()) {
         std::cout << "[SDServer] Created with log_level=" << log_level << std::endl;
     }
@@ -27,56 +73,6 @@ SDServer::SDServer(const std::string& log_level, ModelManager* model_manager)
 
 SDServer::~SDServer() {
     unload();
-}
-
-void SDServer::install(const std::string& backend) {
-    std::string repo = "superm1/stable-diffusion.cpp";
-    std::string filename;
-    std::string expected_version = BackendUtils::get_backend_version(SPEC.recipe, backend);
-
-    // Transform version for URL (master-NNN-HASH -> master-HASH)
-    std::string short_version = expected_version;
-    size_t first_dash = expected_version.find('-');
-    if (first_dash != std::string::npos) {
-        size_t second_dash = expected_version.find('-', first_dash + 1);
-        if (second_dash != std::string::npos) {
-            short_version = expected_version.substr(0, first_dash) + "-" +
-                           expected_version.substr(second_dash + 1);
-        }
-    }
-
-    // ROCm backend selection for AMD GPU support
-    if (backend == "rocm") {
-        // Validate ROCm architecture support
-        std::string target_arch = lemon::SystemInfo::get_rocm_arch();
-        if (target_arch.empty()) {
-            throw std::runtime_error(
-                lemon::SystemInfo::get_unsupported_backend_error("sd-cpp", "rocm")
-            );
-        }
-
-#ifdef _WIN32
-        filename = "sd-" + short_version + "-bin-win-rocm-x64.zip";
-#elif defined(__linux__)
-        filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm.zip";
-#else
-        throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
-#endif
-        std::cout << "[SDServer] Using ROCm GPU backend" << std::endl;
-    } else {
-        // CPU build (default)
-#ifdef _WIN32
-        filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
-#elif defined(__linux__)
-        filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
-#elif defined(__APPLE__)
-        filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.2-arm64.zip";
-#else
-        throw std::runtime_error("Unsupported platform for stable-diffusion.cpp");
-#endif
-    }
-
-    BackendUtils::install_from_github(SPEC, expected_version, repo, filename, backend);
 }
 
 void SDServer::load(const std::string& model_name,
@@ -89,7 +85,7 @@ void SDServer::load(const std::string& model_name,
     std::string backend = options.get_option("sd-cpp_backend");
 
     // Install sd-server if needed
-    install(backend);
+    backend_manager_->install_backend(SPEC.recipe, backend);
 
     // Get model path
     std::string model_path = model_info.resolved_path("main");
@@ -236,25 +232,24 @@ json SDServer::image_generations(const json& request) {
     // sd-server requires extra params (steps, sample_method, scheduler) to be
     // embedded in the prompt as <sd_cpp_extra_args>JSON</sd_cpp_extra_args>
     // See PR #1173: https://github.com/leejet/stable-diffusion.cpp/pull/1173
+    // Use request values if present (e.g. from webapp), fall back to recipe_options defaults.
     json extra_args;
     if (request.contains("steps")) {
-        extra_args["steps"] = request["steps"];
+        extra_args["steps"] = request["steps"].get<int>();
+    } else {
+        extra_args["steps"] = static_cast<int>(recipe_options_.get_option("steps"));
     }
     if (request.contains("cfg_scale")) {
-        extra_args["cfg_scale"] = request["cfg_scale"];
+        extra_args["cfg_scale"] = request["cfg_scale"].get<float>();
+    } else {
+        extra_args["cfg_scale"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
     }
     if (request.contains("seed")) {
-        extra_args["seed"] = request["seed"];
-    }
-    if (request.contains("sample_method")) {
-        extra_args["sample_method"] = request["sample_method"];
-    }
-    if (request.contains("scheduler")) {
-        extra_args["scheduler"] = request["scheduler"];
+        extra_args["seed"] = request["seed"].get<int>();
     }
 
-    // Append extra args to prompt if any were specified
-    if (!extra_args.empty()) {
+    // Append extra args to prompt
+    {
         std::string prompt = sd_request.value("prompt", "");
         prompt += " <sd_cpp_extra_args>" + extra_args.dump() + "</sd_cpp_extra_args>";
         sd_request["prompt"] = prompt;
@@ -267,6 +262,92 @@ json SDServer::image_generations(const json& request) {
 
     // Use base class forward_request with 10 minute timeout for image generation
     return forward_request("/v1/images/generations", sd_request, 600);
+}
+
+json SDServer::image_edits(const json& request) {
+    // Use sd-server's /v1/images/edits endpoint (EDIT mode).
+    // Images are placed into ref_images, which works well with editing models
+    // like Qwen-Edit and Flux Klein 4b/9b.
+    // The endpoint expects multipart/form-data (like the OpenAI API).
+
+    // Use request values if present, fall back to recipe_options defaults.
+    json extra_args;
+    if (request.contains("steps")) {
+        extra_args["steps"] = request["steps"].get<int>();
+    } else {
+        extra_args["steps"] = static_cast<int>(recipe_options_.get_option("steps"));
+    }
+    if (request.contains("cfg_scale")) {
+        extra_args["cfg_scale"] = request["cfg_scale"].get<float>();
+    } else {
+        extra_args["cfg_scale"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
+    }
+    if (request.contains("seed")) {
+        extra_args["seed"] = request["seed"].get<int>();
+    }
+
+    // Append extra args to prompt (same pattern as image_generations)
+    std::string prompt = request.value("prompt", "");
+    prompt += " <sd_cpp_extra_args>" + extra_args.dump() + "</sd_cpp_extra_args>";
+
+    std::vector<MultipartField> fields;
+    fields.push_back({"prompt", prompt, "", ""});
+    fields.push_back({"n", std::to_string(request.value("n", 1)), "", ""});
+    if (request.contains("size")) {
+        fields.push_back({"size", request["size"].get<std::string>(), "", ""});
+    }
+
+    // Decode base64 image data back to binary for multipart upload
+    if (request.contains("image_data")) {
+        std::string image_binary = JsonUtils::base64_decode(
+            request["image_data"].get<std::string>());
+        fields.push_back({"image[]", image_binary, "image.png", "image/png"});
+    }
+    if (request.contains("mask_data")) {
+        std::string mask_binary = JsonUtils::base64_decode(
+            request["mask_data"].get<std::string>());
+        fields.push_back({"mask", mask_binary, "mask.png", "image/png"});
+    }
+
+    if (is_debug()) {
+        std::cout << "[SDServer] Forwarding image edits to /v1/images/edits (multipart)"
+                  << " prompt=" << prompt
+                  << " n=" << request.value("n", 1)
+                  << " size=" << request.value("size", "")
+                  << std::endl;
+    }
+
+    return forward_multipart_request("/v1/images/edits", fields, 600);
+}
+
+json SDServer::image_variations(const json& request) {
+    // Use sd-server's /v1/images/variations endpoint.
+    // Note: OpenAI variations API does NOT accept a prompt parameter.
+    // The endpoint expects multipart/form-data (like the OpenAI API).
+
+    std::vector<MultipartField> fields;
+    fields.push_back({"prompt", "variation", "", ""});  // variations have no user prompt; use placeholder to satisfy non-empty check
+    fields.push_back({"n", std::to_string(request.value("n", 1)), "", ""});
+    if (request.contains("size")) {
+        fields.push_back({"size", request["size"].get<std::string>(), "", ""});
+    }
+
+    // Decode base64 image data back to binary for multipart upload
+    if (request.contains("image_data")) {
+        std::string image_binary = JsonUtils::base64_decode(
+            request["image_data"].get<std::string>());
+        fields.push_back({"image[]", image_binary, "image.png", "image/png"});
+    }
+
+    if (is_debug()) {
+        std::cout << "[SDServer] Forwarding image variations to /v1/images/edits (multipart)"
+                  << " prompt=variation"
+                  << " n=" << request.value("n", 1)
+                  << " size=" << request.value("size", "")
+                  << std::endl;
+    }
+
+    return forward_multipart_request("/v1/images/edits", fields, 600);
 }
 
 } // namespace backends

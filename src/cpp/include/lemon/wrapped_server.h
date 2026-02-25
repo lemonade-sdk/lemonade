@@ -8,8 +8,10 @@
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "utils/process_manager.h"
+#include "utils/http_client.h"
 #include "server_capabilities.h"
 #include "model_manager.h"
+#include "backend_manager.h"
 #include "recipe_options.h"
 
 namespace lemon {
@@ -48,9 +50,11 @@ struct Telemetry {
 
 class WrappedServer : public ICompletionServer {
 public:
-    WrappedServer(const std::string& server_name, const std::string& log_level = "info", ModelManager* model_manager = nullptr)
+    WrappedServer(const std::string& server_name, const std::string& log_level = "info",
+                  ModelManager* model_manager = nullptr, BackendManager* backend_manager = nullptr)
         : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level),
-          model_manager_(model_manager), last_access_time_(std::chrono::steady_clock::now()),
+          model_manager_(model_manager), backend_manager_(backend_manager),
+          last_access_time_(std::chrono::steady_clock::now()),
           is_busy_(false) {}
 
     virtual ~WrappedServer() = default;
@@ -110,9 +114,6 @@ public:
     DeviceType get_device_type() const { return device_type_; }
     RecipeOptions get_recipe_options() const { return recipe_options_; }
 
-    // Install the backend server
-    virtual void install(const std::string& backend = "") = 0;
-
     // Load a model and start the server
     virtual void load(const std::string& model_name,
                      const ModelInfo& model_info,
@@ -166,6 +167,11 @@ protected:
     // Common method to forward requests to the wrapped server (non-streaming)
     json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = INFERENCE_TIMEOUT_SECONDS);
 
+    // Forward multipart form data to the wrapped server
+    json forward_multipart_request(const std::string& endpoint,
+                                   const std::vector<utils::MultipartField>& fields,
+                                   long timeout_seconds = INFERENCE_TIMEOUT_SECONDS);
+
     // Validate that the process is running (platform-agnostic check)
     bool is_process_running() const;
 
@@ -180,6 +186,7 @@ protected:
     Telemetry telemetry_;
     std::string log_level_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
+    BackendManager* backend_manager_;  // Non-owning pointer to BackendManager
 
     // Multi-model support fields
     std::string model_name_;

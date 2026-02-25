@@ -40,6 +40,7 @@ export interface Recipes {
 }
 
 export interface Recipe {
+  default_backend?: string;
   backends: {
     [backendName: string]: BackendInfo;
   };
@@ -47,10 +48,14 @@ export interface Recipe {
 
 export interface BackendInfo {
   devices: string[];
-  supported: boolean;
-  available: boolean;
+  state: 'unsupported' | 'installable' | 'update_required' | 'installed';
+  message: string;
+  action: string;
   version?: string;
-  error?: string;
+  release_url?: string;
+  download_filename?: string;
+  download_size_mb?: number;
+  download_size_bytes?: number;
 }
 
 interface SystemData {
@@ -78,4 +83,31 @@ const fetchSystemInfoFromAPI = async (): Promise<SystemData> => {
 
 export const fetchSystemInfoData = async (): Promise<SystemData> => {
   return fetchSystemInfoFromAPI();
+};
+
+export interface SystemCheck {
+  id: string;
+  severity: 'error' | 'warning' | 'info';
+  platform: string;
+  title: string;
+  message: string;
+  fix_url?: string;
+}
+
+export const fetchSystemChecks = async (): Promise<SystemCheck[]> => {
+  const { serverFetch } = await import('./serverConfig');
+
+  try {
+    const response = await serverFetch('/system-checks');
+    if (!response.ok) {
+      throw new Error(`Failed to fetch system checks: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data as SystemCheck[];
+  } catch (error) {
+    console.error('Failed to fetch system checks from API:', error);
+    // Default to empty array if the check fails
+    return [];
+  }
 };

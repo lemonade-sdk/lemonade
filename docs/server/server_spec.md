@@ -49,6 +49,8 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 
 The additional endpoints are:
 
+- POST `/api/v1/install` - Install or update a backend
+- POST `/api/v1/uninstall` - Remove a backend
 - POST `/api/v1/pull` - Install a model
 - POST `/api/v1/delete` - Delete a model
 - POST `/api/v1/load` - Load a model
@@ -56,6 +58,7 @@ The additional endpoints are:
 - GET `/api/v1/health` - Check server status, such as models loaded
 - GET `/api/v1/stats` - Performance statistics from the last request
 - GET `/api/v1/system-info` - System information and device enumeration
+- GET `/api/v1/system-checks` - System health checks for platform-specific issues
 - GET `/live` - Check server liveness for load balancers and orchestrators
 
 ### Ollama-Compatible API
@@ -1135,7 +1138,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. |
 | `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
-| `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`. |
+| `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`, `--jinja`, `--mmproj`, `--embeddings`, `--reranking`. |
 | `whispercpp_backend` | No | whispercpp | WhisperCpp backend to use (`npu`, `cpu`, or `vulkan` on Linux). Default is `npu` if supported. |
 | `steps` | No | sd-cpp | Number of inference steps for image generation. Default: 20. |
 | `cfg_scale` | No | sd-cpp | Classifier-free guidance scale for image generation. Default: 7.0. |
@@ -1415,6 +1418,59 @@ curl http://localhost:8000/api/v1/stats
 - `decode_token_times` - Array of time taken for each generated token
 - `prompt_tokens` - Total prompt tokens including cached tokens
 
+### `GET /api/v1/system-checks` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+System health checks endpoint that detects platform-specific issues requiring user attention, such as missing kernel fixes, outdated drivers, or configuration problems.
+
+#### Example request
+
+```bash
+curl "http://localhost:8000/api/v1/system-checks"
+```
+
+#### Response format
+
+Returns an array of issues. Empty array means all checks passed.
+
+```json
+[
+  {
+    "id": "linux_strix_halo_kernel",
+    "severity": "error",
+    "platform": "linux",
+    "title": "Missing Strix Halo Kernel Fix",
+    "message": "Your kernel is missing a critical fix that may cause ROCm to crash randomly on Strix Halo systems.",
+    "fix_url": "https://lemonade-server.ai/gfx1151_linux.html"
+  }
+]
+```
+
+#### Response fields
+
+- `id` (string) - Unique identifier for the check (e.g., "linux_strix_halo_kernel")
+- `severity` (string) - Issue severity: "error", "warning", or "info"
+- `platform` (string) - Platform where issue applies: "linux", "windows", "macos"
+- `title` (string) - Short human-readable title of the issue
+- `message` (string) - Detailed description of the issue
+- `fix_url` (string, optional) - URL with instructions to resolve the issue
+
+#### Severity levels
+
+- **error** - Critical issues that may cause crashes or prevent functionality
+- **warning** - Issues that may impact performance or stability
+- **info** - Informational notices about system configuration
+
+#### Platform-specific checks
+
+**Linux:**
+- Strix Halo kernel CWSR fix (gfx1151 systems)
+
+**Windows:**
+- NPU driver version checks (planned)
+
+**macOS:**
+- Metal driver checks (planned)
+
 ### `GET /api/v1/system-info` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 System information endpoint that provides complete hardware details and device enumeration.
@@ -1460,64 +1516,77 @@ curl "http://localhost:8000/api/v1/system-info"
   },
   "recipes": {
     "llamacpp": {
+      "default_backend": "vulkan",
       "backends": {
         "vulkan": {
           "devices": ["cpu", "amd_igpu"],
-          "supported": true,
-          "available": true,
+          "state": "installed",
+          "message": "",
+          "action": "",
           "version": "b7869"
         },
         "rocm": {
           "devices": ["amd_igpu"],
-          "supported": true,
-          "available": false
+          "state": "installable",
+          "message": "Backend is supported but not installed.",
+          "action": "lemonade-server recipes --install llamacpp:rocm"
         },
         "metal": {
           "devices": [],
-          "supported": false,
-          "error": "Requires macOS"
+          "state": "unsupported",
+          "message": "Requires macOS",
+          "action": ""
         },
         "cpu": {
           "devices": ["cpu"],
-          "supported": true,
-          "available": false
+          "state": "update_required",
+          "message": "Backend update is required before use.",
+          "action": "lemonade-server recipes --install llamacpp:cpu"
         }
       }
     },
     "whispercpp": {
+      "default_backend": "default",
       "backends": {
         "default": {
           "devices": ["cpu"],
-          "supported": true,
-          "available": false
+          "state": "installable",
+          "message": "Backend is supported but not installed.",
+          "action": "lemonade-server recipes --install whispercpp:default"
         }
       }
     },
     "sd-cpp": {
+      "default_backend": "default",
       "backends": {
         "default": {
           "devices": ["cpu"],
-          "supported": true,
-          "available": false
+          "state": "installable",
+          "message": "Backend is supported but not installed.",
+          "action": "lemonade-server recipes --install sd-cpp:default"
         }
       }
     },
     "flm": {
+      "default_backend": "default",
       "backends": {
         "default": {
           "devices": ["amd_npu"],
-          "supported": true,
-          "available": true,
+          "state": "installed",
+          "message": "",
+          "action": "",
           "version": "1.2.0"
         }
       }
     },
     "ryzenai-llm": {
+      "default_backend": "default",
       "backends": {
         "default": {
           "devices": ["amd_npu"],
-          "supported": true,
-          "available": true
+          "state": "installed",
+          "message": "",
+          "action": ""
         }
       }
     }
@@ -1545,13 +1614,84 @@ curl "http://localhost:8000/api/v1/system-info"
 
 - `recipes` - Software recipes and their backend support status
   - Each recipe (e.g., `llamacpp`, `whispercpp`, `flm`) contains:
+    - `default_backend` - Preferred backend selected by server policy for this system (present when at least one backend is not `unsupported`)
     - `backends` - Available backends for this recipe
       - Each backend contains:
         - `devices` - List of devices **on this system** that support this backend (empty if not supported)
-        - `supported` - Whether installation is possible on this system
-        - `available` - Whether the backend is currently installed
-        - `version` - Installed version (if available)
-        - `error` - Reason why not supported (if applicable)
+        - `state` - Backend lifecycle state: `unsupported`, `installable`, `update_required`, or `installed`
+        - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
+        - `action` - Actionable user instruction string. For install/update cases this is typically an exact CLI command; for other states it may be empty or another actionable value (for example, a URL).
+        - `version` - Installed or configured backend version (when available)
+
+### `POST /api/v1/install` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Install or update a backend for a specific recipe/backend pair. If the backend is already installed but outdated, this endpoint updates it to the configured version.
+
+#### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `recipe` | Yes | Recipe name (for example, `llamacpp`, `flm`, `whispercpp`, `sd-cpp`, `ryzenai-llm`) |
+| `backend` | Yes | Backend name within the recipe (for example, `vulkan`, `rocm`, `cpu`, `default`) |
+| `stream` | No | If `true`, returns Server-Sent Events with progress. Defaults to `false`. |
+
+#### Example request
+
+```bash
+curl -X POST http://localhost:8000/api/v1/install \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipe": "llamacpp",
+    "backend": "vulkan",
+    "stream": false
+  }'
+```
+
+#### Response format
+
+```json
+{
+  "status":"success",
+  "recipe":"llamacpp",
+  "backend":"vulkan"
+}
+```
+
+In case of an error, returns an `error` field with details.
+
+### `POST /api/v1/uninstall` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Uninstall a backend for a specific recipe/backend pair. If loaded models are using that backend, they are unloaded first.
+
+#### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `recipe` | Yes | Recipe name |
+| `backend` | Yes | Backend name |
+
+#### Example request
+
+```bash
+curl -X POST http://localhost:8000/api/v1/uninstall \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipe": "llamacpp",
+    "backend": "vulkan"
+  }'
+```
+
+#### Response format
+
+```json
+{
+  "status":"success",
+  "recipe":"llamacpp",
+  "backend":"vulkan"
+}
+```
+
+In case of an error, returns an `error` field with details.
 
 # Debugging
 

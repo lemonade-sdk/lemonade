@@ -81,26 +81,12 @@ public:
 
     // Register a user model
     void register_user_model(const std::string& model_name,
-                            const std::string& checkpoint,
-                            const std::string& recipe,
-                            bool reasoning = false,
-                            bool vision = false,
-                            bool embedding = false,
-                            bool reranking = false,
-                            bool image = false,
-                            const std::string& mmproj = "",
+                            const json& model_data,
                             const std::string& source = "");
 
     // Register (if needed) and download a model
     void download_model(const std::string& model_name,
-                       const std::string& checkpoint = "",
-                       const std::string& recipe = "",
-                       bool reasoning = false,
-                       bool vision = false,
-                       bool embedding = false,
-                       bool reranking = false,
-                       bool image = false,
-                       const std::string& mmproj = "",
+                       const json& model_data,
                        bool do_not_upgrade = false,
                        DownloadProgressCallback progress_callback = nullptr);
 

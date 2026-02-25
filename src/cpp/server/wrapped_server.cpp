@@ -3,6 +3,7 @@
 #include <lemon/utils/http_client.h>
 #include <lemon/streaming_proxy.h>
 #include <lemon/error_types.h>
+#include <httplib.h>
 #include <thread>
 #include <chrono>
 #include <iostream>
@@ -79,6 +80,44 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
             return json::parse(response.body);
         } else {
             // Try to parse error response from backend
+            json error_details;
+            try {
+                error_details = json::parse(response.body);
+            } catch (...) {
+                error_details = response.body;
+            }
+
+            return ErrorResponse::create(
+                server_name_ + " request failed",
+                ErrorType::BACKEND_ERROR,
+                {
+                    {"status_code", response.status_code},
+                    {"response", error_details}
+                }
+            );
+        }
+    } catch (const std::exception& e) {
+        return ErrorResponse::from_exception(NetworkException(e.what()));
+    }
+}
+
+json WrappedServer::forward_multipart_request(const std::string& endpoint,
+                                               const std::vector<utils::MultipartField>& fields,
+                                               long timeout_seconds) {
+    if (!is_process_running()) {
+        return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
+    }
+
+    std::string url = get_base_url() + endpoint;
+
+    try {
+        auto response = utils::HttpClient::post_multipart(url, fields, timeout_seconds);
+
+        if (response.status_code == 200) {
+            return json::parse(response.body);
+        } else {
+            std::cerr << "[WrappedServer] Backend returned HTTP " << response.status_code
+                      << " for multipart request: " << response.body << std::endl;
             json error_details;
             try {
                 error_details = json::parse(response.body);

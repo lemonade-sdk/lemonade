@@ -79,36 +79,23 @@ public:
     // Returns empty string if supported, or a reason string if not supported
     static std::string check_recipe_supported(const std::string& recipe);
 
-    // Get all recipes with their support status
-    // Returns a vector of {recipe_name, supported, available, error_message, backends}
+    // Get all recipes with their backend state info
+    // Returns a vector of {recipe_name, backends}
     struct BackendStatus {
         std::string name;
-        bool supported;
-        bool available;
+        std::string state;
         std::string version;
-        std::string error;
+        std::string message;
+        std::string action;
     };
     struct RecipeStatus {
         std::string name;
-        bool supported;
-        bool available;
-        std::string error;
         std::vector<BackendStatus> backends;
     };
     static std::vector<RecipeStatus> get_all_recipe_statuses();
 
-    // Version and installation detection (public for use by backends and helpers)
-    static std::string get_llamacpp_version(const std::string& backend);
-    static std::string get_whispercpp_version(const std::string& backend);
-    static std::string get_kokoro_version(const std::string& backend);
-    static std::string get_sdcpp_version(const std::string& backend);
-    static std::string get_oga_version();
+    // Version detection (public for use by backends and helpers)
     static std::string get_flm_version();
-    static bool is_llamacpp_installed(const std::string& backend);
-    static bool is_whispercpp_installed(const std::string& backend);
-    static bool is_kokoro_installed(const std::string& backend);
-    static bool is_sdcpp_installed(const std::string& backend);
-    static bool is_ryzenai_serve_available();
 
     // Device support detection
     static std::string get_rocm_arch();
@@ -205,6 +192,9 @@ std::unique_ptr<SystemInfo> create_system_info();
 // Helper to identify ROCm architecture from GPU name
 // Returns architecture string (e.g., "gfx1150", "gfx1151", "gfx110X", "gfx120X") or empty string if not recognized
 std::string identify_rocm_arch_from_name(const std::string& device_name);
+
+// Check if kernel has CWSR fix for Strix Halo
+bool needs_gfx1151_cwsr_fix();
 
 // Cache management
 class SystemInfoCache {

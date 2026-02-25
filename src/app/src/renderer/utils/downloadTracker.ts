@@ -25,7 +25,7 @@ class DownloadTracker {
   /**
    * Start tracking a new download
    */
-  startDownload(modelName: string, abortController: AbortController): string {
+  startDownload(modelName: string, abortController: AbortController, downloadType?: 'model' | 'backend'): string {
     // Remove any existing downloads for this model (completed, error, cancelled, or paused)
     // This ensures only one entry per model is shown
     const existingDownloads = Array.from(this.activeDownloads.entries());
@@ -57,6 +57,7 @@ class DownloadTracker {
       status: 'downloading',
       startTime: Date.now(),
       abortController,
+      downloadType,
     };
 
     this.activeDownloads.set(downloadId, downloadItem);
@@ -287,87 +288,3 @@ class DownloadTracker {
 
 // Create and export a singleton instance
 export const downloadTracker = new DownloadTracker();
-
-/**
- * Helper function to start a download with SSE tracking
- */
-export async function trackDownload(
-  modelName: string,
-  url: string,
-  requestInit: RequestInit
-): Promise<void> {
-  const abortController = new AbortController();
-  const downloadId = downloadTracker.startDownload(modelName, abortController);
-
-  try {
-    const response = await fetch(url, {
-      ...requestInit,
-      signal: abortController.signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to download: ${response.statusText}`);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('No response body');
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let currentEventType = 'progress';
-
-    while (true) {
-      const { done, value } = await reader.read();
-
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-
-        if (line.startsWith('event:')) {
-          currentEventType = line.substring(6).trim();
-        } else if (line.startsWith('data:')) {
-          try {
-            const data = JSON.parse(line.substring(5).trim());
-
-            if (currentEventType === 'progress') {
-              downloadTracker.updateProgress(downloadId, data);
-            } else if (currentEventType === 'complete') {
-              downloadTracker.completeDownload(downloadId);
-              return;
-            } else if (currentEventType === 'error') {
-              downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
-              throw new Error(data.error || 'Download failed');
-            }
-          } catch (parseError) {
-            console.error('Failed to parse SSE data:', line, parseError);
-          }
-        } else if (line.trim() === '') {
-          // Empty line resets event type to default
-          currentEventType = 'progress';
-        }
-      }
-    }
-
-    downloadTracker.completeDownload(downloadId);
-  } catch (error: any) {
-    if (error.name === 'AbortError') {
-      // Download was cancelled
-      downloadTracker.cancelDownload(downloadId);
-
-      // Dispatch event to signal that download is fully cleaned up and file handles are released
-      window.dispatchEvent(new CustomEvent('download:cleanup-complete', {
-        detail: { id: downloadId, modelName }
-      }));
-    } else {
-      downloadTracker.failDownload(downloadId, error.message || 'Unknown error');
-      throw error;
-    }
-  }
-}

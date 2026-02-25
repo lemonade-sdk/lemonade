@@ -9,22 +9,27 @@ namespace backends {
 
 class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer {
 public:
+#ifndef LEMONADE_TRAY
+    static InstallParams get_install_params(const std::string& backend, const std::string& version);
+#endif
+
     inline static const BackendSpec SPEC = BackendSpec(
             "llamacpp",
-        // executable
     #ifdef _WIN32
             "llama-server.exe"
     #else
             "llama-server"
     #endif
+#ifndef LEMONADE_TRAY
+        , get_install_params
+#endif
     );
 
-    LlamaCppServer(const std::string& log_level = "info",
-                   ModelManager* model_manager = nullptr);
+    LlamaCppServer(const std::string& log_level,
+                   ModelManager* model_manager,
+                   BackendManager* backend_manager);
 
     ~LlamaCppServer() override;
-
-    void install(const std::string& backend = "") override;
 
     void load(const std::string& model_name,
              const ModelInfo& model_info,

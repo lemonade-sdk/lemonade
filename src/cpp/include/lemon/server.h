@@ -13,6 +13,7 @@
 #include <httplib.h>
 #include "router.h"
 #include "model_manager.h"
+#include "backend_manager.h"
 #ifdef LEMON_HAS_WEBSOCKET
 #include "websocket_server.h"
 #endif
@@ -68,22 +69,28 @@ private:
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
     void handle_system_stats(const httplib::Request& req, httplib::Response& res);
+    void handle_system_checks(const httplib::Request& req, httplib::Response& res);
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_logs_stream(const httplib::Request& req, httplib::Response& res);
+#ifdef HAVE_SYSTEMD
+    void handle_logs_stream_journald(const httplib::Request& req, httplib::Response& res);
+#endif
+
+    // Backend management endpoint handlers
+    void handle_install(const httplib::Request& req, httplib::Response& res);
+    void handle_uninstall(const httplib::Request& req, httplib::Response& res);
+
+    // Shared SSE streaming helper for download operations
+    void stream_download_operation(
+        httplib::Response& res,
+        std::function<void(DownloadProgressCallback)> operation);
 
     // Helper function for local model resolution and registration
     void resolve_and_register_local_model(
         const std::string& dest_path,
         const std::string& model_name,
-        const std::string& recipe,
-        const std::string& variant,
-        const std::string& mmproj,
-        bool reasoning,
-        bool& vision,
-        bool embedding,
-        bool reranking,
-        bool image,
+        const json& model_data,
         const std::string& hf_cache);
 
     // Audio endpoint handlers (OpenAI /v1/audio/* compatible)
@@ -92,6 +99,14 @@ private:
 
     // Image endpoint handlers (OpenAI /v1/images/* compatible)
     void handle_image_generations(const httplib::Request& req, httplib::Response& res);
+    void handle_image_edits(const httplib::Request& req, httplib::Response& res);
+    void handle_image_variations(const httplib::Request& req, httplib::Response& res);
+
+    // Shared helpers for image multipart handlers
+    // Return true on success; on failure set res status/body and return false.
+    bool parse_n_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
+    bool extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
+    bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
 
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
@@ -122,6 +137,7 @@ private:
 
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
+    std::unique_ptr<BackendManager> backend_manager_;
 #ifdef LEMON_HAS_WEBSOCKET
     std::unique_ptr<WebSocketServer> websocket_server_;
 #endif

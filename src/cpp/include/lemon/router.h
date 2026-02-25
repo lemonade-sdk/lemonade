@@ -9,6 +9,7 @@
 #include <httplib.h>
 #include "wrapped_server.h"
 #include "model_manager.h"
+#include "backend_manager.h"
 
 namespace lemon {
 
@@ -16,10 +17,11 @@ using json = nlohmann::json;
 
 class Router {
 public:
-    Router(const json& default_options = json::object(),
-           const std::string& log_level = "info",
-           ModelManager* model_manager = nullptr,
-           int max_loaded_models = 1);
+    Router(const json& default_options,
+           const std::string& log_level,
+           ModelManager* model_manager,
+           int max_loaded_models,
+           BackendManager* backend_manager);
 
     ~Router();
 
@@ -68,6 +70,8 @@ public:
 
     // Image endpoints (OpenAI /v1/images/* compatible)
     json image_generations(const json& request);
+    json image_edits(const json& request);
+    json image_variations(const json& request);
 
     // Forward streaming requests to the appropriate wrapped server
     void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);
@@ -92,6 +96,7 @@ private:
     json default_options_;
     std::string log_level_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
+    BackendManager* backend_manager_;  // Non-owning pointer to BackendManager
 
     // Multi-model limit (applies to each type slot)
     int max_loaded_models_;

@@ -22,25 +22,29 @@ Usage:
     python server_cli.py --server-binary /path/to/lemonade-server
 """
 
-import unittest
-import subprocess
-import time
-import socket
-import sys
+import argparse
+import json
 import os
 import re
-import argparse
-import urllib.request
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
 import urllib.error
+import urllib.request
 
+from utils.server_base import _stop_server_via_systemd
 from utils.test_models import (
-    PORT,
     ENDPOINT_TEST_MODEL,
-    TIMEOUT_MODEL_OPERATION,
+    PORT,
     TIMEOUT_DEFAULT,
+    TIMEOUT_MODEL_OPERATION,
+    USER_MODEL_MAIN_CHECKPOINT,
+    USER_MODEL_NAME,
     get_default_server_binary,
 )
-from utils.server_base import _stop_server_via_systemd
 
 # Global configuration
 _config = {
@@ -328,11 +332,12 @@ class PersistentServerCLITests(CLITestBase):
                 f"Output should contain '{recipe}' recipe: {output}",
             )
 
-        # Should contain status indicators (installed, supported, unsupported)
+        # Should contain status indicators from backend state model
         output_lower = output.lower()
         has_status = (
             "installed" in output_lower
-            or "supported" in output_lower
+            or "installable" in output_lower
+            or "update_required" in output_lower
             or "unsupported" in output_lower
         )
         self.assertTrue(
@@ -352,6 +357,113 @@ class PersistentServerCLITests(CLITestBase):
         )
 
         print(f"[OK] Recipes command output shows recipe/backend status")
+
+    def test_007_pull_json(self):
+        """Test pull command to download a model via JSON file"""
+        json_file = os.path.join(tempfile.gettempdir(), "lemonade_pull_json.json")
+        with open(json_file, "w") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "id": USER_MODEL_NAME,
+                        "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                        "recipe": "llamacpp",
+                    }
+                )
+            )
+
+        result = self.assertCommandSucceeds(
+            ["pull", json_file], timeout=TIMEOUT_MODEL_OPERATION
+        )
+        # Pull should succeed
+        output = result.stdout.lower() + result.stderr.lower()
+        self.assertFalse(
+            "error" in output and "failed" in output,
+            f"Pull should not report errors: {result.stdout}",
+        )
+
+    def test_008_pull_malformed_json(self):
+        """Test pull command to download a model via JSON file"""
+        json_file = os.path.join(
+            tempfile.gettempdir(), "lemonade_pull_malformed_json.json"
+        )
+        with open(json_file, "w") as f:
+            f.write('{"checkpoint:')
+
+        result = self.assertCommandFails(
+            ["pull", json_file], timeout=TIMEOUT_MODEL_OPERATION
+        )
+        # Pull should fail
+        output = result.stdout.lower() + result.stderr.lower()
+        self.assertTrue(
+            "error" in output,
+            f"Pull should fail: {result.stdout}",
+        )
+
+    def _get_test_backend(self):
+        """Get a lightweight test backend based on platform."""
+        import sys
+
+        if sys.platform == "darwin":
+            return "llamacpp", "metal"
+        else:
+            return "llamacpp", "cpu"
+
+    def test_009_recipes_install(self):
+        """Test recipes --install installs a backend."""
+        recipe, backend = self._get_test_backend()
+        target = f"{recipe}:{backend}"
+
+        # Uninstall first (cleanup)
+        run_cli_command(["recipes", "--uninstall", target], timeout=120)
+
+        # Install
+        result = self.assertCommandSucceeds(
+            ["recipes", "--install", target], timeout=300
+        )
+        output = result.stdout.lower()
+        self.assertTrue(
+            "install" in output or "success" in output,
+            f"Expected install confirmation in output: {result.stdout}",
+        )
+
+        # Verify via recipes list
+        result = self.assertCommandSucceeds(["recipes"])
+        self.assertIn(
+            "installed",
+            result.stdout.lower(),
+            f"Expected 'installed' status after install: {result.stdout}",
+        )
+        print(f"[OK] recipes --install {target} succeeded")
+
+    def test_010_recipes_uninstall(self):
+        """Test recipes --uninstall removes a backend."""
+        recipe, backend = self._get_test_backend()
+        target = f"{recipe}:{backend}"
+
+        # Ensure installed first
+        run_cli_command(["recipes", "--install", target], timeout=300)
+
+        # Uninstall
+        result = self.assertCommandSucceeds(
+            ["recipes", "--uninstall", target], timeout=120
+        )
+        output = result.stdout.lower()
+        self.assertTrue(
+            "uninstall" in output or "success" in output,
+            f"Expected uninstall confirmation in output: {result.stdout}",
+        )
+        print(f"[OK] recipes --uninstall {target} succeeded")
+
+    def test_011_recipes_reinstall(self):
+        """Re-install after test to leave system in clean state."""
+        recipe, backend = self._get_test_backend()
+        target = f"{recipe}:{backend}"
+
+        result = self.assertCommandSucceeds(
+            ["recipes", "--install", target], timeout=300
+        )
+        print(f"[OK] Re-installed {target} for clean state")
 
 
 class EphemeralCLITests(CLITestBase):
@@ -569,6 +681,27 @@ class EphemeralCLITests(CLITestBase):
                 server_process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 server_process.kill()
+
+    def test_008_recipes_install_no_server(self):
+        """Test recipes --install works when no server is running (starts ephemeral server)."""
+        import sys
+
+        if sys.platform == "darwin":
+            target = "llamacpp:metal"
+        else:
+            target = "llamacpp:cpu"
+
+        self.assertFalse(is_server_running(), "Server should not be running")
+
+        result = self.assertCommandSucceeds(
+            ["recipes", "--install", target], timeout=300
+        )
+        output = result.stdout.lower()
+        self.assertTrue(
+            "install" in output or "success" in output,
+            f"Expected install result in output: {result.stdout}",
+        )
+        print(f"[OK] recipes --install {target} works without persistent server")
 
 
 def run_cli_tests():

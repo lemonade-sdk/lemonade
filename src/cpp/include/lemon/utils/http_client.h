@@ -2,6 +2,7 @@
 
 #include <string>
 #include <map>
+#include <vector>
 #include <functional>
 #include <chrono>
 #include <memory>
@@ -15,6 +16,13 @@ struct HttpResponse {
     int status_code;
     std::string body;
     std::map<std::string, std::string> headers;
+};
+
+struct MultipartField {
+    std::string name;
+    std::string data;
+    std::string filename;       // empty for text fields
+    std::string content_type;   // empty for text fields
 };
 
 // Result of a download operation with detailed error information
@@ -56,6 +64,11 @@ public:
                             const std::string& body,
                             const std::map<std::string, std::string>& headers = {},
                             long timeout_seconds = 300);
+
+    // Multipart form data POST request
+    static HttpResponse post_multipart(const std::string& url,
+                                       const std::vector<MultipartField>& fields,
+                                       long timeout_seconds = 300);
 
     // Streaming POST request (calls callback for each chunk as it arrives)
     static HttpResponse post_stream(const std::string& url,

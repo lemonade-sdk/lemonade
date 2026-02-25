@@ -415,6 +415,11 @@ static bool is_process_alive_not_zombie(pid_t pid) {
         return false;  // Process doesn't exist
     }
 
+#ifdef __APPLE__
+    // macOS doesn't have /proc — if kill(pid, 0) succeeded, process is alive
+    // macOS automatically reaps zombies more aggressively, so just trust kill()
+    return true;
+#else
     // Check if it's a zombie by reading /proc/PID/stat
     std::string stat_path = "/proc/" + std::to_string(pid) + "/stat";
     std::ifstream stat_file(stat_path);
@@ -435,6 +440,7 @@ static bool is_process_alive_not_zombie(pid_t pid) {
 
     // If we can't parse the state, assume alive to be safe
     return true;
+#endif
 }
 #endif
 
@@ -1350,32 +1356,64 @@ int TrayApp::execute_pull_command() {
         try {
             // Build request body with all optional parameters
             // Local imports don't need streaming (no download progress)
-            nlohmann::json request_body = {{"model", tray_config_.model}, {"stream", !local_import}};
+            nlohmann::json request_body;
+
+            // Try to read the model as a JSON file
+            try {
+                fs::path model_desc_path(tray_config_.model);
+                if ((model_desc_path.extension() == ".json") && fs::exists(model_desc_path)) {
+                    std::ifstream json_file(model_desc_path);
+                    json_file >> request_body;
+                }
+            } catch (const std::ifstream::failure& e) {
+                std::cerr << "Error: " << tray_config_.model << " could not be read." << std::endl;
+                return 1;
+            } catch(const nlohmann::json::exception& e) {
+                std::cerr << "Error: " << tray_config_.model << " is not a valid JSON file." << std::endl;
+                return 1;
+            } catch (const std::exception& e) { /** malformed path. Since the exception thrown by the path constructor is implementation defined, we must catch all. */}
+
+            // Current JSON contains the model name as id, remap
+            if (request_body.contains("id")) {
+                request_body["model"] = request_body["id"];
+            }
+
+            // If checkpoints is available remove checkpoint
+            if (request_body.contains("checkpoints")) {
+                request_body.erase("checkpoint");
+            }
+
+            // Model was not a JSON file
+            if (!request_body.contains("model")) {
+                request_body["model"] = tray_config_.model;
+                if (!tray_config_.checkpoint.empty() && !local_import) {
+                    // Only send checkpoint for remote downloads (local files already copied)
+                    request_body["checkpoint"] = tray_config_.checkpoint;
+                }
+                if (!tray_config_.recipe.empty()) {
+                    request_body["recipe"] = tray_config_.recipe;
+                }
+                if (tray_config_.is_reasoning) {
+                    request_body["reasoning"] = true;
+                }
+                if (tray_config_.is_vision) {
+                    request_body["vision"] = true;
+                }
+                if (tray_config_.is_embedding) {
+                    request_body["embedding"] = true;
+                }
+                if (tray_config_.is_reranking) {
+                    request_body["reranking"] = true;
+                }
+                if (!tray_config_.mmproj.empty()) {
+                    request_body["mmproj"] = tray_config_.mmproj;
+                }
+            }
 
             if (local_import) {
                 request_body["local_import"] = true;
-            }
-            if (!tray_config_.checkpoint.empty() && !local_import) {
-                // Only send checkpoint for remote downloads (local files already copied)
-                request_body["checkpoint"] = tray_config_.checkpoint;
-            }
-            if (!tray_config_.recipe.empty()) {
-                request_body["recipe"] = tray_config_.recipe;
-            }
-            if (tray_config_.is_reasoning) {
-                request_body["reasoning"] = true;
-            }
-            if (tray_config_.is_vision) {
-                request_body["vision"] = true;
-            }
-            if (tray_config_.is_embedding) {
-                request_body["embedding"] = true;
-            }
-            if (tray_config_.is_reranking) {
-                request_body["reranking"] = true;
-            }
-            if (!tray_config_.mmproj.empty()) {
-                request_body["mmproj"] = tray_config_.mmproj;
+            } else {
+                request_body["stream"] = true;
             }
 
             httplib::Client cli = server_manager->make_http_client(86400, 30);
@@ -1602,62 +1640,213 @@ int TrayApp::execute_status_command() {
 
 // Command: recipes
 int TrayApp::execute_recipes_command() {
+    // Handle --install flag
+    if (!tray_config_.install_backend.empty()) {
+        // Parse "recipe:backend" format
+        size_t colon_pos = tray_config_.install_backend.find(':');
+        if (colon_pos == std::string::npos) {
+            std::cerr << "Error: --install requires format 'recipe:backend' (e.g., llamacpp:vulkan)" << std::endl;
+            return 1;
+        }
+        std::string recipe = tray_config_.install_backend.substr(0, colon_pos);
+        std::string backend = tray_config_.install_backend.substr(colon_pos + 1);
+
+        std::cout << "Installing backend: " << recipe << ":" << backend << std::endl;
+
+        return server_call([&](std::unique_ptr<ServerManager> const &server_manager) {
+            try {
+                nlohmann::json request_body = {
+                    {"recipe", recipe},
+                    {"backend", backend},
+                    {"stream", true}
+                };
+
+                httplib::Client cli = server_manager->make_http_client(86400, 30);
+
+                std::string last_file;
+                int last_percent = -1;
+                bool success = false;
+                std::string error_message;
+                std::string buffer;
+
+                httplib::Headers headers;
+                auto res = cli.Post("/api/v1/install", headers, request_body.dump(), "application/json",
+                    [&](const char* data, size_t len) {
+                        buffer.append(data, len);
+
+                        size_t pos;
+                        while ((pos = buffer.find("\n\n")) != std::string::npos) {
+                            std::string message = buffer.substr(0, pos);
+                            buffer.erase(0, pos + 2);
+
+                            std::string event_type;
+                            std::string event_data;
+
+                            std::istringstream stream(message);
+                            std::string line;
+                            while (std::getline(stream, line)) {
+                                if (line.substr(0, 6) == "event:") {
+                                    event_type = line.substr(7);
+                                    while (!event_type.empty() && event_type[0] == ' ') event_type.erase(0, 1);
+                                } else if (line.substr(0, 5) == "data:") {
+                                    event_data = line.substr(6);
+                                    while (!event_data.empty() && event_data[0] == ' ') event_data.erase(0, 1);
+                                }
+                            }
+
+                            if (!event_data.empty()) {
+                                try {
+                                    auto json_data = nlohmann::json::parse(event_data);
+
+                                    if (event_type == "progress") {
+                                        std::string file = json_data.value("file", "");
+                                        uint64_t bytes_downloaded = json_data.value("bytes_downloaded", (uint64_t)0);
+                                        uint64_t bytes_total = json_data.value("bytes_total", (uint64_t)0);
+                                        int percent = json_data.value("percent", 0);
+
+                                        if (file != last_file) {
+                                            if (!last_file.empty()) std::cout << std::endl;
+                                            std::cout << "Downloading: " << file;
+                                            if (bytes_total > 0) {
+                                                std::cout << " (" << std::fixed << std::setprecision(1)
+                                                          << (bytes_total / (1024.0 * 1024.0)) << " MB)";
+                                            }
+                                            std::cout << std::endl;
+                                            last_file = file;
+                                            last_percent = -1;
+                                        }
+
+                                        if (bytes_total > 0 && percent != last_percent) {
+                                            std::cout << "\r  Progress: " << percent << "% ("
+                                                    << std::fixed << std::setprecision(1)
+                                                    << (bytes_downloaded / (1024.0 * 1024.0)) << "/"
+                                                    << (bytes_total / (1024.0 * 1024.0)) << " MB)" << std::flush;
+                                            last_percent = percent;
+                                        }
+                                    } else if (event_type == "complete") {
+                                        std::cout << std::endl;
+                                        success = true;
+                                    } else if (event_type == "error") {
+                                        error_message = json_data.value("error", "Unknown error");
+                                    }
+                                } catch (const std::exception&) {}
+                            }
+                        }
+                        return true;
+                    });
+
+                if (!res && !success) {
+                    throw std::runtime_error("HTTP request failed: " + httplib::to_string(res.error()));
+                }
+                if (!error_message.empty()) {
+                    throw std::runtime_error(error_message);
+                }
+                if (success) {
+                    std::cout << "Backend installed successfully: " << recipe << ":" << backend << std::endl;
+                }
+                return 0;
+            } catch (const std::exception& e) {
+                std::cerr << "Error installing backend: " << e.what() << std::endl;
+                return 1;
+            }
+        });
+    }
+
+    // Handle --uninstall flag
+    if (!tray_config_.uninstall_backend.empty()) {
+        size_t colon_pos = tray_config_.uninstall_backend.find(':');
+        if (colon_pos == std::string::npos) {
+            std::cerr << "Error: --uninstall requires format 'recipe:backend' (e.g., llamacpp:vulkan)" << std::endl;
+            return 1;
+        }
+        std::string recipe = tray_config_.uninstall_backend.substr(0, colon_pos);
+        std::string backend = tray_config_.uninstall_backend.substr(colon_pos + 1);
+
+        std::cout << "Uninstalling backend: " << recipe << ":" << backend << std::endl;
+
+        return server_call([&](std::unique_ptr<ServerManager> const &server_manager) {
+            try {
+                nlohmann::json request_body = {
+                    {"recipe", recipe},
+                    {"backend", backend}
+                };
+
+                std::string response = server_manager->make_http_request(
+                    "/api/v1/uninstall", "POST", request_body.dump());
+
+                auto response_json = nlohmann::json::parse(response);
+                if (response_json.value("status", "") == "success") {
+                    std::cout << "Backend uninstalled successfully: " << recipe << ":" << backend << std::endl;
+                    return 0;
+                } else {
+                    std::cerr << "Uninstall failed: " << response << std::endl;
+                    return 1;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error uninstalling backend: " << e.what() << std::endl;
+                return 1;
+            }
+        });
+    }
+
+    // Default: list recipes
     auto statuses = lemon::SystemInfo::get_all_recipe_statuses();
 
     // Print table header
     std::cout << std::left << std::setw(20) << "Recipe"
               << std::setw(12) << "Backend"
-              << std::setw(14) << "Status"
-              << "Version/Error" << std::endl;
-    std::cout << std::string(75, '-') << std::endl;
+              << std::setw(16) << "Status"
+              << std::setw(46) << "Message/Version"
+              << "Action" << std::endl;
+    std::cout << std::string(148, '-') << std::endl;
 
     for (const auto& status : statuses) {
         bool first_backend = true;
 
         if (status.backends.empty()) {
-            // Recipe with no backends (shouldn't happen, but handle gracefully)
             std::cout << std::left << std::setw(20) << status.name
                       << std::setw(12) << "-"
-                      << std::setw(14) << (status.supported ? "supported" : "unsupported")
+                      << std::setw(16) << "unsupported"
+                      << std::setw(46) << "No backend definitions"
                       << "-" << std::endl;
         } else {
             for (const auto& backend : status.backends) {
-                // Recipe name only on first line
                 std::string recipe_col = first_backend ? status.name : "";
+                std::string status_str = backend.state.empty() ? "unsupported" : backend.state;
 
-                // Determine status string
-                // Check supported first - unsupported takes precedence even if installed
-                std::string status_str;
-                if (!backend.supported) {
-                    status_str = "unsupported";
-                } else if (backend.available) {
-                    status_str = "installed";
-                } else {
-                    status_str = "supported";
-                }
-
-                // Version or error (concise)
                 std::string info_col;
-                if (!backend.version.empty() && backend.version != "unknown") {
+                if (status_str == "installed" && !backend.version.empty() && backend.version != "unknown") {
                     info_col = backend.version;
-                } else if (!backend.supported && !backend.error.empty()) {
-                    info_col = backend.error;
+                } else if (!backend.message.empty()) {
+                    info_col = backend.message;
                 } else {
                     info_col = "-";
                 }
+                std::string action_col = backend.action.empty() ? "-" : backend.action;
 
                 std::cout << std::left << std::setw(20) << recipe_col
                           << std::setw(12) << backend.name
-                          << std::setw(14) << status_str
-                          << info_col << std::endl;
+                          << std::setw(16) << status_str
+                          << std::setw(46) << info_col
+                          << " " << action_col << std::endl;
 
                 first_backend = false;
             }
         }
     }
 
-    std::cout << std::string(75, '-') << std::endl;
+    std::cout << std::string(148, '-') << std::endl;
     return 0;
+}
+
+// Check if a process is alive (cross-platform)
+static bool is_process_alive(int pid) {
+#ifdef __APPLE__
+    // macOS doesn't have /proc — use kill(pid, 0) which checks existence without signaling
+    return (kill(pid, 0) == 0 || errno == EPERM);
+#else
+    return std::filesystem::exists("/proc/" + std::to_string(pid));
+#endif
 }
 
 // Command: stop
@@ -1948,13 +2137,13 @@ int TrayApp::execute_stop_command() {
 
     for (int i = 0; i < 50; i++) {  // 50 * 100ms = 5 seconds
         // Check if main processes are completely gone from process table
-        bool router_gone = !std::filesystem::exists("/proc/" + std::to_string(router_pid));
-        bool tray_gone = (tray_pid == 0 || !std::filesystem::exists("/proc/" + std::to_string(tray_pid)));
+        bool router_gone = !is_process_alive(router_pid);
+        bool tray_gone = (tray_pid == 0 || !is_process_alive(tray_pid));
 
         // Check if all children have exited
         bool all_children_gone = true;
         for (int child_pid : router_children) {
-            if (std::filesystem::exists("/proc/" + std::to_string(child_pid))) {
+            if (is_process_alive(child_pid)) {
                 all_children_gone = false;
                 break;
             }
@@ -1989,13 +2178,13 @@ int TrayApp::execute_stop_command() {
         std::cout << "Timeout expired, forcing termination..." << std::endl;
 
         // Force kill router process (if still alive)
-        if (std::filesystem::exists("/proc/" + std::to_string(router_pid))) {
+        if (is_process_alive(router_pid)) {
             std::cout << "Force killing router (PID: " << router_pid << ")" << std::endl;
             kill(router_pid, SIGKILL);
         }
 
         // Force kill tray app if it exists
-        if (tray_pid != 0 && std::filesystem::exists("/proc/" + std::to_string(tray_pid))) {
+        if (tray_pid != 0 && is_process_alive(tray_pid)) {
             std::cout << "Force killing tray app (PID: " << tray_pid << ")" << std::endl;
             kill(tray_pid, SIGKILL);
         }
@@ -2003,7 +2192,7 @@ int TrayApp::execute_stop_command() {
         // Force kill any remaining children (matching Python's behavior for stubborn llama-server)
         if (!router_children.empty()) {
             for (int child_pid : router_children) {
-                if (std::filesystem::exists("/proc/" + std::to_string(child_pid))) {
+                if (is_process_alive(child_pid)) {
                     std::cout << "Force killing child process (PID: " << child_pid << ")" << std::endl;
                     kill(child_pid, SIGKILL);
                 }
@@ -2031,10 +2220,18 @@ bool TrayApp::start_server() {
             log_file_ = "lemonade-server.log";
         }
         #else
-        // Unix: /tmp/lemonade-server.log or ~/.lemonade/server.log
-        log_file_ = "/tmp/lemonade-server.log";
+        // Use systemd journal if JOURNAL_STREAM is set, unless explicitly disabled
+        // LEMONADE_DISABLE_SYSTEMD_JOURNAL can be set in CI to force file logging
+        const char* journal_stream = std::getenv("JOURNAL_STREAM");
+        const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
+        if (journal_stream && !disable_journal) {
+            log_file_ = "-";  // Special value: don't redirect stdout/stderr
+            DEBUG_LOG(this, "Detected systemd environment - logging will go to journal");
+        } else {
+            log_file_ = "/tmp/lemonade-server.log";
+            DEBUG_LOG(this, "Using default log file: " << log_file_);
+        }
         #endif
-        DEBUG_LOG(this, "Using default log file: " << log_file_);
     }
 
     bool success = server_manager_->start_server(
