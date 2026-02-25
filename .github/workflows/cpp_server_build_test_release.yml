@@ -356,6 +356,7 @@ jobs:
     runs-on: macos-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
+      has_signing: ${{ steps.check_signing.outputs.has_signing }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -366,7 +367,22 @@ jobs:
         id: get_version
         uses: ./.github/actions/get-version
 
+      - name: Check signing secrets
+        id: check_signing
+        shell: bash
+        env:
+          APP_CONNECT_KEY: ${{ secrets.MACOS_APP_CONNECT_KEY_GERAMY }}
+        run: |
+          if [ -n "$APP_CONNECT_KEY" ]; then
+            echo "has_signing=true" >> $GITHUB_OUTPUT
+            echo "Signing secrets available - will build signed .pkg"
+          else
+            echo "has_signing=false" >> $GITHUB_OUTPUT
+            echo "No signing secrets - will build and test locally"
+          fi
+
       - name: Setup macOS Keychain
+        if: steps.check_signing.outputs.has_signing == 'true'
         uses: ./.github/actions/setup-macos-keychain
         with:
           dev-signing-key: ${{ secrets.MACOS_DEV_SIGNING_IDENTITY_KEY }}
@@ -380,16 +396,135 @@ jobs:
         uses: ./.github/actions/build-macos-dmg
         with:
           include-electron: 'true'
+          skip-packaging: ${{ steps.check_signing.outputs.has_signing != 'true' }}
 
       - name: Upload .pkg package
+        if: steps.check_signing.outputs.has_signing == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-macos-pkg
           path: build/*.pkg
           retention-days: 7
 
+      # ---- Unsigned local install + test path ----
+      - name: Install binaries locally (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        run: |
+          set -e
+          echo "Installing binaries locally (no signing)..."
+
+          # Copy binaries to /usr/local/bin
+          sudo cp build/lemonade-router /usr/local/bin/
+          sudo cp build/lemonade-server /usr/local/bin/
+          sudo chmod 755 /usr/local/bin/lemonade-router
+          sudo chmod 755 /usr/local/bin/lemonade-server
+
+          # Copy resources
+          sudo mkdir -p "/Library/Application Support/Lemonade/resources"
+          if [ -d "build/resources" ]; then
+            sudo cp -R build/resources/* "/Library/Application Support/Lemonade/resources/" 2>/dev/null || true
+          fi
+
+          # Run the postinst script for directory setup
+          echo "Running post-install script..."
+          sudo bash src/cpp/postinst-full-mac "" "/"
+
+          # Verify installation
+          echo "Verifying installation..."
+          /usr/local/bin/lemonade-server --version
+          /usr/local/bin/lemonade-router --version
+
+          echo "Local installation complete!"
+
+      - name: Stop services after local install (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        run: |
+          echo "Stopping services started by postinst..."
+          sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
+          CURRENT_UID=$(id -u)
+          launchctl bootout gui/"$CURRENT_UID"/com.lemonade.tray 2>/dev/null || true
+          sleep 2
+
+          # Clean up PID and lock files
+          sudo rm -f /tmp/lemonade-router.pid
+          sudo rm -f /tmp/lemonade_Router.lock
+          sudo rm -f /tmp/lemonade_Server.lock
+          sudo rm -f /tmp/lemonade_Tray.lock
+          sudo rm -f /tmp/lemonade*.pid /tmp/lemonade*.lock
+
+          echo "Services stopped and cleaned up."
+
+      - name: Setup Python and virtual environment (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Run CLI tests (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          HF_HOME: ${{ github.workspace }}/hf-cache
+        run: |
+          set -e
+          echo "Running CLI tests..."
+          .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server
+          .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server --ephemeral
+          .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server --listen-all
+          .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server --api-key
+          echo "CLI tests PASSED!"
+
+      - name: Run endpoint tests (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          HF_HOME: ${{ github.workspace }}/hf-cache
+        run: |
+          set -e
+          echo "Running endpoint tests..."
+          .venv/bin/python test/server_endpoints.py --server-binary /usr/local/bin/lemonade-server
+          .venv/bin/python test/server_endpoints.py --server-binary /usr/local/bin/lemonade-server --server-per-test
+          echo "Endpoint tests PASSED!"
+
+      - name: Run system-info tests (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        env:
+          PYTHONIOENCODING: utf-8
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          HF_HOME: ${{ github.workspace }}/hf-cache
+        run: |
+          set -e
+          echo "Running system-info mock hardware tests..."
+          .venv/bin/python test/server_system_info.py --server-binary /usr/local/bin/lemonade-server
+          echo "System-info tests PASSED!"
+
+      - name: Run Ollama API tests (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          HF_HOME: ${{ github.workspace }}/hf-cache
+        run: |
+          set -e
+          echo "Running Ollama API tests..."
+          .venv/bin/python test/test_ollama.py --server-binary /usr/local/bin/lemonade-server
+          echo "Ollama API tests PASSED!"
+
       - name: Cleanup keychain
-        if: always()
+        if: always() && steps.check_signing.outputs.has_signing == 'true'
         shell: bash
         run: |
           if [ -n "$SIGNING_KEYCHAIN_PATH" ] && [ -f "$SIGNING_KEYCHAIN_PATH" ]; then
@@ -658,7 +793,8 @@ jobs:
     runs-on: macos-latest
     needs: build-lemonade-macos-dmg
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
+    # Also skip when no signing secrets (tests already ran inline in build job)
+    if: ${{ needs.build-lemonade-macos-dmg.outputs.has_signing == 'true' && !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -791,9 +927,9 @@ jobs:
           echo "VENV_PYTHON=.venv/Scripts/python.exe" >> $Env:GITHUB_ENV
           echo "SERVER_BINARY=$Env:LEMONADE_INSTALL_PATH\bin\lemonade-server.exe" >> $Env:GITHUB_ENV
 
-      # ---- macOS Setup ----
+      # ---- macOS Setup (only when signed .pkg is available) ----
       - name: Download .pkg package
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing == 'true'
         uses: actions/download-artifact@v4
         with:
           name: lemonade-macos-pkg
@@ -801,14 +937,14 @@ jobs:
 
       - name: Install Lemonade Server (.pkg)
         id: install-pkg
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing == 'true'
         uses: ./.github/actions/install-lemonade-server-dmg
         with:
           version: ${{ env.LEMONADE_VERSION }}
           download-artifact: 'false'
 
       - name: Set environment (macOS)
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing == 'true'
         shell: bash
         run: |
           echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
@@ -833,7 +969,7 @@ jobs:
           sudo systemctl status lemonade-server || true
 
       - name: Stop LaunchDaemon before tests (macOS)
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing == 'true'
         shell: bash
         run: |
           echo "Stopping lemonade-server LaunchDaemon..."
@@ -853,6 +989,7 @@ jobs:
           echo "LaunchDaemon stopped and cleaned up."
 
       - name: Run ${{ matrix.test_type }} tests
+        if: ${{ !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
         env:
           HF_HOME: ${{ env.HF_HOME }}
