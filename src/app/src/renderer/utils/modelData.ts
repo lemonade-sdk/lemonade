@@ -159,6 +159,10 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         modelInfo.model_name = model.model_name;
       }
 
+      if (model.recipe_options && typeof model.recipe_options === 'object') {
+        modelInfo.recipe_options = model.recipe_options;
+      }
+
       if (typeof model.reasoning === 'boolean') {
         modelInfo.reasoning = model.reasoning;
       }

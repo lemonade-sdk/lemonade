@@ -1,18 +1,39 @@
 #pragma once
 
 #include <string>
+#include <functional>
 #include <filesystem>
 
 namespace fs = std::filesystem;
 
+// Forward declare DownloadProgressCallback to avoid heavy model_manager.h include
+namespace lemon {
+    struct DownloadProgress;
+    using DownloadProgressCallback = std::function<bool(const DownloadProgress&)>;
+}
+
 namespace lemon::backends {
+    struct InstallParams {
+        std::string repo;      // GitHub "org/repo"
+        std::string filename;  // Release asset filename
+    };
+
     struct BackendSpec {
         const std::string recipe;
         const std::string binary;
-        BackendSpec(const std::string r, const std::string b): recipe(r), binary(b) {}
+
+        using InstallParamsFn = InstallParams(*)(const std::string& backend, const std::string& version);
+        InstallParamsFn install_params_fn;  // nullptr for FLM (special installer)
+
+        BackendSpec(std::string r, std::string b, InstallParamsFn fn = nullptr)
+            : recipe(std::move(r)), binary(std::move(b)), install_params_fn(fn) {}
 
         std::string log_name() const { return recipe + " Server"; };
     };
+
+    // Return the backend spec for recipes that use the standard BackendSpec flow.
+    // Returns nullptr for recipes that require custom handling (e.g., flm) or unknown recipes.
+    const BackendSpec* try_get_spec_for_recipe(const std::string& recipe);
 
     /**
     * Utility functions for backend management
@@ -45,8 +66,9 @@ namespace lemon::backends {
 
         // Excluding from lemonade-server to avoid having to compile in additional transitive dependencies
     #ifndef LEMONADE_TRAY
-        /** Download and install the specified version of the backend from github */
-        static void install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& backend);
+        /** Download and install the specified version of the backend from github.
+         *  If progress_cb is provided, it receives download progress events instead of console output. */
+        static void install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& backend, DownloadProgressCallback progress_cb = nullptr);
 
         /** Get the latest version number for the given recipe/backend */
         static std::string get_backend_version(const std::string& recipe, const std::string& backend);
