@@ -1,4 +1,10 @@
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/llamacpp_server.h"
+#include "lemon/backends/whisper_server.h"
+#include "lemon/backends/sd_server.h"
+#include "lemon/backends/kokoro_server.h"
+#include "lemon/backends/ryzenaiserver.h"
+#include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
@@ -20,25 +26,53 @@
 using json = nlohmann::json;
 
 namespace lemon::backends {
+
+    const BackendSpec* try_get_spec_for_recipe(const std::string& recipe) {
+        if (recipe == "llamacpp") return &LlamaCppServer::SPEC;
+        if (recipe == "whispercpp") return &WhisperServer::SPEC;
+        if (recipe == "sd-cpp") return &SDServer::SPEC;
+        if (recipe == "kokoro") return &KokoroServer::SPEC;
+        if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
+        return nullptr;
+    }
+
+#ifdef _WIN32
+    // Resolve the full path to Windows' built-in bsdtar (System32\tar.exe).
+    // This avoids picking up GNU tar from Git, which can't handle zip files
+    // and misinterprets drive letter colons as remote host specifiers.
+    // Returns "tar" as fallback if SystemRoot isn't set.
+    static std::string get_native_tar_path() {
+        const char* system_root = std::getenv("SystemRoot");
+        if (system_root) {
+            return std::string(system_root) + "\\System32\\tar.exe";
+        }
+        return "tar";
+    }
+
+    static bool is_native_tar_available() {
+        std::string tar_path = get_native_tar_path();
+        return system((tar_path + " --version >nul 2>&1").c_str()) == 0;
+    }
+#endif
+
+    static void ensure_directory(const std::string& dir) {
+#ifdef _WIN32
+        std::string cmd = "if not exist \"" + dir + "\" mkdir \"" + dir + "\" >nul 2>&1";
+#else
+        std::string cmd = "mkdir -p \"" + dir + "\"";
+#endif
+        system(cmd.c_str());
+    }
+
     bool BackendUtils::extract_zip(const std::string& zip_path, const std::string& dest_dir, const std::string& backend_name) {
         std::string command;
+        ensure_directory(dest_dir);
 #ifdef _WIN32
-        std::string mkdir_cmd = "if not exist \"" + dest_dir + "\" mkdir \"" + dest_dir + "\" >nul 2>&1";
-        system(mkdir_cmd.c_str());
-#else
-        std::string mkdir_cmd = "mkdir -p \"" + dest_dir + "\"";
-        system(mkdir_cmd.c_str());
-#endif
-#ifdef _WIN32
-        // Check if 'tar' is available (Windows 10 build 17063+ ships with bsdtar)
-        int tar_check = system("tar --version >nul 2>&1");
-        if (tar_check == 0) {
+        if (is_native_tar_available()) {
             std::cout << "[" << backend_name << "] Extracting ZIP with native tar to " << dest_dir << std::endl;
-            // -x: extract, -f: file, -C: change dir
-            command = "tar -xf \"" + zip_path + "\" -C \"" + dest_dir + "\"";
+            command = get_native_tar_path() + " -xf \"" + zip_path + "\" -C \"" + dest_dir + "\"";
         } else {
             std::cout << "[" << backend_name << "] Extracting ZIP via PowerShell to " << dest_dir << std::endl;
-            // PowerShell fallback - use full path to avoid PATH issues
             std::string powershell_path = "powershell";
             const char* system_root = std::getenv("SystemRoot");
             if (system_root) {
@@ -48,13 +82,11 @@ namespace lemon::backends {
                     "' -DestinationPath '" + dest_dir + "' -Force\"";
         }
 #elif defined(__APPLE__) || defined(__linux__)
-        // macOS & Linux Logic
         std::cout << "[" << backend_name << "] Extracting zip to " << dest_dir << std::endl;
         command = "unzip -o -q \"" + zip_path + "\" -d \"" + dest_dir + "\"";
 #endif
         int result = system(command.c_str());
         if (result != 0) {
-            // Adjust error message based on platform context
             #ifdef _WIN32
                 std::cerr << "[" << backend_name << "] Extraction failed with code: " << result << std::endl;
             #else
@@ -67,43 +99,18 @@ namespace lemon::backends {
 
     bool BackendUtils::extract_tarball(const std::string& tarball_path, const std::string& dest_dir, const std::string& backend_name) {
         std::string command;
-        int result;
-#ifdef _WIN32
-        // Windows: Use 'if not exist' to avoid errors if it already exists
-        std::string mkdir_cmd = "if not exist \"" + dest_dir + "\" mkdir \"" + dest_dir + "\" >nul 2>&1";
-        if (system(mkdir_cmd.c_str()) != 0) {
-            std::cerr << "[" << backend_name << "] Failed to create directory: " << dest_dir << std::endl;
-            return false;
-        }
-#else
-        // Linux/macOS: 'mkdir -p' creates parents and is silent if exists
-        std::string mkdir_cmd = "mkdir -p \"" + dest_dir + "\"";
-        if (system(mkdir_cmd.c_str()) != 0) {
-            std::cerr << "[" << backend_name << "] Failed to create directory: " << dest_dir << std::endl;
-            return false;
-        }
-#endif
+        ensure_directory(dest_dir);
         std::cout << "[" << backend_name << "] Extracting tarball to " << dest_dir << std::endl;
 #ifdef _WIN32
-        // Windows 10/11 ships with 'bsdtar' as 'tar.exe'.
-        // It natively supports gzip (-z) and --strip-components.
-
-        // Check if tar exists first
-        int tar_check = system("tar --version >nul 2>&1");
-        if (tar_check != 0) {
+        if (!is_native_tar_available()) {
             std::cerr << "[" << backend_name << "] Error: 'tar' command not found. Windows 10 (17063+) required." << std::endl;
             return false;
         }
-        // Command structure is identical to Linux for modern Windows tar
-        command = "tar -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
-#elif defined(__APPLE__)
-        command = "tar -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
-
+        command = get_native_tar_path() + " -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
 #else
-        // Linux (uses GNU tar by default)
         command = "tar -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
 #endif
-        result = system(command.c_str());
+        int result = system(command.c_str());
         if (result != 0) {
             std::cerr << "[" << backend_name << "] Extraction failed with code: " << result << std::endl;
             return false;
@@ -203,11 +210,10 @@ namespace lemon::backends {
         }
 
         std::string version = recipe_config[backend].get<std::string>();
-        std::cout << "[BackendUtils] Using " << backend_id << " version from config: " << version << std::endl;
         return version;
     }
 
-    void BackendUtils::install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& backend) {
+    void BackendUtils::install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& backend, DownloadProgressCallback progress_cb) {
         std::string install_dir;
         std::string version_file;
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
@@ -257,11 +263,30 @@ namespace lemon::backends {
             std::cout << "[" << spec.log_name() << "] Downloading from: " << url << std::endl;
             std::cout << "[" << spec.log_name() << "] Downloading to: " << zip_path << std::endl;
 
+            // Create the appropriate progress callback
+            // If an external progress_cb is provided, wrap it as a ProgressCallback for HttpClient
+            utils::ProgressCallback http_progress_cb;
+            if (progress_cb) {
+                http_progress_cb = [&progress_cb, &filename](size_t downloaded, size_t total) -> bool {
+                    DownloadProgress p;
+                    p.file = filename;
+                    p.file_index = 1;
+                    p.total_files = 1;
+                    p.bytes_downloaded = downloaded;
+                    p.bytes_total = total;
+                    p.percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
+                    p.complete = false;  // Don't signal complete until extraction is done
+                    return progress_cb(p);
+                };
+            } else {
+                http_progress_cb = utils::create_throttled_progress_callback();
+            }
+
             // Download the file
             auto download_result = utils::HttpClient::download_file(
                 url,
                 zip_path,
-                utils::create_throttled_progress_callback()
+                http_progress_cb
             );
 
             if (!download_result.success) {
@@ -311,9 +336,35 @@ namespace lemon::backends {
             // Delete ZIP file
             fs::remove(zip_path);
 
+            // Send completion event now that installation is fully done
+            if (progress_cb) {
+                DownloadProgress p;
+                p.file = filename;
+                p.file_index = 1;
+                p.total_files = 1;
+                p.bytes_downloaded = download_result.bytes_downloaded;
+                p.bytes_total = download_result.total_bytes;
+                p.percent = 100;
+                p.complete = true;
+                progress_cb(p);
+            }
+
             std::cout << "[" << spec.log_name() << "] Installation complete!" << std::endl;
         } else {
             std::cout << "[" << spec.log_name() << "] Found executable at: " << exe_path << std::endl;
+
+            // Even if already installed, send a completion event so callers know it's done
+            if (progress_cb) {
+                DownloadProgress p;
+                p.file = filename;
+                p.file_index = 1;
+                p.total_files = 1;
+                p.bytes_downloaded = 0;
+                p.bytes_total = 0;
+                p.percent = 100;
+                p.complete = true;
+                progress_cb(p);
+            }
         }
     }
 #endif

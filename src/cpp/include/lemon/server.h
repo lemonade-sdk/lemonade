@@ -13,6 +13,7 @@
 #include <httplib.h>
 #include "router.h"
 #include "model_manager.h"
+#include "backend_manager.h"
 #ifdef LEMON_HAS_WEBSOCKET
 #include "websocket_server.h"
 #endif
@@ -76,6 +77,15 @@ private:
     void handle_logs_stream_journald(const httplib::Request& req, httplib::Response& res);
 #endif
 
+    // Backend management endpoint handlers
+    void handle_install(const httplib::Request& req, httplib::Response& res);
+    void handle_uninstall(const httplib::Request& req, httplib::Response& res);
+
+    // Shared SSE streaming helper for download operations
+    void stream_download_operation(
+        httplib::Response& res,
+        std::function<void(DownloadProgressCallback)> operation);
+
     // Helper function for local model resolution and registration
     void resolve_and_register_local_model(
         const std::string& dest_path,
@@ -127,6 +137,7 @@ private:
 
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
+    std::unique_ptr<BackendManager> backend_manager_;
 #ifdef LEMON_HAS_WEBSOCKET
     std::unique_ptr<WebSocketServer> websocket_server_;
 #endif

@@ -103,8 +103,11 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     // Set extra models directory for GGUF discovery
     model_manager_->set_extra_models_dir(extra_models_dir);
 
+    backend_manager_ = std::make_unique<BackendManager>();
+
     router_ = std::make_unique<Router>(default_options_, log_level,
-                                       model_manager_.get(), max_loaded_models);
+                                       model_manager_.get(), max_loaded_models,
+                                       backend_manager_.get());
 
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
@@ -295,6 +298,15 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     register_post("params", [this](const httplib::Request& req, httplib::Response& res) {
         handle_params(req, res);
+    });
+
+    // Backend management endpoints
+    register_post("install", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_install(req, res);
+    });
+
+    register_post("uninstall", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_uninstall(req, res);
     });
 
     // System endpoints
@@ -2359,64 +2371,10 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         }
 
         if (stream) {
-            // SSE streaming mode - send progress events
-            res.set_header("Content-Type", "text/event-stream");
-            res.set_header("Cache-Control", "no-cache");
-            res.set_header("Connection", "keep-alive");
-            res.set_header("X-Accel-Buffering", "no");
-
-            res.set_chunked_content_provider(
-                "text/event-stream",
-                [this, model_name, request_json, do_not_upgrade](size_t offset, httplib::DataSink& sink) {
-                    if (offset > 0) {
-                        return false; // Already sent everything
-                    }
-
-                    try {
-                        // Create progress callback that emits SSE events
-                        // Returns false if client disconnects to cancel download
-                        DownloadProgressCallback progress_cb = [&sink](const DownloadProgress& p) -> bool {
-                            nlohmann::json event_data;
-                            event_data["file"] = p.file;
-                            event_data["file_index"] = p.file_index;
-                            event_data["total_files"] = p.total_files;
-                            // Explicitly cast to uint64_t for proper JSON serialization
-                            event_data["bytes_downloaded"] = static_cast<uint64_t>(p.bytes_downloaded);
-                            event_data["bytes_total"] = static_cast<uint64_t>(p.bytes_total);
-                            event_data["percent"] = p.percent;
-
-                            std::string event;
-                            if (p.complete) {
-                                event = "event: complete\ndata: " + event_data.dump() + "\n\n";
-                            } else {
-                                event = "event: progress\ndata: " + event_data.dump() + "\n\n";
-                            }
-
-                            // Check if client is still connected
-                            // sink.write() returns false when client disconnects
-                            if (!sink.write(event.c_str(), event.size())) {
-                                std::cout << "[Server] Client disconnected, cancelling download" << std::endl;
-                                return false;  // Cancel download
-                            }
-                            return true;  // Continue download
-                        };
-
-                        model_manager_->download_model(model_name, request_json, do_not_upgrade, progress_cb);
-
-                    } catch (const std::exception& e) {
-                        // Send error event (only if it's not a cancellation)
-                        std::string error_msg = e.what();
-                        if (error_msg != "Download cancelled") {
-                            nlohmann::json error_data = {{"error", error_msg}};
-                            std::string event = "event: error\ndata: " + error_data.dump() + "\n\n";
-                            sink.write(event.c_str(), event.size());
-                        }
-                    }
-
-                    // Explicitly signal we're done - this ensures proper chunked encoding termination
-                    sink.done();
-                    return false; // Signal completion
-                });
+            // SSE streaming mode - send progress events via shared helper
+            stream_download_operation(res, [this, model_name, request_json, do_not_upgrade](DownloadProgressCallback progress_cb) {
+                model_manager_->download_model(model_name, request_json, do_not_upgrade, progress_cb);
+            });
         } else {
             // Legacy synchronous mode - blocks until complete
             model_manager_->download_model(model_name, request_json, do_not_upgrade);
@@ -2806,8 +2764,59 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         return;
     }
 
-    // Get system info - this function handles all errors internally and never throws
+    // Hardware info is cached statically (never changes within a process lifetime)
     nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache();
+
+    // Check if BackendManager already has a cached recipes section
+    // (populated on first request, then kept current by install/uninstall)
+    if (backend_manager_) {
+        json cached_recipes = backend_manager_->get_recipes_cache();
+        if (!cached_recipes.empty()) {
+            system_info["recipes"] = cached_recipes;
+            res.set_content(system_info.dump(), "application/json");
+            return;
+        }
+    }
+
+    // First request: compute recipes from scratch (expensive — filesystem scans, etc.)
+    try {
+        auto sys_info = create_system_info();
+        if (system_info.contains("devices")) {
+            system_info["recipes"] = sys_info->build_recipes_info(system_info["devices"]);
+        }
+    } catch (...) {
+        // Keep whatever recipes were cached if recomputation fails
+    }
+
+    // Enrich with release_url, download_filename, and version from BackendManager
+    if (backend_manager_ && system_info.contains("recipes")) {
+        for (auto& [recipe_name, recipe_info] : system_info["recipes"].items()) {
+            if (!recipe_info.contains("backends")) continue;
+            for (auto& [backend_name, backend_info] : recipe_info["backends"].items()) {
+                try {
+                    auto enrichment = backend_manager_->get_backend_enrichment(recipe_name, backend_name);
+                    if (!enrichment.release_url.empty()) {
+                        backend_info["release_url"] = enrichment.release_url;
+                    }
+                    if (!enrichment.download_filename.empty()) {
+                        backend_info["download_filename"] = enrichment.download_filename;
+                    }
+                    // Always provide the configured version so UI can show version+link
+                    // even for not-installed backends
+                    if (!backend_info.contains("version") || backend_info["version"].get<std::string>().empty()) {
+                        if (!enrichment.version.empty()) {
+                            backend_info["version"] = enrichment.version;
+                        }
+                    }
+                } catch (...) {}
+            }
+        }
+
+        // Store in BackendManager's cache — subsequent requests return instantly,
+        // install/uninstall do targeted updates to keep it current.
+        backend_manager_->set_recipes_cache(system_info["recipes"]);
+    }
+
     res.set_content(system_info.dump(), "application/json");
 }
 
@@ -3286,6 +3295,161 @@ void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& 
             return true;  // Keep streaming
         }
     );
+}
+
+// ============================================================================
+// Shared SSE streaming helper for download operations
+// ============================================================================
+
+void Server::stream_download_operation(
+    httplib::Response& res,
+    std::function<void(DownloadProgressCallback)> operation) {
+
+    res.set_header("Content-Type", "text/event-stream");
+    res.set_header("Cache-Control", "no-cache");
+    res.set_header("Connection", "keep-alive");
+    res.set_header("X-Accel-Buffering", "no");
+
+    res.set_chunked_content_provider(
+        "text/event-stream",
+        [operation = std::move(operation)](size_t offset, httplib::DataSink& sink) {
+            if (offset > 0) {
+                return false; // Already sent everything
+            }
+
+            try {
+                // Create progress callback that emits SSE events
+                DownloadProgressCallback progress_cb = [&sink](const DownloadProgress& p) -> bool {
+                    nlohmann::json event_data;
+                    event_data["file"] = p.file;
+                    event_data["file_index"] = p.file_index;
+                    event_data["total_files"] = p.total_files;
+                    event_data["bytes_downloaded"] = static_cast<uint64_t>(p.bytes_downloaded);
+                    event_data["bytes_total"] = static_cast<uint64_t>(p.bytes_total);
+                    event_data["percent"] = p.percent;
+
+                    std::string event;
+                    if (p.complete) {
+                        event = "event: complete\ndata: " + event_data.dump() + "\n\n";
+                    } else {
+                        event = "event: progress\ndata: " + event_data.dump() + "\n\n";
+                    }
+
+                    if (!sink.write(event.c_str(), event.size())) {
+                        std::cout << "[Server] Client disconnected, cancelling download" << std::endl;
+                        return false;
+                    }
+                    return true;
+                };
+
+                operation(progress_cb);
+
+            } catch (const std::exception& e) {
+                std::string error_msg = e.what();
+                if (error_msg != "Download cancelled") {
+                    nlohmann::json error_data = {{"error", error_msg}};
+                    std::string event = "event: error\ndata: " + error_data.dump() + "\n\n";
+                    sink.write(event.c_str(), event.size());
+                }
+            }
+
+            sink.done();
+            return false;
+        });
+}
+
+// ============================================================================
+// Backend management endpoints
+// ============================================================================
+
+void Server::handle_install(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+        std::string recipe = request_json.value("recipe", "");
+        std::string backend = request_json.value("backend", "");
+        bool stream = request_json.value("stream", false);
+
+        if (recipe.empty() || backend.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Both 'recipe' and 'backend' are required"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        std::cout << "[Server] Installing backend: " << recipe << ":" << backend << std::endl;
+
+        if (stream) {
+            stream_download_operation(res, [this, recipe, backend](DownloadProgressCallback progress_cb) {
+                backend_manager_->install_backend(recipe, backend, progress_cb);
+            });
+        } else {
+            backend_manager_->install_backend(recipe, backend);
+            nlohmann::json response = {
+                {"status", "success"},
+                {"recipe", recipe},
+                {"backend", backend}
+            };
+            res.set_content(response.dump(), "application/json");
+        }
+
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_install: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_uninstall(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+        std::string recipe = request_json.value("recipe", "");
+        std::string backend = request_json.value("backend", "");
+
+        if (recipe.empty() || backend.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Both 'recipe' and 'backend' are required"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        std::cout << "[Server] Uninstalling backend: " << recipe << ":" << backend << std::endl;
+
+        // Check if any loaded models use this recipe+backend and unload them first
+        auto loaded_models = router_->get_all_loaded_models();
+        std::string backend_option_key = recipe + "_backend";
+        for (const auto& model : loaded_models) {
+            if (model.value("recipe", "") == recipe) {
+                // Check if the model's backend matches the one being uninstalled
+                std::string model_backend;
+                if (model.contains("recipe_options") && model["recipe_options"].contains(backend_option_key)) {
+                    model_backend = model["recipe_options"].value(backend_option_key, "");
+                }
+                if (!model_backend.empty() && model_backend != backend) {
+                    continue;  // Different backend, skip
+                }
+                std::string model_name = model.value("model_name", "");
+                std::cout << "[Server] Unloading model " << model_name
+                          << " before uninstalling " << recipe << ":" << backend << std::endl;
+                router_->unload_model(model_name);
+            }
+        }
+
+        backend_manager_->uninstall_backend(recipe, backend);
+
+        nlohmann::json response = {
+            {"status", "success"},
+            {"recipe", recipe},
+            {"backend", backend}
+        };
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_uninstall: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
 }
 
 #ifdef HAVE_SYSTEMD

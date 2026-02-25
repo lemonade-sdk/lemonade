@@ -1,4 +1,4 @@
-import React, {createContext, useCallback, useContext, useMemo, useState} from "react";
+import React, {createContext, useCallback, useContext, useEffect, useMemo, useState} from "react";
 import {fetchSystemInfoData, SystemInfo, fetchSystemChecks, SystemCheck} from "../utils/systemData";
 
 interface SystemContextValue {
@@ -15,7 +15,7 @@ interface SystemContextValue {
 
 // Programmatic structure: recipe -> list of supported backends
 export interface SupportedRecipes {
-  [recipeName: string]: string[]; // e.g., { llamacpp: ['vulkan', 'rocm', 'cpu'], 'ryzenai-llm': ['default'] }
+  [recipeName: string]: string[]; // e.g., { llamacpp: ['vulkan', 'rocm', 'cpu'], 'ryzenai-llm': ['npu'] }
 }
 
 const SystemContext = createContext<SystemContextValue | null>(null);
@@ -40,10 +40,10 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({childre
     for (const [recipeName, recipe] of Object.entries(recipes)) {
       if (!recipe?.backends) continue;
 
-      // Collect all supported backends for this recipe (not just available/installed)
+      // Collect all backends that are viable on this system
       const supportedBackends: string[] = [];
       for (const [backendName, backend] of Object.entries(recipe.backends)) {
-        if (backend?.supported) {
+        if (backend?.state && backend.state !== 'unsupported') {
           supportedBackends.push(backendName);
         }
       }
@@ -168,6 +168,17 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({childre
       }
     }
   }, []);
+
+  // Auto-refresh when a backend install completes (from any codepath)
+  useEffect(() => {
+    const handleBackendsUpdated = () => {
+      refresh();
+    };
+    window.addEventListener('backendsUpdated', handleBackendsUpdated);
+    return () => {
+      window.removeEventListener('backendsUpdated', handleBackendsUpdated);
+    };
+  }, [refresh]);
 
   // No initial load - system info will be fetched when first needed
   // (e.g., when user tries to load a model)

@@ -2060,9 +2060,8 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
 
     // Ensure FLM is installed
     std::cout << "[ModelManager] Checking FLM installation..." << std::endl;
-    backends::FastFlowLMServer flm_installer("info", this);
     try {
-        flm_installer.install();
+        backends::FastFlowLMServer::install_if_needed();
     } catch (const std::exception& e) {
         std::cerr << "[ModelManager ERROR] FLM installation failed: " << e.what() << std::endl;
         throw;

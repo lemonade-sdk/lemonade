@@ -47,6 +47,7 @@
     "eventsource": "^4.1.0",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.25",
+    "lucide-react": "^0.575.0",
     "markdown-it": "^14.1.0",
     "markdown-it-texmath": "^1.0.0",
     "openai": "^4.85.0",

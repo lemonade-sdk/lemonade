@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 9.3.4)
+project(lemon_cpp VERSION 9.4.0)
 
 # Enable Objective-C++ for macOS Metal support
 if(APPLE)
@@ -567,6 +567,7 @@ set(SOURCES
     src/cpp/server/backends/kokoro_server.cpp
     src/cpp/server/backends/sd_server.cpp
     src/cpp/server/backends/backend_utils.cpp
+    src/cpp/server/backend_manager.cpp
     src/cpp/server/ollama_api.cpp
     $<$<PLATFORM_ID:Windows>:src/cpp/server/streaming_audio_buffer.cpp>
     $<$<PLATFORM_ID:Windows>:src/cpp/server/vad.cpp>

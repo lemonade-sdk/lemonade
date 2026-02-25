@@ -1,5 +1,6 @@
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backend_manager.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/path_utils.h"
@@ -161,73 +162,60 @@ static std::string validate_custom_args(const std::string& custom_args_str,
     return "";  // Valid
 }
 
-LlamaCppServer::LlamaCppServer(const std::string& log_level, ModelManager* model_manager)
-    : WrappedServer("llama-server", log_level, model_manager) {
-}
-
-LlamaCppServer::~LlamaCppServer() {
-    unload();
-}
-
-void LlamaCppServer::install(const std::string& backend) {
-    std::string repo;
-    std::string filename;
-    std::string expected_version = BackendUtils::get_backend_version(SPEC.recipe, backend);
+InstallParams LlamaCppServer::get_install_params(const std::string& backend, const std::string& version) {
+    InstallParams params;
 
     if (backend == "rocm") {
-        // ROCm support from lemonade-sdk/llamacpp-rocm
-        repo = "lemonade-sdk/llamacpp-rocm";
-        std::string target_arch = lemon::SystemInfo::get_rocm_arch();
-
+        params.repo = "lemonade-sdk/llamacpp-rocm";
+        std::string target_arch = SystemInfo::get_rocm_arch();
         if (target_arch.empty()) {
             throw std::runtime_error(
-                lemon::SystemInfo::get_unsupported_backend_error("llamacpp", "rocm")
+                SystemInfo::get_unsupported_backend_error("llamacpp", "rocm")
             );
         }
-
 #ifdef _WIN32
-        filename = "llama-" + expected_version + "-windows-rocm-" + target_arch + "-x64.zip";
+        params.filename = "llama-" + version + "-windows-rocm-" + target_arch + "-x64.zip";
 #elif defined(__linux__)
-        filename = "llama-" + expected_version + "-ubuntu-rocm-" + target_arch + "-x64.zip";
+        params.filename = "llama-" + version + "-ubuntu-rocm-" + target_arch + "-x64.zip";
 #else
         throw std::runtime_error("ROCm llamacpp only supported on Windows and Linux");
 #endif
-        std::cout << "[LlamaCpp] Detected ROCm architecture: " << target_arch << std::endl;
-
     } else if (backend == "metal") {
-        // Metal support for macOS Apple Silicon from ggml-org/llama.cpp
-        repo = "ggml-org/llama.cpp";
+        params.repo = "ggml-org/llama.cpp";
 #ifdef __APPLE__
-        filename = "llama-" + expected_version + "-bin-macos-arm64.tar.gz";
+        params.filename = "llama-" + version + "-bin-macos-arm64.tar.gz";
 #else
         throw std::runtime_error("Metal llamacpp only supported on macOS");
 #endif
-
     } else if (backend == "cpu") {
-        // CPU-only builds from ggml-org/llama.cpp
-        repo = "ggml-org/llama.cpp";
-
+        params.repo = "ggml-org/llama.cpp";
 #ifdef _WIN32
-        filename = "llama-" + expected_version + "-bin-win-cpu-x64.zip";
+        params.filename = "llama-" + version + "-bin-win-cpu-x64.zip";
 #elif defined(__linux__)
-        filename = "llama-" + expected_version + "-bin-ubuntu-x64.tar.gz";
+        params.filename = "llama-" + version + "-bin-ubuntu-x64.tar.gz";
 #else
         throw std::runtime_error("CPU llamacpp not supported on this platform");
 #endif
-
     } else {  // vulkan
-        // Vulkan support from ggml-org/llama.cpp
-        repo = "ggml-org/llama.cpp";
+        params.repo = "ggml-org/llama.cpp";
 #ifdef _WIN32
-        filename = "llama-" + expected_version + "-bin-win-vulkan-x64.zip";
+        params.filename = "llama-" + version + "-bin-win-vulkan-x64.zip";
 #elif defined(__linux__)
-        filename = "llama-" + expected_version + "-bin-ubuntu-vulkan-x64.tar.gz";
+        params.filename = "llama-" + version + "-bin-ubuntu-vulkan-x64.tar.gz";
 #else
         throw std::runtime_error("Vulkan llamacpp only supported on Windows and Linux");
 #endif
     }
 
-    BackendUtils::install_from_github(SPEC, expected_version, repo, filename, backend);
+    return params;
+}
+
+LlamaCppServer::LlamaCppServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
+    : WrappedServer("llama-server", log_level, model_manager, backend_manager) {
+}
+
+LlamaCppServer::~LlamaCppServer() {
+    unload();
 }
 
 void LlamaCppServer::load(const std::string& model_name,
@@ -246,7 +234,7 @@ void LlamaCppServer::load(const std::string& model_name,
     bool use_gpu = (llamacpp_backend != "cpu");
 
     // Install llama-server if needed (use per-model backend)
-    install(llamacpp_backend);
+    backend_manager_->install_backend(SPEC.recipe, llamacpp_backend);
 
     // Use pre-resolved GGUF path
     std::string gguf_path = model_info.resolved_path();

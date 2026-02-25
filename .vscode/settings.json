@@ -1,5 +1,5 @@
 {
-    "cmake.sourceDirectory": "/workspaces/lemonade/src/cpp",
+    "cmake.sourceDirectory": "C:/work/lsdk/lemonade",
     "files.watcherExclude": {
         "**/dist-app/**": true,
         "**/build/**": true,

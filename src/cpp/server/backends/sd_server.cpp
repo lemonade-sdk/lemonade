@@ -1,5 +1,6 @@
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backend_manager.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/path_utils.h"
@@ -18,8 +19,53 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-SDServer::SDServer(const std::string& log_level, ModelManager* model_manager)
-    : WrappedServer("sd-server", log_level, model_manager) {
+InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version) {
+    InstallParams params;
+    params.repo = "superm1/stable-diffusion.cpp";
+
+    // Transform version for URL (master-NNN-HASH -> master-HASH)
+    std::string short_version = version;
+    size_t first_dash = version.find('-');
+    if (first_dash != std::string::npos) {
+        size_t second_dash = version.find('-', first_dash + 1);
+        if (second_dash != std::string::npos) {
+            short_version = version.substr(0, first_dash) + "-" +
+                           version.substr(second_dash + 1);
+        }
+    }
+
+    if (backend == "rocm") {
+        std::string target_arch = SystemInfo::get_rocm_arch();
+        if (target_arch.empty()) {
+            throw std::runtime_error(
+                SystemInfo::get_unsupported_backend_error("sd-cpp", "rocm")
+            );
+        }
+#ifdef _WIN32
+        params.filename = "sd-" + short_version + "-bin-win-rocm-x64.zip";
+#elif defined(__linux__)
+        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm.zip";
+#else
+        throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
+#endif
+    } else {
+        // CPU build (default)
+#ifdef _WIN32
+        params.filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
+#elif defined(__linux__)
+        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
+#elif defined(__APPLE__)
+        params.filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.2-arm64.zip";
+#else
+        throw std::runtime_error("Unsupported platform for stable-diffusion.cpp");
+#endif
+    }
+
+    return params;
+}
+
+SDServer::SDServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
+    : WrappedServer("sd-server", log_level, model_manager, backend_manager) {
     if (is_debug()) {
         std::cout << "[SDServer] Created with log_level=" << log_level << std::endl;
     }
@@ -27,56 +73,6 @@ SDServer::SDServer(const std::string& log_level, ModelManager* model_manager)
 
 SDServer::~SDServer() {
     unload();
-}
-
-void SDServer::install(const std::string& backend) {
-    std::string repo = "superm1/stable-diffusion.cpp";
-    std::string filename;
-    std::string expected_version = BackendUtils::get_backend_version(SPEC.recipe, backend);
-
-    // Transform version for URL (master-NNN-HASH -> master-HASH)
-    std::string short_version = expected_version;
-    size_t first_dash = expected_version.find('-');
-    if (first_dash != std::string::npos) {
-        size_t second_dash = expected_version.find('-', first_dash + 1);
-        if (second_dash != std::string::npos) {
-            short_version = expected_version.substr(0, first_dash) + "-" +
-                           expected_version.substr(second_dash + 1);
-        }
-    }
-
-    // ROCm backend selection for AMD GPU support
-    if (backend == "rocm") {
-        // Validate ROCm architecture support
-        std::string target_arch = lemon::SystemInfo::get_rocm_arch();
-        if (target_arch.empty()) {
-            throw std::runtime_error(
-                lemon::SystemInfo::get_unsupported_backend_error("sd-cpp", "rocm")
-            );
-        }
-
-#ifdef _WIN32
-        filename = "sd-" + short_version + "-bin-win-rocm-x64.zip";
-#elif defined(__linux__)
-        filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm.zip";
-#else
-        throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
-#endif
-        std::cout << "[SDServer] Using ROCm GPU backend" << std::endl;
-    } else {
-        // CPU build (default)
-#ifdef _WIN32
-        filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
-#elif defined(__linux__)
-        filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
-#elif defined(__APPLE__)
-        filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.2-arm64.zip";
-#else
-        throw std::runtime_error("Unsupported platform for stable-diffusion.cpp");
-#endif
-    }
-
-    BackendUtils::install_from_github(SPEC, expected_version, repo, filename, backend);
 }
 
 void SDServer::load(const std::string& model_name,
@@ -89,7 +85,7 @@ void SDServer::load(const std::string& model_name,
     std::string backend = options.get_option("sd-cpp_backend");
 
     // Install sd-server if needed
-    install(backend);
+    backend_manager_->install_backend(SPEC.recipe, backend);
 
     // Get model path
     std::string model_path = model_info.resolved_path("main");

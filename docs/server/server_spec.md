@@ -49,6 +49,8 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 
 The additional endpoints are:
 
+- POST `/api/v1/install` - Install or update a backend
+- POST `/api/v1/uninstall` - Remove a backend
 - POST `/api/v1/pull` - Install a model
 - POST `/api/v1/delete` - Delete a model
 - POST `/api/v1/load` - Load a model
@@ -1514,64 +1516,77 @@ curl "http://localhost:8000/api/v1/system-info"
   },
   "recipes": {
     "llamacpp": {
+      "default_backend": "vulkan",
       "backends": {
         "vulkan": {
           "devices": ["cpu", "amd_igpu"],
-          "supported": true,
-          "available": true,
+          "state": "installed",
+          "message": "",
+          "action": "",
           "version": "b7869"
         },
         "rocm": {
           "devices": ["amd_igpu"],
-          "supported": true,
-          "available": false
+          "state": "installable",
+          "message": "Backend is supported but not installed.",
+          "action": "lemonade-server recipes --install llamacpp:rocm"
         },
         "metal": {
           "devices": [],
-          "supported": false,
-          "error": "Requires macOS"
+          "state": "unsupported",
+          "message": "Requires macOS",
+          "action": ""
         },
         "cpu": {
           "devices": ["cpu"],
-          "supported": true,
-          "available": false
+          "state": "update_required",
+          "message": "Backend update is required before use.",
+          "action": "lemonade-server recipes --install llamacpp:cpu"
         }
       }
     },
     "whispercpp": {
+      "default_backend": "default",
       "backends": {
         "default": {
           "devices": ["cpu"],
-          "supported": true,
-          "available": false
+          "state": "installable",
+          "message": "Backend is supported but not installed.",
+          "action": "lemonade-server recipes --install whispercpp:default"
         }
       }
     },
     "sd-cpp": {
+      "default_backend": "default",
       "backends": {
         "default": {
           "devices": ["cpu"],
-          "supported": true,
-          "available": false
+          "state": "installable",
+          "message": "Backend is supported but not installed.",
+          "action": "lemonade-server recipes --install sd-cpp:default"
         }
       }
     },
     "flm": {
+      "default_backend": "default",
       "backends": {
         "default": {
           "devices": ["amd_npu"],
-          "supported": true,
-          "available": true,
+          "state": "installed",
+          "message": "",
+          "action": "",
           "version": "1.2.0"
         }
       }
     },
     "ryzenai-llm": {
+      "default_backend": "default",
       "backends": {
         "default": {
           "devices": ["amd_npu"],
-          "supported": true,
-          "available": true
+          "state": "installed",
+          "message": "",
+          "action": ""
         }
       }
     }
@@ -1599,13 +1614,84 @@ curl "http://localhost:8000/api/v1/system-info"
 
 - `recipes` - Software recipes and their backend support status
   - Each recipe (e.g., `llamacpp`, `whispercpp`, `flm`) contains:
+    - `default_backend` - Preferred backend selected by server policy for this system (present when at least one backend is not `unsupported`)
     - `backends` - Available backends for this recipe
       - Each backend contains:
         - `devices` - List of devices **on this system** that support this backend (empty if not supported)
-        - `supported` - Whether installation is possible on this system
-        - `available` - Whether the backend is currently installed
-        - `version` - Installed version (if available)
-        - `error` - Reason why not supported (if applicable)
+        - `state` - Backend lifecycle state: `unsupported`, `installable`, `update_required`, or `installed`
+        - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
+        - `action` - Actionable user instruction string. For install/update cases this is typically an exact CLI command; for other states it may be empty or another actionable value (for example, a URL).
+        - `version` - Installed or configured backend version (when available)
+
+### `POST /api/v1/install` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Install or update a backend for a specific recipe/backend pair. If the backend is already installed but outdated, this endpoint updates it to the configured version.
+
+#### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `recipe` | Yes | Recipe name (for example, `llamacpp`, `flm`, `whispercpp`, `sd-cpp`, `ryzenai-llm`) |
+| `backend` | Yes | Backend name within the recipe (for example, `vulkan`, `rocm`, `cpu`, `default`) |
+| `stream` | No | If `true`, returns Server-Sent Events with progress. Defaults to `false`. |
+
+#### Example request
+
+```bash
+curl -X POST http://localhost:8000/api/v1/install \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipe": "llamacpp",
+    "backend": "vulkan",
+    "stream": false
+  }'
+```
+
+#### Response format
+
+```json
+{
+  "status":"success",
+  "recipe":"llamacpp",
+  "backend":"vulkan"
+}
+```
+
+In case of an error, returns an `error` field with details.
+
+### `POST /api/v1/uninstall` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Uninstall a backend for a specific recipe/backend pair. If loaded models are using that backend, they are unloaded first.
+
+#### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `recipe` | Yes | Recipe name |
+| `backend` | Yes | Backend name |
+
+#### Example request
+
+```bash
+curl -X POST http://localhost:8000/api/v1/uninstall \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipe": "llamacpp",
+    "backend": "vulkan"
+  }'
+```
+
+#### Response format
+
+```json
+{
+  "status":"success",
+  "recipe":"llamacpp",
+  "backend":"vulkan"
+}
+```
+
+In case of an error, returns an `error` field with details.
 
 # Debugging
 

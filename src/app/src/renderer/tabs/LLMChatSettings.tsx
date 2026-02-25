@@ -18,9 +18,9 @@ interface  LLMChatSettingsProps {
 
 const LLMChatSettings: React.FC<LLMChatSettingsProps> = ({settings, numericSettingsConfig, onBooleanChangeFunc, onNumericChangeFunc, onResetFunc}) => {
   return (
-    <div>
-      { numericSettingsConfig.map((config: NumericSettingConfig) => {
-          return <NumericSetting
+    <div className="settings-section-container">
+      {numericSettingsConfig.map((config: NumericSettingConfig) => (
+        <NumericSetting
           settings={settings}
           key={config.key}
           numKey={config.key}
@@ -28,10 +28,8 @@ const LLMChatSettings: React.FC<LLMChatSettingsProps> = ({settings, numericSetti
           description={config.description}
           onChangeFunc={onNumericChangeFunc}
           onResetFunc={onResetFunc}
-          />
-        })
-      }
-      <div className="settings-section-container">
+        />
+      ))}
         <div className={`settings-section ${settings.enableThinking.useDefault ? 'settings-section-default' : ''}`}>
           <div className="settings-label-row">
             <span className="settings-label-text">Enable Thinking</span>
@@ -72,7 +70,6 @@ const LLMChatSettings: React.FC<LLMChatSettingsProps> = ({settings, numericSetti
             </div>
           </label>
         </div>
-      </div>
     </div>
   );
 }

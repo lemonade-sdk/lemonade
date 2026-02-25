@@ -43,6 +43,10 @@ struct TrayConfig {
     bool is_vision = false;
     bool is_embedding = false;
     bool is_reranking = false;
+
+    // Backend management options (for recipes command)
+    std::string install_backend = "";    // "recipe:backend" format
+    std::string uninstall_backend = "";  // "recipe:backend" format
 };
 
 class CLIParser {

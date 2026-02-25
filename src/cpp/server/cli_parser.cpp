@@ -130,7 +130,11 @@ CLIParser::CLIParser()
     CLI::App* stop = app_.add_subcommand("stop", "Stop the server");
 
     // Recipes
-    CLI::App* recipes = app_.add_subcommand("recipes", "List execution backends");
+    CLI::App* recipes = app_.add_subcommand("recipes", "List and manage execution backends");
+    recipes->add_option("--install", tray_config_.install_backend,
+                        "Install or update a backend (format: recipe:backend)");
+    recipes->add_option("--uninstall", tray_config_.uninstall_backend,
+                        "Uninstall a backend (format: recipe:backend)");
 
     // Tray
     CLI::App* tray = app_.add_subcommand("tray", "Launch tray interface for running server");

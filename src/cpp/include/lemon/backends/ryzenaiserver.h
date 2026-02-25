@@ -2,24 +2,39 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/server_capabilities.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/error_types.h"
 #include <string>
 
 namespace lemon {
 
+using backends::BackendSpec;
+using backends::InstallParams;
+
 class RyzenAIServer : public WrappedServer {
 public:
-    RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager = nullptr);
+#ifndef LEMONADE_TRAY
+    static InstallParams get_install_params(const std::string& backend, const std::string& version);
+#endif
+
+    inline static const BackendSpec SPEC = BackendSpec(
+        "ryzenai-server",
+#ifdef _WIN32
+        "ryzenai-server.exe"
+#else
+        "ryzenai-server"
+#endif
+#ifndef LEMONADE_TRAY
+        , get_install_params
+#endif
+    );
+
+    RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager,
+                  BackendManager* backend_manager);
     ~RyzenAIServer() override;
 
     // Installation and availability
     static bool is_available();
-    static std::string get_ryzenai_server_path();
-    static std::string find_external_ryzenai_server();
-    static std::string find_executable_in_install_dir(const std::string& install_dir);
-
-    // WrappedServer interface
-    void install(const std::string& backend = "") override;
 
     void load(const std::string& model_name,
              const ModelInfo& model_info,
@@ -40,9 +55,6 @@ private:
     std::string model_name_;
     std::string model_path_;
     bool is_loaded_;
-
-    // Helper to download and install ryzenai-server
-    static void download_and_install(const std::string& version);
 };
 
 } // namespace lemon

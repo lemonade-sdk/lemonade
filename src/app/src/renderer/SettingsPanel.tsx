@@ -1,4 +1,5 @@
-import React, { useState, useEffect, ReactElement } from 'react';
+import React, { ReactElement, useEffect, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
 import {
   AppSettings,
   BASE_SETTING_VALUES,
@@ -11,11 +12,10 @@ import {
 import ConnectionSettings from './tabs/ConnectionSettings';
 import TTSSettings from './tabs/TTSSettings';
 import LLMChatSettings from './tabs/LLMChatSettings';
-import Tabs from './Tabs';
 
-interface SettingsModalProps {
-  isOpen: boolean;
-  onClose: () => void;
+interface SettingsPanelProps {
+  isVisible: boolean;
+  searchQuery?: string;
 }
 
 const numericSettingsConfig: Array<{
@@ -45,22 +45,15 @@ const numericSettingsConfig: Array<{
   },
 ];
 
-const tabs = [
-  { id: 'connection_settings', label: 'Connection' },
-  { id: 'llm_chat_settings', label: 'LLM Chat' },
-  { id: 'tts_settings', label: 'TTS' }
-];
-
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = '' }) => {
   const [settings, setSettings] = useState<AppSettings>(createDefaultSettings());
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
+    new Set(['connection_settings', 'llm_chat_settings', 'tts_settings'])
+  );
 
   useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
     let isMounted = true;
 
     const fetchSettings = async () => {
@@ -93,17 +86,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     };
 
     fetchSettings();
-
     return () => {
       isMounted = false;
     };
-  }, [isOpen]);
-
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
+  }, []);
 
   const handleNumericChange = (key: NumericSettingKey, rawValue: number) => {
     setSettings((prev) => ({
@@ -126,7 +112,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   };
 
   const handleTTSSettingChange = (key: string, value: string | boolean) => {
-    if(value !== '') {
+    if (value !== '') {
       setSettings((prev) => ({
         ...prev,
         tts: {
@@ -215,7 +201,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
   const handleSave = async () => {
     if (!window.api?.saveSettings) {
-      onClose();
       return;
     }
 
@@ -223,7 +208,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     try {
       const saved = await window.api.saveSettings(settings);
       setSettings(mergeWithDefaultSettings(saved));
-      onClose();
     } catch (error) {
       console.error('Failed to save settings:', error);
       alert('Failed to save settings. Please try again.');
@@ -232,8 +216,62 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }
   };
 
+  const toggleCategory = (id: string) => {
+    setExpandedCategories((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const settingCategories: Array<{
+    id: string;
+    label: string;
+    keywords: string[];
+    settingCount: number;
+  }> = [
+    {
+      id: 'connection_settings',
+      label: 'Connection',
+      keywords: [
+        'connection', 'base url', 'api key', 'server', 'endpoint', 'authentication', 'request'
+      ],
+      settingCount: 2,
+    },
+    {
+      id: 'llm_chat_settings',
+      label: 'LLM',
+      keywords: [
+        'llm', 'chat', 'temperature', 'top k', 'top p', 'repeat penalty', 'thinking', 'collapse thinking'
+      ],
+      settingCount: 6,
+    },
+    {
+      id: 'tts_settings',
+      label: 'Speech',
+      keywords: [
+        'speech', 'tts', 'text to speech', 'voice', 'model', 'user voice', 'assistant voice', 'enable tts'
+      ],
+      settingCount: 5,
+    },
+  ];
+  const visibleCategories = settingCategories.filter((category) => {
+    if (!normalizedSearchQuery) {
+      return true;
+    }
+    if (category.label.toLowerCase().includes(normalizedSearchQuery)) {
+      return true;
+    }
+    return category.keywords.some((keyword) => keyword.includes(normalizedSearchQuery));
+  });
+
   const getSettingContext = (id: string): ReactElement => {
-    switch(id) {
+    switch (id) {
       case 'connection_settings':
         return <ConnectionSettings
           settings={settings}
@@ -250,61 +288,68 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         />;
       case 'tts_settings':
         return <TTSSettings
-        settings={settings}
-        onValueChangeFunc={handleTTSSettingChange}
-        onResetFunc={handleResetField}
+          settings={settings}
+          onValueChangeFunc={handleTTSSettingChange}
+          onResetFunc={handleResetField}
         />;
       default:
         return <div></div>;
     }
-  }
+  };
 
-  if (!isOpen) return null;
+  if (!isVisible) return null;
 
   return (
-    <div className="settings-overlay" onClick={handleOverlayClick}>
-      <div className="settings-modal">
-        <div className="settings-header">
-          <h2>Settings</h2>
-          <button className="settings-close-button" onClick={onClose} title="Close">
-            <svg width="14" height="14" viewBox="0 0 14 14">
-              <path d="M 1,1 L 13,13 M 13,1 L 1,13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-          </button>
-        </div>
-
-        {isLoading ? (
-          <div className="settings-loading">Loading settings…</div>
-        ) : (
-          <div className="settings-content">
-            <div className="settings-tabs-wrapper">
-              <Tabs>
-                <Tabs.Labels items={tabs.map(({ id, label }) => ({ id, label }))} />
-                <Tabs.Contents items={tabs.map(({ id }) => ({id, content: getSettingContext(id)}))} />
-              </Tabs>
-            </div>
+    <div className="settings-panel">
+      {isLoading ? (
+        <div className="settings-loading">Loading settings...</div>
+      ) : (
+        <div className="settings-content">
+          <div className="settings-categories">
+            {visibleCategories.map((category) => {
+              const isExpanded = normalizedSearchQuery ? true : expandedCategories.has(category.id);
+              return (
+                <div key={category.id} className="model-category">
+                  <div className="model-category-header" onClick={() => toggleCategory(category.id)}>
+                    <span className={`category-chevron ${isExpanded ? 'expanded' : ''}`}>
+                      <ChevronRight size={11} strokeWidth={2.1} />
+                    </span>
+                    <span className="category-label">{category.label}</span>
+                    <span className="category-count">({category.settingCount})</span>
+                  </div>
+                  {isExpanded && (
+                    <div className="settings-category-content">
+                      {getSettingContext(category.id)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {!visibleCategories.length && (
+              <div className="left-panel-empty-state">No settings match your search.</div>
+            )}
           </div>
-        )}
-
-        <div className="settings-footer">
-          <button
-            className="settings-reset-button"
-            onClick={handleReset}
-            disabled={isSaving || isLoading}
-          >
-            Reset to Defaults
-          </button>
-          <button
-            className="settings-save-button"
-            onClick={handleSave}
-            disabled={isSaving || isLoading}
-          >
-            {isSaving ? 'Saving…' : 'Save'}
-          </button>
         </div>
+      )}
+
+      <div className="settings-footer">
+        <button
+          className="settings-reset-button"
+          onClick={handleReset}
+          disabled={isSaving || isLoading}
+        >
+          Reset to Defaults
+        </button>
+        <button
+          className="settings-save-button"
+          onClick={handleSave}
+          disabled={isSaving || isLoading}
+        >
+          {isSaving ? 'Saving...' : 'Save'}
+        </button>
       </div>
     </div>
   );
 };
 
-export default SettingsModal;
+export default SettingsPanel;
