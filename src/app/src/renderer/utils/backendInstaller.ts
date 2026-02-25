@@ -481,7 +481,7 @@ export async function ensureModelReady(
         const healthData = await healthResponse.json();
         const allLoaded: any[] = healthData.all_models_loaded || [];
         const isLoaded = allLoaded.some(
-          (m: any) => m.model_id === modelName || m.model === modelName
+          (m: any) => m.model_name === modelName
         );
         if (isLoaded) {
           return; // Model is already loaded — fast path
