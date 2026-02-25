@@ -1627,12 +1627,7 @@ footer {
 }
 
 .model-catalog-item .model-info-left {
-    display: grid;
-    grid-template-columns: 12px minmax(0, 1fr) auto auto;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-    min-width: 0;
+    width: auto;
 }
 
 .model-labels {
