@@ -4,6 +4,21 @@ import { fetchSystemInfoData, Recipes } from './systemData';
 import { ModelsData } from './modelData';
 import { toFrontendOptionName, OPTION_DEFINITIONS } from '../recipes/recipeOptionsConfig';
 
+function extractServerErrorMessage(errorText: string, fallback: string): string {
+  if (!errorText) return fallback;
+
+  try {
+    const parsed = JSON.parse(errorText);
+    if (typeof parsed?.error === 'string' && parsed.error.trim()) {
+      return parsed.error;
+    }
+  } catch {
+    // Not JSON; return raw text below.
+  }
+
+  return errorText;
+}
+
 /**
  * Registration data for custom user models sent with /pull requests.
  */
@@ -236,7 +251,7 @@ export async function uninstallBackend(recipe: string, backend: string): Promise
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(errorText || response.statusText);
+    throw new Error(extractServerErrorMessage(errorText, response.statusText));
   }
 
   window.dispatchEvent(new CustomEvent('backendsUpdated'));

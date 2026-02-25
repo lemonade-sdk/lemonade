@@ -94,7 +94,7 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
     std::cout << "[BackendManager] Uninstalling " << recipe << ":" << backend << std::endl;
 
     if (recipe == "flm") {
-        throw std::runtime_error("FLM cannot be uninstalled via Backend Manager (system installation)");
+        throw std::runtime_error("Uninstall FastFlowLM using their Windows uninstaller.");
     }
 
     auto* spec = backends::try_get_spec_for_recipe(recipe);
