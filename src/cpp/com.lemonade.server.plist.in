@@ -18,6 +18,9 @@
     <key>KeepAlive</key>
     <false/>
 
+    <key>AbandonProcessGroup</key>
+    <true/>
+
     <key>StandardOutPath</key>
     <string>/var/log/lemonade/lemonade-server.out.log</string>
     <key>StandardErrorPath</key>
