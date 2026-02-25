@@ -12,6 +12,12 @@ fi
 # Add lemonade user to render group for GPU access
 usermod -a -G render lemonade
 
+# Add lemonade user to systemd-journal group for journal access
+# This allows the server to read logs from journald for the web API
+if getent group systemd-journal > /dev/null; then
+    usermod -a -G systemd-journal lemonade
+fi
+
 # Set up the service
 if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-deconfigure" ] || [ "$1" = "abort-remove" ] ; then
         if deb-systemd-helper --quiet was-enabled 'lemonade-server.service'; then

@@ -2063,10 +2063,18 @@ bool TrayApp::start_server() {
             log_file_ = "lemonade-server.log";
         }
         #else
-        // Unix: /tmp/lemonade-server.log or ~/.lemonade/server.log
-        log_file_ = "/tmp/lemonade-server.log";
+        // Use systemd journal if JOURNAL_STREAM is set, unless explicitly disabled
+        // LEMONADE_DISABLE_SYSTEMD_JOURNAL can be set in CI to force file logging
+        const char* journal_stream = std::getenv("JOURNAL_STREAM");
+        const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
+        if (journal_stream && !disable_journal) {
+            log_file_ = "-";  // Special value: don't redirect stdout/stderr
+            DEBUG_LOG(this, "Detected systemd environment - logging will go to journal");
+        } else {
+            log_file_ = "/tmp/lemonade-server.log";
+            DEBUG_LOG(this, "Using default log file: " << log_file_);
+        }
         #endif
-        DEBUG_LOG(this, "Using default log file: " << log_file_);
     }
 
     bool success = server_manager_->start_server(
