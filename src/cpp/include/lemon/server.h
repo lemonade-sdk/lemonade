@@ -71,6 +71,9 @@ private:
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_logs_stream(const httplib::Request& req, httplib::Response& res);
+#ifdef HAVE_SYSTEMD
+    void handle_logs_stream_journald(const httplib::Request& req, httplib::Response& res);
+#endif
 
     // Helper function for local model resolution and registration
     void resolve_and_register_local_model(
