@@ -828,10 +828,14 @@ json SystemInfo::build_recipes_info(const json& devices) {
         // using BackendManager as the single source of truth for repo/version mappings.
 
         // Add to the appropriate recipe/backend structure
-        if (recipes.contains(def.recipe)) {
-            recipes[def.recipe]["backends"][def.backend] = backend;
-        } else {
-            recipes[def.recipe] = {{"backends", {{def.backend, backend}}}};
+        if (!recipes.contains(def.recipe)) {
+            recipes[def.recipe] = {{"backends", json::object()}};
+        }
+        recipes[def.recipe]["backends"][def.backend] = backend;
+
+        // First supported backend encountered in RECIPE_DEFS order is the default.
+        if (supported && !recipes[def.recipe].contains("default_backend")) {
+            recipes[def.recipe]["default_backend"] = def.backend;
         }
     }
 

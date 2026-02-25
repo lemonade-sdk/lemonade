@@ -198,24 +198,29 @@ export async function ensureBackendForRecipe(
   if (!recipes || !recipes[recipe]) return;
 
   const recipeInfo = recipes[recipe];
-  const backends = Object.entries(recipeInfo.backends);
-  if (backends.length === 0) return;
+  const defaultBackend = recipeInfo.default_backend;
+  if (!defaultBackend) {
+    throw new Error(`No supported backend available for recipe ${recipe}.`);
+  }
 
-  // Use the server-provided default backend ordering.
-  const [backendName, backendInfo] = backends[0];
+  const backendInfo = recipeInfo.backends[defaultBackend];
+  if (!backendInfo) {
+    throw new Error(`Default backend '${defaultBackend}' not found for recipe ${recipe}.`);
+  }
+
   if (backendInfo.state === 'installed') return;
 
   if (backendInfo.state === 'installable' || backendInfo.state === 'update_required') {
-    await installBackend(recipe, backendName, true);
+    await installBackend(recipe, defaultBackend, true);
     return;
   }
 
   if (backendInfo.state === 'unsupported') {
     const reason = backendInfo.message || 'Backend is not supported on this system.';
-    throw new Error(`${recipe}:${backendName} is unsupported. ${reason}`);
+    throw new Error(`${recipe}:${defaultBackend} is unsupported. ${reason}`);
   }
 
-  throw new Error(`Unsupported backend state for ${recipe}:${backendName}: ${backendInfo.state}`);
+  throw new Error(`Unsupported backend state for ${recipe}:${defaultBackend}: ${backendInfo.state}`);
 }
 
 /**

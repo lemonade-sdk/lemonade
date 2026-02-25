@@ -1516,6 +1516,7 @@ curl "http://localhost:8000/api/v1/system-info"
   },
   "recipes": {
     "llamacpp": {
+      "default_backend": "vulkan",
       "backends": {
         "vulkan": {
           "devices": ["cpu", "amd_igpu"],
@@ -1545,6 +1546,7 @@ curl "http://localhost:8000/api/v1/system-info"
       }
     },
     "whispercpp": {
+      "default_backend": "default",
       "backends": {
         "default": {
           "devices": ["cpu"],
@@ -1555,6 +1557,7 @@ curl "http://localhost:8000/api/v1/system-info"
       }
     },
     "sd-cpp": {
+      "default_backend": "default",
       "backends": {
         "default": {
           "devices": ["cpu"],
@@ -1565,6 +1568,7 @@ curl "http://localhost:8000/api/v1/system-info"
       }
     },
     "flm": {
+      "default_backend": "default",
       "backends": {
         "default": {
           "devices": ["amd_npu"],
@@ -1576,6 +1580,7 @@ curl "http://localhost:8000/api/v1/system-info"
       }
     },
     "ryzenai-llm": {
+      "default_backend": "default",
       "backends": {
         "default": {
           "devices": ["amd_npu"],
@@ -1609,6 +1614,7 @@ curl "http://localhost:8000/api/v1/system-info"
 
 - `recipes` - Software recipes and their backend support status
   - Each recipe (e.g., `llamacpp`, `whispercpp`, `flm`) contains:
+    - `default_backend` - Preferred backend selected by server policy for this system (present when at least one backend is not `unsupported`)
     - `backends` - Available backends for this recipe
       - Each backend contains:
         - `devices` - List of devices **on this system** that support this backend (empty if not supported)

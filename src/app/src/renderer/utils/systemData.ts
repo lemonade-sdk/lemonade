@@ -40,6 +40,7 @@ export interface Recipes {
 }
 
 export interface Recipe {
+  default_backend?: string;
   backends: {
     [backendName: string]: BackendInfo;
   };

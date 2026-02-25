@@ -698,6 +698,21 @@ class EndpointTests(ServerTestBase):
             self.assertIsInstance(
                 backends, dict, f"Recipe {recipe_name} backends should be dict"
             )
+            has_supported_backend = any(
+                backend_data.get("state") != "unsupported"
+                for backend_data in backends.values()
+            )
+            if has_supported_backend:
+                self.assertIn(
+                    "default_backend",
+                    recipe_data,
+                    f"Recipe {recipe_name} missing 'default_backend'",
+                )
+                self.assertIn(
+                    recipe_data["default_backend"],
+                    backends,
+                    f"Recipe {recipe_name} default_backend must exist in backends map",
+                )
 
             # Each backend should have required fields
             for backend_name, backend_data in backends.items():
