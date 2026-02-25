@@ -257,16 +257,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     return `${size.toFixed(2)} GB`;
   };
 
-  const getRecipeLabel = (recipe: string): string => {
-    const labels: { [key: string]: string } = {
-      'ryzenai-llm': 'RyzenAI',
-      'llamacpp': 'GGUF',
-      'flm': 'FLM',
-      'whispercpp': 'Whisper.cpp'
-    };
-    return labels[recipe] || recipe.toUpperCase();
-  };
-
   const getCategoryLabel = (category: string): string => {
     const labels: { [key: string]: string } = {
       'reasoning': 'Reasoning',
@@ -305,10 +295,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   };
 
   const loadedModelEntries = Array.from(loadedModels)
-    .map(modelName => ({
-      modelName,
-      recipe: modelsData[modelName]?.recipe || 'other',
-    }))
+    .map(modelName => ({ modelName }))
     .sort((a, b) => a.modelName.localeCompare(b.modelName));
 
   const resetNewModelForm = () => {
@@ -837,14 +824,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
               </div>
               {loadedModelEntries.length === 0 && <div className="loaded-model-empty">No models loaded</div>}
               <div className="loaded-model-list">
-                {loadedModelEntries.map(({ modelName, recipe }) => (
+                {loadedModelEntries.map(({ modelName }) => (
                   <div key={modelName} className="loaded-model-info">
                     <div className="loaded-model-details">
                       <span className="loaded-model-indicator">●</span>
-                      <div className="loaded-model-name-stack">
-                        <span className="loaded-model-name">{modelName}</span>
-                        <span className="loaded-model-meta">{getRecipeLabel(recipe)}</span>
-                      </div>
+                      <span className="loaded-model-name">{modelName}</span>
                     </div>
                     <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

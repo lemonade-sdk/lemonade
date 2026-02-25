@@ -1218,13 +1218,6 @@ footer {
     padding-left: 8px;
 }
 
-.loaded-model-name-stack {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    gap: 1px;
-}
-
 .loaded-model-indicator {
     color: #4ade80;
     font-size: 0.8rem;
@@ -1249,13 +1242,6 @@ footer {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-.loaded-model-meta {
-    font-size: 0.57rem;
-    color: #6d6d6d;
-    text-transform: uppercase;
-    letter-spacing: 0.35px;
 }
 
 .active-model-eject-button svg {
