@@ -1306,5 +1306,23 @@
             "vision"
         ],
         "size": 3.74
+    },
+    "Translategemma-4B-Instruct-FLM": {
+        "checkpoint": "translategemma:4b",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": [
+            "vision"
+        ],
+        "size": 4.44
+    },
+    "Medgemma1.5-4B-Instruct-FLM": {
+        "checkpoint": "medgemma1.5:4b",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": [
+            "vision"
+        ],
+        "size": 4.44
     }
 }
