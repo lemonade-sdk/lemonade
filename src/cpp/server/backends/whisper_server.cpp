@@ -56,7 +56,7 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
     InstallParams params;
 
     if (backend == "npu") {
-        params.repo = "lemonade-sdk/whisper.cpp-npu";
+        params.repo = "lemonade-sdk/whisper.cpp-builds";
 #ifdef _WIN32
         params.filename = "whisper-" + version + "-windows-npu-x64.zip";
 #else
@@ -67,7 +67,7 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
 #ifdef _WIN32
         params.filename = "whisper-bin-x64.zip";
 #elif defined(__linux__)
-        params.filename = "whisper-bin-x64.zip";
+        params.filename = "lemonade-sdk/whisper.cpp-builds";
 #elif defined(__APPLE__)
         params.filename = "whisper-bin-arm64.zip";
 #else
