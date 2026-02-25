@@ -332,11 +332,12 @@ class PersistentServerCLITests(CLITestBase):
                 f"Output should contain '{recipe}' recipe: {output}",
             )
 
-        # Should contain status indicators (installed, supported, unsupported)
+        # Should contain status indicators from backend state model
         output_lower = output.lower()
         has_status = (
             "installed" in output_lower
-            or "supported" in output_lower
+            or "installable" in output_lower
+            or "update_required" in output_lower
             or "unsupported" in output_lower
         )
         self.assertTrue(
@@ -398,6 +399,71 @@ class PersistentServerCLITests(CLITestBase):
             "error" in output,
             f"Pull should fail: {result.stdout}",
         )
+
+    def _get_test_backend(self):
+        """Get a lightweight test backend based on platform."""
+        import sys
+
+        if sys.platform == "darwin":
+            return "llamacpp", "metal"
+        else:
+            return "llamacpp", "cpu"
+
+    def test_009_recipes_install(self):
+        """Test recipes --install installs a backend."""
+        recipe, backend = self._get_test_backend()
+        target = f"{recipe}:{backend}"
+
+        # Uninstall first (cleanup)
+        run_cli_command(["recipes", "--uninstall", target], timeout=120)
+
+        # Install
+        result = self.assertCommandSucceeds(
+            ["recipes", "--install", target], timeout=300
+        )
+        output = result.stdout.lower()
+        self.assertTrue(
+            "install" in output or "success" in output,
+            f"Expected install confirmation in output: {result.stdout}",
+        )
+
+        # Verify via recipes list
+        result = self.assertCommandSucceeds(["recipes"])
+        self.assertIn(
+            "installed",
+            result.stdout.lower(),
+            f"Expected 'installed' status after install: {result.stdout}",
+        )
+        print(f"[OK] recipes --install {target} succeeded")
+
+    def test_010_recipes_uninstall(self):
+        """Test recipes --uninstall removes a backend."""
+        recipe, backend = self._get_test_backend()
+        target = f"{recipe}:{backend}"
+
+        # Ensure installed first
+        run_cli_command(["recipes", "--install", target], timeout=300)
+
+        # Uninstall
+        result = self.assertCommandSucceeds(
+            ["recipes", "--uninstall", target], timeout=120
+        )
+        output = result.stdout.lower()
+        self.assertTrue(
+            "uninstall" in output or "success" in output,
+            f"Expected uninstall confirmation in output: {result.stdout}",
+        )
+        print(f"[OK] recipes --uninstall {target} succeeded")
+
+    def test_011_recipes_reinstall(self):
+        """Re-install after test to leave system in clean state."""
+        recipe, backend = self._get_test_backend()
+        target = f"{recipe}:{backend}"
+
+        result = self.assertCommandSucceeds(
+            ["recipes", "--install", target], timeout=300
+        )
+        print(f"[OK] Re-installed {target} for clean state")
 
 
 class EphemeralCLITests(CLITestBase):
@@ -615,6 +681,27 @@ class EphemeralCLITests(CLITestBase):
                 server_process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 server_process.kill()
+
+    def test_008_recipes_install_no_server(self):
+        """Test recipes --install works when no server is running (starts ephemeral server)."""
+        import sys
+
+        if sys.platform == "darwin":
+            target = "llamacpp:metal"
+        else:
+            target = "llamacpp:cpu"
+
+        self.assertFalse(is_server_running(), "Server should not be running")
+
+        result = self.assertCommandSucceeds(
+            ["recipes", "--install", target], timeout=300
+        )
+        output = result.stdout.lower()
+        self.assertTrue(
+            "install" in output or "success" in output,
+            f"Expected install result in output: {result.stdout}",
+        )
+        print(f"[OK] recipes --install {target} works without persistent server")
 
 
 def run_cli_tests():

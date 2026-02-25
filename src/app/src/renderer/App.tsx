@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import TitleBar from './TitleBar';
 import ChatWindow from './ChatWindow';
-import ModelManager from './ModelManager';
+import ModelManager, { LeftPanelView } from './ModelManager';
 import LogsWindow from './LogsWindow';
-import CenterPanel, { CenterPanelView } from './CenterPanel';
 import ResizableDivider from './ResizableDivider';
 import DownloadManager from './DownloadManager';
 import StatusBar from './StatusBar';
@@ -26,8 +25,7 @@ const AppContent: React.FC = () => {
   const { systemChecks, shouldShowSystemChecks, dismissSystemChecks } = useSystem();
   const [isChatVisible, setIsChatVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isChatVisible);
   const [isModelManagerVisible, setIsModelManagerVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isModelManagerVisible);
-  const [isCenterPanelVisible, setIsCenterPanelVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isCenterPanelVisible_v2);
-  const [centerPanelView, setCenterPanelView] = useState<CenterPanelView>('menu');
+  const [leftPanelView, setLeftPanelView] = useState<LeftPanelView>('models');
   const [isLogsVisible, setIsLogsVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isLogsVisible);
   const [isDownloadManagerVisible, setIsDownloadManagerVisible] = useState(false);
   const [isSystemChecksModalOpen, setIsSystemChecksModalOpen] = useState(false);
@@ -50,8 +48,10 @@ const AppContent: React.FC = () => {
           if (settings.layout) {
             setIsChatVisible(settings.layout.isChatVisible ?? DEFAULT_LAYOUT_SETTINGS.isChatVisible);
             setIsModelManagerVisible(settings.layout.isModelManagerVisible ?? DEFAULT_LAYOUT_SETTINGS.isModelManagerVisible);
-            // Use nullish coalescing to default to true for new v2 setting
-            setIsCenterPanelVisible(settings.layout.isCenterPanelVisible_v2 ?? DEFAULT_LAYOUT_SETTINGS.isCenterPanelVisible_v2);
+            const savedView = settings.layout.leftPanelView;
+            if (savedView === 'models' || savedView === 'marketplace' || savedView === 'backends' || savedView === 'settings') {
+              setLeftPanelView(savedView);
+            }
             setIsLogsVisible(settings.layout.isLogsVisible ?? DEFAULT_LAYOUT_SETTINGS.isLogsVisible);
             setModelManagerWidth(settings.layout.modelManagerWidth ?? DEFAULT_LAYOUT_SETTINGS.modelManagerWidth);
             setChatWidth(settings.layout.chatWidth ?? DEFAULT_LAYOUT_SETTINGS.chatWidth);
@@ -79,7 +79,7 @@ const AppContent: React.FC = () => {
           layout: {
             isChatVisible,
             isModelManagerVisible,
-            isCenterPanelVisible_v2: isCenterPanelVisible,
+            leftPanelView,
             isLogsVisible,
             modelManagerWidth,
             chatWidth,
@@ -90,7 +90,7 @@ const AppContent: React.FC = () => {
     } catch (error) {
       console.error('Failed to save layout settings:', error);
     }
-  }, [layoutLoaded, isChatVisible, isModelManagerVisible, isCenterPanelVisible, isLogsVisible, modelManagerWidth, chatWidth, logsHeight]);
+  }, [layoutLoaded, isChatVisible, isModelManagerVisible, leftPanelView, isLogsVisible, modelManagerWidth, chatWidth, logsHeight]);
 
   // Debounced save effect
   useEffect(() => {
@@ -132,7 +132,7 @@ const AppContent: React.FC = () => {
   }, [shouldShowSystemChecks, systemChecks]);
 
   useEffect(() => {
-    const hasMainColumn = isCenterPanelVisible || isLogsVisible;
+    const hasMainColumn = isLogsVisible;
     let computedMinWidth = 0;
 
     if (isModelManagerVisible) {
@@ -148,7 +148,7 @@ const AppContent: React.FC = () => {
     }
 
     let dividerCount = 0;
-    if (isModelManagerVisible && hasMainColumn) {
+    if (isModelManagerVisible && (hasMainColumn || isChatVisible)) {
       dividerCount += 1;
     }
     if (hasMainColumn && isChatVisible) {
@@ -161,7 +161,7 @@ const AppContent: React.FC = () => {
     if (window?.api?.updateMinWidth) {
       window.api.updateMinWidth(targetWidth);
     }
-  }, [isModelManagerVisible, isCenterPanelVisible, isLogsVisible, isChatVisible]);
+  }, [isModelManagerVisible, isLogsVisible, isChatVisible]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -186,13 +186,13 @@ const AppContent: React.FC = () => {
         const appWidth = appLayout?.clientWidth || window.innerWidth;
 
         const leftPanelWidth = isModelManagerVisible ? modelManagerWidth : 0;
-        const hasCenterColumn = isCenterPanelVisible || isLogsVisible;
+        const hasCenterColumn = isLogsVisible;
         const minCenterWidth = hasCenterColumn ? 300 : 0; // keep in sync with CSS min-width
 
         // Account for vertical dividers (each 4px wide)
         const dividerCount =
-          (isModelManagerVisible ? 1 : 0) +
-          (hasCenterColumn && isChatVisible ? 1 : 0);
+          ((isModelManagerVisible && (hasCenterColumn || isChatVisible)) ? 1 : 0) +
+          ((hasCenterColumn && isChatVisible) ? 1 : 0);
         const dividerSpace = dividerCount * 4;
 
         const maxWidthFromLayout = appWidth - leftPanelWidth - minCenterWidth - dividerSpace;
@@ -228,7 +228,6 @@ const AppContent: React.FC = () => {
     };
   }, [
     chatWidth,
-    isCenterPanelVisible,
     isChatVisible,
     isModelManagerVisible,
     isLogsVisible,
@@ -252,34 +251,6 @@ const AppContent: React.FC = () => {
     document.body.style.userSelect = 'none';
   };
 
-  const handleBottomDividerMouseDown = (e: React.MouseEvent) => {
-    isDraggingRef.current = 'bottom';
-    startYRef.current = e.clientY;
-    startHeightRef.current = logsHeight;
-    document.body.style.cursor = 'row-resize';
-    document.body.style.userSelect = 'none';
-  };
-
-  // Memoized callbacks for child components to prevent re-renders during resize
-  const handleCloseCenterPanel = useCallback(() => {
-    setIsCenterPanelVisible(false);
-  }, []);
-
-  const handleCenterPanelViewChange = useCallback((view: CenterPanelView) => {
-    setCenterPanelView(view);
-  }, []);
-
-  // Toggle center panel visibility
-  const handleToggleCenterPanel = useCallback(() => {
-    setIsCenterPanelVisible(prev => !prev);
-  }, []);
-
-  // Open marketplace directly (from View menu)
-  const handleOpenMarketplace = useCallback(() => {
-    setIsCenterPanelVisible(true);
-    setCenterPanelView('marketplace');
-  }, []);
-
   const handleCloseDownloadManager = useCallback(() => {
     setIsDownloadManagerVisible(false);
   }, []);
@@ -291,10 +262,6 @@ const AppContent: React.FC = () => {
         onToggleChat={() => setIsChatVisible(!isChatVisible)}
         isModelManagerVisible={isModelManagerVisible}
         onToggleModelManager={() => setIsModelManagerVisible(!isModelManagerVisible)}
-        isCenterPanelVisible={isCenterPanelVisible}
-        onToggleCenterPanel={handleToggleCenterPanel}
-        centerPanelView={centerPanelView}
-        onOpenMarketplace={handleOpenMarketplace}
         isLogsVisible={isLogsVisible}
         onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
         isDownloadManagerVisible={isDownloadManagerVisible}
@@ -307,44 +274,33 @@ const AppContent: React.FC = () => {
       <div className="app-layout">
         {isModelManagerVisible && (
           <>
-            <ModelManager isVisible={true} width={modelManagerWidth}/>
-            <ResizableDivider onMouseDown={handleLeftDividerMouseDown}/>
+            <ModelManager
+              isVisible={true}
+              width={modelManagerWidth}
+              currentView={leftPanelView}
+              onViewChange={setLeftPanelView}
+            />
+            {(isLogsVisible || isChatVisible) && (
+              <ResizableDivider onMouseDown={handleLeftDividerMouseDown}/>
+            )}
           </>
         )}
-        {(isCenterPanelVisible || isLogsVisible) && (
+        {isLogsVisible && (
           <div className="main-content-container">
-            {isCenterPanelVisible && (
-              <div className={`main-content ${isChatVisible ? 'with-chat' : 'full-width'} ${isModelManagerVisible ? 'with-model-manager' : ''}`}>
-                <CenterPanel
-                  isVisible={true}
-                  currentView={centerPanelView}
-                  onViewChange={handleCenterPanelViewChange}
-                  onClose={handleCloseCenterPanel}
-                />
-              </div>
-            )}
-            {isCenterPanelVisible && isLogsVisible && (
-              <ResizableDivider
-                onMouseDown={handleBottomDividerMouseDown}
-                orientation="horizontal"
-              />
-            )}
-            {isLogsVisible && (
-              <LogsWindow
-                isVisible={true}
-                height={isCenterPanelVisible ? logsHeight : undefined}
-              />
-            )}
+            <LogsWindow
+              isVisible={true}
+              height={undefined}
+            />
           </div>
         )}
         {isChatVisible && (
           <>
-            {(isCenterPanelVisible || isLogsVisible) && (
+            {isLogsVisible && (
               <ResizableDivider onMouseDown={handleRightDividerMouseDown}/>
             )}
             <ChatWindow
               isVisible={true}
-              width={(isCenterPanelVisible || isLogsVisible) ? chatWidth : undefined}
+              width={isLogsVisible ? chatWidth : undefined}
             />
           </>
         )}
