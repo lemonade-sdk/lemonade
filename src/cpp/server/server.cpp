@@ -38,9 +38,14 @@
     #include <sys/sysctl.h>
 #endif
 
+#ifdef HAVE_SYSTEMD
+    #include <systemd/sd-journal.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace lemon {
+
 
 static const json MIME_TYPES = {
     {"mp3",  "audio/mpeg"},
@@ -65,7 +70,16 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     GetTempPathA(MAX_PATH, temp_path);
     log_file_path_ = std::string(temp_path) + "lemonade-server.log";
 #else
-    log_file_path_ = "/tmp/lemonade-server.log";
+    // Use systemd journal if JOURNAL_STREAM is set, unless explicitly disabled
+    // LEMONADE_DISABLE_SYSTEMD_JOURNAL can be set in CI to force file logging
+    const char* journal_stream = std::getenv("JOURNAL_STREAM");
+    const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
+    if (journal_stream && !disable_journal) {
+        log_file_path_ = "";  // Empty signals journald usage
+        std::cout << "[Server] Detected systemd environment - will use journald for log streaming" << std::endl;
+    } else {
+        log_file_path_ = "/tmp/lemonade-server.log";
+    }
 #endif
 
     http_server_ = std::make_unique<httplib::Server>();
@@ -250,6 +264,12 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("images/generations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_image_generations(req, res);
     });
+    register_post("images/edits", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_image_edits(req, res);
+    });
+    register_post("images/variations", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_image_variations(req, res);
+    });
 
     // Responses endpoint
     register_post("responses", [this](const httplib::Request& req, httplib::Response& res) {
@@ -288,6 +308,10 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     register_get("system-stats", [this](const httplib::Request& req, httplib::Response& res) {
         handle_system_stats(req, res);
+    });
+
+    register_get("system-checks", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_system_checks(req, res);
     });
 
     register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
@@ -1986,6 +2010,224 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
     }
 }
 
+bool Server::parse_n_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out) {
+    if (!req.form.has_field("n")) {
+        return true;
+    }
+    int n;
+    try {
+        n = std::stoi(req.form.get_field("n"));
+    } catch (const std::exception&) {
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Invalid value for 'n': must be an integer"},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+        return false;
+    }
+    if (n < 1 || n > 10) {
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Invalid value for 'n': must be between 1 and 10"},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+        return false;
+    }
+    out["n"] = n;
+    return true;
+}
+
+bool Server::extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out) {
+    for (const auto& file_pair : req.form.files) {
+        if (file_pair.first == "image") {
+            const auto& file = file_pair.second;
+            out["image_data"] = utils::JsonUtils::base64_encode(file.content);
+            out["image_filename"] = file.filename;
+            std::cout << "[Server] Image file: " << file.filename
+                      << " (" << file.content.size() << " bytes)" << std::endl;
+            return true;
+        }
+    }
+    res.status = 400;
+    nlohmann::json error = {{"error", {
+        {"message", "Missing 'image' field in request"},
+        {"type", "invalid_request_error"}
+    }}};
+    res.set_content(error.dump(), "application/json");
+    return false;
+}
+
+bool Server::load_image_model(const nlohmann::json& request_json, httplib::Response& res) {
+    if (!request_json.contains("model")) {
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Missing 'model' field in request"},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+        return false;
+    }
+    std::string requested_model = request_json["model"];
+    try {
+        auto_load_model_if_needed(requested_model);
+    } catch (const std::exception& e) {
+        std::cerr << "[Server ERROR] Failed to load image model: " << e.what() << std::endl;
+        auto error_response = create_model_error(requested_model, e.what());
+        std::string error_code = error_response["error"]["code"].get<std::string>();
+        res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+        res.set_content(error_response.dump(), "application/json");
+        return false;
+    }
+    return true;
+}
+
+void Server::handle_image_edits(const httplib::Request& req, httplib::Response& res) {
+    try {
+        std::cout << "[Server] POST /api/v1/images/edits" << std::endl;
+
+        if (!req.is_multipart_form_data()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Request must be multipart/form-data"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        nlohmann::json request_json;
+
+        // Extract common form fields
+        if (req.form.has_field("model"))            request_json["model"]            = req.form.get_field("model");
+        if (req.form.has_field("prompt"))           request_json["prompt"]           = req.form.get_field("prompt");
+        if (req.form.has_field("size"))             request_json["size"]             = req.form.get_field("size");
+        if (req.form.has_field("response_format"))  request_json["response_format"]  = req.form.get_field("response_format");
+        if (req.form.has_field("user"))             request_json["user"]             = req.form.get_field("user");
+        if (req.form.has_field("background"))       request_json["background"]       = req.form.get_field("background");
+        if (req.form.has_field("quality"))          request_json["quality"]          = req.form.get_field("quality");
+        if (req.form.has_field("input_fidelity"))   request_json["input_fidelity"]   = req.form.get_field("input_fidelity");
+
+        if (req.form.has_field("output_compression")) {
+            int output_compression;
+            try {
+                output_compression = std::stoi(req.form.get_field("output_compression"));
+            } catch (const std::exception&) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Invalid value for 'output_compression': must be an integer"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            request_json["output_compression"] = output_compression;
+        }
+
+        if (!parse_n_from_form(req, res, request_json))      return;
+        if (!extract_image_from_form(req, res, request_json)) return;
+
+        // Extract optional mask file
+        for (const auto& file_pair : req.form.files) {
+            if (file_pair.first == "mask") {
+                const auto& file = file_pair.second;
+                request_json["mask_data"] = utils::JsonUtils::base64_encode(file.content);
+                request_json["mask_filename"] = file.filename;
+                std::cout << "[Server] Mask file: " << file.filename
+                          << " (" << file.content.size() << " bytes)" << std::endl;
+                break;
+            }
+        }
+
+        if (!request_json.contains("prompt")) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'prompt' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        if (!load_image_model(request_json, res)) return;
+
+        auto response = router_->image_edits(request_json);
+        if (response.contains("error")) {
+            res.status = 500;
+        }
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const nlohmann::json::exception& e) {
+        std::cerr << "[Server] JSON parse error in handle_image_edits: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Invalid JSON: " + std::string(e.what())},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_image_edits: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "server_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_image_variations(const httplib::Request& req, httplib::Response& res) {
+    try {
+        std::cout << "[Server] POST /api/v1/images/variations" << std::endl;
+
+        if (!req.is_multipart_form_data()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Request must be multipart/form-data"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        nlohmann::json request_json;
+
+        // Extract common form fields
+        if (req.form.has_field("model"))            request_json["model"]            = req.form.get_field("model");
+        if (req.form.has_field("size"))             request_json["size"]             = req.form.get_field("size");
+        if (req.form.has_field("response_format"))  request_json["response_format"]  = req.form.get_field("response_format");
+        if (req.form.has_field("user"))             request_json["user"]             = req.form.get_field("user");
+
+        if (!parse_n_from_form(req, res, request_json))      return;
+        if (!extract_image_from_form(req, res, request_json)) return;
+        if (!load_image_model(request_json, res))             return;
+
+        auto response = router_->image_variations(request_json);
+        if (response.contains("error")) {
+            res.status = 500;
+        }
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const nlohmann::json::exception& e) {
+        std::cerr << "[Server] JSON parse error in handle_image_variations: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Invalid JSON: " + std::string(e.what())},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_image_variations: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "server_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
 void Server::handle_responses(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
@@ -2569,6 +2811,48 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
     res.set_content(system_info.dump(), "application/json");
 }
 
+void Server::handle_system_checks(const httplib::Request& req, httplib::Response& res) {
+    // For HEAD requests, just return 200 OK without processing
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+
+    nlohmann::json response = nlohmann::json::array();
+
+#ifdef __linux__
+    // Check for Strix Halo kernel CWSR fix on Linux
+    bool needs_kernel_fix = lemon::needs_gfx1151_cwsr_fix();
+    if (needs_kernel_fix) {
+        nlohmann::json issue;
+        issue["id"] = "linux_strix_halo_kernel";
+        issue["severity"] = "error";
+        issue["platform"] = "linux";
+        issue["title"] = "Missing Strix Halo Kernel Fix";
+        issue["message"] = "Your kernel is missing a critical fix that may cause stability issues on Strix Halo systems.";
+        issue["fix_url"] = "https://lemonade-server.ai/gfx1151_linux.html";
+        response.push_back(issue);
+    }
+#endif
+
+#ifdef _WIN32
+    // TODO: Add NPU driver checks for Windows
+    // Example structure for future implementation:
+    // if (needs_npu_driver_update()) {
+    //     nlohmann::json issue;
+    //     issue["id"] = "windows_npu_driver";
+    //     issue["severity"] = "warning";
+    //     issue["platform"] = "windows";
+    //     issue["title"] = "NPU Driver Update Available";
+    //     issue["message"] = "A newer NPU driver is recommended for optimal performance.";
+    //     issue["fix_url"] = "https://lemonade-server.ai/driver_install.html";
+    //     response.push_back(issue);
+    // }
+#endif
+
+    res.set_content(response.dump(), "application/json");
+}
+
 // Helper: Get CPU usage percentage
 double Server::get_cpu_usage() {
 #ifdef __linux__
@@ -2902,6 +3186,14 @@ void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res
 }
 
 void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& res) {
+#ifdef HAVE_SYSTEMD
+    if (log_file_path_.empty()) {
+        std::cout << "[Server] Starting log stream from systemd journal" << std::endl;
+        handle_logs_stream_journald(req, res);
+        return;
+    }
+#endif
+
     // Check if log file exists
     if (log_file_path_.empty() || !std::filesystem::exists(log_file_path_)) {
         std::cerr << "[Server] Log file not found: " << log_file_path_ << std::endl;
@@ -2995,5 +3287,100 @@ void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& 
         }
     );
 }
+
+#ifdef HAVE_SYSTEMD
+void Server::handle_logs_stream_journald(const httplib::Request& req, httplib::Response& res) {
+    std::cout << "[Server] Starting systemd journal stream for lemonade-server.service" << std::endl;
+
+    res.set_header("Content-Type", "text/event-stream");
+    res.set_header("Cache-Control", "no-cache");
+    res.set_header("Connection", "keep-alive");
+    res.set_header("X-Accel-Buffering", "no");
+
+    sd_journal* journal = nullptr;
+    int ret = sd_journal_open(&journal, SD_JOURNAL_LOCAL_ONLY);
+    if (ret < 0) {
+        std::cerr << "[Server] Failed to open systemd journal: " << strerror(-ret) << std::endl;
+        res.status = 500;
+        nlohmann::json error = {
+            {"error", "Failed to open systemd journal"},
+            {"details", strerror(-ret)}
+        };
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+
+    ret = sd_journal_add_match(journal, "_SYSTEMD_UNIT=lemonade-server.service", 0);
+    if (ret < 0) {
+        std::cerr << "[Server] Failed to add journal filter: " << strerror(-ret) << std::endl;
+        sd_journal_close(journal);
+        res.status = 500;
+        nlohmann::json error = {
+            {"error", "Failed to add journal filter"},
+            {"details", strerror(-ret)}
+        };
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+
+    // Position at tail, then go back to show recent history
+    sd_journal_seek_tail(journal);
+    for (int i = 0; i < 100; i++) {
+        ret = sd_journal_previous(journal);
+        if (ret <= 0) break;
+    }
+
+    std::cout << "[Server] Journal stream connection opened for lemonade-server.service" << std::endl;
+
+    res.set_chunked_content_provider(
+        "text/event-stream",
+        [journal](size_t offset, httplib::DataSink& sink) mutable {
+            bool sent_data = false;
+
+            while (sd_journal_next(journal) > 0) {
+                const void* data;
+                size_t length;
+
+                int ret = sd_journal_get_data(journal, "MESSAGE", &data, &length);
+                if (ret == 0 && length > 8) {
+                    const char* msg = static_cast<const char*>(data);
+                    std::string message(msg + 8, length - 8);
+                    std::string sse_msg = "data: " + message + "\n\n";
+
+                    if (!sink.write(sse_msg.c_str(), sse_msg.length())) {
+                        std::cout << "[Server] Journal stream client disconnected" << std::endl;
+                        return false;
+                    }
+                    sent_data = true;
+                }
+            }
+
+            if (!sent_data) {
+                const char* heartbeat = ": heartbeat\n\n";
+                if (!sink.write(heartbeat, strlen(heartbeat))) {
+                    std::cout << "[Server] Journal stream client disconnected during heartbeat" << std::endl;
+                    return false;
+                }
+            }
+
+            // Wait for new journal entries
+            if (offset > 0) {  // Skip wait on first call to send historical data immediately
+                int ret = sd_journal_wait(journal, 500000);  // 500ms
+                if (ret < 0) {
+                    std::cerr << "[Server] Journal wait error: " << strerror(-ret) << std::endl;
+                }
+            }
+
+            return true;
+        },
+        [journal](bool success) mutable {
+            std::cout << "[Server] Journal stream ended, closing journal handle" << std::endl;
+            if (journal) {
+                sd_journal_close(journal);
+            }
+        }
+    );
+}
+#endif
 
 } // namespace lemon

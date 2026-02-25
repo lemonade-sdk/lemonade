@@ -681,6 +681,16 @@ elseif(APPLE)
     )
     # Prevent linking to Homebrew OpenSSL on macOS, use Apple's built-in SSL
     target_link_options(${EXECUTABLE_NAME} PRIVATE -Wl,-no_weak_imports)
+elseif(UNIX)
+    # Link systemd for journal support
+    if(PkgConfig_FOUND)
+        pkg_check_modules(SYSTEMD QUIET libsystemd)
+        if(SYSTEMD_FOUND)
+            target_include_directories(${EXECUTABLE_NAME} PRIVATE ${SYSTEMD_INCLUDE_DIRS})
+            target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${SYSTEMD_LIBRARIES})
+            target_compile_definitions(${EXECUTABLE_NAME} PRIVATE HAVE_SYSTEMD)
+        endif()
+    endif()
 endif()
 
 # ============================================================
