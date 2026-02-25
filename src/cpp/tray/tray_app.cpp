@@ -415,6 +415,11 @@ static bool is_process_alive_not_zombie(pid_t pid) {
         return false;  // Process doesn't exist
     }
 
+#ifdef __APPLE__
+    // macOS doesn't have /proc — if kill(pid, 0) succeeded, process is alive
+    // macOS automatically reaps zombies more aggressively, so just trust kill()
+    return true;
+#else
     // Check if it's a zombie by reading /proc/PID/stat
     std::string stat_path = "/proc/" + std::to_string(pid) + "/stat";
     std::ifstream stat_file(stat_path);
@@ -435,6 +440,7 @@ static bool is_process_alive_not_zombie(pid_t pid) {
 
     // If we can't parse the state, assume alive to be safe
     return true;
+#endif
 }
 #endif
 
@@ -1692,6 +1698,16 @@ int TrayApp::execute_recipes_command() {
     return 0;
 }
 
+// Check if a process is alive (cross-platform)
+static bool is_process_alive(int pid) {
+#ifdef __APPLE__
+    // macOS doesn't have /proc — use kill(pid, 0) which checks existence without signaling
+    return (kill(pid, 0) == 0 || errno == EPERM);
+#else
+    return std::filesystem::exists("/proc/" + std::to_string(pid));
+#endif
+}
+
 // Command: stop
 int TrayApp::execute_stop_command() {
     auto [pid, port] = get_server_info();
@@ -1980,13 +1996,13 @@ int TrayApp::execute_stop_command() {
 
     for (int i = 0; i < 50; i++) {  // 50 * 100ms = 5 seconds
         // Check if main processes are completely gone from process table
-        bool router_gone = !std::filesystem::exists("/proc/" + std::to_string(router_pid));
-        bool tray_gone = (tray_pid == 0 || !std::filesystem::exists("/proc/" + std::to_string(tray_pid)));
+        bool router_gone = !is_process_alive(router_pid);
+        bool tray_gone = (tray_pid == 0 || !is_process_alive(tray_pid));
 
         // Check if all children have exited
         bool all_children_gone = true;
         for (int child_pid : router_children) {
-            if (std::filesystem::exists("/proc/" + std::to_string(child_pid))) {
+            if (is_process_alive(child_pid)) {
                 all_children_gone = false;
                 break;
             }
@@ -2021,13 +2037,13 @@ int TrayApp::execute_stop_command() {
         std::cout << "Timeout expired, forcing termination..." << std::endl;
 
         // Force kill router process (if still alive)
-        if (std::filesystem::exists("/proc/" + std::to_string(router_pid))) {
+        if (is_process_alive(router_pid)) {
             std::cout << "Force killing router (PID: " << router_pid << ")" << std::endl;
             kill(router_pid, SIGKILL);
         }
 
         // Force kill tray app if it exists
-        if (tray_pid != 0 && std::filesystem::exists("/proc/" + std::to_string(tray_pid))) {
+        if (tray_pid != 0 && is_process_alive(tray_pid)) {
             std::cout << "Force killing tray app (PID: " << tray_pid << ")" << std::endl;
             kill(tray_pid, SIGKILL);
         }
@@ -2035,7 +2051,7 @@ int TrayApp::execute_stop_command() {
         // Force kill any remaining children (matching Python's behavior for stubborn llama-server)
         if (!router_children.empty()) {
             for (int child_pid : router_children) {
-                if (std::filesystem::exists("/proc/" + std::to_string(child_pid))) {
+                if (is_process_alive(child_pid)) {
                     std::cout << "Force killing child process (PID: " << child_pid << ")" << std::endl;
                     kill(child_pid, SIGKILL);
                 }
