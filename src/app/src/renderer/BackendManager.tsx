@@ -57,7 +57,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
 
         const cacheKey = `${releaseUrl}:${filename}`;
         if (typeof backendAssetSizes[cacheKey] === 'number') return;
-        if (!releaseUrl.includes('github.com/')) return;
 
         if (!pendingByRelease.has(releaseUrl)) {
           pendingByRelease.set(releaseUrl, new Set());
