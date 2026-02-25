@@ -35,11 +35,16 @@ interface BackendManagerProps {
 }
 
 const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError, showSuccess }) => {
-  const { systemInfo, refresh: refreshSystem } = useSystem();
+  const { systemInfo, isLoading, refresh: refreshSystem, ensureSystemInfoLoaded } = useSystem();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const [installingBackends, setInstallingBackends] = useState<Set<string>>(new Set());
   const [hoveredBackend, setHoveredBackend] = useState<string | null>(null);
   const [backendAssetSizes, setBackendAssetSizes] = useState<Record<string, number>>({});
+
+  // Ensure system info is loaded when the backend manager is opened
+  useEffect(() => {
+    ensureSystemInfoLoaded();
+  }, [ensureSystemInfoLoaded]);
 
   const recipes = systemInfo?.recipes;
 
@@ -203,6 +208,15 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
       return [recipeName, filteredBackends] as [string, Array<[string, BackendInfo]>];
     })
     .filter(([, backends]) => backends.length > 0);
+
+  if (isLoading || !recipes) {
+    return (
+      <>
+        <ConfirmDialog />
+        <div className="left-panel-empty-state">Loading backends...</div>
+      </>
+    );
+  }
 
   if (visibleGroups.length === 0) {
     return (
