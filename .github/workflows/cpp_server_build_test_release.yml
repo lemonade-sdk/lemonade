@@ -19,6 +19,9 @@ permissions:
   contents: write
   actions: read  # Required for SignPath to read workflow/job details
 
+env:
+  LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
+
 jobs:
   # ========================================================================
   # BUILD JOBS - Run on rai-160-sdk workers
