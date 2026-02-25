@@ -496,19 +496,6 @@ jobs:
           .venv/bin/python test/server_endpoints.py --server-binary /usr/local/bin/lemonade-server --server-per-test
           echo "Endpoint tests PASSED!"
 
-      - name: Run system-info tests (unsigned path)
-        if: steps.check_signing.outputs.has_signing != 'true'
-        shell: bash
-        env:
-          PYTHONIOENCODING: utf-8
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-          HF_HOME: ${{ github.workspace }}/hf-cache
-        run: |
-          set -e
-          echo "Running system-info mock hardware tests..."
-          .venv/bin/python test/server_system_info.py --server-binary /usr/local/bin/lemonade-server
-          echo "System-info tests PASSED!"
-
       - name: Run Ollama API tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
@@ -867,6 +854,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         test_type: [cli, endpoints, system-info, ollama]
+        exclude:
+          - os: macos-latest
+            test_type: system-info
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8

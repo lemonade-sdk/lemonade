@@ -7,8 +7,9 @@ import CenterPanel, { CenterPanelView } from './CenterPanel';
 import ResizableDivider from './ResizableDivider';
 import DownloadManager from './DownloadManager';
 import StatusBar from './StatusBar';
+import SystemChecksModal from './SystemChecksModal';
 import { ModelsProvider } from './hooks/useModels';
-import { SystemProvider } from './hooks/useSystem';
+import { SystemProvider, useSystem } from './hooks/useSystem';
 import { DEFAULT_LAYOUT_SETTINGS } from './utils/appSettings';
 import '../../styles.css';
 
@@ -20,13 +21,16 @@ const LAYOUT_CONSTANTS = {
   absoluteMinWidth: 400,
 };
 
-const App: React.FC = () => {
+// Inner component that can use SystemProvider context
+const AppContent: React.FC = () => {
+  const { systemChecks, shouldShowSystemChecks, dismissSystemChecks } = useSystem();
   const [isChatVisible, setIsChatVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isChatVisible);
   const [isModelManagerVisible, setIsModelManagerVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isModelManagerVisible);
   const [isCenterPanelVisible, setIsCenterPanelVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isCenterPanelVisible_v2);
   const [centerPanelView, setCenterPanelView] = useState<CenterPanelView>('menu');
   const [isLogsVisible, setIsLogsVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isLogsVisible);
   const [isDownloadManagerVisible, setIsDownloadManagerVisible] = useState(false);
+  const [isSystemChecksModalOpen, setIsSystemChecksModalOpen] = useState(false);
   const [modelManagerWidth, setModelManagerWidth] = useState(DEFAULT_LAYOUT_SETTINGS.modelManagerWidth);
   const [chatWidth, setChatWidth] = useState(DEFAULT_LAYOUT_SETTINGS.chatWidth);
   const [logsHeight, setLogsHeight] = useState(DEFAULT_LAYOUT_SETTINGS.logsHeight);
@@ -115,6 +119,17 @@ const App: React.FC = () => {
       window.removeEventListener('download:chatComplete' as any, handleChatDownloadComplete);
     };
   }, []);
+
+  // Show system checks modal when ROCm usage is detected
+  useEffect(() => {
+    if (shouldShowSystemChecks) {
+      setIsSystemChecksModalOpen(true);
+      // Log issues to console for debugging
+      systemChecks.forEach(check => {
+        console.warn(`System check [${check.id}]:`, check.message);
+      });
+    }
+  }, [shouldShowSystemChecks, systemChecks]);
 
   useEffect(() => {
     const hasMainColumn = isCenterPanelVisible || isLogsVisible;
@@ -270,73 +285,88 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <SystemProvider>
-      <ModelsProvider>
-        <TitleBar
-          isChatVisible={isChatVisible}
-          onToggleChat={() => setIsChatVisible(!isChatVisible)}
-          isModelManagerVisible={isModelManagerVisible}
-          onToggleModelManager={() => setIsModelManagerVisible(!isModelManagerVisible)}
-          isCenterPanelVisible={isCenterPanelVisible}
-          onToggleCenterPanel={handleToggleCenterPanel}
-          centerPanelView={centerPanelView}
-          onOpenMarketplace={handleOpenMarketplace}
-          isLogsVisible={isLogsVisible}
-          onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
-          isDownloadManagerVisible={isDownloadManagerVisible}
-          onToggleDownloadManager={() => setIsDownloadManagerVisible(!isDownloadManagerVisible)}
-        />
-        <DownloadManager
-          isVisible={isDownloadManagerVisible}
-          onClose={handleCloseDownloadManager}
-        />
-        <div className="app-layout">
-          {isModelManagerVisible && (
-            <>
-              <ModelManager isVisible={true} width={modelManagerWidth}/>
-              <ResizableDivider onMouseDown={handleLeftDividerMouseDown}/>
-            </>
-          )}
-          {(isCenterPanelVisible || isLogsVisible) && (
-            <div className="main-content-container">
-              {isCenterPanelVisible && (
-                <div className={`main-content ${isChatVisible ? 'with-chat' : 'full-width'} ${isModelManagerVisible ? 'with-model-manager' : ''}`}>
-                  <CenterPanel
-                    isVisible={true}
-                    currentView={centerPanelView}
-                    onViewChange={handleCenterPanelViewChange}
-                    onClose={handleCloseCenterPanel}
-                  />
-                </div>
-              )}
-              {isCenterPanelVisible && isLogsVisible && (
-                <ResizableDivider
-                  onMouseDown={handleBottomDividerMouseDown}
-                  orientation="horizontal"
-                />
-              )}
-              {isLogsVisible && (
-                <LogsWindow
+    <ModelsProvider>
+      <TitleBar
+        isChatVisible={isChatVisible}
+        onToggleChat={() => setIsChatVisible(!isChatVisible)}
+        isModelManagerVisible={isModelManagerVisible}
+        onToggleModelManager={() => setIsModelManagerVisible(!isModelManagerVisible)}
+        isCenterPanelVisible={isCenterPanelVisible}
+        onToggleCenterPanel={handleToggleCenterPanel}
+        centerPanelView={centerPanelView}
+        onOpenMarketplace={handleOpenMarketplace}
+        isLogsVisible={isLogsVisible}
+        onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
+        isDownloadManagerVisible={isDownloadManagerVisible}
+        onToggleDownloadManager={() => setIsDownloadManagerVisible(!isDownloadManagerVisible)}
+      />
+      <DownloadManager
+        isVisible={isDownloadManagerVisible}
+        onClose={handleCloseDownloadManager}
+      />
+      <div className="app-layout">
+        {isModelManagerVisible && (
+          <>
+            <ModelManager isVisible={true} width={modelManagerWidth}/>
+            <ResizableDivider onMouseDown={handleLeftDividerMouseDown}/>
+          </>
+        )}
+        {(isCenterPanelVisible || isLogsVisible) && (
+          <div className="main-content-container">
+            {isCenterPanelVisible && (
+              <div className={`main-content ${isChatVisible ? 'with-chat' : 'full-width'} ${isModelManagerVisible ? 'with-model-manager' : ''}`}>
+                <CenterPanel
                   isVisible={true}
-                  height={isCenterPanelVisible ? logsHeight : undefined}
+                  currentView={centerPanelView}
+                  onViewChange={handleCenterPanelViewChange}
+                  onClose={handleCloseCenterPanel}
                 />
-              )}
-            </div>
-          )}
-          {isChatVisible && (
-            <>
-              {(isCenterPanelVisible || isLogsVisible) && (
-                <ResizableDivider onMouseDown={handleRightDividerMouseDown}/>
-              )}
-              <ChatWindow
-                isVisible={true}
-                width={(isCenterPanelVisible || isLogsVisible) ? chatWidth : undefined}
+              </div>
+            )}
+            {isCenterPanelVisible && isLogsVisible && (
+              <ResizableDivider
+                onMouseDown={handleBottomDividerMouseDown}
+                orientation="horizontal"
               />
-            </>
-          )}
-        </div>
-        <StatusBar />
-      </ModelsProvider>
+            )}
+            {isLogsVisible && (
+              <LogsWindow
+                isVisible={true}
+                height={isCenterPanelVisible ? logsHeight : undefined}
+              />
+            )}
+          </div>
+        )}
+        {isChatVisible && (
+          <>
+            {(isCenterPanelVisible || isLogsVisible) && (
+              <ResizableDivider onMouseDown={handleRightDividerMouseDown}/>
+            )}
+            <ChatWindow
+              isVisible={true}
+              width={(isCenterPanelVisible || isLogsVisible) ? chatWidth : undefined}
+            />
+          </>
+        )}
+      </div>
+      <StatusBar />
+      <SystemChecksModal
+        isOpen={isSystemChecksModalOpen}
+        onClose={(permanent) => {
+          setIsSystemChecksModalOpen(false);
+          dismissSystemChecks(permanent);
+        }}
+        checks={systemChecks}
+      />
+    </ModelsProvider>
+  );
+};
+
+// Wrapper component that provides SystemProvider
+const App: React.FC = () => {
+  return (
+    <SystemProvider>
+      <AppContent />
     </SystemProvider>
   );
 };

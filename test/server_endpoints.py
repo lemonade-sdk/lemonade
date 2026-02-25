@@ -112,6 +112,7 @@ class EndpointTests(ServerTestBase):
             "health",
             "stats",
             "system-info",
+            "system-checks",
             "reranking",
             "audio/transcriptions",
             "images/generations",
@@ -750,7 +751,63 @@ class EndpointTests(ServerTestBase):
             f"[OK] /system-info: OS={data['OS Version'][:30]}..., recipes={len(recipes)}"
         )
 
-    def test_019_web_app_root(self):
+    def test_019_system_checks(self):
+        """Test the /system-checks endpoint returns valid check results."""
+        response = requests.get(
+            f"{self.base_url}/system-checks", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200)
+
+        data = response.json()
+        self.assertIsInstance(data, list, "Response should be an array")
+
+        # If there are checks, verify structure
+        for check in data:
+            self.assertIsInstance(check, dict)
+
+            # Verify required fields
+            required_fields = ["id", "severity", "platform", "title", "message"]
+            for field in required_fields:
+                self.assertIn(field, check, f"Check missing required field: {field}")
+
+            # Verify field types
+            self.assertIsInstance(check["id"], str)
+            self.assertIsInstance(check["severity"], str)
+            self.assertIsInstance(check["platform"], str)
+            self.assertIsInstance(check["title"], str)
+            self.assertIsInstance(check["message"], str)
+
+            # Verify severity is valid
+            self.assertIn(
+                check["severity"],
+                ["error", "warning", "info"],
+                f"Invalid severity: {check['severity']}",
+            )
+
+            # Verify platform is valid
+            self.assertIn(
+                check["platform"],
+                ["linux", "windows", "macos", "unknown"],
+                f"Invalid platform: {check['platform']}",
+            )
+
+            # fix_url is optional but should be string if present
+            if "fix_url" in check:
+                self.assertIsInstance(check["fix_url"], str)
+                # Should be a valid URL
+                self.assertTrue(
+                    check["fix_url"].startswith(("http://", "https://")),
+                    f"fix_url should be HTTP(S) URL: {check['fix_url']}",
+                )
+
+        if len(data) == 0:
+            print("[OK] /system-checks: All checks passed (no issues)")
+        else:
+            print(
+                f"[OK] /system-checks: Found {len(data)} issue(s) - {[c['id'] for c in data]}"
+            )
+
+    def test_020_web_app_root(self):
         """Test that GET / returns HTML for the web app (browser-accessible UI)."""
         response = requests.get(f"http://localhost:{PORT}/", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(response.status_code, 200)
@@ -768,7 +825,7 @@ class EndpointTests(ServerTestBase):
         )
         print(f"[OK] GET / returned HTML ({len(body)} bytes)")
 
-    def test_020_stats_endpoint(self):
+    def test_021_stats_endpoint(self):
         """Test the /stats endpoint returns performance metrics."""
         # First, make an inference request to populate stats
         requests.post(
