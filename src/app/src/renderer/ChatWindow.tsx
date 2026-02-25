@@ -428,6 +428,9 @@ const fetchLoadedModel = async () => {
 
       if (item.type.indexOf('image') !== -1) {
         event.preventDefault();
+
+        if (!isVisionModel()) break;
+
         const file = item.getAsFile();
         if (!file) continue;
 
