@@ -3192,14 +3192,21 @@ void Server::handle_uninstall(const httplib::Request& req, httplib::Response& re
 
         // Check if any loaded models use this recipe+backend and unload them first
         auto loaded_models = router_->get_all_loaded_models();
-        if (loaded_models.contains("models") && loaded_models["models"].is_array()) {
-            for (const auto& model : loaded_models["models"]) {
-                if (model.value("recipe", "") == recipe) {
-                    std::string model_name = model.value("model", "");
-                    std::cout << "[Server] Unloading model " << model_name
-                              << " before uninstalling " << recipe << ":" << backend << std::endl;
-                    router_->unload_model(model_name);
+        std::string backend_option_key = recipe + "_backend";
+        for (const auto& model : loaded_models) {
+            if (model.value("recipe", "") == recipe) {
+                // Check if the model's backend matches the one being uninstalled
+                std::string model_backend;
+                if (model.contains("recipe_options") && model["recipe_options"].contains(backend_option_key)) {
+                    model_backend = model["recipe_options"].value(backend_option_key, "");
                 }
+                if (!model_backend.empty() && model_backend != backend) {
+                    continue;  // Different backend, skip
+                }
+                std::string model_name = model.value("model_name", "");
+                std::cout << "[Server] Unloading model " << model_name
+                          << " before uninstalling " << recipe << ":" << backend << std::endl;
+                router_->unload_model(model_name);
             }
         }
 
