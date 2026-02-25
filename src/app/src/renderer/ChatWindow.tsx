@@ -9,8 +9,7 @@ import {
   mergeWithDefaultSettings,
 } from './utils/appSettings';
 import { serverFetch, getServerBaseUrl } from './utils/serverConfig';
-import { downloadTracker } from './utils/downloadTracker';
-import { ensureBackendForRecipe } from './utils/backendInstaller';
+import { ensureModelReady, DownloadAbortError } from './utils/backendInstaller';
 import { useModels, DEFAULT_MODEL_ID } from './hooks/useModels';
 import { useSystem } from './hooks/useSystem';
 import { useAudioCapture } from './hooks/useAudioCapture';
@@ -54,17 +53,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     userHasSelectedModel,
     setUserHasSelectedModel,
   } = useModels();
-  const { systemInfo, ensureSystemInfoLoaded, checkForRocmUsage } = useSystem();
+  const { checkForRocmUsage } = useSystem();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [currentLoadedModel, setCurrentLoadedModel] = useState<string | null>(null);
   const [isModelLoading, setIsModelLoading] = useState(false);
-  // Track if we're downloading a model for a pending message (first-time user experience)
-  const [isDownloadingForChat, setIsDownloadingForChat] = useState(false);
-  // Store pending message content to send after download completes
-  const pendingMessageRef = useRef<{ content: MessageContent; images: string[] } | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [editingImages, setEditingImages] = useState<string[]>([]);
@@ -596,106 +591,22 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
   }
 };
 
-/**
- * Download a model with SSE progress tracking.
- * Used for first-time user experience when no models are downloaded.
- */
-const downloadModelForChat = async (modelName: string): Promise<boolean> => {
-  return new Promise((resolve) => {
-    const abortController = new AbortController();
-    const downloadId = downloadTracker.startDownload(modelName, abortController);
-
-    // Dispatch event to open download manager
-    window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName } }));
-
-    let downloadCompleted = false;
-
-    const performDownload = async () => {
-      try {
-        const response = await serverFetch('/pull', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model_name: modelName, stream: true }),
-          signal: abortController.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to download model: ${response.statusText}`);
-        }
-
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error('No response body');
-        }
-
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let currentEventType = 'progress';
-
-        while (true) {
-          const { done, value } = await reader.read();
-
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (line.startsWith('event:')) {
-              currentEventType = line.substring(6).trim();
-            } else if (line.startsWith('data:')) {
-              try {
-                const data = JSON.parse(line.substring(5).trim());
-
-                if (currentEventType === 'progress') {
-                  downloadTracker.updateProgress(downloadId, data);
-                } else if (currentEventType === 'complete') {
-                  downloadTracker.completeDownload(downloadId);
-                  downloadCompleted = true;
-                } else if (currentEventType === 'error') {
-                  downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
-                  throw new Error(data.error || 'Download failed');
-                }
-              } catch (parseError) {
-                console.error('Failed to parse SSE data:', line, parseError);
-              }
-            } else if (line.trim() === '') {
-              currentEventType = 'progress';
-            }
-          }
-        }
-
-        if (!downloadCompleted) {
-          downloadTracker.completeDownload(downloadId);
-          downloadCompleted = true;
-        }
-
-        // Notify all components that models have been updated
-        // (The ModelsProvider listens for this and refreshes automatically)
-        window.dispatchEvent(new CustomEvent('modelsUpdated'));
-
-        resolve(true);
-      } catch (error: any) {
-        if (error.name === 'AbortError') {
-          downloadTracker.cancelDownload(downloadId);
-        } else {
-          downloadTracker.failDownload(downloadId, error.message || 'Unknown error');
-          console.error('Error downloading model:', error);
-        }
-        resolve(false);
-      }
-    };
-
-    performDownload();
-  });
-};
-
 const sendMessage = async () => {
-    if ((!inputValue.trim() && uploadedImages.length === 0) || isLoading || isDownloadingForChat) return;
+    if ((!inputValue.trim() && uploadedImages.length === 0) || isLoading) return;
 
-    // Trigger system info load on first model use (lazy loading)
-    await ensureSystemInfoLoaded();
+    // Universal pre-flight: ensure backend installed, model downloaded, and model loaded
+    try {
+      await ensureModelReady(selectedModel, modelsData, { onModelLoading: () => setIsModelLoading(true) });
+    } catch (error: any) {
+      setIsModelLoading(false);
+      if (error instanceof DownloadAbortError) return; // User paused/cancelled — Download Manager handles UI
+      console.error('Pre-flight failed:', error);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `Error preparing model: ${error.message || 'Failed to prepare model for inference.'}`,
+      }]);
+      return;
+    }
 
     // Cancel any existing request
     if (abortControllerRef.current) {
@@ -735,88 +646,6 @@ const sendMessage = async () => {
       messageContent = inputValue;
     }
 
-    // If the default model is pending (not yet downloaded), we need to download it first
-    if (isDefaultModelPending && selectedModel === DEFAULT_MODEL_ID) {
-      // Store the pending message
-      pendingMessageRef.current = { content: messageContent, images: [...uploadedImages] };
-      setInputValue('');
-      setUploadedImages([]);
-      setIsDownloadingForChat(true);
-
-      // Show the user message immediately
-      const userMessage: Message = { role: 'user', content: messageContent };
-      setMessages(prev => [...prev, userMessage]);
-
-      // Download the model
-      const downloadSuccess = await downloadModelForChat(selectedModel);
-
-      if (downloadSuccess) {
-        // Ensure the backend is installed before auto-load (shows in Download Manager)
-        const modelRecipe = modelsData[selectedModel]?.recipe;
-        if (modelRecipe) {
-          await ensureBackendForRecipe(modelRecipe, systemInfo?.recipes);
-        }
-
-        // Model downloaded successfully - close download manager
-        window.dispatchEvent(new CustomEvent('download:chatComplete'));
-
-        // Now send the message (isDefaultModelPending will be updated by the hook)
-        const pendingMessage = pendingMessageRef.current;
-        pendingMessageRef.current = null;
-
-        if (pendingMessage) {
-          // Continue with the chat request
-          setIsLoading(true);
-          setIsModelLoading(true);
-
-          // Add placeholder for assistant message
-          setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
-
-          try {
-            const messageHistory = messages.concat([{ role: 'user' as const, content: pendingMessage.content }]);
-            await handleStreamingResponse(messageHistory);
-          } catch (error: any) {
-            if (error.name === 'AbortError') {
-              console.log('Request aborted - keeping partial response');
-              setMessages(prev => {
-                const lastMessage = prev[prev.length - 1];
-                if (!lastMessage || (!lastMessage.content && !lastMessage.thinking)) {
-                  return prev.slice(0, -1);
-                }
-                return prev;
-              });
-            } else {
-              console.error('Failed to send message:', error);
-              setMessages(prev => {
-                const newMessages = [...prev];
-                newMessages[newMessages.length - 1] = {
-                  role: 'assistant',
-                  content: `Error: ${error.message || 'Failed to get response from the model.'}`,
-                };
-                return newMessages;
-              });
-            }
-          } finally {
-            setIsLoading(false);
-            setIsModelLoading(false);
-            abortControllerRef.current = null;
-            userScrolledAwayRef.current = false;
-          }
-        }
-      } else {
-        // Download failed - show error
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: 'Failed to download the model. Please try again or download a model from the Model Manager.'
-        }]);
-        pendingMessageRef.current = null;
-      }
-
-      setIsDownloadingForChat(false);
-      return;
-    }
-
-    // Normal flow - model is already downloaded
     const userMessage: Message = { role: 'user', content: messageContent };
     const messageHistory = [...messages, userMessage];
 
@@ -824,13 +653,6 @@ const sendMessage = async () => {
     setInputValue('');
     setUploadedImages([]);
     setIsLoading(true);
-
-    // Check if the selected model is different from the currently loaded model
-    // If so, show the model loading indicator
-    const needsModelLoad = currentLoadedModel !== selectedModel;
-    if (needsModelLoad) {
-      setIsModelLoading(true);
-    }
 
     // Add placeholder for assistant message
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
@@ -1121,6 +943,20 @@ const sendMessage = async () => {
   const handleTextToSpeech = async (message: MessageContent, ttsVoice: string) => {
     const textToSpeechModel = appSettings?.tts.model.value;
 
+    // Pre-flight for TTS model (uses TTS model name, not selectedModel)
+    if (textToSpeechModel) {
+      try {
+        await ensureModelReady(textToSpeechModel, modelsData, { onModelLoading: () => setIsModelLoading(true) });
+      } catch (error: any) {
+        setIsModelLoading(false);
+        if (error instanceof DownloadAbortError) return;
+        console.error('TTS pre-flight failed:', error);
+        stopAudio();
+        return;
+      }
+      setIsModelLoading(false);
+    }
+
     setAudioState(LOADING);
 
     if(message instanceof Array) {
@@ -1211,6 +1047,17 @@ const handleMessageToSpeech = async () => {
   const submitEdit = async () => {
     if ((!editingValue.trim() && editingImages.length === 0) || editingIndex === null || isLoading) return;
 
+    // Universal pre-flight: ensure backend installed, model downloaded, and model loaded
+    try {
+      await ensureModelReady(selectedModel, modelsData, { onModelLoading: () => setIsModelLoading(true) });
+    } catch (error: any) {
+      setIsModelLoading(false);
+      if (error instanceof DownloadAbortError) return;
+      console.error('Pre-flight failed:', error);
+      alert(`Error preparing model: ${error.message || 'Failed to prepare model for inference.'}`);
+      return;
+    }
+
     // Cancel any existing request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -1261,12 +1108,6 @@ const handleMessageToSpeech = async () => {
     setEditingValue('');
     setEditingImages([]);
     setIsLoading(true);
-
-    // Check if the selected model is different from the currently loaded model
-    const needsModelLoad = currentLoadedModel !== selectedModel;
-    if (needsModelLoad) {
-      setIsModelLoading(true);
-    }
 
     // Add placeholder for assistant message
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
@@ -1404,6 +1245,18 @@ const handleMessageToSpeech = async () => {
   const handleEmbedding = async () => {
     if (!embeddingInput.trim() || isProcessingEmbedding) return;
 
+    // Universal pre-flight
+    try {
+      await ensureModelReady(selectedModel, modelsData, { onModelLoading: () => setIsModelLoading(true) });
+    } catch (error: any) {
+      setIsModelLoading(false);
+      if (error instanceof DownloadAbortError) return;
+      console.error('Pre-flight failed:', error);
+      alert(`Error preparing model: ${error.message || 'Failed to prepare model for inference.'}`);
+      return;
+    }
+    setIsModelLoading(false);
+
     const currentInput = embeddingInput;
     setIsProcessingEmbedding(true);
     setEmbeddingInput(''); // Clear input after submitting
@@ -1464,6 +1317,18 @@ const handleMessageToSpeech = async () => {
 
   const handleReranking = async () => {
     if (!rerankQuery.trim() || !rerankDocuments.trim() || isProcessingRerank) return;
+
+    // Universal pre-flight
+    try {
+      await ensureModelReady(selectedModel, modelsData, { onModelLoading: () => setIsModelLoading(true) });
+    } catch (error: any) {
+      setIsModelLoading(false);
+      if (error instanceof DownloadAbortError) return;
+      console.error('Pre-flight failed:', error);
+      alert(`Error preparing model: ${error.message || 'Failed to prepare model for inference.'}`);
+      return;
+    }
+    setIsModelLoading(false);
 
     const currentQuery = rerankQuery;
     const currentDocuments = rerankDocuments;
@@ -1572,6 +1437,18 @@ const handleMessageToSpeech = async () => {
     setLiveTranscript('');
     liveTranscriptRef.current = '';
 
+    // Universal pre-flight for transcription model
+    try {
+      await ensureModelReady(selectedModel, modelsData, { onModelLoading: () => setIsModelLoading(true) });
+    } catch (error: any) {
+      setIsModelLoading(false);
+      if (error instanceof DownloadAbortError) return;
+      console.error('Pre-flight failed:', error);
+      setLiveError(`Error preparing model: ${error.message || 'Failed to prepare model.'}`);
+      return;
+    }
+    setIsModelLoading(false);
+
     try {
       const serverUrl = getServerBaseUrl();
       wsClientRef.current = await TranscriptionWebSocket.connect(serverUrl, selectedModel, {
@@ -1589,7 +1466,7 @@ const handleMessageToSpeech = async () => {
     } catch (err) {
       setLiveError(err instanceof Error ? err.message : 'Failed to connect');
     }
-  }, [selectedModel, handleLiveTranscription, handleSpeechEvent, startRecording]);
+  }, [selectedModel, modelsData, handleLiveTranscription, handleSpeechEvent, startRecording]);
 
   // Stop recording and push transcript to history.
   // With interim transcriptions, we already have the text — no need to commit.
@@ -1636,6 +1513,18 @@ const handleMessageToSpeech = async () => {
 
   const handleTranscription = async () => {
     if (!transcriptionFile || isProcessingTranscription) return;
+
+    // Universal pre-flight
+    try {
+      await ensureModelReady(selectedModel, modelsData, { onModelLoading: () => setIsModelLoading(true) });
+    } catch (error: any) {
+      setIsModelLoading(false);
+      if (error instanceof DownloadAbortError) return;
+      console.error('Pre-flight failed:', error);
+      alert(`Error preparing model: ${error.message || 'Failed to prepare model for inference.'}`);
+      return;
+    }
+    setIsModelLoading(false);
 
     const currentFile = transcriptionFile;
     setIsProcessingTranscription(true);
@@ -1687,6 +1576,18 @@ const handleMessageToSpeech = async () => {
 
   const handleImageGeneration = async () => {
     if (!imagePrompt.trim() || isGeneratingImage) return;
+
+    // Universal pre-flight
+    try {
+      await ensureModelReady(selectedModel, modelsData, { onModelLoading: () => setIsModelLoading(true) });
+    } catch (error: any) {
+      setIsModelLoading(false);
+      if (error instanceof DownloadAbortError) return;
+      console.error('Pre-flight failed:', error);
+      alert(`Error preparing model: ${error.message || 'Failed to prepare model for inference.'}`);
+      return;
+    }
+    setIsModelLoading(false);
 
     const currentPrompt = imagePrompt;
     setIsGeneratingImage(true);
@@ -1827,7 +1728,7 @@ const handleMessageToSpeech = async () => {
         <button
           className="new-chat-button"
           onClick={handleNewChat}
-          disabled={isLoading || isProcessingEmbedding || isProcessingRerank || isDownloadingForChat}
+          disabled={isLoading || isProcessingEmbedding || isProcessingRerank}
           title={modelType === 'llm' ? 'Start a new chat' : 'Clear'}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -2579,17 +2480,12 @@ const handleMessageToSpeech = async () => {
                 </div>
               );
             })}
-            {isDownloadingForChat && (
-              <div className="model-loading-indicator">
-                <span className="model-loading-text">Downloading model...</span>
-              </div>
-            )}
-            {isLoading && isModelLoading && !isDownloadingForChat && (
+            {isLoading && isModelLoading && (
               <div className="model-loading-indicator">
                 <span className="model-loading-text">Loading model</span>
               </div>
             )}
-            {isLoading && !isModelLoading && !isDownloadingForChat && (
+            {isLoading && !isModelLoading && (
               <div className="chat-message assistant-message">
                 <TypingIndicator />
               </div>
@@ -2622,9 +2518,9 @@ const handleMessageToSpeech = async () => {
                 onChange={handleInputChange}
                 onKeyPress={handleKeyPress}
                 onPaste={handleImagePaste}
-                placeholder={isDownloadingForChat ? "Downloading model..." : "Type your message..."}
+                placeholder="Type your message..."
                 rows={1}
-                disabled={isLoading || isDownloadingForChat}
+                disabled={isLoading}
               />
               <div className="chat-controls">
                 <div className="chat-controls-left">
@@ -2640,7 +2536,7 @@ const handleMessageToSpeech = async () => {
                       <button
                         className="image-upload-button"
                         onClick={() => fileInputRef.current?.click()}
-                        disabled={isLoading || isDownloadingForChat}
+                        disabled={isLoading}
                         title="Upload image"
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -2652,14 +2548,13 @@ const handleMessageToSpeech = async () => {
                       </button>
                     </>
                   )}
-                  <ModelSelector disabled={isLoading || isDownloadingForChat} />
+                  <ModelSelector disabled={isLoading} />
                 </div>
-                {isLoading || isDownloadingForChat ? (
+                {isLoading ? (
                   <button
                     className="chat-stop-button"
                     onClick={handleStopGeneration}
                     title="Stop generation"
-                    disabled={isDownloadingForChat}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                       <rect

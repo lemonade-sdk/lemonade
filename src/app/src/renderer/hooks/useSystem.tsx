@@ -1,4 +1,4 @@
-import React, {createContext, useCallback, useContext, useMemo, useState} from "react";
+import React, {createContext, useCallback, useContext, useEffect, useMemo, useState} from "react";
 import {fetchSystemInfoData, SystemInfo, fetchSystemChecks, SystemCheck} from "../utils/systemData";
 
 interface SystemContextValue {
@@ -168,6 +168,17 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({childre
       }
     }
   }, []);
+
+  // Auto-refresh when a backend install completes (from any codepath)
+  useEffect(() => {
+    const handleBackendsUpdated = () => {
+      refresh();
+    };
+    window.addEventListener('backendsUpdated', handleBackendsUpdated);
+    return () => {
+      window.removeEventListener('backendsUpdated', handleBackendsUpdated);
+    };
+  }, [refresh]);
 
   // No initial load - system info will be fetched when first needed
   // (e.g., when user tries to load a model)

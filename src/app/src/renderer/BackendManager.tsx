@@ -1,8 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useSystem } from './hooks/useSystem';
 import { useConfirmDialog } from './ConfirmDialog';
-import { serverFetch } from './utils/serverConfig';
-import { installBackend } from './utils/backendInstaller';
+import { installBackend, uninstallBackend } from './utils/backendInstaller';
 import { Recipe, BackendInfo } from './utils/systemData';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 
@@ -35,7 +34,7 @@ interface BackendManagerProps {
 }
 
 const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError, showSuccess }) => {
-  const { systemInfo, isLoading, refresh: refreshSystem, ensureSystemInfoLoaded } = useSystem();
+  const { systemInfo, isLoading, ensureSystemInfoLoaded } = useSystem();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const [installingBackends, setInstallingBackends] = useState<Set<string>>(new Set());
   const [hoveredBackend, setHoveredBackend] = useState<string | null>(null);
@@ -143,7 +142,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
     try {
       await installBackend(recipe, backend, true);
       showSuccess(`${RECIPE_DISPLAY_NAMES[recipe] || recipe} ${backend} installed successfully.`);
-      await refreshSystem();
+      // No manual refreshSystem() needed — installBackend() dispatches 'backendsUpdated'
+      // which useSystem auto-listens for and refreshes.
     } catch (error) {
       showError(`Failed to install backend: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
@@ -153,7 +153,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
         return next;
       });
     }
-  }, [refreshSystem, showError, showSuccess]);
+  }, [showError, showSuccess]);
 
   const handleUninstallBackend = useCallback(async (recipe: string, backend: string) => {
     const confirmed = await confirm({
@@ -166,21 +166,13 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
     if (!confirmed) return;
 
     try {
-      const response = await serverFetch('/uninstall', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipe, backend })
-      });
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || response.statusText);
-      }
+      await uninstallBackend(recipe, backend);
       showSuccess(`${RECIPE_DISPLAY_NAMES[recipe] || recipe} ${backend} uninstalled successfully.`);
-      await refreshSystem();
+      // No manual refreshSystem() needed — uninstallBackend() dispatches 'backendsUpdated'
     } catch (error) {
       showError(`Failed to uninstall backend: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, [confirm, refreshSystem, showError, showSuccess]);
+  }, [confirm, showError, showSuccess]);
 
   const groupedBackends: Array<[string, Array<[string, BackendInfo]>]> = recipes
     ? Object.entries(recipes)

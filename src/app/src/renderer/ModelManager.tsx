@@ -4,8 +4,8 @@ import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch } from './utils/serverConfig';
-import { downloadTracker } from './utils/downloadTracker';
-import { ensureBackendForRecipe } from './utils/backendInstaller';
+import { pullModel, DownloadAbortError, ensureModelReady, installBackend, deleteModel } from './utils/backendInstaller';
+import type { ModelRegistrationData } from './utils/backendInstaller';
 import { useModels } from './hooks/useModels';
 import { useSystem } from './hooks/useSystem';
 import ModelOptionsModal from "./ModelOptionsModal";
@@ -24,17 +24,6 @@ interface ModelManagerProps {
 
 export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'settings';
 
-// Registration data for new custom models
-interface ModelRegistrationData {
-  checkpoint: string;
-  recipe: string;
-  mmproj?: string;
-  reasoning?: boolean;
-  vision?: boolean;
-  embedding?: boolean;
-  reranking?: boolean;
-}
-
 const createEmptyModelForm = () => ({
   name: '',
   checkpoint: '',
@@ -49,8 +38,6 @@ const createEmptyModelForm = () => ({
 const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, currentView, onViewChange }) => {
   // Get shared model data from context
   const { modelsData, suggestedModels, refresh: refreshModels } = useModels();
-  const { systemInfo, refresh: refreshSystem } = useSystem();
-
   // Get system context for lazy loading system info
   const { ensureSystemInfoLoaded } = useSystem();
 
@@ -393,160 +380,22 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       // Add to loading state to show loading indicator
       setLoadingModels(prev => new Set(prev).add(modelName));
 
-      // Create abort controller for this download
-      const abortController = new AbortController();
-      const downloadId = downloadTracker.startDownload(modelName, abortController);
+      // Use the single consolidated download function
+      await pullModel(modelName, { registrationData });
 
-      // Dispatch event to open download manager
-      window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName } }));
-
-      let downloadCompleted = false;
-      let isPaused = false;
-      let isCancelled = false;
-
-      // Listen for cancel and pause events
-      const handleCancel = (event: CustomEvent) => {
-        if (event.detail.modelName === modelName) {
-          isCancelled = true;
-          abortController.abort();
-        }
-      };
-      const handlePause = (event: CustomEvent) => {
-        if (event.detail.modelName === modelName) {
-          isPaused = true;
-          abortController.abort();
-        }
-      };
-      window.addEventListener('download:cancelled' as any, handleCancel);
-      window.addEventListener('download:paused' as any, handlePause);
-
-      try {
-        // Build request body - include registration data for new custom models
-        const requestBody: Record<string, unknown> = { model_name: modelName, stream: true };
-        if (registrationData) {
-          requestBody.checkpoint = registrationData.checkpoint;
-          requestBody.recipe = registrationData.recipe;
-          if (registrationData.mmproj) requestBody.mmproj = registrationData.mmproj;
-          if (registrationData.reasoning) requestBody.reasoning = registrationData.reasoning;
-          if (registrationData.vision) requestBody.vision = registrationData.vision;
-          if (registrationData.embedding) requestBody.embedding = registrationData.embedding;
-          if (registrationData.reranking) requestBody.reranking = registrationData.reranking;
-        }
-
-        const response = await serverFetch('/pull', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody),
-          signal: abortController.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to download model: ${response.statusText}`);
-        }
-
-        // Read SSE stream for progress updates
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error('No response body');
-        }
-
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let currentEventType = 'progress';
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              if (line.startsWith('event:')) {
-                currentEventType = line.substring(6).trim();
-              } else if (line.startsWith('data:')) {
-                // Parse JSON separately so server errors aren't swallowed
-                let data;
-                try {
-                  data = JSON.parse(line.substring(5).trim());
-                } catch (parseError) {
-                  console.error('Failed to parse SSE data:', line, parseError);
-                  continue;
-                }
-
-                if (currentEventType === 'progress') {
-                  downloadTracker.updateProgress(downloadId, data);
-                } else if (currentEventType === 'complete') {
-                  downloadTracker.completeDownload(downloadId);
-                  downloadCompleted = true;
-                } else if (currentEventType === 'error') {
-                  downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
-                  throw new Error(data.error || 'Download failed');
-                }
-              } else if (line.trim() === '') {
-                currentEventType = 'progress';
-              }
-            }
-          }
-        } catch (streamError: any) {
-          // If we already got the complete event, ignore stream errors
-          if (!downloadCompleted) {
-            throw streamError;
-          }
-        }
-
-        // Mark as complete if not already done
-        if (!downloadCompleted) {
-          downloadTracker.completeDownload(downloadId);
-          downloadCompleted = true;
-        }
-
-        // Notify all components that models have been updated
-        window.dispatchEvent(new CustomEvent('modelsUpdated'));
-        await fetchCurrentLoadedModel();
-
-        // Show success notification
-        showSuccess(`Model "${modelName}" downloaded successfully.`);
-      } catch (error: any) {
-        // Only handle as error if download didn't complete successfully
-        if (downloadCompleted) {
-          // Download actually succeeded, ignore any network errors from connection closing
-          return;
-        }
-
-        if (error.name === 'AbortError') {
-          if (isPaused) {
-            downloadTracker.pauseDownload(downloadId);
-            showWarning(`Download paused: ${modelName}`);
-          } else if (isCancelled) {
-            downloadTracker.cancelDownload(downloadId);
-            showWarning(`Download cancelled: ${modelName}`);
-            // Dispatch cleanup-complete event to signal that file handles are released
-            window.dispatchEvent(new CustomEvent('download:cleanup-complete', {
-              detail: { id: downloadId, modelName }
-            }));
-          } else {
-            downloadTracker.cancelDownload(downloadId);
-            showWarning(`Download cancelled: ${modelName}`);
-            // Dispatch cleanup-complete event to signal that file handles are released
-            window.dispatchEvent(new CustomEvent('download:cleanup-complete', {
-              detail: { id: downloadId, modelName }
-            }));
-          }
-        } else {
-          downloadTracker.failDownload(downloadId, error.message || 'Unknown error');
-          throw error;
-        }
-      } finally {
-        window.removeEventListener('download:cancelled' as any, handleCancel);
-        window.removeEventListener('download:paused' as any, handlePause);
-      }
+      await fetchCurrentLoadedModel();
+      showSuccess(`Model "${modelName}" downloaded successfully.`);
     } catch (error) {
-      console.error('Error downloading model:', error);
-      showError(`Failed to download model: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (error instanceof DownloadAbortError) {
+        if (error.reason === 'paused') {
+          showWarning(`Download paused: ${modelName}`);
+        } else {
+          showWarning(`Download cancelled: ${modelName}`);
+        }
+      } else {
+        console.error('Error downloading model:', error);
+        showError(`Failed to download model: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     } finally {
       // Remove from loading state
       setLoadingModels(prev => {
@@ -560,15 +409,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   // Separate useEffect for download resume/retry to avoid stale closure issues
   useEffect(() => {
     const handleDownloadResume = (event: CustomEvent) => {
-      const { modelName } = event.detail;
-      if (modelName) {
+      const { modelName, downloadType } = event.detail;
+      if (!modelName) return;
+      if (downloadType === 'backend') {
+        // Parse "recipe:backend" format from displayName
+        const [recipe, backend] = modelName.split(':');
+        if (recipe && backend) installBackend(recipe, backend, true);
+      } else {
         handleDownloadModel(modelName);
       }
     };
 
     const handleDownloadRetry = (event: CustomEvent) => {
-      const { modelName } = event.detail;
-      if (modelName) {
+      const { modelName, downloadType } = event.detail;
+      if (!modelName) return;
+      if (downloadType === 'backend') {
+        const [recipe, backend] = modelName.split(':');
+        if (recipe && backend) installBackend(recipe, backend, true);
+      } else {
         handleDownloadModel(modelName);
       }
     };
@@ -582,90 +440,41 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     };
   }, [handleDownloadModel]);
 
-  const handleLoadModel = async (modelName: string, options?: RecipeOptions, autoLoadAfterDownload: boolean = false) => {
+  const handleLoadModel = async (modelName: string, options?: RecipeOptions) => {
     try {
-      let modelData = modelsData[modelName];
+      const modelData = modelsData[modelName];
       if (!modelData) {
         showError('Model metadata is unavailable. Please refresh and try again.');
         return;
       }
 
-      // if options are provided, convert them to API format
-      if (options) {
-        const apiOptions = recipeOptionsToApi(options);
-        modelData = { ...modelData, ...apiOptions };
-      }
-
-      // Add to loading state
       setLoadingModels(prev => new Set(prev).add(modelName));
-
-      // Dispatch event to notify other components
       window.dispatchEvent(new CustomEvent('modelLoadStart', { detail: { modelId: modelName } }));
 
-      // Ensure the backend is installed before loading (shows in Download Manager)
-      if (modelData.recipe) {
-        await ensureBackendForRecipe(modelData.recipe, systemInfo?.recipes);
-        // Refresh system info so backend status is up to date
-        await refreshSystem();
-      }
+      const loadBody = options ? recipeOptionsToApi(options) : undefined;
 
-      const response = await serverFetch('/load', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_name: modelName, ...modelData })
+      await ensureModelReady(modelName, modelsData, {
+        onModelLoading: () => {}, // already set loading above
+        skipHealthCheck: !!options, // Force re-load when options are provided (Load Options modal)
+        loadBody,
       });
 
-      if (!response.ok) {
-        // Try to parse error response to check for model_invalidated
-        try {
-          const errorData = await response.json();
-          if (errorData?.error?.code === 'model_invalidated') {
-            console.log('[ModelManager] Model was invalidated, triggering re-download:', modelName);
-
-            // Remove from loading state before starting download
-            setLoadingModels(prev => {
-              const newSet = new Set(prev);
-              newSet.delete(modelName);
-              return newSet;
-            });
-            window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
-
-            // Show info message
-            showWarning(`Model "${modelName}" needs to be re-downloaded due to a backend upgrade. Starting download...`);
-
-            // Start download, then auto-load when complete
-            await handleDownloadModel(modelName);
-
-            // After download completes, load the model
-            console.log('[ModelManager] Re-download complete, loading model:', modelName);
-            await handleLoadModel(modelName, undefined, true);
-            return;
-          }
-        } catch (parseError) {
-          // Couldn't parse error response, fall through to generic error
-        }
-        throw new Error(`Failed to load model: ${response.statusText}`);
-      }
-
-      // Wait a bit for the model to actually load, then refresh status
-      setTimeout(async () => {
-        await fetchCurrentLoadedModel();
-        window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
-
-        // Refresh the models list in case FLM upgrade invalidated other models
-        window.dispatchEvent(new CustomEvent('modelsUpdated'));
-      }, 1000);
+      await fetchCurrentLoadedModel();
+      window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
+      window.dispatchEvent(new CustomEvent('modelsUpdated'));
     } catch (error) {
-      console.error('Error loading model:', error);
-      showError(`Failed to load model: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (error instanceof DownloadAbortError) {
+        if (error.reason === 'paused') {
+          showWarning(`Download paused for ${modelName}`);
+        } else {
+          showWarning(`Download cancelled for ${modelName}`);
+        }
+      } else {
+        console.error('Error loading model:', error);
+        showError(`Failed to load model: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
 
-      // Remove from loading state on error
-      setLoadingModels(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(modelName);
-        return newSet;
-      });
-
+      setLoadingModels(prev => { const s = new Set(prev); s.delete(modelName); return s; });
       window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
     }
   };
@@ -707,23 +516,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     }
 
     try {
-      const response = await serverFetch('/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_name: modelName })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to delete model: ${response.statusText}`);
-      }
-
-      // Notify all components that models have been updated
-      window.dispatchEvent(new CustomEvent('modelsUpdated'));
+      await deleteModel(modelName);
+      // No manual modelsUpdated dispatch needed — deleteModel() handles it
       await fetchCurrentLoadedModel();
       showSuccess(`Model "${modelName}" deleted successfully.`);
-
-      // Notify other components (e.g., ChatWindow) that models have been updated
-      window.dispatchEvent(new CustomEvent('modelsUpdated'));
     } catch (error) {
       console.error('Error deleting model:', error);
       showError(`Failed to delete model: ${error instanceof Error ? error.message : 'Unknown error'}`);
