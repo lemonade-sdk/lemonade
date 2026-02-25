@@ -11,6 +11,11 @@ const ALLOWLIST = [
   // Linux: llama.cpp only (CPU, GPU)
   { os: 'linux', fw: 'llama', dev: 'cpu' },
   { os: 'linux', fw: 'llama', dev: 'gpu' },
+  // Docker: llama.cpp only (CPU, GPU)
+  { os: 'docker', fw: 'llama', dev: 'cpu' },
+  { os: 'docker', fw: 'llama', dev: 'gpu' },
+  // macOS (beta): llama.cpp only (GPU via Metal)
+  { os: 'macos', fw: 'llama', dev: 'gpu' },
 ];
 
 const NPU_DRIVER_URL = 'https://account.amd.com/en/forms/downloads/ryzenai-eula-public-xef.html?filename=NPU_RAI1.5_280_WHQL.zip';
@@ -41,17 +46,17 @@ function isAllowed(os, fw, dev) {
 function findValidCombo(os, fw, dev) {
   // Try exact match first
   if (isAllowed(os, fw, dev)) return { os, fw, dev };
-  
+
   // Try keeping fw, find valid dev
   for (const d of ['npu', 'gpu', 'cpu']) {
     if (isAllowed(os, fw, d)) return { os, fw, dev: d };
   }
-  
+
   // Try keeping dev, find valid fw
   for (const f of ['oga', 'llama', 'flm']) {
     if (isAllowed(os, f, dev)) return { os, fw: f, dev };
   }
-  
+
   // Fall back to first valid combo for this OS
   const fallback = ALLOWLIST.find(c => c.os === os);
   return fallback || ALLOWLIST[0];
@@ -59,7 +64,7 @@ function findValidCombo(os, fw, dev) {
 
 window.lmnSet = function(field, value) {
   const newState = { ...lmnState, [field]: value };
-  
+
   // OS change may invalidate fw/dev combo
   if (field === 'os') {
     const valid = findValidCombo(value, newState.fw, newState.dev);
@@ -75,23 +80,23 @@ window.lmnSet = function(field, value) {
     newState.fw = valid.fw;
     newState.dev = valid.dev;
   }
-  
+
   window.lmnState = newState;
   lmnRender();
 };
 
 window.lmnRender = function() {
   const { os, type, fw, dev } = lmnState;
-  
+
   // Update active states and disabled states
   const cells = {
-    os: ['win', 'linux', 'macos'],
-    distro: ['win', 'macos', 'ubuntu', 'arch', 'fedora'],
+    os: ['win', 'linux', 'macos', 'docker'],
+    distro: ['win', 'macos', 'ubuntu', 'arch', 'fedora', 'debian'],
     type: ['app', 'server'],
     fw: ['oga', 'llama', 'flm'],
     dev: ['npu', 'gpu', 'cpu']
   };
-  
+
   // Reset and set active
   Object.entries(cells).forEach(([category, options]) => {
     options.forEach(opt => {
@@ -102,7 +107,7 @@ window.lmnRender = function() {
       if (lmnState[category] === opt) el.classList.add('lmn-active');
     });
   });
-  
+
   // Gray out invalid combinations
   cells.fw.forEach(f => {
     const el = document.getElementById(`fw-${f}`);
@@ -110,17 +115,17 @@ window.lmnRender = function() {
       el.classList.add('lmn-disabled');
     }
   });
-  
+
   cells.dev.forEach(d => {
     const el = document.getElementById(`dev-${d}`);
     if (el && !isAllowed(os, fw, d)) {
       el.classList.add('lmn-disabled');
     }
   });
-  
+
   // Render download section
   renderDownload();
-  
+
   // Render quick start commands
   renderQuickStart();
 };
@@ -129,23 +134,43 @@ function renderDownload() {
   const { os, distro, type } = lmnState;
   const osDistro = document.getElementById('lmn-install-distro');
   const downloadArea = document.getElementById('lmn-download-area');
+  const installType = document.getElementById('lmn-install-type');
   const cmdDiv = document.getElementById('lmn-command');
   const installCmdDiv = document.getElementById('lmn-install-commands');
   const version = window.lmnLatestVersion || 'VERSION';
-  
-  // Handle macOS "Coming soon"
+
+  // Handle macOS (beta)
   if (os === 'macos') {
-    if (downloadArea) downloadArea.style.display = 'none';
-    if (installCmdDiv) installCmdDiv.style.display = 'none';
     if (osDistro) osDistro.style.display = 'none';
+    if (installType) installType.style.display = 'none';
+
+    const pkgFile = `Lemonade-${version}-Darwin.pkg`;
+    const link = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${pkgFile}`;
+
+    if (downloadArea) {
+      downloadArea.style.display = 'block';
+      const linkEl = document.getElementById('lmn-link');
+      if (linkEl) {
+        linkEl.href = link;
+        linkEl.textContent = 'Download Lemonade Installer (.pkg)';
+      }
+    }
+    if (installCmdDiv) installCmdDiv.style.display = 'none';
+
+    let notes = '';
+    notes += `<div class="lmn-note"><strong>Note:</strong> macOS support is currently in beta. The installer is signed and notarized for Apple Silicon Macs with Metal GPU acceleration.</div>`;
+    notes += `<div class="lmn-note lmn-source-note">To build from source, see the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md#building-from-source-on-macos-for-m-series--arm64-family" target="_blank">Developer Guide</a>.</div>`;
+
     if (cmdDiv) {
-      cmdDiv.innerHTML = `<div class="lmn-coming-soon">Coming soon!</div>`;
+      cmdDiv.innerHTML = notes;
     }
     return;
   }
-  
+
   if (os === 'win') {
     if (osDistro) osDistro.style.display = 'none';
+    if (installType) installType.style.display = 'table-row';
+
     // Windows: Show download button
     let link, buttonText;
     if (type === 'app') {
@@ -155,7 +180,7 @@ function renderDownload() {
       link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi';
       buttonText = 'Download Lemonade Minimal Installer (.msi)';
     }
-    
+
     if (downloadArea) {
       downloadArea.style.display = 'block';
       const linkEl = document.getElementById('lmn-link');
@@ -168,38 +193,92 @@ function renderDownload() {
       installCmdDiv.style.display = 'none';
     }
   }
-  
+
   if (os === 'linux') {
-    if (osDistro) osDistro.style.display = 'table-row'
+    if (osDistro) osDistro.style.display = 'table-row';
+    if (installType) installType.style.display = 'table-row';
+
     if (distro === 'ubuntu') {
-      // Ubuntu: Show wget + dpkg commands
-      let debFile;
-      if (type === 'app') {
-        debFile = `lemonade_${version}_amd64.deb`;
-      } else {
-        debFile = `lemonade-server-minimal_${version}_amd64.deb`;
-      }
+      // Ubuntu: Show structured server + frontend installation
+      const debFile = `lemonade-server_${version}_amd64.deb`;
+      const appImageFile = `Lemonade-${version}-x86_64.AppImage`;
       const downloadUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${debFile}`;
-      
+      const appImageUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${appImageFile}`;
+
       if (downloadArea) {
         downloadArea.style.display = 'none';
       }
       if (installCmdDiv) {
         installCmdDiv.style.display = 'block';
-        const commands = [
+        const debCommands = [
           `wget ${downloadUrl}`,
-          `sudo dpkg -i ${debFile}`
+          `sudo apt install ./${debFile}`
         ];
-        
-        installCmdDiv.innerHTML = `<pre><code class="language-bash" id="lmn-install-pre-block"></code></pre>`;
-        
+
+        let frontendSection = '';
+        if (type === 'app') {
+          frontendSection = `
+            <div class="lmn-install-section-title">Step 2: Choose your frontend</div>
+            <div class="lmn-install-method-header">Option 1: Web App (default, available at <a href="http://localhost:8000" target="_blank">http://localhost:8000</a>)</div>
+            <div class="lmn-note">The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.</div>
+
+            <div class="lmn-install-method-header">Option 2: AppImage (portable desktop app, no installation required)</div>
+            <pre><code class="language-bash" id="lmn-install-appimage-block"></code></pre>
+
+            <div class="lmn-install-method-header">Option 3: Snap (fully sandboxed desktop app)</div>
+            <pre><code class="language-bash" id="lmn-install-snap-app-block"></code></pre>
+          `;
+        }
+
+        installCmdDiv.innerHTML = `
+          <div class="lmn-install-section-title">Step 1: Install lemonade-server</div>
+          <div class="lmn-install-method-header">Via Debian package:</div>
+          <pre><code class="language-bash" id="lmn-install-pre-block"></code></pre>
+          <div class="lmn-install-method-header">Or via Snap:</div>
+          <pre><code class="language-bash" id="lmn-install-snap-server-block"></code></pre>
+          ${frontendSection}
+        `;
+
         setTimeout(() => {
+          // Render deb commands
           const pre = document.getElementById('lmn-install-pre-block');
           if (pre) {
-            pre.innerHTML = commands.map((line, idx) => {
+            pre.innerHTML = debCommands.map((line, idx) => {
               const safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
               return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyInstallLine(event, ${idx})">📋</button></div>`;
             }).join('');
+          }
+
+          // Render server snap command
+          const serverSnapPre = document.getElementById('lmn-install-snap-server-block');
+          if (serverSnapPre) {
+            const serverSnapCmd = 'sudo snap install lemonade-server';
+            const safeLine = serverSnapCmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            serverSnapPre.innerHTML = `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyServerSnapLine(event)">📋</button></div>`;
+          }
+
+          // Render AppImage commands if App + Server selected
+          if (type === 'app') {
+            const appImagePre = document.getElementById('lmn-install-appimage-block');
+            if (appImagePre) {
+              const appImageCommands = [
+                `wget ${appImageUrl}`,
+                `chmod +x ${appImageFile}`,
+                `./${appImageFile}`
+              ];
+              appImagePre.innerHTML = appImageCommands.map((cmd, idx) => {
+                const safeLine = cmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyAppImageLine(event, ${idx})">📋</button></div>`;
+              }).join('');
+            }
+
+            // Render app snap command
+            const appSnapPre = document.getElementById('lmn-install-snap-app-block');
+            if (appSnapPre) {
+              const appSnapCmd = 'sudo snap install lemonade';
+              const safeLine = appSnapCmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              appSnapPre.innerHTML = `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyAppSnapLine(event)">📋</button></div>`;
+            }
           }
         }, 0);
       }
@@ -213,7 +292,7 @@ function renderDownload() {
         link = 'https://aur.archlinux.org/packages/lemonade-server';
         buttonText = 'Download Lemonade Server (AUR)';
       }
-      
+
       if (downloadArea) {
         downloadArea.style.display = 'block';
         const linkEl = document.getElementById('lmn-link');
@@ -230,25 +309,125 @@ function renderDownload() {
       if (downloadArea) downloadArea.style.display = 'none';
       if (installCmdDiv) installCmdDiv.style.display = 'none';
       if (cmdDiv) {
-        cmdDiv.innerHTML = `<div class="lmn-coming-soon">For Fedora, please follow the build instructions as described in the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/README.md#building-from-source" target="_blank">README</a> file.</div>`;
+        cmdDiv.innerHTML = `<div class="lmn-coming-soon">For Fedora, please follow the build instructions as described in the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md#building-from-source" target="_blank">Developer Guide</a>.</div>`;
+      }
+      return;
+    } else if (distro === 'debian') {
+      if (downloadArea) downloadArea.style.display = 'none';
+      if (installCmdDiv) installCmdDiv.style.display = 'none';
+      if (cmdDiv) {
+        cmdDiv.innerHTML = `<div class="lmn-coming-soon">For Debian, please follow the build instructions as described in the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md#building-from-source" target="_blank">Developer Guide</a>.</div>`;
       }
       return;
     }
   }
-  
-  // Build from source note (only depends on os and type)
-  let notes = `<div class="lmn-note lmn-source-note">To build from source, see the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/README.md" target="_blank">Server</a>`;
-  if (type === 'app') {
-    notes += ` and <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/app/README.md" target="_blank">App</a> dev READMEs`;
+
+  if (os === 'docker') {
+    if (osDistro) osDistro.style.display = 'none';
+
+    if (installType) installType.style.display = 'none';
+
+    if (downloadArea) {
+      downloadArea.style.display = 'none';
+    }
+    if (installCmdDiv) {
+      installCmdDiv.style.display = 'block';
+      const commands = [
+        `docker run -d \\`,
+          `  --name lemonade-server \\`,
+          `  -p 8000:8000 \\`,
+          `  -v lemonade-cache:/root/.cache/huggingface \\`,
+          `  -v lemonade-llama:/opt/lemonade/llama \\`,
+          `  ghcr.io/lemonade-sdk/lemonade-server:latest`
+      ];
+
+      installCmdDiv.innerHTML = `<pre><code class="language-bash" id="lmn-install-pre-block"></code></pre>`;
+
+      setTimeout(() => {
+        const pre = document.getElementById('lmn-install-pre-block');
+        if (pre) {
+          pre.innerHTML = commands.map((line, idx) => {
+            const safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            // Only show copy button on first line
+            const button = idx === 0 ? `<button class="lmn-copy-btn" title="Copy" onclick="lmnCopyAllInstall(event)">📋</button>` : '';
+            return `<div class="lmn-command-line"><span>${safeLine}</span>${button}</div>`;
+          }).join('');
+        }
+      }, 0);
+    }
+
+    let dockerNote = `<div class="lmn-note lmn-source-note">To build from source, see the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/DOCKER_GUIDE.md" target="_blank">Docker Guide</a>`;
+    if (cmdDiv) {
+      cmdDiv.innerHTML = dockerNote;
+    }
+
+    return;
   } else {
-    notes += ` dev README`;
+    // Hide Docker section for other platforms
+    const dockerSection = document.getElementById('lmn-docker-section');
+    if (dockerSection) dockerSection.style.display = 'none';
+  }
+
+  // Build from source note (only depends on os and type)
+  let notes = '';
+
+  // Add Ubuntu-specific note if Ubuntu is selected
+  if (os === 'linux' && distro === 'ubuntu') {
+    notes += `<div class="lmn-note">Lemonade is tested on Ubuntu 24.04 LTS but should also work on other versions.</div>`;
+  }
+
+  notes += `<div class="lmn-note lmn-source-note">To build from source, see the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md" target="_blank">Developer Guide</a>`;
+  if (type === 'app') {
+    notes += ` and <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/app/README.md" target="_blank">App README</a>`;
   }
   notes += `.</div>`;
-  
+
   if (cmdDiv) {
     cmdDiv.innerHTML = notes;
   }
 }
+
+window.lmnCopyAppImageLine = function(e, idx) {
+  e.stopPropagation();
+  const pre = document.getElementById('lmn-install-appimage-block');
+  if (!pre) return;
+  const lines = Array.from(pre.querySelectorAll('.lmn-command-line span')).map(span => span.textContent);
+  if (lines[idx] !== undefined) {
+    navigator.clipboard.writeText(lines[idx]);
+    const btn = e.currentTarget;
+    const old = btn.textContent;
+    btn.textContent = '✔';
+    setTimeout(() => { btn.textContent = old; }, 900);
+  }
+};
+
+window.lmnCopyServerSnapLine = function(e) {
+  e.stopPropagation();
+  const pre = document.getElementById('lmn-install-snap-server-block');
+  if (!pre) return;
+  const line = pre.querySelector('.lmn-command-line span');
+  if (line) {
+    navigator.clipboard.writeText(line.textContent);
+    const btn = e.currentTarget;
+    const old = btn.textContent;
+    btn.textContent = '✔';
+    setTimeout(() => { btn.textContent = old; }, 900);
+  }
+};
+
+window.lmnCopyAppSnapLine = function(e) {
+  e.stopPropagation();
+  const pre = document.getElementById('lmn-install-snap-app-block');
+  if (!pre) return;
+  const line = pre.querySelector('.lmn-command-line span');
+  if (line) {
+    navigator.clipboard.writeText(line.textContent);
+    const btn = e.currentTarget;
+    const old = btn.textContent;
+    btn.textContent = '✔';
+    setTimeout(() => { btn.textContent = old; }, 900);
+  }
+};
 
 window.lmnCopyInstallLine = function(e, idx) {
   e.stopPropagation();
@@ -264,21 +443,35 @@ window.lmnCopyInstallLine = function(e, idx) {
   }
 };
 
+window.lmnCopyAllInstall = function(e) {
+  e.stopPropagation();
+  const pre = document.getElementById('lmn-install-pre-block');
+  if (!pre) return;
+  const lines = Array.from(pre.querySelectorAll('.lmn-command-line span')).map(span => span.textContent);
+  if (lines !== undefined) {
+    // Join with newlines instead of commas for proper formatting
+    navigator.clipboard.writeText(lines.join('\n'));
+    const btn = e.currentTarget;
+    const old = btn.textContent;
+    btn.textContent = '✔';
+    setTimeout(() => { btn.textContent = old; }, 900);
+  }
+};
+
 function renderQuickStart() {
   const { os, fw, dev } = lmnState;
   const exploreDiv = document.getElementById('lmn-explore-command');
   const exploreSection = document.getElementById('lmn-explore-section');
-  
+
   if (!exploreDiv || !exploreSection) return;
-  
-  // Hide quick start for macOS
+
+  // macOS quick start
   if (os === 'macos') {
-    exploreSection.style.display = 'none';
-    return;
+    exploreSection.style.display = 'block';
   }
-  
-  const commands = ['lemonade-server -h'];
-  
+
+  let commands = ['lemonade-server -h'];
+
   if (fw === 'oga') {
     if (dev === 'npu') {
       commands.push('lemonade-server run Llama-3.2-1B-Instruct-NPU');
@@ -295,23 +488,23 @@ function renderQuickStart() {
   } else if (fw === 'flm') {
     commands.push('lemonade-server run Gemma-3-4b-it-FLM');
   }
-  
+
   exploreSection.style.display = 'block';
   exploreDiv.innerHTML = `<pre><code class="language-bash" id="lmn-explore-pre-block"></code></pre>`;
-  
+
   // Add contextual notes based on inference engine and device
   let notes = '';
-  
+
   // NPU driver note
   if (dev === 'npu') {
     notes += `<div class="lmn-note"><strong>Note:</strong> NPU requires an AMD Ryzen AI 300-series PC with Windows 11 and driver installation. Download and install the <a href="${NPU_DRIVER_URL}" target="_blank">NPU Driver</a> before proceeding.</div>`;
   }
-  
+
   // FastFlowLM Early Access note
   if (fw === 'flm') {
     notes += `<div class="lmn-note"><strong><a href="https://github.com/FastFlowLM/FastFlowLM" target="_blank">FastFlowLM (FLM)</a> support in Lemonade is in Early Access.</strong> FLM is free for non-commercial use, however note that commercial licensing terms apply. Installing an FLM model will automatically launch the FLM installer, which will require you to accept the FLM license terms to continue. Contact <a href="mailto:lemonade@amd.com">lemonade@amd.com</a> for inquiries.</div>`;
   }
-  
+
   // llama.cpp backend tip for GPU
   if (fw === 'llama' && dev === 'gpu') {
     notes += `<div class="lmn-note"><strong>Tip:</strong> To select a backend, use <code>--llamacpp rocm</code> or <code>--llamacpp vulkan</code></div>`;
@@ -319,11 +512,38 @@ function renderQuickStart() {
       notes += `<div class="lmn-note"><strong>Note:</strong> You may need to run <code>sudo update-pciids</code> for GPU detection on Linux.</div>`;
     }
   }
-  
+
+  // backend config for docker
+  if (os === 'docker') {
+    commands = [];
+
+    if (fw === 'llama' && dev === 'gpu') {
+      commands.push(`docker run -d \\
+  --name lemonade-server \\
+  -p 8000:8000 \\
+  -v lemonade-cache:/root/.cache/huggingface \\
+  -v lemonade-llama:/opt/lemonade/llama \\
+  -e LEMONADE_LLAMACPP_BACKEND=vulkan \\
+  ghcr.io/lemonade-sdk/lemonade-server:latest`);
+      notes = `<div class="lmn-note"><strong>Tip:</strong> To select a specific backend, update the LEMONADE_LLAMACPP_BACKEND environment variable: <code>LEMONADE_LLAMACPP_BACKEND=vulkan</code></div>`;
+    }
+
+    if (fw === 'llama' && dev === 'cpu') {
+      commands.push(`docker run -d \\
+  --name lemonade-server \\
+  -p 8000:8000 \\
+  -v lemonade-cache:/root/.cache/huggingface \\
+  -v lemonade-llama:/opt/lemonade/llama \\
+  -e LEMONADE_LLAMACPP_BACKEND=cpu \\
+  ghcr.io/lemonade-sdk/lemonade-server:latest`);
+      notes = `<div class="lmn-note"><strong>Tip:</strong> To select a specific backend, update the LEMONADE_LLAMACPP_BACKEND environment variable: <code>LEMONADE_LLAMACPP_BACKEND=cpu</code></div>`;
+    }
+  }
+
   if (notes) {
     exploreDiv.innerHTML += notes;
   }
-  
+
   setTimeout(() => {
     const pre = document.getElementById('lmn-explore-pre-block');
     if (pre) {
@@ -349,6 +569,47 @@ window.lmnCopyLine = function(e, idx) {
   }
 };
 
+// Parse URL hash and set appropriate state
+function parseHashAndSetState() {
+  const hash = window.location.hash.substring(1).toLowerCase(); // Remove # and make lowercase
+
+  if (!hash) return; // No hash, use defaults
+
+  // Handle anchors
+  switch (hash) {
+    case 'linux':
+      lmnSet('os', 'linux');
+      break;
+    case 'ubuntu':
+      lmnSet('os', 'linux');
+      lmnSet('distro', 'ubuntu');
+      break;
+    case 'arch':
+      lmnSet('os', 'linux');
+      lmnSet('distro', 'arch');
+      break;
+    case 'debian':
+      lmnSet('os', 'linux');
+      lmnSet('distro', 'debian');
+      break;
+    case 'fedora':
+      lmnSet('os', 'linux');
+      lmnSet('distro', 'fedora');
+      break;
+    case 'docker':
+      lmnSet('os', 'docker');
+      break;
+    case 'windows':
+    case 'win':
+      lmnSet('os', 'win');
+      break;
+    case 'macos':
+    case 'mac':
+      lmnSet('os', 'macos');
+      break;
+  }
+}
+
 window.lmnInit = function() {
   const installer = document.getElementById('lmn-installer');
   if (installer && !document.getElementById('os-win')) {
@@ -357,21 +618,23 @@ window.lmnInit = function() {
         <div class="lmn-section-header">Download & Install</div>
         <table class="lmn-installer-table lmn-embedded-table">
           <tr>
-            <td class="lmn-label">Operating System</td>
+            <td class="lmn-label">Platform</td>
             <td id="os-win" class="lmn-active">Windows 11</td>
             <td id="os-linux">Linux</td>
             <td id="os-macos">macOS</td>
+            <td id="os-docker">Docker</td>
           </tr>
           <tr id="lmn-install-distro" style="display: none;">
             <td class="lmn-label">Linux Distribution</td>
-            <td id="distro-ubuntu" class="lmn-active">Ubuntu 24.04+</td>          
-            <td id="distro-arch">Arch Linux</td>            
+            <td id="distro-ubuntu" class="lmn-active">Ubuntu 24.04+</td>
+            <td id="distro-arch">Arch Linux</td>
             <td id="distro-fedora">Fedora</td>
+            <td id="distro-debian">Debian Trixie+</td>
           </tr>
-          <tr>
+          <tr id="lmn-install-type">
             <td class="lmn-label">Installation Type</td>
             <td id="type-app" colspan="2" class="lmn-active">App + Server</td>
-            <td id="type-server">Server Only</td>
+            <td id="type-server" colspan="2">Server Only</td>
           </tr>
         </table>
         <div id="lmn-download-area" class="lmn-download-section">
@@ -400,6 +663,13 @@ window.lmnInit = function() {
       </div>
     `;
   }
+
+  // Listen for hash changes
+  window.addEventListener('hashchange', parseHashAndSetState);
+
+  // Parse hash on initial load (after HTML is set up)
+  parseHashAndSetState();
+
   fetchLatestVersion();
   lmnRender();
 };

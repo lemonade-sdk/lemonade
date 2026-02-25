@@ -1,6 +1,11 @@
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/llamacpp_server.h"
+#include "lemon/backends/whisper_server.h"
+#include "lemon/backends/sd_server.h"
+#include "lemon/backends/kokoro_server.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -9,6 +14,9 @@
 #include <regex>
 #include <algorithm>
 #include <cctype>
+#include <set>
+#include <map>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -18,21 +26,298 @@
 #pragma comment(lib, "wbemuuid.lib")
 #endif
 
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#endif
+
 namespace lemon {
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
+using namespace lemon::backends;
 
 // AMD discrete GPU keywords
 const std::vector<std::string> AMD_DISCRETE_GPU_KEYWORDS = {
     "rx ", "xt", "pro w", "pro v", "radeon pro", "firepro", "fury"
 };
 
-// NVIDIA discrete GPU keywords  
+// NVIDIA discrete GPU keywords
 const std::vector<std::string> NVIDIA_DISCRETE_GPU_KEYWORDS = {
     "geforce", "rtx", "gtx", "quadro", "tesla", "titan",
     "a100", "a40", "a30", "a10", "a6000", "a5000", "a4000", "a2000"
 };
+
+// ROCm architecture mapping - maps specific gfx architectures to their family
+const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
+    // RDNA4 family (gfx120X)
+    {"gfx1200", "gfx120X"},
+    {"gfx1201", "gfx120X"},
+
+    // RDNA3 family (gfx110X)
+    {"gfx1100", "gfx110X"},
+    {"gfx1101", "gfx110X"},
+    {"gfx1102", "gfx110X"},
+    {"gfx1103", "gfx110X"},
+};
+
+// ============================================================================
+// Recipe/Backend definition table - single source of truth for support matrix
+// ============================================================================
+
+// Device constraints: device_type -> set of allowed families (empty = all families)
+using DeviceConstraints = std::map<std::string, std::set<std::string>>;
+
+struct RecipeBackendDef {
+    std::string recipe;
+    std::string backend;
+    std::set<std::string> supported_os;
+    DeviceConstraints devices;
+};
+
+// Recipe definitions table - single source of truth for all recipe/backend support
+// Format: {recipe, backend, {supported_os}, {{device_type, {allowed_families}}}}
+//
+// IMPORTANT: Backend order matters! For recipes with multiple backends (e.g., llamacpp),
+// the order in this table defines the preference order. First listed = most preferred.
+// Example: metal is listed before vulkan on macOS, vulkan before cpu elsewhere.
+//
+// Empty family set {} means "all families of that device type"
+static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
+    // llamacpp with multiple backends (order = preference: metal > vulkan > rocm > cpu)
+    {"llamacpp", "metal", {"macos"},
+    {
+        {"metal", {}},
+    }},
+    {"llamacpp", "vulkan", {"windows", "linux"}, {
+        {"cpu", {"x86_64"}},
+        {"amd_igpu", {}},      // all iGPU families
+        {"amd_dgpu", {}},      // all dGPU families
+    }},
+    {"llamacpp", "rocm", {"windows", "linux"}, {
+        {"amd_igpu", {"gfx1150", "gfx1151"}},                      // STX Point/Halo iGPUs
+        {"amd_dgpu", {"gfx110X", "gfx120X"}},                      // RDNA3/RDNA4 dGPUs
+    }},
+    {"llamacpp", "cpu", {"windows", "linux"}, {
+        {"cpu", {"x86_64"}},
+    }},
+
+    // whisper.cpp - Windows x86_64 only
+    {"whispercpp", "npu", {"windows"}, {
+        {"amd_npu", {"XDNA2"}},
+    }},
+    {"whispercpp", "cpu", {"windows"}, {
+        {"cpu", {"x86_64"}},
+    }},
+
+    // kokoro - Windows/Linux x86_64
+    {"kokoro", "cpu", {"windows", "linux"}, {
+        {"cpu", {"x86_64"}},
+    }},
+
+    // stable-diffusion.cpp - ROCm backend for AMD GPUs
+    {"sd-cpp", "rocm", {"windows", "linux"}, {
+        {"amd_igpu", {
+#ifdef __linux__
+            "gfx1150",   // Strix Point - Linux only (ROCm not yet supported on Windows)
+#endif
+            "gfx1151"
+        }},
+        {"amd_dgpu", {"gfx110X", "gfx120X"}},
+    }},
+
+    // stable-diffusion.cpp - CPU backend (Windows/Linux x86_64)
+    {"sd-cpp", "cpu", {"windows", "linux"}, {
+        {"cpu", {"x86_64"}},
+    }},
+
+    // FLM - Windows NPU (XDNA2)
+    {"flm", "default", {"windows"}, {
+        {"amd_npu", {"XDNA2"}},
+    }},
+
+    // RyzenAI LLM - Windows NPU (XDNA2)
+    {"ryzenai-llm", "default", {"windows"}, {
+        {"amd_npu", {"XDNA2"}},
+    }},
+};
+
+// ============================================================================
+// Device family to human-readable name mapping
+// ============================================================================
+
+// Maps device family codes to human-readable descriptions
+// Format: {family_code, human_readable_name}
+static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
+    // CPU architectures
+    {"x86_64", "x86-64 processors"},
+    {"arm64", "ARM64 processors"},
+
+    // AMD iGPU/dGPU architectures (ROCm)
+    {"gfx1150", "Radeon 880M/890M (Strix Point)"},
+    {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
+    {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
+    {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
+
+    // NPU architectures
+    {"XDNA2", "AMD XDNA 2"},
+};
+
+// Maps device types to human-readable names (for error messages)
+static const std::map<std::string, std::string> DEVICE_TYPE_NAMES = {
+    {"cpu", "CPU"},
+    {"amd_igpu", "AMD iGPU"},
+    {"amd_dgpu", "AMD dGPU"},
+    {"amd_npu", "AMD NPU"},
+    {"nvidia_dgpu", "NVIDIA GPU"},
+    {"metal", "MacOS Metal GPU"}
+};
+
+// Get human-readable name for a device family (e.g., "gfx1150" -> "Radeon 880M/890M")
+static std::string get_family_name(const std::string& family) {
+    auto it = DEVICE_FAMILY_NAMES.find(family);
+    return it != DEVICE_FAMILY_NAMES.end() ? it->second : family;
+}
+
+// Get human-readable name for a device type (e.g., "amd_igpu" -> "AMD iGPU")
+static std::string get_device_type_name(const std::string& device_type) {
+    auto it = DEVICE_TYPE_NAMES.find(device_type);
+    return it != DEVICE_TYPE_NAMES.end() ? it->second : device_type;
+}
+
+// Generate a human-readable error message for unsupported backend
+// Uses RECIPE_DEFS and DEVICE_FAMILY_NAMES to build a descriptive message
+std::string SystemInfo::get_unsupported_backend_error(const std::string& recipe, const std::string& backend) {
+    std::string error;
+
+    // Find the recipe/backend in RECIPE_DEFS
+    for (const auto& def : RECIPE_DEFS) {
+        if (def.recipe == recipe && def.backend == backend) {
+            // Collect all required family names
+            std::vector<std::string> family_names;
+            for (const auto& [device_type, families] : def.devices) {
+                for (const auto& f : families) {
+                    family_names.push_back(get_family_name(f));
+                }
+            }
+
+            // Build error message
+            error = "No compatible device detected for " + recipe;
+            if (backend != "default") {
+                error += " (" + backend + " backend)";
+            }
+            if (!family_names.empty()) {
+                error += ". Requires: ";
+                for (size_t i = 0; i < family_names.size(); i++) {
+                    if (i > 0) error += ", ";
+                    error += family_names[i];
+                }
+            }
+            error += ".";
+            break;
+        }
+    }
+
+    if (error.empty()) {
+        error = "Unsupported recipe/backend combination: " + recipe + "/" + backend;
+    }
+
+    return error;
+}
+
+// Detected device with its family
+struct DetectedDevice {
+    std::string type;      // "cpu", "amd_igpu", "amd_dgpu", "amd_npu"
+    std::string name;      // Full device name
+    std::string family;    // "x86_64", "gfx1150", "XDNA2", etc.
+    bool present;
+};
+
+// Get current OS identifier
+static std::string get_current_os() {
+    #ifdef _WIN32
+    return "windows";
+    #elif defined(__APPLE__)
+    return "macos";
+    #else
+    return "linux";
+    #endif
+}
+
+// Forward declarations for helper functions used in device detection
+std::string identify_rocm_arch_from_name(const std::string& device_name);
+std::string identify_npu_arch();
+
+// Check if device matches constraints (empty constraint set = all families allowed)
+static bool device_matches_constraint(const std::string& device_family,
+                                       const std::set<std::string>& allowed_families) {
+    if (allowed_families.empty()) {
+        return true;  // Empty = all families allowed
+    }
+    return allowed_families.count(device_family) > 0;
+}
+
+// Generic installation check
+static bool is_recipe_installed(const std::string& recipe, const std::string& backend) {
+    if (recipe == "llamacpp") {
+        return SystemInfo::is_llamacpp_installed(backend);
+    }
+    if (recipe == "whispercpp") {
+        return SystemInfo::is_whispercpp_installed(backend);
+    }
+    if (recipe == "kokoro") {
+        return SystemInfo::is_kokoro_installed(backend);
+    }
+    if (recipe == "sd-cpp") {
+        return SystemInfo::is_sdcpp_installed(backend);
+    }
+    if (recipe == "flm") {
+        // Check if FLM is installed
+        #ifdef _WIN32
+        for (const auto& path : {"C:\\Program Files\\AMD\\FLM\\flm.exe",
+                                  "C:\\Program Files (x86)\\AMD\\FLM\\flm.exe"}) {
+            if (fs::exists(path)) {
+                return true;
+            }
+        }
+        // Check PATH for non-standard installations
+        FILE* pipe = _popen("where flm 2>NUL", "r");
+        if (pipe) {
+            char buffer[256];
+            bool found = (fgets(buffer, sizeof(buffer), pipe) != nullptr);
+            _pclose(pipe);
+            return found;
+        }
+        #endif
+        return false;
+    }
+    if (recipe == "ryzenai-llm") {
+        return SystemInfo::is_ryzenai_serve_available();
+    }
+    return false;
+}
+
+// Generic version check
+static std::string get_recipe_version(const std::string& recipe, const std::string& backend) {
+    if (recipe == "llamacpp") {
+        return SystemInfo::get_llamacpp_version(backend);
+    }
+    if (recipe == "whispercpp") {
+        return SystemInfo::get_whispercpp_version(backend);
+    }
+    if (recipe == "kokoro") {
+        return SystemInfo::get_kokoro_version(backend);
+    }
+    if (recipe == "sd-cpp") {
+        return SystemInfo::get_sdcpp_version(backend);
+    }
+    if (recipe == "flm") {
+        return SystemInfo::get_flm_version();
+    }
+    if (recipe == "ryzenai-llm") {
+        return SystemInfo::get_oga_version();
+    }
+    return "";
+}
 
 // ============================================================================
 // SystemInfo base class implementation
@@ -46,11 +331,11 @@ json SystemInfo::get_system_info_dict() {
 
 json SystemInfo::get_device_dict() {
     json devices;
-    
+
     // NOTE: This function collects hardware info only (no inference engines).
     // Inference engines are detected separately in get_system_info_with_cache()
     // because they should always be fresh (not cached).
-    
+
     // Get CPU info - with fault tolerance
     try {
         auto cpu = get_cpu_device();
@@ -60,6 +345,13 @@ json SystemInfo::get_device_dict() {
             {"threads", cpu.threads},
             {"available", cpu.available}
         };
+        #if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
+        devices["cpu"]["family"] = "x86_64";
+        #elif defined(__aarch64__) || defined(_M_ARM64)
+        devices["cpu"]["family"] = "arm64";
+        #else
+        devices["cpu"]["family"] = "unknown";
+        #endif
         if (!cpu.error.empty()) {
             devices["cpu"]["error"] = cpu.error;
         }
@@ -72,14 +364,17 @@ json SystemInfo::get_device_dict() {
             {"error", std::string("Detection exception: ") + e.what()}
         };
     }
-    
+
     // Get AMD iGPU info - with fault tolerance
     try {
         auto amd_igpu = get_amd_igpu_device();
         devices["amd_igpu"] = {
             {"name", amd_igpu.name},
+            {"vram_gb", amd_igpu.vram_gb},
+            {"virtual_mem_gb", amd_igpu.virtual_gb},
             {"available", amd_igpu.available}
         };
+        devices["amd_igpu"]["family"] = identify_rocm_arch_from_name(amd_igpu.name);
         if (!amd_igpu.error.empty()) {
             devices["amd_igpu"]["error"] = amd_igpu.error;
         }
@@ -90,7 +385,7 @@ json SystemInfo::get_device_dict() {
             {"error", std::string("Detection exception: ") + e.what()}
         };
     }
-    
+
     // Get AMD dGPU info - with fault tolerance
     try {
         auto amd_dgpus = get_amd_dgpu_devices();
@@ -103,9 +398,13 @@ json SystemInfo::get_device_dict() {
             if (gpu.vram_gb > 0) {
                 gpu_json["vram_gb"] = gpu.vram_gb;
             }
+            if (gpu.virtual_gb > 0) {
+                gpu_json["virtual_mem_gb"] = gpu.virtual_gb;
+            }
             if (!gpu.driver_version.empty()) {
                 gpu_json["driver_version"] = gpu.driver_version;
             }
+            gpu_json["family"] = identify_rocm_arch_from_name(gpu.name);
             if (!gpu.error.empty()) {
                 gpu_json["error"] = gpu.error;
             }
@@ -115,7 +414,7 @@ json SystemInfo::get_device_dict() {
         devices["amd_dgpu"] = json::array();
         devices["amd_dgpu_error"] = std::string("Detection exception: ") + e.what();
     }
-    
+
     // Get NVIDIA dGPU info - with fault tolerance
     try {
         auto nvidia_dgpus = get_nvidia_dgpu_devices();
@@ -140,37 +439,88 @@ json SystemInfo::get_device_dict() {
         devices["nvidia_dgpu"] = json::array();
         devices["nvidia_dgpu_error"] = std::string("Detection exception: ") + e.what();
     }
-    
+
     // Get NPU info - with fault tolerance
+    // Use CPU processor name as the NPU device name (e.g., "AMD Ryzen AI 9 HX 375")
     try {
         auto npu = get_npu_device();
-        devices["npu"] = {
-            {"name", npu.name},
+        std::string cpu_name = devices.contains("cpu") ? devices["cpu"].value("name", "") : "";
+        devices["amd_npu"] = {
+            {"name", cpu_name.empty() ? npu.name : cpu_name},
             {"available", npu.available}
         };
+        devices["amd_npu"]["family"] = identify_npu_arch();
         if (!npu.power_mode.empty()) {
-            devices["npu"]["power_mode"] = npu.power_mode;
+            devices["amd_npu"]["power_mode"] = npu.power_mode;
         }
         if (!npu.error.empty()) {
-            devices["npu"]["error"] = npu.error;
+            devices["amd_npu"]["error"] = npu.error;
         }
     } catch (const std::exception& e) {
         #ifdef _WIN32
         // On Windows, assume NPU may be available - trust the user
-        devices["npu"] = {
+        devices["amd_npu"] = {
             {"name", "Unknown"},
             {"available", true},
             {"error", std::string("Detection exception: ") + e.what()}
         };
         #else
-        devices["npu"] = {
+        devices["amd_npu"] = {
             {"name", "Unknown"},
             {"available", false},
             {"error", std::string("Detection exception: ") + e.what()}
         };
         #endif
     }
-    
+
+    #ifdef __APPLE__
+    // Get Metal GPU info (macOS only) - with fault tolerance
+    try {
+        auto* mac_info = dynamic_cast<MacOSSystemInfo*>(this);
+
+        if (mac_info) {
+            auto metal_gpus = dynamic_cast<MacOSSystemInfo*>(this)->detect_metal_gpus();
+            if (!metal_gpus.empty() && metal_gpus[0].available) {
+                // Use first available Metal GPU (similar to how single devices are handled)
+                const auto& gpu = metal_gpus[0];
+                devices["metal"] = {
+                    {"name", gpu.name},
+                    {"available", gpu.available}
+                };
+                if (gpu.vram_gb > 0) {
+                    devices["metal"]["vram_gb"] = gpu.vram_gb;
+                }
+                if (!gpu.driver_version.empty()) {
+                    devices["metal"]["driver_version"] = gpu.driver_version;
+                }
+                devices["metal"]["family"] = "metal";
+                if (!gpu.error.empty()) {
+                    devices["metal"]["error"] = gpu.error;
+                }
+            } else {
+                devices["metal"] = {
+                    {"name", "Unknown"},
+                    {"available", false},
+                    {"error", "No Metal-compatible GPU found"}
+                };
+            }
+        }
+        else {
+            devices["metal"] = {
+                {"name", "Unknown"},
+                {"available", false},
+                {"error", std::string("Detection exception: ")}
+            };
+        }
+    } catch (const std::exception& e) {
+        devices["metal"] = {
+            {"name", "Unknown"},
+            {"available", false},
+            {"error", std::string("Detection exception: ") + e.what()}
+        };
+    }
+    #endif
+
     return devices;
 }
 
@@ -188,97 +538,340 @@ std::string SystemInfo::get_os_version() {
     #endif
 }
 
-std::vector<std::string> SystemInfo::get_python_packages() {
-    // Not applicable for C++ implementation
-    return {"not-applicable"};
-}
+json SystemInfo::build_recipes_info(const json& devices) {
+    json recipes;
 
-json SystemInfo::detect_inference_engines(const std::string& device_type, const std::string& device_name) {
-    json engines;
-    
-    // llamacpp-vulkan: Available for CPU, AMD iGPU, AMD dGPU, NVIDIA dGPU (NOT NPU)
-    if (device_type == "cpu" || device_type == "amd_igpu" || 
-        device_type == "amd_dgpu" || device_type == "nvidia_dgpu") {
-        
-        bool device_supported = (device_type == "cpu") || check_vulkan_support();
-        
-        if (!device_supported) {
-            engines["llamacpp-vulkan"] = {{"available", false}, {"error", "vulkan not available"}};
-        } else if (!is_llamacpp_installed("vulkan")) {
-            engines["llamacpp-vulkan"] = {{"available", false}, {"error", "vulkan binaries not installed"}};
-        } else {
-            engines["llamacpp-vulkan"] = {
-                {"available", true},
-                {"version", get_llamacpp_version("vulkan")},
-                {"backend", "vulkan"}
-            };
-        }
+    // Get current OS
+    std::string current_os = get_current_os();
+
+    std::vector<DetectedDevice> detected_devices;
+
+    // Build detected_devices from devices JSON, reading cached "family" fields
+    // CPU is always present
+    if (devices.contains("cpu")) {
+        const auto& cpu = devices["cpu"];
+        std::string name = cpu.value("name", "CPU");
+        std::string family = cpu.value("family", "");
+        detected_devices.push_back({"cpu", name, family, true});
+    } else {
+        detected_devices.push_back({"cpu", "CPU", "", true});
     }
-    
-    // llamacpp-rocm: Available for AMD iGPU and AMD dGPU only
-    if (device_type == "amd_igpu" || device_type == "amd_dgpu") {
-        bool device_supported = check_rocm_support(device_name);
-        
-        if (!device_supported) {
-            engines["llamacpp-rocm"] = {{"available", false}, {"error", "rocm not available"}};
-        } else if (!is_llamacpp_installed("rocm")) {
-            engines["llamacpp-rocm"] = {{"available", false}, {"error", "rocm binaries not installed"}};
-        } else {
-            engines["llamacpp-rocm"] = {
-                {"available", true},
-                {"version", get_llamacpp_version("rocm")},
-                {"backend", "rocm"}
-            };
-        }
-    }
-    
-    // FLM: Only available for NPU (Windows only)
-    if (device_type == "npu") {
-        #ifdef _WIN32
-        bool flm_available = false;
-        
-        // Check common Windows locations
-        for (const auto& path : {"C:\\Program Files\\AMD\\FLM\\flm.exe",
-                                  "C:\\Program Files (x86)\\AMD\\FLM\\flm.exe"}) {
-            if (fs::exists(path)) {
-                flm_available = true;
-                break;
+
+    // AMD iGPU
+    if (devices.contains("amd_igpu") && devices["amd_igpu"].is_object()) {
+        const auto& igpu = devices["amd_igpu"];
+        if (igpu.value("available", false)) {
+            std::string name = igpu.value("name", "");
+            std::string family = igpu.value("family", "");
+            if (!name.empty()) {
+                detected_devices.push_back({
+                    "amd_igpu",
+                    name,
+                    family,
+                    true
+                });
             }
         }
-        
-        // Check if flm is in PATH
-        if (!flm_available) {
-            FILE* pipe = _popen("where flm 2>NUL", "r");
-            if (pipe) {
-                char buffer[256];
-                flm_available = (fgets(buffer, sizeof(buffer), pipe) != nullptr);
-                _pclose(pipe);
+    }
+
+    // AMD dGPUs
+    if (devices.contains("amd_dgpu") && devices["amd_dgpu"].is_array()) {
+        for (const auto& gpu : devices["amd_dgpu"]) {
+            if (gpu.value("available", false)) {
+                std::string name = gpu.value("name", "");
+                std::string family = gpu.value("family", "");
+                if (!name.empty()) {
+                    detected_devices.push_back({
+                        "amd_dgpu",
+                        name,
+                        family,
+                        true
+                    });
+                }
             }
         }
-        
-        engines["flm"] = {
-            {"available", flm_available},
-            {"version", flm_available ? get_flm_version() : "unknown"}
+    }
+
+    // AMD NPU
+    if (devices.contains("amd_npu") && devices["amd_npu"].is_object()) {
+        const auto& npu = devices["amd_npu"];
+        if (npu.value("available", false)) {
+            std::string name = npu.value("name", "");
+            std::string family = npu.value("family", "");
+            detected_devices.push_back({
+                "amd_npu",
+                name,
+                family,
+                true
+            });
+        }
+    }
+
+    // Metal
+    if (devices.contains("metal")) {
+        if (devices["metal"].is_object()) {
+            // Single Metal device (legacy format)
+            const auto& metal = devices["metal"];
+            if (metal.value("available", false)) {
+                std::string name = metal.value("name", "");
+                std::string family = metal.value("family", "");
+                detected_devices.push_back({
+                    "metal",
+                    name,
+                    family,
+                    true
+                });
+            }
+        } else if (devices["metal"].is_array()) {
+            // Multiple Metal devices
+            for (const auto& metal : devices["metal"]) {
+                if (metal.value("available", false)) {
+                    std::string name = metal.value("name", "");
+                    std::string family = metal.value("family", "");
+                    if (!name.empty()) {
+                        detected_devices.push_back({
+                            "metal",
+                            name,
+                            family,
+                            true
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Special case: Metal is always available on macOS (system GPU)
+    if (current_os == "macos" && std::find_if(detected_devices.begin(), detected_devices.end(),
+        [](const DetectedDevice& d) { return d.type == "metal"; }) == detected_devices.end()) {
+        detected_devices.push_back({"metal", "Apple Metal", "metal", true});
+    }
+
+    // Build recipes from the definition table
+    for (const auto& def : RECIPE_DEFS) {
+        // Skip if not supported on current OS
+        if (def.supported_os.count(current_os) == 0) {
+            // Helper to format OS name nicely
+            auto format_os_name = [](const std::string& os) -> std::string {
+                if (os == "macos") return "macOS";
+                if (os == "windows") return "Windows";
+                if (os == "linux") return "Linux";
+                // Fallback: capitalize first letter
+                std::string result = os;
+                if (!result.empty()) result[0] = std::toupper(result[0]);
+                return result;
+            };
+
+            // Generate concise OS requirement message
+            std::string required_os;
+            if (def.supported_os.size() == 1) {
+                required_os = format_os_name(*def.supported_os.begin());
+            } else {
+                for (const auto& os : def.supported_os) {
+                    if (!required_os.empty()) required_os += "/";
+                    required_os += format_os_name(os);
+                }
+            }
+
+            // Still add the recipe but mark as not supported
+            json backend = {
+                {"devices", json::array()},
+                {"supported", false},
+                {"available", false},
+                {"error", "Requires " + required_os}
+            };
+
+            // Add to the appropriate recipe/backend structure
+            if (recipes.contains(def.recipe)) {
+                recipes[def.recipe]["backends"][def.backend] = backend;
+            } else {
+                recipes[def.recipe] = {{"backends", {{def.backend, backend}}}};
+            }
+            continue;
+        }
+
+        // Find matching devices on this system and track failures for error reporting
+        json matching_devices = json::array();
+        // Track missing devices with their required families for error messages
+        std::vector<std::pair<std::string, std::set<std::string>>> missing_devices;  // Device types not present
+        std::vector<std::pair<std::string, std::set<std::string>>> wrong_family;     // Device present but wrong family
+
+        for (const auto& [required_device_type, required_families] : def.devices) {
+            bool device_type_found = false;
+            bool family_matched = false;
+
+            for (const auto& detected : detected_devices) {
+                if (detected.type == required_device_type) {
+                    device_type_found = true;
+                    if (device_matches_constraint(detected.family, required_families)) {
+                        matching_devices.push_back(detected.type);
+                        family_matched = true;
+                    }
+                }
+            }
+
+            if (!device_type_found) {
+                missing_devices.push_back({required_device_type, required_families});
+            } else if (!family_matched) {
+                wrong_family.push_back({required_device_type, required_families});
+            }
+        }
+
+        // Remove duplicates (e.g., multiple dGPUs of same type)
+        std::set<std::string> unique_devices;
+        json unique_matching = json::array();
+        for (const auto& dev : matching_devices) {
+            if (unique_devices.insert(dev.get<std::string>()).second) {
+                unique_matching.push_back(dev);
+            }
+        }
+
+        bool supported = !unique_matching.empty();
+        bool available = is_recipe_installed(def.recipe, def.backend);
+
+        json backend = {
+            {"devices", unique_matching},
+            {"supported", supported},
+            {"available", available}
         };
-        #endif
-        
-        // OGA (RyzenAI-Server)
-        engines["oga"] = {{"available", is_ryzenai_serve_available()}};
+
+        // Generate concise error message based on what failed
+        if (!supported) {
+            std::string error;
+
+            if (!missing_devices.empty()) {
+                // Device type not present - include required family if specified
+                const auto& [device_type, required_families] = missing_devices[0];
+                if (!required_families.empty()) {
+                    // Show specific family requirement (e.g., "Requires XDNA2 NPU")
+                    error = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
+                } else {
+                    // No specific family required (e.g., "Requires CPU")
+                    error = "Requires " + get_device_type_name(device_type);
+                }
+            } else if (!wrong_family.empty()) {
+                // Device present but wrong family - show required families
+                const auto& [device_type, required_families] = wrong_family[0];
+                if (!required_families.empty()) {
+                    // Use first required family name for concise message
+                    error = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
+                } else {
+                    error = "Incompatible " + get_device_type_name(device_type);
+                }
+            } else {
+                error = "No compatible device";
+            }
+
+            backend["error"] = error;
+        } else if (available) {
+            // Add version if installed
+            std::string version = get_recipe_version(def.recipe, def.backend);
+            if (!version.empty() && version != "unknown") {
+                backend["version"] = version;
+            }
+        }
+
+        // Add to the appropriate recipe/backend structure
+        if (recipes.contains(def.recipe)) {
+            recipes[def.recipe]["backends"][def.backend] = backend;
+        } else {
+            recipes[def.recipe] = {{"backends", {{def.backend, backend}}}};
+        }
     }
-    
-    return engines;
+
+    return recipes;
 }
 
-std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
-    // Try to find version.txt in the llamacpp directory for specific backend
-    // Location: {executable_dir}/{backend}/llama_server/version.txt
-    
-    #ifdef _WIN32
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-    fs::path exe_dir = fs::path(exe_path).parent_path();
-    
-    fs::path version_file = exe_dir / backend / "llama_server" / "version.txt";
+SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std::string& recipe) {
+    SupportedBackendsResult result;
+    json system_info = SystemInfoCache::get_system_info_with_cache();
+
+    if (!system_info.contains("recipes") || !system_info["recipes"].contains(recipe)) {
+        result.not_supported_error = "Recipe '" + recipe + "' not found";
+        return result;
+    }
+
+    const auto& recipe_info = system_info["recipes"][recipe];
+    if (!recipe_info.contains("backends")) {
+        result.not_supported_error = "No backends found for recipe '" + recipe + "'";
+        return result;
+    }
+
+    // Collect supported backends and capture first error (in preference order from RECIPE_DEFS)
+    for (const auto& def : RECIPE_DEFS) {
+        if (def.recipe == recipe) {
+            if (recipe_info["backends"].contains(def.backend)) {
+                const auto& backend = recipe_info["backends"][def.backend];
+                if (backend.value("supported", false)) {
+                    result.backends.push_back(def.backend);
+                } else if (result.not_supported_error.empty() && backend.contains("error")) {
+                    // Capture first error encountered (in preference order)
+                    result.not_supported_error = backend["error"].get<std::string>();
+                }
+            }
+        }
+    }
+
+    // If no backends supported and no specific error, provide generic message
+    if (result.backends.empty() && result.not_supported_error.empty()) {
+        result.not_supported_error = "No supported backend found for recipe '" + recipe + "'";
+    }
+
+    return result;
+}
+
+std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
+    auto result = get_supported_backends(recipe);
+    return result.backends.empty() ? result.not_supported_error : "";
+}
+
+std::vector<SystemInfo::RecipeStatus> SystemInfo::get_all_recipe_statuses() {
+    std::vector<RecipeStatus> statuses;
+    json system_info = SystemInfoCache::get_system_info_with_cache();
+
+    if (!system_info.contains("recipes") || !system_info["recipes"].is_object()) {
+        return statuses;
+    }
+
+    const auto& recipes = system_info["recipes"];
+    for (auto& [recipe_name, recipe_info] : recipes.items()) {
+        bool any_supported = false;
+        bool any_available = false;
+        std::string first_error;
+        std::vector<BackendStatus> backends;
+
+        if (recipe_info.contains("backends") && recipe_info["backends"].is_object()) {
+            // Iterate in preference order (from RECIPE_DEFS table)
+            for (const auto& def : RECIPE_DEFS) {
+                if (def.recipe != recipe_name) continue;
+
+                if (!recipe_info["backends"].contains(def.backend)) continue;
+
+                const auto& backend_info = recipe_info["backends"][def.backend];
+                bool supported = backend_info.value("supported", false);
+                bool available = backend_info.value("available", false);
+                std::string version = backend_info.value("version", "");
+                std::string error = backend_info.value("error", "");
+
+                if (supported) any_supported = true;
+                if (available) any_available = true;
+
+                if (!supported && first_error.empty() && !error.empty()) {
+                    first_error = error;
+                }
+
+                backends.push_back({def.backend, supported, available, version, error});
+            }
+        }
+
+        statuses.push_back({recipe_name, any_supported, any_available, first_error, backends});
+    }
+
+    return statuses;
+}
+
+// Helper to read version from a version.txt file
+static std::string read_version_file(const fs::path& version_file) {
     if (fs::exists(version_file)) {
         std::ifstream file(version_file);
         if (file.is_open()) {
@@ -293,113 +886,114 @@ std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
             }
         }
     }
-    #else
-    // For Linux, check relative to current executable
-    std::string version_file = backend + "/llama_server/version.txt";
-    std::ifstream file(version_file);
-    if (file.is_open()) {
-        std::string version;
-        std::getline(file, version);
-        file.close();
-        // Trim whitespace
-        size_t start = version.find_first_not_of(" \t\n\r");
-        size_t end = version.find_last_not_of(" \t\n\r");
-        if (start != std::string::npos && end != std::string::npos) {
-            return version.substr(start, end - start + 1);
-        }
-    }
-    #endif
-    
     return "unknown";
 }
 
-bool SystemInfo::is_llamacpp_installed(const std::string& backend) {
-    // Check if llama-server executable exists for the given backend
-    
-    #ifdef _WIN32
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-    fs::path exe_dir = fs::path(exe_path).parent_path();
-    
-    fs::path llama_exe = exe_dir / backend / "llama_server" / "llama-server.exe";
-    return fs::exists(llama_exe);
-    #else
-    // For Linux, check build/bin subdirectory first, then root
-    std::string build_bin_path = backend + "/llama_server/build/bin/llama-server";
-    if (fs::exists(build_bin_path)) {
-        return true;
-    }
-    std::string root_path = backend + "/llama_server/llama-server";
-    return fs::exists(root_path);
-    #endif
+std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
+    return read_version_file(BackendUtils::get_installed_version_file(LlamaCppServer::SPEC, backend));
 }
 
-bool SystemInfo::check_vulkan_support() {
-    // Check if Vulkan is available
-    #ifdef _WIN32
-    // Check for Vulkan DLL on Windows
-    if (fs::exists("C:\\Windows\\System32\\vulkan-1.dll") || 
-        fs::exists("C:\\Windows\\SysWOW64\\vulkan-1.dll")) {
+std::string SystemInfo::get_whispercpp_version(const std::string& backend) {
+    return read_version_file(BackendUtils::get_installed_version_file(WhisperServer::SPEC, backend));
+}
+
+std::string SystemInfo::get_kokoro_version(const std::string& backend) {
+    return read_version_file(BackendUtils::get_installed_version_file(KokoroServer::SPEC, backend));
+}
+
+std::string SystemInfo::get_sdcpp_version(const std::string& backend) {
+    return read_version_file(BackendUtils::get_installed_version_file(SDServer::SPEC, backend));
+}
+
+std::string SystemInfo::get_oga_version() {
+    fs::path bin_dir = utils::get_downloaded_bin_dir();
+    return read_version_file(bin_dir / "ryzenai-server" / "version.txt");
+}
+
+bool SystemInfo::is_llamacpp_installed(const std::string& backend) {
+    try {
+        BackendUtils::get_backend_binary_path(LlamaCppServer::SPEC, backend);
         return true;
+    } catch (const std::exception& e) {
+        return false;
     }
-    #else
-    // Check for Vulkan libraries on Linux
-    std::vector<std::string> vulkan_lib_paths = {
-        "/usr/lib/x86_64-linux-gnu/libvulkan.so.1",
-        "/usr/lib/libvulkan.so.1",
-        "/lib/x86_64-linux-gnu/libvulkan.so.1"
-    };
-    for (const auto& path : vulkan_lib_paths) {
-        if (fs::exists(path)) {
-            return true;
-        }
+}
+
+bool SystemInfo::is_whispercpp_installed(const std::string& backend) {
+    try {
+        BackendUtils::get_backend_binary_path(WhisperServer::SPEC, backend);
+        return true;
+    } catch (const std::exception& e) {
+        return false;
     }
-    #endif
-    
-    // Try vulkaninfo command
-    #ifdef _WIN32
-    FILE* pipe = _popen("vulkaninfo --summary 2>NUL", "r");
-    #else
-    FILE* pipe = popen("vulkaninfo --summary 2>/dev/null", "r");
-    #endif
-    
-    if (pipe) {
-        char buffer[128];
-        bool has_output = (fgets(buffer, sizeof(buffer), pipe) != nullptr);
-        #ifdef _WIN32
-        _pclose(pipe);
-        #else
-        pclose(pipe);
-        #endif
-        return has_output;
+}
+
+bool SystemInfo::is_kokoro_installed(const std::string& backend) {
+    try {
+        BackendUtils::get_backend_binary_path(KokoroServer::SPEC, backend);
+        return true;
+    } catch (const std::exception& e) {
+        return false;
     }
-    
-    return false;
+}
+
+bool SystemInfo::is_sdcpp_installed(const std::string& backend) {
+    try {
+        BackendUtils::get_backend_binary_path(SDServer::SPEC, backend);
+        return true;
+    } catch (const std::exception& e) {
+        return false;
+    }
 }
 
 // Helper to identify ROCm architecture from GPU name
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
-    
-    if (device_lower.find("radeon") == std::string::npos) {
+
+    // linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
+    if (std::all_of(device_lower.begin(), device_lower.end(), ::isdigit)) {
+        if (device_lower.length() >= 4) {
+            std::string major = device_lower.substr(0, 2);
+
+            int minor_int = std::stoi(device_lower.substr(2, 2));
+            std::string minor = std::to_string(minor_int);
+
+            int revision_int = std::stoi(device_lower.substr(4, 2));
+            std::string revision = std::to_string(revision_int);
+
+            std::string arch = "gfx" + major + minor + revision;
+
+            // Apply architecture family mapping
+            auto it = ROCM_ARCH_MAPPING.find(arch);
+            if (it != ROCM_ARCH_MAPPING.end()) {
+                return it->second;
+            }
+
+            return arch;
+        }
+    }
+
+    if (device_lower.find("radeon") == std::string::npos &&
+        device_lower.find("amd") == std::string::npos) {
         return "";
     }
-    
+
     // STX Halo iGPUs (gfx1151 architecture)
     // Radeon 8050S Graphics / Radeon 8060S Graphics
-    if (device_lower.find("8050s") != std::string::npos || 
-        device_lower.find("8060s") != std::string::npos) {
+    if (device_lower.find("8050s") != std::string::npos ||
+        device_lower.find("8060s") != std::string::npos ||
+        device_lower.find("device 1586") != std::string::npos) {
         return "gfx1151";
     }
-    
+
     // STX Point iGPUs (gfx1150 architecture)
     // Radeon 880M / 890M Graphics
     if (device_lower.find("880m") != std::string::npos ||
         device_lower.find("890m") != std::string::npos) {
         return "gfx1150";
     }
-    
+
     // RDNA4 GPUs (gfx120X architecture)
     // AMD Radeon AI PRO R9700, AMD Radeon RX 9070 XT, AMD Radeon RX 9070 GRE,
     // AMD Radeon RX 9070, AMD Radeon RX 9060 XT
@@ -408,7 +1002,7 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         device_lower.find("9070") != std::string::npos) {
         return "gfx120X";
     }
-    
+
     // RDNA3 GPUs (gfx110X architecture)
     // AMD Radeon PRO V710, AMD Radeon PRO W7900 Dual Slot, AMD Radeon PRO W7900,
     // AMD Radeon PRO W7800 48GB, AMD Radeon PRO W7800, AMD Radeon PRO W7700,
@@ -420,15 +1014,185 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         device_lower.find("v710") != std::string::npos) {
         return "gfx110X";
     }
-    
+
     return "";
 }
 
-bool SystemInfo::check_rocm_support(const std::string& device_name) {
-    // Check if device supports ROCm by attempting to identify the architecture
-    // This matches the Python implementation which uses identify_rocm_arch_from_name
-    std::string arch = identify_rocm_arch_from_name(device_name);
-    return !arch.empty();
+// Linux: identify NPU architecture from sysfs accel subsystem
+// Checks /sys/class/accel/*/device/driver for amdxdna, then reads vbnv for NPU generation
+static std::string identify_npu_arch_from_sysfs() {
+    fs::path accel_path = "/sys/class/accel";
+    if (!fs::exists(accel_path) || !fs::is_directory(accel_path)) {
+        return "";
+    }
+
+    for (const auto& entry : fs::directory_iterator(accel_path)) {
+        if (!entry.is_directory() && !entry.is_symlink()) {
+            continue;
+        }
+
+        fs::path driver_link = entry.path() / "device" / "driver";
+        if (fs::exists(driver_link)) {
+            fs::path driver_path = fs::read_symlink(driver_link);
+            std::string driver_name = driver_path.filename().string();
+
+            if (driver_name != "amdxdna") {
+                continue;
+            }
+        } else {
+            continue;
+        }
+
+        fs::path vbnv_file = entry.path() / "device" / "vbnv";
+        if (!fs::exists(vbnv_file)) {
+            continue;
+        }
+
+        std::ifstream vbnv_stream(vbnv_file);
+        if (!vbnv_stream.is_open()) {
+            continue;
+        }
+
+        std::string vbnv_content;
+        std::getline(vbnv_stream, vbnv_content);
+        vbnv_stream.close();
+
+        if (vbnv_content.find("RyzenAI-npu4") != std::string::npos ||
+            vbnv_content.find("RyzenAI-npu5") != std::string::npos ||
+            vbnv_content.find("RyzenAI-npu6") != std::string::npos) {
+            return "XDNA2";
+        }
+    }
+    return "";
+}
+
+// Check if kernel has CWSR fix for Strix Halo by looking for cwsr_size/ctl_stack_size in sysfs
+// The kernel fix exports these properties; older kernels don't have them
+bool needs_gfx1151_cwsr_fix() {
+    std::string kfd_path = "/sys/class/kfd/kfd/topology/nodes";
+
+    if (!fs::exists(kfd_path))
+        return false;
+
+    for (const auto& node_entry : fs::directory_iterator(kfd_path)) {
+        if (!node_entry.is_directory()) continue;
+
+        std::string properties_file = node_entry.path().string() + "/properties";
+        if (!fs::exists(properties_file)) continue;
+
+        std::ifstream props(properties_file);
+        if (!props.is_open())
+            continue;
+
+        bool is_gfx1151 = false;
+        bool has_cwsr_size = false;
+        bool has_ctl_stack_size = false;
+
+        std::string line;
+        while (std::getline(props, line)) {
+            if (line.find("gfx_target_version") == 0) {
+                std::string value = line.substr(line.find(" ") + 1);
+                value.erase(value.find_last_not_of(" \t\n\r") + 1);
+                if (value == "110501") {
+                    is_gfx1151 = true;
+                }
+            }
+
+            if (line.find("cwsr_size") == 0)
+                has_cwsr_size = true;
+            if (line.find("ctl_stack_size") == 0)
+                has_ctl_stack_size = true;
+        }
+
+        if (is_gfx1151) {
+            return !has_cwsr_size || !has_ctl_stack_size;
+        }
+    }
+
+    return false;
+}
+
+// Identify NPU architecture by checking for known hardware
+// Windows: PCI device ID via WMI; Linux: amdxdna driver in sysfs accel subsystem
+// Returns the NPU family (e.g., "XDNA2") or empty string if no NPU found
+// This is the single source of truth for NPU family detection
+std::string identify_npu_arch() {
+#ifdef _WIN32
+    wmi::WMIConnection wmi_conn;
+    if (!wmi_conn.is_valid()) {
+        return "";
+    }
+
+    // XDNA2 NPU: AMD vendor 1022, device 17F0
+    bool found_xdna2 = false;
+    wmi_conn.query(
+        L"SELECT PNPDeviceID FROM Win32_PnPEntity WHERE PNPDeviceID LIKE '%VEN_1022&DEV_17F0%'",
+        [&found_xdna2](IWbemClassObject* pObj) {
+            found_xdna2 = true;
+        });
+
+    if (found_xdna2) {
+        return "XDNA2";
+    }
+#else
+    // Linux: check amdxdna driver + vbnv for NPU generation
+    std::string sysfs_arch = identify_npu_arch_from_sysfs();
+    if (!sysfs_arch.empty()) {
+        return sysfs_arch;
+    }
+#endif
+
+    // Future: Add XDNA3, XDNA4, etc. with their PCI device IDs
+
+    return "";
+}
+
+std::string SystemInfo::get_rocm_arch() {
+    // Returns the ROCm architecture for the best available AMD GPU on this system
+    // Checks iGPU first, then dGPUs. Returns empty string if no compatible GPU found.
+    try {
+        // Use cached system info to avoid re-detecting GPUs
+        json system_info = SystemInfoCache::get_system_info_with_cache();
+
+        if (!system_info.contains("devices")) {
+            return "";
+        }
+
+        const auto& devices = system_info["devices"];
+
+        // Check iGPU first
+        if (devices.contains("amd_igpu") && devices["amd_igpu"].is_object()) {
+            const auto& igpu = devices["amd_igpu"];
+            if (igpu.value("available", false)) {
+                std::string name = igpu.value("name", "");
+                if (!name.empty()) {
+                    std::string arch = identify_rocm_arch_from_name(name);
+                    if (!arch.empty()) {
+                        return arch;
+                    }
+                }
+            }
+        }
+
+        // Check dGPUs
+        if (devices.contains("amd_dgpu") && devices["amd_dgpu"].is_array()) {
+            for (const auto& gpu : devices["amd_dgpu"]) {
+                if (gpu.value("available", false)) {
+                    std::string name = gpu.value("name", "");
+                    if (!name.empty()) {
+                        std::string arch = identify_rocm_arch_from_name(name);
+                        if (!arch.empty()) {
+                            return arch;
+                        }
+                    }
+                }
+            }
+        }
+    } catch (...) {
+        // Detection failed
+    }
+
+    return "";  // No supported architecture found
 }
 
 std::string SystemInfo::get_flm_version() {
@@ -437,14 +1201,14 @@ std::string SystemInfo::get_flm_version() {
     if (!pipe) {
         return "unknown";
     }
-    
+
     char buffer[256];
     std::string output;
     if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output = buffer;
     }
     _pclose(pipe);
-    
+
     // Parse version from output like "FLM v0.9.4"
     if (output.find("FLM v") != std::string::npos) {
         size_t pos = output.find("FLM v");
@@ -457,60 +1221,26 @@ std::string SystemInfo::get_flm_version() {
         return version;
     }
     #endif
-    
+
     return "unknown";
 }
 
 bool SystemInfo::is_ryzenai_serve_available() {
-    // Use the same logic as RyzenAIServer::get_ryzenai_serve_path()
-    
+    // Inline the check to avoid dependency on RyzenAIServer class
+    // 1. Check for custom binary via environment variable
+    const char* ryzenai_bin_env = std::getenv("LEMONADE_RYZENAI_SERVER_BIN");
+    if (ryzenai_bin_env && fs::exists(ryzenai_bin_env)) {
+        return true;
+    }
+
+    // 2. Check in install directory (where download_and_install() places it)
+    fs::path install_dir = fs::path(utils::get_downloaded_bin_dir()) / "ryzenai-server";
     #ifdef _WIN32
-    std::string exe_name = "ryzenai-server.exe";
-    std::string check_cmd = "where ryzenai-server.exe >nul 2>&1";
-#else
-    std::string exe_name = "ryzenai-server";
-    std::string check_cmd = "which ryzenai-server >/dev/null 2>&1";
-#endif
-    
-    // Check if executable exists in PATH
-    if (system(check_cmd.c_str()) == 0) {
-        return true;
-    }
-    
-    // Check in common locations relative to lemonade executable
-    // This uses the same path resolution as RyzenAIServer
-    #ifdef _WIN32
-    // Get executable path
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-    fs::path exe_dir = fs::path(exe_path).parent_path();
-    
-    // Check relative path: from executable to ../../../ryzenai-server/build/bin/Release (source tree)
-    fs::path relative_path = exe_dir / ".." / ".." / ".." / "ryzenai-server" / "build" / "bin" / "Release" / exe_name;
-    if (fs::exists(relative_path)) {
-        return true;
-    }
-    
-    // Check installed location next to lemonade binary
-    fs::path install_path = exe_dir / "ryzenai-server" / exe_name;
-    if (fs::exists(install_path)) {
-        return true;
-    }
+    fs::path exe_path = install_dir / "ryzenai-server.exe";
     #else
-    // For Linux/macOS
-    fs::path relative_path = fs::path("../../../ryzenai-server/build/bin/Release") / exe_name;
-    if (fs::exists(relative_path)) {
-        return true;
-    }
-    
-    // Check installed location
-    fs::path install_path = fs::path("ryzenai-server") / exe_name;
-    if (fs::exists(install_path)) {
-        return true;
-    }
+    fs::path exe_path = install_dir / "ryzenai-server";
     #endif
-    
-    return false;
+    return fs::exists(exe_path);
 }
 
 // ============================================================================
@@ -542,28 +1272,25 @@ WindowsSystemInfo::WindowsSystemInfo() {
 CPUInfo WindowsSystemInfo::get_cpu_device() {
     CPUInfo cpu;
     cpu.available = false;
-    
+
     wmi::WMIConnection wmi;
     if (!wmi.is_valid()) {
         cpu.error = "Failed to connect to WMI";
         return cpu;
     }
-    
+
     wmi.query(L"SELECT * FROM Win32_Processor", [&cpu](IWbemClassObject* pObj) {
         cpu.name = wmi::get_property_string(pObj, L"Name");
         cpu.cores = wmi::get_property_int(pObj, L"NumberOfCores");
         cpu.threads = wmi::get_property_int(pObj, L"NumberOfLogicalProcessors");
         cpu.max_clock_speed_mhz = wmi::get_property_int(pObj, L"MaxClockSpeed");
         cpu.available = true;
-        
-        // Detect inference engines for CPU
-        cpu.inference_engines = detect_inference_engines("cpu", cpu.name);
     });
-    
+
     if (!cpu.available) {
         cpu.error = "No CPU information found";
     }
-    
+
     return cpu;
 }
 
@@ -572,7 +1299,7 @@ GPUInfo WindowsSystemInfo::get_amd_igpu_device() {
     if (!gpus.empty()) {
         return gpus[0];
     }
-    
+
     GPUInfo gpu;
     gpu.available = false;
     gpu.error = "No AMD integrated GPU found";
@@ -585,7 +1312,7 @@ std::vector<GPUInfo> WindowsSystemInfo::get_amd_dgpu_devices() {
 
 std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_dgpu_devices() {
     std::vector<GPUInfo> gpus;
-    
+
     wmi::WMIConnection wmi;
     if (!wmi.is_valid()) {
         GPUInfo gpu;
@@ -594,15 +1321,15 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_dgpu_devices() {
         gpus.push_back(gpu);
         return gpus;
     }
-    
+
     wmi.query(L"SELECT * FROM Win32_VideoController", [&gpus, this](IWbemClassObject* pObj) {
         std::string name = wmi::get_property_string(pObj, L"Name");
-        
+
         // Check if this is an NVIDIA GPU
         if (name.find("NVIDIA") != std::string::npos) {
             std::string name_lower = name;
             std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
-            
+
             // Most NVIDIA GPUs are discrete
             bool is_discrete = true;
             for (const auto& keyword : NVIDIA_DISCRETE_GPU_KEYWORDS) {
@@ -611,105 +1338,67 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_dgpu_devices() {
                     break;
                 }
             }
-            
+
             if (is_discrete) {
                 GPUInfo gpu;
                 gpu.name = name;
                 gpu.available = true;
-                
+
                 // Get driver version - try multiple methods
                 std::string driver_version = get_driver_version("NVIDIA");
                 if (driver_version.empty()) {
                     driver_version = wmi::get_property_string(pObj, L"DriverVersion");
                 }
                 gpu.driver_version = driver_version.empty() ? "Unknown" : driver_version;
-                
+
                 // Get VRAM
                 uint64_t adapter_ram = wmi::get_property_uint64(pObj, L"AdapterRAM");
                 if (adapter_ram > 0) {
                     gpu.vram_gb = adapter_ram / (1024.0 * 1024.0 * 1024.0);
                 }
-                
-                // Detect inference engines
-                gpu.inference_engines = detect_inference_engines("nvidia_dgpu", name);
-                
+
                 gpus.push_back(gpu);
             }
         }
     });
-    
+
     if (gpus.empty()) {
         GPUInfo gpu;
         gpu.available = false;
         gpu.error = "No NVIDIA discrete GPU found";
         gpus.push_back(gpu);
     }
-    
-    return gpus;
-}
 
-bool WindowsSystemInfo::is_supported_ryzen_ai_processor() {
-    // Check if the processor is a supported Ryzen AI processor (300-series)
-    // This matches the logic in Python's check_ryzen_ai_processor() function
-    
-    wmi::WMIConnection wmi;
-    if (!wmi.is_valid()) {
-        // If we can't connect to WMI, we can't verify the processor
-        return false;
-    }
-    
-    std::string processor_name;
-    wmi.query(L"SELECT * FROM Win32_Processor", [&processor_name](IWbemClassObject* pObj) {
-        if (processor_name.empty()) {  // Only get first processor
-            processor_name = wmi::get_property_string(pObj, L"Name");
-        }
-    });
-    
-    if (processor_name.empty()) {
-        return false;
-    }
-    
-    // Convert to lowercase for case-insensitive matching
-    std::string processor_lower = processor_name;
-    std::transform(processor_lower.begin(), processor_lower.end(), processor_lower.begin(), ::tolower);
-    
-    // Check for Ryzen AI 300/400-series pattern: "ryzen ai" followed by a 3-digit number starting with 3 or 4
-    // Also matches Ryzen AI Z2 series (e.g., "Ryzen AI Z2 Extreme")
-    // Pattern: ryzen ai.*((\b[34]\d{2}\b)|(\bz2\b))
-    std::regex pattern(R"(ryzen ai.*((\b[34]\d{2}\b)|(\bz2\b)))", std::regex::icase);
-    
-    return std::regex_search(processor_lower, pattern);
+    return gpus;
 }
 
 NPUInfo WindowsSystemInfo::get_npu_device() {
     NPUInfo npu;
     npu.name = "AMD NPU";
     npu.available = false;
-    
-    // First, check if the processor is a supported Ryzen AI processor
-    if (!is_supported_ryzen_ai_processor()) {
-        npu.error = "NPU requires AMD Ryzen AI 300-series processor";
+
+    // Check for XDNA NPU hardware via PCI device ID
+    std::string npu_arch = identify_npu_arch();
+    if (npu_arch.empty()) {
+        npu.error = "No XDNA NPU hardware detected";
         return npu;
     }
-    
+
     // Check for NPU driver
     std::string driver_version = get_driver_version("NPU Compute Accelerator Device");
     if (!driver_version.empty()) {
         npu.power_mode = get_npu_power_mode();
         npu.available = true;
-        
-        // Detect inference engines
-        npu.inference_engines = detect_inference_engines("npu", "AMD NPU");
     } else {
-        npu.error = "No NPU device found";
+        npu.error = "NPU hardware found but driver not installed";
     }
-    
+
     return npu;
 }
 
 std::vector<GPUInfo> WindowsSystemInfo::detect_amd_gpus(const std::string& gpu_type) {
     std::vector<GPUInfo> gpus;
-    
+
     wmi::WMIConnection wmi;
     if (!wmi.is_valid()) {
         GPUInfo gpu;
@@ -718,16 +1407,16 @@ std::vector<GPUInfo> WindowsSystemInfo::detect_amd_gpus(const std::string& gpu_t
         gpus.push_back(gpu);
         return gpus;
     }
-    
+
     wmi.query(L"SELECT * FROM Win32_VideoController", [&gpus, &gpu_type, this](IWbemClassObject* pObj) {
         std::string name = wmi::get_property_string(pObj, L"Name");
-        
+
         // Check if this is an AMD Radeon GPU
         if (name.find("AMD") != std::string::npos && name.find("Radeon") != std::string::npos) {
             // Convert to lowercase for keyword matching
             std::string name_lower = name;
             std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
-            
+
             // Classify as discrete or integrated based on keywords
             bool is_discrete = false;
             for (const auto& keyword : AMD_DISCRETE_GPU_KEYWORDS) {
@@ -737,53 +1426,49 @@ std::vector<GPUInfo> WindowsSystemInfo::detect_amd_gpus(const std::string& gpu_t
                 }
             }
             bool is_integrated = !is_discrete;
-            
+
             // Filter based on requested type
-            if ((gpu_type == "integrated" && is_integrated) || 
+            if ((gpu_type == "integrated" && is_integrated) ||
                 (gpu_type == "discrete" && is_discrete)) {
-                
+
                 GPUInfo gpu;
                 gpu.name = name;
                 gpu.available = true;
-                
+
                 // Get driver version
                 gpu.driver_version = get_driver_version("AMD-OpenCL User Mode Driver");
                 if (gpu.driver_version.empty()) {
                     gpu.driver_version = "Unknown";
                 }
-                
+
                 // Get VRAM for discrete GPUs
                 if (is_discrete) {
                     // Try dxdiag first (most reliable for dedicated memory)
                     double vram_gb = get_gpu_vram_dxdiag(name);
-                    
+
                     // Fallback to WMI if dxdiag fails
                     if (vram_gb == 0.0) {
                         uint64_t adapter_ram = wmi::get_property_uint64(pObj, L"AdapterRAM");
                         vram_gb = get_gpu_vram_wmi(adapter_ram);
                     }
-                    
+
                     if (vram_gb > 0.0) {
                         gpu.vram_gb = vram_gb;
                     }
                 }
-                
-                // Detect inference engines
-                std::string device_type = is_integrated ? "amd_igpu" : "amd_dgpu";
-                gpu.inference_engines = detect_inference_engines(device_type, name);
-                
+
                 gpus.push_back(gpu);
             }
         }
     });
-    
+
     if (gpus.empty()) {
         GPUInfo gpu;
         gpu.available = false;
         gpu.error = "No AMD " + gpu_type + " GPU found";
         gpus.push_back(gpu);
     }
-    
+
     return gpus;
 }
 
@@ -792,44 +1477,44 @@ std::string WindowsSystemInfo::get_driver_version(const std::string& device_name
     if (!wmi.is_valid()) {
         return "";
     }
-    
+
     std::string driver_version;
-    std::wstring query = L"SELECT * FROM Win32_PnPSignedDriver WHERE DeviceName LIKE '%" + 
+    std::wstring query = L"SELECT * FROM Win32_PnPSignedDriver WHERE DeviceName LIKE '%" +
                          wmi::string_to_wstring(device_name) + L"%'";
-    
+
     wmi.query(query, [&driver_version](IWbemClassObject* pObj) {
         if (driver_version.empty()) {  // Only get first match
             driver_version = wmi::get_property_string(pObj, L"DriverVersion");
         }
     });
-    
+
     return driver_version;
 }
 
 std::string WindowsSystemInfo::get_npu_power_mode() {
     // Try to query xrt-smi for NPU power mode
     std::string xrt_smi_path = "C:\\Windows\\System32\\AMD\\xrt-smi.exe";
-    
+
     // Check if xrt-smi exists
     if (!fs::exists(xrt_smi_path)) {
         return "Unknown";
     }
-    
+
     // Execute xrt-smi examine -r platform
     std::string command = "\"" + xrt_smi_path + "\" examine -r platform 2>NUL";
-    
+
     FILE* pipe = _popen(command.c_str(), "r");
     if (!pipe) {
         return "Unknown";
     }
-    
+
     char buffer[128];
     std::string result;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         result += buffer;
     }
     _pclose(pipe);
-    
+
     // Parse output for "Mode" line
     std::istringstream iss(result);
     std::string line;
@@ -842,7 +1527,7 @@ std::string WindowsSystemInfo::get_npu_power_mode() {
             }
         }
     }
-    
+
     return "Unknown";
 }
 
@@ -863,7 +1548,7 @@ std::string WindowsSystemInfo::get_os_version() {
     if (!wmi.is_valid()) {
         return "Windows";  // Fallback to basic name
     }
-    
+
     std::string os_name, version, build_number;
     wmi.query(L"SELECT * FROM Win32_OperatingSystem", [&](IWbemClassObject* pObj) {
         if (os_name.empty()) {  // Only get first result
@@ -872,7 +1557,7 @@ std::string WindowsSystemInfo::get_os_version() {
             build_number = wmi::get_property_string(pObj, L"BuildNumber");
         }
     });
-    
+
     if (!os_name.empty()) {
         std::string result = os_name;
         if (!version.empty()) {
@@ -883,7 +1568,7 @@ std::string WindowsSystemInfo::get_os_version() {
         }
         return result;
     }
-    
+
     return "Windows";  // Fallback
 }
 
@@ -892,11 +1577,11 @@ std::string WindowsSystemInfo::get_processor_name() {
     if (!wmi.is_valid()) {
         return "Processor information not found.";
     }
-    
+
     std::string processor_name;
     int cores = 0;
     int threads = 0;
-    
+
     wmi.query(L"SELECT * FROM Win32_Processor", [&](IWbemClassObject* pObj) {
         if (processor_name.empty()) {  // Only get first processor
             processor_name = wmi::get_property_string(pObj, L"Name");
@@ -904,7 +1589,7 @@ std::string WindowsSystemInfo::get_processor_name() {
             threads = wmi::get_property_int(pObj, L"NumberOfLogicalProcessors");
         }
     });
-    
+
     if (!processor_name.empty()) {
         // Trim whitespace
         size_t start = processor_name.find_first_not_of(" \t");
@@ -912,11 +1597,11 @@ std::string WindowsSystemInfo::get_processor_name() {
         if (start != std::string::npos && end != std::string::npos) {
             processor_name = processor_name.substr(start, end - start + 1);
         }
-        
-        return processor_name + " (" + std::to_string(cores) + " cores, " + 
+
+        return processor_name + " (" + std::to_string(cores) + " cores, " +
                std::to_string(threads) + " logical processors)";
     }
-    
+
     return "Processor information not found.";
 }
 
@@ -925,21 +1610,21 @@ std::string WindowsSystemInfo::get_physical_memory() {
     if (!wmi.is_valid()) {
         return "Physical memory information not found.";
     }
-    
+
     uint64_t total_capacity = 0;
-    
+
     wmi.query(L"SELECT * FROM Win32_PhysicalMemory", [&](IWbemClassObject* pObj) {
         uint64_t capacity = wmi::get_property_uint64(pObj, L"Capacity");
         total_capacity += capacity;
     });
-    
+
     if (total_capacity > 0) {
         double gb = total_capacity / (1024.0 * 1024.0 * 1024.0);
         std::ostringstream oss;
         oss << std::fixed << std::setprecision(2) << gb << " GB";
         return oss.str();
     }
-    
+
     return "Physical memory information not found.";
 }
 
@@ -948,14 +1633,14 @@ std::string WindowsSystemInfo::get_system_model() {
     if (!wmi.is_valid()) {
         return "System model information not found.";
     }
-    
+
     std::string model;
     wmi.query(L"SELECT * FROM Win32_ComputerSystem", [&](IWbemClassObject* pObj) {
         if (model.empty()) {  // Only get first result
             model = wmi::get_property_string(pObj, L"Model");
         }
     });
-    
+
     return model.empty() ? "System model information not found." : model;
 }
 
@@ -964,14 +1649,14 @@ std::string WindowsSystemInfo::get_bios_version() {
     if (!wmi.is_valid()) {
         return "BIOS Version not found.";
     }
-    
+
     std::string bios_version;
     wmi.query(L"SELECT * FROM Win32_BIOS", [&](IWbemClassObject* pObj) {
         if (bios_version.empty()) {  // Only get first result
             bios_version = wmi::get_property_string(pObj, L"Name");
         }
     });
-    
+
     return bios_version.empty() ? "BIOS Version not found." : bios_version;
 }
 
@@ -980,18 +1665,18 @@ std::string WindowsSystemInfo::get_max_clock_speed() {
     if (!wmi.is_valid()) {
         return "Max CPU clock speed not found.";
     }
-    
+
     int max_clock = 0;
     wmi.query(L"SELECT * FROM Win32_Processor", [&](IWbemClassObject* pObj) {
         if (max_clock == 0) {  // Only get first processor
             max_clock = wmi::get_property_int(pObj, L"MaxClockSpeed");
         }
     });
-    
+
     if (max_clock > 0) {
         return std::to_string(max_clock) + " MHz";
     }
-    
+
     return "Max CPU clock speed not found.";
 }
 
@@ -1001,14 +1686,14 @@ std::string WindowsSystemInfo::get_windows_power_setting() {
     if (!pipe) {
         return "Windows power setting not found (command failed)";
     }
-    
+
     char buffer[256];
     std::string result;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         result += buffer;
     }
     _pclose(pipe);
-    
+
     // Extract power scheme name from parentheses
     // Output format: "Power Scheme GUID: ... (Power Scheme Name)"
     size_t start = result.find('(');
@@ -1016,7 +1701,7 @@ std::string WindowsSystemInfo::get_windows_power_setting() {
     if (start != std::string::npos && end != std::string::npos && end > start) {
         return result.substr(start + 1, end - start - 1);
     }
-    
+
     return "Power scheme name not found in output";
 }
 
@@ -1030,53 +1715,53 @@ double WindowsSystemInfo::get_gpu_vram_wmi(uint64_t adapter_ram) {
 double WindowsSystemInfo::get_gpu_vram_dxdiag(const std::string& gpu_name) {
     // Get GPU VRAM using dxdiag (most reliable for dedicated memory)
     // Similar to Python's _get_gpu_vram_dxdiag_simple method
-    
+
     try {
         // Create temp file path
         char temp_path[MAX_PATH];
         char temp_dir[MAX_PATH];
         GetTempPathA(MAX_PATH, temp_dir);
         GetTempFileNameA(temp_dir, "dxd", 0, temp_path);
-        
+
         // Run dxdiag /t temp_path
         std::string command = "dxdiag /t \"" + std::string(temp_path) + "\" 2>NUL";
         int result = system(command.c_str());
-        
+
         if (result != 0) {
             DeleteFileA(temp_path);
             return 0.0;
         }
-        
+
         // Wait a bit for dxdiag to finish writing (it can take a few seconds)
         Sleep(3000);
-        
+
         // Read the file
         std::ifstream file(temp_path);
         if (!file.is_open()) {
             DeleteFileA(temp_path);
             return 0.0;
         }
-        
+
         std::string line;
         bool found_gpu = false;
         double vram_gb = 0.0;
-        
+
         // Convert gpu_name to lowercase for case-insensitive comparison
         std::string gpu_name_lower = gpu_name;
         std::transform(gpu_name_lower.begin(), gpu_name_lower.end(), gpu_name_lower.begin(), ::tolower);
-        
+
         while (std::getline(file, line)) {
             // Convert line to lowercase for case-insensitive search
             std::string line_lower = line;
             std::transform(line_lower.begin(), line_lower.end(), line_lower.begin(), ::tolower);
-            
+
             // Check if this is our GPU
-            if (line_lower.find("card name:") != std::string::npos && 
+            if (line_lower.find("card name:") != std::string::npos &&
                 line_lower.find(gpu_name_lower) != std::string::npos) {
                 found_gpu = true;
                 continue;
             }
-            
+
             // Look for dedicated memory line
             if (found_gpu && line_lower.find("dedicated memory:") != std::string::npos) {
                 // Extract memory value (format: "Dedicated Memory: 12345 MB")
@@ -1092,17 +1777,17 @@ double WindowsSystemInfo::get_gpu_vram_dxdiag(const std::string& gpu_name) {
                     }
                 }
             }
-            
+
             // Reset if we hit another display device
-            if (line_lower.find("card name:") != std::string::npos && 
+            if (line_lower.find("card name:") != std::string::npos &&
                 line_lower.find(gpu_name_lower) == std::string::npos) {
                 found_gpu = false;
             }
         }
-        
+
         file.close();
         DeleteFileA(temp_path);
-        
+
         return vram_gb;
     } catch (...) {
         return 0.0;
@@ -1120,27 +1805,27 @@ double WindowsSystemInfo::get_gpu_vram_dxdiag(const std::string& gpu_name) {
 CPUInfo LinuxSystemInfo::get_cpu_device() {
     CPUInfo cpu;
     cpu.available = false;
-    
+
     // Execute lscpu command
     FILE* pipe = popen("lscpu 2>/dev/null", "r");
     if (!pipe) {
         cpu.error = "Failed to execute lscpu command";
         return cpu;
     }
-    
+
     char buffer[256];
     std::string lscpu_output;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         lscpu_output += buffer;
     }
     pclose(pipe);
-    
+
     // Parse lscpu output
     std::istringstream iss(lscpu_output);
     std::string line;
     int cores_per_socket = 0;
     int sockets = 1;  // Default to 1
-    
+
     while (std::getline(iss, line)) {
         if (line.find("Model name:") != std::string::npos) {
             size_t pos = line.find(":");
@@ -1174,20 +1859,17 @@ CPUInfo LinuxSystemInfo::get_cpu_device() {
             }
         }
     }
-    
+
     // Calculate total cores
     if (cores_per_socket > 0) {
         cpu.cores = cores_per_socket * sockets;
     }
-    
+
     if (!cpu.available) {
         cpu.error = "No CPU information found";
         return cpu;
     }
-    
-    // Detect inference engines
-    cpu.inference_engines = detect_inference_engines("cpu", cpu.name);
-    
+
     return cpu;
 }
 
@@ -1196,7 +1878,7 @@ GPUInfo LinuxSystemInfo::get_amd_igpu_device() {
     if (!gpus.empty() && gpus[0].available) {
         return gpus[0];
     }
-    
+
     GPUInfo gpu;
     gpu.available = false;
     gpu.error = "No AMD integrated GPU found";
@@ -1209,7 +1891,7 @@ std::vector<GPUInfo> LinuxSystemInfo::get_amd_dgpu_devices() {
 
 std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_dgpu_devices() {
     std::vector<GPUInfo> gpus;
-    
+
     // Execute lspci to find GPUs
     FILE* pipe = popen("lspci 2>/dev/null | grep -iE 'vga|3d|display'", "r");
     if (!pipe) {
@@ -1219,14 +1901,14 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_dgpu_devices() {
         gpus.push_back(gpu);
         return gpus;
     }
-    
+
     char buffer[512];
     std::vector<std::string> lspci_lines;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         lspci_lines.push_back(buffer);
     }
     pclose(pipe);
-    
+
     // Parse NVIDIA GPUs
     for (const auto& line : lspci_lines) {
         if (line.find("NVIDIA") != std::string::npos || line.find("nvidia") != std::string::npos) {
@@ -1242,11 +1924,11 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_dgpu_devices() {
             } else {
                 name = line;
             }
-            
+
             // Check if discrete (most NVIDIA GPUs are discrete)
             std::string name_lower = name;
             std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
-            
+
             bool is_discrete = true;  // Default to discrete for NVIDIA
             for (const auto& keyword : NVIDIA_DISCRETE_GPU_KEYWORDS) {
                 if (name_lower.find(keyword) != std::string::npos) {
@@ -1254,39 +1936,36 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_dgpu_devices() {
                     break;
                 }
             }
-            
+
             if (is_discrete) {
                 GPUInfo gpu;
                 gpu.name = name;
                 gpu.available = true;
-                
+
                 // Get driver version
                 gpu.driver_version = get_nvidia_driver_version();
                 if (gpu.driver_version.empty()) {
                     gpu.driver_version = "Unknown";
                 }
-                
+
                 // Get VRAM
                 double vram = get_nvidia_vram();
                 if (vram > 0.0) {
                     gpu.vram_gb = vram;
                 }
-                
-                // Detect inference engines
-                gpu.inference_engines = detect_inference_engines("nvidia_dgpu", name);
-                
+
                 gpus.push_back(gpu);
             }
         }
     }
-    
+
     if (gpus.empty()) {
         GPUInfo gpu;
         gpu.available = false;
         gpu.error = "No NVIDIA discrete GPU found";
         gpus.push_back(gpu);
     }
-    
+
     return gpus;
 }
 
@@ -1294,98 +1973,121 @@ NPUInfo LinuxSystemInfo::get_npu_device() {
     NPUInfo npu;
     npu.name = "AMD NPU";
     npu.available = false;
-    npu.error = "NPU detection not yet implemented for Linux";
+
+    fs::path accel_path = "/sys/class/accel";
+    if (!fs::exists(accel_path) || !fs::is_directory(accel_path)) {
+        npu.error = "No NPU device found";
+        return npu;
+    }
+
+    for (const auto& entry : fs::directory_iterator(accel_path)) {
+        if (!entry.is_directory() && !entry.is_symlink()) {
+            continue;
+        }
+        fs::path driver_link = entry.path() / "device" / "driver";
+        if (!fs::exists(driver_link)) {
+            continue;
+        }
+        fs::path driver_path = fs::read_symlink(driver_link);
+        std::string driver_name = driver_path.filename().string();
+
+        if (driver_name != "amdxdna") {
+            continue;
+        }
+
+        npu.available = true;
+
+        fs::path vbnv_file = entry.path() / "device" / "vbnv";
+        if (fs::exists(vbnv_file)) {
+            std::ifstream vbnv_stream(vbnv_file);
+            if (vbnv_stream.is_open()) {
+                std::string vbnv_content;
+                std::getline(vbnv_stream, vbnv_content);
+                vbnv_stream.close();
+
+                if (!vbnv_content.empty()) {
+                    npu.name = "AMD NPU (" + vbnv_content + ")";
+                }
+            }
+        }
+
+        break;
+    }
+
+    if (!npu.available) {
+        npu.error = "No NPU device found with amdxdna driver";
+    }
+
     return npu;
 }
 
 std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_type) {
     std::vector<GPUInfo> gpus;
-    
-    // Execute lspci to find GPUs
-    FILE* pipe = popen("lspci 2>/dev/null | grep -iE 'vga|3d|display'", "r");
-    if (!pipe) {
+    std::string kfd_path = "/sys/class/kfd/kfd/topology/nodes";
+
+    if (!fs::exists(kfd_path)) {
         GPUInfo gpu;
         gpu.available = false;
-        gpu.error = "Failed to execute lspci command";
+        gpu.error = "No KFD nodes found (AMD GPU driver not loaded or no GPU present)";
         gpus.push_back(gpu);
         return gpus;
     }
-    
-    char buffer[512];
-    std::vector<std::string> lspci_lines;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        lspci_lines.push_back(buffer);
-    }
-    pclose(pipe);
-    
-    // Parse AMD GPUs
-    for (const auto& line : lspci_lines) {
-        if (line.find("AMD") != std::string::npos || line.find("ATI") != std::string::npos) {
-            // Extract device name
-            std::string name;
-            size_t pos = line.find(": ");
-            if (pos != std::string::npos) {
-                name = line.substr(pos + 2);
-                // Remove newline
-                if (!name.empty() && name.back() == '\n') {
-                    name.pop_back();
+
+    for (const auto& node_entry : fs::directory_iterator(kfd_path)) {
+        if (!node_entry.is_directory()) continue;
+
+        std::string node_path = node_entry.path().string();
+        std::string properties_file = node_path + "/properties";
+
+        if (!fs::exists(properties_file)) continue;
+
+        std::ifstream props(properties_file);
+        if (!props.is_open()) continue;
+
+        std::string line;
+        std::string drm_render_minor;
+        std::string gfx_target_version;
+
+        bool is_gpu = false;
+
+        while (std::getline(props, line)) {
+            if (line.find("gfx_target_version") == 0) {
+                gfx_target_version = line.substr(line.find(" ") + 1);
+                gfx_target_version.erase(gfx_target_version.find_last_not_of(" \t\n\r") + 1);
+                if (!gfx_target_version.empty() && std::stoi(gfx_target_version) != 0) {
+                    is_gpu = true;
                 }
-            } else {
-                name = line;
-            }
-            
-            // Classify as discrete or integrated using keywords
-            std::string name_lower = name;
-            std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
-            
-            bool is_discrete = false;
-            for (const auto& keyword : AMD_DISCRETE_GPU_KEYWORDS) {
-                if (name_lower.find(keyword) != std::string::npos) {
-                    is_discrete = true;
-                    break;
-                }
-            }
-            bool is_integrated = !is_discrete;
-            
-            // Filter based on requested type
-            if ((gpu_type == "integrated" && is_integrated) || 
-                (gpu_type == "discrete" && is_discrete)) {
-                
-                GPUInfo gpu;
-                gpu.name = name;
-                gpu.available = true;
-                
-                // Get VRAM for discrete GPUs
-                if (is_discrete) {
-                    // Extract PCI ID from lspci line (first field)
-                    std::string pci_id = line.substr(0, line.find(" "));
-                    
-                    double vram = get_amd_vram_rocm_smi();
-                    if (vram == 0.0) {
-                        vram = get_amd_vram_sysfs(pci_id);
-                    }
-                    
-                    if (vram > 0.0) {
-                        gpu.vram_gb = vram;
-                    }
-                }
-                
-                // Detect inference engines
-                std::string device_type = is_integrated ? "amd_igpu" : "amd_dgpu";
-                gpu.inference_engines = detect_inference_engines(device_type, name);
-                
-                gpus.push_back(gpu);
+            } else if (line.find("drm_render_minor") == 0) {
+                drm_render_minor = line.substr(line.find(" ") + 1);
+                drm_render_minor.erase(drm_render_minor.find_last_not_of(" \t\n\r") + 1);
             }
         }
+        props.close();
+
+        if (!is_gpu || drm_render_minor.empty() || drm_render_minor == "-1")
+            continue;
+
+        bool is_integrated = get_amd_is_igpu(drm_render_minor);
+        if ((gpu_type == "integrated" && !is_integrated) || (gpu_type == "discrete" && is_integrated)) continue;
+
+        GPUInfo gpu;
+        gpu.name = gfx_target_version;
+        gpu.available = true;
+
+        // Get VRAM and GTT for GPUs
+        gpu.vram_gb = get_amd_vram(drm_render_minor);
+        gpu.virtual_gb = get_amd_gtt(drm_render_minor);
+
+        gpus.push_back(gpu);
     }
-    
+
     if (gpus.empty()) {
         GPUInfo gpu;
         gpu.available = false;
-        gpu.error = "No AMD " + gpu_type + " GPU found";
+        gpu.error = "No AMD " + gpu_type + " GPU found in KFD nodes";
         gpus.push_back(gpu);
     }
-    
+
     return gpus;
 }
 
@@ -1407,7 +2109,7 @@ std::string LinuxSystemInfo::get_nvidia_driver_version() {
         }
         pclose(pipe);
     }
-    
+
     // Fallback: Try /proc/driver/nvidia/version
     std::ifstream file("/proc/driver/nvidia/version");
     if (file.is_open()) {
@@ -1423,7 +2125,7 @@ std::string LinuxSystemInfo::get_nvidia_driver_version() {
             }
         }
     }
-    
+
     return "";
 }
 
@@ -1432,12 +2134,12 @@ double LinuxSystemInfo::get_nvidia_vram() {
     if (!pipe) {
         return 0.0;
     }
-    
+
     char buffer[128];
     if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         std::string vram_str = buffer;
         pclose(pipe);
-        
+
         try {
             // nvidia-smi returns MB
             double vram_mb = std::stod(vram_str);
@@ -1447,85 +2149,62 @@ double LinuxSystemInfo::get_nvidia_vram() {
         }
     }
     pclose(pipe);
-    
+
     return 0.0;
 }
 
-double LinuxSystemInfo::get_amd_vram_rocm_smi() {
-    FILE* pipe = popen("rocm-smi --showmeminfo vram --csv 2>/dev/null", "r");
-    if (!pipe) {
-        return 0.0;
-    }
-    
-    char buffer[256];
-    std::string output;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-    pclose(pipe);
-    
-    // Parse CSV output for VRAM
-    std::istringstream iss(output);
-    std::string line;
-    while (std::getline(iss, line)) {
-        if (line.find("Total VRAM") != std::string::npos || 
-            line.find("vram") != std::string::npos) {
-            // Extract numbers
-            std::regex num_regex(R"(\d+)");
-            std::smatch match;
-            if (std::regex_search(line, match, num_regex)) {
-                try {
-                    double vram_value = std::stod(match[0].str());
-                    // Assume MB if large value, GB if small
-                    if (vram_value > 100) {
-                        return std::round(vram_value / 1024.0 * 10.0) / 10.0;
-                    } else {
-                        return vram_value;
-                    }
-                } catch (...) {
-                    return 0.0;
-                }
-            }
-        }
-    }
-    
-    return 0.0;
-}
+double LinuxSystemInfo::get_ttm_gb() {
+    std::string ttm_path = "/sys/module/ttm/parameters/pages_limit";
+    std::ifstream sysfs_file(ttm_path);
 
-double LinuxSystemInfo::get_amd_vram_sysfs(const std::string& pci_id) {
-    // Try device-specific path first
-    std::string vram_path = "/sys/bus/pci/devices/" + pci_id + "/mem_info_vram_total";
-    std::ifstream file(vram_path);
-    
-    if (!file.is_open()) {
-        // Try wildcard path
-        FILE* pipe = popen("cat /sys/class/drm/card*/device/mem_info_vram_total 2>/dev/null | head -1", "r");
-        if (pipe) {
-            char buffer[128];
-            if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-                pclose(pipe);
-                try {
-                    uint64_t vram_bytes = std::stoull(buffer);
-                    return std::round(vram_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
-                } catch (...) {
-                    return 0.0;
-                }
-            }
-            pclose(pipe);
-        }
+    if (!sysfs_file.is_open()) {
         return 0.0;
     }
-    
-    std::string vram_str;
-    std::getline(file, vram_str);
-    file.close();
-    
+
+    std::string page_limit_str;
+    std::getline(sysfs_file, page_limit_str);
+    sysfs_file.close();
+
     try {
-        uint64_t vram_bytes = std::stoull(vram_str);
-        return std::round(vram_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
+        uint64_t page_limit = std::stoull(page_limit_str);
+        return std::round(page_limit / ((1024.0 * 1024.0 * 1024.0) / 4096) * 10.0) / 10.0;
     } catch (...) {
         return 0.0;
     }
+}
+
+bool LinuxSystemInfo::get_amd_is_igpu(const std::string& drm_render_minor) {
+    std::string device_path = "/sys/class/drm/renderD" + drm_render_minor + "/device/";
+    std::string board_info_path = device_path + "board_info";
+    return !(fs::exists(board_info_path) && fs::is_regular_file(board_info_path));
+}
+
+double LinuxSystemInfo::parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname){
+    // Try device-specific path first
+    std::string sysfs_path = "/sys/class/drm/renderD" + drm_render_minor + "/device/" + fname;
+
+    if (!fs::exists(sysfs_path))
+        return 0.0;
+
+    std::ifstream sysfs_file(sysfs_path);
+    std::string memory_str;
+    std::getline(sysfs_file, memory_str);
+    sysfs_file.close();
+
+    try {
+        uint64_t memory_bytes = std::stoull(memory_str);
+        return std::round(memory_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
+    } catch (...) {
+        return 0.0;
+    }
+}
+
+double LinuxSystemInfo::get_amd_gtt(const std::string& drm_render_minor){
+    return parse_memory_sysfs(drm_render_minor, "mem_info_gtt_total");
+}
+
+double LinuxSystemInfo::get_amd_vram(const std::string& drm_render_minor) {
+    return parse_memory_sysfs(drm_render_minor, "mem_info_vram_total");
 }
 
 json LinuxSystemInfo::get_system_info_dict() {
@@ -1538,22 +2217,25 @@ json LinuxSystemInfo::get_system_info_dict() {
 std::string LinuxSystemInfo::get_os_version() {
     // Get detailed Linux version (similar to Python's platform.platform())
     std::string result = "Linux";
-    
-    // Get kernel version using uname
-    FILE* pipe = popen("uname -r 2>/dev/null", "r");
-    if (pipe) {
-        char buffer[128];
-        if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            std::string kernel = buffer;
-            // Remove newline
-            if (!kernel.empty() && kernel.back() == '\n') {
-                kernel.pop_back();
-            }
-            result += "-" + kernel;
+
+    // Get kernel version from /proc/version
+    std::string kernel = "unknown_kernel";
+
+    std::ifstream file("/proc/version");
+    if (file.is_open()){
+        std::string line;
+        std::getline(file, line);
+
+        const std::string tag = "version ";
+        size_t pos = line.find(tag);
+        if (pos != std::string::npos){
+            pos += tag.size();
+            size_t end = line.find(' ', pos);
+            kernel = line.substr(pos, end - pos);
         }
-        pclose(pipe);
     }
-    
+    result += "-" + kernel;
+
     // Try to get distribution info from /etc/os-release
     std::ifstream os_release("/etc/os-release");
     if (os_release.is_open()) {
@@ -1570,7 +2252,7 @@ std::string LinuxSystemInfo::get_os_version() {
                 distro_version.erase(std::remove(distro_version.begin(), distro_version.end(), '"'), distro_version.end());
             }
         }
-        
+
         if (!distro_name.empty()) {
             result += " (" + distro_name;
             if (!distro_version.empty()) {
@@ -1579,7 +2261,7 @@ std::string LinuxSystemInfo::get_os_version() {
             result += ")";
         }
     }
-    
+
     return result;
 }
 
@@ -1588,14 +2270,14 @@ std::string LinuxSystemInfo::get_processor_name() {
     if (!pipe) {
         return "ERROR - Failed to execute lscpu";
     }
-    
+
     char buffer[256];
     std::string output;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output += buffer;
     }
     pclose(pipe);
-    
+
     std::istringstream iss(output);
     std::string line;
     while (std::getline(iss, line)) {
@@ -1612,57 +2294,35 @@ std::string LinuxSystemInfo::get_processor_name() {
             }
         }
     }
-    
+
     return "ERROR - Processor name not found";
 }
 
 std::string LinuxSystemInfo::get_physical_memory() {
-    FILE* pipe = popen("free -m 2>/dev/null", "r");
-    if (!pipe) {
-        return "ERROR - Failed to execute free command";
-    }
-    
-    char buffer[256];
-    std::string output;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-    pclose(pipe);
-    
-    // Parse output - second line contains memory info
-    std::istringstream iss(output);
-    std::string line;
-    int line_count = 0;
-    while (std::getline(iss, line)) {
-        line_count++;
-        if (line_count == 2) {  // Second line has memory data
-            std::istringstream line_stream(line);
-            std::string token;
-            int token_count = 0;
-            while (line_stream >> token) {
-                token_count++;
-                if (token_count == 2) {  // Second token is total memory in MB
-                    try {
-                        int mem_mb = std::stoi(token);
-                        double mem_gb = std::round(mem_mb / 1024.0 * 100.0) / 100.0;
-                        std::ostringstream oss;
-                        oss << std::fixed << std::setprecision(2) << mem_gb << " GB";
-                        return oss.str();
-                    } catch (...) {
-                        return "ERROR - Failed to parse memory info";
-                    }
-                }
+    std::string token;
+    std::ifstream file("/proc/meminfo");
+
+    //Step through each token in the file
+    while(file >> token) {
+        if(token == "MemTotal:") {
+            // Get the token after "MemTotal:"
+            if(double mem; file >> mem) {
+                std::ostringstream oss;
+                oss << std::fixed << std::setprecision(2) << std::round(mem / 1024.0 / 1024.0 * 100.0) / 100.0 << " GB";
+                return oss.str();
             }
+            break;
         }
+        // Skip the line if key/token isn't found.
+        file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
     }
-    
-    return "ERROR - Memory information not found";
+    return "ERROR - Physical memory not found";
 }
 
 #endif // __linux__
 
 // ============================================================================
-// macOS implementation (stubs)
+// macOS implementation
 // ============================================================================
 
 #ifdef __APPLE__
@@ -1670,30 +2330,138 @@ std::string LinuxSystemInfo::get_physical_memory() {
 CPUInfo MacOSSystemInfo::get_cpu_device() {
     CPUInfo cpu;
     cpu.available = false;
-    cpu.error = "macOS CPU detection not implemented yet";
+
+    // Initialize numeric values to -1 to distinguish between "0" and "Failed to fetch"
+    cpu.cores = -1;
+    cpu.threads = -1;
+    cpu.max_clock_speed_mhz = 0;
+
+    size_t size;
+    char buffer[256];
+
+    size = sizeof(buffer);
+    if (sysctlbyname("machdep.cpu.brand_string", buffer, &size, nullptr, 0) == 0) {
+        cpu.name = buffer;
+        cpu.available = true;
+    } else {
+        cpu.name = "Unknown Apple Processor";
+        cpu.error = "sysctl failed for machdep.cpu.brand_string";
+    }
+
+    int cores = 0;
+    size = sizeof(cores);
+    if (sysctlbyname("hw.physicalcpu", &cores, &size, nullptr, 0) == 0) {
+        cpu.cores = cores;
+    } else {
+        cpu.error += " | Failed to get physical cores";
+    }
+
+    int threads = 0;
+    size = sizeof(threads);
+    if (sysctlbyname("hw.logicalcpu", &threads, &size, nullptr, 0) == 0) {
+        cpu.threads = threads;
+    } else {
+        cpu.error += " | Failed to get logical threads";
+    }
+
+    // 4. Get Max Clock Speed
+    uint64_t freq = 0;
+    size = sizeof(freq);
+    if (sysctlbyname("hw.cpufrequency_max", &freq, &size, nullptr, 0) == 0) {
+        //Calculation of hz to mhz
+        cpu.max_clock_speed_mhz = (freq > 0) ? (uint32_t)(freq / 1000000) : 0;
+    } else {
+        cpu.error += " | Failed to get maximum frequency";
+    }
+
     return cpu;
 }
 
 GPUInfo MacOSSystemInfo::get_amd_igpu_device() {
     GPUInfo gpu;
     gpu.available = false;
-    gpu.error = "macOS AMD iGPU detection not implemented yet";
+    gpu.error = "AMD integrated GPUs not detected on macOS";
     return gpu;
 }
 
 std::vector<GPUInfo> MacOSSystemInfo::get_amd_dgpu_devices() {
-    return {};
+    GPUInfo gpu;
+    gpu.available = false;
+    gpu.error = "AMD discrete GPUs not detected on macOS";
+    return {gpu};
 }
 
 std::vector<GPUInfo> MacOSSystemInfo::get_nvidia_dgpu_devices() {
-    return {};
+    GPUInfo gpu;
+    gpu.available = false;
+    gpu.error = "NVIDIA GPUs not detected on macOS";
+    return {gpu};
 }
 
 NPUInfo MacOSSystemInfo::get_npu_device() {
     NPUInfo npu;
+    npu.name = "AMD NPU";
     npu.available = false;
-    npu.error = "macOS NPU detection not implemented yet";
+    npu.error = "NPU not supported on macOS (Ryzen AI NPUs are Windows/Linux only)";
     return npu;
+}
+
+json MacOSSystemInfo::get_system_info_dict() {
+    json info = SystemInfo::get_system_info_dict();  // Get base fields (includes OS Version)
+    info["Processor"] = get_processor_name();
+    info["Physical Memory"] = get_physical_memory();
+    return info;
+}
+
+std::string MacOSSystemInfo::get_os_version() {
+    std::string result = "macOS";
+
+    // Get macOS product version (e.g., "14.3.1")
+    FILE* pipe = popen("sw_vers -productVersion 2>/dev/null", "r");
+    if (pipe) {
+        char buffer[128];
+        if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            std::string version = buffer;
+            // Trim trailing newline
+            while (!version.empty() && (version.back() == '\n' || version.back() == '\r')) {
+                version.pop_back();
+            }
+            if (!version.empty()) {
+                result += " " + version;
+            }
+        }
+        pclose(pipe);
+    }
+
+    // Append Darwin kernel version
+    char kernel_buf[256];
+    size_t size = sizeof(kernel_buf);
+    if (sysctlbyname("kern.osrelease", kernel_buf, &size, nullptr, 0) == 0) {
+        result += " Darwin Kernel Version " + std::string(kernel_buf);
+    }
+
+    return result;
+}
+
+std::string MacOSSystemInfo::get_processor_name() {
+    char buffer[256];
+    size_t size = sizeof(buffer);
+    if (sysctlbyname("machdep.cpu.brand_string", buffer, &size, nullptr, 0) == 0) {
+        return std::string(buffer);
+    }
+    return "Unknown Apple Processor";
+}
+
+std::string MacOSSystemInfo::get_physical_memory() {
+    uint64_t mem_bytes = 0;
+    size_t size = sizeof(mem_bytes);
+    if (sysctlbyname("hw.memsize", &mem_bytes, &size, nullptr, 0) == 0) {
+        double mem_gb = mem_bytes / (1024.0 * 1024.0 * 1024.0);
+        // Round to nearest integer for clean display
+        int rounded_gb = static_cast<int>(mem_gb + 0.5);
+        return std::to_string(rounded_gb) + " GB";
+    }
+    return "Unknown";
 }
 
 #endif // __APPLE__
@@ -1718,7 +2486,7 @@ bool SystemInfoCache::is_ci_mode() const {
 bool SystemInfoCache::is_version_less_than(const std::string& v1, const std::string& v2) {
     // Parse semantic versions (e.g., "9.0.0" vs "8.5.3")
     // Returns true if v1 < v2
-    
+
     auto parse_version = [](const std::string& v) -> std::vector<int> {
         std::vector<int> parts;
         std::stringstream ss(v);
@@ -1736,17 +2504,17 @@ bool SystemInfoCache::is_version_less_than(const std::string& v1, const std::str
         }
         return parts;
     };
-    
+
     std::vector<int> parts1 = parse_version(v1);
     std::vector<int> parts2 = parse_version(v2);
-    
+
     // Compare major, minor, patch (use min with parentheses to avoid Windows macro conflict)
     size_t min_size = (parts1.size() < parts2.size()) ? parts1.size() : parts2.size();
     for (size_t i = 0; i < min_size; ++i) {
         if (parts1[i] < parts2[i]) return true;
         if (parts1[i] > parts2[i]) return false;
     }
-    
+
     // Equal versions
     return false;
 }
@@ -1756,34 +2524,34 @@ bool SystemInfoCache::is_valid() const {
     if (is_ci_mode()) {
         return false;
     }
-    
+
     // Check if cache file exists
     if (!fs::exists(cache_file_path_)) {
         return false;
     }
-    
+
     // Load cache and check version
     try {
         std::ifstream file(cache_file_path_);
         json cache_data = json::parse(file);
-        
+
         // Check if version field is missing or hardware field is missing
         if (!cache_data.contains("version") || !cache_data.contains("hardware")) {
             return false;
         }
-        
+
         // Get cached version and current version
         std::string cached_version = cache_data["version"];
         std::string current_version = get_lemonade_version();
-        
+
         // Invalidate if cache version is less than current version
         if (is_version_less_than(cached_version, current_version)) {
             return false;
         }
-        
+
         // Cache is valid
         return true;
-        
+
     } catch (...) {
         return false;
     }
@@ -1793,7 +2561,7 @@ json SystemInfoCache::load_hardware_info() {
     if (!is_valid()) {
         return json::object();
     }
-    
+
     try {
         std::ifstream file(cache_file_path_);
         json cache_data = json::parse(file);
@@ -1806,11 +2574,11 @@ json SystemInfoCache::load_hardware_info() {
 void SystemInfoCache::save_hardware_info(const json& hardware_info) {
     // Create cache directory if it doesn't exist
     fs::create_directories(fs::path(cache_file_path_).parent_path());
-    
+
     json cache_data;
     cache_data["version"] = get_lemonade_version();
     cache_data["hardware"] = hardware_info;
-    
+
     std::ofstream file(cache_file_path_);
     file << cache_data.dump(2);
 }
@@ -1821,90 +2589,101 @@ void SystemInfoCache::clear() {
     }
 }
 
-json SystemInfoCache::get_system_info_with_cache(bool verbose) {
+void SystemInfoCache::perform_upgrade_cleanup() {
+    // Read the old version from the existing cache file.
+    // This should only be called when cache_file_path_ exists (upgrade path),
+    // never for new installs where no cache file is present.
+    try {
+        if (!fs::exists(cache_file_path_)) {
+            return;
+        }
+
+        std::ifstream file(cache_file_path_);
+        json cache_data = json::parse(file);
+
+        if (!cache_data.contains("version")) {
+            return;
+        }
+
+        std::string old_version = cache_data["version"];
+
+        // Delete the backend bin directory when upgrading from a version older
+        // than clear_bin_if_lemonade_below (defined in backend_versions.json).
+        // Backend binaries from older versions may be incompatible and need to
+        // be re-downloaded.
+        std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+        std::ifstream config_file(config_path);
+        json config = json::parse(config_file);
+        std::string cleanup_version = config.value("clear_bin_if_lemonade_below", "0.0.0");
+
+        if (is_version_less_than(old_version, cleanup_version)) {
+            std::string bin_dir = get_cache_dir() + "/bin";
+            std::error_code ec;
+            fs::remove_all(bin_dir, ec);
+            // Silently ignore errors - delete as much as possible
+        }
+    } catch (...) {
+        // Silently ignore any errors during upgrade cleanup
+    }
+}
+
+json SystemInfoCache::get_system_info_with_cache() {
+    // In-memory static cache to avoid repeated disk reads and message printing
+    // within the same process lifetime
+    static json cached_result;
+    static bool result_computed = false;
+
+    // Return cached result if available
+    if (result_computed) {
+        return cached_result;
+    }
+
     json system_info;
-    
+
     // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
     try {
         // Create cache instance and load cached data
         SystemInfoCache cache;
         bool cache_exists = fs::exists(cache.get_cache_file_path());
         json cached_data = cache.load_hardware_info();
-        
+
         // Create platform-specific system info instance
         auto sys_info = create_system_info();
-        
+
         if (!cached_data.empty()) {
-            std::cout << "[Server] Using cached hardware info" << std::endl;
             system_info = cached_data;
         } else {
             // Provide friendly message about why we're detecting hardware
             if (cache_exists) {
                 std::cout << "[Server] Collecting system info (Lemonade was updated)" << std::endl;
+
+                // Perform version-specific cleanup (e.g., removing stale backend binaries)
+                cache.perform_upgrade_cleanup();
             } else {
                 std::cout << "[Server] Collecting system info" << std::endl;
             }
-            
-            // Get system info (OS, Processor, Memory, etc.)
+
+            // Get system info (OS, Processor, Memory, OEM System, BIOS, etc.)
             try {
                 system_info = sys_info->get_system_info_dict();
             } catch (...) {
                 system_info["OS Version"] = "Unknown";
             }
-            
+
             // Get device information - handles its own exceptions internally
             system_info["devices"] = sys_info->get_device_dict();
-            
-            // Save to cache (without inference_engines which are always fresh)
+
+            // Save to cache (without recipes which are always fresh)
             try {
                 cache.save_hardware_info(system_info);
             } catch (...) {
                 // Cache save failed - not critical, continue
             }
         }
-        
-        // Add inference engines (always fresh, never cached)
-        if (system_info.contains("devices")) {
-            auto& devices = system_info["devices"];
-            
-            // Helper to safely add inference engines
-            auto add_engines = [&](const std::string& key, const std::string& device_type) {
-                if (devices.contains(key) && devices[key].contains("name")) {
-                    std::string name = devices[key]["name"];
-                    devices[key]["inference_engines"] = sys_info->detect_inference_engines(device_type, name);
-                }
-            };
-            
-            add_engines("cpu", "cpu");
-            add_engines("amd_igpu", "amd_igpu");
-            add_engines("npu", "npu");
-            
-            // Handle GPU arrays
-            for (const auto& gpu_type : {"amd_dgpu", "nvidia_dgpu"}) {
-                if (devices.contains(gpu_type) && devices[gpu_type].is_array()) {
-                    for (auto& gpu : devices[gpu_type]) {
-                        if (gpu.contains("name") && !gpu["name"].get<std::string>().empty()) {
-                            gpu["inference_engines"] = sys_info->detect_inference_engines(gpu_type, gpu["name"]);
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Filter for non-verbose mode
-        if (!verbose) {
-            std::vector<std::string> essential_keys = {"OS Version", "Processor", "Physical Memory", "devices"};
-            json filtered_info;
-            for (const auto& key : essential_keys) {
-                if (system_info.contains(key)) {
-                    filtered_info[key] = system_info[key];
-                }
-            }
-            system_info = filtered_info;
-        } else {
-            system_info["Python Packages"] = SystemInfo::get_python_packages();
-        }
-        
+
+        // Add recipes section (always fresh, never cached)
+        system_info["recipes"] = sys_info->build_recipes_info(system_info["devices"]);
+
     } catch (const std::exception& e) {
         // Catastrophic failure - return minimal info but don't crash
         std::cerr << "[Server] System info failed: " << e.what() << std::endl;
@@ -1921,10 +2700,13 @@ json SystemInfoCache::get_system_info_with_cache(bool verbose) {
             {"devices", json::object()}
         };
     }
-    
+
+    // Store in static cache for future calls
+    cached_result = system_info;
+    result_computed = true;
+
     return system_info;
 }
 
 
 } // namespace lemon
-

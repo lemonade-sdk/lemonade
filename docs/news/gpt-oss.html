@@ -7,6 +7,7 @@
   <link rel="icon" href="../assets/favicon.ico">
   <link rel="stylesheet" href="../assets/website-styles.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="../assets/navbar.js"></script>
   <script>
     // Define the article description once to avoid repetition
     const ARTICLE_DESCRIPTION = "Lemonade now supports OpenAI's gpt-oss models, bringing you the power to run these cutting-edge models locally on your own hardware!";
@@ -19,19 +20,7 @@
   <meta property="article:author" content="Daniel Holanda, Jeremy Fowers, Krishna Sivakumar, Victoria Godsoe">
 </head>
 <body>
-  <!-- Navbar -->
-  <nav class="navbar" id="navbar">
-    <div class="navbar-brand">
-      <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade</a></span>
-    </div>
-    <div class="navbar-links">
-      <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
-      <a href="../docs/">Docs</a>
-      <a href="../docs/server/server_models/">Models</a>
-      <a href="../docs/server/apps/">Featured Apps</a>
-      <a href="index.html">News</a>
-    </div>
-  </nav>
+  <div class="navbar-placeholder"></div>
 
   <!-- Article Content -->
   <main class="main">
@@ -244,7 +233,7 @@ lemonade-server pull gpt-oss-120b-GGUF</code></pre>
           <div class="cta-content">
             <h2 class="cta-title">Ready to Get Started?</h2>
             <p style="font-size: 1.1rem; margin: 0 0 2rem 0; color: #333;">Join thousands of developers running OpenAI's gpt-oss models locally with Lemonade!</p>
-            
+
             <div class="cta-links">
               <a href="https://lemonade-server.ai" class="cta-link" target="_blank" rel="noopener">
                 <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
@@ -271,7 +260,7 @@ lemonade-server pull gpt-oss-120b-GGUF</code></pre>
                 </div>
               </a>
             </div>
-            
+
             <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(255, 255, 255, 0.8); border-radius: 12px; backdrop-filter: blur(10px);">
               <p style="margin: 0; font-size: 1.1rem; font-weight: 600; color: #333;">
                 🍋 Experience the power of OpenAI's latest models running entirely on your local hardware!
@@ -290,13 +279,14 @@ lemonade-server pull gpt-oss-120b-GGUF</code></pre>
 
   <!-- Footer will be inserted here by footer.js -->
   <div class="footer-placeholder"></div>
-  
+
   <script src="../assets/footer.js"></script>
   <script>
     // Initialize footer with star count (uses ../ basePath)
     document.addEventListener('DOMContentLoaded', () => {
+      initializeNavbar('../');
       initializeFooter('../');
-      
+
       // Populate meta tags and subtitle with the description
       document.querySelector('meta[name="description"]').setAttribute('content', ARTICLE_DESCRIPTION);
       document.querySelector('meta[property="og:description"]').setAttribute('content', ARTICLE_DESCRIPTION);

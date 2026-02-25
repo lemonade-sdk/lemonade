@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import logo from '../../assets/logo.svg';
 import SettingsModal from './SettingsModal';
 import AboutModal from './AboutModal';
+import { CenterPanelView } from './CenterPanel';
 
 type MenuType = 'view' | 'help' | null;
 
@@ -12,25 +13,30 @@ interface TitleBarProps {
   onToggleModelManager: () => void;
   isCenterPanelVisible: boolean;
   onToggleCenterPanel: () => void;
+  centerPanelView: CenterPanelView;
+  onOpenMarketplace: () => void;
   isLogsVisible: boolean;
   onToggleLogs: () => void;
   isDownloadManagerVisible: boolean;
   onToggleDownloadManager: () => void;
 }
 
-const TitleBar: React.FC<TitleBarProps> = ({ 
-  isChatVisible, 
-  onToggleChat, 
-  isModelManagerVisible, 
+const TitleBar: React.FC<TitleBarProps> = ({
+  isChatVisible,
+  onToggleChat,
+  isModelManagerVisible,
   onToggleModelManager,
   isCenterPanelVisible,
   onToggleCenterPanel,
+  centerPanelView,
+  onOpenMarketplace,
   isLogsVisible,
   onToggleLogs,
   isDownloadManagerVisible,
   onToggleDownloadManager
 }) => {
   const [activeMenu, setActiveMenu] = useState<MenuType>(null);
+  const [isCenterPanelSubmenuOpen, setIsCenterPanelSubmenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -41,6 +47,9 @@ const TitleBar: React.FC<TitleBarProps> = ({
   const isWindowsPlatform = normalizedPlatform.includes('win');
   const zoomInShortcutLabel = isMacPlatform ? '⌘ +' : isWindowsPlatform ? 'Ctrl Shift +' : 'Ctrl +';
   const zoomOutShortcutLabel = isMacPlatform ? '⌘ -' : 'Ctrl -';
+
+  // Detect if running as web app vs Electron using explicit flag
+  const isWebApp = window.api?.isWebApp === true;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -133,7 +142,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
           <img src={logo} alt="Lemonade" className="title-bar-logo" />
           <div className="menu-items">
             <div className="menu-item-wrapper">
-              <span 
+              <span
                 className={`menu-item ${activeMenu === 'view' ? 'active' : ''}`}
                 onClick={() => handleMenuClick('view')}
               >
@@ -145,9 +154,35 @@ const TitleBar: React.FC<TitleBarProps> = ({
                     <span>{isModelManagerVisible ? '✓ ' : ''}Model Manager</span>
                     <span className="menu-shortcut">Ctrl+Shift+M</span>
                   </div>
-                  <div className="menu-option" onClick={() => { onToggleCenterPanel(); setActiveMenu(null); }}>
+                  <div
+                    className="menu-option has-submenu"
+                    onClick={() => { onToggleCenterPanel(); setActiveMenu(null); setIsCenterPanelSubmenuOpen(false); }}
+                    onMouseEnter={() => setIsCenterPanelSubmenuOpen(true)}
+                    onMouseLeave={() => setIsCenterPanelSubmenuOpen(false)}
+                  >
                     <span>{isCenterPanelVisible ? '✓ ' : ''}Center Panel</span>
                     <span className="menu-shortcut">Ctrl+Shift+P</span>
+                    <svg className="submenu-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                    {isCenterPanelSubmenuOpen && (
+                      <div
+                        className="menu-submenu"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div
+                          className="menu-option"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenMarketplace();
+                            setActiveMenu(null);
+                            setIsCenterPanelSubmenuOpen(false);
+                          }}
+                        >
+                          <span>{isCenterPanelVisible && centerPanelView === 'marketplace' ? '✓ ' : ''}Marketplace</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className="menu-option" onClick={() => { onToggleChat(); setActiveMenu(null); }}>
                     <span>{isChatVisible ? '✓ ' : ''}Chat Window</span>
@@ -171,7 +206,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
             </div>
 
             <div className="menu-item-wrapper">
-              <span 
+              <span
                 className={`menu-item ${activeMenu === 'help' ? 'active' : ''}`}
                 onClick={() => handleMenuClick('help')}
               >
@@ -198,7 +233,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
           <span className="app-title">Lemonade</span>
         </div>
         <div className="title-bar-right">
-          <button 
+          <button
             className={`title-bar-button downloads ${isDownloadManagerVisible ? 'active' : ''}`}
             onClick={onToggleDownloadManager}
             title="Downloads"
@@ -209,7 +244,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
               <path d="M8 10V2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
-          <button 
+          <button
             className="title-bar-button settings"
             onClick={() => setIsSettingsOpen(true)}
             title="Settings"
@@ -219,40 +254,44 @@ const TitleBar: React.FC<TitleBarProps> = ({
               <circle cx="8" cy="8.5" r="2.5" stroke="currentColor" strokeWidth="1.2"/>
             </svg>
           </button>
-          <button 
-            className="title-bar-button minimize"
-            onClick={() => window.api.minimizeWindow()}
-            title="Minimize"
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12">
-              <rect x="0" y="5" width="12" height="1" fill="currentColor"/>
-            </svg>
-          </button>
-          <button 
-            className="title-bar-button maximize"
-            onClick={() => window.api.maximizeWindow()}
-            title={isMaximized ? "Restore Down" : "Maximize"}
-          >
-            {isMaximized ? (
-              <svg width="12" height="12" viewBox="0 0 12 12">
-                <rect x="2.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1"/>
-                <rect x="0.5" y="2.5" width="9" height="9" fill="black" stroke="currentColor" strokeWidth="1"/>
-              </svg>
-            ) : (
-              <svg width="12" height="12" viewBox="0 0 12 12">
-                <rect x="0.5" y="0.5" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1"/>
-              </svg>
-            )}
-          </button>
-          <button 
-            className="title-bar-button close"
-            onClick={() => window.api.closeWindow()}
-            title="Close"
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12">
-              <path d="M 1,1 L 11,11 M 11,1 L 1,11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-          </button>
+          {!isWebApp && (
+            <>
+              <button
+                className="title-bar-button minimize"
+                onClick={() => window.api.minimizeWindow()}
+                title="Minimize"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12">
+                  <rect x="0" y="5" width="12" height="1" fill="currentColor"/>
+                </svg>
+              </button>
+              <button
+                className="title-bar-button maximize"
+                onClick={() => window.api.maximizeWindow()}
+                title={isMaximized ? "Restore Down" : "Maximize"}
+              >
+                {isMaximized ? (
+                  <svg width="12" height="12" viewBox="0 0 12 12">
+                    <rect x="2.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1"/>
+                    <rect x="0.5" y="2.5" width="9" height="9" fill="black" stroke="currentColor" strokeWidth="1"/>
+                  </svg>
+                ) : (
+                  <svg width="12" height="12" viewBox="0 0 12 12">
+                    <rect x="0.5" y="0.5" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1"/>
+                  </svg>
+                )}
+              </button>
+              <button
+                className="title-bar-button close"
+                onClick={() => window.api.closeWindow()}
+                title="Close"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12">
+                  <path d="M 1,1 L 11,11 M 11,1 L 1,11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </>
+          )}
         </div>
       </div>
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
@@ -262,4 +301,3 @@ const TitleBar: React.FC<TitleBarProps> = ({
 };
 
 export default TitleBar;
-

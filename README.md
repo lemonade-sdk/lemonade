@@ -1,15 +1,19 @@
-## 🍋 Lemonade: Local LLMs with GPU and NPU acceleration
+## 🍋 Lemonade: Refreshingly fast local LLMs, Image and Speech Generation
 
 <p align="center">
   <a href="https://discord.gg/5xXzkMu8Zk">
     <img src="https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="https://github.com/lemonade-sdk/lemonade/tree/main/test" title="Check out our tests">
-    <img src="https://github.com/lemonade-sdk/lemonade/actions/workflows/test_lemonade.yml/badge.svg" alt="Lemonade tests" /></a>
+    <img src="https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml/badge.svg" alt="Lemonade Server Build" /></a>
   <a href="docs/README.md#installation" title="Check out our instructions">
     <img src="https://img.shields.io/badge/Windows-11-0078D6?logo=windows&logoColor=white" alt="Windows 11" /></a>
-  <a href="https://lemonade-server.ai/#linux" title="Ubuntu 24.04 & 25.04 Supported">
+  <a href="https://lemonade-server.ai/install_options.html#ubuntu" title="Ubuntu 24.04 & 25.04 Supported">
     <img src="https://img.shields.io/badge/Ubuntu-24.04%20%7C%2025.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu 24.04 | 25.04" /></a>
-  <a href="https://lemonade-server.ai/#linux" title="Arch Linux Supported">
+  <a href="https://lemonade-server.ai/install_options.html#macos" title="macOS (beta)">
+    <img src="https://img.shields.io/badge/macOS-beta-999999?logo=apple&logoColor=white" alt="macOS (beta)" /></a>
+  <a href="https://snapcraft.io/lemonade-server">
+    <img src="https://snapcraft.io/lemonade-server/badge.svg" alt="Get it from the Snap Store" /></a>
+  <a href="https://lemonade-server.ai/install_options.html#arch" title="Arch Linux Supported">
     <img src="https://img.shields.io/aur/version/lemonade-server" alt="Arch Linux"></a>
   <a href="docs/README.md#installation" title="Check out our instructions">
     <img src="https://img.shields.io/badge/Python-3.10--3.13-blue?logo=python&logoColor=white" alt="Made with Python" /></a>
@@ -32,27 +36,30 @@
   <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/banner_02.png?raw=true" alt="Lemonade Banner" />
 </p>
 <h3 align="center">
-  <a href="https://lemonade-server.ai">Download</a> | 
-  <a href="https://lemonade-server.ai/docs/">Documentation</a> | 
+  <a href="https://lemonade-server.ai/install_options.html">Download</a> |
+  <a href="https://lemonade-server.ai/docs/">Documentation</a> |
   <a href="https://discord.gg/5xXzkMu8Zk">Discord</a>
 </h3>
 
-Lemonade helps users discover and run local AI apps by serving optimized LLMs right from their own GPUs and NPUs.
+Lemonade helps users discover and run local AI apps by serving optimized LLMs, images, and speech right from their own GPUs and NPUs.
 
-Apps like [n8n](https://n8n.io/integrations/lemonade-model/), [VS Code Copilot](https://marketplace.visualstudio.com/items?itemName=lemonade-sdk.lemonade-sdk), [Morphik](https://www.morphik.ai/docs/local-inference#lemonade), and many more use Lemonade to seamlessly run LLMs on any PC.
+Apps like [n8n](https://n8n.io/integrations/lemonade-model/), [VS Code Copilot](https://marketplace.visualstudio.com/items?itemName=lemonade-sdk.lemonade-sdk), [Morphik](https://www.morphik.ai/docs/local-inference#lemonade), and many more use Lemonade to seamlessly run generative AI on any PC.
 
 ## Getting Started
 
-1. **Install**: [Windows](https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi) · [Linux](https://lemonade-server.ai/install_options.html) · [Source](https://lemonade-server.ai/install_options.html)
+1. **Install**: [Windows](https://lemonade-server.ai/install_options.html#windows) · [Linux](https://lemonade-server.ai/install_options.html#linux) · [macOS (beta)](https://lemonade-server.ai/install_options.html#macos) · [Docker](https://lemonade-server.ai/install_options.html#docker) · [Source](./docs/dev-getting-started.md)
 2. **Get Models**: Browse and download with the [Model Manager](#model-library)
-3. **Chat**: Try models with the built-in chat interface
-4. **Connect**: Use Lemonade with your favorite apps:
+3. **Generate**: Try models with the built-in interfaces for chat, image gen, speech gen, and more
+4. **Mobile**: Take your lemonade to go: [iOS](https://apps.apple.com/us/app/lemonade-mobile/id6757372210) · [Android](https://play.google.com/store/apps/details?id=com.lemonade.mobile.chat.ai&pli=1) · [Source](https://github.com/lemonade-sdk/lemonade-mobile)
+5. **Connect**: Use Lemonade with your favorite apps:
 
+<!-- MARKETPLACE_START -->
 <p align="center">
-  <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" width="60" /></a>&nbsp;&nbsp;<a href="https://n8n.io/integrations/lemonade-model/" title="n8n"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/n8n.png" alt="n8n" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/amd/gaia" title="Gaia"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/gaia.png" alt="Gaia" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/infinity-arcade" title="Infinity Arcade"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/infinity_arcade.png" alt="Infinity Arcade" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/continue.png" alt="Continue" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.visualstudio.com/items?itemName=lemonade-sdk.lemonade-sdk" title="GitHub Copilot"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/github_copilot.png" alt="GitHub Copilot" width="60" /></a>&nbsp;&nbsp;<a href="https://openhands.dev/" title="OpenHands"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/openhands.png" alt="OpenHands" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.dify.ai/plugins/langgenius/lemonade" title="Dify"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/dify.png" alt="Dify" width="60" /></a>&nbsp;&nbsp;<a href="https://deeptutor.knowhiz.us/" title="Deep Tutor"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/deep_tutor.png" alt="Deep Tutor" width="60" /></a>&nbsp;&nbsp;<a href="https://www.iterate.ai/" title="Iterate.ai"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/iterate_ai.png" alt="Iterate.ai" width="60" /></a>
+  <a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/continue/logo.png" alt="Continue" width="60" /></a>&nbsp;&nbsp;<a href="https://deeptutor.knowhiz.us/" title="Deep Tutor"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/deep-tutor/logo.png" alt="Deep Tutor" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.dify.ai/plugins/langgenius/lemonade" title="Dify"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/dify/logo.png" alt="Dify" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/amd/gaia?tab=readme-ov-file#getting-started-guide" title="Gaia"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/gaia/logo.png" alt="Gaia" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.visualstudio.com/items?itemName=lemonade-sdk.lemonade-sdk" title="GitHub Copilot"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/github-copilot/logo.png" alt="GitHub Copilot" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/infinity-arcade" title="Infinity Arcade"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/infinity-arcade/logo.png" alt="Infinity Arcade" width="60" /></a>&nbsp;&nbsp;<a href="https://www.iterate.ai/" title="Iterate.ai"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/iterate-ai/logo.png" alt="Iterate.ai" width="60" /></a>&nbsp;&nbsp;<a href="https://n8n.io/integrations/lemonade-model/" title="n8n"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/n8n/logo.png" alt="n8n" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/open-webui/logo.png" alt="Open WebUI" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/open-hands/" title="OpenHands"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/openhands/logo.png" alt="OpenHands" width="60" /></a>
 </p>
 
-<p align="center"><em>Want your app featured here? <a href="https://discord.gg/5xXzkMu8Zk">Discord</a> · <a href="https://github.com/lemonade-sdk/lemonade/issues">GitHub Issue</a> · <a href="mailto:lemonade@amd.com">Email</a></em></p>
+<p align="center"><em><a href="https://lemonade-server.ai/marketplace">View all apps →</a></br>Want your app featured here? <a href="https://github.com/lemonade-sdk/marketplace">Just submit a marketplace PR!</a></em></p>
+<!-- MARKETPLACE_END -->
 
 ## Using the CLI
 
@@ -62,42 +69,134 @@ To run and chat with Gemma 3:
 lemonade-server run Gemma-3-4b-it-GGUF
 ```
 
-To install models ahead of time, use the `pull` command:
+More modalities:
 
 ```
-lemonade-server pull Gemma-3-4b-it-GGUF
+# image gen
+lemonade-server run SDXL-Turbo
+
+# speech gen
+lemonade-server run kokoro-v1
+
+# transcription
+lemonade-server run Whisper-Large-v3-Turbo
 ```
 
-To check all models available, use the `list` command:
+To see models availables and download them:
 
 ```
 lemonade-server list
+
+lemonade-server pull Gemma-3-4b-it-GGUF
 ```
 
-> **Tip**: You can use `--llamacpp vulkan/rocm` to select a backend when running GGUF models.
+To see the backends available on your PC:
+
+```
+lemonade-server recipes
+```
 
 
 ## Model Library
 
 <img align="right" src="https://github.com/lemonade-sdk/assets/blob/main/docs/model_manager_02.png?raw=true" alt="Model Manager" width="280" />
 
-Lemonade supports **GGUF**, **FLM**, and **ONNX** models across CPU, GPU, and NPU (see [supported configurations](#supported-configurations)).
+Lemonade supports a wide variety of LLMs (**GGUF**, **FLM**, and **ONNX**), whisper, stable diffusion, etc. models across CPU, GPU, and NPU.
 
 Use `lemonade-server pull` or the built-in **Model Manager** to download models. You can also import custom GGUF/ONNX models from Hugging Face.
 
-**[Browse all built-in models →](https://lemonade-server.ai/docs/server/server_models/)**
+**[Browse all built-in models →](https://lemonade-server.ai/models.html)**
 
 <br clear="right"/>
 
 ## Supported Configurations
 
-Lemonade supports the following configurations, while also making it easy to switch between them at runtime. Find more information about it [here](./docs/README.md#software-and-hardware-overview).
+Lemonade supports multiple recipes (LLM, speech, TTS, and image generation), and each recipe has its own backend and hardware requirements.
 
-| Hardware | Engine: OGA | Engine: llamacpp | Engine: FLM | Windows | Linux |
-|----------|-------------|------------------|------------|---------|-------|
-| **🧠 CPU** | All platforms | All platforms | - | ✅ | ✅ |
-| **🎮 GPU** | — | Vulkan: All platforms<br>ROCm: Selected AMD platforms*<br>Metal: Apple Silicon | — | ✅ | ✅ |
-| **🤖 NPU** | AMD Ryzen™ AI 300 series | — | Ryzen™ AI 300 series | ✅ | — |
+<table>
+  <thead>
+    <tr>
+      <th>Modality</th>
+      <th>Recipe</th>
+      <th>Backend</th>
+      <th>Device</th>
+      <th>OS</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td rowspan="6"><strong>LLM</strong></td>
+      <td rowspan="4"><code>llamacpp</code></td>
+      <td><code>vulkan</code></td>
+      <td>GPU</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>rocm</code></td>
+      <td>Select AMD GPUs*</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code></td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>metal</code></td>
+      <td>Apple Silicon GPU</td>
+      <td>macOS (beta)</td>
+    </tr>
+    <tr>
+      <td><code>flm</code></td>
+      <td><code>npu</code></td>
+      <td>XDNA2 NPU</td>
+      <td>Windows</td>
+    </tr>
+    <tr>
+      <td><code>ryzenai-llm</code></td>
+      <td><code>npu</code></td>
+      <td>XDNA2 NPU</td>
+      <td>Windows</td>
+    </tr>
+    <tr>
+      <td rowspan="2"><strong>Speech-to-text</strong></td>
+      <td rowspan="2"><code>whispercpp</code></td>
+      <td><code>npu</code></td>
+      <td>XDNA2 NPU</td>
+      <td>Windows</td>
+    </tr>
+    <tr>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code></td>
+      <td>Windows</td>
+    </tr>
+    <tr>
+      <td><strong>Text-to-speech</strong></td>
+      <td><code>kokoro</code></td>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code></td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td rowspan="2"><strong>Image generation</strong></td>
+      <td rowspan="2"><code>sd-cpp</code></td>
+      <td><code>rocm</code></td>
+      <td>Selected AMD GPUs</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code> CPU</td>
+      <td>Windows, Linux</td>
+    </tr>
+  </tbody>
+</table>
+
+To check exactly which recipes/backends are supported on your own machine, run:
+
+```
+lemonade-server recipes
+```
 
 <details>
 <summary><small><i>* See supported AMD ROCm platforms</i></small></summary>
@@ -134,11 +233,13 @@ Lemonade supports the following configurations, while also making it easy to swi
 
 ## Project Roadmap
 
-| Under Development                                 | Under Consideration                            | Recently Completed                       |
-|---------------------------------------------------|------------------------------------------------|------------------------------------------|
-| Image Generation      | vLLM support                                   | General speech-to-text support (whisper.cpp)                 |
-| Text to speech    |      | ROCm support for Ryzen AI 360-375 (Strix) APUs  |
-|     |                                | Lemonade desktop app                     |
+| Under Development          | Under Consideration         | Recently Completed      |
+|---------------------------|-----------------------------|------------------------|
+| MLX support               | vLLM support                | macOS (beta)           |
+| More whisper.cpp backends | Enhanced custom model usage  | Image generation       |
+| More SD.cpp backends      |                              | Speech-to-text         |
+|                           |                              | Text-to-speech         |
+|                           |                              | Apps marketplace       |
 
 ## Integrate Lemonade Server with Your Application
 
@@ -176,93 +277,6 @@ print(completion.choices[0].message.content)
 
 For more detailed integration instructions, see the [Integration Guide](./docs/server/server_integration.md).
 
-## Beyond an LLM Server
-
-The [Lemonade Python SDK](./docs/README.md) is also available, which includes the following components:
-
-- 🐍 **[Lemonade Python API](./docs/lemonade_api.md)**: High-level Python API to directly integrate Lemonade LLMs into Python applications.
-- 🖥️ **[Lemonade CLI](./docs/dev_cli/README.md)**: The `lemonade` CLI lets you mix-and-match LLMs (ONNX, GGUF, SafeTensors) with prompting templates, accuracy testing, performance benchmarking, and memory profiling to characterize your models on your hardware.
-
-## Quick Start with Docker
-
-> You may need additional configuration depending on your environment.
-
-### Docker Run with Default Configuration
-
-```bash
-docker run -d \
-  --name lemonade-server \
-  -p 8000:8000 \
-  -v lemonade-cache:/root/.cache/huggingface \
-  -v lemonade-llama:/opt/lemonade/llama \
-  -e LEMONADE_LLAMACPP_BACKEND=cpu \
-  ghcr.io/lemonade-sdk/lemonade-server:latest
-```
-
-### Docker Run with a Specific Port and Version
-
-```bash
-docker run -d \
-  --name lemonade-server \
-  -p 4000:5000 \
-  -v lemonade-cache:/root/.cache/huggingface \
-  -v lemonade-llama:/opt/lemonade/llama \
-  -e LEMONADE_LLAMACPP_BACKEND=cpu \
-  ghcr.io/lemonade-sdk/lemonade-server:v9.1.3 \
-  ./lemonade-server serve --no-tray --host 0.0.0.0 --port 5000
-```
-
-> This will run the server on port 5000 inside the container, mapped to port 4000 on your host.
-
-### Other Docker Methods
-
-#### Docker Compose Setup
-Docker Compose makes it easier to manage multi-container applications.
-1. Make sure you have Docker Compose installed.
-2. Create a `docker-compose.yml` file like this:
-
-```yml
-services:
-  lemonade:
-    image: ghcr.io/lemonade-sdk/lemonade-server:latest
-    container_name: lemonade-server
-    ports:
-      - "8000:8000"
-    volumes:
-      # Persist downloaded models
-      - lemonade-cache:/root/.cache/huggingface
-      # # Persist llama binaries
-      - lemonade-llama:/opt/lemonade/llama
-    environment:
-      - LEMONADE_LLAMACPP_BACKEND=cpu
-    restart: unless-stopped
-
-volumes:
-  lemonade-cache:
-  lemonade-llama:
-```
-
-> You can add more services as needed.
-
-3. Run the following command in the directory containing your docker-compose.yml:
-
-```bash
-docker-compose up -d
-```
-
-This will pull the latest image (or the version you specified) from the Lemonade container registry and start the server with your mapped ports.
-
-Once the container is running, verify it’s working:
-
-```bash
-curl http://localhost:8000/api/v1/models
-```
-
-You should receive a response listing available models.
-
-#### Build Your Own Docker Image
-If you want to build a custom image, check out the `DOCKER_GUIDE` for detailed instructions.
-
 ## FAQ
 
 To read our frequently asked questions, see our [FAQ Guide](./docs/faq.md)
@@ -279,14 +293,26 @@ New contributors can find beginner-friendly issues tagged with "Good First Issue
 
 ## Maintainers
 
-This is a community project maintained by @amd-pworfolk @bitgamma @danielholanda @jeremyfowers @Geramy @ramkrishna2910 @siavashhub @sofiageo @vgodsoe, and sponsored by AMD. You can reach us by filing an [issue](https://github.com/lemonade-sdk/lemonade/issues), emailing [lemonade@amd.com](mailto:lemonade@amd.com), or joining our [Discord](https://discord.gg/5xXzkMu8Zk).
+This is a community project maintained by @amd-pworfolk @bitgamma @danielholanda @jeremyfowers @Geramy @ramkrishna2910 @siavashhub @sofiageo @superm1 @vgodsoe, and sponsored by AMD. You can reach us by filing an [issue](https://github.com/lemonade-sdk/lemonade/issues), emailing [lemonade@amd.com](mailto:lemonade@amd.com), or joining our [Discord](https://discord.gg/5xXzkMu8Zk).
+
+## Code Signing Policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- **Committers and reviewers**: [Maintainers](#maintainers) of this repo
+- **Approvers**: [Owners](https://github.com/orgs/lemonade-sdk/people?query=role%3Aowner)
+
+**Privacy policy**: This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. When the user requests it, Lemonade downloads AI models from [Hugging Face Hub](https://huggingface.co/) (see their [privacy policy](https://huggingface.co/privacy)).
 
 ## License and Attribution
 
 This project is:
-- Built with C++ (server) and Python (SDK) with ❤️ for the open source community,
+- Built with C++ (server) and React (app) with ❤️ for the open source community,
 - Standing on the shoulders of great tools from:
   - [ggml/llama.cpp](https://github.com/ggml-org/llama.cpp)
+  - [ggml/whisper.cpp](https://github.com/ggerganov/whisper.cpp)
+  - [ggml/stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)
+  - [kokoros](https://github.com/lucasjinreal/Kokoros)
   - [OnnxRuntime GenAI](https://github.com/microsoft/onnxruntime-genai)
   - [Hugging Face Hub](https://github.com/huggingface/huggingface_hub)
   - [OpenAI API](https://github.com/openai/openai-python)

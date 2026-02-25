@@ -2,13 +2,13 @@
 
 🍋 Lemonade Server is a server interface that uses the standard Open AI API, allowing applications to integrate with local LLMs. This means that you can easily replace cloud-based LLMs with private and free LLMs that run locally on your own PC's NPU and GPU.
 
-Lemonade Server is available as a standalone tool with a [one-click Windows GUI installer](https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi).
+Lemonade Server is available as a standalone tool with a [one-click Windows GUI installer](https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi). Installers are also available for [Linux](https://lemonade-server.ai/install_options.html#linux) and [macOS (beta)](https://lemonade-server.ai/install_options.html#macos).
 
 ## Intro Video
 
 ▶️ [Watch on YouTube](https://www.youtube.com/watch?v=mcf7dDybUco)
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/mcf7dDybUco" 
+<iframe width="560" height="315" src="https://www.youtube.com/embed/mcf7dDybUco"
 title="YouTube video player" frameborder="0" allowfullscreen></iframe>
 
 Once you've installed, we recommend checking out these resources:
@@ -18,7 +18,7 @@ Once you've installed, we recommend checking out these resources:
 | [Supported Applications](./apps/README.md) | Explore applications that work out-of-the-box with Lemonade Server. |
 | [Lemonade Server Concepts](./concepts.md) | Background knowledge about local LLM servers and the OpenAI standard. |
 | [`lemonade-server` CLI Guide](./lemonade-server-cli.md) | Learn how to manage the server process and install new models using the command-line interface. |
-| [Models List](./server_models.md) | Browse a curated set of LLMs available for serving. |
+| [Models List](https://lemonade-server.ai/models.html) | Browse a curated set of LLMs available for serving. |
 | [Server Spec](./server_spec.md) | Review all supported OpenAI-compatible and Lemonade-specific API endpoints. |
 | [Integration Guide](./server_integration.md) | Step-by-step instructions for integrating Lemonade Server into your own applications. |
 

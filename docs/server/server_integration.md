@@ -2,7 +2,7 @@
 
 This guide provides instructions on how to integrate Lemonade Server into your application.
 
-There are two main ways in which Lemonade Sever might integrate into apps:
+There are two main ways in which Lemonade Server might integrate into apps:
 
 * User-Managed Server: User is responsible for installing and managing Lemonade Server.
 * App-Managed Server: App is responsible for installing and managing Lemonade Server on behalf of the user.
@@ -16,13 +16,13 @@ The first part of this guide contains instructions that are common for both inte
 To identify if Lemonade Server is installed on a system, you can use the [`lemonade-server` CLI command](./lemonade-server-cli.md), which is added to path when using our installer. This is a reliable method to:
 
 - Verify if the server is installed.
-- Check which version is currently available is running the command below.
+- Check which version is currently available by running the command below.
 
 ```
 lemonade-server --version
 ```
 
->Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (lemonade-server-minimal.msi) and Debian Installer (lemonade-server-minimal_<VERSION>_amd64.deb).
+>Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (lemonade-server-minimal.msi), Debian Installer (lemonade-server_<VERSION>_amd64.deb), or macOS Installer (Lemonade-<VERSION>-Darwin.pkg).
 
 ### Checking Server Status
 
@@ -62,14 +62,21 @@ The recommended way of directing users to the installer is pointing users to htt
 
 ### Installing Additional Models
 
-Lemonade Server installations always come with at least one LLM installed. If you want to install additional models on behalf of your users, the following tools are available:
+If you want to install models on behalf of your users, the following tools are available:
 
-- Discovering which LLMs are available:
-  - [A human-readable list of supported models](./server_models.md).
-  - [A JSON file with the list of supported models](https://github.com/lemonade-sdk/lemonade/tree/main/src/lemonade_server/server_models.json) is included in every Lemonade Server installation.
-- Installing LLMs:
-  - [The `pull` endpoint in the server](./server_spec.md#get-apiv1pull).
+- LLMs that are already available in lemonade:
+  - Run `lemonade-server list`.
+  - Use the [models endpoint](./server_spec.md#get-apiv1models).
+  - [A human-readable list of supported models](https://lemonade-server.ai/models.html). Do not modify this file in an existing install (see `user_models.json` below).
+  - [A JSON file that defines the list of built-in models](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/server_models.json).
   - `lemonade-server pull MODEL` on the command line interface.
+
+- Adding new LLMs:
+
+  - The `user_models.json` file is similar to `server_models.json` (see above), but contains a user-specific registry that persists across lemonade updates. It is located at `$LEMONADE_CACHE_DIR/user_models.json`, which defaults to `~/.cache/lemonade/user_models.json`.
+  - [The `pull` endpoint in the server](./server_spec.md#post-apiv1pull) automates the process of registering models into `user_models.json` and downloading them.
+  - The `lemonade-server pull` CLI command can also register and download new models, see [Options for pull](./lemonade-server-cli.md#options-for-pull).
+
 
 ## Stand-Alone Server Integration
 
@@ -94,7 +101,7 @@ By default, the server runs on port 8000. Optionally, you can specify a custom p
 lemonade-server serve --port 8123
 ```
 
-You can also prevent the server from showing a system tray icon by using the `--no-tray` flag (Windows only):
+You can also prevent the server from showing a system tray icon by using the `--no-tray` flag (Windows and macOS):
 
 ```bash
 lemonade-server serve --no-tray
@@ -104,46 +111,179 @@ You can also run the server as a background process using a subprocess or any pr
 
 To stop the server, you may use the `lemonade-server stop` command, or simply terminate the process you created by keeping track of its PID. Please do not run the `lemonade-server stop` command if your application has not started the server, as the server may be used by other applications.
 
-### Silent Installation
+## Windows Installation
 
-Silent installation runs `lemonade-server-minimal.msi` without a GUI and automatically accepts all prompts using the Windows Installer command-line interface.
+**Available Installers:**
+- `lemonade-server-minimal.msi` - Server only (~3 MB)
+- `lemonade.msi` - Full installer with Electron desktop app (~105 MB)
 
-In a `cmd.exe` or PowerShell terminal:
+**GUI Installation:**
 
-```bash
-msiexec /i lemonade-server-minimal.msi /qn
-```
-
-The install directory can also be changed from the default using the `INSTALLDIR` property:
+Double-click the MSI file, or run:
 
 ```bash
-msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\a\new\path"
-```
-
-If you don't want to create a desktop shortcut during installation, use the `ADDDESKTOPSHORTCUT=0` parameter:
-
-```bash
-msiexec /i lemonade-server-minimal.msi /qn ADDDESKTOPSHORTCUT=0
-```
-
-To add Lemonade Server to Windows startup:
-
-```bash
-msiexec /i lemonade-server-minimal.msi /qn ADDTOSTARTUP=1
-```
-
-You can combine multiple parameters:
-
-```bash
-msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\Custom\Path" ADDDESKTOPSHORTCUT=0 ADDTOSTARTUP=1
+msiexec /i lemonade.msi
 ```
 
 **MSI Properties:**
+
+Properties can be passed on the command line to customize the installation:
+
 - `INSTALLDIR` - Custom installation directory (default: `%LOCALAPPDATA%\lemonade_server`)
 - `ADDDESKTOPSHORTCUT` - Create desktop shortcut (0=no, 1=yes, default: 1)
-- `ADDTOSTARTUP` - Add to Windows startup (0=no, 1=yes, default: 0)
+- `ALLUSERS` - Install for all users (1=yes, requires elevation; default: per-user)
 
-The available models are documented [here](./server_models.md).
+**Examples:**
+
+```bash
+# Custom install directory
+msiexec /i lemonade.msi INSTALLDIR="C:\Custom\Path"
+
+# Without desktop shortcut
+msiexec /i lemonade.msi ADDDESKTOPSHORTCUT=0
+
+# Combined parameters
+msiexec /i lemonade.msi INSTALLDIR="C:\Custom\Path" ADDDESKTOPSHORTCUT=0
+```
+
+### Silent Installation
+
+Add `/qn` to run without a GUI, automatically accepting all prompts:
+
+```bash
+msiexec /i lemonade.msi /qn
+```
+
+This can be combined with any MSI properties:
+
+```bash
+msiexec /i lemonade.msi /qn INSTALLDIR="C:\Custom\Path" ADDDESKTOPSHORTCUT=0
+```
+
+### All Users Installation
+
+To install for all users (Program Files + system PATH), you **must** run from an Administrator command prompt.
+
+1. Open Command Prompt as Administrator (right-click → "Run as administrator")
+2. Run the install command:
+
+```bash
+msiexec /i lemonade.msi ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemonade Server"
+```
+
+For silent all-users installation, add `/qn`:
+
+```bash
+msiexec /i lemonade.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemonade Server"
+```
+
+**Troubleshooting:**
+- If installation fails silently, check that you're running as Administrator
+- Add `/L*V install.log` to generate a debug log file
+
+## Linux Installation
+
+### Debian/Ubuntu Package
+
+The Debian package installer handles all system configuration automatically, including setting up a systemd service for managing the Lemonade Server.
+
+If you would prefer to manage the lifecycle of the server process manually, the service can be disabled and manually run as well.
+
+### Systemd Service Management
+
+When Lemonade Server is installed via the Debian package, it registers a systemd service called `lemonade-server` that allows you to manage the server process using standard systemd commands.
+
+**Service Features:**
+
+- **Automatic restart:** The service automatically restarts if the server crashes
+- **User isolation:** Runs under the unprivileged `lemonade` user for security
+- **GPU access:** The service is configured with proper group membership to access GPU/NPU hardware via the `render` group
+- **Security hardening:** Includes systemd security options like `ProtectSystem=full`, `ProtectHome=yes`, and `NoNewPrivileges=yes`
+- **Boot integration:** Starts automatically on system boot (if enabled)
+
+**Common Commands:**
+
+```bash
+# Start the service
+sudo systemctl start lemonade-server
+
+# Stop the service
+sudo systemctl stop lemonade-server
+
+# Restart the service
+sudo systemctl restart lemonade-server
+
+# Check service status
+sudo systemctl status lemonade-server
+
+# Enable automatic startup on boot
+sudo systemctl enable lemonade-server
+
+# Disable automatic startup on boot
+sudo systemctl disable lemonade-server
+
+# View service logs
+sudo journalctl -u lemonade-server
+
+# View recent logs (follow mode)
+sudo journalctl -u lemonade-server -f
+```
+
+**Configuration:**
+
+The Lemonade Server systemd service is configured to read settings from `/etc/lemonade/lemonade.conf`. Environment variables defined in this file are passed to the server process. Edit this file to customize server behavior:
+
+```bash
+sudo nano /etc/lemonade/lemonade.conf
+```
+
+Secrets, like the LEMONADE_API_KEY secret, are defined in `/etc/lemonade/secrets.conf`
+
+```bash
+sudo nano /etc/lemonade/secrets.conf
+```
+
+After making changes to the configuration files, restart the service for changes to take effect:
+
+```bash
+sudo systemctl restart lemonade-server
+```
+
+**Service File Location:**
+
+The systemd service file is located at `/etc/systemd/system/lemonade-server.service`. This file should not be edited directly as it may be overwritten during package updates. Instead, use the configuration file (`/etc/lemonade/lemonade.conf`) to customize server behavior.
+
+If you need to make persistent changes to the service file, use systemd's drop-in override mechanism:
+
+```bash
+sudo systemctl edit lemonade-server
+```
+
+This creates an override file that takes precedence over the original service file and persists across updates.
+
+
+## macOS Installation (Beta)
+
+**Available Installer:**
+- `Lemonade-<VERSION>-Darwin.pkg` - Signed and notarized macOS installer package
+
+**GUI Installation:**
+
+Double-click the `.pkg` file to launch the installer, or run:
+
+```bash
+sudo installer -pkg Lemonade-<VERSION>-Darwin.pkg -target /
+```
+
+**Silent Installation:**
+
+```bash
+sudo installer -pkg Lemonade-<VERSION>-Darwin.pkg -target /
+```
+
+The macOS installer places binaries in `/usr/local/bin`, so `lemonade-server` is available in PATH immediately after installation.
+
+> **Note:** macOS support is currently in beta. The llama.cpp backend with Metal acceleration is supported on Apple Silicon Macs.
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->

@@ -1,27 +1,50 @@
 # Lemonade Examples
 
-This folder contains examples of how to deploy `lemonade` into applications. 
+Interactive demos that work with Lemonade Server.
 
-## Notebooks
+## Available Demos
 
-The `notebooks/` folder contains Jupyter notebooks that give tutorials on deeper topics.
+### Audio Transcription
+- **realtime_transcription.py**: Stream microphone audio for real-time transcription (+ test mode for WAV files)
 
-## API Examples
+### LLM Demos
+- **llm-debate.html**: A debate arena where multiple LLMs can debate each other on any topic
+- **multi-model-tester.html**: Test prompts across multiple models side-by-side
 
-This folder has examples of using the Lemonade API to integrate LLMs into Python applications. These APIs make it easy to load a model, generate responses, and also show how to stream those responses.
+### Image Generation
+- **api_image_generation.py**: Generate images using the `images/generations` endpoint
 
-The `demos/` folder also contains some higher-level application demos of the APIs. Learn more in `demos/README.md`.
+### Speech Synthesis (TTS)
+- **api_text_to_speech.py**: Generate speech from a prompt using `audio/speech` endpoint
 
-This table shows which API examples are available:
+## Setup
 
-| Framework                  | CPU                       | NPU             | Hybrid             |
-|----------------------------|---------------------------|-----------------|--------------------|
-| Huggingface                | api_basic.py              | -               | -                  |
-| OGA                        | api_oga_cpu.py            | api_oga_npu.py | api_oga_hybrid.py |
-| Huggingface with streaming | api_streaming.py          | -               | -                  |
-| OGA with streaming         | api_oga_cpu_streaming.py  | api_oga_npu_streaming.py | api_oga_hybrid_streaming.py |
+1. Install Lemonade Server from the [latest release](https://github.com/lemonade-sdk/lemonade/releases/latest)
+2. Start the server: `lemonade-server serve`
+3. Pull a model if needed (e.g., `lemonade-server-dev pull Whisper-Tiny`)
 
-To run an API example, first set up a Python environment with the appropriate framework and backend support. Then run the scripts with a command like `python api_basic.py`.
+## Running the Examples
+
+### Realtime Transcription (Python)
+
+Uses the OpenAI-compatible WebSocket API for real-time speech-to-text.
+
+```bash
+# Install dependencies
+pip install openai websockets pyaudio
+
+# Stream from microphone
+python realtime_transcription.py
+
+# Use a different model
+python realtime_transcription.py --model Whisper-Small
+```
+
+### LLM Demos
+
+Open the HTML files directly in your browser.
+
+See [debate-arena.md](debate-arena.md) for detailed instructions on the debate demo.
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->

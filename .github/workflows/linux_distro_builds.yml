@@ -1,0 +1,152 @@
+name: Linux Distro Builds 🐧
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    name: Build on ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: Arch
+            image: archlinux:latest
+            python: python
+          - distro: Debian
+            image: debian:trixie
+            python: python3
+          - distro: Fedora
+            image: fedora:latest
+            python: python3
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Run setup.sh to configure environment
+        run: |
+          set -e
+
+          echo "Running setup.sh for ${{ matrix.distro }}..."
+          bash setup.sh
+
+          echo "Verifying process management tools..."
+          command -v pgrep && command -v pkill && command -v ps
+
+          echo "Verifying SSL certificates..."
+          ls -la /etc/ssl/certs/ | head -10
+
+          echo "Testing HTTPS connectivity..."
+          curl -sI https://huggingface.co | head -5 || echo "Warning: HTTPS test failed"
+
+          echo "Setup completed successfully!"
+
+      - name: Build C++ Server with CMake
+        run: |
+          set -e
+
+          echo "Building lemonade-router and lemonade-server on ${{ matrix.distro }}..."
+
+          # Build
+          echo "Building binaries..."
+          cmake --build --preset default
+
+          # Verify binaries exist
+          if [ ! -f "build/lemonade-router" ]; then
+              echo "ERROR: lemonade-router not found!"
+              echo "Build directory contents:"
+              ls -lh build/
+              exit 1
+          fi
+
+          if [ ! -f "build/lemonade-server" ]; then
+              echo "ERROR: lemonade-server not found!"
+              echo "Build directory contents:"
+              ls -lh build/
+              exit 1
+          fi
+
+          echo "Binaries found successfully"
+          ls -lh build/lemonade-router build/lemonade-server
+
+          echo "Verifying binary executability..."
+          ./build/lemonade-router --version
+          ./build/lemonade-server --version
+
+          echo "${{ matrix.distro }} build successful!"
+
+      - name: Verify system library linking
+        run: |
+          echo "Checking library dependencies..."
+          cd build
+
+          echo "=== lemonade-router dependencies ==="
+          ldd lemonade-router
+
+          echo ""
+          echo "=== lemonade-server dependencies ==="
+          ldd lemonade-server
+
+          echo ""
+          echo "All dependencies resolved successfully on ${{ matrix.distro }}!"
+
+      - name: Setup Python virtual environment
+        run: |
+          echo "Creating Python virtual environment..."
+          if [ "${{ matrix.distro }}" = "Debian" ]; then
+              apt install -y python3-venv
+          fi
+
+          ${{ matrix.python }} -m venv .venv
+
+          echo "Activating virtual environment and installing dependencies..."
+          . .venv/bin/activate
+          pip install --upgrade pip
+          pip install -r test/requirements.txt
+
+          echo "Python environment setup complete!"
+
+      - name: Run CLI tests
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+        run: |
+          set -e
+
+          . .venv/bin/activate
+          SERVER_BINARY="$(pwd)/build/lemonade-server"
+
+          echo "Running CLI tests..."
+          python test/server_cli.py --server-binary "$SERVER_BINARY"
+
+          echo "CLI tests PASSED!"
+
+      - name: Run endpoint tests
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+        run: |
+          set -e
+
+          . .venv/bin/activate
+          SERVER_BINARY="$(pwd)/build/lemonade-server"
+
+          echo "Running endpoint tests..."
+          python test/server_endpoints.py --server-binary "$SERVER_BINARY"
+
+          echo "Endpoint tests PASSED!"

@@ -1,11 +1,93 @@
 # Running Lemonade C++ in Docker
 
+## Quick Start with Docker
+
+> You may need additional configuration depending on your environment.
+
+### Docker Run with Default Configuration
+
+```bash
+docker run -d \
+  --name lemonade-server \
+  -p 8000:8000 \
+  -v lemonade-cache:/root/.cache/huggingface \
+  -v lemonade-llama:/opt/lemonade/llama \
+  -e LEMONADE_LLAMACPP_BACKEND=cpu \
+  ghcr.io/lemonade-sdk/lemonade-server:latest
+```
+
+### Docker Run with a Specific Port and Version
+
+```bash
+docker run -d \
+  --name lemonade-server \
+  -p 4000:5000 \
+  -v lemonade-cache:/root/.cache/huggingface \
+  -v lemonade-llama:/opt/lemonade/llama \
+  -e LEMONADE_LLAMACPP_BACKEND=cpu \
+  ghcr.io/lemonade-sdk/lemonade-server:v9.1.3 \
+  ./lemonade-server serve --no-tray --host 0.0.0.0 --port 5000
+```
+
+> This will run the server on port 5000 inside the container, mapped to port 4000 on your host.
+
+### Other Docker Methods
+
+#### Docker Compose Setup
+Docker Compose makes it easier to manage multi-container applications.
+1. Make sure you have Docker Compose installed.
+2. Create a `docker-compose.yml` file like this:
+
+```yml
+services:
+  lemonade:
+    image: ghcr.io/lemonade-sdk/lemonade-server:latest
+    container_name: lemonade-server
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist downloaded models
+      - lemonade-cache:/root/.cache/huggingface
+      # # Persist llama binaries
+      - lemonade-llama:/opt/lemonade/llama
+    environment:
+      - LEMONADE_LLAMACPP_BACKEND=cpu
+    restart: unless-stopped
+
+volumes:
+  lemonade-cache:
+  lemonade-llama:
+```
+
+> You can add more services as needed.
+
+3. Run the following command in the directory containing your docker-compose.yml:
+
+```bash
+docker-compose up -d
+```
+
+This will pull the latest image (or the version you specified) from the Lemonade container registry and start the server with your mapped ports.
+
+Once the container is running, verify it’s working:
+
+```bash
+curl http://localhost:8000/api/v1/models
+```
+
+You should receive a response listing available models.
+
+<br>
+
+# Build Your Own Docker Image
+Documentation below shows container based workflows and how to build your own environments if needed.
+
 ## Container-based workflows
 
 This repository supports two container-related workflows with different goals:
 
 ### Development (Dev Containers)
-The `.devcontainer` ([dev container](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/README.md#developer-ide--ide-build-steps)) configuration is intended for contributors and developers.
+The `.devcontainer` ([dev container](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md#developer-ide--ide-build-steps)) configuration is intended for contributors and developers.
 It provides a full development environment (tooling, debuggers, source mounted)
 and is primarily used with VS Code Dev Containers or GitHub Codespaces.
 
@@ -76,7 +158,7 @@ RUN apt-get update && apt-get install -y \
 
 # Copy source code
 COPY lemonade /app
-WORKDIR /app/src/cpp
+WORKDIR /app/
 
 # Build the project
 RUN rm -rf build && \
@@ -106,15 +188,15 @@ RUN apt-get update && apt-get install -y \
     libvulkan1 \
     unzip \
     libgomp1 \
-    && rm -rf /var/lib/apt/lists/*  
+    && rm -rf /var/lib/apt/lists/*
 
 # Create application directory
 WORKDIR /opt/lemonade
 
 # Copy built executables and resources from builder
-COPY --from=builder /app/src/cpp/build/lemonade-router ./lemonade-router
-COPY --from=builder /app/src/cpp/build/lemonade-server ./lemonade-server
-COPY --from=builder /app/src/cpp/build/resources ./resources
+COPY --from=builder /app/build/lemonade-router ./lemonade-router
+COPY --from=builder /app/build/lemonade-server ./lemonade-server
+COPY --from=builder /app/build/resources ./resources
 
 # Make executables executable
 RUN chmod +x ./lemonade-router ./lemonade-server
@@ -129,7 +211,7 @@ EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/ || exit 1
+    CMD curl -f http://localhost:8000/live || exit 1
 
 # Default command: start server in headless mode
 CMD ["./lemonade-server", "serve", "--no-tray", "--host", "0.0.0.0"]
@@ -233,7 +315,7 @@ Once the model is loaded:
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8000/api/v1", 
+    base_url="http://localhost:8000/api/v1",
     api_key="lemonade"  # required but unused
 )
 

@@ -6,38 +6,41 @@
   <title>Lemonade News</title>
   <link rel="icon" href="../assets/favicon.ico">
   <link rel="stylesheet" href="../assets/website-styles.css">
+  <link rel="stylesheet" href="../assets/common.css">
+  <link rel="stylesheet" href="../assets/news.css">
+  <script src="../assets/navbar.js"></script>
   <script src="../assets/news-data.js"></script>
   <script>
     // Function to generate news tiles
     function generateNewsTiles(filterType = 'all', sortOrder = 'newest') {
       const newsPostsContainer = document.querySelector('.news-posts');
       newsPostsContainer.innerHTML = ''; // Clear existing tiles
-      
-      let filteredData = filterType === 'all' 
-        ? [...newsData] 
+
+      let filteredData = filterType === 'all'
+        ? [...newsData]
         : newsData.filter(item => item.type === filterType);
-      
+
       // Sort data by date
       filteredData.sort((a, b) => {
         const dateA = new Date(a.date);
         const dateB = new Date(b.date);
-        
+
         if (sortOrder === 'newest') {
           return dateB - dateA; // Newest first
         } else {
           return dateA - dateB; // Oldest first
         }
       });
-      
+
       filteredData.forEach(item => {
         const article = document.createElement('article');
         article.className = 'news-tile';
-        
+
         const isVideo = item.type === 'video';
         const isTutorial = item.type === 'tutorial';
         const isRelease = item.type === 'release';
         let badgeText, badgeClass;
-        
+
         if (isVideo) {
           badgeText = 'Video';
           badgeClass = 'video-badge';
@@ -51,9 +54,9 @@
           badgeText = 'Blog';
           badgeClass = 'blog-badge';
         }
-        
+
         const playButton = isVideo ? '<div class="youtube-play-button">▶</div>' : '';
-        
+
         article.innerHTML = `
           <a href="${item.url}" target="_blank" class="news-tile-link">
             <div class="news-image">
@@ -68,7 +71,7 @@
             </div>
           </a>
         `;
-        
+
         newsPostsContainer.appendChild(article);
       });
     }
@@ -80,10 +83,10 @@
         btn.classList.remove('active');
       });
       document.querySelector(`[data-filter="${filterType}"]`).classList.add('active');
-      
+
       // Get current sort order
       const sortOrder = document.getElementById('sortSelect').value;
-      
+
       // Re-generate tiles with filter and sort
       generateNewsTiles(filterType, sortOrder);
     }
@@ -92,7 +95,7 @@
     function handleSortChange(sortOrder) {
       // Get current filter
       const activeFilter = document.querySelector('.filter-btn.active').getAttribute('data-filter');
-      
+
       // Re-generate tiles with current filter and new sort
       generateNewsTiles(activeFilter, sortOrder);
     }
@@ -100,10 +103,13 @@
     // Generate tiles when page loads
     document.addEventListener('DOMContentLoaded', () => {
       generateNewsTiles();
-      
+
+      // Initialize shared navbar for docs subpages
+      initializeNavbar('../');
+
       // Initialize footer with star count for news page (uses ../ basePath)
       initializeFooter('../');
-      
+
       // Add event listeners to filter buttons
       document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -111,15 +117,15 @@
           handleFilterChange(filterType);
         });
       });
-      
+
       // Add event listener to sort dropdown
       document.getElementById('sortSelect').addEventListener('change', (e) => {
         handleSortChange(e.target.value);
       });
-      
+
       // Back to top button functionality
       const backToTopBtn = document.getElementById('backToTop');
-      
+
       // Show/hide button based on scroll position
       window.addEventListener('scroll', () => {
         if (window.scrollY > 300) {
@@ -128,7 +134,7 @@
           backToTopBtn.classList.remove('show');
         }
       });
-      
+
       // Smooth scroll to top when clicked
       backToTopBtn.addEventListener('click', () => {
         window.scrollTo({
@@ -136,139 +142,93 @@
           behavior: 'smooth'
         });
       });
-      
+
       // Sidebar toggle functionality for mobile
       const sidebarToggle = document.getElementById('sidebarToggle');
       const newsSidebar = document.getElementById('newsSidebar');
       const sidebarOverlay = document.getElementById('sidebarOverlay');
-      const collapseBtn = document.getElementById('collapseBtn');
-      const expandBtn = document.getElementById('expandBtn');
-      const newsView = document.querySelector('.news-view');
-      
+
+      // Legacy desktop collapse is no longer used in the news layout.
+      newsSidebar.classList.remove('collapsed');
+      localStorage.setItem('sidebarCollapsed', 'false');
+
       // Mobile sidebar toggle
       sidebarToggle.addEventListener('click', () => {
         newsSidebar.classList.toggle('mobile-open');
         sidebarOverlay.classList.toggle('active');
       });
-      
+
       // Close sidebar when clicking overlay
       sidebarOverlay.addEventListener('click', () => {
         newsSidebar.classList.remove('mobile-open');
         sidebarOverlay.classList.remove('active');
       });
-      
-      // Desktop sidebar collapse/expand
-      collapseBtn.addEventListener('click', () => {
-        newsSidebar.classList.add('collapsed');
-        newsView.classList.add('sidebar-collapsed');
-        expandBtn.classList.add('show');
-        localStorage.setItem('sidebarCollapsed', 'true');
-      });
-      
-      expandBtn.addEventListener('click', () => {
-        newsSidebar.classList.remove('collapsed');
-        newsView.classList.remove('sidebar-collapsed');
-        expandBtn.classList.remove('show');
-        localStorage.setItem('sidebarCollapsed', 'false');
-      });
-      
-      // Restore sidebar state from localStorage
-      const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-      if (sidebarCollapsed && window.innerWidth > 768) {
-        newsSidebar.classList.add('collapsed');
-        newsView.classList.add('sidebar-collapsed');
-        expandBtn.classList.add('show');
-      }
-      
+
       // Close sidebar when window is resized to desktop
       window.addEventListener('resize', () => {
         if (window.innerWidth > 768) {
           newsSidebar.classList.remove('mobile-open');
           sidebarOverlay.classList.remove('active');
-          
-          // Restore collapsed state on desktop
-          const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-          if (sidebarCollapsed) {
-            newsSidebar.classList.add('collapsed');
-            newsView.classList.add('sidebar-collapsed');
-            expandBtn.classList.add('show');
-          }
         } else {
-          // Reset collapsed state on mobile
           newsSidebar.classList.remove('collapsed');
-          newsView.classList.remove('sidebar-collapsed');
-          expandBtn.classList.remove('show');
         }
       });
     });
   </script>
 </head>
-<body>
-  <!-- Navbar -->
-  <nav class="navbar" id="navbar">
-    <div class="navbar-brand">
-      <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade</a></span>
-    </div>
-    <div class="navbar-links">
-      <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
-      <a href="../docs/">Docs</a>
-      <a href="../docs/server/server_models/">Models</a>
-      <a href="../docs/server/apps/">Featured Apps</a>
-      <a href="index.html">News</a>
-    </div>
-
-    <!-- Place buttons here so they don't overlap the brand -->
-    <button class="sidebar-toggle" id="sidebarToggle">
-      ➤ Filters
-    </button>
-    <button class="expand-btn" id="expandBtn">
-      ➤ Filters
-    </button>
-  </nav>
+<body id="news-page-body">
+  <div class="navbar-placeholder"></div>
 
   <!-- Sidebar Overlay (Mobile) -->
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
   <!-- News Sidebar -->
-  <div class="news-sidebar" id="newsSidebar">
-    <button class="collapse-btn" id="collapseBtn">
-      ← Hide
-    </button>
-
-    <div class="sidebar-header">
-      <h3>🍋 Filters</h3>
-      <p>Filter content by type or sort by date</p>
+  <div class="news-sidebar docs-side-nav" id="newsSidebar">
+    <div class="sidebar-card">
+      <div class="sidebar-header">
+        <h3>Filters</h3>
+        <p>Browse by type and date</p>
+      </div>
     </div>
 
-    <!-- Filter Buttons -->
-    <div class="filter-container">
-      <button class="filter-btn active" data-filter="all">All</button>
-      <button class="filter-btn" data-filter="blog">📝 Blogs</button>
-      <button class="filter-btn" data-filter="video">🎥 Videos</button>
-      <button class="filter-btn" data-filter="tutorial">🎓 Tutorials</button>
-      <button class="filter-btn" data-filter="release">📦 Releases</button>
+    <div class="sidebar-card">
+      <label class="control-label">Type</label>
+      <div class="filter-container">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="blog">Blogs</button>
+        <button class="filter-btn" data-filter="video">Videos</button>
+        <button class="filter-btn" data-filter="tutorial">Tutorials</button>
+        <button class="filter-btn" data-filter="release">Releases</button>
+      </div>
     </div>
 
-    <!-- Sort Dropdown -->
-    <div class="sort-container">
-      <label for="sortSelect" class="sort-label">Sort by:</label>
-      <select id="sortSelect" class="sort-select">
-        <option value="newest">Newest First</option>
-        <option value="oldest">Oldest First</option>
-      </select>
+    <div class="sidebar-card">
+      <label for="sortSelect" class="control-label">Sort</label>
+      <div class="sort-container">
+        <select id="sortSelect" class="sort-select">
+          <option value="newest">Newest First</option>
+          <option value="oldest">Oldest First</option>
+        </select>
+      </div>
     </div>
   </div>
 
   <!-- News View -->
   <div class="news-view">
-    <div class="hero-section">
-      <div class="main-heading">
+    <div class="hero-section docs-page-hero">
+      <div class="main-heading docs-page-title">
         Latest News & Updates
       </div>
-      <div class="subtitle">
+      <div class="subtitle docs-page-subtitle">
         Discover insights, tutorials, and the latest developments from Lemonade
       </div>
     </div>
+    <button class="sidebar-toggle docs-side-toggle" id="sidebarToggle" type="button" aria-label="Open filters">
+      <span class="hamburger-icon" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </span>
+      <span>Filters</span>
+    </button>
 
     <div class="news-posts">
       <!-- News tiles will be generated by JavaScript -->
@@ -283,6 +243,6 @@
 
   <!-- Footer will be inserted here by footer.js -->
   <div class="footer-placeholder"></div>
-  
+
   <script src="../assets/footer.js"></script>
 </html>

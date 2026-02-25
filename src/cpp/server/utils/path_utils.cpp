@@ -10,14 +10,16 @@
 #include <unistd.h>
 #include <limits.h>
 #ifdef __APPLE__
+#include <unistd.h>
+#include <sys/types.h>
+#include <pwd.h>
 #include <mach-o/dyld.h>
 #endif
 #endif
 
 namespace fs = std::filesystem;
 
-namespace lemon {
-namespace utils {
+namespace lemon::utils {
 
 std::string get_executable_dir() {
 #ifdef _WIN32
@@ -53,26 +55,29 @@ std::string get_executable_dir() {
 std::string get_resource_path(const std::string& relative_path) {
     fs::path exe_dir = get_executable_dir();
     fs::path resource_path = exe_dir / relative_path;
-    
+
     // Check if resource exists next to executable (for dev builds)
     if (fs::exists(resource_path)) {
         return resource_path.string();
     }
-    
+
 #ifndef _WIN32
     // On Linux/macOS, also check standard install locations
     std::vector<std::string> install_prefixes = {
+        "/Library/Application Support/Lemonade",  // macOS system install location
         "/usr/local/share/lemonade-server",
+        "/opt/share/lemonade-server",
         "/usr/share/lemonade-server"
     };
-    
+
+
     // Also check user's local install directory
     const char* home = std::getenv("HOME");
     if (home) {
         std::string home_local = std::string(home) + "/.local/share/lemonade-server";
         install_prefixes.insert(install_prefixes.begin(), home_local);
     }
-    
+
     for (const auto& prefix : install_prefixes) {
         fs::path installed_path = fs::path(prefix) / relative_path;
         if (fs::exists(installed_path)) {
@@ -80,7 +85,7 @@ std::string get_resource_path(const std::string& relative_path) {
         }
     }
 #endif
-    
+
     // Fallback: return original path (will fail but with clear error)
     return resource_path.string();
 }
@@ -95,7 +100,7 @@ std::string find_flm_executable() {
                       0, KEY_READ, &hKey) == ERROR_SUCCESS) {
         char buffer[32767];
         DWORD bufferSize = sizeof(buffer);
-        if (RegQueryValueExA(hKey, "PATH", nullptr, nullptr, 
+        if (RegQueryValueExA(hKey, "PATH", nullptr, nullptr,
                             reinterpret_cast<LPBYTE>(buffer), &bufferSize) == ERROR_SUCCESS) {
             std::string system_path = buffer;
             // Combine with current process PATH (system PATH takes priority for FLM lookup)
@@ -107,7 +112,7 @@ std::string find_flm_executable() {
         }
         RegCloseKey(hKey);
     }
-    
+
     // Use SearchPathA which is the same API that CreateProcessA uses internally
     // This ensures we find the exact same executable that will be launched
     char found_path[MAX_PATH];
@@ -119,11 +124,11 @@ std::string find_flm_executable() {
         found_path,
         nullptr
     );
-    
+
     if (result > 0 && result < MAX_PATH) {
         return found_path;
     }
-    
+
     return "";
 #else
     // On Linux/Mac, check PATH using which
@@ -137,62 +142,79 @@ std::string find_flm_executable() {
 std::string get_cache_dir() {
     const char* cache_dir_env = std::getenv("LEMONADE_CACHE_DIR");
     if (cache_dir_env) {
-        return std::string(cache_dir_env);
+        std::string cache_dir = std::string(cache_dir_env);
+#ifdef __APPLE__
+        // Ensure directory exists on macOS
+        if (!fs::exists(cache_dir)) {
+            fs::create_directories(cache_dir);
+        }
+#endif
+        return cache_dir;
     }
-    
-    #ifdef _WIN32
+
+#ifdef _WIN32
     const char* userprofile = std::getenv("USERPROFILE");
     if (userprofile) {
         return std::string(userprofile) + "\\.cache\\lemonade";
     }
-    #else
+#elif defined(__APPLE__)
+    // Check if we are running as root (UID 0)
+    if (geteuid() != 0) {
+        // --- NORMAL USER MODE ---
+        const char* home = std::getenv("HOME");
+        if (home) {
+            std::string cache_dir = std::string(home) + "/.cache/lemonade";
+            // Ensure directory exists
+            if (!fs::exists(cache_dir)) {
+                fs::create_directories(cache_dir);
+            }
+            return cache_dir;
+        }
+        // Fallback if HOME is missing but we aren't root
+        struct passwd* pw = getpwuid(getuid());
+        if (pw) {
+            std::string cache_dir = std::string(pw->pw_dir) + "/.cache/lemonade";
+            // Ensure directory exists
+            if (!fs::exists(cache_dir)) {
+                fs::create_directories(cache_dir);
+            }
+            return cache_dir;
+        }
+    }
+
+    // --- SYSTEM SERVICE / ROOT MODE ---
+    // If we are root (or getting HOME failed), use a shared system location.
+    // /Users/Shared is okay, but /Library/Application Support is the standard macOS system path.
+    std::string cache_dir = "/Library/Application Support/lemonade/.cache";
+    // Ensure directory exists
+    if (!fs::exists(cache_dir)) {
+        fs::create_directories(cache_dir);
+    }
+    return cache_dir;
+
+#else
+    // Linux and other Unix systems
     const char* home = std::getenv("HOME");
     if (home) {
         return std::string(home) + "/.cache/lemonade";
     }
     #endif
-    
+
     return ".cache/lemonade";
 }
 
 std::string get_downloaded_bin_dir() {
-#ifdef _WIN32
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-    fs::path exe_dir = fs::path(exe_path).parent_path();
-    return exe_dir.string();
-#else
-    return get_cache_dir() + "/bin";
-#endif
-}
+    // Use cache directory on all platforms for consistent multi-user support
+    // This is important for All Users installs on Windows where Program Files is read-only
+    std::string bin_dir = get_cache_dir() + "/bin";
 
-#ifndef _WIN32
-std::string get_deprecated_downloaded_bin_dir() {
-    // Get the actual executable location
-    char exe_path[1024];
-    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
-    if (len != -1) {
-        exe_path[len] = '\0';
-        fs::path exe_dir = fs::path(exe_path).parent_path();
-        
-        // If we're in /usr/local/bin, use /usr/local/share/lemonade-server instead
-        if (exe_dir == "/usr/local/bin" || exe_dir == "/usr/bin") {
-            if (fs::exists("/usr/local/share/lemonade-server")) {
-                return "/usr/local/share/lemonade-server";
-            }
-            if (fs::exists("/usr/share/lemonade-server")) {
-                return "/usr/share/lemonade-server";
-            }
-        }
-        
-        // Otherwise (dev builds), use the exe directory
-        return exe_dir.string();
+    // Ensure directory exists
+    if (!fs::exists(bin_dir)) {
+        fs::create_directories(bin_dir);
     }
-    return ".";
+
+    return bin_dir;
 }
-#endif
 
 
-} // namespace utils
-} // namespace lemon
-
+} // namespace utils::lemon

@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import MarkdownMessage from './MarkdownMessage';
+import AudioButton, { LOADING, PAUSED, PLAYING } from './AudioButton'
 // @ts-ignore - SVG assets live outside of the TypeScript rootDir for Electron packaging
 import logoSvg from '../../assets/logo.svg';
 import {
@@ -7,9 +8,13 @@ import {
   buildChatRequestOverrides,
   mergeWithDefaultSettings,
 } from './utils/appSettings';
-import { serverFetch } from './utils/serverConfig';
+import { serverFetch, getServerBaseUrl } from './utils/serverConfig';
 import { downloadTracker } from './utils/downloadTracker';
 import { useModels, DEFAULT_MODEL_ID } from './hooks/useModels';
+import { useAudioCapture } from './hooks/useAudioCapture';
+import { TranscriptionWebSocket } from './utils/websocketClient';
+import { voiceOptions } from './tabs/TTSSettings';
+import { useSystem } from './hooks/useSystem';
 
 interface ImageContent {
   type: 'image_url';
@@ -49,6 +54,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     setUserHasSelectedModel,
   } = useModels();
 
+  // Get system context for lazy loading system info and checking ROCm usage
+  const { ensureSystemInfoLoaded, checkForRocmUsage } = useSystem();
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -74,13 +82,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
-  
+
   // Embedding model state
   const [embeddingInput, setEmbeddingInput] = useState('');
   const [embeddingHistory, setEmbeddingHistory] = useState<Array<{input: string, embedding: number[], dimensions?: number}>>([]);
   const [isProcessingEmbedding, setIsProcessingEmbedding] = useState(false);
   const [expandedEmbeddings, setExpandedEmbeddings] = useState<Set<number>>(new Set());
-  
+
   // Reranking model state
   const [rerankQuery, setRerankQuery] = useState('');
   const [rerankDocuments, setRerankDocuments] = useState('');
@@ -90,7 +98,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     results: Array<{index: number, text: string, score: number}>;
   }>>([]);
   const [isProcessingRerank, setIsProcessingRerank] = useState(false);
-  
+
   // Transcription model state
   const [transcriptionFile, setTranscriptionFile] = useState<File | null>(null);
   const [transcriptionHistory, setTranscriptionHistory] = useState<Array<{
@@ -99,6 +107,54 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   }>>([]);
   const [isProcessingTranscription, setIsProcessingTranscription] = useState(false);
   const audioFileInputRef = useRef<HTMLInputElement>(null);
+  // Live microphone recording state
+  const [isLiveRecording, setIsLiveRecording] = useState(false);
+  const [isLiveConnected, setIsLiveConnected] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const audioLevelRef = useRef(0);
+  const wsClientRef = useRef<TranscriptionWebSocket | null>(null);
+  const isLiveRecordingRef = useRef(false);
+  const isSpeakingRef = useRef(false);
+  const liveTranscriptRef = useRef('');
+
+  // Image generation model state
+  const [imagePrompt, setImagePrompt] = useState('');
+  const [imageHistory, setImageHistory] = useState<Array<{
+    prompt: string;
+    imageData: string;  // base64 data
+    timestamp: number;
+  }>>([]);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+
+  // Text to speech state
+  const [currentVoice, setVoice] = useState('');
+  const [audioState, setAudioState] = useState<number>(0);
+  const [pressedAudioButton, setPressedAudioButton] = useState<number>(-1);
+  const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
+  const [ttsMessageHistory, setTTSMessageHistory] = useState<MessageContent[]>([]);
+  const [isProcessingTTS, setIsProcessingTTS] = useState(false);
+
+  // Image generation settings
+  interface ImageSettings {
+    steps: number;
+    cfgScale: number;
+    width: number;
+    height: number;
+    seed: number;
+  }
+
+  const DEFAULT_IMAGE_SETTINGS: ImageSettings = {
+    steps: 20,
+    cfgScale: 7.0,
+    width: 512,
+    height: 512,
+    seed: -1,
+  };
+
+  const [imageSettings, setImageSettings] = useState<ImageSettings>(DEFAULT_IMAGE_SETTINGS);
 
 useEffect(() => {
   fetchLoadedModel();
@@ -141,6 +197,9 @@ useEffect(() => {
       // Fallback: fetch the loaded model from the health endpoint
       fetchLoadedModel();
     }
+
+    // Check if ROCm is being used to show system checks if needed
+    checkForRocmUsage();
   };
 
   const handleModelUnload = () => {
@@ -148,6 +207,11 @@ useEffect(() => {
     setCurrentLoadedModel(null);
   };
 
+  const handleModelLoadStart = (e: CustomEvent) => {
+    setSelectedModel(e.detail.modelId);
+  }
+
+  window.addEventListener('modelLoadStart' as any, handleModelLoadStart);
   window.addEventListener('modelLoadEnd' as any, handleModelLoadEnd);
   window.addEventListener('modelUnload' as any, handleModelUnload);
 
@@ -157,6 +221,7 @@ useEffect(() => {
   }, 5000);
 
   return () => {
+    window.removeEventListener('modelLoadStart' as any, handleModelLoadStart);
     window.removeEventListener('modelLoadEnd' as any, handleModelLoadEnd);
     window.removeEventListener('modelUnload' as any, handleModelUnload);
     clearInterval(healthCheckInterval);
@@ -173,7 +238,7 @@ useEffect(() => {
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
       }
-      
+
       // Use requestAnimationFrame to scroll after render completes
       requestAnimationFrame(() => {
         if (!userScrolledAwayRef.current) {
@@ -181,7 +246,7 @@ useEffect(() => {
         }
       });
     }
-    
+
     return () => {
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
@@ -196,10 +261,40 @@ useEffect(() => {
     }
   }, [editingIndex, editingValue]);
 
+  useEffect(() => {
+    if(appSettings) {
+      setVoice(appSettings?.tts.userVoice.value);
+    }
+  }, [appSettings]);
+
+  // Load model-specific image defaults when the selected model changes
+  useEffect(() => {
+    if (isImageGenerationModel() && selectedModel) {
+      const modelInfo = modelsData[selectedModel];
+      const defaults = modelInfo?.image_defaults;
+      setImageSettings({
+        steps: defaults?.steps ?? DEFAULT_IMAGE_SETTINGS.steps,
+        cfgScale: defaults?.cfg_scale ?? DEFAULT_IMAGE_SETTINGS.cfgScale,
+        width: defaults?.width ?? DEFAULT_IMAGE_SETTINGS.width,
+        height: defaults?.height ?? DEFAULT_IMAGE_SETTINGS.height,
+        seed: -1,  // Always reset seed to random
+      });
+    }
+  }, [selectedModel, modelsData]);
+
+  // Auto-scroll to bottom when new images are generated
+  useEffect(() => {
+    if (imageHistory.length > 0) {
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
+  }, [imageHistory.length]);
+
   const checkIfAtBottom = () => {
     const container = messagesContainerRef.current;
     if (!container) return true;
-    
+
     const threshold = 20; // pixels from bottom to consider "at bottom"
     const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
     return isAtBottom;
@@ -208,7 +303,7 @@ useEffect(() => {
   const handleScroll = () => {
     const atBottom = checkIfAtBottom();
     setIsUserAtBottom(atBottom);
-    
+
     // Track immediately via ref - if user scrolls away during streaming, respect it
     if (!atBottom && isLoading) {
       userScrolledAwayRef.current = true;
@@ -246,40 +341,65 @@ const fetchLoadedModel = async () => {
 
   const isVisionModel = (): boolean => {
     if (!selectedModel) return false;
-    
+
     const modelInfo = modelsData[selectedModel];
-    
+
     return modelInfo?.labels?.includes('vision') || false;
   };
 
   const isEmbeddingModel = (): boolean => {
     if (!selectedModel) return false;
-    
+
     const modelInfo = modelsData[selectedModel];
-    
+
     return !!(modelInfo?.labels?.includes('embeddings') || (modelInfo as any)?.embedding);
   };
 
   const isRerankingModel = (): boolean => {
     if (!selectedModel) return false;
-    
+
     const modelInfo = modelsData[selectedModel];
-    
+
     return !!(modelInfo?.labels?.includes('reranking') || (modelInfo as any)?.reranking);
   };
 
   const isTranscriptionModel = (): boolean => {
     if (!selectedModel) return false;
-    
+
     const modelInfo = modelsData[selectedModel];
-    
+
     return modelInfo?.recipe === 'whispercpp';
   };
 
-  const getModelType = (): 'llm' | 'embedding' | 'reranking' | 'transcription' => {
+  const isSpeechModel = (): boolean => {
+    if (!selectedModel) return false;
+
+    const modelInfo = modelsData[selectedModel];
+
+    return modelInfo?.recipe === 'kokoro';
+  };
+
+  const isImageGenerationModel = (): boolean => {
+    if (!selectedModel) return false;
+
+    const modelInfo = modelsData[selectedModel];
+
+    // Debug logging
+    console.log('[ImageDetection] selectedModel:', selectedModel);
+    console.log('[ImageDetection] modelInfo:', modelInfo);
+    console.log('[ImageDetection] recipe:', modelInfo?.recipe);
+    console.log('[ImageDetection] labels:', modelInfo?.labels);
+
+    return modelInfo?.recipe === 'sd-cpp' ||
+           modelInfo?.labels?.includes('image') || false;
+  };
+
+  const getModelType = (): 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'speech' => {
     if (isEmbeddingModel()) return 'embedding';
     if (isRerankingModel()) return 'reranking';
     if (isTranscriptionModel()) return 'transcription';
+    if (isImageGenerationModel()) return 'image';
+    if(isSpeechModel()) return 'speech';
     return 'llm';
   };
 
@@ -289,28 +409,28 @@ const fetchLoadedModel = async () => {
 
     const file = files[0];
     const reader = new FileReader();
-    
+
     reader.onload = (e) => {
       const result = e.target?.result;
       if (typeof result === 'string') {
         setUploadedImages(prev => [...prev, result]);
       }
     };
-    
+
     reader.readAsDataURL(file);
   };
 
   const handleImagePaste = (event: React.ClipboardEvent) => {
     const items = event.clipboardData.items;
-    
+
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      
+
       if (item.type.indexOf('image') !== -1) {
         event.preventDefault();
         const file = item.getAsFile();
         if (!file) continue;
-        
+
         const reader = new FileReader();
         reader.onload = (e) => {
           const result = e.target?.result;
@@ -339,18 +459,18 @@ const buildChatRequestBody = (messageHistory: Message[]) => ({
 const extractThinking = (content: string): { content: string; thinking: string } => {
   let extractedThinking = '';
   let cleanedContent = content;
-  
+
   // Extract all complete <think>...</think> blocks
   const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
   let match;
-  
+
   while ((match = thinkRegex.exec(content)) !== null) {
     extractedThinking += match[1];
   }
-  
+
   // Remove all complete <think>...</think> blocks from content
   cleanedContent = cleanedContent.replace(thinkRegex, '');
-  
+
   return {
     content: cleanedContent,
     thinking: extractedThinking
@@ -362,6 +482,8 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
   let accumulatedContent = '';
   let accumulatedThinking = '';
   let receivedFirstChunk = false;
+  // Check if this is a new model being loaded (different from currently loaded model)
+  const isNewModelLoad = currentLoadedModel !== selectedModel;
 
   const response = await serverFetch('/chat/completions', {
     method: 'POST',
@@ -386,7 +508,7 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
   try {
     while (true) {
       const { done, value } = await reader.read();
-      
+
       if (done) break;
 
       const chunk = decoder.decode(value, { stream: true });
@@ -395,7 +517,7 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           const data = line.slice(6).trim();
-          
+
           if (data === '[DONE]') {
             continue;
           }
@@ -409,31 +531,35 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
             const delta = parsed.choices?.[0]?.delta;
             const content = delta?.content;
             const thinkingContent = delta?.reasoning_content || delta?.thinking;
-            
+
             if (content) {
               accumulatedContent += content;
             }
-            
+
             if (thinkingContent) {
               accumulatedThinking += thinkingContent;
             }
-            
+
             if (content || thinkingContent) {
               // First response received - model is loaded, clear loading indicator
               if (!receivedFirstChunk) {
                 receivedFirstChunk = true;
                 setIsModelLoading(false);
                 setCurrentLoadedModel(selectedModel);
+                // Only dispatch modelLoadEnd if this is a new model being loaded
+                if (isNewModelLoad) {
+                  window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: selectedModel } }));
+                }
               }
-              
+
               // Extract thinking from <think> tags in content
               const extracted = extractThinking(accumulatedContent);
               const displayContent = extracted.content;
               const embeddedThinking = extracted.thinking;
-              
+
               // Combine thinking from both sources (API field and embedded tags)
               const totalThinking = (accumulatedThinking || '') + (embeddedThinking || '');
-              
+
               setMessages(prev => {
                 const newMessages = [...prev];
                 const messageIndex = newMessages.length - 1;
@@ -442,7 +568,7 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
                   content: displayContent,
                   thinking: totalThinking || undefined,
                 };
-                
+
                 // Auto-expand thinking section if thinking content is present
                 // and collapseThinkingByDefault is not enabled
                 if (totalThinking && !appSettings?.collapseThinkingByDefault?.value) {
@@ -452,7 +578,7 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
                     return next;
                   });
                 }
-                
+
                 return newMessages;
               });
             }
@@ -479,12 +605,12 @@ const downloadModelForChat = async (modelName: string): Promise<boolean> => {
   return new Promise((resolve) => {
     const abortController = new AbortController();
     const downloadId = downloadTracker.startDownload(modelName, abortController);
-    
+
     // Dispatch event to open download manager
     window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName } }));
-    
+
     let downloadCompleted = false;
-    
+
     const performDownload = async () => {
       try {
         const response = await serverFetch('/pull', {
@@ -493,36 +619,36 @@ const downloadModelForChat = async (modelName: string): Promise<boolean> => {
           body: JSON.stringify({ model_name: modelName, stream: true }),
           signal: abortController.signal,
         });
-        
+
         if (!response.ok) {
           throw new Error(`Failed to download model: ${response.statusText}`);
         }
-        
+
         const reader = response.body?.getReader();
         if (!reader) {
           throw new Error('No response body');
         }
-        
+
         const decoder = new TextDecoder();
         let buffer = '';
         let currentEventType = 'progress';
-        
+
         while (true) {
           const { done, value } = await reader.read();
-          
+
           if (done) break;
-          
+
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
-          
+
           for (const line of lines) {
             if (line.startsWith('event:')) {
               currentEventType = line.substring(6).trim();
             } else if (line.startsWith('data:')) {
               try {
                 const data = JSON.parse(line.substring(5).trim());
-                
+
                 if (currentEventType === 'progress') {
                   downloadTracker.updateProgress(downloadId, data);
                 } else if (currentEventType === 'complete') {
@@ -540,16 +666,16 @@ const downloadModelForChat = async (modelName: string): Promise<boolean> => {
             }
           }
         }
-        
+
         if (!downloadCompleted) {
           downloadTracker.completeDownload(downloadId);
           downloadCompleted = true;
         }
-        
+
         // Notify all components that models have been updated
         // (The ModelsProvider listens for this and refreshes automatically)
         window.dispatchEvent(new CustomEvent('modelsUpdated'));
-        
+
         resolve(true);
       } catch (error: any) {
         if (error.name === 'AbortError') {
@@ -561,13 +687,16 @@ const downloadModelForChat = async (modelName: string): Promise<boolean> => {
         resolve(false);
       }
     };
-    
+
     performDownload();
   });
 };
 
 const sendMessage = async () => {
     if ((!inputValue.trim() && uploadedImages.length === 0) || isLoading || isDownloadingForChat) return;
+
+    // Trigger system info load on first model use (lazy loading)
+    await ensureSystemInfoLoaded();
 
     // Cancel any existing request
     if (abortControllerRef.current) {
@@ -576,7 +705,7 @@ const sendMessage = async () => {
 
     // Create new abort controller
     abortControllerRef.current = new AbortController();
-    
+
     // When sending a new message, ensure we're at the bottom and reset scroll tracking
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
@@ -585,14 +714,14 @@ const sendMessage = async () => {
     let messageContent: MessageContent;
     if (uploadedImages.length > 0) {
       const contentArray: Array<TextContent | ImageContent> = [];
-      
+
       if (inputValue.trim()) {
         contentArray.push({
           type: 'text',
           text: inputValue
         });
       }
-      
+
       uploadedImages.forEach(imageUrl => {
         contentArray.push({
           type: 'image_url',
@@ -601,7 +730,7 @@ const sendMessage = async () => {
           }
         });
       });
-      
+
       messageContent = contentArray;
     } else {
       messageContent = inputValue;
@@ -614,30 +743,30 @@ const sendMessage = async () => {
       setInputValue('');
       setUploadedImages([]);
       setIsDownloadingForChat(true);
-      
+
       // Show the user message immediately
       const userMessage: Message = { role: 'user', content: messageContent };
       setMessages(prev => [...prev, userMessage]);
-      
+
       // Download the model
       const downloadSuccess = await downloadModelForChat(selectedModel);
-      
+
       if (downloadSuccess) {
         // Model downloaded successfully - close download manager
         window.dispatchEvent(new CustomEvent('download:chatComplete'));
-        
+
         // Now send the message (isDefaultModelPending will be updated by the hook)
         const pendingMessage = pendingMessageRef.current;
         pendingMessageRef.current = null;
-        
+
         if (pendingMessage) {
           // Continue with the chat request
           setIsLoading(true);
           setIsModelLoading(true);
-          
+
           // Add placeholder for assistant message
           setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
-          
+
           try {
             const messageHistory = messages.concat([{ role: 'user' as const, content: pendingMessage.content }]);
             await handleStreamingResponse(messageHistory);
@@ -671,13 +800,13 @@ const sendMessage = async () => {
         }
       } else {
         // Download failed - show error
-        setMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: 'Failed to download the model. Please try again or download a model from the Model Manager.' 
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: 'Failed to download the model. Please try again or download a model from the Model Manager.'
         }]);
         pendingMessageRef.current = null;
       }
-      
+
       setIsDownloadingForChat(false);
       return;
     }
@@ -685,7 +814,7 @@ const sendMessage = async () => {
     // Normal flow - model is already downloaded
     const userMessage: Message = { role: 'user', content: messageContent };
     const messageHistory = [...messages, userMessage];
-    
+
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setUploadedImages([]);
@@ -732,6 +861,8 @@ const sendMessage = async () => {
       abortControllerRef.current = null;
       // Reset scroll tracking after streaming ends so next message can autoscroll
       userScrolledAwayRef.current = false;
+      // Notify StatusBar to refresh server stats
+      window.dispatchEvent(new CustomEvent('inference-complete'));
     }
   };
 
@@ -739,6 +870,13 @@ const sendMessage = async () => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleMessageToSpeech();
     }
   };
 
@@ -777,30 +915,30 @@ const sendMessage = async () => {
     });
   };
 
-  const renderMessageContent = (content: MessageContent, thinking?: string, messageIndex?: number) => {
+  const renderMessageContent = (content: MessageContent, thinking?: string, messageIndex?: number, isComplete?: boolean) => {
     return (
       <>
         {thinking && (
           <div className="thinking-section">
-            <button 
+            <button
               className="thinking-toggle"
               onClick={() => messageIndex !== undefined && toggleThinking(messageIndex)}
             >
-              <svg 
-                width="12" 
-                height="12" 
-                viewBox="0 0 24 24" 
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
                 fill="none"
-                style={{ 
+                style={{
                   transform: expandedThinking.has(messageIndex!) ? 'rotate(180deg)' : 'rotate(0deg)',
                   transition: 'transform 0.2s'
                 }}
               >
-                <path 
-                  d="M6 9L12 15L18 9" 
-                  stroke="currentColor" 
-                  strokeWidth="2" 
-                  strokeLinecap="round" 
+                <path
+                  d="M6 9L12 15L18 9"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
                   strokeLinejoin="round"
                 />
               </svg>
@@ -808,24 +946,24 @@ const sendMessage = async () => {
             </button>
             {expandedThinking.has(messageIndex!) && (
               <div className="thinking-content">
-                <MarkdownMessage content={thinking} />
+                <MarkdownMessage content={thinking} isComplete={isComplete} />
               </div>
             )}
           </div>
         )}
         {typeof content === 'string' ? (
-          <MarkdownMessage content={content} />
+          <MarkdownMessage content={content} isComplete={isComplete} />
         ) : (
           <div className="message-content-array">
             {content.map((item, index) => {
               if (item.type === 'text') {
-                return <MarkdownMessage key={index} content={item.text} />;
+                return <MarkdownMessage key={index} content={item.text} isComplete={isComplete} />;
               } else if (item.type === 'image_url') {
                 return (
-                  <img 
-                    key={index} 
-                    src={item.image_url.url} 
-                    alt="Uploaded" 
+                  <img
+                    key={index}
+                    src={item.image_url.url}
+                    alt="Uploaded"
                     className="message-image"
                   />
                 );
@@ -840,7 +978,7 @@ const sendMessage = async () => {
 
   const handleEditMessage = (index: number, e: React.MouseEvent) => {
     if (isLoading) return; // Don't allow editing while loading
-    
+
     e.stopPropagation(); // Prevent triggering the outside click
     const message = messages[index];
     if (message.role === 'user') {
@@ -853,10 +991,28 @@ const sendMessage = async () => {
         // If content is an array, extract the text and image parts
         const textContent = message.content.find(item => item.type === 'text');
         setEditingValue(textContent ? textContent.text : '');
-        
+
         const imageContents = message.content.filter(item => item.type === 'image_url');
         setEditingImages(imageContents.map(img => img.image_url.url));
       }
+    }
+  };
+
+  const handleEditAudioMessage = (index: number, e: React.MouseEvent) => {
+    if (isProcessingTTS) {
+      return;
+    }
+
+    e.stopPropagation();
+
+    const message = ttsMessageHistory[index];
+    setEditingIndex(index);
+
+    if (typeof message === 'string') {
+      setEditingValue(message);
+    } else {
+      const textContent = message.find(item => item.type === 'text');
+      setEditingValue(textContent ? textContent.text : '');
     }
   };
 
@@ -879,28 +1035,28 @@ const sendMessage = async () => {
 
     const file = files[0];
     const reader = new FileReader();
-    
+
     reader.onload = (e) => {
       const result = e.target?.result;
       if (typeof result === 'string') {
         setEditingImages(prev => [...prev, result]);
       }
     };
-    
+
     reader.readAsDataURL(file);
   };
 
   const handleEditImagePaste = (event: React.ClipboardEvent) => {
     const items = event.clipboardData.items;
-    
+
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      
+
       if (item.type.indexOf('image') !== -1) {
         event.preventDefault();
         const file = item.getAsFile();
         if (!file) continue;
-        
+
         const reader = new FileReader();
         reader.onload = (e) => {
           const result = e.target?.result;
@@ -923,6 +1079,130 @@ const sendMessage = async () => {
     e.stopPropagation(); // Prevent closing when clicking inside the edit area
   };
 
+  // Handle text to speech conversion using Kokoro
+  useEffect(() => {
+    if(currentAudio) {
+      currentAudio.addEventListener('ended', stopAudio);
+      currentAudio.addEventListener('error', stopAudio);
+
+      currentAudio.play().catch(e => console.error("Playback prevented:", currentAudio));
+    }
+
+    return () => {
+      currentAudio?.removeEventListener('ended', stopAudio);
+      currentAudio?.removeEventListener('error', stopAudio);
+    }
+  }, [currentAudio, audioState]);
+
+  const playAudio = (audioUrl: string) => {
+    setCurrentAudio(new Audio(audioUrl));
+    setAudioState(PLAYING);
+  }
+
+  const stopAudio = () => {
+    if (currentAudio) {
+      currentAudio.pause();
+      if (currentAudio.src.startsWith('blob:')) {
+        URL.revokeObjectURL(currentAudio.src);
+      }
+
+      setCurrentAudio(null);
+    }
+
+    setPressedAudioButton(-1);
+    setAudioState(PAUSED);
+  }
+
+  const handleTextToSpeech = async (message: MessageContent, ttsVoice: string) => {
+    const textToSpeechModel = appSettings?.tts.model.value;
+
+    setAudioState(LOADING);
+
+    if(message instanceof Array) {
+      message = message.map(function(item) {return (item.type == "text") ? item.text : ''}).toString();
+    }
+
+    try {
+      const requestBody: any = {
+        model: textToSpeechModel,
+        input: message,
+        voice: ttsVoice
+      };
+
+      const response = await serverFetch('/audio/speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const respBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(respBlob);
+      playAudio(audioUrl);
+      setAudioState(PLAYING);
+    } catch(err: any) {
+      console.log(`Error: ${err}`);
+      stopAudio();
+    }
+  }
+
+  const handleAudioButtonClick = async (message: MessageContent, btnIndex: number, role?: string) => {
+    let b = pressedAudioButton;
+    let voice = currentVoice;
+
+    stopAudio();
+
+    if (b === btnIndex) {
+      return;
+    }
+
+    if(role && appSettings) {
+      voice = (role === 'assistant') ? appSettings?.tts.assistantVoice.value : appSettings?.tts.userVoice.value;
+    }
+
+    setPressedAudioButton(btnIndex);
+    await handleTextToSpeech(message, voice);
+  }
+
+  const renderAudioButton = (role: string, message: MessageContent, btnIndex: number) => {
+    let isTextContent = (typeof message === 'object') ? (message.filter((chunk) => chunk.type === 'text').length != 0) : true;
+
+    return (appSettings?.tts.enableTTS.value) &&
+      isTextContent &&
+      ((role == 'assistant') ||
+      (role == 'user' && appSettings?.tts.enableUserTTS.value)) ?
+      <AudioButton
+      role={role}
+      textMessage={message}
+      buttonIndex={btnIndex}
+      onClickFunction={handleAudioButtonClick}
+      buttonContext={{buttonId: pressedAudioButton, audioState: audioState}}
+      /> :
+      ''
+  };
+
+const handleMessageToSpeech = async () => {
+  if (!inputValue.trim() || isProcessingTTS) return;
+
+  setIsProcessingTTS(true);
+
+  try {
+    await handleTextToSpeech(inputValue, currentVoice);
+    setTTSMessageHistory(prev => [...prev, inputValue]);
+  } catch (error: any) {
+    console.error('Failed to proccess message:', error);
+    alert(`Failed to proccess message: ${error.message || 'Unknown error'}`);
+  } finally {
+    setIsProcessingTTS(false);
+    setInputValue('');
+  }
+};
+
+
+
   const submitEdit = async () => {
     if ((!editingValue.trim() && editingImages.length === 0) || editingIndex === null || isLoading) return;
 
@@ -933,26 +1213,26 @@ const sendMessage = async () => {
 
     // Create new abort controller
     abortControllerRef.current = new AbortController();
-    
+
     // When submitting an edit, ensure we're at the bottom and reset scroll tracking
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
 
     // Truncate messages up to the edited message
     const truncatedMessages = messages.slice(0, editingIndex);
-    
+
     // Build edited message content with images if present
     let messageContent: MessageContent;
     if (editingImages.length > 0) {
       const contentArray: Array<TextContent | ImageContent> = [];
-      
+
       if (editingValue.trim()) {
         contentArray.push({
           type: 'text',
           text: editingValue
         });
       }
-      
+
       editingImages.forEach(imageUrl => {
         contentArray.push({
           type: 'image_url',
@@ -961,16 +1241,16 @@ const sendMessage = async () => {
           }
         });
       });
-      
+
       messageContent = contentArray;
     } else {
       messageContent = editingValue;
     }
-    
+
     // Add the edited message
     const editedMessage: Message = { role: 'user', content: messageContent };
     const messageHistory = [...truncatedMessages, editedMessage];
-    
+
     setMessages(messageHistory);
     setEditingIndex(null);
     setEditingValue('');
@@ -1017,13 +1297,41 @@ const sendMessage = async () => {
       abortControllerRef.current = null;
       // Reset scroll tracking after streaming ends so next message can autoscroll
       userScrolledAwayRef.current = false;
+      // Notify StatusBar to refresh server stats
+      window.dispatchEvent(new CustomEvent('inference-complete'));
     }
+  };
+
+  const submitAudioMessageEdit = async () => {
+    if (!editingValue.trim() || editingIndex === null || isProcessingTTS) {
+      return;
+    }
+
+    setIsUserAtBottom(true);
+    userScrolledAwayRef.current = false;
+
+    let ttsMessages = ttsMessageHistory;
+    ttsMessages[editingIndex] = editingValue;
+
+    setTTSMessageHistory(ttsMessages);
+    setEditingIndex(null);
+    setEditingValue('');
   };
 
   const handleEditKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       submitEdit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelEdit();
+    }
+  };
+
+  const handleAudioEditKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitAudioMessageEdit();
     } else if (e.key === 'Escape') {
       e.preventDefault();
       cancelEdit();
@@ -1041,7 +1349,7 @@ const sendMessage = async () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    
+
     // Clear all messages and reset state
     setMessages([]);
     setInputValue('');
@@ -1053,13 +1361,39 @@ const sendMessage = async () => {
     setExpandedThinking(new Set());
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
-    
+
     // Clear embedding/reranking state
     setEmbeddingInput('');
     setEmbeddingHistory([]);
     setRerankQuery('');
     setRerankDocuments('');
     setRerankHistory([]);
+
+    // Clear image generation state
+    setImagePrompt('');
+    setImageHistory([]);
+    setIsGeneratingImage(false);
+
+    // Clear transcription state
+    setTranscriptionFile(null);
+    setTranscriptionHistory([]);
+    setIsProcessingTranscription(false);
+    if (audioFileInputRef.current) {
+      audioFileInputRef.current.value = '';
+    }
+    // Stop live recording if active
+    if (isLiveRecording) {
+      stopRecording();
+      wsClientRef.current?.close();
+      wsClientRef.current = null;
+      setIsLiveRecording(false);
+      setIsLiveConnected(false);
+      setIsSpeaking(false);
+      setAudioLevel(0);
+      audioLevelRef.current = 0;
+    }
+    setLiveTranscript('');
+    setLiveError(null);
   };
 
   const handleEmbedding = async () => {
@@ -1074,7 +1408,7 @@ const sendMessage = async () => {
         model: selectedModel,
         input: currentInput
       };
-      
+
       const response = await serverFetch('/embeddings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1086,7 +1420,7 @@ const sendMessage = async () => {
       }
 
       const data = await response.json();
-      
+
       // Extract the embedding from the response
       // OpenAI format: { data: [{ embedding: [...] }] }
       let embedding: number[];
@@ -1097,10 +1431,10 @@ const sendMessage = async () => {
       } else {
         throw new Error('Unexpected response format');
       }
-      
+
       // Add to history
-      setEmbeddingHistory(prev => [...prev, { 
-        input: currentInput, 
+      setEmbeddingHistory(prev => [...prev, {
+        input: currentInput,
         embedding
       }]);
     } catch (error: any) {
@@ -1128,13 +1462,13 @@ const sendMessage = async () => {
 
     const currentQuery = rerankQuery;
     const currentDocuments = rerankDocuments;
-    
+
     setIsProcessingRerank(true);
 
     try {
       // Parse documents - assume one document per line
       const docs = currentDocuments.split('\n').filter(d => d.trim());
-      
+
       const response = await serverFetch('/reranking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1150,7 +1484,7 @@ const sendMessage = async () => {
       }
 
       const data = await response.json();
-      
+
       // Extract the reranking results from the response
       // Expected format: { results: [{ index: 0, relevance_score: 0.95 }] }
       if (data.results && Array.isArray(data.results)) {
@@ -1159,7 +1493,7 @@ const sendMessage = async () => {
           text: docs[r.index],
           score: r.relevance_score || r.score || 0
         }));
-        
+
         // Add to history
         setRerankHistory(prev => [...prev, {
           query: currentQuery,
@@ -1180,10 +1514,120 @@ const sendMessage = async () => {
   const handleAudioFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
-    
+
     const file = files[0];
     setTranscriptionFile(file);
   };
+
+  // Live transcription callbacks — same pattern as StreamingTranscription component
+  const handleAudioChunk = useCallback((base64: string) => {
+    wsClientRef.current?.sendAudio(base64);
+  }, []);
+
+  const handleAudioLevel = useCallback((level: number) => {
+    const smoothed = audioLevelRef.current * 0.7 + level * 0.3;
+    audioLevelRef.current = smoothed;
+    setAudioLevel(smoothed);
+  }, []);
+
+  const { isRecording: isMicActive, startRecording, stopRecording, error: micError } =
+    useAudioCapture(handleAudioChunk, handleAudioLevel);
+
+  const handleLiveTranscription = useCallback((text: string, isFinal: boolean) => {
+    // Ignore events after recording stopped - handleMicStop already saved the transcript
+    if (!isLiveRecordingRef.current) return;
+
+    const trimmedText = text.trim();
+    if (!trimmedText) return;
+
+    // Both delta and completed contain the FULL text for the current utterance.
+    // - Delta: replace display with accumulated + delta (interim for current utterance)
+    // - Completed: append this utterance to accumulated, update display
+    const accumulated = liveTranscriptRef.current;
+    if (isFinal) {
+      // Final result: add this utterance to accumulated (previous finals)
+      const next = accumulated ? `${accumulated} ${trimmedText}` : trimmedText;
+      liveTranscriptRef.current = next;
+      setLiveTranscript(next);
+    } else {
+      // Interim result: show accumulated + this interim (replaces previous interim)
+      const display = accumulated ? `${accumulated} ${trimmedText}` : trimmedText;
+      setLiveTranscript(display);
+    }
+  }, []);
+
+  const handleSpeechEvent = useCallback((event: 'started' | 'stopped') => {
+    isSpeakingRef.current = event === 'started';
+    setIsSpeaking(event === 'started');
+  }, []);
+
+  // Exactly mirrors StreamingTranscription's handleStart
+  const handleMicStart = useCallback(async () => {
+    setLiveError(null);
+    setLiveTranscript('');
+    liveTranscriptRef.current = '';
+
+    try {
+      const serverUrl = getServerBaseUrl();
+      wsClientRef.current = await TranscriptionWebSocket.connect(serverUrl, selectedModel, {
+        onTranscription: handleLiveTranscription,
+        onSpeechEvent: handleSpeechEvent,
+        onError: (err) => setLiveError(err),
+        onConnected: () => setIsLiveConnected(true),
+        onDisconnected: () => setIsLiveConnected(false),
+      });
+
+      await new Promise(r => setTimeout(r, 500));
+      await startRecording();
+      isLiveRecordingRef.current = true;
+      setIsLiveRecording(true);
+    } catch (err) {
+      setLiveError(err instanceof Error ? err.message : 'Failed to connect');
+    }
+  }, [selectedModel, handleLiveTranscription, handleSpeechEvent, startRecording]);
+
+  // Stop recording and push transcript to history.
+  // With interim transcriptions, we already have the text — no need to commit.
+  const handleMicStop = useCallback(() => {
+    stopRecording();
+    isLiveRecordingRef.current = false;
+
+    // Get the displayed transcript (includes last interim) via DOM or state
+    // liveTranscriptRef has accumulated finals; current interim is only in display
+    // For simplicity, read from state synchronously by capturing current value
+    setLiveTranscript(currentDisplay => {
+      const finalText = currentDisplay.trim();
+      if (finalText) {
+        setTranscriptionHistory(h => [...h, { filename: 'Live Recording', text: finalText }]);
+      }
+      return ''; // Clear display
+    });
+    liveTranscriptRef.current = '';
+
+    if (wsClientRef.current) {
+      // Clear buffer without committing — we already have the transcript from interims
+      wsClientRef.current.clearAudio();
+
+      const wsToClose = wsClientRef.current;
+      wsClientRef.current = null;
+      setIsLiveConnected(false);
+      setTimeout(() => {
+        wsToClose.close();
+      }, 3000);
+    }
+
+    setIsLiveRecording(false);
+    setIsSpeaking(false);
+    setAudioLevel(0);
+    audioLevelRef.current = 0;
+  }, [stopRecording]);
+
+  // Cleanup WebSocket on unmount
+  useEffect(() => {
+    return () => {
+      wsClientRef.current?.close();
+    };
+  }, []);
 
   const handleTranscription = async () => {
     if (!transcriptionFile || isProcessingTranscription) return;
@@ -1196,7 +1640,7 @@ const sendMessage = async () => {
       const formData = new FormData();
       formData.append('file', currentFile);
       formData.append('model', selectedModel);
-      
+
       const response = await serverFetch('/audio/transcriptions', {
         method: 'POST',
         body: formData
@@ -1207,7 +1651,7 @@ const sendMessage = async () => {
       }
 
       const data = await response.json();
-      
+
       // Extract the transcription text from the response
       let transcriptionText: string;
       if (data.text) {
@@ -1215,19 +1659,19 @@ const sendMessage = async () => {
       } else {
         throw new Error('Unexpected response format');
       }
-      
+
       // Add to history
-      setTranscriptionHistory(prev => [...prev, { 
-        filename: currentFile.name, 
+      setTranscriptionHistory(prev => [...prev, {
+        filename: currentFile.name,
         text: transcriptionText
       }]);
-      
+
       // Clear the file input
       setTranscriptionFile(null);
       if (audioFileInputRef.current) {
         audioFileInputRef.current.value = '';
       }
-      
+
     } catch (error: any) {
       console.error('Failed to transcribe:', error);
       alert(`Failed to transcribe: ${error.message || 'Unknown error'}`);
@@ -1236,12 +1680,80 @@ const sendMessage = async () => {
     }
   };
 
+  const handleImageGeneration = async () => {
+    if (!imagePrompt.trim() || isGeneratingImage) return;
+
+    const currentPrompt = imagePrompt;
+    setIsGeneratingImage(true);
+    setImagePrompt(''); // Clear input immediately
+
+    try {
+      // Build request body with current settings
+      const requestBody: Record<string, unknown> = {
+        model: selectedModel,
+        prompt: currentPrompt,
+        size: `${imageSettings.width}x${imageSettings.height}`,
+        steps: imageSettings.steps,
+        cfg_scale: imageSettings.cfgScale,
+        response_format: 'b64_json'
+      };
+
+      // Only include seed if it's positive (otherwise random)
+      if (imageSettings.seed > 0) {
+        requestBody.seed = imageSettings.seed;
+      }
+
+      const response = await serverFetch('/images/generations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.data && data.data[0] && data.data[0].b64_json) {
+        setImageHistory(prev => [...prev, {
+          prompt: currentPrompt,
+          imageData: data.data[0].b64_json,
+          timestamp: Date.now()
+        }]);
+      } else {
+        throw new Error('Unexpected response format');
+      }
+
+    } catch (error: any) {
+      console.error('Failed to generate image:', error);
+      alert(`Failed to generate image: ${error.message || 'Unknown error'}`);
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  };
+
+  const saveGeneratedImage = (imageData: string, prompt: string) => {
+    const link = document.createElement('a');
+    link.href = `data:image/png;base64,${imageData}`;
+    // Create filename from prompt (sanitized, max 30 chars)
+    const sanitizedPrompt = prompt.slice(0, 30).replace(/[^a-z0-9]/gi, '_');
+    const filename = `lemonade_${sanitizedPrompt}_${Date.now()}.png`;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (!isVisible) return null;
 
   const modelType = getModelType();
-  const headerTitle = modelType === 'embedding' ? 'Lemonade Embeddings' 
+  const headerTitle = modelType === 'embedding' ? 'Lemonade Embeddings'
                     : modelType === 'reranking' ? 'Lemonade Reranking'
                     : modelType === 'transcription' ? 'Lemonade Transcriber'
+                    : modelType === 'image' ? 'Lemonade Image Generator'
+                    : modelType === 'speech' ? 'Lemonade Text to Speech'
                     : 'LLM Chat';
 
   // Reusable components
@@ -1261,8 +1773,8 @@ const sendMessage = async () => {
   );
 
   // Build the list of models for the dropdown
-  const dropdownModels = isDefaultModelPending 
-    ? [{ id: DEFAULT_MODEL_ID }] 
+  const dropdownModels = isDefaultModelPending
+    ? [{ id: DEFAULT_MODEL_ID }]
     : downloadedModels;
 
   const ModelSelector = ({ disabled }: { disabled: boolean }) => (
@@ -1307,7 +1819,7 @@ const sendMessage = async () => {
     <div className="chat-window" style={width ? { width: `${width}px` } : undefined}>
       <div className="chat-header">
         <h3>{headerTitle}</h3>
-        <button 
+        <button
           className="new-chat-button"
           onClick={handleNewChat}
           disabled={isLoading || isProcessingEmbedding || isProcessingRerank || isDownloadingForChat}
@@ -1330,12 +1842,12 @@ const sendMessage = async () => {
         <>
           <div className="chat-messages" ref={messagesContainerRef}>
             {embeddingHistory.length === 0 && <EmptyState title="Lemonade Embeddings" />}
-            
+
             {embeddingHistory.map((item, index) => {
               const isExpanded = expandedEmbeddings.has(index);
               const previewLength = 10;
               const embeddingPreview = item.embedding.slice(0, previewLength);
-              
+
               return (
                 <div key={index} className="embedding-history-item">
                   <div className="embedding-user-input">
@@ -1356,7 +1868,7 @@ const sendMessage = async () => {
                         </div>
                       )}
                     </div>
-                    <button 
+                    <button
                       className="embedding-toggle-button"
                       onClick={() => toggleEmbeddingExpansion(index)}
                     >
@@ -1371,7 +1883,7 @@ const sendMessage = async () => {
                 </div>
               );
             })}
-            
+
             {isProcessingEmbedding && (
               <div className="chat-message assistant-message">
                 <TypingIndicator />
@@ -1416,19 +1928,19 @@ const sendMessage = async () => {
         <>
           <div className="chat-messages" ref={messagesContainerRef}>
             {rerankHistory.length === 0 && <EmptyState title="Lemonade Reranking" />}
-            
+
             {rerankHistory.map((item, index) => (
               <div key={index} className="reranking-history-item">
                 <div className="reranking-user-input">
                   <div className="reranking-input-label">Query</div>
                   <div className="reranking-input-text">{item.query}</div>
                 </div>
-                
+
                 <div className="reranking-user-input">
                   <div className="reranking-input-label">Documents</div>
                   <div className="reranking-input-text">{item.documents.split('\n').filter(d => d.trim()).length} documents</div>
                 </div>
-                
+
                 <div className="reranking-result-container">
                   <div className="reranking-result-header">
                     <h4>Ranked Results</h4>
@@ -1446,7 +1958,7 @@ const sendMessage = async () => {
                 </div>
               </div>
             ))}
-            
+
             {isProcessingRerank && (
               <div className="chat-message assistant-message">
                 <TypingIndicator />
@@ -1471,7 +1983,7 @@ const sendMessage = async () => {
                   disabled={isProcessingRerank}
                 />
               </div>
-              
+
               <div className="reranking-documents-section">
                 <label className="reranking-label">Documents (one per line)</label>
                 <textarea
@@ -1486,7 +1998,7 @@ const sendMessage = async () => {
                   disabled={isProcessingRerank}
                 />
               </div>
-              
+
               <div className="chat-controls">
                 <div className="chat-controls-left">
                   <ModelSelector disabled={isProcessingRerank} />
@@ -1521,25 +2033,46 @@ const sendMessage = async () => {
       {modelType === 'transcription' && (
         <>
           <div className="chat-messages" ref={messagesContainerRef}>
-            {transcriptionHistory.length === 0 && <EmptyState title="Lemonade Transcriber" />}
-            
+            {transcriptionHistory.length === 0 && !isLiveRecording && <EmptyState title="Lemonade Transcriber" />}
+
             {transcriptionHistory.map((item, index) => (
               <div key={index} className="transcription-history-item">
                 <div className="transcription-file-info">
                   <div className="transcription-label">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ marginRight: '8px' }}>
-                      <path
-                        d="M12 15V3M12 15L8 11M12 15L16 11M2 17L2.621 19.485C2.725 19.871 2.777 20.064 2.873 20.213C2.958 20.345 3.073 20.454 3.209 20.531C3.364 20.618 3.558 20.658 3.947 20.737L11.053 22.147C11.442 22.226 11.636 22.266 11.791 22.179C11.927 22.102 12.042 21.993 12.127 21.861C12.223 21.712 12.275 21.519 12.379 21.133L13 18.5M22 17L21.379 19.485C21.275 19.871 21.223 20.064 21.127 20.213C21.042 20.345 20.927 20.454 20.791 20.531C20.636 20.618 20.442 20.658 20.053 20.737L12.947 22.147C12.558 22.226 12.364 22.266 12.209 22.179C12.073 22.102 11.958 21.993 11.873 21.861C11.777 21.712 11.725 21.519 11.621 21.133L11 18.5"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
+                    {item.filename === 'Live Recording' ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ marginRight: '8px' }}>
+                        <path
+                          d="M12 1C11.2044 1 10.4413 1.31607 9.87868 1.87868C9.31607 2.44129 9 3.20435 9 4V12C9 12.7956 9.31607 13.5587 9.87868 14.1213C10.4413 14.6839 11.2044 15 12 15C12.7956 15 13.5587 14.6839 14.1213 14.1213C14.6839 13.5587 15 12.7956 15 12V4C15 3.20435 14.6839 2.44129 14.1213 1.87868C13.5587 1.31607 12.7956 1 12 1Z"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M19 10V12C19 13.8565 18.2625 15.637 16.9497 16.9497C15.637 18.2625 13.8565 19 12 19C10.1435 19 8.36301 18.2625 7.05025 16.9497C5.7375 15.637 5 13.8565 5 12V10"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path d="M12 19V23" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M8 23H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ marginRight: '8px' }}>
+                        <path
+                          d="M12 15V3M12 15L8 11M12 15L16 11M2 17L2.621 19.485C2.725 19.871 2.777 20.064 2.873 20.213C2.958 20.345 3.073 20.454 3.209 20.531C3.364 20.618 3.558 20.658 3.947 20.737L11.053 22.147C11.442 22.226 11.636 22.266 11.791 22.179C11.927 22.102 12.042 21.993 12.127 21.861C12.223 21.712 12.275 21.519 12.379 21.133L13 18.5M22 17L21.379 19.485C21.275 19.871 21.223 20.064 21.127 20.213C21.042 20.345 20.927 20.454 20.791 20.531C20.636 20.618 20.442 20.658 20.053 20.737L12.947 22.147C12.558 22.226 12.364 22.266 12.209 22.179C12.073 22.102 11.958 21.993 11.873 21.861C11.777 21.712 11.725 21.519 11.621 21.133L11 18.5"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    )}
                     {item.filename}
                   </div>
                 </div>
-                
+
                 <div className="transcription-result-container">
                   <div className="transcription-result-header">
                     <h4>Transcription</h4>
@@ -1550,7 +2083,43 @@ const sendMessage = async () => {
                 </div>
               </div>
             ))}
-            
+
+            {isLiveRecording && (
+              <div className="transcription-history-item">
+                <div className="transcription-file-info">
+                  <div className="transcription-label">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ marginRight: '8px' }}>
+                      <path
+                        d="M12 1C11.2044 1 10.4413 1.31607 9.87868 1.87868C9.31607 2.44129 9 3.20435 9 4V12C9 12.7956 9.31607 13.5587 9.87868 14.1213C10.4413 14.6839 11.2044 15 12 15C12.7956 15 13.5587 14.6839 14.1213 14.1213C14.6839 13.5587 15 12.7956 15 12V4C15 3.20435 14.6839 2.44129 14.1213 1.87868C13.5587 1.31607 12.7956 1 12 1Z"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M19 10V12C19 13.8565 18.2625 15.637 16.9497 16.9497C15.637 18.2625 13.8565 19 12 19C10.1435 19 8.36301 18.2625 7.05025 16.9497C5.7375 15.637 5 13.8565 5 12V10"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path d="M12 19V23" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M8 23H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    Live Recording
+                  </div>
+                </div>
+                <div className="transcription-result-container">
+                  <div className="transcription-result-header">
+                    <h4>Transcription</h4>
+                  </div>
+                  <div className="transcription-result">
+                    {liveTranscript || (isLiveRecording ? 'Listening... Start speaking to see transcription.' : '')}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {isProcessingTranscription && (
               <div className="chat-message assistant-message">
                 <TypingIndicator />
@@ -1568,9 +2137,28 @@ const sendMessage = async () => {
                 onChange={handleAudioFileSelect}
                 style={{ display: 'none' }}
               />
-              
+
               <div className="transcription-file-display">
-                {transcriptionFile ? (
+                {isLiveRecording ? (
+                  <div className="live-status">
+                    {!isLiveConnected ? (
+                      <span className="status-indicator">
+                        <span className="dot connecting" />
+                        Connecting...
+                      </span>
+                    ) : (
+                      <div className="level-meter">
+                        <div
+                          className="level-fill"
+                          style={{
+                            width: `${audioLevel * 100}%`,
+                            backgroundColor: audioLevel > 0.7 ? '#f44336' : audioLevel > 0.3 ? '#4caf50' : '#555',
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ) : transcriptionFile ? (
                   <div className="transcription-file-info-display">
                     <span className="file-name">{transcriptionFile.name}</span>
                     <span className="file-size-indicator">
@@ -1581,13 +2169,13 @@ const sendMessage = async () => {
                   <span className="transcription-placeholder">No audio file selected</span>
                 )}
               </div>
-              
+
               <div className="chat-controls">
                 <div className="chat-controls-left">
                   <button
                     className="audio-file-button"
                     onClick={() => audioFileInputRef.current?.click()}
-                    disabled={isProcessingTranscription}
+                    disabled={isProcessingTranscription || isLiveRecording}
                     title="Choose audio file"
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -1600,12 +2188,282 @@ const sendMessage = async () => {
                       />
                     </svg>
                   </button>
-                  <ModelSelector disabled={isProcessingTranscription} />
+                  <button
+                    className={`audio-file-button${isLiveRecording ? ' recording' : ''}`}
+                    onClick={isLiveRecording ? handleMicStop : handleMicStart}
+                    disabled={isProcessingTranscription}
+                    title={isLiveRecording ? 'Stop recording' : 'Start live recording'}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M12 1C10.34 1 9 2.34 9 4V12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12V4C15 2.34 13.66 1 12 1Z"
+                        fill={isLiveRecording ? '#ef4444' : 'none'}
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M19 10V12C19 15.87 15.87 19 12 19C8.13 19 5 15.87 5 12V10M12 19V23M8 23H16"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                  <ModelSelector disabled={isProcessingTranscription || isLiveRecording} />
                 </div>
-                <SendButton 
-                  onClick={handleTranscription} 
-                  disabled={!transcriptionFile || isProcessingTranscription} 
+                <SendButton
+                  onClick={handleTranscription}
+                  disabled={!transcriptionFile || isProcessingTranscription || isLiveRecording}
                 />
+              </div>
+            </div>
+          </div>
+
+          {(liveError || micError) && (
+            <div className="transcription-error">{liveError || micError}</div>
+          )}
+        </>
+      )}
+
+      {/* Image Generation UI */}
+      {modelType === 'image' && (
+        <>
+          <div className="chat-messages" ref={messagesContainerRef}>
+            {imageHistory.length === 0 && (
+              <EmptyState title="Lemonade Image Generator" />
+            )}
+
+            {imageHistory.map((item, index) => (
+              <div key={index} className="image-generation-item">
+                <div className="image-prompt-display">
+                  <span className="prompt-label">Prompt:</span>
+                  <span className="prompt-text">{item.prompt}</span>
+                </div>
+
+                <div className="generated-image-container">
+                  <img
+                    src={`data:image/png;base64,${item.imageData}`}
+                    alt={item.prompt}
+                    className="generated-image"
+                  />
+                  <button
+                    className="save-image-button"
+                    onClick={() => saveGeneratedImage(item.imageData, item.prompt)}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="7 10 12 15 17 10"/>
+                      <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Save Image
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {isGeneratingImage && (
+              <div className="image-generating-indicator">
+                <div className="generating-spinner"></div>
+                <span>Generating image...</span>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Image Settings Panel */}
+          <div className="image-settings-panel">
+            <div className="image-setting">
+              <label>Steps</label>
+              <input
+                type="number"
+                min="1"
+                max="50"
+                value={imageSettings.steps}
+                onChange={(e) => setImageSettings(prev => ({ ...prev, steps: parseInt(e.target.value) || 1 }))}
+                disabled={isGeneratingImage}
+              />
+            </div>
+            <div className="image-setting">
+              <label>CFG Scale</label>
+              <input
+                type="number"
+                min="1"
+                max="20"
+                step="0.5"
+                value={imageSettings.cfgScale}
+                onChange={(e) => setImageSettings(prev => ({ ...prev, cfgScale: parseFloat(e.target.value) || 1 }))}
+                disabled={isGeneratingImage}
+              />
+            </div>
+            <div className="image-setting">
+              <label>Width</label>
+              <select
+                value={imageSettings.width}
+                onChange={(e) => setImageSettings(prev => ({ ...prev, width: parseInt(e.target.value) }))}
+                disabled={isGeneratingImage}
+              >
+                <option value="512">512</option>
+                <option value="768">768</option>
+                <option value="1024">1024</option>
+              </select>
+            </div>
+            <div className="image-setting">
+              <label>Height</label>
+              <select
+                value={imageSettings.height}
+                onChange={(e) => setImageSettings(prev => ({ ...prev, height: parseInt(e.target.value) }))}
+                disabled={isGeneratingImage}
+              >
+                <option value="512">512</option>
+                <option value="768">768</option>
+                <option value="1024">1024</option>
+              </select>
+            </div>
+            <div className="image-setting">
+              <label>Seed</label>
+              <input
+                type="number"
+                min="-1"
+                value={imageSettings.seed}
+                onChange={(e) => setImageSettings(prev => ({ ...prev, seed: parseInt(e.target.value) || -1 }))}
+                disabled={isGeneratingImage}
+                placeholder="-1 = random"
+              />
+            </div>
+          </div>
+
+          <div className="chat-input-container">
+            <div className="chat-input-wrapper">
+              <textarea
+                ref={inputTextareaRef}
+                className="chat-input"
+                value={imagePrompt}
+                onChange={(e) => {
+                  setImagePrompt(e.target.value);
+                  adjustTextareaHeight(e.target);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleImageGeneration();
+                  }
+                }}
+                placeholder="Describe the image you want to generate..."
+                rows={1}
+                disabled={isGeneratingImage}
+              />
+              <div className="chat-controls">
+                <div className="chat-controls-left">
+                  <ModelSelector disabled={isGeneratingImage} />
+                </div>
+                <button
+                  className="chat-send-button"
+                  onClick={handleImageGeneration}
+                  disabled={!imagePrompt.trim() || isGeneratingImage}
+                  title="Generate"
+                >
+                  {isGeneratingImage ? (
+                    <TypingIndicator size="small" />
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        transform="translate(-1, 1)"
+                      />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* TTS UI */}
+      {modelType === 'speech' && (
+        <>
+          <div className="chat-messages" ref={messagesContainerRef} onScroll={handleScroll}>
+            {ttsMessageHistory.length === 0 && <EmptyState title="Lemonade Text to Speech" />}
+            {ttsMessageHistory.map((message, index) => {
+              return (
+                <div key={index} className="chat-message user-message">
+                  <AudioButton textMessage={message} buttonIndex={index} onClickFunction={handleAudioButtonClick} buttonContext={{ buttonId: pressedAudioButton, audioState: audioState }} />
+                  {editingIndex === index ? (
+                    <div className="edit-message-wrapper" onClick={handleEditContainerClick}>
+                      <div className="edit-message-content">
+                        <textarea ref={editTextareaRef} className="edit-message-input" value={editingValue} onChange={handleEditInputChange} onKeyDown={handleAudioEditKeyPress} autoFocus rows={1} />
+                        <div className="edit-message-controls">
+                          <button className="edit-send-button" onClick={submitAudioMessageEdit} disabled={!editingValue.trim() && editingImages.length === 0} title="Send edited message">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                              <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" transform="translate(-1, 1)" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div onClick={(e) => !isLoading && handleEditAudioMessage(index, e)} style={{ cursor: !isLoading ? 'pointer' : 'default' }}>
+                      {renderMessageContent(message, '', index, false)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {isProcessingTTS && (
+              <div className="model-loading-indicator">
+                <span className="model-loading-text">Converting text to speech...</span>
+              </div>
+            )}
+
+            {isModelLoading && (
+              <div className="model-loading-indicator">
+                <span className="model-loading-text">Loading tts model...</span>
+              </div>
+            )}
+            <div ref={messagesEndRef} /></div>
+          <div className="chat-input-container">
+            <div className="chat-input-voice-selector">
+              <select className="form-input form-select" value={currentVoice} onChange={(e) => setVoice(e.target.value)}>
+                {
+                  voiceOptions.map((voice: string, index: number) => {
+                    const label = (voice === '') ? 'Select a voice...' : voice;
+                    return <option key={index} value={voice} disabled={(voice === '')}>{label}</option>;
+                  })
+                }
+              </select>
+            </div>
+            <div className="chat-input-wrapper">
+              <textarea
+                ref={inputTextareaRef}
+                className="chat-input"
+                value={inputValue}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder={isProcessingTTS ? "Converting text to speech.." : "Type your message..."}
+                rows={1}
+                disabled={isProcessingTTS}
+              />
+              <div className="chat-controls">
+                <div className="chat-controls-left">
+                  <ModelSelector disabled={isProcessingTTS} />
+                </div>
+                {(audioState == PLAYING) ? (
+                  <button className="chat-stop-button" onClick={stopAudio} title="Stop audio">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <rect x="6" y="6" width="12" height="12" fill="currentColor" rx="2" />
+                    </svg>
+                  </button>
+                ) : (
+                  <SendButton onClick={handleMessageToSpeech} disabled={!inputValue.trim()} />
+                )}
               </div>
             </div>
           </div>
@@ -1615,8 +2473,8 @@ const sendMessage = async () => {
       {/* LLM Chat UI (default) */}
       {modelType === 'llm' && (
         <>
-          <div 
-            className="chat-messages" 
+          <div
+            className="chat-messages"
             ref={messagesContainerRef}
             onScroll={handleScroll}
             onClick={editingIndex !== null ? cancelEdit : undefined}
@@ -1630,7 +2488,8 @@ const sendMessage = async () => {
                   className={`chat-message ${message.role === 'user' ? 'user-message' : 'assistant-message'} ${
                     message.role === 'user' && !isLoading ? 'editable' : ''
                   } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''}`}
-                >
+                  >
+                   {renderAudioButton(message.role, message.content, index)}
                   {editingIndex === index ? (
                     <div className="edit-message-wrapper" onClick={handleEditContainerClick}>
                       {editingImages.length > 0 && (
@@ -1709,7 +2568,7 @@ const sendMessage = async () => {
                       onClick={(e) => message.role === 'user' && !isLoading && handleEditMessage(index, e)}
                       style={{ cursor: message.role === 'user' && !isLoading ? 'pointer' : 'default' }}
                     >
-                      {renderMessageContent(message.content, message.thinking, index)}
+                      {renderMessageContent(message.content, message.thinking, index, message.role === 'assistant')}
                     </div>
                   )}
                 </div>
@@ -1821,5 +2680,3 @@ const sendMessage = async () => {
 };
 
 export default ChatWindow;
-
-

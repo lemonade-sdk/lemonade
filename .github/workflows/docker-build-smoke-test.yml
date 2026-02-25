@@ -29,7 +29,7 @@ jobs:
         run: |
           echo "Waiting for Lemonade to start..."
           for i in {1..30}; do
-            if curl -sf http://localhost:8000/ > /dev/null; then
+            if curl -sf http://localhost:8000/live > /dev/null; then
               echo "Server is up"
               exit 0
             fi

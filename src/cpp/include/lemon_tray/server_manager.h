@@ -25,6 +25,8 @@ using pid_t = DWORD;
 #include <sys/types.h>
 #endif
 
+#include <httplib.h>
+
 namespace lemon_tray {
 
 enum class LogLevel {
@@ -36,47 +38,48 @@ enum class LogLevel {
 
 class ServerManager {
 public:
-    ServerManager();
+    ServerManager(const std::string& host, int port);
     ~ServerManager();
-    
+
     // Server lifecycle
     bool start_server(
         const std::string& server_binary_path,
         int port,
-        int ctx_size,
+        const nlohmann::json& recipe_options,
         const std::string& log_file,
-        const std::string& log_level = "info",
-        const std::string& llamacpp_backend = "vulkan",
-        bool show_console = false,
-        bool is_ephemeral = false,
-        const std::string& llamacpp_args = "",
-        const std::string& host = "127.0.0.1",
-        int max_llm_models = 1,
-        int max_embedding_models = 1,
-        int max_reranking_models = 1,
-        int max_audio_models = 1,
-        const std::string& extra_models_dir = ""
+        const std::string& log_level,
+        bool show_console,
+        bool is_ephemeral,
+        const std::string& host,
+        int max_loaded_models,
+        const std::string& extra_models_dir
     );
-    
+
     bool stop_server();
     bool restart_server();
     bool is_server_running() const;
-    
+
     // Configuration
     void set_port(int port);
     void set_context_size(int ctx_size);
     bool set_log_level(LogLevel level);
-    
+
     int get_port() const { return port_; }
-    int get_context_size() const { return ctx_size_; }
-    
+    // Translate bind addresses to connection addresses.
+    // "0.0.0.0" is a bind-all address that isn't valid for connections.
+    // "localhost" can resolve to IPv6 (::1) on some Windows systems, which fails
+    // if the server is only listening on IPv4 when bound to 0.0.0.0.
+    std::string get_connection_host() const {
+        return (host_ == "0.0.0.0" || host_ == "localhost") ? "127.0.0.1" : host_;
+    }
+
     // API communication (returns JSON or throws exception)
     nlohmann::json get_health();
     nlohmann::json get_models();
-    bool load_model(const std::string& model_name, bool save_options=false);
+    bool load_model(const std::string& model_name, const nlohmann::json& recipe_options=nlohmann::json::object(), bool save_options=false);
     bool unload_model();  // Unload all models
     bool unload_model(const std::string& model_name);  // Unload specific model
-    
+
     // HTTP communication (public for custom requests)
     std::string make_http_request(
         const std::string& endpoint,
@@ -84,47 +87,39 @@ public:
         const std::string& body = "",
         int timeout_seconds = 5
     );
-    
-    // Utility
-    std::string get_base_url() const;
-    
+    httplib::Client make_http_client(int timeout_seconds, int connection_timeout);
+
 private:
     // Platform-specific process management
     bool spawn_process();
     bool terminate_process();
     bool terminate_router_tree();  // Kills router and its children (but NOT parent tray app)
     bool is_process_alive() const;
-    
+
 #ifndef _WIN32
     // Linux-specific PID file management
     void write_pid_file();
     void remove_pid_file();
 #endif
-    
+
     // Member variables
     pid_t server_pid_;
     std::string server_binary_path_;
     std::string log_file_;
     std::string log_level_;
-    std::string llamacpp_backend_;
-    std::string llamacpp_args_;
     std::string extra_models_dir_;
     std::string host_;
     std::string api_key_;
     int port_;
-    int ctx_size_;
-    int max_llm_models_;
-    int max_embedding_models_;
-    int max_reranking_models_;
-    int max_audio_models_;
+    int max_loaded_models_;
+    nlohmann::json recipe_options_;
     bool show_console_;
     bool is_ephemeral_;  // Suppress output for ephemeral servers
     std::atomic<bool> server_started_;
-    
+
 #ifdef _WIN32
     HANDLE process_handle_;
 #endif
 };
 
 } // namespace lemon_tray
-

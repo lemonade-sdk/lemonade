@@ -28,13 +28,13 @@ class LemonException : public std::exception {
 public:
     LemonException(const std::string& message, const std::string& type = ErrorType::INTERNAL_ERROR)
         : message_(message), type_(type) {}
-    
+
     const char* what() const noexcept override {
         return message_.c_str();
     }
-    
+
     const std::string& type() const { return type_; }
-    
+
     json to_json() const {
         return {
             {"error", {
@@ -43,7 +43,7 @@ public:
             }}
         };
     }
-    
+
 protected:
     std::string message_;
     std::string type_;
@@ -53,7 +53,7 @@ protected:
 class ModelNotLoadedException : public LemonException {
 public:
     ModelNotLoadedException(const std::string& details = "")
-        : LemonException("No model loaded" + (details.empty() ? "" : ": " + details), 
+        : LemonException("No model loaded" + (details.empty() ? "" : ": " + details),
                         ErrorType::MODEL_NOT_LOADED) {}
 };
 
@@ -62,7 +62,7 @@ public:
     BackendException(const std::string& backend, const std::string& message, int status_code = 0)
         : LemonException(backend + " error: " + message, ErrorType::BACKEND_ERROR),
           backend_(backend), status_code_(status_code) {}
-    
+
     json to_json() const {
         auto j = LemonException::to_json();
         j["error"]["backend"] = backend_;
@@ -71,7 +71,7 @@ public:
         }
         return j;
     }
-    
+
 private:
     std::string backend_;
     int status_code_;
@@ -92,23 +92,23 @@ public:
 class UnsupportedOperationException : public LemonException {
 public:
     UnsupportedOperationException(const std::string& operation, const std::string& backend = "")
-        : LemonException(operation + " not supported" + (backend.empty() ? "" : " by " + backend), 
+        : LemonException(operation + " not supported" + (backend.empty() ? "" : " by " + backend),
                         ErrorType::UNSUPPORTED_OPERATION) {}
 };
 
 class ModelInvalidatedException : public LemonException {
 public:
     ModelInvalidatedException(const std::string& model_name, const std::string& reason = "")
-        : LemonException("Model '" + model_name + "' was invalidated" + 
+        : LemonException("Model '" + model_name + "' was invalidated" +
                         (reason.empty() ? "" : ": " + reason) +
-                        ". Please download the model again.", 
+                        ". Please download the model again.",
                         ErrorType::MODEL_INVALIDATED) {}
 };
 
 // Helper class for consistent error responses
 class ErrorResponse {
 public:
-    static json create(const std::string& message, 
+    static json create(const std::string& message,
                       const std::string& type = ErrorType::INTERNAL_ERROR,
                       const json& details = {}) {
         json error = {
@@ -117,19 +117,19 @@ public:
                 {"type", type}
             }}
         };
-        
+
         if (!details.empty()) {
             error["error"]["details"] = details;
         }
-        
+
         return error;
     }
-    
+
     static json from_exception(const LemonException& e) {
         return e.to_json();
     }
-    
-    static json from_std_exception(const std::exception& e, 
+
+    static json from_std_exception(const std::exception& e,
                                    const std::string& type = ErrorType::INTERNAL_ERROR) {
         return create(e.what(), type);
     }

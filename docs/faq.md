@@ -31,16 +31,16 @@
 
 ### 3. **Is Linux supported? What about macOS?**
 
-   Yes, Linux is supported!
-   
-   - **Linux**: Visit https://lemonade-server.ai/ and check the "Developer Setup" section for installation instructions.
-   - **macOS**: Not supported right now, but it is on the roadmap.
-   
+   Yes, both Linux and macOS are supported!
+
+   - **Linux**: Visit https://lemonade-server.ai/install_options.html#linux for installation instructions.
+   - **macOS (beta)**: A macOS installer (.pkg) is available for Apple Silicon Macs. Visit https://lemonade-server.ai/install_options.html#macos to download. macOS support uses the llama.cpp backend with Metal acceleration.
+
    Visit the [Supported Configurations](https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations) section to see the support matrix for CPU, GPU, and NPU.
 
 ### 4. **How do I uninstall Lemonade Server? (Windows)**
 
-   To uninstall Lemonade Server, use the Windows Add/Remove Programs menu. 
+   To uninstall Lemonade Server, use the Windows Add/Remove Programs menu.
 
    **Optional: Remove cached files**
    - Open File Explorer and navigate to `%USERPROFILE%\.cache`
@@ -54,7 +54,7 @@
    Lemonade uses three model locations:
 
    **Primary: Hugging Face Cache**
-   
+
    Models downloaded through Lemonade are stored using the Hugging Face Hub specification. By default, models are located at `~/.cache/huggingface/hub/`, where `~` is your home directory.
 
    For example, `Qwen/Qwen2.5-0.5B` is stored at `~/.cache/huggingface/hub/models--Qwen--Qwen2.5-0.5B`.
@@ -66,8 +66,8 @@
    **Secondary: Extra Models Directory (GGUF)**
 
    Lemonade Server can discover GGUF models from a secondary directory using the `--extra-models-dir` option, enabling compatibility with llama.cpp and LM Studio model caches. Suggested paths:
-   
-   - **Windows:** 
+
+   - **Windows:**
        - LM Studio: `C:\Users\You\.lmstudio\models`
        - llamacpp: `%LOCALAPPDATA%\llama.cpp` (e.g., `C:\Users\You\AppData\Local\llama.cpp`)
    - **Linux:** `~/.cache/llama.cpp`
@@ -78,14 +78,14 @@
 
    **FastFlowLM**
 
-   FastFlowLM (FLM) has its own model management system. When you first install FLM the install wizard asks for a model directory, which is then saved to the `FLM_MODEL_PATH` environment variable on your system PATH. Models are stored in that directory. If you change the variable's value, newly downloaded models will be stored on the new path, but your prior models will still be at the prior path.  
+   FastFlowLM (FLM) has its own model management system. When you first install FLM the install wizard asks for a model directory, which is then saved to the `FLM_MODEL_PATH` environment variable on your system PATH. Models are stored in that directory. If you change the variable's value, newly downloaded models will be stored on the new path, but your prior models will still be at the prior path.
 
 ### 2. **What models are supported?**
 
    Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, gpt-oss, LFM, and many more. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface in the app or the `pull` command on the CLI.
-   
-   👉 [Supported Models List](https://lemonade-server.ai/docs/server/server_models/)
-   👉 [pull command](https://lemonade-server.ai/docs/server/lemonade-server-cli/#pull-command-options)
+
+   👉 [Supported Models List](https://lemonade-server.ai/models.html)
+   👉 [pull command](https://lemonade-server.ai/docs/server/lemonade-server-cli/#options-for-pull)
 
 ### 3. **How do I know what size model will work with my setup?**
 
@@ -100,14 +100,16 @@
 ### 4. **I'm looking for a model, but it's not listed in the Model Manager.**
 
    If a model isn't listed, it may not be compatible with your PC due to device or RAM limitations, or we just haven't added it to the `server_models.json` file yet.
-   
+
    You can:
 
-   - Add a custom model manually via the app's "Add a Model" interface or the [CLI pull command](https://lemonade-server.ai/docs/server/lemonade-server-cli/#pull-command-options).
+   - Add a custom model manually via the app's "Add a Model" interface or the [CLI pull command](https://lemonade-server.ai/docs/server/lemonade-server-cli/#options-for-pull).
    - Use a pull request to add the model to the built-in `server_models.json` file.
    - Request support by opening a [GitHub issue](https://github.com/lemonade-sdk/lemonade/issues).
 
    If you are sure that a model should be listed, but you aren't seeing it, you can set the `LEMONADE_DISABLE_MODEL_FILTERING` environment variable to show all models supported by Lemonade on any PC configuration. But please note, this can show models that definitely won't work on your system.
+
+   Alternatively if you are attempting to use GTT on your dGPU then you can set the `LEMONADE_ENABLE_DGPU_GTT` environment variable to filter using the combined memory pool. Please note ROCM does not support splitting memory across multiple pools, vulkan is likely required for this usecase.
 
 ### 5. **Is there a script or tool to convert models to Ryzen AI NPU format?**
 
@@ -142,6 +144,12 @@
 
 ### 4. **How should dedicated GPU RAM be allocated on Strix Halo**
 
+   **Linux**
+
+   Please see the official AMD guidance [here](https://rocm.docs.amd.com/en/latest/how-to/system-optimization/strixhalo.html).
+   
+   **Windows**
+   
    Strix Halo PCs can have up to 128 GB of unified RAM and Windows allows the user to allocate a portion of this to dedicated GPU RAM.
 
    We suggest setting dedicated GPU RAM to `64/64 (auto)`.
@@ -162,7 +170,7 @@
 ### 2. **I loaded a hybrid model, but the NPU is barely active. Is that expected?**
 
    Yes. In hybrid mode:
-   
+
    - The NPU handles prompt processing.
    - The GPU handles token generation.
    - If your prompt is short, the NPU finishes quickly. Try a longer prompt to see more NPU activity.
@@ -170,14 +178,14 @@
 ### 3. **Does Lemonade work on older AMD processors or non-Ryzen AI systems?**
 
    Yes! Lemonade supports multiple execution modes:
-   
+
    - **AMD Ryzen 7000/8000/200 series**: GPU acceleration via llama.cpp + Vulkan backend
    - **Systems with Radeon GPUs**: Yes
    - **Any x86 CPU**: Yes
    - **Intel/NVIDIA systems**: CPU inference, with GPU support via the llama.cpp + Vulkan backend
 
    While you won't get NPU acceleration on non-Ryzen AI 300 systems, you can still benefit from GPU acceleration and the OpenAI-compatible API.
-   
+
 ### 4. **Is the NPU on the AMD Ryzen AI 7000/8000/200 series going to be supported for LLM inference?**
 
    No inference engine providers have plans to support NPUs prior to Ryzen AI 300-series, but you can still request this by filing an issue on their respective GitHubs:
@@ -213,19 +221,27 @@
       ```bash
       lemonade-server serve --host 0.0.0.0 --port 8000
       ```
-   2. On the client machine, launch the app pointing to the server's IP:
+   2. On the client machine, launch the app and configure the endpoint through the UI:
       ```bash
-      lemonade-app --base-url http://SERVER_IP:8000
+      lemonade-app
       ```
 
    For detailed instructions and security considerations, see [Remote Server Connection](./lemonade-server-cli.md#remote-server-connection).
+
+## Customization
+
+### 1. **How do I use my own llama.cpp or whisper.cpp binaries?**
+
+   Lemonade Server allows you to use custom `llama-server` or `whisper-server` binaries instead of the bundled ones by setting environment variables to the full path of your binary.
+
+   👉 [Custom Backend Binaries](./server/lemonade-server-cli.md#custom-backend-binaries)
 
 ## Support & Roadmap
 
 ### 1. **What if I encounter installation or runtime errors?**
 
    Check the Lemonade Server logs via the App (all supported OSes) or tray icon (Windows only). Common issues include model compatibility or outdated versions.
-   
+
    👉 [Open an Issue on GitHub](https://github.com/lemonade-sdk/lemonade/issues)
 
 ### 2. **Lemonade is missing a feature I really want. What should I do?**
@@ -235,5 +251,5 @@
 ### 3. **Do you plan to share a roadmap?**
 
    Yes! Check out the project README:
-   
+
    👉 [Lemonade Roadmap](https://github.com/lemonade-sdk/lemonade#project-roadmap)

@@ -42,9 +42,9 @@ class DownloadTracker {
         this.cumulativeData.delete(id);
       }
     }
-    
+
     const downloadId = `${modelName}-${Date.now()}`;
-    
+
     const downloadItem: DownloadItem = {
       id: downloadId,
       modelName,
@@ -65,7 +65,7 @@ class DownloadTracker {
       fileSizes: new Map(),
     });
     this.emitUpdate(downloadItem);
-    
+
     return downloadId;
   }
 
@@ -96,7 +96,7 @@ class DownloadTracker {
     // Calculate cumulative totals
     const cumulativeBytesDownloaded = cumulative.completedFilesBytes + progress.bytes_downloaded;
     const cumulativeBytesTotal = Array.from(cumulative.fileSizes.values()).reduce((sum, size) => sum + size, 0);
-    
+
     // Calculate overall percent
     let overallPercent: number;
     if (cumulativeBytesTotal > 0) {
@@ -111,13 +111,13 @@ class DownloadTracker {
     } else {
       overallPercent = 0;
     }
-    
+
     // Cap percentage at 100% to handle edge cases where byte tracking is incomplete
     overallPercent = Math.min(overallPercent, 100);
-    
+
     // Cap bytesDownloaded to not exceed bytesTotal for display consistency
-    const displayBytesDownloaded = cumulativeBytesTotal > 0 
-      ? Math.min(cumulativeBytesDownloaded, cumulativeBytesTotal) 
+    const displayBytesDownloaded = cumulativeBytesTotal > 0
+      ? Math.min(cumulativeBytesDownloaded, cumulativeBytesTotal)
       : cumulativeBytesDownloaded;
 
     const updatedDownload: DownloadItem = {
@@ -149,7 +149,7 @@ class DownloadTracker {
 
     this.activeDownloads.set(downloadId, completedDownload);
     this.emitComplete(downloadId);
-    
+
     // Remove from active downloads and cumulative data after a delay
     setTimeout(() => {
       this.activeDownloads.delete(downloadId);
@@ -172,7 +172,7 @@ class DownloadTracker {
 
     this.activeDownloads.set(downloadId, failedDownload);
     this.emitError(downloadId, error);
-    
+
     // Clean up cumulative data
     this.cumulativeData.delete(downloadId);
   }
@@ -215,7 +215,7 @@ class DownloadTracker {
 
     this.activeDownloads.set(downloadId, cancelledDownload);
     this.emitUpdate(cancelledDownload);
-    
+
     // Clean up cumulative data
     this.cumulativeData.delete(downloadId);
   }
@@ -320,7 +320,7 @@ export async function trackDownload(
 
     while (true) {
       const { done, value } = await reader.read();
-      
+
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
@@ -329,13 +329,13 @@ export async function trackDownload(
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        
+
         if (line.startsWith('event:')) {
           currentEventType = line.substring(6).trim();
         } else if (line.startsWith('data:')) {
           try {
             const data = JSON.parse(line.substring(5).trim());
-            
+
             if (currentEventType === 'progress') {
               downloadTracker.updateProgress(downloadId, data);
             } else if (currentEventType === 'complete') {
@@ -360,7 +360,7 @@ export async function trackDownload(
     if (error.name === 'AbortError') {
       // Download was cancelled
       downloadTracker.cancelDownload(downloadId);
-      
+
       // Dispatch event to signal that download is fully cleaned up and file handles are released
       window.dispatchEvent(new CustomEvent('download:cleanup-complete', {
         detail: { id: downloadId, modelName }
@@ -371,4 +371,3 @@ export async function trackDownload(
     }
   }
 }
-
