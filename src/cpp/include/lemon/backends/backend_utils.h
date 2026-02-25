@@ -31,6 +31,10 @@ namespace lemon::backends {
         std::string log_name() const { return recipe + " Server"; };
     };
 
+    // Return the backend spec for recipes that use the standard BackendSpec flow.
+    // Returns nullptr for recipes that require custom handling (e.g., flm) or unknown recipes.
+    const BackendSpec* try_get_spec_for_recipe(const std::string& recipe);
+
     /**
     * Utility functions for backend management
     */

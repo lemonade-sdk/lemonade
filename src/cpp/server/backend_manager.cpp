@@ -44,16 +44,6 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
 // Core operations
 // ============================================================================
 
-static const backends::BackendSpec& get_spec_for_recipe(const std::string& recipe) {
-    if (recipe == "llamacpp") return backends::LlamaCppServer::SPEC;
-    if (recipe == "whispercpp") return backends::WhisperServer::SPEC;
-    if (recipe == "sd-cpp") return backends::SDServer::SPEC;
-    if (recipe == "kokoro") return backends::KokoroServer::SPEC;
-    if (recipe == "ryzenai-llm") return RyzenAIServer::SPEC;
-
-    throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
-}
-
 // ============================================================================
 // Install parameters
 // ============================================================================
@@ -63,14 +53,17 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
         throw std::runtime_error("FLM uses a special installer and cannot be installed via get_install_params");
     }
 
-    const auto& spec = get_spec_for_recipe(recipe);
+    auto* spec = backends::try_get_spec_for_recipe(recipe);
+    if (!spec) {
+        throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
+    }
     std::string version = get_version_from_config(recipe, backend);
 
-    if (!spec.install_params_fn) {
+    if (!spec->install_params_fn) {
         throw std::runtime_error("No install params function for recipe: " + recipe);
     }
 
-    auto params = spec.install_params_fn(backend, version);
+    auto params = spec->install_params_fn(backend, version);
     return {params.repo, params.filename, version};
 }
 
@@ -86,10 +79,13 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     }
 
     auto params = get_install_params(recipe, backend);
-    const auto& spec = get_spec_for_recipe(recipe);
+    auto* spec = backends::try_get_spec_for_recipe(recipe);
+    if (!spec) {
+        throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
+    }
 
     backends::BackendUtils::install_from_github(
-        spec, params.version, params.repo, params.filename, backend, progress_cb);
+        *spec, params.version, params.repo, params.filename, backend, progress_cb);
 
     update_recipes_cache_entry(recipe, backend, true);
 }
@@ -101,9 +97,12 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
         throw std::runtime_error("FLM cannot be uninstalled via Backend Manager (system installation)");
     }
 
-    const auto& spec = get_spec_for_recipe(recipe);
+    auto* spec = backends::try_get_spec_for_recipe(recipe);
+    if (!spec) {
+        throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
+    }
 
-    std::string install_dir = backends::BackendUtils::get_install_directory(spec.recipe, backend);
+    std::string install_dir = backends::BackendUtils::get_install_directory(spec->recipe, backend);
 
     if (fs::exists(install_dir)) {
         // On Windows, antivirus scanning or indexing can briefly lock files after extraction.

@@ -1,4 +1,9 @@
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/llamacpp_server.h"
+#include "lemon/backends/whisper_server.h"
+#include "lemon/backends/sd_server.h"
+#include "lemon/backends/kokoro_server.h"
+#include "lemon/backends/ryzenaiserver.h"
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
 #include "lemon/utils/path_utils.h"
@@ -21,6 +26,15 @@
 using json = nlohmann::json;
 
 namespace lemon::backends {
+
+    const BackendSpec* try_get_spec_for_recipe(const std::string& recipe) {
+        if (recipe == "llamacpp") return &LlamaCppServer::SPEC;
+        if (recipe == "whispercpp") return &WhisperServer::SPEC;
+        if (recipe == "sd-cpp") return &SDServer::SPEC;
+        if (recipe == "kokoro") return &KokoroServer::SPEC;
+        if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
+        return nullptr;
+    }
 
 #ifdef _WIN32
     // Resolve the full path to Windows' built-in bsdtar (System32\tar.exe).

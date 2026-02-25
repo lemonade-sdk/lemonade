@@ -255,18 +255,9 @@ static bool device_matches_constraint(const std::string& device_family,
     return allowed_families.count(device_family) > 0;
 }
 
-// Spec lookup for recipes that follow the standard BackendSpec pattern
-static const BackendSpec* get_spec_for_recipe(const std::string& recipe) {
-    if (recipe == "llamacpp") return &LlamaCppServer::SPEC;
-    if (recipe == "whispercpp") return &WhisperServer::SPEC;
-    if (recipe == "sd-cpp") return &SDServer::SPEC;
-    if (recipe == "kokoro") return &KokoroServer::SPEC;
-    return nullptr;  // flm, ryzenai-llm have special handling
-}
-
 // Generic installation check
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend) {
-    auto* spec = get_spec_for_recipe(recipe);
+    auto* spec = try_get_spec_for_recipe(recipe);
     if (spec) {
         try {
             BackendUtils::get_backend_binary_path(*spec, backend);
@@ -293,33 +284,16 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         #endif
         return false;
     }
-    if (recipe == "ryzenai-llm") {
-        const char* ryzenai_bin_env = std::getenv("LEMONADE_RYZENAI_SERVER_BIN");
-        if (ryzenai_bin_env && fs::exists(ryzenai_bin_env)) {
-            return true;
-        }
-        fs::path install_dir = fs::path(utils::get_downloaded_bin_dir()) / "ryzenai-server" / "npu";
-        #ifdef _WIN32
-        fs::path exe_path = install_dir / "ryzenai-server.exe";
-        #else
-        fs::path exe_path = install_dir / "ryzenai-server";
-        #endif
-        return fs::exists(exe_path);
-    }
     return false;
 }
 
 static std::string get_recipe_version(const std::string& recipe, const std::string& backend) {
-    auto* spec = get_spec_for_recipe(recipe);
+    auto* spec = try_get_spec_for_recipe(recipe);
     if (spec) {
         return read_version_file(BackendUtils::get_installed_version_file(*spec, backend));
     }
     if (recipe == "flm") {
         return SystemInfo::get_flm_version();
-    }
-    if (recipe == "ryzenai-llm") {
-        fs::path bin_dir = utils::get_downloaded_bin_dir();
-        return read_version_file(bin_dir / "ryzenai-server" / "npu" / "version.txt");
     }
     return "";
 }
