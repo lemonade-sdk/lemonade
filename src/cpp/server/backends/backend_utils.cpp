@@ -261,7 +261,7 @@ namespace lemon::backends {
                     p.bytes_downloaded = downloaded;
                     p.bytes_total = total;
                     p.percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
-                    p.complete = (downloaded >= total && total > 0);
+                    p.complete = false;  // Don't signal complete until extraction is done
                     return progress_cb(p);
                 };
             } else {
@@ -281,19 +281,6 @@ namespace lemon::backends {
             }
 
             std::cout << std::endl << "[" << spec.log_name() << "] Download complete!" << std::endl;
-
-            // Send completion event via progress callback
-            if (progress_cb) {
-                DownloadProgress p;
-                p.file = filename;
-                p.file_index = 1;
-                p.total_files = 1;
-                p.bytes_downloaded = download_result.bytes_downloaded;
-                p.bytes_total = download_result.total_bytes;
-                p.percent = 100;
-                p.complete = true;
-                progress_cb(p);
-            }
 
             // Verify the downloaded file
             if (!fs::exists(zip_path)) {
@@ -334,6 +321,19 @@ namespace lemon::backends {
 
             // Delete ZIP file
             fs::remove(zip_path);
+
+            // Send completion event now that installation is fully done
+            if (progress_cb) {
+                DownloadProgress p;
+                p.file = filename;
+                p.file_index = 1;
+                p.total_files = 1;
+                p.bytes_downloaded = download_result.bytes_downloaded;
+                p.bytes_total = download_result.total_bytes;
+                p.percent = 100;
+                p.complete = true;
+                progress_cb(p);
+            }
 
             std::cout << "[" << spec.log_name() << "] Installation complete!" << std::endl;
         } else {

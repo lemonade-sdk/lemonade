@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 9.3.5)
+project(lemon_cpp VERSION 9.4.0)
 
 # Enable Objective-C++ for macOS Metal support
 if(APPLE)

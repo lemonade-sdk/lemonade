@@ -688,6 +688,17 @@ bool FastFlowLMServer::install_flm_if_needed(DownloadProgressCallback progress_c
         // Ignore cleanup errors
     }
 
+    // Send completion event now that installation is fully done
+    if (progress_cb) {
+        DownloadProgress p;
+        p.file = "flm-setup.exe";
+        p.file_index = 1;
+        p.total_files = 1;
+        p.percent = 100;
+        p.complete = true;
+        progress_cb(p);
+    }
+
     std::cout << "[FastFlowLM] Successfully installed FLM "
               << required_version << std::endl;
 
@@ -715,7 +726,7 @@ bool FastFlowLMServer::download_flm_installer(const std::string& output_path,
             p.bytes_downloaded = downloaded;
             p.bytes_total = total;
             p.percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
-            p.complete = (downloaded >= total && total > 0);
+            p.complete = false;  // Don't signal complete until installer finishes
             return progress_cb(p);
         };
     } else {
