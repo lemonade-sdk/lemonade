@@ -20,8 +20,6 @@ public:
     void uninstall_backend(const std::string& recipe, const std::string& backend);
 
     // Query operations
-    bool is_installed(const std::string& recipe, const std::string& backend);
-    std::string get_installed_version(const std::string& recipe, const std::string& backend);
     std::string get_latest_version(const std::string& recipe, const std::string& backend);
 
     // List all recipes with their backends and install status

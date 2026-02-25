@@ -241,9 +241,10 @@ static std::string get_current_os() {
     #endif
 }
 
-// Forward declarations for helper functions used in device detection
+// Forward declarations for helper functions
 std::string identify_rocm_arch_from_name(const std::string& device_name);
 std::string identify_npu_arch();
+static std::string read_version_file(const fs::path& version_file);
 
 // Check if device matches constraints (empty constraint set = all families allowed)
 static bool device_matches_constraint(const std::string& device_family,
@@ -254,22 +255,27 @@ static bool device_matches_constraint(const std::string& device_family,
     return allowed_families.count(device_family) > 0;
 }
 
+// Spec lookup for recipes that follow the standard BackendSpec pattern
+static const BackendSpec* get_spec_for_recipe(const std::string& recipe) {
+    if (recipe == "llamacpp") return &LlamaCppServer::SPEC;
+    if (recipe == "whispercpp") return &WhisperServer::SPEC;
+    if (recipe == "sd-cpp") return &SDServer::SPEC;
+    if (recipe == "kokoro") return &KokoroServer::SPEC;
+    return nullptr;  // flm, ryzenai-llm have special handling
+}
+
 // Generic installation check
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend) {
-    if (recipe == "llamacpp") {
-        return SystemInfo::is_llamacpp_installed(backend);
-    }
-    if (recipe == "whispercpp") {
-        return SystemInfo::is_whispercpp_installed(backend);
-    }
-    if (recipe == "kokoro") {
-        return SystemInfo::is_kokoro_installed(backend);
-    }
-    if (recipe == "sd-cpp") {
-        return SystemInfo::is_sdcpp_installed(backend);
+    auto* spec = get_spec_for_recipe(recipe);
+    if (spec) {
+        try {
+            BackendUtils::get_backend_binary_path(*spec, backend);
+            return true;
+        } catch (...) {
+            return false;
+        }
     }
     if (recipe == "flm") {
-        // Check if FLM is installed
         #ifdef _WIN32
         for (const auto& path : {"C:\\Program Files\\AMD\\FLM\\flm.exe",
                                   "C:\\Program Files (x86)\\AMD\\FLM\\flm.exe"}) {
@@ -277,7 +283,6 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
                 return true;
             }
         }
-        // Check PATH for non-standard installations
         FILE* pipe = _popen("where flm 2>NUL", "r");
         if (pipe) {
             char buffer[256];
@@ -289,29 +294,32 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         return false;
     }
     if (recipe == "ryzenai-llm") {
-        return SystemInfo::is_ryzenai_serve_available();
+        const char* ryzenai_bin_env = std::getenv("LEMONADE_RYZENAI_SERVER_BIN");
+        if (ryzenai_bin_env && fs::exists(ryzenai_bin_env)) {
+            return true;
+        }
+        fs::path install_dir = fs::path(utils::get_downloaded_bin_dir()) / "ryzenai-server" / "npu";
+        #ifdef _WIN32
+        fs::path exe_path = install_dir / "ryzenai-server.exe";
+        #else
+        fs::path exe_path = install_dir / "ryzenai-server";
+        #endif
+        return fs::exists(exe_path);
     }
     return false;
 }
 
 static std::string get_recipe_version(const std::string& recipe, const std::string& backend) {
-    if (recipe == "llamacpp") {
-        return SystemInfo::get_llamacpp_version(backend);
-    }
-    if (recipe == "whispercpp") {
-        return SystemInfo::get_whispercpp_version(backend);
-    }
-    if (recipe == "kokoro") {
-        return SystemInfo::get_kokoro_version(backend);
-    }
-    if (recipe == "sd-cpp") {
-        return SystemInfo::get_sdcpp_version(backend);
+    auto* spec = get_spec_for_recipe(recipe);
+    if (spec) {
+        return read_version_file(BackendUtils::get_installed_version_file(*spec, backend));
     }
     if (recipe == "flm") {
         return SystemInfo::get_flm_version();
     }
     if (recipe == "ryzenai-llm") {
-        return SystemInfo::get_oga_version();
+        fs::path bin_dir = utils::get_downloaded_bin_dir();
+        return read_version_file(bin_dir / "ryzenai-server" / "npu" / "version.txt");
     }
     return "";
 }
@@ -889,62 +897,6 @@ static std::string read_version_file(const fs::path& version_file) {
     return "unknown";
 }
 
-std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
-    return read_version_file(BackendUtils::get_installed_version_file(LlamaCppServer::SPEC, backend));
-}
-
-std::string SystemInfo::get_whispercpp_version(const std::string& backend) {
-    return read_version_file(BackendUtils::get_installed_version_file(WhisperServer::SPEC, backend));
-}
-
-std::string SystemInfo::get_kokoro_version(const std::string& backend) {
-    return read_version_file(BackendUtils::get_installed_version_file(KokoroServer::SPEC, backend));
-}
-
-std::string SystemInfo::get_sdcpp_version(const std::string& backend) {
-    return read_version_file(BackendUtils::get_installed_version_file(SDServer::SPEC, backend));
-}
-
-std::string SystemInfo::get_oga_version() {
-    fs::path bin_dir = utils::get_downloaded_bin_dir();
-    return read_version_file(bin_dir / "ryzenai-server" / "npu" / "version.txt");
-}
-
-bool SystemInfo::is_llamacpp_installed(const std::string& backend) {
-    try {
-        BackendUtils::get_backend_binary_path(LlamaCppServer::SPEC, backend);
-        return true;
-    } catch (const std::exception& e) {
-        return false;
-    }
-}
-
-bool SystemInfo::is_whispercpp_installed(const std::string& backend) {
-    try {
-        BackendUtils::get_backend_binary_path(WhisperServer::SPEC, backend);
-        return true;
-    } catch (const std::exception& e) {
-        return false;
-    }
-}
-
-bool SystemInfo::is_kokoro_installed(const std::string& backend) {
-    try {
-        BackendUtils::get_backend_binary_path(KokoroServer::SPEC, backend);
-        return true;
-    } catch (const std::exception& e) {
-        return false;
-    }
-}
-
-bool SystemInfo::is_sdcpp_installed(const std::string& backend) {
-    try {
-        BackendUtils::get_backend_binary_path(SDServer::SPEC, backend);
-        return true;
-    } catch (const std::exception& e) {
-        return false;
-    }
-}
 
 // Helper to identify ROCm architecture from GPU name
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
@@ -1161,24 +1113,6 @@ std::string SystemInfo::get_flm_version() {
     #endif
 
     return "unknown";
-}
-
-bool SystemInfo::is_ryzenai_serve_available() {
-    // Inline the check to avoid dependency on RyzenAIServer class
-    // 1. Check for custom binary via environment variable
-    const char* ryzenai_bin_env = std::getenv("LEMONADE_RYZENAI_SERVER_BIN");
-    if (ryzenai_bin_env && fs::exists(ryzenai_bin_env)) {
-        return true;
-    }
-
-    // 2. Check in install directory (where download_and_install() places it)
-    fs::path install_dir = fs::path(utils::get_downloaded_bin_dir()) / "ryzenai-server" / "npu";
-    #ifdef _WIN32
-    fs::path exe_path = install_dir / "ryzenai-server.exe";
-    #else
-    fs::path exe_path = install_dir / "ryzenai-server";
-    #endif
-    return fs::exists(exe_path);
 }
 
 // ============================================================================

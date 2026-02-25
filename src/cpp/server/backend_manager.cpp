@@ -129,39 +129,6 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
 // Query operations
 // ============================================================================
 
-bool BackendManager::is_installed(const std::string& recipe, const std::string& backend) {
-    if (recipe == "flm") {
-        return SystemInfo::get_flm_version() != "";
-    }
-
-    try {
-        const auto& spec = get_spec_for_recipe(recipe);
-        std::string path = backends::BackendUtils::get_backend_binary_path(spec, backend);
-        return !path.empty();
-    } catch (...) {
-        return false;
-    }
-}
-
-std::string BackendManager::get_installed_version(const std::string& recipe, const std::string& backend) {
-    if (recipe == "flm") {
-        return SystemInfo::get_flm_version();
-    }
-
-    try {
-        const auto& spec = get_spec_for_recipe(recipe);
-        std::string version_file = backends::BackendUtils::get_installed_version_file(spec, backend);
-        if (fs::exists(version_file)) {
-            std::ifstream vf(version_file);
-            std::string version;
-            std::getline(vf, version);
-            return version;
-        }
-    } catch (...) {}
-
-    return "";
-}
-
 std::string BackendManager::get_latest_version(const std::string& recipe, const std::string& backend) {
     try {
         return get_version_from_config(recipe, backend);

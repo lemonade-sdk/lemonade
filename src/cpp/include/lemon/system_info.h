@@ -97,18 +97,8 @@ public:
     };
     static std::vector<RecipeStatus> get_all_recipe_statuses();
 
-    // Version and installation detection (public for use by backends and helpers)
-    static std::string get_llamacpp_version(const std::string& backend);
-    static std::string get_whispercpp_version(const std::string& backend);
-    static std::string get_kokoro_version(const std::string& backend);
-    static std::string get_sdcpp_version(const std::string& backend);
-    static std::string get_oga_version();
+    // Version detection (public for use by backends and helpers)
     static std::string get_flm_version();
-    static bool is_llamacpp_installed(const std::string& backend);
-    static bool is_whispercpp_installed(const std::string& backend);
-    static bool is_kokoro_installed(const std::string& backend);
-    static bool is_sdcpp_installed(const std::string& backend);
-    static bool is_ryzenai_serve_available();
 
     // Device support detection
     static std::string get_rocm_arch();
