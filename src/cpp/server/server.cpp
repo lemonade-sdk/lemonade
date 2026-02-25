@@ -38,6 +38,10 @@
     #include <sys/sysctl.h>
 #endif
 
+#ifdef HAVE_SYSTEMD
+    #include <systemd/sd-journal.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace lemon {
@@ -65,7 +69,16 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     GetTempPathA(MAX_PATH, temp_path);
     log_file_path_ = std::string(temp_path) + "lemonade-server.log";
 #else
-    log_file_path_ = "/tmp/lemonade-server.log";
+    // Use systemd journal if JOURNAL_STREAM is set, unless explicitly disabled
+    // LEMONADE_DISABLE_SYSTEMD_JOURNAL can be set in CI to force file logging
+    const char* journal_stream = std::getenv("JOURNAL_STREAM");
+    const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
+    if (journal_stream && !disable_journal) {
+        log_file_path_ = "";  // Empty signals journald usage
+        std::cout << "[Server] Detected systemd environment - will use journald for log streaming" << std::endl;
+    } else {
+        log_file_path_ = "/tmp/lemonade-server.log";
+    }
 #endif
 
     http_server_ = std::make_unique<httplib::Server>();
@@ -2902,6 +2915,14 @@ void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res
 }
 
 void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& res) {
+#ifdef HAVE_SYSTEMD
+    if (log_file_path_.empty()) {
+        std::cout << "[Server] Starting log stream from systemd journal" << std::endl;
+        handle_logs_stream_journald(req, res);
+        return;
+    }
+#endif
+
     // Check if log file exists
     if (log_file_path_.empty() || !std::filesystem::exists(log_file_path_)) {
         std::cerr << "[Server] Log file not found: " << log_file_path_ << std::endl;
@@ -2995,5 +3016,100 @@ void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& 
         }
     );
 }
+
+#ifdef HAVE_SYSTEMD
+void Server::handle_logs_stream_journald(const httplib::Request& req, httplib::Response& res) {
+    std::cout << "[Server] Starting systemd journal stream for lemonade-server.service" << std::endl;
+
+    res.set_header("Content-Type", "text/event-stream");
+    res.set_header("Cache-Control", "no-cache");
+    res.set_header("Connection", "keep-alive");
+    res.set_header("X-Accel-Buffering", "no");
+
+    sd_journal* journal = nullptr;
+    int ret = sd_journal_open(&journal, SD_JOURNAL_LOCAL_ONLY);
+    if (ret < 0) {
+        std::cerr << "[Server] Failed to open systemd journal: " << strerror(-ret) << std::endl;
+        res.status = 500;
+        nlohmann::json error = {
+            {"error", "Failed to open systemd journal"},
+            {"details", strerror(-ret)}
+        };
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+
+    ret = sd_journal_add_match(journal, "_SYSTEMD_UNIT=lemonade-server.service", 0);
+    if (ret < 0) {
+        std::cerr << "[Server] Failed to add journal filter: " << strerror(-ret) << std::endl;
+        sd_journal_close(journal);
+        res.status = 500;
+        nlohmann::json error = {
+            {"error", "Failed to add journal filter"},
+            {"details", strerror(-ret)}
+        };
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+
+    // Position at tail, then go back to show recent history
+    sd_journal_seek_tail(journal);
+    for (int i = 0; i < 100; i++) {
+        ret = sd_journal_previous(journal);
+        if (ret <= 0) break;
+    }
+
+    std::cout << "[Server] Journal stream connection opened for lemonade-server.service" << std::endl;
+
+    res.set_chunked_content_provider(
+        "text/event-stream",
+        [journal](size_t offset, httplib::DataSink& sink) mutable {
+            bool sent_data = false;
+
+            while (sd_journal_next(journal) > 0) {
+                const void* data;
+                size_t length;
+
+                int ret = sd_journal_get_data(journal, "MESSAGE", &data, &length);
+                if (ret == 0 && length > 8) {
+                    const char* msg = static_cast<const char*>(data);
+                    std::string message(msg + 8, length - 8);
+                    std::string sse_msg = "data: " + message + "\n\n";
+
+                    if (!sink.write(sse_msg.c_str(), sse_msg.length())) {
+                        std::cout << "[Server] Journal stream client disconnected" << std::endl;
+                        return false;
+                    }
+                    sent_data = true;
+                }
+            }
+
+            if (!sent_data) {
+                const char* heartbeat = ": heartbeat\n\n";
+                if (!sink.write(heartbeat, strlen(heartbeat))) {
+                    std::cout << "[Server] Journal stream client disconnected during heartbeat" << std::endl;
+                    return false;
+                }
+            }
+
+            // Wait for new journal entries
+            if (offset > 0) {  // Skip wait on first call to send historical data immediately
+                int ret = sd_journal_wait(journal, 500000);  // 500ms
+                if (ret < 0) {
+                    std::cerr << "[Server] Journal wait error: " << strerror(-ret) << std::endl;
+                }
+            }
+
+            return true;
+        },
+        [journal](bool success) mutable {
+            std::cout << "[Server] Journal stream ended, closing journal handle" << std::endl;
+            if (journal) {
+                sd_journal_close(journal);
+            }
+        }
+    );
+}
+#endif
 
 } // namespace lemon
