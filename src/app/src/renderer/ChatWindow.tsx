@@ -54,7 +54,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     userHasSelectedModel,
     setUserHasSelectedModel,
   } = useModels();
-  const { systemInfo } = useSystem();
+  const { systemInfo, ensureSystemInfoLoaded, checkForRocmUsage } = useSystem();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -196,6 +196,9 @@ useEffect(() => {
       // Fallback: fetch the loaded model from the health endpoint
       fetchLoadedModel();
     }
+
+    // Check if ROCm is being used to show system checks if needed
+    checkForRocmUsage();
   };
 
   const handleModelUnload = () => {
@@ -478,6 +481,8 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
   let accumulatedContent = '';
   let accumulatedThinking = '';
   let receivedFirstChunk = false;
+  // Check if this is a new model being loaded (different from currently loaded model)
+  const isNewModelLoad = currentLoadedModel !== selectedModel;
 
   const response = await serverFetch('/chat/completions', {
     method: 'POST',
@@ -540,6 +545,10 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
                 receivedFirstChunk = true;
                 setIsModelLoading(false);
                 setCurrentLoadedModel(selectedModel);
+                // Only dispatch modelLoadEnd if this is a new model being loaded
+                if (isNewModelLoad) {
+                  window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: selectedModel } }));
+                }
               }
 
               // Extract thinking from <think> tags in content
@@ -684,6 +693,9 @@ const downloadModelForChat = async (modelName: string): Promise<boolean> => {
 
 const sendMessage = async () => {
     if ((!inputValue.trim() && uploadedImages.length === 0) || isLoading || isDownloadingForChat) return;
+
+    // Trigger system info load on first model use (lazy loading)
+    await ensureSystemInfoLoaded();
 
     // Cancel any existing request
     if (abortControllerRef.current) {
