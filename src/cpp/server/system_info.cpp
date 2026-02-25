@@ -1066,6 +1066,52 @@ static std::string identify_npu_arch_from_sysfs() {
     return "";
 }
 
+// Check if kernel has CWSR fix for Strix Halo by looking for cwsr_size/ctl_stack_size in sysfs
+// The kernel fix exports these properties; older kernels don't have them
+bool needs_gfx1151_cwsr_fix() {
+    std::string kfd_path = "/sys/class/kfd/kfd/topology/nodes";
+
+    if (!fs::exists(kfd_path))
+        return false;
+
+    for (const auto& node_entry : fs::directory_iterator(kfd_path)) {
+        if (!node_entry.is_directory()) continue;
+
+        std::string properties_file = node_entry.path().string() + "/properties";
+        if (!fs::exists(properties_file)) continue;
+
+        std::ifstream props(properties_file);
+        if (!props.is_open())
+            continue;
+
+        bool is_gfx1151 = false;
+        bool has_cwsr_size = false;
+        bool has_ctl_stack_size = false;
+
+        std::string line;
+        while (std::getline(props, line)) {
+            if (line.find("gfx_target_version") == 0) {
+                std::string value = line.substr(line.find(" ") + 1);
+                value.erase(value.find_last_not_of(" \t\n\r") + 1);
+                if (value == "110501") {
+                    is_gfx1151 = true;
+                }
+            }
+
+            if (line.find("cwsr_size") == 0)
+                has_cwsr_size = true;
+            if (line.find("ctl_stack_size") == 0)
+                has_ctl_stack_size = true;
+        }
+
+        if (is_gfx1151) {
+            return !has_cwsr_size || !has_ctl_stack_size;
+        }
+    }
+
+    return false;
+}
+
 // Identify NPU architecture by checking for known hardware
 // Windows: PCI device ID via WMI; Linux: amdxdna driver in sysfs accel subsystem
 // Returns the NPU family (e.g., "XDNA2") or empty string if no NPU found
@@ -1105,24 +1151,40 @@ std::string SystemInfo::get_rocm_arch() {
     // Returns the ROCm architecture for the best available AMD GPU on this system
     // Checks iGPU first, then dGPUs. Returns empty string if no compatible GPU found.
     try {
-        auto system_info = create_system_info();
+        // Use cached system info to avoid re-detecting GPUs
+        json system_info = SystemInfoCache::get_system_info_with_cache();
+
+        if (!system_info.contains("devices")) {
+            return "";
+        }
+
+        const auto& devices = system_info["devices"];
 
         // Check iGPU first
-        auto igpu = system_info->get_amd_igpu_device();
-        if (igpu.available && !igpu.name.empty()) {
-            std::string arch = identify_rocm_arch_from_name(igpu.name);
-            if (!arch.empty()) {
-                return arch;
+        if (devices.contains("amd_igpu") && devices["amd_igpu"].is_object()) {
+            const auto& igpu = devices["amd_igpu"];
+            if (igpu.value("available", false)) {
+                std::string name = igpu.value("name", "");
+                if (!name.empty()) {
+                    std::string arch = identify_rocm_arch_from_name(name);
+                    if (!arch.empty()) {
+                        return arch;
+                    }
+                }
             }
         }
 
         // Check dGPUs
-        auto dgpus = system_info->get_amd_dgpu_devices();
-        for (const auto& gpu : dgpus) {
-            if (gpu.available && !gpu.name.empty()) {
-                std::string arch = identify_rocm_arch_from_name(gpu.name);
-                if (!arch.empty()) {
-                    return arch;
+        if (devices.contains("amd_dgpu") && devices["amd_dgpu"].is_array()) {
+            for (const auto& gpu : devices["amd_dgpu"]) {
+                if (gpu.value("available", false)) {
+                    std::string name = gpu.value("name", "");
+                    if (!name.empty()) {
+                        std::string arch = identify_rocm_arch_from_name(name);
+                        if (!arch.empty()) {
+                            return arch;
+                        }
+                    }
                 }
             }
         }

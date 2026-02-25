@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kernel Update Required - Lemonade Server</title>
+  <link rel="icon" href="./assets/favicon.ico">
+  <link rel="stylesheet" href="assets/website-styles.css">
+</head>
+<body>
+  <div class="navbar-placeholder"></div>
+
+  <main class="main">
+    <div class="hero-section">
+      <div class="main-heading">
+        Kernel Update Required
+      </div>
+      <div class="subtitle">
+        Your kernel has a critical bug affecting Strix Halo (gfx1151) systems
+      </div>
+    </div>
+
+    <!-- Kernel Fix Content -->
+    <div class="install-content">
+      <div class="install-section">
+        <h2>What's the problem?</h2>
+        <p>
+          Your system has a Strix Halo GPU (gfx1151), but your Linux kernel is missing a critical fix
+          that exports CWSR (Context Wave Save/Restore) properties. Without this fix, ROCm may have
+          incorrect VGPR counts, causing crashes for various workloads.
+        </p>
+        <p>
+          <strong>Technical details:</strong>
+        </p>
+        <ul>
+          <li><a href="https://rocm.docs.amd.com/en/latest/how-to/system-optimization/strixhalo.html" target="_blank">Strix Halo optimization guide</a></li>
+          <li>The fix is included in kernel 6.18.4+ but may be backported to older kernels</li>
+        </ul>
+      </div>
+
+      <div class="install-section">
+        <h2>How to fix this</h2>
+
+        <!-- Ubuntu Option -->
+        <div class="option-box option-primary">
+          <div class="option-header">
+            <span class="option-label">For Ubuntu Users</span>
+            <span class="option-tag recommended">Recommended</span>
+          </div>
+          <h3>Install the OEM Kernel</h3>
+          <p>Ubuntu provides an OEM kernel with the fix included. Open a terminal and run:</p>
+
+          <div class="code-block">
+            <code>sudo apt update && sudo apt install linux-oem-24.04</code>
+          </div>
+
+          <p class="option-note">After installation, reboot your system for the new kernel to take effect.</p>
+        </div>
+
+        <!-- Other Linux Distros -->
+        <div class="option-box option-secondary">
+          <div class="option-header">
+            <span class="option-label">For Other Linux Distributions</span>
+          </div>
+          <h3>Upgrade to a Kernel with the CWSR Fix</h3>
+          <p>
+            Upgrade your kernel to version <strong>6.18.4 or later</strong>, or a kernel with the
+            CWSR fix backported. The fix exports cwsr_size and ctl_stack_size properties to userspace.
+          </p>
+
+          <div class="step-container">
+            <div class="step">
+              <div class="step-number">1</div>
+              <div class="step-content">
+                <h3>Check Current Kernel Version</h3>
+                <p>Open a terminal and run:</p>
+                <div class="code-block">
+                  <code>uname -r</code>
+                </div>
+              </div>
+            </div>
+
+            <div class="step">
+              <div class="step-number">2</div>
+              <div class="step-content">
+                <h3>Update Your Kernel</h3>
+                <p>
+                  Use your distribution's kernel update process. For example:
+                </p>
+                <ul>
+                  <li><strong>Fedora/RHEL:</strong> <code>sudo dnf update kernel</code></li>
+                  <li><strong>Arch Linux:</strong> <code>sudo pacman -Syu linux</code></li>
+                  <li><strong>openSUSE:</strong> <code>sudo zypper update kernel-default</code></li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="step">
+              <div class="step-number">3</div>
+              <div class="step-content">
+                <h3>Reboot</h3>
+                <p>Reboot your system to load the new kernel:</p>
+                <div class="code-block">
+                  <code>sudo reboot</code>
+                </div>
+              </div>
+            </div>
+
+            <div class="step">
+              <div class="step-number">4</div>
+              <div class="step-content">
+                <h3>Verify</h3>
+                <p>After rebooting, verify the CWSR properties are exported:</p>
+                <div class="code-block">
+                  <code>grep -E "cwsr_size|ctl_stack_size" /sys/class/kfd/kfd/topology/nodes/*/properties</code>
+                </div>
+                <p>You should see both <code>cwsr_size</code> and <code>ctl_stack_size</code> listed.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="install-section">
+        <h2>Need Help?</h2>
+        <p>
+          If you continue to experience issues after updating your kernel:
+        </p>
+        <ul>
+          <li>Check the <a href="https://github.com/lemonade-sdk/lemonade/issues">GitHub Issues</a> page</li>
+          <li>Contact us on <a href="https://discord.gg/lemonade-server">Discord</a></li>
+        </ul>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer will be inserted here by footer.js -->
+  <div class="footer-placeholder"></div>
+
+  <script src="assets/navbar.js"></script>
+  <script src="assets/footer.js"></script>
+  <script>
+    // Initialize footer when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+      if (typeof initializeNavbar === 'function') {
+        initializeNavbar('./');
+      }
+      if (typeof initializeFooter === 'function') {
+        initializeFooter('./');
+      }
+    });
+  </script>
+
+  <style>
+    .install-content {
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 2rem;
+    }
+
+    .install-section {
+      margin-bottom: 3rem;
+    }
+
+    .install-section h2 {
+      color: #2c3e50;
+      border-bottom: 2px solid #e74c3c;
+      padding-bottom: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .install-section ul {
+      margin-left: 2rem;
+      line-height: 1.8;
+    }
+
+    .install-section p {
+      line-height: 1.6;
+      color: #555;
+      margin-bottom: 1rem;
+    }
+
+    .code-block {
+      background: #2c3e50;
+      color: #ecf0f1;
+      padding: 1rem;
+      border-radius: 6px;
+      margin: 1rem 0;
+      font-family: 'Courier New', monospace;
+      overflow-x: auto;
+    }
+
+    .code-block code {
+      color: #ecf0f1;
+      background: none;
+      padding: 0;
+    }
+
+    .option-box {
+      padding: 1.5rem;
+      border-radius: 8px;
+      margin-bottom: 2rem;
+    }
+
+    .option-primary {
+      background: linear-gradient(135deg, #fef5e7, #fdebd0);
+      border: 2px solid #f39c12;
+    }
+
+    .option-secondary {
+      background: #f8f9fa;
+      border: 2px solid #bdc3c7;
+    }
+
+    .option-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .option-label {
+      font-weight: bold;
+      font-size: 1.1rem;
+      color: #2c3e50;
+    }
+
+    .option-tag {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .option-tag.recommended {
+      background: #27ae60;
+      color: white;
+    }
+
+    .option-box h3 {
+      margin: 0 0 0.75rem 0;
+      color: #2c3e50;
+    }
+
+    .option-note {
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      color: #666;
+      font-style: italic;
+    }
+
+    .step-container {
+      margin: 2rem 0;
+    }
+
+    .step {
+      display: flex;
+      align-items: flex-start;
+      margin-bottom: 2rem;
+      padding: 1.5rem;
+      background: white;
+      border-radius: 8px;
+      border-left: 4px solid #e74c3c;
+    }
+
+    .step-number {
+      background: #e74c3c;
+      color: white;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 1.2rem;
+      margin-right: 1.5rem;
+      flex-shrink: 0;
+    }
+
+    .step-content h3 {
+      margin: 0 0 0.5rem 0;
+      color: #2c3e50;
+    }
+
+    .step-content p {
+      margin: 0 0 1rem 0;
+    }
+
+    .step-content ul {
+      margin: 0.5rem 0 0.5rem 2rem;
+    }
+
+    @media (max-width: 768px) {
+      .install-content {
+        padding: 0 1rem;
+      }
+
+      .step {
+        flex-direction: column;
+        text-align: center;
+      }
+
+      .step-number {
+        margin: 0 auto 1rem auto;
+      }
+    }
+  </style>
+</body>
+</html>
