@@ -1180,7 +1180,8 @@ std::string SystemInfo::get_flm_version() {
     // Parse version from output like "FLM v0.9.4"
     if (output.find("FLM v") != std::string::npos) {
         size_t pos = output.find("FLM v");
-        std::string version = output.substr(pos + 5);
+        // Keep the 'v' prefix so it matches backend_versions.json (e.g. "v0.9.34").
+        std::string version = output.substr(pos + 4);
         // Trim whitespace and newlines
         size_t end = version.find_first_of(" \t\n\r");
         if (end != std::string::npos) {
