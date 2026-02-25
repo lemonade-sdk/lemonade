@@ -6,8 +6,9 @@ import LogsWindow from './LogsWindow';
 import ResizableDivider from './ResizableDivider';
 import DownloadManager from './DownloadManager';
 import StatusBar from './StatusBar';
+import SystemChecksModal from './SystemChecksModal';
 import { ModelsProvider } from './hooks/useModels';
-import { SystemProvider } from './hooks/useSystem';
+import { SystemProvider, useSystem } from './hooks/useSystem';
 import { DEFAULT_LAYOUT_SETTINGS } from './utils/appSettings';
 import '../../styles.css';
 
@@ -19,12 +20,15 @@ const LAYOUT_CONSTANTS = {
   absoluteMinWidth: 400,
 };
 
-const App: React.FC = () => {
+// Inner component that can use SystemProvider context
+const AppContent: React.FC = () => {
+  const { systemChecks, shouldShowSystemChecks, dismissSystemChecks } = useSystem();
   const [isChatVisible, setIsChatVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isChatVisible);
   const [isModelManagerVisible, setIsModelManagerVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isModelManagerVisible);
   const [leftPanelView, setLeftPanelView] = useState<LeftPanelView>('models');
   const [isLogsVisible, setIsLogsVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isLogsVisible);
   const [isDownloadManagerVisible, setIsDownloadManagerVisible] = useState(false);
+  const [isSystemChecksModalOpen, setIsSystemChecksModalOpen] = useState(false);
   const [modelManagerWidth, setModelManagerWidth] = useState(DEFAULT_LAYOUT_SETTINGS.modelManagerWidth);
   const [chatWidth, setChatWidth] = useState(DEFAULT_LAYOUT_SETTINGS.chatWidth);
   const [logsHeight, setLogsHeight] = useState(DEFAULT_LAYOUT_SETTINGS.logsHeight);
@@ -115,6 +119,17 @@ const App: React.FC = () => {
       window.removeEventListener('download:chatComplete' as any, handleChatDownloadComplete);
     };
   }, []);
+
+  // Show system checks modal when ROCm usage is detected
+  useEffect(() => {
+    if (shouldShowSystemChecks) {
+      setIsSystemChecksModalOpen(true);
+      // Log issues to console for debugging
+      systemChecks.forEach(check => {
+        console.warn(`System check [${check.id}]:`, check.message);
+      });
+    }
+  }, [shouldShowSystemChecks, systemChecks]);
 
   useEffect(() => {
     const hasMainColumn = isLogsVisible;
@@ -241,60 +256,73 @@ const App: React.FC = () => {
   }, []);
 
   return (
+    <ModelsProvider>
+      <TitleBar
+        isChatVisible={isChatVisible}
+        onToggleChat={() => setIsChatVisible(!isChatVisible)}
+        isModelManagerVisible={isModelManagerVisible}
+        onToggleModelManager={() => setIsModelManagerVisible(!isModelManagerVisible)}
+        isLogsVisible={isLogsVisible}
+        onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
+        isDownloadManagerVisible={isDownloadManagerVisible}
+        onToggleDownloadManager={() => setIsDownloadManagerVisible(!isDownloadManagerVisible)}
+      />
+      <DownloadManager
+        isVisible={isDownloadManagerVisible}
+        onClose={handleCloseDownloadManager}
+      />
+      <div className="app-layout">
+        {isModelManagerVisible && (
+          <>
+            <ModelManager
+              isVisible={true}
+              width={modelManagerWidth}
+              currentView={leftPanelView}
+              onViewChange={setLeftPanelView}
+            />
+            {(isLogsVisible || isChatVisible) && (
+              <ResizableDivider onMouseDown={handleLeftDividerMouseDown}/>
+            )}
+          </>
+        )}
+        {isLogsVisible && (
+          <div className="main-content-container">
+            <LogsWindow
+              isVisible={true}
+              height={undefined}
+            />
+          </div>
+        )}
+        {isChatVisible && (
+          <>
+            {isLogsVisible && (
+              <ResizableDivider onMouseDown={handleRightDividerMouseDown}/>
+            )}
+            <ChatWindow
+              isVisible={true}
+              width={isLogsVisible ? chatWidth : undefined}
+            />
+          </>
+        )}
+      </div>
+      <StatusBar />
+      <SystemChecksModal
+        isOpen={isSystemChecksModalOpen}
+        onClose={(permanent) => {
+          setIsSystemChecksModalOpen(false);
+          dismissSystemChecks(permanent);
+        }}
+        checks={systemChecks}
+      />
+    </ModelsProvider>
+  );
+};
+
+// Wrapper component that provides SystemProvider
+const App: React.FC = () => {
+  return (
     <SystemProvider>
-      <ModelsProvider>
-        <TitleBar
-          isChatVisible={isChatVisible}
-          onToggleChat={() => setIsChatVisible(!isChatVisible)}
-          isModelManagerVisible={isModelManagerVisible}
-          onToggleModelManager={() => setIsModelManagerVisible(!isModelManagerVisible)}
-          isLogsVisible={isLogsVisible}
-          onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
-          isDownloadManagerVisible={isDownloadManagerVisible}
-          onToggleDownloadManager={() => setIsDownloadManagerVisible(!isDownloadManagerVisible)}
-        />
-        <DownloadManager
-          isVisible={isDownloadManagerVisible}
-          onClose={handleCloseDownloadManager}
-        />
-        <div className="app-layout">
-          {isModelManagerVisible && (
-            <>
-              <ModelManager
-                isVisible={true}
-                width={modelManagerWidth}
-                currentView={leftPanelView}
-                onViewChange={setLeftPanelView}
-              />
-              {(isLogsVisible || isChatVisible) && (
-                <ResizableDivider onMouseDown={handleLeftDividerMouseDown}/>
-              )}
-            </>
-          )}
-          {isLogsVisible && (
-            <div className="main-content-container">
-              {isLogsVisible && (
-                <LogsWindow
-                  isVisible={true}
-                  height={undefined}
-                />
-              )}
-            </div>
-          )}
-          {isChatVisible && (
-            <>
-              {isLogsVisible && (
-                <ResizableDivider onMouseDown={handleRightDividerMouseDown}/>
-              )}
-              <ChatWindow
-                isVisible={true}
-                width={isLogsVisible ? chatWidth : undefined}
-              />
-            </>
-          )}
-        </div>
-        <StatusBar />
-      </ModelsProvider>
+      <AppContent />
     </SystemProvider>
   );
 };
