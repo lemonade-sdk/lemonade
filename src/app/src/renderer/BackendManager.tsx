@@ -260,36 +260,34 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
                 >
                   <div className="model-item-content">
                     <div className="model-info-left backend-row-main">
-                      <span className="model-name backend-name">
-                        <span
-                          className={`model-status-indicator ${STATUS_INDICATOR_CLASS[info.state]}`}
-                          title={info.message || info.state}
-                        >
-                          ●
+                      <div className="backend-row-head">
+                        <span className="model-name backend-name">
+                          <span className={`model-status-indicator ${STATUS_INDICATOR_CLASS[info.state]}`}>●</span>
+                          {backendName}
                         </span>
-                        {backendName}
-                      </span>
-                      <div className="backend-inline-meta">
-                        {info.release_url ? (
-                          <button
-                            className="backend-version-link"
-                            onClick={() => openExternalLink(info.release_url)}
-                            title="Open backend release page"
-                          >
-                            {info.version || 'Not installed'}
-                          </button>
-                        ) : info.version ? (
-                          <span className="backend-version">{info.version}</span>
-                        ) : (
-                          <span className="backend-version">{info.state}</span>
-                        )}
-                        {sizeLabel && (
-                          <>
-                            <span className="backend-meta-separator">•</span>
-                            <span className="backend-size">{sizeLabel}</span>
-                          </>
-                        )}
+                        <div className="backend-inline-meta">
+                          {info.release_url ? (
+                            <button
+                              className="backend-version-link"
+                              onClick={() => openExternalLink(info.release_url)}
+                              title="Open backend release page"
+                            >
+                              {info.version || 'Not installed'}
+                            </button>
+                          ) : info.version ? (
+                            <span className="backend-version">{info.version}</span>
+                          ) : (
+                            <span className="backend-version">{info.state}</span>
+                          )}
+                          {sizeLabel && (
+                            <>
+                              <span className="backend-meta-separator">•</span>
+                              <span className="backend-size">{sizeLabel}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
+                      {info.message && <div className="backend-status-message">{info.message}</div>}
                     </div>
                     {isHovered && (
                       <span className="model-actions">

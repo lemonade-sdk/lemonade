@@ -1916,6 +1916,17 @@ footer {
 
 .backend-row-main {
     display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    white-space: normal;
+}
+
+.backend-row-head {
+    display: flex;
     align-items: baseline;
     gap: 9px;
     width: 100%;
@@ -1946,6 +1957,17 @@ footer {
     line-height: 1.2;
     white-space: nowrap;
     overflow: hidden;
+}
+
+.backend-status-message {
+    margin-left: 14px;
+    color: #777;
+    font-size: 0.62rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
 }
 
 .backend-inline-meta .backend-version,
