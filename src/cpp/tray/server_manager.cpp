@@ -378,7 +378,7 @@ bool ServerManager::spawn_process() {
     std::string cmdline = "\"" + server_binary_path_ + "\"";
     cmdline += " --port " + std::to_string(port_);
     cmdline += " --host " + host_;
-    cmdline += " --log-level debug";  // Always use debug logging for router
+    cmdline += " --log-level " + log_level_;
 
     std::vector<std::string> recipe_cli = lemon::RecipeOptions::to_cli_options(recipe_options_);
 
@@ -588,7 +588,7 @@ bool ServerManager::spawn_process() {
         args.push_back("--host");
         args.push_back(host_.c_str());
         args.push_back("--log-level");
-        args.push_back("debug");  // Always use debug logging
+        args.push_back(log_level_.c_str());
 
         std::vector<std::string> recipe_cli = lemon::RecipeOptions::to_cli_options(recipe_options_);
 
