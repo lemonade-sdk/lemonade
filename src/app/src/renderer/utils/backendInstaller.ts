@@ -188,8 +188,8 @@ export async function installBackend(
 
 /**
  * Install the appropriate backend for a recipe before loading a model.
- * Picks the first supported backend. If already installed, returns immediately.
- * Silently ignores errors so model loading can still proceed (server installs as fallback).
+ * Uses recipe default backend (first backend in server-provided priority order).
+ * Installs/updates when required and throws actionable errors when not viable.
  */
 export async function ensureBackendForRecipe(
   recipe: string,
@@ -199,23 +199,23 @@ export async function ensureBackendForRecipe(
 
   const recipeInfo = recipes[recipe];
   const backends = Object.entries(recipeInfo.backends);
+  if (backends.length === 0) return;
 
-  // Find first supported backend that needs installation
-  const needsInstall = backends.find(
-    ([, info]) => info.supported && !info.available
-  );
+  // Use the server-provided default backend ordering.
+  const [backendName, backendInfo] = backends[0];
+  if (backendInfo.state === 'installed') return;
 
-  if (!needsInstall) return; // All supported backends are installed
-
-  const [backendName] = needsInstall;
-  try {
+  if (backendInfo.state === 'installable' || backendInfo.state === 'update_required') {
     await installBackend(recipe, backendName, true);
-  } catch (error) {
-    // User pause/cancel must propagate — don't let the server silently re-download
-    if (error instanceof DownloadAbortError) throw error;
-    // Other errors (network, etc.) are non-fatal — server will attempt install during load as fallback
-    console.warn(`Backend pre-install failed for ${recipe}:${backendName}:`, error);
+    return;
   }
+
+  if (backendInfo.state === 'unsupported') {
+    const reason = backendInfo.message || 'Backend is not supported on this system.';
+    throw new Error(`${recipe}:${backendName} is unsupported. ${reason}`);
+  }
+
+  throw new Error(`Unsupported backend state for ${recipe}:${backendName}: ${backendInfo.state}`);
 }
 
 /**
@@ -502,27 +502,25 @@ export async function ensureModelReady(
     // If loadBody specifies an explicit backend, install that one specifically
     const explicitBackend = extractExplicitBackend(options?.loadBody);
     if (explicitBackend) {
-      try {
-        const freshSystemData = await fetchSystemInfoData();
-        const freshRecipes = freshSystemData.info?.recipes;
-        const recipeInfo = freshRecipes?.[explicitBackend.recipe];
-        const backendInfo = recipeInfo?.backends?.[explicitBackend.backend];
-        if (backendInfo && backendInfo.supported && !backendInfo.available) {
+      const freshSystemData = await fetchSystemInfoData();
+      const freshRecipes = freshSystemData.info?.recipes;
+      const recipeInfo = freshRecipes?.[explicitBackend.recipe];
+      const backendInfo = recipeInfo?.backends?.[explicitBackend.backend];
+
+      if (backendInfo) {
+        if (backendInfo.state === 'installable' || backendInfo.state === 'update_required') {
           await installBackend(explicitBackend.recipe, explicitBackend.backend, true);
+        } else if (backendInfo.state === 'unsupported') {
+          const reason = backendInfo.message || 'Backend is not supported on this system.';
+          throw new Error(`${explicitBackend.recipe}:${explicitBackend.backend} is unsupported. ${reason}`);
         }
-      } catch (error) {
-        if (error instanceof DownloadAbortError) throw error;
-        console.warn('Explicit backend pre-install failed, server may handle it:', error);
+      } else {
+        throw new Error(`Selected backend not found: ${explicitBackend.recipe}:${explicitBackend.backend}`);
       }
     } else {
-      try {
-        const freshSystemData = await fetchSystemInfoData();
-        const freshRecipes = freshSystemData.info?.recipes;
-        await ensureBackendForRecipe(recipe, freshRecipes);
-      } catch (error) {
-        if (error instanceof DownloadAbortError) throw error;
-        console.warn('Backend pre-install failed, server may handle it:', error);
-      }
+      const freshSystemData = await fetchSystemInfoData();
+      const freshRecipes = freshSystemData.info?.recipes;
+      await ensureBackendForRecipe(recipe, freshRecipes);
     }
   }
 

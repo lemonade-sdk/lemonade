@@ -707,14 +707,19 @@ class EndpointTests(ServerTestBase):
                     f"Backend {recipe_name}/{backend_name} missing 'devices'",
                 )
                 self.assertIn(
-                    "supported",
+                    "state",
                     backend_data,
-                    f"Backend {recipe_name}/{backend_name} missing 'supported'",
+                    f"Backend {recipe_name}/{backend_name} missing 'state'",
                 )
                 self.assertIn(
-                    "available",
+                    "message",
                     backend_data,
-                    f"Backend {recipe_name}/{backend_name} missing 'available'",
+                    f"Backend {recipe_name}/{backend_name} missing 'message'",
+                )
+                self.assertIn(
+                    "action",
+                    backend_data,
+                    f"Backend {recipe_name}/{backend_name} missing 'action'",
                 )
                 self.assertIsInstance(
                     backend_data["devices"],
@@ -722,23 +727,25 @@ class EndpointTests(ServerTestBase):
                     f"Backend {recipe_name}/{backend_name} devices should be list",
                 )
                 self.assertIsInstance(
-                    backend_data["supported"],
-                    bool,
-                    f"Backend {recipe_name}/{backend_name} supported should be bool",
+                    backend_data["state"],
+                    str,
+                    f"Backend {recipe_name}/{backend_name} state should be string",
                 )
                 self.assertIsInstance(
-                    backend_data["available"],
-                    bool,
-                    f"Backend {recipe_name}/{backend_name} available should be bool",
+                    backend_data["message"],
+                    str,
+                    f"Backend {recipe_name}/{backend_name} message should be string",
                 )
-
-                # If not supported, should have error field
-                if not backend_data["supported"]:
-                    self.assertIn(
-                        "error",
-                        backend_data,
-                        f"Unsupported backend {recipe_name}/{backend_name} missing 'error'",
-                    )
+                self.assertIsInstance(
+                    backend_data["action"],
+                    str,
+                    f"Backend {recipe_name}/{backend_name} action should be string",
+                )
+                self.assertIn(
+                    backend_data["state"],
+                    {"unsupported", "installable", "update_required", "installed"},
+                    f"Backend {recipe_name}/{backend_name} has invalid state: {backend_data['state']}",
+                )
 
                 # If available, may have version field (optional)
                 # version is optional, so we just check it's a string if present
@@ -1056,8 +1063,9 @@ class EndpointTests(ServerTestBase):
         response = requests.get(f"{self.base_url}/system-info", timeout=TIMEOUT_DEFAULT)
         info = response.json()
         self.assertTrue(
-            info["recipes"][recipe]["backends"][backend].get("available", False),
-            f"Expected {recipe}:{backend} to be available before uninstall",
+            info["recipes"][recipe]["backends"][backend].get("state", "")
+            in {"installed", "update_required"},
+            f"Expected {recipe}:{backend} to be installed before uninstall",
         )
 
         # Uninstall

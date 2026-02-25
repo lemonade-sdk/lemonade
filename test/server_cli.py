@@ -332,11 +332,12 @@ class PersistentServerCLITests(CLITestBase):
                 f"Output should contain '{recipe}' recipe: {output}",
             )
 
-        # Should contain status indicators (installed, supported, unsupported)
+        # Should contain status indicators from backend state model
         output_lower = output.lower()
         has_status = (
             "installed" in output_lower
-            or "supported" in output_lower
+            or "installable" in output_lower
+            or "update_required" in output_lower
             or "unsupported" in output_lower
         )
         self.assertTrue(

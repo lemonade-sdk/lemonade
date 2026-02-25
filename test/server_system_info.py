@@ -614,10 +614,12 @@ class SystemInfoMockTests(unittest.TestCase):
                         )
                         backend_info = backends[backend]
                         self.assertTrue(
-                            backend_info.get("supported", False),
-                            f"Expected {recipe}/{backend} to be supported, but got: {backend_info}",
+                            backend_info.get("state", "") != "unsupported",
+                            f"Expected {recipe}/{backend} to be supported, but got state={backend_info.get('state')}: {backend_info}",
                         )
-                        print(f"  [OK] {recipe}/{backend}: supported=True")
+                        print(
+                            f"  [OK] {recipe}/{backend}: state={backend_info.get('state')}"
+                        )
 
                 # Validate expected unsupported backends
                 for recipe, expected_backends in config.get(
@@ -639,10 +641,10 @@ class SystemInfoMockTests(unittest.TestCase):
 
                         backend_info = backends[backend]
                         self.assertFalse(
-                            backend_info.get("supported", False),
-                            f"Expected {recipe}/{backend} to be UNsupported, but got: {backend_info}",
+                            backend_info.get("state", "") != "unsupported",
+                            f"Expected {recipe}/{backend} to be unsupported, but got state={backend_info.get('state')}: {backend_info}",
                         )
-                        print(f"  [OK] {recipe}/{backend}: supported=False")
+                        print(f"  [OK] {recipe}/{backend}: state=unsupported")
 
             finally:
                 # Stop the server

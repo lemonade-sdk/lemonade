@@ -1535,6 +1535,10 @@ footer {
     color: #4CAF50;
 }
 
+.model-action-btn.update-btn:hover {
+    color: #ffb74d;
+}
+
 .model-action-btn.load-btn:hover {
     color: #2196F3;
 }
@@ -1591,6 +1595,15 @@ footer {
 /* Model is not downloaded (gray) */
 .model-status-indicator.not-downloaded {
     color: #444;
+}
+
+.model-status-indicator.update-required {
+    color: #ffb74d;
+    filter: drop-shadow(0 0 2px rgba(255, 183, 77, 0.5));
+}
+
+.model-status-indicator.unsupported {
+    color: #f44336;
 }
 
 /* Model is loading (pulsing animation) */

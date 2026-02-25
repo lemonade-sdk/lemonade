@@ -79,20 +79,17 @@ public:
     // Returns empty string if supported, or a reason string if not supported
     static std::string check_recipe_supported(const std::string& recipe);
 
-    // Get all recipes with their support status
-    // Returns a vector of {recipe_name, supported, available, error_message, backends}
+    // Get all recipes with their backend state info
+    // Returns a vector of {recipe_name, backends}
     struct BackendStatus {
         std::string name;
-        bool supported;
-        bool available;
+        std::string state;
         std::string version;
-        std::string error;
+        std::string message;
+        std::string action;
     };
     struct RecipeStatus {
         std::string name;
-        bool supported;
-        bool available;
-        std::string error;
         std::vector<BackendStatus> backends;
     };
     static std::vector<RecipeStatus> get_all_recipe_statuses();

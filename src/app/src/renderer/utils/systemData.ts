@@ -47,10 +47,10 @@ export interface Recipe {
 
 export interface BackendInfo {
   devices: string[];
-  supported: boolean;
-  available: boolean;
+  state: 'unsupported' | 'installable' | 'update_required' | 'installed';
+  message: string;
+  action: string;
   version?: string;
-  error?: string;
   release_url?: string;
   download_filename?: string;
   download_size_mb?: number;

@@ -1789,9 +1789,10 @@ int TrayApp::execute_recipes_command() {
     // Print table header
     std::cout << std::left << std::setw(20) << "Recipe"
               << std::setw(12) << "Backend"
-              << std::setw(14) << "Status"
-              << "Version/Error" << std::endl;
-    std::cout << std::string(75, '-') << std::endl;
+              << std::setw(16) << "Status"
+              << std::setw(46) << "Message/Version"
+              << "Action" << std::endl;
+    std::cout << std::string(148, '-') << std::endl;
 
     for (const auto& status : statuses) {
         bool first_backend = true;
@@ -1799,41 +1800,36 @@ int TrayApp::execute_recipes_command() {
         if (status.backends.empty()) {
             std::cout << std::left << std::setw(20) << status.name
                       << std::setw(12) << "-"
-                      << std::setw(14) << (status.supported ? "supported" : "unsupported")
+                      << std::setw(16) << "unsupported"
+                      << std::setw(46) << "No backend definitions"
                       << "-" << std::endl;
         } else {
             for (const auto& backend : status.backends) {
                 std::string recipe_col = first_backend ? status.name : "";
-
-                std::string status_str;
-                if (!backend.supported) {
-                    status_str = "unsupported";
-                } else if (backend.available) {
-                    status_str = "installed";
-                } else {
-                    status_str = "supported";
-                }
+                std::string status_str = backend.state.empty() ? "unsupported" : backend.state;
 
                 std::string info_col;
-                if (!backend.version.empty() && backend.version != "unknown") {
+                if (status_str == "installed" && !backend.version.empty() && backend.version != "unknown") {
                     info_col = backend.version;
-                } else if (!backend.supported && !backend.error.empty()) {
-                    info_col = backend.error;
+                } else if (!backend.message.empty()) {
+                    info_col = backend.message;
                 } else {
                     info_col = "-";
                 }
+                std::string action_col = backend.action.empty() ? "-" : backend.action;
 
                 std::cout << std::left << std::setw(20) << recipe_col
                           << std::setw(12) << backend.name
-                          << std::setw(14) << status_str
-                          << info_col << std::endl;
+                          << std::setw(16) << status_str
+                          << std::setw(46) << info_col
+                          << " " << action_col << std::endl;
 
                 first_backend = false;
             }
         }
     }
 
-    std::cout << std::string(75, '-') << std::endl;
+    std::cout << std::string(148, '-') << std::endl;
     return 0;
 }
 

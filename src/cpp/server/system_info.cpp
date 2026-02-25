@@ -324,6 +324,36 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
     return "";
 }
 
+static std::string get_install_command(const std::string& recipe, const std::string& backend) {
+    return "lemonade-server recipes --install " + recipe + ":" + backend;
+}
+
+static std::string get_expected_backend_version(const std::string& recipe, const std::string& backend) {
+    static json backend_versions = []() -> json {
+        try {
+            std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+            std::ifstream file(config_path);
+            if (!file.is_open()) {
+                return json::object();
+            }
+            json data = json::parse(file);
+            file.close();
+            return data;
+        } catch (...) {
+            return json::object();
+        }
+    }();
+
+    if (!backend_versions.contains(recipe)) {
+        return "";
+    }
+    const auto& recipe_config = backend_versions[recipe];
+    if (!recipe_config.contains(backend) || !recipe_config[backend].is_string()) {
+        return "";
+    }
+    return recipe_config[backend].get<std::string>();
+}
+
 // ============================================================================
 // SystemInfo base class implementation
 // ============================================================================
@@ -678,12 +708,13 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 }
             }
 
-            // Still add the recipe but mark as not supported
+            std::string message = "Requires " + required_os;
+            // Still add the recipe but mark as unsupported
             json backend = {
                 {"devices", json::array()},
-                {"supported", false},
-                {"available", false},
-                {"error", "Requires " + required_os}
+                {"state", "unsupported"},
+                {"message", message},
+                {"action", ""}
             };
 
             // Add to the appropriate recipe/backend structure
@@ -732,47 +763,64 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
 
         bool supported = !unique_matching.empty();
-        bool available = is_recipe_installed(def.recipe, def.backend);
+        bool installed = is_recipe_installed(def.recipe, def.backend);
 
         json backend = {
-            {"devices", unique_matching},
-            {"supported", supported},
-            {"available", available}
+            {"devices", unique_matching}
         };
 
-        // Generate concise error message based on what failed
         if (!supported) {
-            std::string error;
+            std::string message;
 
             if (!missing_devices.empty()) {
                 // Device type not present - include required family if specified
                 const auto& [device_type, required_families] = missing_devices[0];
                 if (!required_families.empty()) {
                     // Show specific family requirement (e.g., "Requires XDNA2 NPU")
-                    error = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
+                    message = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
                 } else {
                     // No specific family required (e.g., "Requires CPU")
-                    error = "Requires " + get_device_type_name(device_type);
+                    message = "Requires " + get_device_type_name(device_type);
                 }
             } else if (!wrong_family.empty()) {
                 // Device present but wrong family - show required families
                 const auto& [device_type, required_families] = wrong_family[0];
                 if (!required_families.empty()) {
                     // Use first required family name for concise message
-                    error = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
+                    message = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
                 } else {
-                    error = "Incompatible " + get_device_type_name(device_type);
+                    message = "Incompatible " + get_device_type_name(device_type);
                 }
             } else {
-                error = "No compatible device";
+                message = "No compatible device";
+            }
+            backend["state"] = "unsupported";
+            backend["message"] = message;
+            backend["action"] = "";
+        } else if (!installed) {
+            backend["state"] = "installable";
+            backend["message"] = "Backend is supported but not installed.";
+            backend["action"] = get_install_command(def.recipe, def.backend);
+        } else {
+            std::string installed_version = get_recipe_version(def.recipe, def.backend);
+            std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
+
+            if (!installed_version.empty() && installed_version != "unknown") {
+                backend["version"] = installed_version;
             }
 
-            backend["error"] = error;
-        } else if (available) {
-            // Add version if installed
-            std::string version = get_recipe_version(def.recipe, def.backend);
-            if (!version.empty() && version != "unknown") {
-                backend["version"] = version;
+            bool version_known = !installed_version.empty() && installed_version != "unknown";
+            bool has_expected = !expected_version.empty();
+            bool needs_update = has_expected && (!version_known || installed_version != expected_version);
+
+            if (needs_update) {
+                backend["state"] = "update_required";
+                backend["message"] = "Backend update is required before use.";
+                backend["action"] = get_install_command(def.recipe, def.backend);
+            } else {
+                backend["state"] = "installed";
+                backend["message"] = "";
+                backend["action"] = "";
             }
         }
 
@@ -810,11 +858,12 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
         if (def.recipe == recipe) {
             if (recipe_info["backends"].contains(def.backend)) {
                 const auto& backend = recipe_info["backends"][def.backend];
-                if (backend.value("supported", false)) {
+                std::string state = backend.value("state", "unsupported");
+                if (state != "unsupported") {
                     result.backends.push_back(def.backend);
-                } else if (result.not_supported_error.empty() && backend.contains("error")) {
+                } else if (result.not_supported_error.empty() && backend.contains("message")) {
                     // Capture first error encountered (in preference order)
-                    result.not_supported_error = backend["error"].get<std::string>();
+                    result.not_supported_error = backend["message"].get<std::string>();
                 }
             }
         }
@@ -843,9 +892,6 @@ std::vector<SystemInfo::RecipeStatus> SystemInfo::get_all_recipe_statuses() {
 
     const auto& recipes = system_info["recipes"];
     for (auto& [recipe_name, recipe_info] : recipes.items()) {
-        bool any_supported = false;
-        bool any_available = false;
-        std::string first_error;
         std::vector<BackendStatus> backends;
 
         if (recipe_info.contains("backends") && recipe_info["backends"].is_object()) {
@@ -856,23 +902,15 @@ std::vector<SystemInfo::RecipeStatus> SystemInfo::get_all_recipe_statuses() {
                 if (!recipe_info["backends"].contains(def.backend)) continue;
 
                 const auto& backend_info = recipe_info["backends"][def.backend];
-                bool supported = backend_info.value("supported", false);
-                bool available = backend_info.value("available", false);
+                std::string state = backend_info.value("state", "unsupported");
                 std::string version = backend_info.value("version", "");
-                std::string error = backend_info.value("error", "");
-
-                if (supported) any_supported = true;
-                if (available) any_available = true;
-
-                if (!supported && first_error.empty() && !error.empty()) {
-                    first_error = error;
-                }
-
-                backends.push_back({def.backend, supported, available, version, error});
+                std::string message = backend_info.value("message", "");
+                std::string action = backend_info.value("action", "");
+                backends.push_back({def.backend, state, version, message, action});
             }
         }
 
-        statuses.push_back({recipe_name, any_supported, any_available, first_error, backends});
+        statuses.push_back({recipe_name, backends});
     }
 
     return statuses;

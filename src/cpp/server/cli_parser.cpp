@@ -132,7 +132,7 @@ CLIParser::CLIParser()
     // Recipes
     CLI::App* recipes = app_.add_subcommand("recipes", "List and manage execution backends");
     recipes->add_option("--install", tray_config_.install_backend,
-                        "Install a backend (format: recipe:backend)");
+                        "Install or update a backend (format: recipe:backend)");
     recipes->add_option("--uninstall", tray_config_.uninstall_backend,
                         "Uninstall a backend (format: recipe:backend)");
 

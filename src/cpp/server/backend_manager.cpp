@@ -144,23 +144,16 @@ json BackendManager::get_all_backends_status() {
     for (const auto& recipe : statuses) {
         json recipe_json;
         recipe_json["recipe"] = recipe.name;
-        recipe_json["supported"] = recipe.supported;
-        recipe_json["available"] = recipe.available;
-        if (!recipe.error.empty()) {
-            recipe_json["error"] = recipe.error;
-        }
 
         json backends_json = json::array();
         for (const auto& backend : recipe.backends) {
             json b;
             b["name"] = backend.name;
-            b["supported"] = backend.supported;
-            b["available"] = backend.available;
+            b["state"] = backend.state;
+            b["message"] = backend.message;
+            b["action"] = backend.action;
             if (!backend.version.empty()) {
                 b["version"] = backend.version;
-            }
-            if (!backend.error.empty()) {
-                b["error"] = backend.error;
             }
 
             // Add release URL
@@ -251,7 +244,20 @@ void BackendManager::update_recipes_cache_entry(const std::string& recipe, const
     }
 
     auto& info = cached_recipes_[recipe]["backends"][backend];
-    info["available"] = installed;
+    const std::string install_action = "lemonade-server recipes --install " + recipe + ":" + backend;
+    const std::string current_state = info.value("state", "unsupported");
+
+    if (current_state == "unsupported") {
+        info["action"] = "";
+    } else if (installed) {
+        info["state"] = "installed";
+        info["message"] = "";
+        info["action"] = "";
+    } else {
+        info["state"] = "installable";
+        info["message"] = "Backend is supported but not installed.";
+        info["action"] = install_action;
+    }
 
     // Keep enrichment fields current for both installed and uninstalled states.
     // Version should remain visible in /system-info even when a backend is not installed.

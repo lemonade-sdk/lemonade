@@ -40,10 +40,10 @@ export const SystemProvider: React.FC<{ children: React.ReactNode }> = ({childre
     for (const [recipeName, recipe] of Object.entries(recipes)) {
       if (!recipe?.backends) continue;
 
-      // Collect all supported backends for this recipe (not just available/installed)
+      // Collect all backends that are viable on this system
       const supportedBackends: string[] = [];
       for (const [backendName, backend] of Object.entries(recipe.backends)) {
-        if (backend?.supported) {
+        if (backend?.state && backend.state !== 'unsupported') {
           supportedBackends.push(backendName);
         }
       }

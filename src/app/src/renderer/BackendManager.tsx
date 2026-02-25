@@ -14,6 +14,13 @@ const RECIPE_ORDER = new Map([
   'ryzenai-llm',
 ].map((recipe, index) => [recipe, index]));
 
+const STATUS_INDICATOR_CLASS: Record<BackendInfo['state'], string> = {
+  installed: 'available',
+  installable: 'not-downloaded',
+  update_required: 'update-required',
+  unsupported: 'unsupported',
+};
+
 interface GithubReleaseRef {
   owner: string;
   repo: string;
@@ -155,6 +162,16 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
     }
   }, [showError, showSuccess]);
 
+  const handleCopyAction = useCallback(async (recipe: string, backend: string, action?: string) => {
+    if (!action) return;
+    try {
+      await navigator.clipboard.writeText(action);
+      showSuccess(`Copied action for ${RECIPE_DISPLAY_NAMES[recipe] || recipe} ${backend}.`);
+    } catch {
+      showError('Failed to copy action to clipboard.');
+    }
+  }, [showError, showSuccess]);
+
   const handleUninstallBackend = useCallback(async (recipe: string, backend: string) => {
     const confirmed = await confirm({
       title: 'Uninstall Backend',
@@ -177,7 +194,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
   const groupedBackends: Array<[string, Array<[string, BackendInfo]>]> = recipes
     ? Object.entries(recipes)
       .map(([recipeName, recipe]: [string, Recipe]) => {
-        const backends = Object.entries(recipe.backends).filter(([, info]) => info.supported);
+        const backends = Object.entries(recipe.backends).filter(([, info]) => info.state !== 'unsupported');
         return [recipeName, backends] as [string, Array<[string, BackendInfo]>];
       })
       .filter(([, backends]) => backends.length > 0)
@@ -194,7 +211,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
     .map(([recipeName, backends]) => {
       const filteredBackends = backends.filter(([backendName, info]) => {
         if (!query) return true;
-        const haystack = `${recipeName} ${backendName} ${info.version || ''}`.toLowerCase();
+        const haystack = `${recipeName} ${backendName} ${info.version || ''} ${info.state} ${info.message || ''}`.toLowerCase();
         return haystack.includes(query);
       });
       return [recipeName, filteredBackends] as [string, Array<[string, BackendInfo]>];
@@ -244,7 +261,12 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
                   <div className="model-item-content">
                     <div className="model-info-left backend-row-main">
                       <span className="model-name backend-name">
-                        <span className={`model-status-indicator ${info.available ? 'available' : 'not-downloaded'}`}>●</span>
+                        <span
+                          className={`model-status-indicator ${STATUS_INDICATOR_CLASS[info.state]}`}
+                          title={info.message || info.state}
+                        >
+                          ●
+                        </span>
                         {backendName}
                       </span>
                       <div className="backend-inline-meta">
@@ -259,7 +281,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
                         ) : info.version ? (
                           <span className="backend-version">{info.version}</span>
                         ) : (
-                          <span className="backend-version">Not installed</span>
+                          <span className="backend-version">{info.state}</span>
                         )}
                         {sizeLabel && (
                           <>
@@ -271,21 +293,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
                     </div>
                     {isHovered && (
                       <span className="model-actions">
-                        {info.available ? (
+                        {(info.state === 'installable' || info.state === 'update_required') && (
                           <button
-                            className="model-action-btn delete-btn"
-                            title="Uninstall backend"
-                            onClick={() => handleUninstallBackend(recipeName, backendName)}
-                          >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <polyline points="3 6 5 6 21 6" />
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                            </svg>
-                          </button>
-                        ) : (
-                          <button
-                            className="model-action-btn download-btn"
-                            title="Install backend"
+                            className={`model-action-btn ${info.state === 'update_required' ? 'update-btn' : 'download-btn'}`}
+                            title={info.state === 'update_required' ? 'Update backend' : 'Install backend'}
                             disabled={isInstalling}
                             onClick={() => handleInstallBackend(recipeName, backendName)}
                           >
@@ -296,6 +307,30 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
                                 <line x1="12" y1="15" x2="12" y2="3" />
                               </svg>
                             )}
+                          </button>
+                        )}
+                        {info.state === 'installed' && (
+                          <button
+                            className="model-action-btn delete-btn"
+                            title="Uninstall backend"
+                            onClick={() => handleUninstallBackend(recipeName, backendName)}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            </svg>
+                          </button>
+                        )}
+                        {(info.state === 'installable' || info.state === 'update_required') && info.action && (
+                          <button
+                            className="model-action-btn"
+                            title={info.action}
+                            onClick={() => handleCopyAction(recipeName, backendName, info.action)}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                            </svg>
                           </button>
                         )}
                       </span>
