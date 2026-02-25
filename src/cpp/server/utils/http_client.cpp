@@ -149,6 +149,58 @@ HttpResponse HttpClient::post(const std::string& url,
     return response;
 }
 
+HttpResponse HttpClient::post_multipart(const std::string& url,
+                                         const std::vector<MultipartField>& fields,
+                                         long timeout_seconds) {
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        throw std::runtime_error("Failed to initialize CURL");
+    }
+
+    HttpResponse response;
+    std::string response_body;
+
+    curl_mime* mime = curl_mime_init(curl);
+
+    for (const auto& field : fields) {
+        curl_mimepart* part = curl_mime_addpart(mime);
+        curl_mime_name(part, field.name.c_str());
+        curl_mime_data(part, field.data.c_str(), field.data.size());
+        if (!field.filename.empty()) {
+            curl_mime_filename(part, field.filename.c_str());
+        }
+        if (!field.content_type.empty()) {
+            curl_mime_type(part, field.content_type.c_str());
+        }
+    }
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
+
+    CURLcode res = curl_easy_perform(curl);
+
+    if (res != CURLE_OK) {
+        std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
+        curl_mime_free(mime);
+        curl_easy_cleanup(curl);
+        throw std::runtime_error(error);
+    }
+
+    long response_code;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+    response.status_code = static_cast<int>(response_code);
+    response.body = response_body;
+
+    curl_mime_free(mime);
+    curl_easy_cleanup(curl);
+
+    return response;
+}
+
 // Helper struct to pass stream callback through C interface
 struct StreamCallbackData {
     StreamCallback* callback;

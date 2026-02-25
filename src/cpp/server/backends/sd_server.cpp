@@ -236,25 +236,24 @@ json SDServer::image_generations(const json& request) {
     // sd-server requires extra params (steps, sample_method, scheduler) to be
     // embedded in the prompt as <sd_cpp_extra_args>JSON</sd_cpp_extra_args>
     // See PR #1173: https://github.com/leejet/stable-diffusion.cpp/pull/1173
+    // Use request values if present (e.g. from webapp), fall back to recipe_options defaults.
     json extra_args;
     if (request.contains("steps")) {
-        extra_args["steps"] = request["steps"];
+        extra_args["steps"] = request["steps"].get<int>();
+    } else {
+        extra_args["steps"] = static_cast<int>(recipe_options_.get_option("steps"));
     }
     if (request.contains("cfg_scale")) {
-        extra_args["cfg_scale"] = request["cfg_scale"];
+        extra_args["cfg_scale"] = request["cfg_scale"].get<float>();
+    } else {
+        extra_args["cfg_scale"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
     }
     if (request.contains("seed")) {
-        extra_args["seed"] = request["seed"];
-    }
-    if (request.contains("sample_method")) {
-        extra_args["sample_method"] = request["sample_method"];
-    }
-    if (request.contains("scheduler")) {
-        extra_args["scheduler"] = request["scheduler"];
+        extra_args["seed"] = request["seed"].get<int>();
     }
 
-    // Append extra args to prompt if any were specified
-    if (!extra_args.empty()) {
+    // Append extra args to prompt
+    {
         std::string prompt = sd_request.value("prompt", "");
         prompt += " <sd_cpp_extra_args>" + extra_args.dump() + "</sd_cpp_extra_args>";
         sd_request["prompt"] = prompt;
@@ -267,6 +266,92 @@ json SDServer::image_generations(const json& request) {
 
     // Use base class forward_request with 10 minute timeout for image generation
     return forward_request("/v1/images/generations", sd_request, 600);
+}
+
+json SDServer::image_edits(const json& request) {
+    // Use sd-server's /v1/images/edits endpoint (EDIT mode).
+    // Images are placed into ref_images, which works well with editing models
+    // like Qwen-Edit and Flux Klein 4b/9b.
+    // The endpoint expects multipart/form-data (like the OpenAI API).
+
+    // Use request values if present, fall back to recipe_options defaults.
+    json extra_args;
+    if (request.contains("steps")) {
+        extra_args["steps"] = request["steps"].get<int>();
+    } else {
+        extra_args["steps"] = static_cast<int>(recipe_options_.get_option("steps"));
+    }
+    if (request.contains("cfg_scale")) {
+        extra_args["cfg_scale"] = request["cfg_scale"].get<float>();
+    } else {
+        extra_args["cfg_scale"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
+    }
+    if (request.contains("seed")) {
+        extra_args["seed"] = request["seed"].get<int>();
+    }
+
+    // Append extra args to prompt (same pattern as image_generations)
+    std::string prompt = request.value("prompt", "");
+    prompt += " <sd_cpp_extra_args>" + extra_args.dump() + "</sd_cpp_extra_args>";
+
+    std::vector<MultipartField> fields;
+    fields.push_back({"prompt", prompt, "", ""});
+    fields.push_back({"n", std::to_string(request.value("n", 1)), "", ""});
+    if (request.contains("size")) {
+        fields.push_back({"size", request["size"].get<std::string>(), "", ""});
+    }
+
+    // Decode base64 image data back to binary for multipart upload
+    if (request.contains("image_data")) {
+        std::string image_binary = JsonUtils::base64_decode(
+            request["image_data"].get<std::string>());
+        fields.push_back({"image[]", image_binary, "image.png", "image/png"});
+    }
+    if (request.contains("mask_data")) {
+        std::string mask_binary = JsonUtils::base64_decode(
+            request["mask_data"].get<std::string>());
+        fields.push_back({"mask", mask_binary, "mask.png", "image/png"});
+    }
+
+    if (is_debug()) {
+        std::cout << "[SDServer] Forwarding image edits to /v1/images/edits (multipart)"
+                  << " prompt=" << prompt
+                  << " n=" << request.value("n", 1)
+                  << " size=" << request.value("size", "")
+                  << std::endl;
+    }
+
+    return forward_multipart_request("/v1/images/edits", fields, 600);
+}
+
+json SDServer::image_variations(const json& request) {
+    // Use sd-server's /v1/images/variations endpoint.
+    // Note: OpenAI variations API does NOT accept a prompt parameter.
+    // The endpoint expects multipart/form-data (like the OpenAI API).
+
+    std::vector<MultipartField> fields;
+    fields.push_back({"prompt", "variation", "", ""});  // variations have no user prompt; use placeholder to satisfy non-empty check
+    fields.push_back({"n", std::to_string(request.value("n", 1)), "", ""});
+    if (request.contains("size")) {
+        fields.push_back({"size", request["size"].get<std::string>(), "", ""});
+    }
+
+    // Decode base64 image data back to binary for multipart upload
+    if (request.contains("image_data")) {
+        std::string image_binary = JsonUtils::base64_decode(
+            request["image_data"].get<std::string>());
+        fields.push_back({"image[]", image_binary, "image.png", "image/png"});
+    }
+
+    if (is_debug()) {
+        std::cout << "[SDServer] Forwarding image variations to /v1/images/edits (multipart)"
+                  << " prompt=variation"
+                  << " n=" << request.value("n", 1)
+                  << " size=" << request.value("size", "")
+                  << std::endl;
+    }
+
+    return forward_multipart_request("/v1/images/edits", fields, 600);
 }
 
 } // namespace backends

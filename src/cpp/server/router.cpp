@@ -621,6 +621,30 @@ json Router::image_generations(const json& request) {
     });
 }
 
+json Router::image_edits(const json& request) {
+    return execute_inference(request, [&](WrappedServer* server) {
+        auto image_server = dynamic_cast<IImageServer*>(server);
+        if (!image_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Image editing", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return image_server->image_edits(request);
+    });
+}
+
+json Router::image_variations(const json& request) {
+    return execute_inference(request, [&](WrappedServer* server) {
+        auto image_server = dynamic_cast<IImageServer*>(server);
+        if (!image_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Image variations", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return image_server->image_variations(request);
+    });
+}
+
 json Router::get_stats() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = get_most_recent_server();
