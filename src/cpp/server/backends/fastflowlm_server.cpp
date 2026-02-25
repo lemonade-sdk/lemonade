@@ -31,29 +31,27 @@ namespace fs = std::filesystem;
 namespace lemon {
 namespace backends {
 
-FastFlowLMServer::FastFlowLMServer(const std::string& log_level, ModelManager* model_manager)
-    : WrappedServer("FastFlowLM", log_level, model_manager) {
+FastFlowLMServer::FastFlowLMServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
+    : WrappedServer("FastFlowLM", log_level, model_manager, backend_manager) {
 }
 
 FastFlowLMServer::~FastFlowLMServer() {
     unload();
 }
 
-void FastFlowLMServer::install(const std::string& backend) {
+FastFlowLMServer::InstallResult FastFlowLMServer::install_if_needed(DownloadProgressCallback progress_cb) {
     std::cout << "[FastFlowLM] Checking FLM installation..." << std::endl;
-
-    // Reset upgrade tracking
-    flm_was_upgraded_ = false;
 
     // Check NPU driver version first
     if (!check_npu_driver_version()) {
         throw std::runtime_error("NPU driver version check failed - please update your driver");
     }
 
+    bool was_upgraded = false;
     try {
         // Install FLM if needed (uses version from backend_versions.json)
         // Returns true if FLM was installed or upgraded
-        flm_was_upgraded_ = install_flm_if_needed();
+        was_upgraded = install_flm_if_needed(progress_cb);
 
         // Verify flm is now available
         std::string flm_path = get_flm_path();
@@ -76,6 +74,8 @@ void FastFlowLMServer::install(const std::string& backend) {
         std::cerr << std::string(70, '=') << std::endl << std::endl;
         throw;
     }
+
+    return InstallResult{was_upgraded};
 }
 
 std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade) {
@@ -150,12 +150,12 @@ void FastFlowLMServer::load(const std::string& model_name,
     // Check if model was downloaded before FLM upgrade (for invalidation detection)
     bool model_was_downloaded = model_manager_ && model_manager_->is_model_downloaded(model_name);
 
-    // Install/check FLM
-    install();
+    // Install/check FLM (static — no instance state needed)
+    auto install_result = FastFlowLMServer::install_if_needed();
 
     // Check if FLM upgrade invalidated the model
     // This happens when a new FLM version requires models to be re-downloaded
-    if (flm_was_upgraded_ && model_was_downloaded && model_manager_) {
+    if (install_result.was_upgraded && model_was_downloaded && model_manager_) {
         // Refresh and check if model is now marked as not downloaded
         model_manager_->refresh_flm_download_status();
 
@@ -333,12 +333,12 @@ std::string FastFlowLMServer::get_flm_required_version() {
 
         const auto& flm_config = config["flm"];
 
-        if (!flm_config.contains("version") || !flm_config["version"].is_string()) {
-            std::cerr << "[FastFlowLM] backend_versions.json is missing 'flm.version'" << std::endl;
+        if (!flm_config.contains("npu") || !flm_config["npu"].is_string()) {
+            std::cerr << "[FastFlowLM] backend_versions.json is missing 'flm.npu'" << std::endl;
             return "v0.9.23";  // Fallback default
         }
 
-        return flm_config["version"].get<std::string>();
+        return flm_config["npu"].get<std::string>();
 
     } catch (const std::exception& e) {
         std::cerr << "[FastFlowLM] Error reading backend_versions.json: " << e.what() << std::endl;
@@ -387,10 +387,17 @@ std::string FastFlowLMServer::get_min_npu_driver_version() {
     }
 }
 
+// Function-local static for version cache (shared across all callers)
+static std::string& get_cached_version() {
+    static std::string cached_version;
+    return cached_version;
+}
+
 std::string FastFlowLMServer::get_flm_installed_version() {
     // Return cached version if available
-    if (!cached_installed_version_.empty()) {
-        return cached_installed_version_;
+    auto& cached = get_cached_version();
+    if (!cached.empty()) {
+        return cached;
     }
 
     // Check if flm is installed
@@ -433,8 +440,8 @@ std::string FastFlowLMServer::get_flm_installed_version() {
             if (end != std::string::npos) {
                 version_str = version_str.substr(0, end);
             }
-            cached_installed_version_ = version_str;
-            return cached_installed_version_;
+            cached = version_str;
+            return cached;
         }
 
         return "";
@@ -445,7 +452,7 @@ std::string FastFlowLMServer::get_flm_installed_version() {
 }
 
 void FastFlowLMServer::invalidate_version_cache() {
-    cached_installed_version_.clear();
+    get_cached_version().clear();
 }
 
 std::string FastFlowLMServer::get_npu_driver_version() {
@@ -598,7 +605,7 @@ bool FastFlowLMServer::compare_versions(const std::string& v1, const std::string
     return true; // Equal versions
 }
 
-bool FastFlowLMServer::install_flm_if_needed() {
+bool FastFlowLMServer::install_flm_if_needed(DownloadProgressCallback progress_cb) {
     std::string required_version = get_flm_required_version();
     std::string current_version = get_flm_installed_version();
 
@@ -659,7 +666,7 @@ bool FastFlowLMServer::install_flm_if_needed() {
         }
     }
 
-    if (!download_flm_installer(installer_path)) {
+    if (!download_flm_installer(installer_path, progress_cb)) {
         throw std::runtime_error("Failed to download FLM installer");
     }
 
@@ -681,21 +688,25 @@ bool FastFlowLMServer::install_flm_if_needed() {
         // Ignore cleanup errors
     }
 
+    // Send completion event now that installation is fully done
+    if (progress_cb) {
+        DownloadProgress p;
+        p.file = "flm-setup.exe";
+        p.file_index = 1;
+        p.total_files = 1;
+        p.percent = 100;
+        p.complete = true;
+        progress_cb(p);
+    }
+
     std::cout << "[FastFlowLM] Successfully installed FLM "
               << required_version << std::endl;
-
-    // Refresh FLM model download status in the model cache
-    // This ensures any pre-existing FLM models are now detected
-    // (FLM upgrade may invalidate previously downloaded models)
-    if (model_manager_) {
-        std::cout << "[FastFlowLM] Refreshing FLM model download status..." << std::endl;
-        model_manager_->refresh_flm_download_status();
-    }
 
     return true;  // FLM was installed or upgraded
 }
 
-bool FastFlowLMServer::download_flm_installer(const std::string& output_path) {
+bool FastFlowLMServer::download_flm_installer(const std::string& output_path,
+                                               DownloadProgressCallback progress_cb) {
     // Get required version and build download URL
     std::string version = get_flm_required_version();
     const std::string url =
@@ -704,9 +715,25 @@ bool FastFlowLMServer::download_flm_installer(const std::string& output_path) {
     std::cout << "[FastFlowLM] Downloading FLM " << version << " installer..." << std::endl;
     std::cout << "[FastFlowLM] URL: " << url << std::endl;
 
-    auto progress_callback = utils::create_throttled_progress_callback();
+    // If an external progress_cb is provided, wrap it as a ProgressCallback for HttpClient
+    utils::ProgressCallback http_progress_cb;
+    if (progress_cb) {
+        http_progress_cb = [&progress_cb](size_t downloaded, size_t total) -> bool {
+            DownloadProgress p;
+            p.file = "flm-setup.exe";
+            p.file_index = 1;
+            p.total_files = 1;
+            p.bytes_downloaded = downloaded;
+            p.bytes_total = total;
+            p.percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
+            p.complete = false;  // Don't signal complete until installer finishes
+            return progress_cb(p);
+        };
+    } else {
+        http_progress_cb = utils::create_throttled_progress_callback();
+    }
 
-    auto result = utils::HttpClient::download_file(url, output_path, progress_callback);
+    auto result = utils::HttpClient::download_file(url, output_path, http_progress_cb);
 
     if (result.success) {
         std::cout << "\n[FastFlowLM] Downloaded installer to "

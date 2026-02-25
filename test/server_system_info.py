@@ -145,8 +145,8 @@ MOCK_HARDWARE_CONFIGS = {
             "llamacpp": ["metal"],
             "whispercpp": ["npu"],  # npu backend requires XDNA2 NPU
             # NPU recipes unsupported: CPU is "Ryzen 9 7950X" (no "Ryzen AI" -> no XDNA2)
-            "flm": ["default"],
-            "ryzenai-llm": ["default"],
+            "flm": ["npu"],
+            "ryzenai-llm": ["npu"],
         },
     },
     # Windows x86_64 with AMD iGPU (Strix Point - ROCm-capable) and NPU
@@ -190,8 +190,8 @@ MOCK_HARDWARE_CONFIGS = {
             "llamacpp": ["vulkan", "rocm", "cpu"],
             "whispercpp": ["npu", "cpu"],  # npu supported on XDNA2, cpu on x86_64
             "sd-cpp": ["cpu"],
-            "flm": ["default"],
-            "ryzenai-llm": ["default"],
+            "flm": ["npu"],
+            "ryzenai-llm": ["npu"],
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
@@ -241,8 +241,8 @@ MOCK_HARDWARE_CONFIGS = {
             "whispercpp": ["npu"],  # npu backend requires XDNA2 NPU
             # NPU recipes unsupported: CPU is "Intel Core i9-13900K" (no Ryzen AI)
             "sd-cpp": ["rocm"],
-            "flm": ["default"],
-            "ryzenai-llm": ["default"],
+            "flm": ["npu"],
+            "ryzenai-llm": ["npu"],
         },
     },
     # Windows x86_64 with AMD iGPU but NOT ROCm-capable (older GPU)
@@ -287,8 +287,8 @@ MOCK_HARDWARE_CONFIGS = {
             "whispercpp": ["npu"],  # npu backend requires XDNA2 NPU
             # NPU recipes unsupported: CPU is "Ryzen 7 6800U" (no Ryzen AI)
             "sd-cpp": ["rocm"],
-            "flm": ["default"],
-            "ryzenai-llm": ["default"],
+            "flm": ["npu"],
+            "ryzenai-llm": ["npu"],
         },
     },
     # macOS ARM64 (Apple Silicon) - ONLY RUN ON MACOS
@@ -327,8 +327,8 @@ MOCK_HARDWARE_CONFIGS = {
             "llamacpp": ["vulkan", "rocm", "cpu"],
             "whispercpp": ["npu", "cpu"],  # whispercpp is Windows-only
             "sd-cpp": ["cpu", "rocm"],
-            "flm": ["default"],
-            "ryzenai-llm": ["default"],
+            "flm": ["npu"],
+            "ryzenai-llm": ["npu"],
         },
     },
     # Linux x86_64 with no AMD GPU - ONLY RUN ON LINUX
@@ -362,8 +362,8 @@ MOCK_HARDWARE_CONFIGS = {
             "llamacpp": ["metal", "rocm"],
             "whispercpp": ["npu"],  # whispercpp NPU is Windows-only
             "sd-cpp": ["rocm"],
-            "flm": ["default"],
-            "ryzenai-llm": ["default"],
+            "flm": ["npu"],
+            "ryzenai-llm": ["npu"],
         },
     },
     # Linux x86_64 with AMD RDNA3 dGPU (ROCm-capable) - ONLY RUN ON LINUX
@@ -403,9 +403,9 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
-            "whispercpp": ["npu"],  # whispercpp NPU is Windows-only
-            "flm": ["default"],  # Windows NPU only
-            "ryzenai-llm": ["default"],
+            "whispercpp": ["npu", "cpu"],  # whispercpp is Windows-only
+            "flm": ["npu"],  # Windows NPU only
+            "ryzenai-llm": ["npu"],
         },
     },
     # Linux x86_64 with AMD GPU that doesn't support ROCm (RDNA2) - ONLY RUN ON LINUX
@@ -447,8 +447,8 @@ MOCK_HARDWARE_CONFIGS = {
             "llamacpp": ["metal", "rocm"],  # rocm not supported on RDNA2
             "whispercpp": ["npu"],  # whispercpp NPU is Windows-only
             "sd-cpp": ["rocm"],
-            "flm": ["default"],
-            "ryzenai-llm": ["default"],
+            "flm": ["npu"],
+            "ryzenai-llm": ["npu"],
         },
     },
 }
@@ -616,10 +616,12 @@ class SystemInfoMockTests(unittest.TestCase):
                         )
                         backend_info = backends[backend]
                         self.assertTrue(
-                            backend_info.get("supported", False),
-                            f"Expected {recipe}/{backend} to be supported, but got: {backend_info}",
+                            backend_info.get("state", "") != "unsupported",
+                            f"Expected {recipe}/{backend} to be supported, but got state={backend_info.get('state')}: {backend_info}",
                         )
-                        print(f"  [OK] {recipe}/{backend}: supported=True")
+                        print(
+                            f"  [OK] {recipe}/{backend}: state={backend_info.get('state')}"
+                        )
 
                 # Validate expected unsupported backends
                 for recipe, expected_backends in config.get(
@@ -641,10 +643,10 @@ class SystemInfoMockTests(unittest.TestCase):
 
                         backend_info = backends[backend]
                         self.assertFalse(
-                            backend_info.get("supported", False),
-                            f"Expected {recipe}/{backend} to be UNsupported, but got: {backend_info}",
+                            backend_info.get("state", "") != "unsupported",
+                            f"Expected {recipe}/{backend} to be unsupported, but got state={backend_info.get('state')}: {backend_info}",
                         )
-                        print(f"  [OK] {recipe}/{backend}: supported=False")
+                        print(f"  [OK] {recipe}/{backend}: state=unsupported")
 
             finally:
                 # Stop the server

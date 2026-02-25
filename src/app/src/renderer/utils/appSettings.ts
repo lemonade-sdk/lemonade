@@ -21,7 +21,7 @@ export interface StringSetting {
 export interface LayoutSettings {
   isChatVisible: boolean;
   isModelManagerVisible: boolean;
-  isCenterPanelVisible_v2: boolean;  // v2 to reset user preference from old isMarketplaceVisible
+  leftPanelView: 'models' | 'marketplace' | 'backends' | 'settings';
   isLogsVisible: boolean;
   modelManagerWidth: number;
   chatWidth: number;
@@ -79,7 +79,7 @@ const numericSettingKeys: NumericSettingKey[] = ['temperature', 'topK', 'topP', 
 export const DEFAULT_LAYOUT_SETTINGS: LayoutSettings = {
   isChatVisible: true,
   isModelManagerVisible: true,
-  isCenterPanelVisible_v2: true,  // v2 to reset user preference from old isMarketplaceVisible
+  leftPanelView: 'models',
   isLogsVisible: false,
   modelManagerWidth: 280,
   chatWidth: 350,
@@ -241,8 +241,8 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
     if (typeof rawLayout.isModelManagerVisible === 'boolean') {
       defaults.layout.isModelManagerVisible = rawLayout.isModelManagerVisible;
     }
-    if (typeof rawLayout.isCenterPanelVisible_v2 === 'boolean') {
-      defaults.layout.isCenterPanelVisible_v2 = rawLayout.isCenterPanelVisible_v2;
+    if (rawLayout.leftPanelView === 'models' || rawLayout.leftPanelView === 'marketplace' || rawLayout.leftPanelView === 'backends' || rawLayout.leftPanelView === 'settings') {
+      defaults.layout.leftPanelView = rawLayout.leftPanelView;
     }
     if (typeof rawLayout.isLogsVisible === 'boolean') {
       defaults.layout.isLogsVisible = rawLayout.isLogsVisible;

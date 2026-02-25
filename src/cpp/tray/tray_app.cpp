@@ -1640,61 +1640,202 @@ int TrayApp::execute_status_command() {
 
 // Command: recipes
 int TrayApp::execute_recipes_command() {
+    // Handle --install flag
+    if (!tray_config_.install_backend.empty()) {
+        // Parse "recipe:backend" format
+        size_t colon_pos = tray_config_.install_backend.find(':');
+        if (colon_pos == std::string::npos) {
+            std::cerr << "Error: --install requires format 'recipe:backend' (e.g., llamacpp:vulkan)" << std::endl;
+            return 1;
+        }
+        std::string recipe = tray_config_.install_backend.substr(0, colon_pos);
+        std::string backend = tray_config_.install_backend.substr(colon_pos + 1);
+
+        std::cout << "Installing backend: " << recipe << ":" << backend << std::endl;
+
+        return server_call([&](std::unique_ptr<ServerManager> const &server_manager) {
+            try {
+                nlohmann::json request_body = {
+                    {"recipe", recipe},
+                    {"backend", backend},
+                    {"stream", true}
+                };
+
+                httplib::Client cli = server_manager->make_http_client(86400, 30);
+
+                std::string last_file;
+                int last_percent = -1;
+                bool success = false;
+                std::string error_message;
+                std::string buffer;
+
+                httplib::Headers headers;
+                auto res = cli.Post("/api/v1/install", headers, request_body.dump(), "application/json",
+                    [&](const char* data, size_t len) {
+                        buffer.append(data, len);
+
+                        size_t pos;
+                        while ((pos = buffer.find("\n\n")) != std::string::npos) {
+                            std::string message = buffer.substr(0, pos);
+                            buffer.erase(0, pos + 2);
+
+                            std::string event_type;
+                            std::string event_data;
+
+                            std::istringstream stream(message);
+                            std::string line;
+                            while (std::getline(stream, line)) {
+                                if (line.substr(0, 6) == "event:") {
+                                    event_type = line.substr(7);
+                                    while (!event_type.empty() && event_type[0] == ' ') event_type.erase(0, 1);
+                                } else if (line.substr(0, 5) == "data:") {
+                                    event_data = line.substr(6);
+                                    while (!event_data.empty() && event_data[0] == ' ') event_data.erase(0, 1);
+                                }
+                            }
+
+                            if (!event_data.empty()) {
+                                try {
+                                    auto json_data = nlohmann::json::parse(event_data);
+
+                                    if (event_type == "progress") {
+                                        std::string file = json_data.value("file", "");
+                                        uint64_t bytes_downloaded = json_data.value("bytes_downloaded", (uint64_t)0);
+                                        uint64_t bytes_total = json_data.value("bytes_total", (uint64_t)0);
+                                        int percent = json_data.value("percent", 0);
+
+                                        if (file != last_file) {
+                                            if (!last_file.empty()) std::cout << std::endl;
+                                            std::cout << "Downloading: " << file;
+                                            if (bytes_total > 0) {
+                                                std::cout << " (" << std::fixed << std::setprecision(1)
+                                                          << (bytes_total / (1024.0 * 1024.0)) << " MB)";
+                                            }
+                                            std::cout << std::endl;
+                                            last_file = file;
+                                            last_percent = -1;
+                                        }
+
+                                        if (bytes_total > 0 && percent != last_percent) {
+                                            std::cout << "\r  Progress: " << percent << "% ("
+                                                    << std::fixed << std::setprecision(1)
+                                                    << (bytes_downloaded / (1024.0 * 1024.0)) << "/"
+                                                    << (bytes_total / (1024.0 * 1024.0)) << " MB)" << std::flush;
+                                            last_percent = percent;
+                                        }
+                                    } else if (event_type == "complete") {
+                                        std::cout << std::endl;
+                                        success = true;
+                                    } else if (event_type == "error") {
+                                        error_message = json_data.value("error", "Unknown error");
+                                    }
+                                } catch (const std::exception&) {}
+                            }
+                        }
+                        return true;
+                    });
+
+                if (!res && !success) {
+                    throw std::runtime_error("HTTP request failed: " + httplib::to_string(res.error()));
+                }
+                if (!error_message.empty()) {
+                    throw std::runtime_error(error_message);
+                }
+                if (success) {
+                    std::cout << "Backend installed successfully: " << recipe << ":" << backend << std::endl;
+                }
+                return 0;
+            } catch (const std::exception& e) {
+                std::cerr << "Error installing backend: " << e.what() << std::endl;
+                return 1;
+            }
+        });
+    }
+
+    // Handle --uninstall flag
+    if (!tray_config_.uninstall_backend.empty()) {
+        size_t colon_pos = tray_config_.uninstall_backend.find(':');
+        if (colon_pos == std::string::npos) {
+            std::cerr << "Error: --uninstall requires format 'recipe:backend' (e.g., llamacpp:vulkan)" << std::endl;
+            return 1;
+        }
+        std::string recipe = tray_config_.uninstall_backend.substr(0, colon_pos);
+        std::string backend = tray_config_.uninstall_backend.substr(colon_pos + 1);
+
+        std::cout << "Uninstalling backend: " << recipe << ":" << backend << std::endl;
+
+        return server_call([&](std::unique_ptr<ServerManager> const &server_manager) {
+            try {
+                nlohmann::json request_body = {
+                    {"recipe", recipe},
+                    {"backend", backend}
+                };
+
+                std::string response = server_manager->make_http_request(
+                    "/api/v1/uninstall", "POST", request_body.dump());
+
+                auto response_json = nlohmann::json::parse(response);
+                if (response_json.value("status", "") == "success") {
+                    std::cout << "Backend uninstalled successfully: " << recipe << ":" << backend << std::endl;
+                    return 0;
+                } else {
+                    std::cerr << "Uninstall failed: " << response << std::endl;
+                    return 1;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error uninstalling backend: " << e.what() << std::endl;
+                return 1;
+            }
+        });
+    }
+
+    // Default: list recipes
     auto statuses = lemon::SystemInfo::get_all_recipe_statuses();
 
     // Print table header
     std::cout << std::left << std::setw(20) << "Recipe"
               << std::setw(12) << "Backend"
-              << std::setw(14) << "Status"
-              << "Version/Error" << std::endl;
-    std::cout << std::string(75, '-') << std::endl;
+              << std::setw(16) << "Status"
+              << std::setw(46) << "Message/Version"
+              << "Action" << std::endl;
+    std::cout << std::string(148, '-') << std::endl;
 
     for (const auto& status : statuses) {
         bool first_backend = true;
 
         if (status.backends.empty()) {
-            // Recipe with no backends (shouldn't happen, but handle gracefully)
             std::cout << std::left << std::setw(20) << status.name
                       << std::setw(12) << "-"
-                      << std::setw(14) << (status.supported ? "supported" : "unsupported")
+                      << std::setw(16) << "unsupported"
+                      << std::setw(46) << "No backend definitions"
                       << "-" << std::endl;
         } else {
             for (const auto& backend : status.backends) {
-                // Recipe name only on first line
                 std::string recipe_col = first_backend ? status.name : "";
+                std::string status_str = backend.state.empty() ? "unsupported" : backend.state;
 
-                // Determine status string
-                // Check supported first - unsupported takes precedence even if installed
-                std::string status_str;
-                if (!backend.supported) {
-                    status_str = "unsupported";
-                } else if (backend.available) {
-                    status_str = "installed";
-                } else {
-                    status_str = "supported";
-                }
-
-                // Version or error (concise)
                 std::string info_col;
-                if (!backend.version.empty() && backend.version != "unknown") {
+                if (status_str == "installed" && !backend.version.empty() && backend.version != "unknown") {
                     info_col = backend.version;
-                } else if (!backend.supported && !backend.error.empty()) {
-                    info_col = backend.error;
+                } else if (!backend.message.empty()) {
+                    info_col = backend.message;
                 } else {
                     info_col = "-";
                 }
+                std::string action_col = backend.action.empty() ? "-" : backend.action;
 
                 std::cout << std::left << std::setw(20) << recipe_col
                           << std::setw(12) << backend.name
-                          << std::setw(14) << status_str
-                          << info_col << std::endl;
+                          << std::setw(16) << status_str
+                          << std::setw(46) << info_col
+                          << " " << action_col << std::endl;
 
                 first_backend = false;
             }
         }
     }
 
-    std::cout << std::string(75, '-') << std::endl;
+    std::cout << std::string(148, '-') << std::endl;
     return 0;
 }
 
