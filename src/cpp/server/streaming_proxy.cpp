@@ -1,6 +1,5 @@
 #include "lemon/streaming_proxy.h"
 #include <sstream>
-#include <iomanip>
 #include <iostream>
 
 namespace lemon {

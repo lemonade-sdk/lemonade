@@ -1,7 +1,6 @@
 #include "lemon/streaming_audio_buffer.h"
 #include <ixwebsocket/IXBase64.h>
 #include <cstring>
-#include <stdexcept>
 #include <algorithm>
 #include <iostream>
 

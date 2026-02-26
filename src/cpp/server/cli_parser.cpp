@@ -1,9 +1,6 @@
 #include <lemon/cli_parser.h>
 #include <lemon/recipe_options.h>
 #include <lemon/version.h>
-#include <iostream>
-#include <cctype>
-#include <cstdlib>
 
 #ifdef LEMONADE_TRAY
 #define APP_NAME "lemonade-server"

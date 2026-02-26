@@ -1,11 +1,6 @@
 #include "lemon/ollama_api.h"
 #include "lemon/model_types.h"
-#include "lemon/version.h"
 #include <iostream>
-#include <sstream>
-#include <chrono>
-#include <algorithm>
-#include <thread>
 
 namespace lemon {
 
