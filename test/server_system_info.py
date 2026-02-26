@@ -360,7 +360,7 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],
-            "whispercpp": ["npu"],  # whispercpp NPU is Windows-only
+            "whispercpp": ["npu", "cpu"],  # NPU is Windows-only; Windows has both NPU and CPU
             "sd-cpp": ["rocm"],
             "flm": ["npu"],
             "ryzenai-llm": ["npu"],
@@ -403,7 +403,7 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
-            "whispercpp": ["npu"],  # whispercpp NPU is Windows-only
+            "whispercpp": ["npu", "cpu"],  # NPU is Windows-only; Windows has both NPU and CPU
             "flm": ["npu"],  # Windows NPU only
             "ryzenai-llm": ["npu"],
         },
@@ -445,7 +445,7 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],  # rocm not supported on RDNA2
-            "whispercpp": ["npu"],  # whispercpp NPU is Windows-only
+            "whispercpp": ["npu", "cpu"],  # NPU is Windows-only; Windows has both NPU and CPU
             "sd-cpp": ["rocm"],
             "flm": ["npu"],
             "ryzenai-llm": ["npu"],
