@@ -148,7 +148,6 @@ const EmbeddingPanel: React.FC<EmbeddingPanelProps> = ({
             }}
             placeholder="Enter text to generate embeddings..."
             rows={1}
-            disabled={isBusy}
           />
           <InferenceControls
             isBusy={isBusy}

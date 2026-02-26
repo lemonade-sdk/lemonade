@@ -234,9 +234,8 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
             value={inputValue}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={isBusy ? "Converting text to speech.." : "Type your message..."}
+            placeholder="Type your message..."
             rows={1}
-            disabled={isBusy}
           />
           <div className="chat-controls">
             <div className="chat-controls-left">

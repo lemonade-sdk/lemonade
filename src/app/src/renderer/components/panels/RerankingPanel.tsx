@@ -151,7 +151,6 @@ const RerankingPanel: React.FC<RerankingPanelProps> = ({
               }}
               placeholder="Enter your search query..."
               rows={1}
-              disabled={isBusy}
             />
           </div>
           <div className="reranking-documents-section">
@@ -165,7 +164,6 @@ const RerankingPanel: React.FC<RerankingPanelProps> = ({
               }}
               placeholder="Enter documents to rerank, one per line..."
               rows={3}
-              disabled={isBusy}
             />
           </div>
           <InferenceControls

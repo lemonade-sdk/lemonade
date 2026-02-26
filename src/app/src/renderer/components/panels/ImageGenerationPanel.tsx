@@ -239,7 +239,6 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
             }}
             placeholder="Describe the image you want to generate..."
             rows={1}
-            disabled={isBusy}
           />
           <InferenceControls
             isBusy={isBusy}

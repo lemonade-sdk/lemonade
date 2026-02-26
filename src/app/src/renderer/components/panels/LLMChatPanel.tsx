@@ -673,7 +673,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             onPaste={uploadedImageHandlers.paste}
             placeholder="Type your message..."
             rows={1}
-            disabled={isBusy}
           />
           <InferenceControls
             isBusy={isBusy}
