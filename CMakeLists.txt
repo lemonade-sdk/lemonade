@@ -1332,8 +1332,8 @@ if(UNIX AND NOT APPLE)
         set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "chromium-browser | google-chrome-stable | chromium")
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
     endif()
-    # Post-install script for debian package
-    set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst")
+    # Control scripts for debian package
+    set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst;${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/prerm;${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postrm")
 
     # RPM specific variables defined within
     include(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/CPackRPM.cmake)
