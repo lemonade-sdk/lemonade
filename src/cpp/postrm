@@ -1,0 +1,12 @@
+#!/bin/bash
+set -e
+
+# Clean up systemd state on purge
+if [ "$1" = "purge" ] ; then
+    if [ -x "/usr/bin/deb-systemd-helper" ]; then
+        deb-systemd-helper purge 'lemonade-server.service' >/dev/null || true
+        deb-systemd-helper unmask 'lemonade-server.service' >/dev/null || true
+    fi
+fi
+
+exit 0
