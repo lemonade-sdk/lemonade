@@ -764,11 +764,43 @@
         "labels": [],
         "size": 45.1
     },
+    "Qwen3.5-35B-A3B-GGUF": {
+        "checkpoint": "unsloth/Qwen3.5-35B-A3B-GGUF:Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision",
+            "hot"
+        ],
+        "size": 19.7
+    },
+    "Qwen3.5-122B-A10B-GGUF": {
+        "checkpoint": "unsloth/Qwen3.5-122B-A10B-GGUF:UD-Q4_K_XL",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision",
+            "hot"
+        ],
+        "size": 68.4
+    },
+    "Qwen3.5-27B-GGUF": {
+        "checkpoint": "unsloth/Qwen3.5-27B-GGUF:Qwen3.5-27B-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision"
+        ],
+        "size": 16.7
+    },
     "Llama-4-Scout-17B-16E-Instruct-GGUF": {
         "checkpoint": "unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF:Q4_K_S",
         "mmproj": "mmproj-F16.gguf",
         "recipe": "llamacpp",
-        "suggested": true,
+        "suggested": false,
         "labels": [
             "vision"
         ],
@@ -949,6 +981,12 @@
         "recipe": "llamacpp",
         "suggested": true,
         "size": 4.8
+    },
+    "LFM2-24B-A2B-GGUF": {
+        "checkpoint": "LiquidAI/LFM2-24B-A2B-GGUF:Q4_K_M",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 14.4
     },
     "gpt-oss-20b-FLM": {
         "checkpoint": "gpt-oss:20b",
