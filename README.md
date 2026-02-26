@@ -125,7 +125,7 @@ Lemonade supports multiple recipes (LLM, speech, TTS, and image generation), and
   </thead>
   <tbody>
     <tr>
-      <td rowspan="6"><strong>LLM</strong></td>
+      <td rowspan="6"><strong>Text generation</strong></td>
       <td rowspan="4"><code>llamacpp</code></td>
       <td><code>vulkan</code></td>
       <td>GPU</td>
