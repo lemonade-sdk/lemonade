@@ -130,7 +130,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       }
       pendingAutoScrollRef.current = false;
     };
-  }, [messages, isUserAtBottom]);
+  }, [messages, isBusy, isUserAtBottom]);
 
   // Auto-grow edit textarea
   useEffect(() => {
