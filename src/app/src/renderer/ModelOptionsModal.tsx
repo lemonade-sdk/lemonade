@@ -39,11 +39,12 @@ interface SettingsModalProps {
 }
 
 const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onSubmit, model }) => {
-  const { supportedRecipes } = useSystem();
+  const { supportedRecipes, ensureSystemInfoLoaded } = useSystem();
   const [modelInfo, setModelInfo] = useState<ModelInfo>();
   const [modelName, setModelName] = useState("");
   const [modelUrl, setModelUrl] = useState<string>("");
   const [options, setOptions] = useState<RecipeOptions>();
+  const [numericDrafts, setNumericDrafts] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -52,10 +53,15 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   useEffect(() => {
     if (!isOpen) return;
     let isMounted = true;
+    setNumericDrafts({});
+    void ensureSystemInfoLoaded();
 
     const fetchOptions = async () => {
       if (isMounted) setIsLoading(true);
-      if (!model) return;
+      if (!model) {
+        if (isMounted) setIsLoading(false);
+        return;
+      }
 
       try {
         const response = await serverFetch(`/models/${model}`);
@@ -85,7 +91,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
     fetchOptions();
     return () => { isMounted = false; };
-  }, [isOpen]);
+  }, [isOpen, model, ensureSystemInfoLoaded]);
 
   // Handle click outside and escape key
   useEffect(() => {
@@ -126,6 +132,25 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     });
   };
 
+  const clearNumericDraft = (key: string) => {
+    setNumericDrafts(prev => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const commitNumericDraft = (key: string, draftValue: string): void => {
+    const trimmed = draftValue.trim();
+    if (trimmed === '') return;
+
+    const parsed = parseFloat(trimmed);
+    if (Number.isNaN(parsed)) return;
+
+    handleNumericChange(key, parsed);
+  };
+
   // Generic handler for string option changes
   const handleStringChange = (key: string, value: string) => {
     if (!options) return;
@@ -163,6 +188,8 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     const def = getOptionDefinition(key);
     if (!def) return;
 
+    clearNumericDraft(key);
+
     setOptions(prev => {
       if (!prev) return prev;
       return {
@@ -178,6 +205,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   // Reset all options to defaults
   const handleReset = () => {
     if (!options?.recipe) return;
+    setNumericDrafts({});
     setOptions(createDefaultOptions(options.recipe));
   };
 
@@ -187,7 +215,26 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
   const handleSubmit = () => {
     if (!options || !modelName) return;
-    onSubmit(modelName, options);
+
+    let submitOptions: RecipeOptions = options;
+
+    for (const [key, draftValue] of Object.entries(numericDrafts)) {
+      const trimmed = draftValue.trim();
+      if (trimmed === '') continue;
+
+      const parsed = parseFloat(trimmed);
+      if (Number.isNaN(parsed)) continue;
+
+      submitOptions = {
+        ...submitOptions,
+        [key]: {
+          value: clampOptionValue(key, parsed),
+          useDefault: false,
+        }
+      } as RecipeOptions;
+    }
+
+    onSubmit(modelName, submitOptions);
   };
 
   if (!isOpen || !options) return null;
@@ -216,18 +263,24 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
     const value = getOptionValue<number>(key);
     if (value === undefined) return null;
+    const displayValue = numericDrafts[key] ?? String(value);
 
     return (
       <div className="form-section" key={key}>
         <label className="form-label" title={def.description}>{def.label.toLowerCase()}</label>
         <input
           type="text"
-          value={value}
+          value={displayValue}
           onChange={(e) => {
-            if (e.target.value === 'auto' || e.target.value === '') return;
-            const parsed = parseFloat(e.target.value);
-            if (Number.isNaN(parsed)) return;
-            handleNumericChange(key, parsed);
+            const inputValue = e.target.value;
+            setNumericDrafts(prev => ({ ...prev, [key]: inputValue }));
+          }}
+          onBlur={() => {
+            const draftValue = numericDrafts[key];
+            if (draftValue !== undefined) {
+              commitNumericDraft(key, draftValue);
+            }
+            clearNumericDraft(key);
           }}
           className="form-input"
           placeholder="auto"
