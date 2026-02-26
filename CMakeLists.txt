@@ -7,6 +7,9 @@ endif()
 
 project(lemon_cpp VERSION 9.4.0)
 
+# Export compile_commands.json for clangd/IntelliSense
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Enable Objective-C++ for macOS Metal support
 if(APPLE)
     enable_language(OBJCXX)
