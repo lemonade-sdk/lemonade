@@ -1110,16 +1110,6 @@ static bool is_npu_available(const json& hardware) {
     return false;
 }
 
-static bool is_flm_available(const json& hardware) {
-    return is_npu_available(hardware);
-}
-
-static bool is_ryzenai_llm_available(const json& hardware) {
-    // RyzenAI LLM models are available if NPU hardware is present
-    // The ryzenai-server executable will be obtained as needed
-    return is_npu_available(hardware);
-}
-
 // Helper function to parse physical memory string (e.g., "32.00 GB") to GB as double
 // Returns 0.0 if parsing fails
 static double parse_physical_memory_gb(const std::string& memory_str) {
@@ -1230,8 +1220,6 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
     // Check backend availability (passing hardware info)
     bool npu_available = is_npu_available(hardware);
-    bool flm_available = is_flm_available(hardware);
-    bool ryzenai_llm_available = is_ryzenai_llm_available(hardware);
 
     // Get largest VRAM object for memory-based filtering
     double largest_mem_pool_gb = 0.0;
@@ -1278,8 +1266,6 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     if (!debug_printed) {
         std::cout << "[ModelManager] Backend availability:" << std::endl;
         std::cout << "  - NPU hardware: " << (npu_available ? "Yes" : "No") << std::endl;
-        std::cout << "  - FLM available: " << (flm_available ? "Yes" : "No") << std::endl;
-        std::cout << "  - RyzenAI LLM available: " << (ryzenai_llm_available ? "Yes" : "No") << std::endl;
         if (system_ram_gb > 0.0) {
             std::cout << "  - System RAM: " << std::fixed << std::setprecision(1) << system_ram_gb
                       << " GB (max model size: " << max_model_size_gb << " GB)" << std::endl;
