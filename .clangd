@@ -1,0 +1,5 @@
+CompileFlags:
+  CompilationDatabase: build
+  Add: [-Wall, -Wextra, -Wpedantic]
+Index:
+  Background: Build
