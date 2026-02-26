@@ -36,7 +36,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [resetKey, setResetKey] = useState(0);
 
-  const modelType = useMemo((): 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'speech' => {
+  type ModelType = 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'speech';
+
+  const modelType = useMemo((): ModelType => {
     if (!selectedModel) return 'llm';
     const info = modelsData[selectedModel];
     if (!info) return 'llm';
@@ -47,6 +49,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     if (info.recipe === 'kokoro') return 'speech';
     return 'llm';
   }, [selectedModel, modelsData]);
+
+  // Lock the rendered panel type during inference so that loading a
+  // different-modality model via Model Manager doesn't yank the current
+  // panel out from under the user mid-inference.
+  const [activeModelType, setActiveModelType] = useState<ModelType>(modelType);
+  useEffect(() => {
+    if (!inference.isBusy) {
+      setActiveModelType(modelType);
+    }
+  }, [modelType, inference.isBusy]);
 
   const isVision = useMemo(() => {
     if (!selectedModel) return false;
@@ -135,11 +147,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
 
   if (!isVisible) return null;
 
-  const headerTitle = modelType === 'embedding' ? 'Lemonade Embeddings'
-    : modelType === 'reranking' ? 'Lemonade Reranking'
-    : modelType === 'transcription' ? 'Lemonade Transcriber'
-    : modelType === 'image' ? 'Lemonade Image Generator'
-    : modelType === 'speech' ? 'Lemonade Text to Speech'
+  const headerTitle = activeModelType === 'embedding' ? 'Lemonade Embeddings'
+    : activeModelType === 'reranking' ? 'Lemonade Reranking'
+    : activeModelType === 'transcription' ? 'Lemonade Transcriber'
+    : activeModelType === 'image' ? 'Lemonade Image Generator'
+    : activeModelType === 'speech' ? 'Lemonade Text to Speech'
     : 'LLM Chat';
 
   const sharedProps = {
@@ -154,7 +166,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   };
 
   return (
-    <div className={`chat-window ${modelType === 'llm' ? 'chat-window-llm' : ''}`} style={width ? { width: `${width}px` } : undefined}>
+    <div className={`chat-window ${activeModelType === 'llm' ? 'chat-window-llm' : ''}`} style={width ? { width: `${width}px` } : undefined}>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       <div className="chat-header">
         <h3>{headerTitle}</h3>
@@ -162,7 +174,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
           className="new-chat-button"
           onClick={handleNewChat}
           disabled={inference.isBusy}
-          title={modelType === 'llm' ? 'Start a new chat' : 'Clear'}
+          title={activeModelType === 'llm' ? 'Start a new chat' : 'Clear'}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path
@@ -176,12 +188,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
         </button>
       </div>
 
-      {modelType === 'embedding' && <EmbeddingPanel key={resetKey} {...sharedProps} />}
-      {modelType === 'reranking' && <RerankingPanel key={resetKey} {...sharedProps} />}
-      {modelType === 'transcription' && <TranscriptionPanel key={resetKey} {...sharedProps} />}
-      {modelType === 'image' && <ImageGenerationPanel key={resetKey} {...sharedProps} />}
-      {modelType === 'speech' && <TTSPanel key={resetKey} {...sharedProps} />}
-      {modelType === 'llm' && (
+      {activeModelType === 'embedding' && <EmbeddingPanel key={resetKey} {...sharedProps} />}
+      {activeModelType === 'reranking' && <RerankingPanel key={resetKey} {...sharedProps} />}
+      {activeModelType === 'transcription' && <TranscriptionPanel key={resetKey} {...sharedProps} />}
+      {activeModelType === 'image' && <ImageGenerationPanel key={resetKey} {...sharedProps} />}
+      {activeModelType === 'speech' && <TTSPanel key={resetKey} {...sharedProps} />}
+      {activeModelType === 'llm' && (
         <LLMChatPanel
           key={resetKey}
           {...sharedProps}
