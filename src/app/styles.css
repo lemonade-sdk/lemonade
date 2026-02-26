@@ -510,14 +510,6 @@ main {
     background: #222;
 }
 
-.external-content-title {
-    font-size: 12px;
-    font-weight: 500;
-    color: #eee;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
 /* Disable iframe pointer events during resize to prevent event capture */
 body[style*="cursor: col-resize"] .marketplace-iframe,
 body[style*="cursor: row-resize"] .marketplace-iframe {

@@ -163,7 +163,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
       // Extract URL from action
       if (action) {
         const urlMatch = action.match(/https?:\/\/[^\s]+/);
-        if (urlMatch && urlMatch[0].endsWith('.html')) {
+        if (urlMatch) {
           window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: urlMatch[0] } }));
         }
       }
@@ -179,9 +179,9 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
   const handleCopyAction = useCallback(async (recipe: string, backend: string, action?: string) => {
     if (!action) return;
     try {
-      // If the action contains a documentation URL, open it in-app
-      if (action.match(/https?:\/\/[^\s]+\.html/)) {
-        const urlMatch = action.match(/https?:\/\/[^\s]+/);
+      // If the action contains a lemonade-server.ai documentation URL, open it in-app
+      if (action.match(/https:\/\/lemonade-server\.ai\/[^\s]+\.html/)) {
+        const urlMatch = action.match(/https:\/\/lemonade-server\.ai\/[^\s]+/);
         if (urlMatch) {
           window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: urlMatch[0] } }));
           return;

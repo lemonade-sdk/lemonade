@@ -304,7 +304,6 @@ const AppContent: React.FC = () => {
                       <ChevronLeft size={14} />
                       Back to Chat
                     </button>
-                    <span className="external-content-title">Guide</span>
                   </div>
                   <iframe src={externalContentUrl} className="marketplace-iframe" />
                 </div>
