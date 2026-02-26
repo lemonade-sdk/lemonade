@@ -2475,6 +2475,29 @@ footer {
     border-color: #555;
 }
 
+/* LLM view: soften the input area into the chat background */
+.chat-window-llm .chat-input-container {
+    padding: 20px 15px 14px;
+    border-top: none;
+    background: linear-gradient(
+        180deg,
+        rgba(10, 10, 10, 0) 0%,
+        rgba(8, 8, 8, 0.72) 45%,
+        #000000 100%
+    );
+}
+
+.chat-window-llm .chat-input-wrapper {
+    background: rgba(20, 20, 20, 0.9);
+    border: 1px solid #2a2a2a;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+.chat-window-llm .chat-input-wrapper:focus-within {
+    border-color: #4a4a4a;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+
 .chat-input {
     width: 100%;
     background: transparent;
@@ -5630,6 +5653,10 @@ footer {
     font-size: 11px;
 }
 
+.status-bar-label-short {
+    display: none;
+}
+
 .status-bar-value {
     color: #888;
     font-variant-numeric: tabular-nums;
@@ -5663,6 +5690,29 @@ footer {
 .status-bar-connection {
     border-right: 1px solid #1a1a1a;
     padding-right: 20px;
+}
+
+@media (max-width: 1000px) {
+    .status-bar {
+        gap: 10px;
+        padding: 0 8px;
+    }
+
+    .status-bar-item {
+        gap: 4px;
+    }
+
+    .status-bar-connection {
+        padding-right: 10px;
+    }
+
+    .status-bar-label-long {
+        display: none;
+    }
+
+    .status-bar-label-short {
+        display: inline;
+    }
 }
 
 .launcher-card {

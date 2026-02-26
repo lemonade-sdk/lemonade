@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { serverConfig, onServerUrlChange } from './utils/serverConfig';
 
 interface ServerStats {
@@ -31,6 +31,7 @@ const StatusBar: React.FC = () => {
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
   const [serverUrl, setServerUrl] = useState<string>('');
   const [lastSuccessfulConnection, setLastSuccessfulConnection] = useState<number | null>(null);
+  const lastSystemStatsFetchRef = useRef<number>(0);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -52,6 +53,12 @@ const StatusBar: React.FC = () => {
   }, []);
 
   const fetchSystemStats = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastSystemStatsFetchRef.current < 1000) {
+      return;
+    }
+    lastSystemStatsFetchRef.current = now;
+
     try {
       if (window.api?.getSystemStats) {
         const stats = await window.api.getSystemStats();
@@ -125,7 +132,7 @@ const StatusBar: React.FC = () => {
 
   const formatPercent = (percent: number | null): string => {
     if (percent === null || percent === undefined) return 'N/A';
-    return `${percent.toFixed(2)} %`;
+    return `${percent.toFixed(1)} %`;
   };
 
   const formatTtft = (seconds: number | null): string => {
@@ -157,45 +164,54 @@ const StatusBar: React.FC = () => {
     <div className="status-bar">
       <div className="status-bar-item status-bar-connection" title={serverUrl}>
         <span className={`connection-indicator connection-${connectionStatus}`}>●</span>
-        <span className="status-bar-label">STATUS:</span>
+        <span className="status-bar-label status-bar-label-long">STATUS:</span>
+        <span className="status-bar-label status-bar-label-short"></span>
         <span className="status-bar-value">{connectionStatus.toUpperCase()}</span>
       </div>
 
       <div className="status-bar-item">
-        <span className="status-bar-label">INPUT TOKENS:</span>
+        <span className="status-bar-label status-bar-label-long">INPUT TOKENS:</span>
+        <span className="status-bar-label status-bar-label-short">IN:</span>
         <span className="status-bar-value">{formatTokens(serverStats.input_tokens)}</span>
       </div>
       <div className="status-bar-item">
-        <span className="status-bar-label">OUTPUT TOKENS:</span>
+        <span className="status-bar-label status-bar-label-long">OUTPUT TOKENS:</span>
+        <span className="status-bar-label status-bar-label-short">OUT:</span>
         <span className="status-bar-value">{formatTokens(serverStats.output_tokens)}</span>
       </div>
       <div className="status-bar-item">
-        <span className="status-bar-label">TPS:</span>
+        <span className="status-bar-label status-bar-label-long">TPS:</span>
+        <span className="status-bar-label status-bar-label-short">TPS:</span>
         <span className="status-bar-value">{formatTps(serverStats.tokens_per_second)}</span>
       </div>
       <div className="status-bar-item">
-        <span className="status-bar-label">TTFT:</span>
+        <span className="status-bar-label status-bar-label-long">TTFT:</span>
+        <span className="status-bar-label status-bar-label-short">TTFT:</span>
         <span className="status-bar-value">{formatTtft(serverStats.time_to_first_token)}</span>
       </div>
       <div className="status-bar-item">
-        <span className="status-bar-label">RAM:</span>
+        <span className="status-bar-label status-bar-label-long">RAM:</span>
+        <span className="status-bar-label status-bar-label-short">RAM:</span>
         <span className="status-bar-value">{formatMemory(systemStats.memory_gb)}</span>
       </div>
       {systemStats.cpu_percent !== null && systemStats.cpu_percent !== undefined && (
         <div className="status-bar-item">
-          <span className="status-bar-label">CPU:</span>
+          <span className="status-bar-label status-bar-label-long">CPU:</span>
+          <span className="status-bar-label status-bar-label-short">CPU:</span>
           <span className="status-bar-value">{formatPercent(systemStats.cpu_percent)}</span>
         </div>
       )}
       {systemStats.gpu_percent !== null && systemStats.gpu_percent !== undefined && (
         <div className="status-bar-item">
-          <span className="status-bar-label">GPU:</span>
+          <span className="status-bar-label status-bar-label-long">GPU:</span>
+          <span className="status-bar-label status-bar-label-short">GPU:</span>
           <span className="status-bar-value">{formatPercent(systemStats.gpu_percent)}</span>
         </div>
       )}
       {systemStats.vram_gb !== null && (
         <div className="status-bar-item">
-          <span className="status-bar-label">VRAM:</span>
+          <span className="status-bar-label status-bar-label-long">VRAM:</span>
+          <span className="status-bar-label status-bar-label-short">VRAM:</span>
           <span className="status-bar-value">{formatVram(systemStats.vram_gb)}</span>
         </div>
       )}
