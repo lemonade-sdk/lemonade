@@ -1,7 +1,6 @@
 #include "lemon/server.h"
 #include "lemon/ollama_api.h"
 #include "lemon/utils/json_utils.h"
-#include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/system_info.h"
@@ -17,9 +16,6 @@
 #include <thread>
 #include <chrono>
 #include <mutex>
-#include <condition_variable>
-#include <atomic>
-#include <queue>
 #include <filesystem>
 #include <algorithm>
 

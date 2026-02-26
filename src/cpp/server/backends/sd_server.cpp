@@ -3,15 +3,12 @@
 #include "lemon/backend_manager.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
-#include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
 #include <httplib.h>
 #include <iostream>
 #include <filesystem>
-#include <thread>
-#include <chrono>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;

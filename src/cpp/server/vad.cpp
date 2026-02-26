@@ -1,7 +1,6 @@
 #include "lemon/vad.h"
 #include <cmath>
 #include <chrono>
-#include <algorithm>
 
 namespace lemon {
 
