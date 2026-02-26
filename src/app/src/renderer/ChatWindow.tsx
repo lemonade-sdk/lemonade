@@ -75,6 +75,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const editFileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const autoScrollInProgressRef = useRef(false);
+  const autoScrollResetRef = useRef<number | null>(null);
+  const autoScrollRafRef = useRef<number | null>(null);
+  const pendingAutoScrollRef = useRef(false);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
 
   // Embedding model state
@@ -233,18 +237,21 @@ useEffect(() => {
         clearTimeout(scrollTimeoutRef.current);
       }
 
-      // Use requestAnimationFrame to scroll after render completes
-      requestAnimationFrame(() => {
-        if (!userScrolledAwayRef.current) {
-          scrollToBottom();
-        }
-      });
+      scrollToBottom();
     }
 
     return () => {
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
       }
+      if (autoScrollResetRef.current !== null) {
+        window.clearTimeout(autoScrollResetRef.current);
+      }
+      if (autoScrollRafRef.current !== null) {
+        window.cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = null;
+      }
+      pendingAutoScrollRef.current = false;
     };
   }, [messages, isLoading, isUserAtBottom]);
 
@@ -299,7 +306,7 @@ useEffect(() => {
     setIsUserAtBottom(atBottom);
 
     // Track immediately via ref - if user scrolls away during streaming, respect it
-    if (!atBottom && isLoading) {
+    if (!atBottom && isLoading && !autoScrollInProgressRef.current) {
       userScrolledAwayRef.current = true;
     } else if (atBottom) {
       // User scrolled back to bottom, reset the flag
@@ -308,8 +315,41 @@ useEffect(() => {
   };
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: isLoading ? 'auto' : 'smooth' });
-    setIsUserAtBottom(true);
+    if (pendingAutoScrollRef.current) {
+      return;
+    }
+    pendingAutoScrollRef.current = true;
+
+    if (autoScrollRafRef.current !== null) {
+      return;
+    }
+
+    autoScrollRafRef.current = window.requestAnimationFrame(() => {
+      autoScrollRafRef.current = null;
+      pendingAutoScrollRef.current = false;
+
+      if (userScrolledAwayRef.current) {
+        return;
+      }
+
+      const container = messagesContainerRef.current;
+      if (!container) {
+        return;
+      }
+
+      autoScrollInProgressRef.current = true;
+      if (autoScrollResetRef.current !== null) {
+        window.clearTimeout(autoScrollResetRef.current);
+      }
+
+      // A single scrollTop write per frame is steadier than many scrollIntoView calls.
+      container.scrollTop = container.scrollHeight;
+
+      autoScrollResetRef.current = window.setTimeout(() => {
+        autoScrollInProgressRef.current = false;
+        autoScrollResetRef.current = null;
+      }, 60);
+    });
   };
 
 const fetchLoadedModel = async () => {
@@ -412,6 +452,8 @@ const fetchLoadedModel = async () => {
     };
 
     reader.readAsDataURL(file);
+    // Allow re-selecting the same file to trigger onChange again
+    event.target.value = '';
   };
 
   const handleImagePaste = (event: React.ClipboardEvent) => {
@@ -479,8 +521,52 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
   let accumulatedContent = '';
   let accumulatedThinking = '';
   let receivedFirstChunk = false;
+  let lastRenderUpdateAt = 0;
+  let thinkingAutoExpanded = false;
+  const STREAM_UPDATE_INTERVAL_MS = 33;
   // Check if this is a new model being loaded (different from currently loaded model)
   const isNewModelLoad = currentLoadedModel !== selectedModel;
+
+  const flushAssistantUpdate = (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastRenderUpdateAt < STREAM_UPDATE_INTERVAL_MS) {
+      return;
+    }
+    lastRenderUpdateAt = now;
+
+    // Extract thinking from <think> tags in content
+    const extracted = extractThinking(accumulatedContent);
+    const displayContent = extracted.content;
+    const embeddedThinking = extracted.thinking;
+
+    // Combine thinking from both sources (API field and embedded tags)
+    const totalThinking = (accumulatedThinking || '') + (embeddedThinking || '');
+
+    setMessages(prev => {
+      if (prev.length === 0) return prev;
+      const newMessages = [...prev];
+      const messageIndex = newMessages.length - 1;
+      newMessages[messageIndex] = {
+        role: 'assistant',
+        content: displayContent,
+        thinking: totalThinking || undefined,
+      };
+      return newMessages;
+    });
+
+    if (
+      totalThinking &&
+      !thinkingAutoExpanded &&
+      !appSettings?.collapseThinkingByDefault?.value
+    ) {
+      thinkingAutoExpanded = true;
+      setExpandedThinking(prevExpanded => {
+        const next = new Set(prevExpanded);
+        next.add(messageHistory.length);
+        return next;
+      });
+    }
+  };
 
   const response = await serverFetch('/chat/completions', {
     method: 'POST',
@@ -549,35 +635,7 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
                 }
               }
 
-              // Extract thinking from <think> tags in content
-              const extracted = extractThinking(accumulatedContent);
-              const displayContent = extracted.content;
-              const embeddedThinking = extracted.thinking;
-
-              // Combine thinking from both sources (API field and embedded tags)
-              const totalThinking = (accumulatedThinking || '') + (embeddedThinking || '');
-
-              setMessages(prev => {
-                const newMessages = [...prev];
-                const messageIndex = newMessages.length - 1;
-                newMessages[messageIndex] = {
-                  role: 'assistant',
-                  content: displayContent,
-                  thinking: totalThinking || undefined,
-                };
-
-                // Auto-expand thinking section if thinking content is present
-                // and collapseThinkingByDefault is not enabled
-                if (totalThinking && !appSettings?.collapseThinkingByDefault?.value) {
-                  setExpandedThinking(prevExpanded => {
-                    const next = new Set(prevExpanded);
-                    next.add(messageIndex);
-                    return next;
-                  });
-                }
-
-                return newMessages;
-              });
+              flushAssistantUpdate();
             }
           } catch (e) {
             console.warn('Failed to parse SSE data:', data, e);
@@ -586,6 +644,7 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
       }
     }
   } finally {
+    flushAssistantUpdate(true);
     reader.releaseLock();
   }
 
@@ -874,6 +933,8 @@ const sendMessage = async () => {
     };
 
     reader.readAsDataURL(file);
+    // Allow re-selecting the same file to trigger onChange again
+    event.target.value = '';
   };
 
   const handleEditImagePaste = (event: React.ClipboardEvent) => {
@@ -1203,9 +1264,15 @@ const handleMessageToSpeech = async () => {
     setMessages([]);
     setInputValue('');
     setUploadedImages([]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
     setEditingIndex(null);
     setEditingValue('');
     setEditingImages([]);
+    if (editFileInputRef.current) {
+      editFileInputRef.current.value = '';
+    }
     setIsLoading(false);
     setExpandedThinking(new Set());
     setIsUserAtBottom(true);
@@ -1725,7 +1792,7 @@ const handleMessageToSpeech = async () => {
   );
 
   return (
-    <div className="chat-window" style={width ? { width: `${width}px` } : undefined}>
+    <div className={`chat-window ${modelType === 'llm' ? 'chat-window-llm' : ''}`} style={width ? { width: `${width}px` } : undefined}>
       <div className="chat-header">
         <h3>{headerTitle}</h3>
         <button
