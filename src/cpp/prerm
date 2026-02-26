@@ -1,0 +1,11 @@
+#!/bin/bash
+set -e
+
+# Stop the service before removal or upgrade to ensure files are not in use
+if [ "$1" = "remove" ] || [ "$1" = "upgrade" ]; then
+    if [ -d /run/systemd/system ]; then
+        deb-systemd-invoke stop 'lemonade-server.service' >/dev/null || true
+    fi
+fi
+
+exit 0
