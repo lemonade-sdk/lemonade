@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import TitleBar from './TitleBar';
 import ChatWindow from './ChatWindow';
 import ModelManager, { LeftPanelView } from './ModelManager';
@@ -6,9 +7,8 @@ import LogsWindow from './LogsWindow';
 import ResizableDivider from './ResizableDivider';
 import DownloadManager from './DownloadManager';
 import StatusBar from './StatusBar';
-import SystemChecksModal from './SystemChecksModal';
 import { ModelsProvider } from './hooks/useModels';
-import { SystemProvider, useSystem } from './hooks/useSystem';
+import { SystemProvider } from './hooks/useSystem';
 import { DEFAULT_LAYOUT_SETTINGS } from './utils/appSettings';
 import '../../styles.css';
 
@@ -22,13 +22,12 @@ const LAYOUT_CONSTANTS = {
 
 // Inner component that can use SystemProvider context
 const AppContent: React.FC = () => {
-  const { systemChecks, shouldShowSystemChecks, dismissSystemChecks } = useSystem();
   const [isChatVisible, setIsChatVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isChatVisible);
   const [isModelManagerVisible, setIsModelManagerVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isModelManagerVisible);
   const [leftPanelView, setLeftPanelView] = useState<LeftPanelView>('models');
+  const [externalContentUrl, setExternalContentUrl] = useState<string | null>(null);
   const [isLogsVisible, setIsLogsVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isLogsVisible);
   const [isDownloadManagerVisible, setIsDownloadManagerVisible] = useState(false);
-  const [isSystemChecksModalOpen, setIsSystemChecksModalOpen] = useState(false);
   const [modelManagerWidth, setModelManagerWidth] = useState(DEFAULT_LAYOUT_SETTINGS.modelManagerWidth);
   const [chatWidth, setChatWidth] = useState(DEFAULT_LAYOUT_SETTINGS.chatWidth);
   const [logsHeight, setLogsHeight] = useState(DEFAULT_LAYOUT_SETTINGS.logsHeight);
@@ -114,22 +113,21 @@ const AppContent: React.FC = () => {
     window.addEventListener('download:started' as any, handleDownloadStart);
     window.addEventListener('download:chatComplete' as any, handleChatDownloadComplete);
 
+    const handleOpenExternalContent = (e: any) => {
+      if (e.detail?.url) {
+        setExternalContentUrl(e.detail.url);
+        setIsChatVisible(true);
+        setIsDownloadManagerVisible(false);
+      }
+    };
+    window.addEventListener('open-external-content' as any, handleOpenExternalContent);
+
     return () => {
       window.removeEventListener('download:started' as any, handleDownloadStart);
       window.removeEventListener('download:chatComplete' as any, handleChatDownloadComplete);
+      window.removeEventListener('open-external-content' as any, handleOpenExternalContent);
     };
   }, []);
-
-  // Show system checks modal when ROCm usage is detected
-  useEffect(() => {
-    if (shouldShowSystemChecks) {
-      setIsSystemChecksModalOpen(true);
-      // Log issues to console for debugging
-      systemChecks.forEach(check => {
-        console.warn(`System check [${check.id}]:`, check.message);
-      });
-    }
-  }, [shouldShowSystemChecks, systemChecks]);
 
   useEffect(() => {
     const hasMainColumn = isLogsVisible;
@@ -298,22 +296,28 @@ const AppContent: React.FC = () => {
             {isLogsVisible && (
               <ResizableDivider onMouseDown={handleRightDividerMouseDown}/>
             )}
-            <ChatWindow
-              isVisible={true}
-              width={isLogsVisible ? chatWidth : undefined}
-            />
+            {externalContentUrl ? (
+              <div className="chat-window" style={isLogsVisible ? { width: `${chatWidth}px` } : undefined}>
+                <div className="external-content-container">
+                  <div className="external-content-header">
+                    <button className="external-content-back-btn" onClick={() => setExternalContentUrl(null)}>
+                      <ChevronLeft size={14} />
+                      Back to Chat
+                    </button>
+                  </div>
+                  <iframe src={externalContentUrl} className="marketplace-iframe" />
+                </div>
+              </div>
+            ) : (
+              <ChatWindow
+                isVisible={true}
+                width={isLogsVisible ? chatWidth : undefined}
+              />
+            )}
           </>
         )}
       </div>
       <StatusBar />
-      <SystemChecksModal
-        isOpen={isSystemChecksModalOpen}
-        onClose={(permanent) => {
-          setIsSystemChecksModalOpen(false);
-          dismissSystemChecks(permanent);
-        }}
-        checks={systemChecks}
-      />
     </ModelsProvider>
   );
 };

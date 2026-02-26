@@ -26,6 +26,10 @@
 #include <sys/sysctl.h>
 #endif
 
+#ifndef _WIN32
+#include <sys/wait.h>
+#endif
+
 namespace lemon {
 
 namespace fs = std::filesystem;
@@ -129,7 +133,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"cpu", {"x86_64"}},
     }},
 
-    // FLM - Windows NPU (XDNA2)
+    // FLM - NPU (XDNA2)
     {"flm", "npu", {"windows"}, {
         {"amd_npu", {"XDNA2"}},
     }},
@@ -255,7 +259,7 @@ static bool device_matches_constraint(const std::string& device_family,
 }
 
 // Generic installation check
-static bool is_recipe_installed(const std::string& recipe, const std::string& backend) {
+static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
     auto* spec = try_get_spec_for_recipe(recipe);
     if (spec) {
         try {
@@ -266,22 +270,70 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         }
     }
     if (recipe == "flm") {
-        #ifdef _WIN32
-        for (const auto& path : {"C:\\Program Files\\AMD\\FLM\\flm.exe",
-                                  "C:\\Program Files (x86)\\AMD\\FLM\\flm.exe"}) {
-            if (fs::exists(path)) {
-                return true;
+        if (!utils::run_flm_validate("", error_message)) {
+            return false;
+        }
+#ifdef _WIN32
+        // Check NPU driver version meets minimum from backend_versions.json
+        {
+            // Query NPU driver version via WMI
+            std::string npu_driver;
+            {
+                wmi::WMIConnection wmi_conn;
+                if (wmi_conn.is_valid()) {
+                    std::wstring query = L"SELECT DriverVersion FROM Win32_PnPSignedDriver WHERE DeviceName LIKE '%NPU Compute Accelerator Device%'";
+                    wmi_conn.query(query, [&npu_driver](IWbemClassObject* pObj) {
+                        if (npu_driver.empty()) {
+                            npu_driver = wmi::get_property_string(pObj, L"DriverVersion");
+                        }
+                    });
+                }
+            }
+            if (!npu_driver.empty()) {
+                // Read min_npu_driver from backend_versions.json
+                std::string min_version;
+                try {
+                    std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+                    std::ifstream file(config_path);
+                    if (file.is_open()) {
+                        json data = json::parse(file);
+                        if (data.contains("flm") && data["flm"].contains("min_npu_driver")) {
+                            min_version = data["flm"]["min_npu_driver"].get<std::string>();
+                        }
+                    }
+                } catch (...) {}
+
+                if (!min_version.empty()) {
+                    // Simple dotted-version comparison (e.g., "32.0.203.311")
+                    auto parse_parts = [](const std::string& v) {
+                        std::vector<int> parts;
+                        std::istringstream ss(v);
+                        std::string token;
+                        while (std::getline(ss, token, '.')) {
+                            try { parts.push_back(std::stoi(token)); } catch (...) { parts.push_back(0); }
+                        }
+                        return parts;
+                    };
+                    auto cur = parse_parts(npu_driver);
+                    auto min_v = parse_parts(min_version);
+                    // Pad to same length
+                    while (cur.size() < min_v.size()) cur.push_back(0);
+                    while (min_v.size() < cur.size()) min_v.push_back(0);
+                    bool too_old = false;
+                    for (size_t i = 0; i < cur.size(); ++i) {
+                        if (cur[i] < min_v[i]) { too_old = true; break; }
+                        if (cur[i] > min_v[i]) break;
+                    }
+                    if (too_old) {
+                        error_message = "NPU driver version " + npu_driver +
+                            " is older than required " + min_version;
+                        return false;
+                    }
+                }
             }
         }
-        FILE* pipe = _popen("where flm 2>NUL", "r");
-        if (pipe) {
-            char buffer[256];
-            bool found = (fgets(buffer, sizeof(buffer), pipe) != nullptr);
-            _pclose(pipe);
-            return found;
-        }
-        #endif
-        return false;
+#endif
+        return true;
     }
     return false;
 }
@@ -687,7 +739,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 {"devices", json::array()},
                 {"state", "unsupported"},
                 {"message", message},
-                {"action", ""}
+                {"action", ""},
+                {"can_uninstall", true},
             };
 
             // Add to the appropriate recipe/backend structure
@@ -736,7 +789,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
 
         bool supported = !unique_matching.empty();
-        bool installed = is_recipe_installed(def.recipe, def.backend);
+        std::string install_error;
+        bool available = is_recipe_installed(def.recipe, def.backend, install_error);
 
         json backend = {
             {"devices", unique_matching}
@@ -770,10 +824,29 @@ json SystemInfo::build_recipes_info(const json& devices) {
             backend["state"] = "unsupported";
             backend["message"] = message;
             backend["action"] = "";
-        } else if (!installed) {
+        } else if (!available) {
             backend["state"] = "installable";
-            backend["message"] = "Backend is supported but not installed.";
-            backend["action"] = get_install_command(def.recipe, def.backend);
+            backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
+
+            // For FLM on Linux, the action should be to visit setup documentation
+            if (def.recipe == "flm") {
+#ifdef __linux__
+                backend["action"] = "Visit https://lemonade-server.ai/npu_linux.html";
+#elif defined(_WIN32)
+                // Driver/kernel issue → docs URL (opens iframe)
+                // FLM not installed → install command (auto-installable)
+                if (install_error.find("driver") != std::string::npos ||
+                    install_error.find("Driver") != std::string::npos) {
+                    backend["action"] = "Visit https://lemonade-server.ai/driver_install.html";
+                } else {
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+                }
+#else
+                backend["action"] = get_install_command(def.recipe, def.backend);
+#endif
+            } else {
+                backend["action"] = get_install_command(def.recipe, def.backend);
+            }
         } else {
             std::string installed_version = get_recipe_version(def.recipe, def.backend);
             std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
@@ -795,6 +868,13 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 backend["message"] = "";
                 backend["action"] = "";
             }
+
+            // FLM cannot be uninstalled on Linux (managed by system package manager)
+#ifdef __linux__
+            if (def.recipe == "flm") {
+                backend["can_uninstall"] = false;
+            }
+#endif
         }
 
         // Note: release_url and download_size_mb are added by Server::handle_system_info()
@@ -911,7 +991,6 @@ static std::string read_version_file(const fs::path& version_file) {
     }
     return "unknown";
 }
-
 
 // Helper to identify ROCm architecture from GPU name
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
@@ -1079,6 +1158,32 @@ bool needs_gfx1151_cwsr_fix() {
     return false;
 }
 
+// Check if FLM validation fails on Linux (indicating NPU stack issues)
+// Returns true if FLM is present but fails validation
+// error_message is populated with the actual error from FLM if validation fails
+// Note: Only checks if FLM is installed. The "FLM not installed" case is handled
+// by the model manager when a user tries to download/load an FLM model.
+bool check_flm_validation_fails(std::string& error_message) {
+#ifdef __linux__
+    std::string flm_path = utils::find_flm_executable();
+    if (flm_path.empty()) {
+        // No FLM installed - not a system check issue
+        // (FLM not being installed is only a problem if user tries to use FLM models)
+        error_message.clear();
+        return false;
+    }
+
+    // Run flm validate
+    bool success = utils::run_flm_validate(flm_path, error_message);
+
+    // Return true if validation failed (indicating NPU stack issues)
+    return !success;
+#else
+    error_message.clear();
+    return false;
+#endif
+}
+
 // Identify NPU architecture by checking for known hardware
 // Windows: PCI device ID via WMI; Linux: amdxdna driver in sysfs accel subsystem
 // Returns the NPU family (e.g., "XDNA2") or empty string if no NPU found
@@ -1165,6 +1270,10 @@ std::string SystemInfo::get_rocm_arch() {
 std::string SystemInfo::get_flm_version() {
     #ifdef _WIN32
     FILE* pipe = _popen("flm version 2>NUL", "r");
+    #else
+    FILE* pipe = popen("flm version 2>/dev/null", "r");
+    #endif
+
     if (!pipe) {
         return "unknown";
     }
@@ -1174,7 +1283,12 @@ std::string SystemInfo::get_flm_version() {
     if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output = buffer;
     }
+
+    #ifdef _WIN32
     _pclose(pipe);
+    #else
+    pclose(pipe);
+    #endif
 
     // Parse version from output like "FLM v0.9.4"
     if (output.find("FLM v") != std::string::npos) {
@@ -1188,7 +1302,6 @@ std::string SystemInfo::get_flm_version() {
         }
         return version;
     }
-    #endif
 
     return "unknown";
 }

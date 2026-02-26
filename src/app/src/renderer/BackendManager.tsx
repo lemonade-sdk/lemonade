@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import { useSystem } from './hooks/useSystem';
 import { useConfirmDialog } from './ConfirmDialog';
 import { installBackend, uninstallBackend } from './utils/backendInstaller';
@@ -152,7 +153,20 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
       // No manual refreshSystem() needed — installBackend() dispatches 'backendsUpdated'
       // which useSystem auto-listens for and refreshes.
     } catch (error) {
-      showError(`Failed to install backend: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      showError(`Failed: ${errorMessage}`);
+
+      // If the error has a help URL in the action, open it
+      const backendInfo = systemInfo?.recipes?.[recipe]?.backends?.[backend];
+      const action = backendInfo?.action;
+
+      // Extract URL from action
+      if (action) {
+        const urlMatch = action.match(/https?:\/\/[^\s]+/);
+        if (urlMatch) {
+          window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: urlMatch[0] } }));
+        }
+      }
     } finally {
       setInstallingBackends(prev => {
         const next = new Set(prev);
@@ -160,11 +174,20 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
         return next;
       });
     }
-  }, [showError, showSuccess]);
+  }, [showError, showSuccess, systemInfo]);
 
   const handleCopyAction = useCallback(async (recipe: string, backend: string, action?: string) => {
     if (!action) return;
     try {
+      // If the action contains a lemonade-server.ai documentation URL, open it in-app
+      if (action.match(/https:\/\/lemonade-server\.ai\/[^\s]+\.html/)) {
+        const urlMatch = action.match(/https:\/\/lemonade-server\.ai\/[^\s]+/);
+        if (urlMatch) {
+          window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: urlMatch[0] } }));
+          return;
+        }
+      }
+
       await navigator.clipboard.writeText(action);
       showSuccess(`Copied action for ${RECIPE_DISPLAY_NAMES[recipe] || recipe} ${backend}.`);
     } catch {
@@ -307,7 +330,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
                             )}
                           </button>
                         )}
-                        {info.state === 'installed' && (
+                        {info.state === 'installed' && info.can_uninstall !== false && (
                           <button
                             className="model-action-btn delete-btn"
                             title="Uninstall backend"

@@ -132,8 +132,15 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       if (target.tagName === 'A') {
         e.preventDefault();
         const href = target.getAttribute('href');
-        if (href && window.api) {
-          window.api.openExternal(href);
+        if (href) {
+          // Open documentation pages in-app via iframe
+          if (href.endsWith('.html') && (href.includes('lemonade-server.ai') || href.startsWith('/'))) {
+            window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: href } }));
+            return;
+          }
+          if (window.api) {
+            window.api.openExternal(href);
+          }
         }
       }
     };
