@@ -1,5 +1,5 @@
 {
-    "cmake.sourceDirectory": "C:/work/lsdk/lemonade",
+    "cmake.sourceDirectory": "${workspaceFolder}",
     "files.watcherExclude": {
         "**/dist-app/**": true,
         "**/build/**": true,
@@ -32,8 +32,16 @@
         "**/mac/**": true
     },
     "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
-    "C_Cpp.intelliSenseEngine": "Default",
+    "C_Cpp.intelliSenseEngine": "disabled",
     "C_Cpp.default.intelliSenseMode": "linux-clang-x64",
+    "clangd.arguments": [
+        "--compile-commands-dir=build",
+        "--all-scopes-completion",
+        "--background-index",
+        "--clang-tidy",
+        "--header-insertion=iwyu",
+        "--completion-style=detailed",
+    ],
     "cmake.debugConfig": {
         "args": [
             "--llamacpp", "cpu"
