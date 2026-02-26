@@ -28,6 +28,9 @@ const StatusBar: React.FC = () => {
     gpu_percent: null,
     vram_gb: null,
   });
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
+  const [serverUrl, setServerUrl] = useState<string>('');
+  const [lastSuccessfulConnection, setLastSuccessfulConnection] = useState<number | null>(null);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -40,9 +43,11 @@ const StatusBar: React.FC = () => {
           time_to_first_token: data.time_to_first_token ?? null,
           tokens_per_second: data.tokens_per_second ?? null,
         });
+        setConnectionStatus('connected');
+        setLastSuccessfulConnection(Date.now());
       }
     } catch {
-      // Server may not be running, ignore errors
+      // Connection monitoring interval will handle timeout
     }
   }, []);
 
@@ -58,28 +63,40 @@ const StatusBar: React.FC = () => {
         });
       }
     } catch {
-      // Ignore errors
     }
   }, []);
 
   useEffect(() => {
-    // Initial fetch
     fetchStats();
     fetchSystemStats();
 
-    // Listen for inference completion to refresh server stats
+    const initialUrl = serverConfig.getServerBaseUrl();
+    setServerUrl(initialUrl);
+
     const handleInferenceComplete = () => {
       fetchStats();
     };
     window.addEventListener('inference-complete', handleInferenceComplete);
 
-    // Poll server stats infrequently as fallback (every 30s)
-    const statsInterval = setInterval(fetchStats, 30000);
-    // Poll system stats more frequently (every 5s) since they change over time
+    // Poll every 3s when connecting/disconnected, every 30s when connected
+    const pollInterval = connectionStatus === 'connected' ? 30000 : 3000;
+    const statsInterval = setInterval(fetchStats, pollInterval);
     const systemInterval = setInterval(fetchSystemStats, 5000);
 
-    // Re-fetch when server URL changes
-    const unsubscribe = onServerUrlChange(() => {
+    const connectionCheckInterval = setInterval(() => {
+      if (lastSuccessfulConnection) {
+        const timeSinceLastConnection = Date.now() - lastSuccessfulConnection;
+        if (timeSinceLastConnection > 15000) {
+          setConnectionStatus('disconnected');
+        }
+      } else {
+        setConnectionStatus('connecting');
+      }
+    }, 3000);
+
+    const unsubscribe = onServerUrlChange((url, apiKey) => {
+      setServerUrl(url);
+      setConnectionStatus('connecting');
       fetchStats();
     });
 
@@ -87,9 +104,10 @@ const StatusBar: React.FC = () => {
       window.removeEventListener('inference-complete', handleInferenceComplete);
       clearInterval(statsInterval);
       clearInterval(systemInterval);
+      clearInterval(connectionCheckInterval);
       unsubscribe();
     };
-  }, [fetchStats, fetchSystemStats]);
+  }, [fetchStats, fetchSystemStats, lastSuccessfulConnection, connectionStatus]);
 
   const formatTokens = (value: number | null): string => {
     if (value === null || value === undefined) return 'N/A';
@@ -120,8 +138,29 @@ const StatusBar: React.FC = () => {
     return `${tps.toFixed(1)}`;
   };
 
+  const formatServerUrl = (url: string): string => {
+    if (!url) return 'N/A';
+
+    if (url.includes('localhost') || url.includes('127.0.0.1')) {
+      return url;
+    }
+
+    try {
+      const urlObj = new URL(url);
+      return urlObj.host;
+    } catch {
+      return url;
+    }
+  };
+
   return (
     <div className="status-bar">
+      <div className="status-bar-item status-bar-connection" title={serverUrl}>
+        <span className={`connection-indicator connection-${connectionStatus}`}>●</span>
+        <span className="status-bar-label">STATUS:</span>
+        <span className="status-bar-value">{connectionStatus.toUpperCase()}</span>
+      </div>
+
       <div className="status-bar-item">
         <span className="status-bar-label">INPUT TOKENS:</span>
         <span className="status-bar-value">{formatTokens(serverStats.input_tokens)}</span>
