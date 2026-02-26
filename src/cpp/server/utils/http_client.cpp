@@ -1,6 +1,5 @@
 #include <lemon/utils/http_client.h>
 #include <curl/curl.h>
-#include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <iostream>
