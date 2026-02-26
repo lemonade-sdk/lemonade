@@ -1,4 +1,5 @@
 #include <lemon/utils/path_utils.h>
+#include <lemon/utils/json_utils.h>
 #include <filesystem>
 #include <vector>
 #include <string>
@@ -216,5 +217,93 @@ std::string get_downloaded_bin_dir() {
     return bin_dir;
 }
 
+bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
+    FILE* pipe;
+
+    std::string flm_exe = flm_path.empty() ? find_flm_executable() : flm_path;
+    if (flm_exe.empty()) {
+        error_message = "FLM executable not found";
+        return false;
+    }
+
+    std::string command = "\"" + flm_exe + "\" validate --json";
+#ifdef _WIN32
+    //TODO: Update to 0.9.35 command if 0.9.35+ present
+    //pipe = _popen(command.c_str(), "r");
+    return true;
+#else
+    pipe = popen(command.c_str(), "r");
+#endif
+
+    if (!pipe) {
+        error_message = "Failed to execute " + flm_exe;
+        return false;
+    }
+
+    char buffer[1024];
+    std::string output;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output += buffer;
+    }
+
+#ifdef _WIN32
+    int exit_code = _pclose(pipe);
+#else
+    int exit_code = pclose(pipe);
+    if (exit_code != -1) {
+        exit_code = WEXITSTATUS(exit_code);
+    }
+#endif
+
+    try {
+        if (!output.empty()) {
+            json j = JsonUtils::parse(output);
+            if (j.is_object() && j.contains("ok")) {
+                bool ok = j["ok"].get<bool>();
+                if (ok) {
+                    error_message.clear();
+                    return true;
+                }
+
+                std::vector<std::string> errors;
+
+                if (j.contains("amd_device_found") && !j["amd_device_found"].get<bool>()) {
+                    errors.push_back("No AMD NPU device found.");
+                }
+
+                if (j.contains("all_fw_ok") && !j["all_fw_ok"].get<bool>()) {
+                    errors.push_back("NPU firmware is incompatible.");
+                }
+                if (j.contains("kernel_ok") && !j["kernel_ok"].get<bool>()) {
+                    errors.push_back("Kernel version is incompatible.");
+                }
+
+                if (j.contains("memlock_ok") && !j["memlock_ok"].get<bool>()) {
+                    errors.push_back("Memlock limits are too low.");
+                }
+
+                if (errors.empty()) {
+                    error_message = "NPU validation failed.";
+                } else {
+                    error_message = "";
+                    for (size_t i = 0; i < errors.size(); ++i) {
+                        error_message += errors[i] + (i == errors.size() - 1 ? "" : " ");
+                    }
+                }
+                return false;
+            }
+        }
+    } catch (...) {
+        // Fallback for non-JSON output or parsing error
+    }
+
+    if (exit_code != 0) {
+        error_message = "flm validate failed with exit code " + std::to_string(exit_code);
+        return false;
+    }
+
+    error_message.clear();
+    return true;
+}
 
 } // namespace utils::lemon

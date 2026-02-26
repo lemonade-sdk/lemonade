@@ -27,6 +27,14 @@ std::string get_resource_path(const std::string& relative_path);
 std::string find_flm_executable();
 
 /**
+ * Run 'flm validate' command and check if it succeeds.
+ * @param flm_path Optional path to flm executable. If empty, will search for it.
+ * @param error_message Output parameter for error message if validation fails.
+ * @return true if validation succeeds, false otherwise.
+ */
+bool run_flm_validate(const std::string& flm_path, std::string& error_message);
+
+/**
  * Get the cache directory
  */
 std::string get_cache_dir();

@@ -5,7 +5,6 @@ import {
 } from './utils/appSettings';
 import { serverFetch } from './utils/serverConfig';
 import { useModels } from './hooks/useModels';
-import { useSystem } from './hooks/useSystem';
 import { useInferenceState } from './hooks/useInferenceState';
 import { useToast, ToastContainer } from './Toast';
 import EmbeddingPanel from './components/panels/EmbeddingPanel';
@@ -28,7 +27,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     userHasSelectedModel,
     setUserHasSelectedModel,
   } = useModels();
-  const { checkForRocmUsage } = useSystem();
   const inference = useInferenceState();
   const { toasts, removeToast, showError } = useToast();
 
@@ -110,7 +108,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
       } else {
         fetchLoadedModel();
       }
-      checkForRocmUsage();
     };
 
     const handleModelUnload = () => {

@@ -7,6 +7,7 @@ import {
 } from '../../utils/appSettings';
 import { serverFetch } from '../../utils/serverConfig';
 import { useModels } from '../../hooks/useModels';
+import { useSystem } from '../../hooks/useSystem';
 import { Modality } from '../../hooks/useInferenceState';
 import { ModelsData } from '../../utils/modelData';
 import { useTTS } from '../../hooks/useTTS';
@@ -39,6 +40,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   isVision, currentLoadedModel, setCurrentLoadedModel,
 }) => {
   const { selectedModel, modelsData } = useModels();
+  const { systemInfo } = useSystem();
   const tts = useTTS(appSettings, modelsData);
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -192,6 +194,24 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     stream: true,
     ...buildChatRequestOverrides(appSettings),
   });
+
+  /** Build an error message enriched with backend action help text when available. */
+  const buildErrorMessage = (error: any): string => {
+    const errorMessage = error.message || 'Failed to get response from the model.';
+    const modelInfo = modelsData[selectedModel];
+    const recipe = modelInfo?.recipe;
+    const backendAction = recipe && systemInfo?.recipes?.[recipe]?.backends?.[systemInfo.recipes[recipe].default_backend || '']?.action;
+    const helpText = backendAction ? `\n\n${backendAction}` : '';
+
+    if (backendAction && backendAction.match(/https?:\/\/[^\s]+\.html/)) {
+      const urlMatch = backendAction.match(/https?:\/\/[^\s]+/);
+      if (urlMatch) {
+        window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: urlMatch[0] } }));
+      }
+    }
+
+    return `Error: ${errorMessage}${helpText}`;
+  };
 
   const extractThinking = (content: string): { content: string; thinking: string } => {
     let extractedThinking = '';
@@ -358,7 +378,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           const newMessages = [...prev];
           newMessages[newMessages.length - 1] = {
             role: 'assistant',
-            content: `Error: ${error.message || 'Failed to get response from the model.'}`,
+            content: buildErrorMessage(error),
           };
           return newMessages;
         });
@@ -425,7 +445,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           const newMessages = [...prev];
           newMessages[newMessages.length - 1] = {
             role: 'assistant',
-            content: `Error: ${error.message || 'Failed to get response from the model.'}`,
+            content: buildErrorMessage(error),
           };
           return newMessages;
         });

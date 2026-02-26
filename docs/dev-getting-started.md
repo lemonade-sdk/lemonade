@@ -785,7 +785,7 @@ The C++ implementation is tested using the existing Python test suite.
 | Test File | Description |
 |-----------|-------------|
 | `server_cli.py` | CLI commands (version, list, pull, status, delete, serve, stop, run) |
-| `server_endpoints.py` | HTTP endpoints (health, models, pull, load, unload, system-info, system-checks, stats) |
+| `server_endpoints.py` | HTTP endpoints (health, models, pull, load, unload, system-info, stats) |
 | `server_llm.py` | LLM inference (chat completions, embeddings, reranking) |
 | `server_whisper.py` | Audio transcription (whisper models) |
 | `server_sd.py` | Image generation (Stable Diffusion, ~2-3 min per image on CPU) |

@@ -94,7 +94,6 @@ public:
     };
     static std::vector<RecipeStatus> get_all_recipe_statuses();
 
-    // Version detection (public for use by backends and helpers)
     static std::string get_flm_version();
 
     // Device support detection
@@ -195,6 +194,11 @@ std::string identify_rocm_arch_from_name(const std::string& device_name);
 
 // Check if kernel has CWSR fix for Strix Halo
 bool needs_gfx1151_cwsr_fix();
+
+// Check if FLM validation fails on Linux (indicating NPU stack issues)
+// Returns true if FLM is present but fails validation
+// error_message is populated with the actual error from FLM if validation fails
+bool check_flm_validation_fails(std::string& error_message);
 
 // Cache management
 class SystemInfoCache {

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, session, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, session, screen, webFrameMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -786,6 +786,50 @@ function createWindow() {
     // Open in external browser instead of new Electron window
     shell.openExternal(url);
     return { action: 'deny' }; // Prevent Electron from opening a new window
+  });
+
+  const isHttpUrl = (value) => {
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  };
+
+  // Intercept all anchor clicks inside loaded iframe pages and route them through
+  // window.open so Electron's setWindowOpenHandler opens them in the system browser.
+  const injectIframeLinkInterceptor = (frame) => {
+    if (!frame || !isHttpUrl(frame.url) || frame === mainWindow.webContents.mainFrame) {
+      return;
+    }
+
+    frame.executeJavaScript(`
+      (() => {
+        if (window.__lemonadeExternalLinkInterceptorInstalled) return;
+        window.__lemonadeExternalLinkInterceptorInstalled = true;
+
+        document.addEventListener('click', (event) => {
+          const element = event.target && event.target.closest ? event.target.closest('a[href]') : null;
+          if (!element) return;
+
+          const href = element.href || element.getAttribute('href') || '';
+          if (!/^https?:\\/\\//i.test(href)) return;
+
+          event.preventDefault();
+          event.stopPropagation();
+          window.open(href, '_blank', 'noopener,noreferrer');
+        }, true);
+      })();
+    `).catch(() => {});
+  };
+
+  mainWindow.webContents.on('did-frame-finish-load', (_event, isMainFrame, frameProcessId, frameRoutingId) => {
+    if (isMainFrame) {
+      return;
+    }
+    const frame = webFrameMain.fromId(frameProcessId, frameRoutingId);
+    injectIframeLinkInterceptor(frame);
   });
 
   // Open DevTools in development mode

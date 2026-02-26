@@ -100,7 +100,7 @@ export async function installBackend(
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to install backend: ${errorText || response.statusText}`);
+      throw new Error(`Failed: ${errorText || response.statusText}`);
     }
 
     const reader = response.body?.getReader();
@@ -226,6 +226,12 @@ export async function ensureBackendForRecipe(
   if (backendInfo.state === 'installed') return;
 
   if (backendInfo.state === 'installable' || backendInfo.state === 'update_required') {
+    const action = backendInfo.action || '';
+    const htmlUrlMatch = action.match(/https?:\/\/[^\s]+\.html/);
+    if (htmlUrlMatch) {
+      window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: htmlUrlMatch[0] } }));
+      throw new Error(backendInfo.message || `Please follow the guide to set up ${recipe}.`);
+    }
     await installBackend(recipe, defaultBackend, true);
     return;
   }
