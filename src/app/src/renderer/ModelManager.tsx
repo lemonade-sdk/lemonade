@@ -6,6 +6,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch } from './utils/serverConfig';
 import { pullModel, DownloadAbortError, ensureModelReady, installBackend, deleteModel } from './utils/backendInstaller';
 import type { ModelRegistrationData } from './utils/backendInstaller';
+import { downloadTracker } from './utils/downloadTracker';
 import { useModels } from './hooks/useModels';
 import { useSystem } from './hooks/useSystem';
 import ModelOptionsModal from "./ModelOptionsModal";
@@ -354,6 +355,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   };
 
   const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData) => {
+    let downloadId: string | null = null;
+
     try {
       // Trigger system info load on first model download (lazy loading)
       await ensureSystemInfoLoaded();

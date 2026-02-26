@@ -100,7 +100,7 @@ export async function installBackend(
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to install backend: ${errorText || response.statusText}`);
+      throw new Error(`Failed: ${errorText || response.statusText}`);
     }
 
     const reader = response.body?.getReader();

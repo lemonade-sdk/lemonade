@@ -53,7 +53,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     userHasSelectedModel,
     setUserHasSelectedModel,
   } = useModels();
-  const { checkForRocmUsage } = useSystem();
+
+  // Get system context for lazy loading system info
+  const { systemInfo, ensureSystemInfoLoaded } = useSystem();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -191,9 +193,6 @@ useEffect(() => {
       // Fallback: fetch the loaded model from the health endpoint
       fetchLoadedModel();
     }
-
-    // Check if ROCm is being used to show system checks if needed
-    checkForRocmUsage();
   };
 
   const handleModelUnload = () => {
@@ -676,11 +675,26 @@ const sendMessage = async () => {
         });
       } else {
         console.error('Failed to send message:', error);
+        const errorMessage = error.message || 'Failed to get response from the model.';
+
+        // Get action from backend info if available
+        const modelInfo = modelsData[selectedModel];
+        const recipe = modelInfo?.recipe;
+        const backendAction = recipe && systemInfo?.recipes?.[recipe]?.backends?.[systemInfo.recipes[recipe].default_backend || '']?.action;
+        const helpText = backendAction ? `\n\n${backendAction}` : '';
+
+        if (backendAction && backendAction.match(/https?:\/\/[^\s]+\.html/)) {
+          const urlMatch = backendAction.match(/https?:\/\/[^\s]+/);
+          if (urlMatch) {
+            window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: urlMatch[0] } }));
+          }
+        }
+
         setMessages(prev => {
           const newMessages = [...prev];
           newMessages[newMessages.length - 1] = {
             role: 'assistant',
-            content: `Error: ${error.message || 'Failed to get response from the model.'}`,
+            content: `Error: ${errorMessage}${helpText}`,
           };
           return newMessages;
         });
@@ -1131,11 +1145,26 @@ const handleMessageToSpeech = async () => {
         });
       } else {
         console.error('Failed to send message:', error);
+        const errorMessage = error.message || 'Failed to get response from the model.';
+
+        // Get action from backend info if available
+        const modelInfo = modelsData[selectedModel];
+        const recipe = modelInfo?.recipe;
+        const backendAction = recipe && systemInfo?.recipes?.[recipe]?.backends?.[systemInfo.recipes[recipe].default_backend || '']?.action;
+        const helpText = backendAction ? `\n\n${backendAction}` : '';
+
+        if (backendAction && backendAction.match(/https?:\/\/[^\s]+\.html/)) {
+          const urlMatch = backendAction.match(/https?:\/\/[^\s]+/);
+          if (urlMatch) {
+            window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: urlMatch[0] } }));
+          }
+        }
+
         setMessages(prev => {
           const newMessages = [...prev];
           newMessages[newMessages.length - 1] = {
             role: 'assistant',
-            content: `Error: ${error.message || 'Failed to get response from the model.'}`,
+            content: `Error: ${errorMessage}${helpText}`,
           };
           return newMessages;
         });

@@ -73,7 +73,10 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     // FLM special case - uses installer exe with its own install logic
     if (recipe == "flm") {
-        backends::FastFlowLMServer::install_if_needed(progress_cb);
+        backends::FastFlowLMServer flm_installer("info", nullptr, this);
+        if (!flm_installer.check()) {
+            flm_installer.install(backend);
+        }
         update_recipes_cache_entry(recipe, backend, true);
         return;
     }

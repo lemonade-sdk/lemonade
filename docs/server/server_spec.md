@@ -58,7 +58,6 @@ The additional endpoints are:
 - GET `/api/v1/health` - Check server status, such as models loaded
 - GET `/api/v1/stats` - Performance statistics from the last request
 - GET `/api/v1/system-info` - System information and device enumeration
-- GET `/api/v1/system-checks` - System health checks for platform-specific issues
 - GET `/live` - Check server liveness for load balancers and orchestrators
 
 ### Ollama-Compatible API
@@ -1417,59 +1416,6 @@ curl http://localhost:8000/api/v1/stats
 - `output_tokens` - Number of tokens generated
 - `decode_token_times` - Array of time taken for each generated token
 - `prompt_tokens` - Total prompt tokens including cached tokens
-
-### `GET /api/v1/system-checks` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
-
-System health checks endpoint that detects platform-specific issues requiring user attention, such as missing kernel fixes, outdated drivers, or configuration problems.
-
-#### Example request
-
-```bash
-curl "http://localhost:8000/api/v1/system-checks"
-```
-
-#### Response format
-
-Returns an array of issues. Empty array means all checks passed.
-
-```json
-[
-  {
-    "id": "linux_strix_halo_kernel",
-    "severity": "error",
-    "platform": "linux",
-    "title": "Missing Strix Halo Kernel Fix",
-    "message": "Your kernel is missing a critical fix that may cause ROCm to crash randomly on Strix Halo systems.",
-    "fix_url": "https://lemonade-server.ai/gfx1151_linux.html"
-  }
-]
-```
-
-#### Response fields
-
-- `id` (string) - Unique identifier for the check (e.g., "linux_strix_halo_kernel")
-- `severity` (string) - Issue severity: "error", "warning", or "info"
-- `platform` (string) - Platform where issue applies: "linux", "windows", "macos"
-- `title` (string) - Short human-readable title of the issue
-- `message` (string) - Detailed description of the issue
-- `fix_url` (string, optional) - URL with instructions to resolve the issue
-
-#### Severity levels
-
-- **error** - Critical issues that may cause crashes or prevent functionality
-- **warning** - Issues that may impact performance or stability
-- **info** - Informational notices about system configuration
-
-#### Platform-specific checks
-
-**Linux:**
-- Strix Halo kernel CWSR fix (gfx1151 systems)
-
-**Windows:**
-- NPU driver version checks (planned)
-
-**macOS:**
-- Metal driver checks (planned)
 
 ### `GET /api/v1/system-info` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 

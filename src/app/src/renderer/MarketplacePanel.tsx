@@ -55,6 +55,11 @@ const MarketplacePanel: React.FC<MarketplacePanelProps> = ({ searchQuery, select
 
   const openExternalLink = (url?: string) => {
     if (!url) return;
+    // Open documentation pages in-app via iframe
+    if (url.endsWith('.html') && (url.includes('lemonade-server.ai') || url.startsWith('/'))) {
+      window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url } }));
+      return;
+    }
     if (window.api?.openExternal) {
       window.api.openExternal(url);
       return;

@@ -30,6 +30,10 @@
 #include <sys/sysctl.h>
 #endif
 
+#ifndef _WIN32
+#include <sys/wait.h>
+#endif
+
 namespace lemon {
 
 namespace fs = std::filesystem;
@@ -130,7 +134,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"cpu", {"x86_64"}},
     }},
 
-    // FLM - Windows NPU (XDNA2)
+    // FLM - NPU (XDNA2)
     {"flm", "npu", {"windows"}, {
         {"amd_npu", {"XDNA2"}},
     }},
@@ -256,7 +260,7 @@ static bool device_matches_constraint(const std::string& device_family,
 }
 
 // Generic installation check
-static bool is_recipe_installed(const std::string& recipe, const std::string& backend) {
+static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
     auto* spec = try_get_spec_for_recipe(recipe);
     if (spec) {
         try {
@@ -267,22 +271,7 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         }
     }
     if (recipe == "flm") {
-        #ifdef _WIN32
-        for (const auto& path : {"C:\\Program Files\\AMD\\FLM\\flm.exe",
-                                  "C:\\Program Files (x86)\\AMD\\FLM\\flm.exe"}) {
-            if (fs::exists(path)) {
-                return true;
-            }
-        }
-        FILE* pipe = _popen("where flm 2>NUL", "r");
-        if (pipe) {
-            char buffer[256];
-            bool found = (fgets(buffer, sizeof(buffer), pipe) != nullptr);
-            _pclose(pipe);
-            return found;
-        }
-        #endif
-        return false;
+        return utils::run_flm_validate("", error_message);
     }
     return false;
 }
@@ -688,7 +677,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 {"devices", json::array()},
                 {"state", "unsupported"},
                 {"message", message},
-                {"action", ""}
+                {"action", ""},
+                {"can_uninstall", true},
             };
 
             // Add to the appropriate recipe/backend structure
@@ -737,7 +727,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
 
         bool supported = !unique_matching.empty();
-        bool installed = is_recipe_installed(def.recipe, def.backend);
+        std::string install_error;
+        bool available = is_recipe_installed(def.recipe, def.backend, install_error);
 
         json backend = {
             {"devices", unique_matching}
@@ -771,10 +762,20 @@ json SystemInfo::build_recipes_info(const json& devices) {
             backend["state"] = "unsupported";
             backend["message"] = message;
             backend["action"] = "";
-        } else if (!installed) {
+        } else if (!available) {
             backend["state"] = "installable";
-            backend["message"] = "Backend is supported but not installed.";
-            backend["action"] = get_install_command(def.recipe, def.backend);
+            backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
+
+            // For FLM on Linux, the action should be to visit setup documentation
+            if (def.recipe == "flm") {
+#ifdef __linux__
+                backend["action"] = "Visit https://lemonade-server.ai/npu_linux.html";
+#else
+                backend["action"] = get_install_command(def.recipe, def.backend);
+#endif
+            } else {
+                backend["action"] = get_install_command(def.recipe, def.backend);
+            }
         } else {
             std::string installed_version = get_recipe_version(def.recipe, def.backend);
             std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
@@ -796,6 +797,13 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 backend["message"] = "";
                 backend["action"] = "";
             }
+
+            // FLM cannot be uninstalled on Linux (managed by system package manager)
+#ifdef __linux__
+            if (def.recipe == "flm") {
+                backend["can_uninstall"] = false;
+            }
+#endif
         }
 
         // Note: release_url and download_size_mb are added by Server::handle_system_info()
@@ -912,7 +920,6 @@ static std::string read_version_file(const fs::path& version_file) {
     }
     return "unknown";
 }
-
 
 // Helper to identify ROCm architecture from GPU name
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
@@ -1080,6 +1087,32 @@ bool needs_gfx1151_cwsr_fix() {
     return false;
 }
 
+// Check if FLM validation fails on Linux (indicating NPU stack issues)
+// Returns true if FLM is present but fails validation
+// error_message is populated with the actual error from FLM if validation fails
+// Note: Only checks if FLM is installed. The "FLM not installed" case is handled
+// by the model manager when a user tries to download/load an FLM model.
+bool check_flm_validation_fails(std::string& error_message) {
+#ifdef __linux__
+    std::string flm_path = utils::find_flm_executable();
+    if (flm_path.empty()) {
+        // No FLM installed - not a system check issue
+        // (FLM not being installed is only a problem if user tries to use FLM models)
+        error_message.clear();
+        return false;
+    }
+
+    // Run flm validate
+    bool success = utils::run_flm_validate(flm_path, error_message);
+
+    // Return true if validation failed (indicating NPU stack issues)
+    return !success;
+#else
+    error_message.clear();
+    return false;
+#endif
+}
+
 // Identify NPU architecture by checking for known hardware
 // Windows: PCI device ID via WMI; Linux: amdxdna driver in sysfs accel subsystem
 // Returns the NPU family (e.g., "XDNA2") or empty string if no NPU found
@@ -1166,6 +1199,10 @@ std::string SystemInfo::get_rocm_arch() {
 std::string SystemInfo::get_flm_version() {
     #ifdef _WIN32
     FILE* pipe = _popen("flm version 2>NUL", "r");
+    #else
+    FILE* pipe = popen("flm version 2>/dev/null", "r");
+    #endif
+
     if (!pipe) {
         return "unknown";
     }
@@ -1175,7 +1212,12 @@ std::string SystemInfo::get_flm_version() {
     if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output = buffer;
     }
+
+    #ifdef _WIN32
     _pclose(pipe);
+    #else
+    pclose(pipe);
+    #endif
 
     // Parse version from output like "FLM v0.9.4"
     if (output.find("FLM v") != std::string::npos) {
@@ -1189,7 +1231,6 @@ std::string SystemInfo::get_flm_version() {
         }
         return version;
     }
-    #endif
 
     return "unknown";
 }
