@@ -703,6 +703,10 @@ jobs:
             script: server_sd.py
             extra_args: ""
             backends: "cpu rocm"
+          - name: whisper
+            script: server_whisper.py
+            extra_args: ""
+            backends: "cpu vulkan"
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""

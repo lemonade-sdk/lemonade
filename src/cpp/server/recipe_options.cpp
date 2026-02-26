@@ -57,7 +57,7 @@ static const json CLI_OPTIONS = {
     {"--whispercpp", {
         {"option_name", "whispercpp_backend"},
         {"type_name", "BACKEND"},
-        {"allowed_values", {"cpu", "npu"}},
+        {"allowed_values", {"cpu", "npu", "vulkan"}},
         {"envname", "LEMONADE_WHISPERCPP"},
         {"help", "WhisperCpp backend to use"}
     }},
