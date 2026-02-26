@@ -63,20 +63,22 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
         throw std::runtime_error("NPU whisper.cpp only supported on Windows");
 #endif
     } else if (backend == "cpu") {
-        params.repo = "ggml-org/whisper.cpp";
 #ifdef _WIN32
+        params.repo = "ggml-org/whisper.cpp";
         params.filename = "whisper-bin-x64.zip";
 #elif defined(__linux__)
-        params.filename = "lemonade-sdk/whisper.cpp-builds";
+        params.repo = "lemonade-sdk/whisper.cpp-builds";
+        params.filename = "whisper-" + version + "-linux-cpu-x86_64.tar.gz";
 #elif defined(__APPLE__)
+        params.repo = "ggml-org/whisper.cpp";
         params.filename = "whisper-bin-arm64.zip";
 #else
         throw std::runtime_error("Unsupported platform for whisper.cpp");
 #endif
     } else if (backend == "vulkan") {
 #if defined(__linux__)
-        repo = "lemonade-sdk/whisper.cpp-builds";
-        filename = "whisper-" + expected_version + "-linux-vulkan-x86_64.tar.gz";
+        params.repo = "lemonade-sdk/whisper.cpp-builds";
+        params.filename = "whisper-" + version + "-linux-vulkan-x86_64.tar.gz";
 #else
         throw std::runtime_error("Vulkan whisper.cpp backend is currently supported only on Linux");
 #endif

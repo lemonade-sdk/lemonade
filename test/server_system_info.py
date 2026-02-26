@@ -403,7 +403,7 @@ MOCK_HARDWARE_CONFIGS = {
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
-            "whispercpp": ["npu", "cpu"],  # whispercpp is Windows-only
+            "whispercpp": ["npu"],  # whispercpp NPU is Windows-only
             "flm": ["npu"],  # Windows NPU only
             "ryzenai-llm": ["npu"],
         },
