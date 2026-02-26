@@ -142,7 +142,16 @@ void FastFlowLMServer::load(const std::string& model_name,
                            const RecipeOptions& options,
                            bool do_not_upgrade) {
     std::cout << "[FastFlowLM] Loading model: " << model_name << std::endl;
+
+    // Get FLM-specific options from RecipeOptions
     int ctx_size = options.get_option("ctx_size");
+    std::string flm_args = options.get_option("flm_args");
+
+    std::cout << "[FastFlowLM] Options: ctx_size=" << ctx_size;
+    if (!flm_args.empty()) {
+        std::cout << ", flm_args=\"" << flm_args << "\"";
+    }
+    std::cout << std::endl;
 
     // Note: checkpoint_ is set by Router via set_model_metadata() before load() is called
     // We use checkpoint_ (base class field) for FLM API calls
@@ -185,6 +194,16 @@ void FastFlowLMServer::load(const std::string& model_name,
         "--port", std::to_string(port_),
         "--host", "127.0.0.1"
     };
+
+    // Parse and append custom flm_args if provided
+    // Similar to how llamacpp_args works
+    if (!flm_args.empty()) {
+        std::istringstream iss(flm_args);
+        std::string token;
+        while (iss >> token) {
+            args.push_back(token);
+        }
+    }
 
     std::cout << "[FastFlowLM] Starting flm-server..." << std::endl;
     std::cout << "[ProcessManager] Starting process: \"" << flm_path << "\"";

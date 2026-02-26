@@ -21,7 +21,9 @@ static const json DEFAULTS = {
     {"steps", 20},
     {"cfg_scale", 7.0},
     {"width", 512},
-    {"height", 512}
+    {"height", 512},
+    // FLM-specific options (similar to llamacpp_args)
+    {"flm_args", ""}       // Custom arguments to pass to flm serve
 };
 
 // CLI_OPTIONS without allowed_values for inference engines (will be set dynamically)
@@ -86,6 +88,13 @@ static const json CLI_OPTIONS = {
         {"envname", "LEMONADE_HEIGHT"},
         {"help", "Image height in pixels"}
     }},
+    // FLM-specific options (similar to llamacpp-args)
+    {"--flm-args", {
+        {"option_name", "flm_args"},
+        {"type_name", "ARGS"},
+        {"envname", "LEMONADE_FLM_ARGS"},
+        {"help", "Custom arguments to pass to flm serve (e.g., \"--socket 20 --q-len 15\")"}
+    }},
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
@@ -93,7 +102,10 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
         return {"ctx_size", "llamacpp_backend", "llamacpp_args"};
     } else if (recipe == "whispercpp") {
         return {"whispercpp_backend"};
-    } else if (recipe == "ryzenai-llm" || recipe == "flm") {
+    } else if (recipe == "flm") {
+        // FLM supports ctx_size and flm_args (for custom arguments)
+        return {"ctx_size", "flm_args"};
+    } else if (recipe == "ryzenai-llm") {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
         return {"sd-cpp_backend", "steps", "cfg_scale", "width", "height"};
