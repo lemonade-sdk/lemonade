@@ -68,7 +68,7 @@ These settings can also be provided via environment variables that Lemonade Serv
 | `LEMONADE_PORT`                    | Port number to run the server on                                                                                                                        |
 | `LEMONADE_LOG_LEVEL`               | Logging level                                                                                                                                           |
 | `LEMONADE_LLAMACPP`                | Default LlamaCpp backend (`vulkan`, `rocm`, or `cpu`)                                                                                                   |
-| `LEMONADE_WHISPERCPP`              | Default WhisperCpp backend (`cpu` or `npu`)                                                                                                             |
+| `LEMONADE_WHISPERCPP`              | Default WhisperCpp backend: `npu` or `cpu` on Windows; `cpu` or `vulkan` on Linux                                                                       |
 | `LEMONADE_CTX_SIZE`                | Default context size for models                                                                                                                         |
 | `LEMONADE_LLAMACPP_ARGS`           | Custom arguments to pass to llama-server                                                                                                                |
 | `LEMONADE_EXTRA_MODELS_DIR`        | Secondary directory to scan for GGUF model files                                                                                                        |

@@ -53,22 +53,31 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
     InstallParams params;
 
     if (backend == "npu") {
-        params.repo = "lemonade-sdk/whisper.cpp-npu";
+        params.repo = "lemonade-sdk/whisper.cpp-builds";
 #ifdef _WIN32
         params.filename = "whisper-" + version + "-windows-npu-x64.zip";
 #else
         throw std::runtime_error("NPU whisper.cpp only supported on Windows");
 #endif
     } else if (backend == "cpu") {
-        params.repo = "ggml-org/whisper.cpp";
 #ifdef _WIN32
+        params.repo = "ggml-org/whisper.cpp";
         params.filename = "whisper-bin-x64.zip";
 #elif defined(__linux__)
-        params.filename = "whisper-bin-x64.zip";
+        params.repo = "lemonade-sdk/whisper.cpp-builds";
+        params.filename = "whisper-" + version + "-linux-cpu-x86_64.tar.gz";
 #elif defined(__APPLE__)
+        params.repo = "ggml-org/whisper.cpp";
         params.filename = "whisper-bin-arm64.zip";
 #else
         throw std::runtime_error("Unsupported platform for whisper.cpp");
+#endif
+    } else if (backend == "vulkan") {
+#if defined(__linux__)
+        params.repo = "lemonade-sdk/whisper.cpp-builds";
+        params.filename = "whisper-" + version + "-linux-vulkan-x86_64.tar.gz";
+#else
+        throw std::runtime_error("Vulkan whisper.cpp backend is currently supported only on Linux");
 #endif
     } else {
         throw std::runtime_error("[WhisperServer] Unknown whisper backend: " + backend);
@@ -201,12 +210,33 @@ void WhisperServer::load(const std::string& model_name,
 
     // Note: whisper-server doesn't support --debug flag
 
+    // Set up environment variables for shared library loading
+    std::vector<std::pair<std::string, std::string>> env_vars;
+    fs::path exe_dir = fs::path(exe_path).parent_path();
+
+#ifndef _WIN32
+    // set LD_LIBRARY_PATH to include executable directory
+    std::string lib_path = exe_dir.string();
+
+    const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+    if (existing_ld_path && strlen(existing_ld_path) > 0) {
+        lib_path = lib_path + ":" + std::string(existing_ld_path);
+    }
+
+    env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+    if (is_debug()) {
+        std::cout << "[WhisperServer] Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+    }
+#endif
+
     // Launch the subprocess
     process_handle_ = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",     // working_dir (empty = current)
-        is_debug()  // inherit_output
+        is_debug(),  // inherit_output
+        false,  // filter_health_logs
+        env_vars
     );
 
     if (process_handle_.pid == 0) {
