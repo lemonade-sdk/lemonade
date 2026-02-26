@@ -39,7 +39,7 @@ interface SettingsModalProps {
 }
 
 const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onSubmit, model }) => {
-  const { supportedRecipes } = useSystem();
+  const { supportedRecipes, ensureSystemInfoLoaded } = useSystem();
   const [modelInfo, setModelInfo] = useState<ModelInfo>();
   const [modelName, setModelName] = useState("");
   const [modelUrl, setModelUrl] = useState<string>("");
@@ -54,10 +54,14 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     if (!isOpen) return;
     let isMounted = true;
     setNumericDrafts({});
+    void ensureSystemInfoLoaded();
 
     const fetchOptions = async () => {
       if (isMounted) setIsLoading(true);
-      if (!model) return;
+      if (!model) {
+        if (isMounted) setIsLoading(false);
+        return;
+      }
 
       try {
         const response = await serverFetch(`/models/${model}`);
@@ -87,7 +91,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
     fetchOptions();
     return () => { isMounted = false; };
-  }, [isOpen]);
+  }, [isOpen, model, ensureSystemInfoLoaded]);
 
   // Handle click outside and escape key
   useEffect(() => {
