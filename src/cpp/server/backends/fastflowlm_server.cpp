@@ -25,7 +25,7 @@
 #endif
 
 // URL to direct users to for driver updates
-static const std::string DRIVER_INSTALL_URL = "https://lemonade-server.ai/driver_install";
+static const std::string DRIVER_INSTALL_URL = "https://lemonade-server.ai/driver_install.html";
 
 namespace fs = std::filesystem;
 
@@ -107,10 +107,8 @@ void FastFlowLMServer::install(const std::string& backend) {
 std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade) {
     std::cout << "[FastFlowLM] Pulling model with FLM: " << checkpoint << std::endl;
 
-    // Check NPU driver version before pulling models
-    if (!check_npu_driver_version()) {
-        throw std::runtime_error("NPU driver version check failed - please update your driver before pulling FLM models");
-    }
+    // Check NPU driver version before pulling models (throws on failure)
+    check_npu_driver_version();
 
     // Use flm pull command to download the model
     std::string flm_path = get_flm_path();
@@ -177,8 +175,15 @@ void FastFlowLMServer::load(const std::string& model_name,
     bool model_was_downloaded = model_manager_ && model_manager_->is_model_downloaded(model_name);
 
     // Install/check FLM
-    if (!check())
-        install();
+    try {
+        check();
+    } catch (const FLMCheckException& e) {
+        if (e.type() == FLMCheckException::ErrorType::NOT_INSTALLED) {
+            install();
+        } else {
+            throw;
+        }
+    }
 
     // Check if FLM upgrade invalidated the model
     // This happens when a new FLM version requires models to be re-downloaded

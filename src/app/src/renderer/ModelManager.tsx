@@ -4,7 +4,8 @@ import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch } from './utils/serverConfig';
-import { pullModel, DownloadAbortError, ensureModelReady, installBackend, deleteModel } from './utils/backendInstaller';
+import { pullModel, DownloadAbortError, ensureModelReady, installBackend, deleteModel, ensureBackendForRecipe } from './utils/backendInstaller';
+import { fetchSystemInfoData } from './utils/systemData';
 import type { ModelRegistrationData } from './utils/backendInstaller';
 import { downloadTracker } from './utils/downloadTracker';
 import { useModels } from './hooks/useModels';
@@ -361,6 +362,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       // Trigger system info load on first model download (lazy loading)
       await ensureSystemInfoLoaded();
 
+      // Ensure the backend for this model's recipe is installed
+      const recipe = (registrationData?.recipe) || modelsData[modelName]?.recipe;
+      if (recipe) {
+        // Fetch fresh system-info directly (avoid stale closure over React state)
+        const freshSystemInfo = await fetchSystemInfoData();
+        await ensureBackendForRecipe(recipe, freshSystemInfo.info?.recipes);
+      }
+
       // For registered models, verify metadata exists; for new models, we're registering now
       if (!registrationData && !modelsData[modelName]) {
         showError('Model metadata is unavailable. Please refresh and try again.');
@@ -383,8 +392,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
           showWarning(`Download cancelled: ${modelName}`);
         }
       } else {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
         console.error('Error downloading model:', error);
-        showError(`Failed to download model: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+        // Detect driver-related errors and open the driver guide iframe
+        if (errorMsg.toLowerCase().includes('driver') && errorMsg.toLowerCase().includes('older than required')) {
+          window.dispatchEvent(new CustomEvent('open-external-content', {
+            detail: { url: 'https://lemonade-server.ai/driver_install.html' }
+          }));
+          showError('Your NPU driver needs to be updated. Please follow the guide.');
+        } else {
+          showError(`Failed to download model: ${errorMsg}`);
+        }
       }
     } finally {
       // Remove from loading state

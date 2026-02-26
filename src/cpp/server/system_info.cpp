@@ -271,7 +271,70 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         }
     }
     if (recipe == "flm") {
-        return utils::run_flm_validate("", error_message);
+        if (!utils::run_flm_validate("", error_message)) {
+            return false;
+        }
+#ifdef _WIN32
+        // Check NPU driver version meets minimum from backend_versions.json
+        {
+            // Query NPU driver version via WMI
+            std::string npu_driver;
+            {
+                wmi::WMIConnection wmi_conn;
+                if (wmi_conn.is_valid()) {
+                    std::wstring query = L"SELECT DriverVersion FROM Win32_PnPSignedDriver WHERE DeviceName LIKE '%NPU Compute Accelerator Device%'";
+                    wmi_conn.query(query, [&npu_driver](IWbemClassObject* pObj) {
+                        if (npu_driver.empty()) {
+                            npu_driver = wmi::get_property_string(pObj, L"DriverVersion");
+                        }
+                    });
+                }
+            }
+            if (!npu_driver.empty()) {
+                // Read min_npu_driver from backend_versions.json
+                std::string min_version;
+                try {
+                    std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+                    std::ifstream file(config_path);
+                    if (file.is_open()) {
+                        json data = json::parse(file);
+                        if (data.contains("flm") && data["flm"].contains("min_npu_driver")) {
+                            min_version = data["flm"]["min_npu_driver"].get<std::string>();
+                        }
+                    }
+                } catch (...) {}
+
+                if (!min_version.empty()) {
+                    // Simple dotted-version comparison (e.g., "32.0.203.311")
+                    auto parse_parts = [](const std::string& v) {
+                        std::vector<int> parts;
+                        std::istringstream ss(v);
+                        std::string token;
+                        while (std::getline(ss, token, '.')) {
+                            try { parts.push_back(std::stoi(token)); } catch (...) { parts.push_back(0); }
+                        }
+                        return parts;
+                    };
+                    auto cur = parse_parts(npu_driver);
+                    auto min_v = parse_parts(min_version);
+                    // Pad to same length
+                    while (cur.size() < min_v.size()) cur.push_back(0);
+                    while (min_v.size() < cur.size()) min_v.push_back(0);
+                    bool too_old = false;
+                    for (size_t i = 0; i < cur.size(); ++i) {
+                        if (cur[i] < min_v[i]) { too_old = true; break; }
+                        if (cur[i] > min_v[i]) break;
+                    }
+                    if (too_old) {
+                        error_message = "NPU driver version " + npu_driver +
+                            " is older than required " + min_version;
+                        return false;
+                    }
+                }
+            }
+        }
+#endif
+        return true;
     }
     return false;
 }
@@ -770,6 +833,15 @@ json SystemInfo::build_recipes_info(const json& devices) {
             if (def.recipe == "flm") {
 #ifdef __linux__
                 backend["action"] = "Visit https://lemonade-server.ai/npu_linux.html";
+#elif defined(_WIN32)
+                // Driver/kernel issue → docs URL (opens iframe)
+                // FLM not installed → install command (auto-installable)
+                if (install_error.find("driver") != std::string::npos ||
+                    install_error.find("Driver") != std::string::npos) {
+                    backend["action"] = "Visit https://lemonade-server.ai/driver_install.html";
+                } else {
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+                }
 #else
                 backend["action"] = get_install_command(def.recipe, def.backend);
 #endif
