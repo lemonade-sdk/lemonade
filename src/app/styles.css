@@ -5635,6 +5635,36 @@ footer {
     font-variant-numeric: tabular-nums;
 }
 
+/* Connection status indicator styles */
+.connection-indicator {
+    font-size: 11px;
+    line-height: 1;
+    margin-right: 2px;
+}
+
+.connection-indicator.connection-connected {
+    color: #4ade80; /* Green */
+}
+
+.connection-indicator.connection-connecting {
+    color: #fbbf24; /* Yellow */
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.connection-indicator.connection-disconnected {
+    color: #ef4444; /* Red */
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.status-bar-connection {
+    border-right: 1px solid #1a1a1a;
+    padding-right: 20px;
+}
+
 .launcher-card {
     background: rgba(255, 255, 255, 0.015);
     border: 1px solid rgba(255, 255, 255, 0.07);
