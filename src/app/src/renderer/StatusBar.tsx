@@ -49,6 +49,7 @@ const StatusBar: React.FC = () => {
       }
     } catch {
       // Connection monitoring interval will handle timeout
+      setConnectionStatus('disconnected');
     }
   }, []);
 
@@ -85,22 +86,6 @@ const StatusBar: React.FC = () => {
     };
     window.addEventListener('inference-complete', handleInferenceComplete);
 
-    // Poll every 3s when connecting/disconnected, every 30s when connected
-    const pollInterval = connectionStatus === 'connected' ? 30000 : 3000;
-    const statsInterval = setInterval(fetchStats, pollInterval);
-    const systemInterval = setInterval(fetchSystemStats, 5000);
-
-    const connectionCheckInterval = setInterval(() => {
-      if (lastSuccessfulConnection) {
-        const timeSinceLastConnection = Date.now() - lastSuccessfulConnection;
-        if (timeSinceLastConnection > 15000) {
-          setConnectionStatus('disconnected');
-        }
-      } else {
-        setConnectionStatus('connecting');
-      }
-    }, 3000);
-
     const unsubscribe = onServerUrlChange((url, apiKey) => {
       setServerUrl(url);
       setConnectionStatus('connecting');
@@ -109,12 +94,21 @@ const StatusBar: React.FC = () => {
 
     return () => {
       window.removeEventListener('inference-complete', handleInferenceComplete);
-      clearInterval(statsInterval);
-      clearInterval(systemInterval);
-      clearInterval(connectionCheckInterval);
       unsubscribe();
     };
-  }, [fetchStats, fetchSystemStats, lastSuccessfulConnection, connectionStatus]);
+  }, [fetchStats, fetchSystemStats]);
+
+  useEffect(() => {
+    // Poll every 3s when connecting/disconnected, every 15s when connected
+    const pollInterval = connectionStatus === 'connected' ? 15000 : 3000;
+    const statsInterval = setInterval(fetchStats, pollInterval);
+    const systemInterval = setInterval(fetchSystemStats, 5000);
+
+    return () => {
+      clearInterval(statsInterval);
+      clearInterval(systemInterval);
+    };
+  }, [connectionStatus, fetchStats, fetchSystemStats]);
 
   const formatTokens = (value: number | null): string => {
     if (value === null || value === undefined) return 'N/A';
