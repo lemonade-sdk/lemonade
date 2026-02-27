@@ -13,12 +13,19 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const [autoScroll, setAutoScroll] = useState(true);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContentRef = useRef<HTMLDivElement>(null);
+  const autoScrollRef = useRef(true);
   const isProgrammaticScrollRef = useRef(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [serverUrl, setServerUrl] = useState<string>('');
   const [apiKey, setAPIKey] = useState<string>('');
   const [isInitialized, setIsInitialized] = useState(false);
+
+  const isNearBottom = () => {
+    const logsContent = logsContentRef.current;
+    if (!logsContent) return true;
+    return logsContent.scrollHeight - logsContent.scrollTop <= logsContent.clientHeight + 30;
+  };
 
   const scrollToBottom = () => {
     if (!logsEndRef.current) return;
@@ -60,6 +67,10 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
       scrollToBottom();
     }
   }, [logs, autoScroll]);
+
+  useEffect(() => {
+    autoScrollRef.current = autoScroll;
+  }, [autoScroll]);
 
   // Detect if user scrolls up (disable auto-scroll) or scrolls to bottom (enable auto-scroll)
   useEffect(() => {
@@ -130,6 +141,11 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
           // Skip heartbeat messages
           if (logLine.trim() === '' || logLine === 'heartbeat') {
             return;
+          }
+
+          // Recover follow mode if user is already at bottom but state got out of sync.
+          if (!autoScrollRef.current && isNearBottom()) {
+            setAutoScroll(true);
           }
 
           setLogs((prevLogs) => {

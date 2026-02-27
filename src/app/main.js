@@ -96,6 +96,34 @@ const getHomeDirectory = () => {
   return process.env.HOME || process.env.USERPROFILE || '';
 };
 
+const getLocalInterfaceAddresses = () => {
+  const interfaces = os.networkInterfaces ? os.networkInterfaces() : {};
+  const localAddresses = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+  Object.values(interfaces || {}).forEach((entries) => {
+    if (!Array.isArray(entries)) {
+      return;
+    }
+    entries.forEach((entry) => {
+      if (entry && typeof entry.address === 'string') {
+        localAddresses.add(entry.address);
+      }
+    });
+  });
+
+  return localAddresses;
+};
+
+const isBeaconFromLocalMachine = (address) => {
+  if (!address || typeof address !== 'string') {
+    return false;
+  }
+
+  const normalized = address.replace(/^::ffff:/, '');
+  const localAddresses = getLocalInterfaceAddresses();
+  return localAddresses.has(address) || localAddresses.has(normalized);
+};
+
 const getCacheDirectory = () => {
   const homeDir = getHomeDirectory();
   if (!homeDir) {
@@ -493,13 +521,20 @@ const discoverServerPort = () => {
         cleanup();
         if (!discovered) {
           discovered = true;
-          console.log('Falling back to default port due to socket error');
-          resolve(DEFAULT_PORT);
+          const fallbackPort = cachedServerPort || DEFAULT_PORT;
+          console.log(`Falling back to cached port due to socket error: ${fallbackPort}`);
+          resolve(fallbackPort);
         }
       });
 
       socket.on('message', (msg, rinfo) => {
         if (discovered) return;
+
+        // Ignore beacons from other machines. We only derive localhost port
+        // in discovery mode, so remote beacons can cause invalid localhost targets.
+        if (!isBeaconFromLocalMachine(rinfo?.address)) {
+          return;
+        }
 
         try {
           const payload = JSON.parse(msg.toString());
@@ -536,8 +571,9 @@ const discoverServerPort = () => {
         if (!discovered) {
           discovered = true;
           cleanup();
-          console.log('UDP discovery timeout, falling back to default port');
-          resolve(DEFAULT_PORT);
+          const fallbackPort = cachedServerPort || DEFAULT_PORT;
+          console.log(`UDP discovery timeout, falling back to cached port: ${fallbackPort}`);
+          resolve(fallbackPort);
         }
       }, DISCOVERY_TIMEOUT_MS);
 
@@ -549,7 +585,7 @@ const discoverServerPort = () => {
         cleanup();
         if (!discovered) {
           discovered = true;
-          resolve(DEFAULT_PORT);
+          resolve(cachedServerPort || DEFAULT_PORT);
         }
       }
     });
@@ -590,8 +626,12 @@ const startBeaconListener = async () => {
     setTimeout(() => startBeaconListener(), 10000);
   });
 
-  socket.on('message', (msg) => {
+  socket.on('message', (msg, rinfo) => {
     try {
+      if (!isBeaconFromLocalMachine(rinfo?.address)) {
+        return;
+      }
+
       const payload = JSON.parse(msg.toString());
 
       if (payload.service === 'lemonade' && payload.url) {
