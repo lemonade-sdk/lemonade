@@ -596,7 +596,9 @@
         "checkpoint": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": [],
+        "labels": [
+            "tool-calling"
+        ],
         "size": 2.5
     },
     "Qwen3-30B-A3B-GGUF": {
@@ -612,6 +614,9 @@
         "checkpoint": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Qwen3-30B-A3B-Instruct-2507-Q4_0.gguf",
         "recipe": "llamacpp",
         "suggested": true,
+        "labels": [
+            "tool-calling"
+        ],
         "size": 17.4
     },
     "Qwen3-Coder-30B-A3B-Instruct-GGUF": {
@@ -761,7 +766,9 @@
         "checkpoint": "unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF:Qwen3-Next-80B-A3B-Instruct-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": [],
+        "labels": [
+            "tool-calling"
+        ],
         "size": 45.1
     },
     "Qwen3.5-35B-A3B-GGUF": {
@@ -1038,6 +1045,9 @@
         "checkpoint": "qwen3-it:4b",
         "recipe": "flm",
         "suggested": true,
+        "labels": [
+            "tool-calling"
+        ],
         "size": 3.07
     },
     "Qwen3-8b-FLM": {
