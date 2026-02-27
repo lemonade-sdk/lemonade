@@ -1,4 +1,6 @@
 name: Test New Runner on Windows
+permissions:
+  contents: read
 
 on:
   workflow_dispatch:
