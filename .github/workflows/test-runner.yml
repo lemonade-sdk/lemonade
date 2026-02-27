@@ -1,4 +1,4 @@
-name: Test Self-Hosted Runner
+name: Test New Runner on Windows
 
 on:
   workflow_dispatch:
@@ -26,14 +26,6 @@ jobs:
           echo "Runner OS: ${{ runner.os }}"
           echo "Runner arch: ${{ runner.arch }}"
           hostname
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: pip install -r test/requirements.txt
 
       - name: Install Lemonade
         run: |
