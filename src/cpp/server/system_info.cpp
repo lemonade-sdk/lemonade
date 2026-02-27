@@ -1267,6 +1267,32 @@ std::string SystemInfo::get_rocm_arch() {
     return "";  // No supported architecture found
 }
 
+bool SystemInfo::get_has_igpu() {
+    // Returns if the device is an iGPU. Only AMD iGPUs are detected at the moment
+    try {
+        // Use cached system info to avoid re-detecting GPUs
+        json system_info = SystemInfoCache::get_system_info_with_cache();
+
+        if (!system_info.contains("devices")) {
+            return false;
+        }
+
+        const auto& devices = system_info["devices"];
+
+        // Check iGPU first
+        if (devices.contains("amd_igpu") && devices["amd_igpu"].is_object()) {
+            const auto& igpu = devices["amd_igpu"];
+            if (igpu.value("available", false)) {
+                return true;
+            }
+        }
+    } catch (...) {
+        // Detection failed
+    }
+
+    return false;  // No iGPU detected
+}
+
 std::string SystemInfo::get_flm_version() {
     #ifdef _WIN32
     FILE* pipe = _popen("flm version 2>NUL", "r");
