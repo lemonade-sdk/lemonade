@@ -1,7 +1,6 @@
 #include "lemon/utils/network_beacon.h"
 
 #include <chrono>
-#include <iostream>
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
@@ -269,12 +268,7 @@ void NetworkBeacon::broadcastThreadLoop() {
             destAddr.sin_port = htons(_port);
             inet_pton(AF_INET, iface.broadcastAddress.c_str(), &destAddr.sin_addr);
 
-            auto bytesSent = sendto(_socket, payload.c_str(), (int)payload.size(), 0, (sockaddr*)&destAddr, sizeof(destAddr));
-            if (bytesSent < 0) {
-                std::cerr << "[Server] [Net Broadcast] sendto failed on " << iface.ipAddress << " (errno: " << errno << ")" << std::endl;
-            } else {
-                std::cout << "[Server] [Net Broadcast] Beacon sent via " << iface.ipAddress << " -> " << iface.broadcastAddress << ":" << _port << " (" << bytesSent << " bytes)" << std::endl;
-            }
+            sendto(_socket, payload.c_str(), (int)payload.size(), 0, (sockaddr*)&destAddr, sizeof(destAddr));
         }
 
         // Always send on loopback for same-machine discovery
