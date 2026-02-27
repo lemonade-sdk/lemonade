@@ -23,7 +23,8 @@ function extractServerErrorMessage(errorText: string, fallback: string): string 
  * Registration data for custom user models sent with /pull requests.
  */
 export interface ModelRegistrationData {
-  checkpoint: string;
+  checkpoint?: string;
+  checkpoints?: string[];
   recipe: string;
   mmproj?: string;
   reasoning?: boolean;
@@ -300,6 +301,7 @@ export async function pullModel(
   options?: {
     registrationData?: ModelRegistrationData;
     showInDownloadManager?: boolean;
+    isExportedModel?: boolean | undefined
   }
 ): Promise<void> {
   const showInDownloadManager = options?.showInDownloadManager ?? true;
@@ -336,16 +338,23 @@ export async function pullModel(
 
   try {
     // Build request body — include registration data for custom models
-    const requestBody: Record<string, unknown> = { model_name: modelName, stream: true };
-    if (options?.registrationData) {
-      const rd = options.registrationData;
-      requestBody.checkpoint = rd.checkpoint;
-      requestBody.recipe = rd.recipe;
-      if (rd.mmproj) requestBody.mmproj = rd.mmproj;
-      if (rd.reasoning) requestBody.reasoning = rd.reasoning;
-      if (rd.vision) requestBody.vision = rd.vision;
-      if (rd.embedding) requestBody.embedding = rd.embedding;
-      if (rd.reranking) requestBody.reranking = rd.reranking;
+    let requestBody: Record<string, unknown>;
+
+    if(options?.isExportedModel && options?.registrationData) {
+      requestBody = {...options.registrationData} as Record<string, any>;
+      requestBody.stream = true;
+    } else {
+      requestBody = { model_name: modelName, stream: true }
+      if (options?.registrationData) {
+        const rd = options.registrationData;
+        requestBody.checkpoint = rd.checkpoint;
+        requestBody.recipe = rd.recipe;
+        if (rd.mmproj) requestBody.mmproj = rd.mmproj;
+        if (rd.reasoning) requestBody.reasoning = rd.reasoning;
+        if (rd.vision) requestBody.vision = rd.vision;
+        if (rd.embedding) requestBody.embedding = rd.embedding;
+        if (rd.reranking) requestBody.reranking = rd.reranking;
+      }
     }
 
     const response = await serverFetch('/pull', {
