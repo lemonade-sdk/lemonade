@@ -2,6 +2,7 @@
  * WebSocket client for realtime transcription.
  * Uses a raw WebSocket with OpenAI Realtime API message format.
  */
+import { serverFetch } from './serverConfig';
 
 export interface TranscriptionCallbacks {
   /** Called with transcription text. isFinal=false for interim results that replace previous interim. */
@@ -98,15 +99,13 @@ export class TranscriptionWebSocket {
    * Fetches the WebSocket port from /health endpoint.
    */
   static async connect(
-    serverUrl: string,
     model: string,
     callbacks: TranscriptionCallbacks,
   ): Promise<TranscriptionWebSocket> {
-    // Fetch WebSocket port from /health endpoint
-    const healthUrl = `${serverUrl}/api/v1/health`;
-    console.log('[WebSocket] Fetching WebSocket port from:', healthUrl);
+    // Fetch WebSocket port from /health endpoint using serverFetch for auto port discovery
+    console.log('[WebSocket] Fetching WebSocket port from server');
 
-    const response = await fetch(healthUrl);
+    const response = await serverFetch('/health');
     if (!response.ok) {
       throw new Error(`Failed to fetch health: ${response.status}`);
     }

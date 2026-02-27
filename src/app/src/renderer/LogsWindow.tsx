@@ -127,7 +127,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
           setConnectionStatus('error');
           eventSource.close();
 
-          // Attempt to reconnect after 5 seconds
+          // Reconnect after 5 seconds
           reconnectTimeoutRef.current = setTimeout(() => {
             console.log('Attempting to reconnect to log stream...');
             connectToLogStream();
@@ -137,7 +137,6 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
         console.error('Failed to connect to log stream:', error);
         setConnectionStatus('error');
 
-        // Attempt to reconnect after 5 seconds
         reconnectTimeoutRef.current = setTimeout(() => {
           connectToLogStream();
         }, 5000);
