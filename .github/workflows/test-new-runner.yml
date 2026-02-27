@@ -3,6 +3,8 @@ permissions:
   contents: read
 
 on:
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       runner:
@@ -10,13 +12,12 @@ on:
         required: true
         type: choice
         options:
-        - stx
-        - stx-test
-        default: 'stx-test'
+          - test
+        default: 'test'
 
 jobs:
   test-runner:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || 'test' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
