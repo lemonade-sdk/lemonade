@@ -3,19 +3,13 @@
         "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 0.77,
-        "labels": [
-            "tool-calling"
-        ]
+        "size": 0.77
     },
     "Llama-3.2-1B-Instruct-CPU": {
         "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-uint4-float16-cpu-onnx",
         "recipe": "ryzenai-llm",
         "suggested": false,
-        "size": 1.64,
-        "labels": [
-            "tool-calling"
-        ]
+        "size": 1.64
     },
     "Llama-3.2-3B-Instruct-CPU": {
         "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-uint4-float16-cpu-onnx",
@@ -126,10 +120,7 @@
         "checkpoint": "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 1.76,
-        "labels": [
-            "tool-calling"
-        ]
+        "size": 1.76
     },
     "Llama-3.2-3B-Hybrid": {
         "checkpoint": "amd/Llama-3.2-3B-onnx-ryzenai-1.7-hybrid",
@@ -255,10 +246,7 @@
         "checkpoint": "amd/Qwen2.5-0.5B-Instruct-onnx-ryzenai-1.7-hybrid",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 0.77,
-        "labels": [
-            "tool-calling"
-        ]
+        "size": 0.77
     },
     "Qwen2.5-14B-instruct-Hybrid": {
         "checkpoint": "amd/Qwen2.5-14B-instruct-onnx-ryzenai-1.7-hybrid",
@@ -293,8 +281,7 @@
         "suggested": true,
         "size": 0.77,
         "labels": [
-            "coding",
-            "tool-calling"
+            "coding"
         ]
     },
     "Qwen2.5-Coder-1.5B-Instruct-Hybrid": {
@@ -426,8 +413,7 @@
         "suggested": true,
         "size": 6.22,
         "labels": [
-            "vision",
-            "tool-calling"
+            "vision"
         ]
     },
     "Llama-2-7b-chat-hf-NPU": {
@@ -452,10 +438,7 @@
         "checkpoint": "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-npu",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "size": 1.82,
-        "labels": [
-            "tool-calling"
-        ]
+        "size": 1.82
     },
     "Llama-3.2-1B-NPU": {
         "checkpoint": "amd/Llama-3.2-1B-onnx-ryzenai-npu",
@@ -745,8 +728,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
-            "vision",
-            "tool-calling"
+            "vision"
         ],
         "size": 3.61
     },
@@ -763,10 +745,7 @@
         "checkpoint": "LiquidAI/LFM2-1.2B-GGUF:LFM2-1.2B-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "size": 0.731,
-        "labels": [
-            "tool-calling"
-        ]
+        "size": 0.731
     },
     "LFM2.5-1.2B-Instruct-GGUF": {
         "checkpoint": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF:LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
@@ -805,10 +784,7 @@
         "checkpoint": "unsloth/Llama-3.2-1B-Instruct-GGUF:Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "size": 0.834,
-        "labels": [
-            "tool-calling"
-        ]
+        "size": 0.834
     },
     "Llama-3.2-3B-Instruct-GGUF": {
         "checkpoint": "unsloth/Llama-3.2-3B-Instruct-GGUF:Llama-3.2-3B-Instruct-UD-Q4_K_XL.gguf",
@@ -931,8 +907,7 @@
         "recipe": "llamacpp",
         "suggested": false,
         "labels": [
-            "vision",
-            "tool-calling"
+            "vision"
         ],
         "size": 61.5
     },
@@ -1149,8 +1124,7 @@
         "recipe": "flm",
         "suggested": true,
         "labels": [
-            "vision",
-            "tool-calling"
+            "vision"
         ],
         "size": 5.26
     },
@@ -1207,10 +1181,7 @@
         "checkpoint": "llama3.2:1b",
         "recipe": "flm",
         "suggested": true,
-        "size": 1.21,
-        "labels": [
-            "tool-calling"
-        ]
+        "size": 1.21
     },
     "Llama-3.2-3B-FLM": {
         "checkpoint": "llama3.2:3b",
@@ -1225,10 +1196,7 @@
         "checkpoint": "lfm2:1.2b",
         "recipe": "flm",
         "suggested": true,
-        "size": 0.96,
-        "labels": [
-            "tool-calling"
-        ]
+        "size": 0.96
     },
     "LFM2.5-1.2B-Instruct-FLM": {
         "checkpoint": "lfm2.5-it:1.2b",
