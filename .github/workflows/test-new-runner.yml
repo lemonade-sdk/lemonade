@@ -17,7 +17,7 @@ on:
 
 jobs:
   test-runner:
-    runs-on: ${{ inputs.runner || 'test' }}
+    runs-on: test
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
