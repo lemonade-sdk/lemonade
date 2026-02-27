@@ -7,6 +7,8 @@ interface LogsWindowProps {
   height?: number;
 }
 
+const BOTTOM_FOLLOW_THRESHOLD_PX = 60;
+
 const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const [logs, setLogs] = useState<string[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error' | 'disconnected'>('connecting');
@@ -24,7 +26,10 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const isNearBottom = () => {
     const logsContent = logsContentRef.current;
     if (!logsContent) return true;
-    return logsContent.scrollHeight - logsContent.scrollTop <= logsContent.clientHeight + 30;
+    return (
+      logsContent.scrollHeight - logsContent.scrollTop <=
+      logsContent.clientHeight + BOTTOM_FOLLOW_THRESHOLD_PX
+    );
   };
 
   const scrollToBottom = () => {
@@ -82,8 +87,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
         return;
       }
 
-      const isAtBottom =
-        logsContent.scrollHeight - logsContent.scrollTop <= logsContent.clientHeight + 30;
+      const isAtBottom = isNearBottom();
       setAutoScroll((prev) => (prev === isAtBottom ? prev : isAtBottom));
     };
 
@@ -143,8 +147,9 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
             return;
           }
 
-          // Recover follow mode if user is already at bottom but state got out of sync.
-          if (!autoScrollRef.current && isNearBottom()) {
+          // Keep follow mode sticky when user is effectively at bottom.
+          const shouldFollowNextLine = autoScrollRef.current || isNearBottom();
+          if (shouldFollowNextLine && !autoScrollRef.current) {
             setAutoScroll(true);
           }
 
