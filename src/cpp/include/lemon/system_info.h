@@ -99,6 +99,9 @@ public:
     // Device support detection
     static std::string get_rocm_arch();
 
+    // Detect if the device is an iGPU
+    static bool get_has_igpu();
+
     // Generate human-readable error message for unsupported backend
     static std::string get_unsupported_backend_error(const std::string& recipe, const std::string& backend);
 };

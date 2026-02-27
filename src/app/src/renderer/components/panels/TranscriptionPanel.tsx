@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useModels } from '../../hooks/useModels';
 import { Modality } from '../../hooks/useInferenceState';
 import { ModelsData } from '../../utils/modelData';
-import { serverFetch, getServerBaseUrl } from '../../utils/serverConfig';
+import { serverFetch } from '../../utils/serverConfig';
 import { useAudioCapture } from '../../hooks/useAudioCapture';
 import { TranscriptionWebSocket } from '../../utils/websocketClient';
 import { MicrophoneIcon } from '../Icons';
@@ -91,8 +91,7 @@ const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
     if (!ready) return;
 
     try {
-      const serverUrl = getServerBaseUrl();
-      wsClientRef.current = await TranscriptionWebSocket.connect(serverUrl, selectedModel, {
+      wsClientRef.current = await TranscriptionWebSocket.connect(selectedModel, {
         onTranscription: handleLiveTranscription,
         onSpeechEvent: handleSpeechEvent,
         onError: (err) => setLiveError(err),

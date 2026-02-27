@@ -260,6 +260,13 @@ static bool device_matches_constraint(const std::string& device_family,
 
 // Generic installation check
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
+    // Special handling for ROCm backends on gfx1151 (Strix Halo) if kernel CWSR fix is missing
+    if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
+        if (needs_gfx1151_cwsr_fix()) {
+            error_message = "Linux kernel missing support";
+            return false;
+        }
+    }
     auto* spec = try_get_spec_for_recipe(recipe);
     if (spec) {
         try {
@@ -828,8 +835,13 @@ json SystemInfo::build_recipes_info(const json& devices) {
             backend["state"] = "installable";
             backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
 
+            // Special action for ROCm backend on llamacpp/sd-cpp if CWSR fix is missing
+            if ((def.recipe == "llamacpp" || def.recipe == "sd-cpp") && def.backend == "rocm"
+                && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
+                backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
+            }
             // For FLM on Linux, the action should be to visit setup documentation
-            if (def.recipe == "flm") {
+            else if (def.recipe == "flm") {
 #ifdef __linux__
                 backend["action"] = "Visit https://lemonade-server.ai/npu_linux.html";
 #elif defined(_WIN32)
@@ -1265,6 +1277,32 @@ std::string SystemInfo::get_rocm_arch() {
     }
 
     return "";  // No supported architecture found
+}
+
+bool SystemInfo::get_has_igpu() {
+    // Returns if the device is an iGPU. Only AMD iGPUs are detected at the moment
+    try {
+        // Use cached system info to avoid re-detecting GPUs
+        json system_info = SystemInfoCache::get_system_info_with_cache();
+
+        if (!system_info.contains("devices")) {
+            return false;
+        }
+
+        const auto& devices = system_info["devices"];
+
+        // Check iGPU first
+        if (devices.contains("amd_igpu") && devices["amd_igpu"].is_object()) {
+            const auto& igpu = devices["amd_igpu"];
+            if (igpu.value("available", false)) {
+                return true;
+            }
+        }
+    } catch (...) {
+        // Detection failed
+    }
+
+    return false;  // No iGPU detected
 }
 
 std::string SystemInfo::get_flm_version() {
