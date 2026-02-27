@@ -13,11 +13,24 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const [autoScroll, setAutoScroll] = useState(true);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContentRef = useRef<HTMLDivElement>(null);
+  const isProgrammaticScrollRef = useRef(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [serverUrl, setServerUrl] = useState<string>('');
   const [apiKey, setAPIKey] = useState<string>('');
   const [isInitialized, setIsInitialized] = useState(false);
+
+  const scrollToBottom = () => {
+    if (!logsEndRef.current) return;
+
+    isProgrammaticScrollRef.current = true;
+    logsEndRef.current.scrollIntoView({ behavior: 'auto', block: 'end' });
+
+    // Keep programmatic-scroll guard through the next paint.
+    requestAnimationFrame(() => {
+      isProgrammaticScrollRef.current = false;
+    });
+  };
 
   // Wait for serverConfig to initialize and get the correct URL
   useEffect(() => {
@@ -43,8 +56,8 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
 
   // Auto-scroll to bottom when new logs arrive (if auto-scroll is enabled)
   useEffect(() => {
-    if (autoScroll && logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (autoScroll) {
+      scrollToBottom();
     }
   }, [logs, autoScroll]);
 
@@ -54,9 +67,13 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
     if (!logsContent) return;
 
     const handleScroll = () => {
+      if (isProgrammaticScrollRef.current) {
+        return;
+      }
+
       const isAtBottom =
         logsContent.scrollHeight - logsContent.scrollTop <= logsContent.clientHeight + 30;
-      setAutoScroll(isAtBottom);
+      setAutoScroll((prev) => (prev === isAtBottom ? prev : isAtBottom));
     };
 
     logsContent.addEventListener('scroll', handleScroll);
@@ -165,7 +182,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
 
   const handleScrollToBottom = () => {
     setAutoScroll(true);
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollToBottom();
   };
 
   if (!isVisible) return null;
