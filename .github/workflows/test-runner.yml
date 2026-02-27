@@ -1,0 +1,45 @@
+name: Test Self-Hosted Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner to use'
+        required: true
+        type: choice
+        options:
+        - stx
+        - stx-test
+        default: 'stx-test'
+
+jobs:
+  test-runner:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Show runner information
+        run: |
+          echo "Hello from the runner!"
+          echo "Runner name: ${{ runner.name }}"
+          echo "Runner OS: ${{ runner.os }}"
+          echo "Runner arch: ${{ runner.arch }}"
+          hostname
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r test/requirements.txt
+
+      - name: Install Lemonade
+        run: |
+          curl -L -o lemonade.msi https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi
+          msiexec /i lemonade.msi /qn
+        shell: bash
+
+      - name: Run simple Lemonade test
+        run: lemonade-server --help
