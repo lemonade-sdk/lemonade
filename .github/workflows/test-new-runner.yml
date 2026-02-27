@@ -32,7 +32,7 @@ jobs:
 
       - name: Install Lemonade
         run: |
-          curl -L -o lemonade.msi https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi
+          Invoke-WebRequest -Uri "https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi" -OutFile "lemonade.msi"
           msiexec /i lemonade.msi /qn
 
       - name: Run simple Lemonade test
