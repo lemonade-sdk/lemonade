@@ -771,6 +771,7 @@
         "suggested": true,
         "labels": [
             "vision",
+            "tool-calling",
             "hot"
         ],
         "size": 19.7
@@ -782,6 +783,7 @@
         "suggested": true,
         "labels": [
             "vision",
+            "tool-calling",
             "hot"
         ],
         "size": 68.4
@@ -792,7 +794,8 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
-            "vision"
+            "vision",
+            "tool-calling"
         ],
         "size": 16.7
     },
