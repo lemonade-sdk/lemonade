@@ -292,6 +292,11 @@ void LlamaCppServer::load(const std::string& model_name,
     // Disable llamacpp webui by default
     push_overridable_arg(args, llamacpp_args, "--no-webui");
 
+    // Disable mmap on iGPU
+    if (SystemInfo::get_has_igpu()) {
+        push_overridable_arg(args, llamacpp_args, "--no-mmap");
+    }
+
     // Add embeddings support if the model supports it
     if (supports_embeddings) {
         std::cout << "[LlamaCpp] Model supports embeddings, adding --embeddings flag" << std::endl;
