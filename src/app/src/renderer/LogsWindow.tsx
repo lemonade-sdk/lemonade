@@ -7,17 +7,42 @@ interface LogsWindowProps {
   height?: number;
 }
 
+const BOTTOM_FOLLOW_THRESHOLD_PX = 60;
+
 const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const [logs, setLogs] = useState<string[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error' | 'disconnected'>('connecting');
   const [autoScroll, setAutoScroll] = useState(true);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContentRef = useRef<HTMLDivElement>(null);
+  const autoScrollRef = useRef(true);
+  const isProgrammaticScrollRef = useRef(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [serverUrl, setServerUrl] = useState<string>('');
   const [apiKey, setAPIKey] = useState<string>('');
   const [isInitialized, setIsInitialized] = useState(false);
+
+  const isNearBottom = () => {
+    const logsContent = logsContentRef.current;
+    if (!logsContent) return true;
+    return (
+      logsContent.scrollHeight - logsContent.scrollTop <=
+      logsContent.clientHeight + BOTTOM_FOLLOW_THRESHOLD_PX
+    );
+  };
+
+  const scrollToBottom = () => {
+    if (!logsEndRef.current) return;
+
+    isProgrammaticScrollRef.current = true;
+    logsEndRef.current.scrollIntoView({ behavior: 'auto', block: 'end' });
+
+    // Keep programmatic-scroll guard through the next paint.
+    requestAnimationFrame(() => {
+      isProgrammaticScrollRef.current = false;
+    });
+  };
 
   // Wait for serverConfig to initialize and get the correct URL
   useEffect(() => {
@@ -43,10 +68,14 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
 
   // Auto-scroll to bottom when new logs arrive (if auto-scroll is enabled)
   useEffect(() => {
-    if (autoScroll && logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (autoScroll) {
+      scrollToBottom();
     }
   }, [logs, autoScroll]);
+
+  useEffect(() => {
+    autoScrollRef.current = autoScroll;
+  }, [autoScroll]);
 
   // Detect if user scrolls up (disable auto-scroll) or scrolls to bottom (enable auto-scroll)
   useEffect(() => {
@@ -54,9 +83,12 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
     if (!logsContent) return;
 
     const handleScroll = () => {
-      const isAtBottom =
-        logsContent.scrollHeight - logsContent.scrollTop <= logsContent.clientHeight + 30;
-      setAutoScroll(isAtBottom);
+      if (isProgrammaticScrollRef.current) {
+        return;
+      }
+
+      const isAtBottom = isNearBottom();
+      setAutoScroll((prev) => (prev === isAtBottom ? prev : isAtBottom));
     };
 
     logsContent.addEventListener('scroll', handleScroll);
@@ -115,6 +147,12 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
             return;
           }
 
+          // Keep follow mode sticky when user is effectively at bottom.
+          const shouldFollowNextLine = autoScrollRef.current || isNearBottom();
+          if (shouldFollowNextLine && !autoScrollRef.current) {
+            setAutoScroll(true);
+          }
+
           setLogs((prevLogs) => {
             // Keep last 1000 lines to prevent memory issues
             const newLogs = [...prevLogs, logLine];
@@ -165,7 +203,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
 
   const handleScrollToBottom = () => {
     setAutoScroll(true);
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollToBottom();
   };
 
   if (!isVisible) return null;
