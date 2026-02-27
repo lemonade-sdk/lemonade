@@ -33,7 +33,10 @@ jobs:
       - name: Install Lemonade
         run: |
           Invoke-WebRequest -Uri "https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi" -OutFile "lemonade.msi"
-          msiexec /i lemonade.msi /qn
-
-      - name: Run simple Lemonade test
-        run: lemonade-server --help
+          msiexec /i lemonade.msi /qn /L*V install.log
+          Start-Sleep -Seconds 5
+          
+      - name: Refresh Environment and Test
+        run: |
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          lemonade-server --help
