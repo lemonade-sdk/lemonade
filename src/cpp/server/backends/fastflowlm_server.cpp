@@ -407,7 +407,7 @@ std::string FastFlowLMServer::get_min_npu_driver_version() {
 #elif defined(__linux__)
         // Linux: use min_kernel_version field
         if (!flm_config.contains("min_kernel_version") || !flm_config["min_kernel_version"].is_string()) {
-            return "7.0";  // Fallback default
+            return "6.17";  // Fallback default
         }
         return flm_config["min_kernel_version"].get<std::string>();
 #else
