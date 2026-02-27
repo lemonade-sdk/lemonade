@@ -86,6 +86,9 @@ bool NetworkBeacon::isRFC1918(const std::string& ipAddress) {
     // 192.168.0.0/16
     if ((ip & 0xFFFF0000) == 0xC0A80000) return true;
 
+    // 127.0.0.0/8 (loopback)
+    if ((ip & 0xFF000000) == 0x7F000000) return true;
+
     return false;
 }
 
@@ -139,6 +142,7 @@ void NetworkBeacon::stopBroadcasting() {
 void NetworkBeacon::broadcastThreadLoop() {
     // Setup - Localize data to minimize lock time
     sockaddr_in addr{};
+    sockaddr_in loopbackAddr{};
     std::string currentPayload;
     int interval;
 
@@ -151,7 +155,11 @@ void NetworkBeacon::broadcastThreadLoop() {
         addr.sin_family = AF_INET;
         addr.sin_port = htons(_port);
         addr.sin_addr.s_addr = INADDR_BROADCAST;
-        
+
+        loopbackAddr.sin_family = AF_INET;
+        loopbackAddr.sin_port = htons(_port);
+        loopbackAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
         currentPayload = _payload;
         interval = _broadcastIntervalSeconds;
     }
@@ -165,6 +173,7 @@ void NetworkBeacon::broadcastThreadLoop() {
         }
 
         sendto(_socket, currentPayload.c_str(), (int)currentPayload.size(), 0, (sockaddr*)&addr, sizeof(addr));
+        sendto(_socket, currentPayload.c_str(), (int)currentPayload.size(), 0, (sockaddr*)&loopbackAddr, sizeof(loopbackAddr));
         std::this_thread::sleep_for(std::chrono::seconds(interval));
     }
 }
