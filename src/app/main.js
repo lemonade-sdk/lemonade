@@ -556,6 +556,76 @@ const discoverServerPort = () => {
   });
 };
 
+/**
+ * Background beacon listener that continuously monitors for lemonade server
+ * UDP beacons on localhost. When a beacon is received with a different port
+ * than the currently cached port, it updates the cached port and broadcasts
+ * the change to all renderer windows.
+ */
+let beaconSocket = null;
+
+const startBeaconListener = async () => {
+  const BEACON_PORT = 8000;
+
+  // Don't listen if an explicit base URL is configured
+  const baseURL = await getBaseURLFromConfig();
+  if (baseURL) {
+    console.log('Beacon listener skipped - using explicit server URL:', baseURL);
+    return;
+  }
+
+  if (beaconSocket) {
+    return; // Already listening
+  }
+
+  const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+  beaconSocket = socket;
+
+  socket.on('error', (err) => {
+    console.error('Beacon listener socket error:', err);
+    try { socket.close(); } catch (e) { /* ignore */ }
+    beaconSocket = null;
+
+    // Retry after 10 seconds
+    setTimeout(() => startBeaconListener(), 10000);
+  });
+
+  socket.on('message', (msg) => {
+    try {
+      const payload = JSON.parse(msg.toString());
+
+      if (payload.service === 'lemonade' && payload.url) {
+        const urlMatch = payload.url.match(/:(\d+)\//);
+        if (urlMatch && urlMatch[1]) {
+          const port = parseInt(urlMatch[1], 10);
+          if (!isNaN(port) && port > 0 && port < 65536 && port !== cachedServerPort) {
+            console.log(`Beacon listener detected server port change: ${cachedServerPort} -> ${port}`);
+            cachedServerPort = port;
+            broadcastServerPortUpdated(port);
+          }
+        }
+      }
+    } catch (e) {
+      // Not a valid JSON beacon, ignore
+    }
+  });
+
+  socket.on('listening', () => {
+    const address = socket.address();
+    console.log(`Beacon listener started on ${address.address}:${address.port}`);
+  });
+
+  try {
+    socket.bind(BEACON_PORT);
+  } catch (bindError) {
+    console.error('Failed to bind beacon listener socket:', bindError);
+    beaconSocket = null;
+
+    // Retry after 10 seconds
+    setTimeout(() => startBeaconListener(), 10000);
+  }
+};
+
 // Returns the configured server base URL, or null if using localhost discovery
 ipcMain.handle('get-server-base-url', async () => {
   return await getBaseURLFromConfig();
@@ -854,6 +924,7 @@ function createWindow() {
 
 app.on('ready', () => {
   ensureTrayRunning();
+  startBeaconListener();
   createWindow();
 
   // Allow microphone access for streaming audio transcription.
@@ -901,6 +972,13 @@ app.on('ready', () => {
 app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+app.on('will-quit', () => {
+  if (beaconSocket) {
+    try { beaconSocket.close(); } catch (e) { /* ignore */ }
+    beaconSocket = null;
   }
 });
 
