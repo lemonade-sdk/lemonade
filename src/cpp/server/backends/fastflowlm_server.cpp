@@ -449,7 +449,7 @@ bool FastFlowLMServer::validate() {
         throw FLMCheckException(
             FLMCheckException::ErrorType::VALIDATION_FAILED,
             error_message.empty() ? "FLM validation failed" : error_message,
-            "https://lemonade-server.ai/npu_linux.html"
+            "https://lemonade-server.ai/flm_npu_linux.html"
         );
     }
 
@@ -581,7 +581,7 @@ bool FastFlowLMServer::check_npu_driver_version() {
         fix_url = DRIVER_INSTALL_URL;
 #elif defined(__linux__)
         error_msg = "Kernel version " + version + " is older than required " + min_version + " for NPU support";
-        fix_url = "https://lemonade-server.ai/npu_linux.html";
+        fix_url = "https://lemonade-server.ai/flm_npu_linux.html";
 #else
         error_msg = "Driver/kernel version check not available on this platform";
         fix_url = "";
