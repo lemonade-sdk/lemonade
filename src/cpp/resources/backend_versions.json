@@ -21,8 +21,7 @@
   },
   "flm": {
     "npu": "v0.9.34",
-    "min_npu_driver": "32.0.203.304",
-    "min_kernel_version": "7.0"
+    "min_npu_driver": "32.0.203.304"
   },
   "kokoro": {
     "cpu": "b14"
