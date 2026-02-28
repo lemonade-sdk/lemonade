@@ -21,7 +21,8 @@ static const json DEFAULTS = {
     {"steps", 20},
     {"cfg_scale", 7.0},
     {"width", 512},
-    {"height", 512}
+    {"height", 512},
+    {"image_request_timeout", 0}
 };
 
 // CLI_OPTIONS without allowed_values for inference engines (will be set dynamically)
@@ -86,6 +87,12 @@ static const json CLI_OPTIONS = {
         {"envname", "LEMONADE_HEIGHT"},
         {"help", "Image height in pixels"}
     }},
+    {"--image-request-timeout", {
+        {"option_name", "image_request_timeout"},
+        {"type_name", "SECONDS"},
+        {"envname", "LEMONADE_IMAGE_REQUEST_TIMEOUT"},
+        {"help", "Overall timeout for image generation requests in seconds (0 disables the timeout)"}
+    }},
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
@@ -96,7 +103,7 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     } else if (recipe == "ryzenai-llm" || recipe == "flm") {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
-        return {"sd-cpp_backend", "steps", "cfg_scale", "width", "height"};
+        return {"sd-cpp_backend", "steps", "cfg_scale", "width", "height", "image_request_timeout"};
     } else {
         return {};
     }
@@ -158,6 +165,18 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
         // Common settings for all options
         o->envname(opt["envname"]);
         o->type_name(opt["type_name"]);
+        if (opt_name == "image_request_timeout") {
+            o->check([](const std::string& val) -> std::string {
+                try {
+                    int num = std::stoi(val);
+                    if (num >= 0) {
+                        return "";
+                    }
+                } catch (...) {
+                }
+                return "Value must be 0 or a positive integer number of seconds";
+            });
+        }
         if (opt.contains("allowed_values")) {
             o->check(CLI::IsMember(opt["allowed_values"].get<std::vector<std::string>>()));
         }
