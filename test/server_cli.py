@@ -561,7 +561,60 @@ class EphemeralCLITests(CLITestBase):
             except subprocess.TimeoutExpired:
                 server_process.kill()
 
-    def test_005_status_when_stopped(self):
+    def test_005_duplicate_serve_reports_existing_server(self):
+        """Test duplicate serve prints an explicit already-running message."""
+        self.assertFalse(is_server_running(), "Server should not be running initially")
+
+        first_cmd = [_config["server_binary"], "serve"]
+        second_cmd = [_config["server_binary"], "serve"]
+        if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
+            first_cmd.append("--no-tray")
+            second_cmd.append("--no-tray")
+
+        first_process = subprocess.Popen(
+            first_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        try:
+            self.assertTrue(
+                wait_for_server_start(timeout=60),
+                "First server should start within 60 seconds",
+            )
+
+            duplicate_result = subprocess.run(
+                second_cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                encoding="utf-8",
+                errors="replace",
+            )
+
+            duplicate_output = duplicate_result.stdout + duplicate_result.stderr
+            duplicate_output_lower = duplicate_output.lower()
+
+            self.assertNotEqual(
+                duplicate_result.returncode,
+                0,
+                f"Duplicate serve should fail: {duplicate_output}",
+            )
+            self.assertTrue(
+                "already running" in duplicate_output_lower
+                or "duplicate instance now exiting" in duplicate_output_lower,
+                f"Duplicate serve should explain why it exited: {duplicate_output}",
+            )
+        finally:
+            stop_server()
+            first_process.terminate()
+            try:
+                first_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                first_process.kill()
+
+    def test_006_status_when_stopped(self):
         """Test status command when server is not running."""
         self.assertFalse(is_server_running(), "Server should not be running")
 
@@ -576,7 +629,7 @@ class EphemeralCLITests(CLITestBase):
             f"Status should indicate server is not running: {result.stdout}",
         )
 
-    def test_006_recipes_no_server(self):
+    def test_007_recipes_no_server(self):
         """Test recipes command works without server running."""
         self.assertFalse(is_server_running(), "Server should not be running")
 
@@ -605,7 +658,7 @@ class EphemeralCLITests(CLITestBase):
 
         print("[OK] Recipes command works without server running")
 
-    def test_007_status_reports_http_port_not_websocket(self):
+    def test_008_status_reports_http_port_not_websocket(self):
         """Test that status reports the HTTP port, not the WebSocket port.
 
         Regression test: the router listens on both an HTTP port and a
@@ -682,7 +735,7 @@ class EphemeralCLITests(CLITestBase):
             except subprocess.TimeoutExpired:
                 server_process.kill()
 
-    def test_008_recipes_install_no_server(self):
+    def test_009_recipes_install_no_server(self):
         """Test recipes --install works when no server is running (starts ephemeral server)."""
         import sys
 

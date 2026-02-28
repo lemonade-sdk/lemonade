@@ -861,6 +861,8 @@ void Server::run() {
 
     std::string ipv4 = resolve_host_to_ip(AF_INET, host_);
     std::string ipv6 = resolve_host_to_ip(AF_INET6, host_);
+    std::atomic<bool> listener_started(false);
+    std::atomic<bool> listener_start_failed(false);
 
     running_ = true;
 
@@ -878,17 +880,29 @@ void Server::run() {
     if (!ipv4.empty()) {
         // setup ipv4 thread
         setup_http_logger(*http_server_);
-        http_v4_thread_ = std::thread([this, ipv4]() {
-            http_server_->bind_to_port(ipv4, port_);
-            http_server_->listen_after_bind();
+        http_v4_thread_ = std::thread([this, ipv4, &listener_started, &listener_start_failed]() {
+            if (http_server_->bind_to_port(ipv4, port_) <= 0) {
+                listener_start_failed = true;
+                return;
+            }
+            listener_started = true;
+            if (!http_server_->listen_after_bind()) {
+                listener_start_failed = true;
+            }
         });
     }
     if (!ipv6.empty()) {
         // setup ipv6 thread
         setup_http_logger(*http_server_v6_);
-        http_v6_thread_ = std::thread([this, ipv6]() {
-            http_server_v6_->bind_to_port(ipv6, port_);
-            http_server_v6_->listen_after_bind();
+        http_v6_thread_ = std::thread([this, ipv6, &listener_started, &listener_start_failed]() {
+            if (http_server_v6_->bind_to_port(ipv6, port_) <= 0) {
+                listener_start_failed = true;
+                return;
+            }
+            listener_started = true;
+            if (!http_server_v6_->listen_after_bind()) {
+                listener_start_failed = true;
+            }
         });
     }
 
@@ -918,6 +932,12 @@ void Server::run() {
         http_v4_thread_.join();
     if(http_v6_thread_.joinable())
         http_v6_thread_.join();
+
+    if (!listener_started && listener_start_failed) {
+        std::cerr << "[Server] Another Lemonade router/server instance is already running on "
+                  << host_ << ":" << port_ << ". Duplicate instance now exiting." << std::endl;
+        stop();
+    }
 }
 
 void Server::stop() {
