@@ -196,7 +196,6 @@ void FastFlowLMServer::load(const std::string& model_name,
     };
 
     // Parse and append custom flm_args if provided
-    // Similar to how llamacpp_args works
     if (!flm_args.empty()) {
         std::istringstream iss(flm_args);
         std::string token;

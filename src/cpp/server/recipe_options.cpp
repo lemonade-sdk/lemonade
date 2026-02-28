@@ -88,7 +88,7 @@ static const json CLI_OPTIONS = {
         {"envname", "LEMONADE_HEIGHT"},
         {"help", "Image height in pixels"}
     }},
-    // FLM-specific options (similar to llamacpp-args)
+    // FLM-specific options
     {"--flm-args", {
         {"option_name", "flm_args"},
         {"type_name", "ARGS"},
@@ -103,7 +103,6 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     } else if (recipe == "whispercpp") {
         return {"whispercpp_backend"};
     } else if (recipe == "flm") {
-        // FLM supports ctx_size and flm_args (for custom arguments)
         return {"ctx_size", "flm_args"};
     } else if (recipe == "ryzenai-llm") {
         return {"ctx_size"};
