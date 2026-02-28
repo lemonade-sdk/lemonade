@@ -777,14 +777,6 @@ bool ServerManager::terminate_router_tree() {
 }
 
 void ServerManager::write_pid_file() {
-    // Skip PID file when running under systemd, unless explicitly disabled
-    // LEMONADE_DISABLE_SYSTEMD_JOURNAL can be set in CI to force PID file creation
-    const char* journal_stream = std::getenv("JOURNAL_STREAM");
-    const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
-    if (journal_stream && !disable_journal) {
-        return;  // Systemd tracks PID itself
-    }
-
     std::string pid_file_path = "/tmp/lemonade-router.pid";
     DEBUG_LOG(this, "write_pid_file() called - PID: " << server_pid_ << ", Port: " << port_);
 
@@ -801,13 +793,6 @@ void ServerManager::write_pid_file() {
 }
 
 void ServerManager::remove_pid_file() {
-    // Skip PID file when running under systemd, unless explicitly disabled
-    const char* journal_stream = std::getenv("JOURNAL_STREAM");
-    const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
-    if (journal_stream && !disable_journal) {
-        return;
-    }
-
     std::string pid_file_path = "/tmp/lemonade-router.pid";
     if (remove(pid_file_path.c_str()) == 0) {
         DEBUG_LOG(this, "Removed PID file: " << pid_file_path);
