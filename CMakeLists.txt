@@ -93,6 +93,11 @@ set(USE_SYSTEM_ZSTD ${ZSTD_FOUND})
 set(USE_SYSTEM_CLI11 ${CLI11_INCLUDE_DIRS})
 set(USE_SYSTEM_HTTPLIB ${HTTPLIB_FOUND})
 
+# On Linux, enable NPU support (using local headers if system ones are missing)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(HAVE_AMDXDNA_ACCEL ON)
+endif()
+
 # On macOS, always statically link dependencies to avoid Homebrew dylib issues
 if(APPLE)
     set(USE_SYSTEM_ZSTD OFF)
@@ -696,6 +701,11 @@ elseif(UNIX)
             target_compile_definitions(${EXECUTABLE_NAME} PRIVATE HAVE_SYSTEMD)
         endif()
     endif()
+
+    # NPU support via Linux kernel headers (amdxdna)
+    # Always enabled on Linux, using local headers as fallback for system ones
+    target_compile_definitions(${EXECUTABLE_NAME} PRIVATE HAVE_AMDXDNA_ACCEL_H)
+    target_include_directories(${EXECUTABLE_NAME} PRIVATE src/cpp/include/linux)
 endif()
 
 # ============================================================

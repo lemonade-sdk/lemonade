@@ -30,6 +30,12 @@
 #include <sys/wait.h>
 #endif
 
+#ifdef __linux__
+#include <drm/amdxdna_accel.h>
+#include <sys/ioctl.h>
+#include <fcntl.h>
+#endif
+
 namespace lemon {
 
 namespace fs = std::filesystem;
@@ -1079,6 +1085,7 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
 // Linux: identify NPU architecture from sysfs accel subsystem
 // Checks /sys/class/accel/*/device/driver for amdxdna, then reads vbnv for NPU generation
 static std::string identify_npu_arch_from_sysfs() {
+#ifdef __linux__
     fs::path accel_path = "/sys/class/accel";
     if (!fs::exists(accel_path) || !fs::is_directory(accel_path)) {
         return "";
@@ -1101,26 +1108,31 @@ static std::string identify_npu_arch_from_sysfs() {
             continue;
         }
 
-        fs::path vbnv_file = entry.path() / "device" / "vbnv";
-        if (!fs::exists(vbnv_file)) {
+        std::string accel_basename = entry.path().filename().string();
+        std::string accel_dev = "/dev/accel" + accel_basename;
+        if (!fs::exists(accel_dev))
+            continue;
+
+        if (accel_dev.empty() || !fs::exists(accel_dev)) {
             continue;
         }
 
-        std::ifstream vbnv_stream(vbnv_file);
-        if (!vbnv_stream.is_open()) {
+        int fd = open(accel_dev.c_str(), O_RDWR);
+        if (fd < 0)
             continue;
-        }
-
-        std::string vbnv_content;
-        std::getline(vbnv_stream, vbnv_content);
-        vbnv_stream.close();
-
-        if (vbnv_content.find("RyzenAI-npu4") != std::string::npos ||
-            vbnv_content.find("RyzenAI-npu5") != std::string::npos ||
-            vbnv_content.find("RyzenAI-npu6") != std::string::npos) {
+        amdxdna_drm_query_aie_metadata query_aie_metadata = {};
+        amdxdna_drm_get_info get_info = {
+            .param = DRM_AMDXDNA_QUERY_AIE_METADATA,
+            .buffer_size = sizeof(amdxdna_drm_query_aie_metadata),
+            .buffer = (unsigned long)&query_aie_metadata,
+        };
+        ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info);
+        close(fd);
+        if (query_aie_metadata.cols == 8) {
             return "XDNA2";
         }
     }
+#endif
     return "";
 }
 

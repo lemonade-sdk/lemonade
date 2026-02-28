@@ -239,6 +239,15 @@ if(UNIX AND NOT APPLE)
             target_compile_definitions(lemonade-server PRIVATE HAVE_SYSTEMD)
         endif()
     endif()
+
+    # NPU support via Linux kernel headers (amdxdna)
+    # Always enabled on Linux, using local headers as fallback for system ones
+    target_compile_definitions(lemonade-server PRIVATE HAVE_AMDXDNA_ACCEL_H)
+    target_include_directories(lemonade-server PRIVATE ${CMAKE_SOURCE_DIR}/src/cpp/include/linux)
+    if(TARGET lemonade-tray)
+        target_compile_definitions(lemonade-tray PRIVATE HAVE_AMDXDNA_ACCEL_H)
+        target_include_directories(lemonade-tray PRIVATE ${CMAKE_SOURCE_DIR}/src/cpp/include/linux)
+    endif()
 endif()
 
 # Install target (only on non-macOS platforms where main CMakeLists doesn't handle it)
