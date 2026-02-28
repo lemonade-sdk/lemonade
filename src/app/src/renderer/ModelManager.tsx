@@ -368,7 +368,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       if (recipe) {
         // Fetch fresh system-info directly (avoid stale closure over React state)
         const freshSystemInfo = await fetchSystemInfoData();
-        await ensureBackendForRecipe(recipe, freshSystemInfo.info?.recipes);
+        // await ensureBackendForRecipe(recipe, freshSystemInfo.info?.recipes);
       }
 
       // For registered models, verify metadata exists; for new models, we're registering now
