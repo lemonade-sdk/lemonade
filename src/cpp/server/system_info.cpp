@@ -1,6 +1,7 @@
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/utils/json_utils.h"
 #include "lemon/backends/backend_utils.h"
 #include <filesystem>
 #include <fstream>
@@ -1443,10 +1444,18 @@ bool SystemInfo::get_has_igpu() {
 }
 
 std::string SystemInfo::get_flm_version() {
+    // Find the flm executable using shared utility
+    std::string flm_path = utils::find_flm_executable();
+    if (flm_path.empty()) {
+        return "unknown";
+    }
+
     #ifdef _WIN32
-    FILE* pipe = _popen("flm version 2>NUL", "r");
+    std::string command = "\"" + flm_path + "\" version --json 2>NUL";
+    FILE* pipe = _popen(command.c_str(), "r");
     #else
-    FILE* pipe = popen("flm version 2>/dev/null", "r");
+    std::string command = "\"" + flm_path + "\" version --json 2>/dev/null";
+    FILE* pipe = popen(command.c_str(), "r");
     #endif
 
     if (!pipe) {
@@ -1455,8 +1464,8 @@ std::string SystemInfo::get_flm_version() {
 
     char buffer[256];
     std::string output;
-    if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output = buffer;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output += buffer;
     }
 
     #ifdef _WIN32
@@ -1465,7 +1474,23 @@ std::string SystemInfo::get_flm_version() {
     pclose(pipe);
     #endif
 
-    // Parse version from output like "FLM v0.9.4"
+    // Parse JSON output: { "version": "0.9.34" }
+    try {
+        json j = JsonUtils::parse(output);
+        if (j.contains("version") && j["version"].is_string()) {
+            std::string version = j["version"].get<std::string>();
+            // If the version doesn't start with 'v', prepend it
+            // for backend_versions.json compatibility (e.g. "v0.9.34").
+            if (!version.empty() && version[0] != 'v') {
+                return "v" + version;
+            }
+            return version;
+        }
+    } catch (...) {
+        // Fallback to legacy parsing if JSON parsing fails
+    }
+
+    // Legacy parsing from output like "FLM v0.9.4"
     if (output.find("FLM v") != std::string::npos) {
         size_t pos = output.find("FLM v");
         // Keep the 'v' prefix so it matches backend_versions.json (e.g. "v0.9.34").

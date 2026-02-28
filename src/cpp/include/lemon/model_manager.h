@@ -123,6 +123,9 @@ public:
     // Get list of installed FLM models (for caching)
     std::vector<std::string> get_flm_installed_models();
 
+    // Get list of all available FLM models from 'flm list --json'
+    std::vector<ModelInfo> get_flm_available_models();
+
     // Refresh FLM model download status from 'flm list' (call after FLM install/upgrade)
     void refresh_flm_download_status();
 

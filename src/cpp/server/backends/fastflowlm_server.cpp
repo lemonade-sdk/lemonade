@@ -584,8 +584,8 @@ std::string FastFlowLMServer::get_flm_installed_version() {
     }
 
     try {
-        // Run flm --version command using the full path (not relying on PATH)
-        std::string command = "\"" + flm_path + "\" --version 2>&1";
+        // Run flm version --json command using the full path (not relying on PATH)
+        std::string command = "\"" + flm_path + "\" version --json 2>&1";
 #ifdef _WIN32
         FILE* pipe = _popen(command.c_str(), "r");
 #else
@@ -606,6 +606,24 @@ std::string FastFlowLMServer::get_flm_installed_version() {
 #else
         pclose(pipe);
 #endif
+
+        // Parse JSON output: { "version": "0.9.34" }
+        try {
+            json j = utils::JsonUtils::parse(output);
+            if (j.contains("version") && j["version"].is_string()) {
+                std::string version_str = j["version"].get<std::string>();
+                // If the version doesn't start with 'v', prepend it
+                // for backend_versions.json compatibility (e.g. "v0.9.34").
+                if (!version_str.empty() && version_str[0] != 'v') {
+                    cached = "v" + version_str;
+                } else {
+                    cached = version_str;
+                }
+                return cached;
+            }
+        } catch (...) {
+            // Fallback to legacy parsing if JSON parsing fails
+        }
 
         // Parse output like "FLM v0.9.23" - look for "FLM v" specifically
         // to avoid matching 'v' in other text (like error messages)

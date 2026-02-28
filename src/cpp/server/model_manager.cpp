@@ -832,6 +832,14 @@ void ModelManager::build_cache() {
         all_models[name] = info;
     }
 
+    // Step 1.6: Discover FLM models from 'flm list --json'
+    // Precedence: server_models.json > user_models.json > extra_models > flm_list
+    auto flm_available = get_flm_available_models();
+    for (const auto& info : flm_available) {
+        // Use emplace to only add if key doesn't exist (respect precedence)
+        all_models.emplace(info.model_name, info);
+    }
+
     // Populate recipe options
     for (auto& [name, info] : all_models) {
         // Start with image_defaults as base options for sd-cpp models
@@ -1459,9 +1467,9 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
         return installed_models; // FLM not installed
     }
 
-    // Run 'flm list --filter installed --quiet' to get only installed models
+    // Run 'flm list --filter installed --quiet --json' to get only installed models
     // Use the full path to flm.exe to avoid PATH issues
-    std::string command = "\"" + flm_path + "\" list --filter installed --quiet";
+    std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json";
 
 #ifdef _WIN32
     FILE* pipe = _popen(command.c_str(), "r");
@@ -1485,7 +1493,22 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
     pclose(pipe);
 #endif
 
-    // Parse output - cleaner format without emojis
+    // Parse output: { "models": [ { "name": "modelname:tag", ... }, ... ] }
+    try {
+        json j = JsonUtils::parse(output);
+        if (j.contains("models") && j["models"].is_array()) {
+            for (const auto& model : j["models"]) {
+                if (model.contains("name") && model["name"].is_string()) {
+                    installed_models.push_back(model["name"].get<std::string>());
+                }
+            }
+            return installed_models;
+        }
+    } catch (...) {
+        // Fallback to legacy parsing if JSON parsing fails
+    }
+
+    // Legacy parsing - cleaner format without emojis
     // Expected format:
     //   Models:
     //     - modelname:tag
@@ -1515,6 +1538,118 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
     }
 
     return installed_models;
+}
+
+std::vector<ModelInfo> ModelManager::get_flm_available_models() {
+    std::vector<ModelInfo> flm_models;
+
+    // Find the flm executable using shared utility
+    std::string flm_path = utils::find_flm_executable();
+    if (flm_path.empty()) {
+        return flm_models; // FLM not installed
+    }
+
+    // Run 'flm list --json' to get all available models
+    std::string command = "\"" + flm_path + "\" list --json";
+
+#ifdef _WIN32
+    FILE* pipe = _popen(command.c_str(), "r");
+#else
+    FILE* pipe = popen(command.c_str(), "r");
+#endif
+
+    if (!pipe) {
+        return flm_models;
+    }
+
+    char buffer[256];
+    std::string output;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output += buffer;
+    }
+
+#ifdef _WIN32
+    _pclose(pipe);
+#else
+    pclose(pipe);
+#endif
+
+    // Parse output: { "models": [ { "name": "modelname:tag", "footprint": 1.23, ... }, ... ] }
+    try {
+        json j = JsonUtils::parse(output);
+        if (j.contains("models") && j["models"].is_array()) {
+            for (const auto& m : j["models"]) {
+                if (m.contains("name") && m["name"].is_string()) {
+                    std::string checkpoint = m["name"].get<std::string>();
+
+                    // Capitalize first letter and handle -it suffix for model name
+                    // e.g., "llama3.2:1b" -> "Llama-3.2-1B-FLM"
+                    std::string display_name = checkpoint;
+                    // Replace : with -
+                    std::replace(display_name.begin(), display_name.end(), ':', '-');
+                    // Capitalize
+                    if (!display_name.empty()) {
+                        display_name[0] = std::toupper(display_name[0]);
+                    }
+                    // Uppercase 'b' for parameter size (e.g., -1b -> -1B)
+                    size_t b_pos = display_name.find_last_of("0123456789");
+                    if (b_pos != std::string::npos && b_pos + 1 < display_name.length() && display_name[b_pos+1] == 'b') {
+                        display_name[b_pos+1] = 'B';
+                    }
+                    // Handle -it -> -Instruct
+                    size_t it_pos = display_name.find("-it");
+                    if (it_pos != std::string::npos) {
+                        display_name.replace(it_pos, 3, "-Instruct");
+                    }
+
+                    std::string model_name = display_name + "-FLM";
+
+                    ModelInfo info;
+                    info.model_name = model_name;
+                    info.checkpoints["main"] = checkpoint;
+                    info.recipe = "flm";
+                    info.suggested = true; // All official FLM models are suggested
+
+                    // Size in GB (footprint field contains disk size in GB)
+                    if (m.contains("footprint") && m["footprint"].is_number()) {
+                        info.size = m["footprint"].get<double>();
+                    }
+
+                    // Family/labels
+                    if (m.contains("details") && m["details"].is_object()) {
+                        auto details = m["details"];
+                        if (details.contains("family") && details["family"].is_string()) {
+                            std::string family = details["family"].get<std::string>();
+                            if (family == "deepseek-r1" || family == "qwen3" || family.find("tk") != std::string::npos) {
+                                info.labels.push_back("reasoning");
+                            }
+                            if (family.find("whisper") != std::string::npos) {
+                                info.labels.push_back("audio");
+                            }
+                            if (family.find("embed") != std::string::npos) {
+                                info.labels.push_back("embeddings");
+                            }
+                        }
+                    }
+
+                    // VLM support
+                    if (m.value("vlm", false) || (m.contains("details") && m["details"].value("family", "") == "gemma3")) {
+                        info.labels.push_back("vision");
+                    }
+
+                    // Populate type and device fields (multi-model support)
+                    info.type = get_model_type_from_labels(info.labels);
+                    info.device = get_device_type_from_recipe(info.recipe);
+
+                    flm_models.push_back(info);
+                }
+            }
+        }
+    } catch (...) {
+        // Silently fail if JSON parsing fails, we'll just have no dynamic FLM models
+    }
+
+    return flm_models;
 }
 
 bool ModelManager::is_model_downloaded(const std::string& model_name) {
