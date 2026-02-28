@@ -212,8 +212,10 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
   const handleModelExport = () => {
     URL.revokeObjectURL(exportModelBtn!.current!.href);
+    let modelName = (modelInfo?.id as string).startsWith("user.") ? modelInfo?.id : `user.${modelInfo?.id}`;
+
     let modelToExport = {
-      "model": modelInfo?.id,
+      "model": modelName,
       "downloaded": modelInfo?.downloaded,
       "labels": modelInfo?.labels,
       "recipe": modelInfo?.recipe,
