@@ -1,4 +1,5 @@
 #include <lemon/utils/json_utils.h>
+#include <lemon/utils/path_utils.h>
 #include <fstream>
 #include <stdexcept>
 #include <vector>
@@ -7,7 +8,7 @@ namespace lemon {
 namespace utils {
 
 json JsonUtils::load_from_file(const std::string& file_path) {
-    std::ifstream file(file_path);
+    std::ifstream file(path_from_utf8(file_path));
     if (!file.is_open()) {
         throw std::runtime_error("Failed to open file: " + file_path);
     }
@@ -23,7 +24,7 @@ json JsonUtils::load_from_file(const std::string& file_path) {
 }
 
 void JsonUtils::save_to_file(const json& j, const std::string& file_path) {
-    std::ofstream file(file_path);
+    std::ofstream file(path_from_utf8(file_path));
     if (!file.is_open()) {
         throw std::runtime_error("Failed to open file for writing: " + file_path);
     }

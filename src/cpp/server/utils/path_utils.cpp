@@ -22,6 +22,70 @@ namespace fs = std::filesystem;
 
 namespace lemon::utils {
 
+#ifdef _WIN32
+static std::wstring utf8_to_wstring(const std::string& str) {
+    if (str.empty()) return std::wstring();
+
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
+    if (size_needed <= 0) {
+        return std::wstring();
+    }
+
+    std::wstring result(size_needed, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &result[0], size_needed);
+    result.resize(size_needed - 1);
+    return result;
+}
+
+static std::string wstring_to_utf8(const std::wstring& wstr) {
+    if (wstr.empty()) return std::string();
+
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (size_needed <= 0) {
+        return std::string();
+    }
+
+    std::string result(size_needed, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &result[0], size_needed, nullptr, nullptr);
+    result.resize(size_needed - 1);
+    return result;
+}
+#endif
+
+std::string get_environment_variable_utf8(const std::string& name) {
+#ifdef _WIN32
+    std::wstring wide_name = utf8_to_wstring(name);
+    DWORD size_needed = GetEnvironmentVariableW(wide_name.c_str(), nullptr, 0);
+    if (size_needed == 0) {
+        return "";
+    }
+
+    std::wstring value(size_needed, L'\0');
+    GetEnvironmentVariableW(wide_name.c_str(), &value[0], size_needed);
+    value.resize(size_needed - 1);
+    return wstring_to_utf8(value);
+#else
+    const char* value = std::getenv(name.c_str());
+    return value ? std::string(value) : "";
+#endif
+}
+
+fs::path path_from_utf8(const std::string& path) {
+#ifdef _WIN32
+    return fs::u8path(path);
+#else
+    return fs::path(path);
+#endif
+}
+
+std::string path_to_utf8(const fs::path& path) {
+#ifdef _WIN32
+    return wstring_to_utf8(path.wstring());
+#else
+    return path.string();
+#endif
+}
+
 std::string get_executable_dir() {
 #ifdef _WIN32
     char buffer[MAX_PATH];
@@ -141,33 +205,35 @@ std::string find_flm_executable() {
 }
 
 std::string get_cache_dir() {
-    const char* cache_dir_env = std::getenv("LEMONADE_CACHE_DIR");
-    if (cache_dir_env) {
-        std::string cache_dir = std::string(cache_dir_env);
+    std::string cache_dir_env = get_environment_variable_utf8("LEMONADE_CACHE_DIR");
+    if (!cache_dir_env.empty()) {
+        std::string cache_dir = cache_dir_env;
 #ifdef __APPLE__
         // Ensure directory exists on macOS
-        if (!fs::exists(cache_dir)) {
-            fs::create_directories(cache_dir);
+        fs::path cache_path = path_from_utf8(cache_dir);
+        if (!fs::exists(cache_path)) {
+            fs::create_directories(cache_path);
         }
 #endif
         return cache_dir;
     }
 
 #ifdef _WIN32
-    const char* userprofile = std::getenv("USERPROFILE");
-    if (userprofile) {
-        return std::string(userprofile) + "\\.cache\\lemonade";
+    std::string userprofile = get_environment_variable_utf8("USERPROFILE");
+    if (!userprofile.empty()) {
+        return userprofile + "\\.cache\\lemonade";
     }
 #elif defined(__APPLE__)
     // Check if we are running as root (UID 0)
     if (geteuid() != 0) {
         // --- NORMAL USER MODE ---
-        const char* home = std::getenv("HOME");
-        if (home) {
-            std::string cache_dir = std::string(home) + "/.cache/lemonade";
+        std::string home = get_environment_variable_utf8("HOME");
+        if (!home.empty()) {
+            std::string cache_dir = home + "/.cache/lemonade";
             // Ensure directory exists
-            if (!fs::exists(cache_dir)) {
-                fs::create_directories(cache_dir);
+            fs::path cache_path = path_from_utf8(cache_dir);
+            if (!fs::exists(cache_path)) {
+                fs::create_directories(cache_path);
             }
             return cache_dir;
         }
@@ -176,8 +242,9 @@ std::string get_cache_dir() {
         if (pw) {
             std::string cache_dir = std::string(pw->pw_dir) + "/.cache/lemonade";
             // Ensure directory exists
-            if (!fs::exists(cache_dir)) {
-                fs::create_directories(cache_dir);
+            fs::path cache_path = path_from_utf8(cache_dir);
+            if (!fs::exists(cache_path)) {
+                fs::create_directories(cache_path);
             }
             return cache_dir;
         }
@@ -188,16 +255,17 @@ std::string get_cache_dir() {
     // /Users/Shared is okay, but /Library/Application Support is the standard macOS system path.
     std::string cache_dir = "/Library/Application Support/lemonade/.cache";
     // Ensure directory exists
-    if (!fs::exists(cache_dir)) {
-        fs::create_directories(cache_dir);
+    fs::path cache_path = path_from_utf8(cache_dir);
+    if (!fs::exists(cache_path)) {
+        fs::create_directories(cache_path);
     }
     return cache_dir;
 
 #else
     // Linux and other Unix systems
-    const char* home = std::getenv("HOME");
-    if (home) {
-        return std::string(home) + "/.cache/lemonade";
+    std::string home = get_environment_variable_utf8("HOME");
+    if (!home.empty()) {
+        return home + "/.cache/lemonade";
     }
     #endif
 
@@ -210,8 +278,9 @@ std::string get_downloaded_bin_dir() {
     std::string bin_dir = get_cache_dir() + "/bin";
 
     // Ensure directory exists
-    if (!fs::exists(bin_dir)) {
-        fs::create_directories(bin_dir);
+    fs::path bin_path = path_from_utf8(bin_dir);
+    if (!fs::exists(bin_path)) {
+        fs::create_directories(bin_path);
     }
 
     return bin_dir;

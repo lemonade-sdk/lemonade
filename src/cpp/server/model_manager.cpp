@@ -223,28 +223,28 @@ std::string ModelManager::get_recipe_options_file() {
 
 std::string ModelManager::get_hf_cache_dir() const {
     // Check HF_HUB_CACHE first (highest priority)
-    const char* hf_hub_cache_env = std::getenv("HF_HUB_CACHE");
-    if (hf_hub_cache_env) {
-        return std::string(hf_hub_cache_env);
+    std::string hf_hub_cache_env = get_environment_variable_utf8("HF_HUB_CACHE");
+    if (!hf_hub_cache_env.empty()) {
+        return hf_hub_cache_env;
     }
 
     // Check HF_HOME second (append /hub)
-    const char* hf_home_env = std::getenv("HF_HOME");
-    if (hf_home_env) {
-        return std::string(hf_home_env) + "/hub";
+    std::string hf_home_env = get_environment_variable_utf8("HF_HOME");
+    if (!hf_home_env.empty()) {
+        return hf_home_env + "/hub";
     }
 
     // Default platform-specific paths
 #ifdef _WIN32
-    const char* userprofile = std::getenv("USERPROFILE");
-    if (userprofile) {
-        return std::string(userprofile) + "\\.cache\\huggingface\\hub";
+    std::string userprofile = get_environment_variable_utf8("USERPROFILE");
+    if (!userprofile.empty()) {
+        return userprofile + "\\.cache\\huggingface\\hub";
     }
     return "C:\\.cache\\huggingface\\hub";
 #else
-    const char* home = std::getenv("HOME");
-    if (home) {
-        return std::string(home) + "/.cache/huggingface/hub";
+    std::string home = get_environment_variable_utf8("HOME");
+    if (!home.empty()) {
+        return home + "/.cache/huggingface/hub";
     }
     return "/tmp/.cache/huggingface/hub";
 #endif
@@ -448,13 +448,14 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
     }
 
     std::string model_cache_path = hf_cache + "/" + cache_dir_name;
+    fs::path model_cache_path_fs = path_from_utf8(model_cache_path);
 
     // For RyzenAI LLM models, look for genai_config.json directory
     if (info.recipe == "ryzenai-llm") {
-        if (fs::exists(model_cache_path)) {
-            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+        if (fs::exists(model_cache_path_fs)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
                 if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
-                    return entry.path().parent_path().string();
+                    return path_to_utf8(entry.path().parent_path());
                 }
             }
         }
@@ -463,10 +464,10 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
     // For kokoro models, look for index.json directory
     if (info.recipe == "kokoro") {
-        if (fs::exists(model_cache_path)) {
-            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+        if (fs::exists(model_cache_path_fs)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
                 if (entry.is_regular_file() && entry.path().filename() == "index.json") {
-                    return entry.path().string();
+                    return path_to_utf8(entry.path());
                 }
             }
         }
@@ -477,17 +478,17 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
     // For whispercpp, find the .bin model file
     if (info.recipe == "whispercpp" && variant.empty()) {
         // No variant specified - use fallback logic to find any .bin file
-        if (!fs::exists(model_cache_path)) {
+        if (!fs::exists(model_cache_path_fs)) {
             return model_cache_path;  // Return directory path even if not found
         }
 
         // Collect all .bin files
         std::vector<std::string> all_bin_files;
-        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
             if (entry.is_regular_file()) {
                 std::string filename = entry.path().filename().string();
                 if (filename.find(".bin") != std::string::npos) {
-                    all_bin_files.push_back(entry.path().string());
+                    all_bin_files.push_back(path_to_utf8(entry.path()));
                 }
             }
         }
@@ -505,20 +506,20 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
     // For llamacpp, find the GGUF file with advanced sharded model support
     if (info.recipe == "llamacpp" && type == "main") {
-        if (!fs::exists(model_cache_path)) {
+        if (!fs::exists(model_cache_path_fs)) {
             return model_cache_path;  // Return directory path even if not found
         }
 
         // Collect all GGUF files (exclude mmproj files)
         std::vector<std::string> all_gguf_files;
-        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
             if (entry.is_regular_file()) {
                 std::string filename = entry.path().filename().string();
                 std::string filename_lower = filename;
                 std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
 
                 if (filename.find(".gguf") != std::string::npos && filename_lower.find("mmproj") == std::string::npos) {
-                    all_gguf_files.push_back(entry.path().string());
+                    all_gguf_files.push_back(path_to_utf8(entry.path()));
                 }
             }
         }
@@ -543,7 +544,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
         // Case 2: Exact filename match (variant ends with .gguf)
         if (variant.find(".gguf") != std::string::npos) {
             for (const auto& filepath : all_gguf_files) {
-                std::string filename = fs::path(filepath).filename().string();
+                std::string filename = path_from_utf8(filepath).filename().string();
                 if (filename == variant) {
                     return filepath;
                 }
@@ -558,7 +559,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
         std::vector<std::string> matching_files;
         for (const auto& filepath : all_gguf_files) {
-            std::string filename = fs::path(filepath).filename().string();
+            std::string filename = path_from_utf8(filepath).filename().string();
             std::string filename_lower = filename;
             std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
 
@@ -577,7 +578,8 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
         for (const auto& filepath : all_gguf_files) {
             // Get relative path from model cache path
-            std::string relative_path = filepath.substr(model_cache_path.length());
+            std::string relative_path = path_to_utf8(
+                path_from_utf8(filepath).lexically_relative(model_cache_path_fs));
             std::string relative_lower = relative_path;
             std::transform(relative_lower.begin(), relative_lower.end(), relative_lower.begin(), ::tolower);
 
@@ -593,18 +595,17 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
     // Everything else
     if (!variant.empty()) {
         // Try to find the exact variant in snapshots subdirectories
-        if (fs::exists(model_cache_path)) {
-            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+        if (fs::exists(model_cache_path_fs)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
                 if (entry.is_regular_file()) {
                     std::string filename = entry.path().filename().string();
                     if (filename == variant) {
-                        return entry.path().string();
+                        return path_to_utf8(entry.path());
                     }
                 } else if (entry.is_directory()) {
-                    // variant could be a path
-                    std::string variant_path = (entry.path() / variant).string();
+                    fs::path variant_path = entry.path() / path_from_utf8(variant);
                     if (fs::exists(variant_path)) {
-                        return variant_path;
+                        return path_to_utf8(variant_path);
                     }
                 }
             }
@@ -1822,9 +1823,10 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
     // Get Hugging Face cache directory
     std::string hf_cache = get_hf_cache_dir();
+    fs::path hf_cache_path = path_from_utf8(hf_cache);
 
     // Create cache directory structure
-    fs::create_directories(hf_cache);
+    fs::create_directories(hf_cache_path);
 
     std::string cache_dir_name = "models--";
     for (char c : main_repo_id) {
@@ -1835,7 +1837,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         }
     }
 
-    std::string model_cache_path = hf_cache + "/" + cache_dir_name;
+    fs::path model_cache_path = hf_cache_path / cache_dir_name;
     fs::create_directories(model_cache_path);
 
     // Get HF token if available
@@ -1881,13 +1883,13 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     }
 
     // Create snapshot directory using commit hash
-    std::string snapshot_path = model_cache_path + "/snapshots/" + commit_hash;
+    fs::path snapshot_path = model_cache_path / "snapshots" / commit_hash;
     fs::create_directories(snapshot_path);
 
     // Create refs/main file pointing to this commit (matching huggingface_hub behavior)
-    std::string refs_dir = model_cache_path + "/refs";
+    fs::path refs_dir = model_cache_path / "refs";
     fs::create_directories(refs_dir);
-    std::string refs_main_path = refs_dir + "/main";
+    fs::path refs_main_path = refs_dir / "main";
     std::ofstream refs_file(refs_main_path);
     if (refs_file.is_open()) {
         refs_file << commit_hash;
@@ -1980,7 +1982,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
     // Create download manifest to track incomplete downloads
     // This allows us to detect partially downloaded models
-    std::string manifest_path = snapshot_path + "/.download_manifest.json";
+    std::string manifest_path = path_to_utf8(snapshot_path / ".download_manifest.json");
 
     // Fetch file sizes from the tree API (the models API doesn't include sizes)
     std::map<std::string, size_t> file_sizes;
@@ -2011,7 +2013,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     json manifest;
     manifest["repo_id"] = main_repo_id;
     manifest["commit_hash"] = commit_hash;
-    manifest["download_path"] = snapshot_path;
+    manifest["download_path"] = path_to_utf8(snapshot_path);
     manifest["files_count"] = total_files;
     manifest["files"] = json::array();
     for (auto const& [repo_id, files] : files_to_download) {
@@ -2050,7 +2052,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     }
 
     std::cout << "[ModelManager] ✓ All files downloaded and validated successfully!" << std::endl;
-    std::cout << "[ModelManager DEBUG] Download location: " << snapshot_path << std::endl;
+    std::cout << "[ModelManager DEBUG] Download location: " << path_to_utf8(snapshot_path) << std::endl;
 }
 
 void ModelManager::download_from_flm(const std::string& checkpoint,
@@ -2369,14 +2371,14 @@ void ModelManager::delete_model(const std::string& model_name) {
 
     // Find the models--* directory from resolved_path
     // resolved_path could be a file or directory, we need to find the models-- ancestor
-    fs::path path_obj(info.resolved_path());
+    fs::path path_obj(path_from_utf8(info.resolved_path()));
     std::string model_cache_path;
 
     // Walk up the directory tree to find models--* directory
     while (!path_obj.empty() && path_obj.has_filename()) {
         std::string dirname = path_obj.filename().string();
         if (dirname.find("models--") == 0) {
-            model_cache_path = path_obj.string();
+            model_cache_path = path_to_utf8(path_obj);
             break;
         }
         path_obj = path_obj.parent_path();
@@ -2388,9 +2390,10 @@ void ModelManager::delete_model(const std::string& model_name) {
 
     std::cout << "[ModelManager] Cache path: " << model_cache_path << std::endl;
 
-    if (fs::exists(model_cache_path)) {
+    fs::path model_cache_path_fs = path_from_utf8(model_cache_path);
+    if (fs::exists(model_cache_path_fs)) {
         std::cout << "[ModelManager] Removing directory..." << std::endl;
-        fs::remove_all(model_cache_path);
+        fs::remove_all(model_cache_path_fs);
         std::cout << "[ModelManager] ✓ Deleted model files: " << model_name << std::endl;
     } else {
         std::cout << "[ModelManager] Warning: Model cache directory not found (may already be deleted)" << std::endl;
