@@ -727,6 +727,7 @@ ipcMain.handle('get-system-stats', async () => {
         memory_gb: data.memory_gb || 0,
         gpu_percent: data.gpu_percent,
         vram_gb: data.vram_gb,
+        npu_tops: data.npu_tops,
       };
     }
   } catch (error) {
@@ -739,6 +740,7 @@ ipcMain.handle('get-system-stats', async () => {
     memory_gb: 0,
     gpu_percent: null,
     vram_gb: null,
+    npu_tops: null,
   };
 });
 

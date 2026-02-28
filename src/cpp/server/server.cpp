@@ -34,6 +34,13 @@
     #include <sys/sysctl.h>
 #endif
 
+#ifdef __linux__
+    #include <sys/ioctl.h>
+    #include <fcntl.h>
+    #include <unistd.h>
+    #include "lemon/amdxdna_accel.h"
+#endif
+
 #ifdef HAVE_SYSTEMD
     #include <systemd/sd-journal.h>
 #endif
@@ -3024,6 +3031,42 @@ double Server::get_vram_usage() {
 #endif
 }
 
+// Helper: Get NPU current TOPs (AMD NPU on Linux)
+uint64_t Server::get_npu_tops() {
+#ifdef __linux__
+    try {
+        std::string accel_path = "/dev/accel/accel0";
+        if (!fs::exists(accel_path)) {
+            return 0;
+        }
+
+        int fd = open(accel_path.c_str(), O_RDWR);
+        if (fd < 0) {
+            return 0;
+        }
+
+        amdxdna_drm_get_resource_info res_info = {};
+        amdxdna_drm_get_info get_info = {};
+        get_info.param = DRM_AMDXDNA_QUERY_RESOURCE_INFO;
+        get_info.buffer_size = sizeof(res_info);
+        get_info.buffer = (uintptr_t)&res_info;
+
+        if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) < 0) {
+            close(fd);
+            return 0;
+        }
+
+        close(fd);
+        return res_info.npu_tops_curr;
+    } catch (...) {
+        return 0;
+    }
+#else
+    // NPU monitoring not implemented for Windows/macOS
+    return 0;
+#endif
+}
+
 void Server::handle_system_stats(const httplib::Request& req, httplib::Response& res) {
     // For HEAD requests, just return 200 OK without processing
     if (req.method == "HEAD") {
@@ -3089,6 +3132,10 @@ void Server::handle_system_stats(const httplib::Request& req, httplib::Response&
     // VRAM usage
     double vram_gb = get_vram_usage();
     stats["vram_gb"] = (vram_gb >= 0) ? nlohmann::json(vram_gb) : nlohmann::json();
+
+    // NPU TOPs
+    uint64_t npu_tops = get_npu_tops();
+    stats["npu_tops"] = (npu_tops > 0) ? nlohmann::json(npu_tops) : nlohmann::json();
 
     res.set_content(stats.dump(), "application/json");
 }

@@ -13,6 +13,7 @@ interface SystemStats {
   memory_gb: number;
   gpu_percent: number | null;
   vram_gb: number | null;
+  npu_tops: number | null;
 }
 
 const StatusBar: React.FC = () => {
@@ -27,6 +28,7 @@ const StatusBar: React.FC = () => {
     memory_gb: 0,
     gpu_percent: null,
     vram_gb: null,
+    npu_tops: null,
   });
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
   const [serverUrl, setServerUrl] = useState<string>('');
@@ -68,6 +70,7 @@ const StatusBar: React.FC = () => {
           memory_gb: stats.memory_gb ?? 0,
           gpu_percent: stats.gpu_percent ?? null,
           vram_gb: stats.vram_gb ?? null,
+          npu_tops: stats.npu_tops ?? null,
         });
       }
     } catch {
@@ -122,6 +125,11 @@ const StatusBar: React.FC = () => {
   const formatVram = (gb: number | null): string => {
     if (gb === null || gb === undefined) return 'N/A';
     return `${gb.toFixed(1)} GB`;
+  };
+
+  const formatTops = (tops: number | null): string => {
+    if (tops === null || tops === undefined) return 'N/A';
+    return `${tops.toFixed(0)}`;
   };
 
   const formatPercent = (percent: number | null): string => {
@@ -207,6 +215,13 @@ const StatusBar: React.FC = () => {
           <span className="status-bar-label status-bar-label-long">VRAM:</span>
           <span className="status-bar-label status-bar-label-short">VRAM:</span>
           <span className="status-bar-value">{formatVram(systemStats.vram_gb)}</span>
+        </div>
+      )}
+      {systemStats.npu_tops !== null && (
+        <div className="status-bar-item">
+          <span className="status-bar-label status-bar-label-long">NPU:</span>
+          <span className="status-bar-label status-bar-label-short">NPU:</span>
+          <span className="status-bar-value">{formatTops(systemStats.npu_tops)} TOPs</span>
         </div>
       )}
     </div>

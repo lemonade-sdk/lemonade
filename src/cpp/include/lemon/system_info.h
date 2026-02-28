@@ -30,6 +30,8 @@ struct GPUInfo : DeviceInfo {
 struct NPUInfo : DeviceInfo {
     std::string driver_version;
     std::string power_mode;
+    uint64_t tops_max = 0;
+    uint64_t tops_curr = 0;
 };
 
 //Enums
