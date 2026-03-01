@@ -35,12 +35,15 @@ const RecordButton: React.FC<RecordButtonProps> = ({
   const baseTextRef = useRef('');   // textarea content at recording start
   const inputValueRef = useRef(inputValue); // always-current textarea value
   const audioLevelRef = useRef(0);
-  const pendingAutoSubmitRef = useRef(false); // set on stop; cleared when completed fires
+  const pendingAutoSubmitRef = useRef(false); // true after manual stop, waiting for completed
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onAutoSubmitRef = useRef(onAutoSubmit); // always-current to avoid stale closures in WS callback
+  const onAutoSubmitRef = useRef(onAutoSubmit);
   onAutoSubmitRef.current = onAutoSubmit;
+  // Stable refs so WS callbacks can call these without stale closures
+  const stopRecordingRef = useRef<() => void>(() => {});
+  const resetRef = useRef<() => void>(() => {});
 
-  // Keep inputValueRef in sync every render
+  // Keep refs in sync every render
   inputValueRef.current = inputValue;
 
   const handleAudioChunk = useCallback((base64: string) => {
@@ -56,6 +59,10 @@ const RecordButton: React.FC<RecordButtonProps> = ({
   const { startRecording, stopRecording, error: micError } =
     useAudioCapture(handleAudioChunk, handleAudioLevel);
 
+  // Sync after useAudioCapture / props are available
+  stopRecordingRef.current = stopRecording;
+  resetRef.current = reset;
+
   useEffect(() => { if (micError) onError(micError); }, [micError, onError]);
 
   useEffect(() => () => {
@@ -64,8 +71,18 @@ const RecordButton: React.FC<RecordButtonProps> = ({
     if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
   }, []);
 
+  // Helper: shared WS teardown used by both VAD auto-stop and manual stop
+  const closeWs = useCallback(() => {
+    if (wsClientRef.current) {
+      wsClientRef.current.clearAudio();
+      const wsToClose = wsClientRef.current;
+      wsClientRef.current = null;
+      setTimeout(() => wsToClose.close(), 3000);
+    }
+  }, []);
+
   // Mirrors TranscriptionPanel's handleLiveTranscription, but also updates the textarea live.
-  // Always lets isFinal=true (completed) events through even after stop so we get the real transcript.
+  // completed events are always processed; delta events are dropped after manual stop.
   const handleLiveTranscription = useCallback((text: string, isFinal: boolean) => {
     if (!isFinal && !isRecordingRef.current) return;
     const trimmed = text.trim();
@@ -87,15 +104,31 @@ const RecordButton: React.FC<RecordButtonProps> = ({
     setInputValue(newValue);
     if (textareaRef?.current) adjustTextareaHeight(textareaRef.current);
 
-    // Auto-submit fires here on the completed event, after stop was already clicked
-    if (isFinal && pendingAutoSubmitRef.current) {
+    if (!isFinal) return;
+
+    // completed event — two cases:
+    if (isRecordingRef.current) {
+      // VAD-triggered: speech ended naturally, auto-stop and submit
+      isRecordingRef.current = false;
+      stopRecordingRef.current();
+      closeWs();
+      finalsRef.current = '';
+      baseTextRef.current = '';
+      setIsRecording(false);
+      setIsConnected(false);
+      setAudioLevel(0);
+      audioLevelRef.current = 0;
+      resetRef.current();
+      onAutoSubmitRef.current?.(newValue.trim());
+    } else if (pendingAutoSubmitRef.current) {
+      // User clicked stop manually; completed arrived within the grace window
       pendingAutoSubmitRef.current = false;
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
       finalsRef.current = '';
       baseTextRef.current = '';
       onAutoSubmitRef.current?.(newValue.trim());
     }
-  }, [setInputValue, textareaRef]);
+  }, [setInputValue, textareaRef, closeWs]);
 
   // Mirrors TranscriptionPanel's handleMicStart
   const handleMicStart = useCallback(async () => {
@@ -134,38 +167,29 @@ const RecordButton: React.FC<RecordButtonProps> = ({
     }
   }, [whisperModel, modelsData, inputValue, handleLiveTranscription, startRecording, runPreFlight, reset, onError]);
 
-  // Mirrors TranscriptionPanel's handleMicStop
+  // Manual stop: clean up mic+WS, then wait up to 3s for completed before submitting.
+  // If completed arrives first (handled above), the fallback timer is cleared.
   const handleMicStop = useCallback(() => {
     stopRecording();
     isRecordingRef.current = false;
-
-    if (wsClientRef.current) {
-      wsClientRef.current.clearAudio();
-      const wsToClose = wsClientRef.current;
-      wsClientRef.current = null;
-      setTimeout(() => wsToClose.close(), 3000);
-    }
+    closeWs();
     setIsRecording(false);
     setIsConnected(false);
     setAudioLevel(0);
     audioLevelRef.current = 0;
     reset();
 
-    // Wait for the completed event to fire with the real transcript.
-    // Fallback: if completed never arrives within 3s, submit whatever is in the textarea.
-    if (onAutoSubmitRef.current) {
-      pendingAutoSubmitRef.current = true;
-      fallbackTimerRef.current = setTimeout(() => {
-        if (pendingAutoSubmitRef.current) {
-          pendingAutoSubmitRef.current = false;
-          finalsRef.current = '';
-          baseTextRef.current = '';
-          const text = inputValueRef.current.trim();
-          if (text) onAutoSubmitRef.current?.(text);
-        }
-      }, 3000);
-    }
-  }, [stopRecording, reset]);
+    pendingAutoSubmitRef.current = true;
+    fallbackTimerRef.current = setTimeout(() => {
+      if (pendingAutoSubmitRef.current) {
+        pendingAutoSubmitRef.current = false;
+        finalsRef.current = '';
+        baseTextRef.current = '';
+        const text = inputValueRef.current.trim();
+        if (text) onAutoSubmitRef.current?.(text);
+      }
+    }, 3000);
+  }, [stopRecording, reset, closeWs]);
 
   const title = !whisperModel
     ? 'No Whisper model available'
