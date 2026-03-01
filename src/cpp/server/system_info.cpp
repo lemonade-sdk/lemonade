@@ -134,7 +134,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     }},
 
     // FLM - NPU (XDNA2)
-    {"flm", "npu", {"windows"}, {
+    {"flm", "npu", {"windows", "linux"}, {
         {"amd_npu", {"XDNA2"}},
     }},
 
