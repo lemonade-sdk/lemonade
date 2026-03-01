@@ -52,6 +52,14 @@ OmniConfig OmniConfig::from_json(const json& j, const std::string& model) {
     }
     if (j.contains("extra_tools") && j["extra_tools"].is_array()) {
         config.extra_tools = j["extra_tools"];
+        // Extract script commands from extra_tools
+        for (const auto& tool : j["extra_tools"]) {
+            if (tool.contains("script") && tool["script"].is_string() &&
+                tool.contains("function") && tool["function"].contains("name")) {
+                std::string name = tool["function"]["name"].get<std::string>();
+                config.tool_scripts[name] = tool["script"].get<std::string>();
+            }
+        }
     }
     if (j.contains("tool_callback_url") && j["tool_callback_url"].is_string()) {
         config.tool_callback_url = j["tool_callback_url"].get<std::string>();
@@ -1254,6 +1262,99 @@ ToolResult OmniLoop::execute_run_command(const json& args, const std::string& to
 
 // === Tool Dispatcher ===
 
+ToolResult OmniLoop::execute_script_tool(const std::string& script_command, const json& tool_call, const OmniConfig& config) {
+    ToolResult result;
+    result.tool_call_id = tool_call.value("id", "");
+    result.tool_name = tool_call["function"]["name"].get<std::string>();
+
+    try {
+        json args = json::parse(tool_call["function"]["arguments"].get<std::string>());
+
+        json payload = {
+            {"tool_call_id", result.tool_call_id},
+            {"tool_name", result.tool_name},
+            {"arguments", args}
+        };
+
+        std::cout << "[OmniLoop] Running script tool '" << result.tool_name
+                  << "': " << script_command << std::endl;
+
+        // Write payload to a temp JSON file to avoid stdin piping complexity
+        std::string temp_dir = ".";
+#ifdef _WIN32
+        if (auto* tmp = std::getenv("TEMP")) temp_dir = tmp;
+#else
+        if (auto* tmp = std::getenv("TMPDIR")) temp_dir = tmp;
+        else temp_dir = "/tmp";
+#endif
+        std::string temp_file = temp_dir + "/omni_script_" + result.tool_call_id + ".json";
+        {
+            std::ofstream f(temp_file);
+            f << payload.dump();
+        }
+
+        // Build command: pipe temp file as stdin to the script
+#ifdef _WIN32
+        std::string full_cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"Get-Content '" +
+                               temp_file + "' | " + script_command + "\" 2>&1";
+#else
+        std::string full_cmd = script_command + " < " + temp_file + " 2>&1";
+#endif
+
+        std::string output;
+        const size_t max_output = 100 * 1024; // 100KB cap
+
+        FILE* pipe = popen(full_cmd.c_str(), "r");
+        if (!pipe) {
+            std::remove(temp_file.c_str());
+            throw std::runtime_error("Failed to spawn script process");
+        }
+
+        char buffer[4096];
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            output += buffer;
+            if (output.size() > max_output) {
+                output += "\n... (output truncated at 100KB)";
+                break;
+            }
+        }
+
+        int exit_code = pclose(pipe);
+#ifdef _WIN32
+        // pclose returns the process exit code directly on Windows
+#else
+        exit_code = WEXITSTATUS(exit_code);
+#endif
+
+        // Clean up temp file
+        std::remove(temp_file.c_str());
+
+        if (exit_code != 0) {
+            result.success = false;
+            result.llm_summary = "Script tool '" + result.tool_name + "' exited with code " +
+                                 std::to_string(exit_code) + ": " + output.substr(0, 2000);
+            result.result_data = {{"error", result.llm_summary}};
+            return result;
+        }
+
+        // Parse JSON from stdout
+        json resp = json::parse(output);
+        result.success = resp.value("success", false);
+        result.result_data = resp.value("result", json::object());
+        result.llm_summary = resp.value("summary", "Script tool returned no summary");
+    } catch (const json::parse_error& e) {
+        result.success = false;
+        result.llm_summary = "Script tool '" + result.tool_name + "' returned invalid JSON: " + std::string(e.what());
+        result.result_data = {{"error", e.what()}};
+    } catch (const std::exception& e) {
+        result.success = false;
+        result.llm_summary = "Script tool '" + result.tool_name + "' failed: " + std::string(e.what());
+        result.result_data = {{"error", e.what()}};
+    }
+
+    return result;
+}
+
 ToolResult OmniLoop::execute_external_tool(const json& tool_call, const OmniConfig& config) {
     ToolResult result;
     result.tool_call_id = tool_call.value("id", "");
@@ -1324,6 +1425,12 @@ ToolResult OmniLoop::execute_tool(const json& tool_call, const OmniConfig& confi
     if (function_name == "list_models") return execute_list_models(args, tool_call_id);
     if (function_name == "load_model") return execute_load_model(args, tool_call_id);
     if (function_name == "run_command") return execute_run_command(args, tool_call_id);
+
+    // Script-based tools: check if this tool has a script defined
+    auto script_it = config.tool_scripts.find(function_name);
+    if (script_it != config.tool_scripts.end()) {
+        return execute_script_tool(script_it->second, tool_call, config);
+    }
 
     // Not a native tool — route to external callback if configured
     if (!config.tool_callback_url.empty()) {

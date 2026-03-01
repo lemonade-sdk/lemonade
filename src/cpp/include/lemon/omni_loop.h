@@ -27,6 +27,7 @@ struct OmniConfig {
     json extra_tools;                   // Extra tool definitions (OpenAI format)
     std::string tool_callback_url;      // URL to POST external tool calls to
     int tool_callback_timeout = 30;     // Timeout in seconds for callback
+    std::map<std::string, std::string> tool_scripts; // tool name → script command
 
     static OmniConfig from_json(const json& j, const std::string& model);
 };
@@ -81,6 +82,9 @@ private:
 
     // Shell tool
     ToolResult execute_run_command(const json& args, const std::string& tool_call_id);
+
+    // Script-based tool: spawn a local process
+    ToolResult execute_script_tool(const std::string& script_command, const json& tool_call, const OmniConfig& config);
 
     // External tool: POST to callback URL
     ToolResult execute_external_tool(const json& tool_call, const OmniConfig& config);

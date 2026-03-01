@@ -380,6 +380,73 @@ class OmniEndpointTests(ServerTestBase):
         data = response.json()
         self.assertIn("choices", data)
 
+    def test_omni_chat_script_tool(self):
+        """Test that a script-based extra tool is accepted and can be invoked."""
+        # Create a small inline Python script that reads JSON from stdin and
+        # returns a valid tool result on stdout.
+        import tempfile
+        import os
+
+        script_content = (
+            'import sys, json\n'
+            'data = json.load(sys.stdin)\n'
+            'print(json.dumps({"success": True, '
+            '"result": {"answer": "42", "query": data["arguments"].get("query", "")}, '
+            '"summary": "Script returned 42"}))\n'
+        )
+        script_file = os.path.join(tempfile.gettempdir(), "omni_test_script.py")
+        with open(script_file, "w") as f:
+            f.write(script_content)
+
+        payload = {
+            "model": TOOL_CALLING_MODEL,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Use the my_search tool to search for 'lemonade'. You must call the my_search tool.",
+                }
+            ],
+            "stream": False,
+            "omni": {
+                "max_iterations": 3,
+                "tools": [],  # no built-in tools
+                "extra_tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "my_search",
+                            "description": "Search for information. You must use this tool when asked to search.",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "query": {
+                                        "type": "string",
+                                        "description": "The search query",
+                                    }
+                                },
+                                "required": ["query"],
+                            },
+                        },
+                        "script": f"python {script_file}",
+                    }
+                ],
+            },
+        }
+
+        try:
+            response = requests.post(
+                OMNI_ENDPOINT,
+                json=payload,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+
+            self.assertEqual(response.status_code, 200, f"Response: {response.text}")
+            data = response.json()
+            self.assertIn("choices", data)
+            self.assertIn("omni_steps", data)
+        finally:
+            os.remove(script_file)
+
     def test_omni_streaming_step_events(self):
         """Test that streaming mode emits proper SSE event types."""
         payload = {

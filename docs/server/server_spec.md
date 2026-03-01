@@ -49,6 +49,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 
 The additional endpoints are:
 
+- POST `/api/v1/omni/chat` - Omni mode: agent runtime with tool-calling loop
 - POST `/api/v1/install` - Install or update a backend
 - POST `/api/v1/uninstall` - Remove a backend
 - POST `/api/v1/pull` - Install a model
@@ -985,6 +986,108 @@ If the model is not found, the endpoint returns a 404 error:
   }
 }
 ```
+
+### `POST /api/v1/omni/chat` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Omni mode turns Lemonade into an agent runtime. A tool-calling LLM autonomously orchestrates image generation, vision, audio, web search, shell commands, and file I/O to fulfill a request. See the [Omni Endpoint guide](../omni-endpoint.md) for examples and usage patterns.
+
+#### Top-level Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model` | Yes | Tool-calling LLM to use as the brain (e.g., `gpt-oss-20b-mxfp4-GGUF`). |
+| `messages` | Yes | Array of conversation messages (OpenAI format). |
+| `stream` | No | If `true`, returns Server-Sent Events (SSE). Defaults to `false`. |
+| `omni` | No | Omni loop configuration object. If omitted, defaults are used. |
+
+#### `omni` Configuration
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `tools` | No | all 13 enabled | Array of built-in tool names the LLM can use. |
+| `max_iterations` | No | `25` | Maximum tool-calling loop iterations. |
+| `image_model` | No | `SD-Turbo` | Model for `generate_image` / `edit_image`. |
+| `audio_model` | No | `Whisper-Large-v3-Turbo` | Model for `transcribe_audio`. |
+| `tts_model` | No | `kokoro-v1` | Model for `text_to_speech`. |
+| `vision_model` | No | `Qwen3-VL-4B-Instruct-GGUF` | Model for `analyze_image`. |
+| `system_prompt` | No | built-in prompt | Custom system prompt (replaces the default). |
+| `extra_tools` | No | `[]` | Extra tool definitions in OpenAI format. Each entry may include an optional `script` field for local execution. |
+| `tool_callback_url` | No | `""` | URL to POST external tool calls to. |
+| `tool_callback_timeout` | No | `30` | Timeout in seconds for callback requests. |
+
+**Built-in tools:** `generate_image`, `edit_image`, `describe_image`, `analyze_image`, `transcribe_audio`, `text_to_speech`, `read_file`, `write_file`, `list_directory`, `web_search`, `run_command`, `list_models`, `load_model`
+
+#### Custom tool dispatch priority
+
+When the LLM calls a tool that is not built-in, Lemonade resolves it in this order:
+
+1. **Script tools** — if the tool's `extra_tools` entry has a `script` field, spawn the script locally (stdin/stdout JSON).
+2. **Callback tools** — if `tool_callback_url` is set, POST the tool call to the callback server.
+
+#### Example request
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/omni/chat \
+      -H "Content-Type: application/json" \
+      -d '{
+            "model": "gpt-oss-20b-mxfp4-GGUF",
+            "messages": [
+              {"role": "user", "content": "Generate a picture of a sunset over mountains."}
+            ],
+            "stream": false,
+            "omni": {
+              "tools": ["generate_image"],
+              "max_iterations": 5
+            }
+          }'
+    ```
+
+#### Response format
+
+=== "Non-streaming responses"
+
+    ```json
+    {
+      "id": "0",
+      "object": "chat.completion",
+      "model": "gpt-oss-20b-mxfp4-GGUF",
+      "choices": [{
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "Here is the sunset image you requested."
+        },
+        "finish_reason": "stop"
+      }],
+      "omni_steps": [
+        {
+          "step_number": 1,
+          "tool_calls": [...],
+          "results": [
+            {
+              "tool_call_id": "call_1",
+              "tool_name": "generate_image",
+              "success": true,
+              "result": {"images": [{"b64_json": "..."}]},
+              "summary": "Generated image: sunset over mountains"
+            }
+          ]
+        }
+      ]
+    }
+    ```
+
+=== "Streaming responses"
+
+    SSE events:
+
+    - `omni.step.start` — a new tool-calling iteration began
+    - `omni.step.result` — a tool returned its result
+    - `omni.step.complete` — all tools in this iteration finished
+    - `omni.response.delta` — incremental text from the final LLM response
+    - `omni.response.done` — final event with complete `omni_steps`
 
 ## Additional Endpoints
 
