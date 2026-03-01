@@ -166,12 +166,13 @@ chmod +x build/app-appimage/Lemonade-*.AppImage
 - Fully functional for server operations and model management
 - Uses permissively licensed dependencies only (MIT, Apache 2.0, BSD, curl license)
 - Clean .deb package with only runtime files (no development headers)
-- PID file system (`/tmp/lemonade-router.pid`) for reliable process management
+- PID file system for reliable process management
 - Proper graceful shutdown - all child processes cleaned up correctly
 - File locations:
   - Installed binaries: `/opt/bin`
   - Downloaded backends (llama-server, ryzenai-server): `~/.cache/lemonade/bin/`
   - Model downloads: `~/.cache/huggingface/` (follows HF conventions)
+  - Runtime files (PID, lock, log): `$XDG_RUNTIME_DIR/lemonade/` when set and writable, otherwise `/tmp/`
 
 **macOS (beta):**
 - Uses native system frameworks (Cocoa, Foundation)
@@ -617,7 +618,8 @@ The client automatically:
 - Only the `serve` command is blocked when a server is running
 - Commands like `status`, `list`, `pull`, `delete`, `stop` can run alongside an active server
 - Provides clear error messages with suggestions when blocked
-- **Linux-specific:** Uses PID file (`/tmp/lemonade-router.pid`) for efficient server discovery and port detection
+- **Linux-specific:** Uses a PID file (`lemonade-router.pid`) for efficient server discovery and port detection
+  - Stored in `$XDG_RUNTIME_DIR/lemonade/` when the XDG runtime directory is set and writable, otherwise falls back to `/tmp/`
   - Avoids port scanning, finds exact server PID and port instantly
   - Validated on read (checks if process is still alive)
   - Automatically cleaned up on graceful shutdown
