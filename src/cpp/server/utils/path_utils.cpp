@@ -218,6 +218,13 @@ std::string get_downloaded_bin_dir() {
 }
 
 bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
+#ifdef __linux__
+    const char* beta_flm = std::getenv("LEMONADE_FLM_LINUX_BETA");
+    if (!beta_flm || (std::string(beta_flm) != "1" && std::string(beta_flm) != "true")) {
+        error_message = "FLM Linux is currently in beta";
+        return false;
+    }
+#endif
     FILE* pipe;
 
     std::string flm_exe = flm_path.empty() ? find_flm_executable() : flm_path;
