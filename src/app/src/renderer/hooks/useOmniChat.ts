@@ -21,14 +21,16 @@ export interface OmniMessage {
   omniSteps?: OmniStep[];
   images?: string[];
   audioData?: { base64: string; format: string }[];
+  attachedImages?: string[];
 }
 
 interface UseOmniChatReturn {
   messages: OmniMessage[];
-  sendMessage: (text: string, model: string) => Promise<void>;
+  sendMessage: (text: string, model: string, images?: string[]) => Promise<void>;
   isProcessing: boolean;
   currentStep: string | null;
   clearMessages: () => void;
+  abort: () => void;
 }
 
 export function useOmniChat(): UseOmniChatReturn {
@@ -37,8 +39,12 @@ export function useOmniChat(): UseOmniChatReturn {
   const [currentStep, setCurrentStep] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const sendMessage = useCallback(async (text: string, model: string) => {
-    const userMessage: OmniMessage = { role: 'user', content: text };
+  const sendMessage = useCallback(async (text: string, model: string, images?: string[]) => {
+    const userMessage: OmniMessage = {
+      role: 'user',
+      content: text,
+      attachedImages: images?.length ? images : undefined,
+    };
     setMessages(prev => [...prev, userMessage]);
     setIsProcessing(true);
     setCurrentStep(null);
@@ -50,7 +56,18 @@ export function useOmniChat(): UseOmniChatReturn {
     const apiMessages: any[] = [];
     for (const m of allMessages) {
       if (m.role === 'user') {
-        apiMessages.push({ role: 'user', content: m.content });
+        // Build multimodal content array if user attached images
+        if (m.attachedImages?.length) {
+          apiMessages.push({
+            role: 'user',
+            content: [
+              { type: 'text', text: m.content },
+              ...m.attachedImages.map(url => ({ type: 'image_url', image_url: { url } })),
+            ],
+          });
+        } else {
+          apiMessages.push({ role: 'user', content: m.content });
+        }
       } else if (m.role === 'assistant') {
         if (m.omniSteps && m.omniSteps.length > 0) {
           // Replay each step: assistant message with tool_calls, then tool results
@@ -296,5 +313,9 @@ export function useOmniChat(): UseOmniChatReturn {
     }
   }, []);
 
-  return { messages, sendMessage, isProcessing, currentStep, clearMessages };
+  const abort = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
+
+  return { messages, sendMessage, isProcessing, currentStep, clearMessages, abort };
 }

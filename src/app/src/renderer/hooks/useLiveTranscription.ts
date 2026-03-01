@@ -10,6 +10,7 @@ interface UseLiveTranscriptionOptions {
   modelsData: ModelsData;
   runPreFlight: (modality: Modality, options: { modelName: string; modelsData: ModelsData; onError: (msg: string) => void }) => Promise<boolean>;
   onError?: (msg: string) => void;
+  onSpeechStopped?: () => void;
 }
 
 interface UseLiveTranscriptionReturn {
@@ -31,6 +32,7 @@ export function useLiveTranscription({
   modelsData,
   runPreFlight,
   onError,
+  onSpeechStopped,
 }: UseLiveTranscriptionOptions): UseLiveTranscriptionReturn {
   const [isLiveRecording, setIsLiveRecording] = useState(false);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
@@ -72,9 +74,11 @@ export function useLiveTranscription({
     }
   }, []);
 
-  const handleSpeechEvent = useCallback((_event: 'started' | 'stopped') => {
-    // Could expose this if needed in the future
-  }, []);
+  const handleSpeechEvent = useCallback((event: 'started' | 'stopped') => {
+    if (event === 'stopped') {
+      onSpeechStopped?.();
+    }
+  }, [onSpeechStopped]);
 
   const start = useCallback(async () => {
     setError(null);

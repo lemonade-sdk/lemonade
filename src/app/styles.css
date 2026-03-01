@@ -6790,15 +6790,8 @@ footer {
   color: rgba(255, 255, 255, 0.3);
 }
 
-.omni-input-buttons {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.omni-mic-button,
-.omni-send-button {
+/* Mic button (used as leftControls in InferenceControls) */
+.omni-mic-button {
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -6808,9 +6801,6 @@ footer {
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s;
-}
-
-.omni-mic-button {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.6);
 }
@@ -6831,21 +6821,271 @@ footer {
   50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
 }
 
-.omni-send-button {
+.omni-mic-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* InferenceControls inside omni panel — match dark translucent theme */
+.omni-input-container .chat-controls {
+  border-top: none;
+  background: transparent;
+  padding: 4px 0 0;
+}
+
+.omni-input-container .model-selector {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.omni-input-container .chat-send-button {
   background: rgba(99, 102, 241, 0.4);
   color: white;
 }
 
-.omni-send-button:hover:not(:disabled) {
+.omni-input-container .chat-send-button:hover:not(:disabled) {
   background: rgba(99, 102, 241, 0.6);
 }
 
-.omni-send-button:disabled {
+.omni-input-container .chat-stop-button {
+  background: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+/* Feature 1: Expandable tool step details */
+.omni-tool-badge.clickable {
+  cursor: pointer;
+  transition: filter 0.15s;
+  user-select: none;
+}
+
+.omni-tool-badge.clickable:hover {
+  filter: brightness(1.3);
+}
+
+.omni-badge-chevron {
+  font-size: 9px;
+  opacity: 0.7;
+}
+
+.omni-tool-result-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.omni-steps-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.omni-tool-detail {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.5;
+}
+
+.omni-tool-detail pre {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 8px;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+.omni-tool-detail a {
+  color: rgba(129, 140, 248, 0.9);
+  text-decoration: none;
+}
+
+.omni-tool-detail a:hover {
+  text-decoration: underline;
+}
+
+.omni-tool-detail ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.omni-tool-detail li {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.omni-tool-snippet {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+}
+
+.omni-tool-detail .stderr {
+  color: rgba(239, 68, 68, 0.9);
+}
+
+.omni-tool-detail-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Feature 2: Multimodal input — image previews and upload button */
+.omni-image-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0;
+  width: 100%;
+}
+
+.omni-image-previews .image-preview-item {
+  position: relative;
+  width: 56px;
+  height: 56px;
+}
+
+.omni-image-previews .image-preview {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.omni-image-previews .image-remove-button {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(239, 68, 68, 0.8);
+  color: white;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.omni-image-upload-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.omni-image-upload-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.omni-image-upload-button:disabled {
   opacity: 0.3;
   cursor: not-allowed;
 }
 
-.omni-mic-button:disabled {
+/* User-attached image thumbnails in bubbles */
+.omni-user-attached-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.omni-user-thumbnail {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Feature 3: Image interaction actions */
+.omni-image-wrapper {
+  display: inline-block;
+}
+
+.omni-image-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.omni-image-actions button {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+
+.omni-image-actions button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+
+/* Feature 4: Voice loop mode */
+.omni-voice-loop-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.omni-voice-loop-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.omni-voice-loop-button.active {
+  background: rgba(99, 102, 241, 0.3);
+  color: rgba(129, 140, 248, 0.95);
+  animation: agent-pulse 1.5s ease-in-out infinite;
+}
+
+.omni-voice-loop-button:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+.omni-voice-status {
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 0 0 6px;
+  animation: agent-msg-in 0.3s ease-out;
 }

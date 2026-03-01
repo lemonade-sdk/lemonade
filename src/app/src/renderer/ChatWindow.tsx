@@ -61,20 +61,30 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     return modelsData[selectedModel]?.labels?.includes('tool-calling') || false;
   }, [selectedModel, modelsData]);
 
+  const hasAnyToolCallingModel = useMemo(() => {
+    return Object.values(modelsData).some(
+      info => info.downloaded && info.labels?.includes('tool-calling')
+    );
+  }, [modelsData]);
+
   // Lock the rendered panel type during inference so that loading a
   // different-modality model via Model Manager doesn't yank the current
   // panel out from under the user mid-inference.
   const [activeModelType, setActiveModelType] = useState<ModelType>(modelType);
   useEffect(() => {
     if (!inference.isBusy) {
-      // Override to omni mode when toggle is on and model supports it
-      if (omniModeEnabled && isToolCallingModel && modelType === 'llm') {
+      // Auto-disable omni when user selects a non-LLM model
+      if (omniModeEnabled && modelType !== 'llm') {
+        setOmniModeEnabled(false);
+      }
+      // Override to omni mode when toggle is on and model type is LLM
+      if (omniModeEnabled && modelType === 'llm') {
         setActiveModelType('omni');
       } else {
         setActiveModelType(modelType);
       }
     }
-  }, [modelType, inference.isBusy, omniModeEnabled, isToolCallingModel]);
+  }, [modelType, inference.isBusy, omniModeEnabled]);
 
   const isVision = useMemo(() => {
     if (!selectedModel) return false;
@@ -198,7 +208,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
       <div className="chat-header">
         <h3>{headerTitle}</h3>
         <div className="chat-header-actions">
-          {isToolCallingModel && (
+          {hasAnyToolCallingModel && (
             <button
               className={`omni-toggle-button ${omniModeEnabled ? 'active' : ''}`}
               onClick={() => { setOmniModeEnabled(prev => !prev); setResetKey(k => k + 1); }}

@@ -1,11 +1,12 @@
 import React from 'react';
-import { useModels, DEFAULT_MODEL_ID } from '../hooks/useModels';
+import { useModels, DEFAULT_MODEL_ID, DownloadedModel } from '../hooks/useModels';
 
 interface ModelSelectorProps {
   disabled: boolean;
+  filter?: (model: DownloadedModel) => boolean;
 }
 
-const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
+const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled, filter }) => {
   const {
     downloadedModels,
     selectedModel,
@@ -14,9 +15,11 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
     setUserHasSelectedModel,
   } = useModels();
 
+  const filteredModels = filter ? downloadedModels.filter(filter) : downloadedModels;
+
   const dropdownModels = isDefaultModelPending
     ? [{ id: DEFAULT_MODEL_ID }]
-    : downloadedModels;
+    : filteredModels;
 
   return (
     <select
