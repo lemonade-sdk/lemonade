@@ -35,6 +35,10 @@ const RecordButton: React.FC<RecordButtonProps> = ({
   const baseTextRef = useRef('');   // textarea content at recording start
   const inputValueRef = useRef(inputValue); // always-current textarea value
   const audioLevelRef = useRef(0);
+  const pendingAutoSubmitRef = useRef(false); // set on stop; cleared when completed fires
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onAutoSubmitRef = useRef(onAutoSubmit); // always-current to avoid stale closures in WS callback
+  onAutoSubmitRef.current = onAutoSubmit;
 
   // Keep inputValueRef in sync every render
   inputValueRef.current = inputValue;
@@ -57,11 +61,13 @@ const RecordButton: React.FC<RecordButtonProps> = ({
   useEffect(() => () => {
     if (isRecordingRef.current) stopRecording();
     wsClientRef.current?.close();
+    if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
   }, []);
 
-  // Mirrors TranscriptionPanel's handleLiveTranscription, but also updates the textarea live
+  // Mirrors TranscriptionPanel's handleLiveTranscription, but also updates the textarea live.
+  // Always lets isFinal=true (completed) events through even after stop so we get the real transcript.
   const handleLiveTranscription = useCallback((text: string, isFinal: boolean) => {
-    if (!isRecordingRef.current) return;
+    if (!isFinal && !isRecordingRef.current) return;
     const trimmed = text.trim();
     if (!trimmed) return;
 
@@ -80,6 +86,15 @@ const RecordButton: React.FC<RecordButtonProps> = ({
     const newValue = base + separator + liveText;
     setInputValue(newValue);
     if (textareaRef?.current) adjustTextareaHeight(textareaRef.current);
+
+    // Auto-submit fires here on the completed event, after stop was already clicked
+    if (isFinal && pendingAutoSubmitRef.current) {
+      pendingAutoSubmitRef.current = false;
+      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+      finalsRef.current = '';
+      baseTextRef.current = '';
+      onAutoSubmitRef.current?.(newValue.trim());
+    }
   }, [setInputValue, textareaRef]);
 
   // Mirrors TranscriptionPanel's handleMicStart
@@ -124,11 +139,6 @@ const RecordButton: React.FC<RecordButtonProps> = ({
     stopRecording();
     isRecordingRef.current = false;
 
-    // inputValueRef always holds the latest textarea content (base + live transcription)
-    const finalText = inputValueRef.current.trim();
-    finalsRef.current = '';
-    baseTextRef.current = '';
-
     if (wsClientRef.current) {
       wsClientRef.current.clearAudio();
       const wsToClose = wsClientRef.current;
@@ -140,8 +150,22 @@ const RecordButton: React.FC<RecordButtonProps> = ({
     setAudioLevel(0);
     audioLevelRef.current = 0;
     reset();
-    if (finalText) onAutoSubmit?.(finalText);
-  }, [stopRecording, reset, onAutoSubmit]);
+
+    // Wait for the completed event to fire with the real transcript.
+    // Fallback: if completed never arrives within 3s, submit whatever is in the textarea.
+    if (onAutoSubmitRef.current) {
+      pendingAutoSubmitRef.current = true;
+      fallbackTimerRef.current = setTimeout(() => {
+        if (pendingAutoSubmitRef.current) {
+          pendingAutoSubmitRef.current = false;
+          finalsRef.current = '';
+          baseTextRef.current = '';
+          const text = inputValueRef.current.trim();
+          if (text) onAutoSubmitRef.current?.(text);
+        }
+      }, 3000);
+    }
+  }, [stopRecording, reset]);
 
   const title = !whisperModel
     ? 'No Whisper model available'

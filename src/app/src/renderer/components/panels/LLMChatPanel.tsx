@@ -699,7 +699,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           <InferenceControls
             isBusy={isBusy}
             isInferring={isInferring}
-            stoppable={true}
+            stoppable={activeModality === 'llm'}
             onSend={sendMessage}
             onStop={handleStopGeneration}
             sendDisabled={!inputValue.trim() && uploadedImages.length === 0}
