@@ -2707,7 +2707,10 @@ void TrayApp::on_show_logs() {
     pid_t pid = fork();
     if (pid == 0) {
         // Child process
-        std::string cmd = "gnome-terminal -- tail -f '" + log_file_ + "' || xterm -e tail -f '" + log_file_ + "'";
+        std::string tail_cmd = "tail -f '" + log_file_ + "'";
+        std::string cmd = "ptyxis -- " + tail_cmd
+            + " || gnome-terminal -- " + tail_cmd
+            + " || xterm -e " + tail_cmd;
         execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
         exit(0);
     } else if (pid > 0) {
