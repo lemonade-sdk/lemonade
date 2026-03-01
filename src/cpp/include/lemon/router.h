@@ -57,6 +57,9 @@ public:
     // Get backend server address (for streaming proxy)
     std::string get_backend_address() const;
 
+    // Get backend server address for a specific model (for omni loop direct calls)
+    std::string get_backend_address(const std::string& model_name) const;
+
     // Forward requests to the appropriate wrapped server (non-streaming)
     json chat_completion(const json& request);
     json completion(const json& request);

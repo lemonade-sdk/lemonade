@@ -1,10 +1,9 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { useModels } from '../../hooks/useModels';
 import { Modality } from '../../hooks/useInferenceState';
 import { ModelsData } from '../../utils/modelData';
-import { serverFetch, getServerBaseUrl } from '../../utils/serverConfig';
-import { useAudioCapture } from '../../hooks/useAudioCapture';
-import { TranscriptionWebSocket } from '../../utils/websocketClient';
+import { serverFetch } from '../../utils/serverConfig';
+import { useLiveTranscription } from '../../hooks/useLiveTranscription';
 import { MicrophoneIcon } from '../Icons';
 import InferenceControls from '../InferenceControls';
 import ModelSelector from '../ModelSelector';
@@ -28,125 +27,27 @@ const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
   const [transcriptionFile, setTranscriptionFile] = useState<File | null>(null);
   const [transcriptionHistory, setTranscriptionHistory] = useState<Array<{ filename: string; text: string }>>([]);
   const audioFileInputRef = useRef<HTMLInputElement>(null);
-
-  // Live microphone recording state
-  const [isLiveRecording, setIsLiveRecording] = useState(false);
-  const [isLiveConnected, setIsLiveConnected] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [audioLevel, setAudioLevel] = useState(0);
-  const [liveError, setLiveError] = useState<string | null>(null);
-  const [liveTranscript, setLiveTranscript] = useState('');
-  const audioLevelRef = useRef(0);
-  const wsClientRef = useRef<TranscriptionWebSocket | null>(null);
-  const isLiveRecordingRef = useRef(false);
-  const isSpeakingRef = useRef(false);
-  const liveTranscriptRef = useRef('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Audio capture callbacks
-  const handleAudioChunk = useCallback((base64: string) => {
-    wsClientRef.current?.sendAudio(base64);
-  }, []);
-
-  const handleAudioLevel = useCallback((level: number) => {
-    const smoothed = audioLevelRef.current * 0.7 + level * 0.3;
-    audioLevelRef.current = smoothed;
-    setAudioLevel(smoothed);
-  }, []);
-
-  const { isRecording: isMicActive, startRecording, stopRecording, error: micError } =
-    useAudioCapture(handleAudioChunk, handleAudioLevel);
-
-  const handleLiveTranscription = useCallback((text: string, isFinal: boolean) => {
-    if (!isLiveRecordingRef.current) return;
-    const trimmedText = text.trim();
-    if (!trimmedText) return;
-
-    const accumulated = liveTranscriptRef.current;
-    if (isFinal) {
-      const next = accumulated ? `${accumulated} ${trimmedText}` : trimmedText;
-      liveTranscriptRef.current = next;
-      setLiveTranscript(next);
-    } else {
-      const display = accumulated ? `${accumulated} ${trimmedText}` : trimmedText;
-      setLiveTranscript(display);
-    }
-  }, []);
-
-  const handleSpeechEvent = useCallback((event: 'started' | 'stopped') => {
-    isSpeakingRef.current = event === 'started';
-    setIsSpeaking(event === 'started');
-  }, []);
+  // Reusable live transcription hook (shared with OmniPanel)
+  const mic = useLiveTranscription({
+    modelName: selectedModel,
+    modelsData,
+    runPreFlight,
+    onError: showError,
+  });
 
   const handleMicStart = useCallback(async () => {
-    setLiveError(null);
-    setLiveTranscript('');
-    liveTranscriptRef.current = '';
-
-    const ready = await runPreFlight('transcription', {
-      modelName: selectedModel,
-      modelsData,
-      onError: (msg) => setLiveError(`Error preparing model: ${msg}`),
-    });
-    if (!ready) return;
-
-    try {
-      const serverUrl = getServerBaseUrl();
-      wsClientRef.current = await TranscriptionWebSocket.connect(serverUrl, selectedModel, {
-        onTranscription: handleLiveTranscription,
-        onSpeechEvent: handleSpeechEvent,
-        onError: (err) => setLiveError(err),
-        onConnected: () => setIsLiveConnected(true),
-        onDisconnected: () => setIsLiveConnected(false),
-      });
-
-      await new Promise(r => setTimeout(r, 500));
-      await startRecording();
-      isLiveRecordingRef.current = true;
-      setIsLiveRecording(true);
-    } catch (err) {
-      setLiveError(err instanceof Error ? err.message : 'Failed to connect');
-      reset();
-    }
-  }, [selectedModel, modelsData, handleLiveTranscription, handleSpeechEvent, startRecording, runPreFlight, reset]);
+    await mic.start();
+  }, [mic]);
 
   const handleMicStop = useCallback(() => {
-    stopRecording();
-    isLiveRecordingRef.current = false;
-
-    setLiveTranscript(currentDisplay => {
-      const finalText = currentDisplay.trim();
-      if (finalText) {
-        setTranscriptionHistory(h => [...h, { filename: 'Live Recording', text: finalText }]);
-      }
-      return '';
-    });
-    liveTranscriptRef.current = '';
-
-    if (wsClientRef.current) {
-      wsClientRef.current.clearAudio();
-      const wsToClose = wsClientRef.current;
-      wsClientRef.current = null;
-      setIsLiveConnected(false);
-      setTimeout(() => { wsToClose.close(); }, 3000);
+    const finalText = mic.stop();
+    if (finalText) {
+      setTranscriptionHistory(h => [...h, { filename: 'Live Recording', text: finalText }]);
     }
-
-    setIsLiveRecording(false);
-    setIsSpeaking(false);
-    setAudioLevel(0);
-    audioLevelRef.current = 0;
     reset();
-  }, [stopRecording, reset]);
-
-  // Cleanup WebSocket on unmount
-  useEffect(() => {
-    return () => {
-      if (isLiveRecordingRef.current) {
-        stopRecording();
-      }
-      wsClientRef.current?.close();
-    };
-  }, []);
+  }, [mic, reset]);
 
   const handleAudioFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -213,7 +114,7 @@ const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
   return (
     <>
       <div className="chat-messages">
-        {transcriptionHistory.length === 0 && !isLiveRecording && <EmptyState title="Lemonade Transcriber" />}
+        {transcriptionHistory.length === 0 && !mic.isRecording && <EmptyState title="Lemonade Transcriber" />}
 
         {transcriptionHistory.map((item, index) => (
           <div key={index} className="transcription-history-item">
@@ -239,7 +140,7 @@ const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
           </div>
         ))}
 
-        {isLiveRecording && (
+        {mic.isRecording && (
           <div className="transcription-history-item">
             <div className="transcription-file-info">
               <div className="transcription-label">
@@ -250,13 +151,13 @@ const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
             <div className="transcription-result-container">
               <div className="transcription-result-header"><h4>Transcription</h4></div>
               <div className="transcription-result">
-                {liveTranscript || (isLiveRecording ? 'Listening... Start speaking to see transcription.' : '')}
+                {mic.transcript || (mic.isRecording ? 'Listening... Start speaking to see transcription.' : '')}
               </div>
             </div>
           </div>
         )}
 
-        {isBusy && activeModality === 'transcription' && !isLiveRecording && (
+        {isBusy && activeModality === 'transcription' && !mic.isRecording && (
           <div className="chat-message assistant-message">
             <TypingIndicator />
           </div>
@@ -275,9 +176,9 @@ const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
           />
 
           <div className="transcription-file-display">
-            {isLiveRecording ? (
+            {mic.isRecording ? (
               <div className="live-status">
-                {!isLiveConnected ? (
+                {!mic.isConnected ? (
                   <span className="status-indicator">
                     <span className="dot connecting" />
                     Connecting...
@@ -287,8 +188,8 @@ const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
                     <div
                       className="level-fill"
                       style={{
-                        width: `${audioLevel * 100}%`,
-                        backgroundColor: audioLevel > 0.7 ? '#f44336' : audioLevel > 0.3 ? '#4caf50' : '#555',
+                        width: `${mic.audioLevel * 100}%`,
+                        backgroundColor: mic.audioLevel > 0.7 ? '#f44336' : mic.audioLevel > 0.3 ? '#4caf50' : '#555',
                       }}
                     />
                   </div>
@@ -311,14 +212,14 @@ const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
             isInferring={isInferring}
             stoppable={false}
             onSend={handleTranscription}
-            sendDisabled={!transcriptionFile || isBusy || isLiveRecording}
-            modelSelector={<ModelSelector disabled={isBusy || isLiveRecording} />}
+            sendDisabled={!transcriptionFile || isBusy || mic.isRecording}
+            modelSelector={<ModelSelector disabled={isBusy || mic.isRecording} />}
             leftControls={
               <>
                 <button
                   className="audio-file-button"
                   onClick={() => audioFileInputRef.current?.click()}
-                  disabled={isBusy || isLiveRecording}
+                  disabled={isBusy || mic.isRecording}
                   title="Choose audio file"
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -329,12 +230,12 @@ const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
                   </svg>
                 </button>
                 <button
-                  className={`audio-file-button${isLiveRecording ? ' recording' : ''}`}
-                  onClick={isLiveRecording ? handleMicStop : handleMicStart}
-                  disabled={isBusy && !isLiveRecording}
-                  title={isLiveRecording ? 'Stop recording' : 'Start live recording'}
+                  className={`audio-file-button${mic.isRecording ? ' recording' : ''}`}
+                  onClick={mic.isRecording ? handleMicStop : handleMicStart}
+                  disabled={isBusy && !mic.isRecording}
+                  title={mic.isRecording ? 'Stop recording' : 'Start live recording'}
                 >
-                  <MicrophoneIcon active={isLiveRecording} />
+                  <MicrophoneIcon active={mic.isRecording} />
                 </button>
               </>
             }
@@ -342,8 +243,8 @@ const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
         </div>
       </div>
 
-      {(liveError || micError) && (
-        <div className="transcription-error">{liveError || micError}</div>
+      {mic.error && (
+        <div className="transcription-error">{mic.error}</div>
       )}
     </>
   );

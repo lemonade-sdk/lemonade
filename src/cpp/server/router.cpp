@@ -457,6 +457,12 @@ std::string Router::get_backend_address() const {
     return server ? server->get_address() : "";
 }
 
+std::string Router::get_backend_address(const std::string& model_name) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    WrappedServer* server = find_server_by_model_name(model_name);
+    return server ? server->get_address() : "";
+}
+
 // Template method for generic inference execution
 template<typename Func>
 auto Router::execute_inference(const json& request, Func&& inference_func) -> decltype(inference_func(nullptr)) {

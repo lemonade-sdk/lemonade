@@ -572,6 +572,7 @@ set(SOURCES
     src/cpp/server/backends/backend_utils.cpp
     src/cpp/server/backend_manager.cpp
     src/cpp/server/ollama_api.cpp
+    src/cpp/server/omni_loop.cpp
     $<$<PLATFORM_ID:Windows>:src/cpp/server/streaming_audio_buffer.cpp>
     $<$<PLATFORM_ID:Windows>:src/cpp/server/vad.cpp>
     $<$<PLATFORM_ID:Windows>:src/cpp/server/realtime_session.cpp>

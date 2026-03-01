@@ -105,6 +105,8 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
                                        model_manager_.get(), max_loaded_models,
                                        backend_manager_.get());
 
+    omni_loop_ = std::make_unique<OmniLoop>(router_.get(), model_manager_.get());
+
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
     }
@@ -268,6 +270,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     register_post("images/variations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_image_variations(req, res);
+    });
+
+    // Omni chat endpoint (multimodal omni loop)
+    register_post("omni/chat", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_omni_chat(req, res);
     });
 
     // Responses endpoint
@@ -2232,6 +2239,65 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
             {"message", e.what()},
             {"type", "server_error"}
         }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_omni_chat(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+
+        // Validate model field
+        if (!request_json.contains("model") || !request_json["model"].is_string()) {
+            res.status = 400;
+            res.set_content(R"({"error":{"message":"Missing required field: model","type":"invalid_request_error"}})", "application/json");
+            return;
+        }
+
+        std::string model = request_json["model"].get<std::string>();
+
+        // Auto-load the brain model
+        try {
+            auto_load_model_if_needed(model);
+        } catch (const std::exception& e) {
+            auto error_response = create_model_error(model, e.what());
+            std::string error_code = error_response["error"]["code"].get<std::string>();
+            res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+            res.set_content(error_response.dump(), "application/json");
+            return;
+        }
+
+        bool is_streaming = request_json.value("stream", false);
+
+        if (is_streaming) {
+            std::cout << "[Server] POST /api/v1/omni/chat - Streaming" << std::endl;
+
+            res.set_header("Content-Type", "text/event-stream");
+            res.set_header("Cache-Control", "no-cache");
+            res.set_header("Connection", "keep-alive");
+            res.set_header("X-Accel-Buffering", "no");
+
+            res.set_chunked_content_provider(
+                "text/event-stream",
+                [this, request_json](size_t offset, httplib::DataSink& sink) {
+                    if (offset > 0) return false;
+                    omni_loop_->run_stream(request_json, sink);
+                    return false;
+                }
+            );
+        } else {
+            std::cout << "[Server] POST /api/v1/omni/chat - Non-streaming" << std::endl;
+            json response = omni_loop_->run(request_json);
+            res.set_content(response.dump(), "application/json");
+        }
+
+    } catch (const nlohmann::json::exception& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", {{"message", "Invalid JSON: " + std::string(e.what())}, {"type", "invalid_request_error"}}}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        nlohmann::json error = {{"error", {{"message", e.what()}, {"type", "internal_error"}}}};
         res.set_content(error.dump(), "application/json");
     }
 }

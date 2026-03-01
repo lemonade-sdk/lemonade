@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   AppSettings,
   mergeWithDefaultSettings,
@@ -14,6 +14,7 @@ import TranscriptionPanel from './components/panels/TranscriptionPanel';
 import ImageGenerationPanel from './components/panels/ImageGenerationPanel';
 import TTSPanel from './components/panels/TTSPanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
+import OmniPanel from './components/panels/OmniPanel';
 
 interface ChatWindowProps {
   isVisible: boolean;
@@ -36,7 +37,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [resetKey, setResetKey] = useState(0);
 
-  type ModelType = 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'speech';
+  type ModelType = 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'speech' | 'omni';
 
   const modelType = useMemo((): ModelType => {
     if (!selectedModel) return 'llm';
@@ -50,15 +51,30 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     return 'llm';
   }, [selectedModel, modelsData]);
 
+  // Omni mode toggle — only available for models with "tool-calling" label
+  const [omniModeEnabled, setOmniModeEnabled] = useState(false);
+  const omniModeRef = useRef(omniModeEnabled);
+  useEffect(() => { omniModeRef.current = omniModeEnabled; }, [omniModeEnabled]);
+
+  const isToolCallingModel = useMemo(() => {
+    if (!selectedModel) return false;
+    return modelsData[selectedModel]?.labels?.includes('tool-calling') || false;
+  }, [selectedModel, modelsData]);
+
   // Lock the rendered panel type during inference so that loading a
   // different-modality model via Model Manager doesn't yank the current
   // panel out from under the user mid-inference.
   const [activeModelType, setActiveModelType] = useState<ModelType>(modelType);
   useEffect(() => {
     if (!inference.isBusy) {
-      setActiveModelType(modelType);
+      // Override to omni mode when toggle is on and model supports it
+      if (omniModeEnabled && isToolCallingModel && modelType === 'llm') {
+        setActiveModelType('omni');
+      } else {
+        setActiveModelType(modelType);
+      }
     }
-  }, [modelType, inference.isBusy]);
+  }, [modelType, inference.isBusy, omniModeEnabled, isToolCallingModel]);
 
   const isVision = useMemo(() => {
     if (!selectedModel) return false;
@@ -71,7 +87,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
       const data = await response.json();
       if (data?.model_loaded) {
         setCurrentLoadedModel(data.model_loaded);
-        if (!userHasSelectedModel) {
+        // Don't override selected model when omni mode is active
+        if (!omniModeRef.current && !userHasSelectedModel) {
           setSelectedModel(data.model_loaded);
         }
       } else {
@@ -105,10 +122,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
       const loadedModelId = customEvent.detail?.modelId;
       if (loadedModelId) {
         setCurrentLoadedModel(loadedModelId);
-        setSelectedModel(loadedModelId);
-        setUserHasSelectedModel(false);
+        // Don't switch the selected model when omni mode is active —
+        // the omni loop loads helper models (SD, Whisper, etc.) internally
+        // and those shouldn't hijack the UI.
+        if (!omniModeRef.current) {
+          setSelectedModel(loadedModelId);
+          setUserHasSelectedModel(false);
+        }
       } else {
-        fetchLoadedModel();
+        if (!omniModeRef.current) {
+          fetchLoadedModel();
+        }
       }
       checkForRocmUsage();
     };
@@ -118,7 +142,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     };
 
     const handleModelLoadStart = (e: CustomEvent) => {
-      setSelectedModel(e.detail.modelId);
+      if (!omniModeRef.current) {
+        setSelectedModel(e.detail.modelId);
+      }
     };
 
     window.addEventListener('modelLoadStart' as any, handleModelLoadStart);
@@ -152,6 +178,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     : activeModelType === 'transcription' ? 'Lemonade Transcriber'
     : activeModelType === 'image' ? 'Lemonade Image Generator'
     : activeModelType === 'speech' ? 'Lemonade Text to Speech'
+    : activeModelType === 'omni' ? 'Lemonade Omni'
     : 'LLM Chat';
 
   const sharedProps = {
@@ -170,22 +197,38 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       <div className="chat-header">
         <h3>{headerTitle}</h3>
-        <button
-          className="new-chat-button"
-          onClick={handleNewChat}
-          disabled={inference.isBusy}
-          title={activeModelType === 'llm' ? 'Start a new chat' : 'Clear'}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M21 3V8M21 8H16M21 8L18 5.29168C16.4077 3.86656 14.3051 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21C16.2832 21 19.8675 18.008 20.777 14"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+        <div className="chat-header-actions">
+          {isToolCallingModel && (
+            <button
+              className={`omni-toggle-button ${omniModeEnabled ? 'active' : ''}`}
+              onClick={() => { setOmniModeEnabled(prev => !prev); setResetKey(k => k + 1); }}
+              disabled={inference.isBusy}
+              title={omniModeEnabled ? 'Switch to Chat mode' : 'Switch to Omni mode'}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
+              </svg>
+              <span>Omni</span>
+            </button>
+          )}
+          <button
+            className="new-chat-button"
+            onClick={handleNewChat}
+            disabled={inference.isBusy}
+            title={activeModelType === 'llm' ? 'Start a new chat' : 'Clear'}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M21 3V8M21 8H16M21 8L18 5.29168C16.4077 3.86656 14.3051 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21C16.2832 21 19.8675 18.008 20.777 14"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {activeModelType === 'embedding' && <EmbeddingPanel key={resetKey} {...sharedProps} />}
@@ -193,6 +236,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
       {activeModelType === 'transcription' && <TranscriptionPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'image' && <ImageGenerationPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'speech' && <TTSPanel key={resetKey} {...sharedProps} />}
+      {activeModelType === 'omni' && <OmniPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'llm' && (
         <LLMChatPanel
           key={resetKey}

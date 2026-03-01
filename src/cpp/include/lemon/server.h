@@ -14,6 +14,7 @@
 #include "router.h"
 #include "model_manager.h"
 #include "backend_manager.h"
+#include "omni_loop.h"
 #ifdef LEMON_HAS_WEBSOCKET
 #include "websocket_server.h"
 #endif
@@ -102,6 +103,9 @@ private:
     void handle_image_edits(const httplib::Request& req, httplib::Response& res);
     void handle_image_variations(const httplib::Request& req, httplib::Response& res);
 
+    // Omni endpoint handler
+    void handle_omni_chat(const httplib::Request& req, httplib::Response& res);
+
     // Shared helpers for image multipart handlers
     // Return true on success; on failure set res status/body and return false.
     bool parse_n_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
@@ -138,6 +142,7 @@ private:
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
+    std::unique_ptr<OmniLoop> omni_loop_;
 #ifdef LEMON_HAS_WEBSOCKET
     std::unique_ptr<WebSocketServer> websocket_server_;
 #endif
