@@ -40,6 +40,7 @@
 #ifdef HAVE_SYSTEMD
 #include <systemd/sd-bus.h>
 #include <systemd/sd-daemon.h>
+#include <systemd/sd-login.h>
 #endif
 #endif
 
@@ -2231,17 +2232,35 @@ bool TrayApp::start_server() {
             log_file_ = "lemonade-server.log";
         }
         #else
-        // Use systemd journal if JOURNAL_STREAM is set, unless explicitly disabled
-        // LEMONADE_DISABLE_SYSTEMD_JOURNAL can be set in CI to force file logging
-        const char* journal_stream = std::getenv("JOURNAL_STREAM");
+        // Use systemd journal only when actually running as lemonade-server.service.
+        // sd_pid_get_unit() reads the process's cgroup assignment (not environment variables),
+        // so it cannot give false positives from inherited env vars like JOURNAL_STREAM or
+        // INVOCATION_ID, both of which are inherited by all child processes in a systemd session.
+        // LEMONADE_DISABLE_SYSTEMD_JOURNAL overrides this for testing/CI.
+        #ifdef HAVE_SYSTEMD
+        const char* service_name_env = std::getenv("LEMONADE_SYSTEMD_UNIT");
+        const char* service_name = service_name_env ? service_name_env : LEMONADE_SYSTEMD_UNIT_NAME;
+        char* unit_name = nullptr;
         const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
-        if (journal_stream && !disable_journal) {
-            log_file_ = "-";  // Special value: don't redirect stdout/stderr
-            DEBUG_LOG(this, "Detected systemd environment - logging will go to journal");
+        if (!disable_journal && sd_pid_get_unit(0, &unit_name) >= 0) {
+            bool is_service = (strcmp(unit_name, service_name) == 0);
+            free(unit_name);
+            if (is_service) {
+                log_file_ = "-";  // Special value: don't redirect stdout/stderr
+                DEBUG_LOG(this, "Detected systemd environment - logging will go to journal");
+            } else {
+                log_file_ = "/tmp/lemonade-server.log";
+                DEBUG_LOG(this, "Using default log file: " << log_file_);
+            }
         } else {
+            if (unit_name) free(unit_name);
             log_file_ = "/tmp/lemonade-server.log";
             DEBUG_LOG(this, "Using default log file: " << log_file_);
         }
+        #else
+        log_file_ = "/tmp/lemonade-server.log";
+        DEBUG_LOG(this, "Using default log file: " << log_file_);
+        #endif
         #endif
     }
 

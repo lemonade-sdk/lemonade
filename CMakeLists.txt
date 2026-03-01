@@ -691,9 +691,13 @@ elseif(UNIX)
     if(PkgConfig_FOUND)
         pkg_check_modules(SYSTEMD QUIET libsystemd)
         if(SYSTEMD_FOUND)
+            set(LEMONADE_SYSTEMD_UNIT_NAME "lemonade-server.service" CACHE STRING
+                "Systemd unit name to match for journald log mode (overridable at runtime via LEMONADE_SYSTEMD_UNIT env var)")
             target_include_directories(${EXECUTABLE_NAME} PRIVATE ${SYSTEMD_INCLUDE_DIRS})
             target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${SYSTEMD_LIBRARIES})
-            target_compile_definitions(${EXECUTABLE_NAME} PRIVATE HAVE_SYSTEMD)
+            target_compile_definitions(${EXECUTABLE_NAME} PRIVATE
+                HAVE_SYSTEMD
+                LEMONADE_SYSTEMD_UNIT_NAME="${LEMONADE_SYSTEMD_UNIT_NAME}")
         endif()
     endif()
 endif()

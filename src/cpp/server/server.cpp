@@ -36,6 +36,7 @@
 
 #ifdef HAVE_SYSTEMD
     #include <systemd/sd-journal.h>
+    #include <systemd/sd-login.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -66,16 +67,32 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     GetTempPathA(MAX_PATH, temp_path);
     log_file_path_ = std::string(temp_path) + "lemonade-server.log";
 #else
-    // Use systemd journal if JOURNAL_STREAM is set, unless explicitly disabled
-    // LEMONADE_DISABLE_SYSTEMD_JOURNAL can be set in CI to force file logging
-    const char* journal_stream = std::getenv("JOURNAL_STREAM");
+    // Use systemd journal only when actually running as lemonade-server.service.
+    // sd_pid_get_unit() reads the process's cgroup assignment (not environment variables),
+    // so it cannot give false positives from inherited env vars like JOURNAL_STREAM or
+    // INVOCATION_ID, both of which are inherited by all child processes in a systemd session.
+    // LEMONADE_DISABLE_SYSTEMD_JOURNAL overrides this for testing/CI.
+#ifdef HAVE_SYSTEMD
+    const char* service_name_env = std::getenv("LEMONADE_SYSTEMD_UNIT");
+    const char* service_name = service_name_env ? service_name_env : LEMONADE_SYSTEMD_UNIT_NAME;
+    char* unit_name = nullptr;
     const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
-    if (journal_stream && !disable_journal) {
-        log_file_path_ = "";  // Empty signals journald usage
-        std::cout << "[Server] Detected systemd environment - will use journald for log streaming" << std::endl;
+    if (!disable_journal && sd_pid_get_unit(0, &unit_name) >= 0) {
+        bool is_service = (strcmp(unit_name, service_name) == 0);
+        free(unit_name);
+        if (is_service) {
+            log_file_path_ = "";  // Empty signals journald usage
+            std::cout << "[Server] Detected systemd environment - will use journald for log streaming" << std::endl;
+        } else {
+            log_file_path_ = "/tmp/lemonade-server.log";
+        }
     } else {
+        if (unit_name) free(unit_name);
         log_file_path_ = "/tmp/lemonade-server.log";
     }
+#else
+    log_file_path_ = "/tmp/lemonade-server.log";
+#endif
 #endif
 
     http_server_ = std::make_unique<httplib::Server>();
