@@ -19,6 +19,7 @@ import ModelSelector from '../ModelSelector';
 import ImagePreviewList from '../ImagePreviewList';
 import EmptyState from '../EmptyState';
 import TypingIndicator from '../TypingIndicator';
+import RecordButton from '../RecordButton';
 
 interface LLMChatPanelProps {
   isBusy: boolean;
@@ -703,25 +704,37 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             sendDisabled={!inputValue.trim() && uploadedImages.length === 0}
             modelSelector={<ModelSelector disabled={isBusy} />}
             leftControls={
-              isVision ? (
-                <>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={uploadedImageHandlers.upload}
-                    style={{ display: 'none' }}
-                  />
-                  <button
-                    className="image-upload-button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isBusy}
-                    title="Upload image"
-                  >
-                    <ImageUploadIcon />
-                  </button>
-                </>
-              ) : undefined
+              <>
+                {isVision && (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={uploadedImageHandlers.upload}
+                      style={{ display: 'none' }}
+                    />
+                    <button
+                      className="image-upload-button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isBusy}
+                      title="Upload image"
+                    >
+                      <ImageUploadIcon />
+                    </button>
+                  </>
+                )}
+                <RecordButton
+                  disabled={isBusy}
+                  modelsData={modelsData}
+                  runPreFlight={runPreFlight}
+                  onTranscription={(text) => {
+                    setInputValue(prev => prev ? prev + (prev.endsWith(' ') ? '' : ' ') + text : text);
+                    if (inputTextareaRef.current) adjustTextareaHeight(inputTextareaRef.current);
+                  }}
+                  onError={showError}
+                />
+              </>
             }
           />
         </div>
