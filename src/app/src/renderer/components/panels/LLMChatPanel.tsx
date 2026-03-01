@@ -326,8 +326,9 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     if (!accumulatedContent) throw new Error('No content received from stream');
   };
 
-  const sendMessage = async () => {
-    if ((!inputValue.trim() && uploadedImages.length === 0) || isBusy) return;
+  const sendMessage = async (textOverride?: string) => {
+    const textToSend = textOverride ?? inputValue;
+    if ((!textToSend.trim() && uploadedImages.length === 0) || isBusy) return;
 
     const ready = await runPreFlight('llm', {
       modelName: selectedModel,
@@ -346,13 +347,13 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     let messageContent: MessageContent;
     if (uploadedImages.length > 0) {
       const contentArray: Array<TextContent | ImageContent> = [];
-      if (inputValue.trim()) contentArray.push({ type: 'text', text: inputValue });
+      if (textToSend.trim()) contentArray.push({ type: 'text', text: textToSend });
       uploadedImages.forEach(imageUrl => {
         contentArray.push({ type: 'image_url', image_url: { url: imageUrl } });
       });
       messageContent = contentArray;
     } else {
-      messageContent = inputValue;
+      messageContent = textToSend;
     }
 
     const userMessage: Message = { role: 'user', content: messageContent };
@@ -727,12 +728,13 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                 <RecordButton
                   disabled={isBusy}
                   modelsData={modelsData}
-                  runPreFlight={runPreFlight}
-                  onTranscription={(text) => {
-                    setInputValue(prev => prev ? prev + (prev.endsWith(' ') ? '' : ' ') + text : text);
-                    if (inputTextareaRef.current) adjustTextareaHeight(inputTextareaRef.current);
-                  }}
+                  inputValue={inputValue}
+                  setInputValue={setInputValue}
+                  textareaRef={inputTextareaRef}
                   onError={showError}
+                  runPreFlight={runPreFlight}
+                  reset={reset}
+                  onAutoSubmit={(text) => sendMessage(text)}
                 />
               </>
             }

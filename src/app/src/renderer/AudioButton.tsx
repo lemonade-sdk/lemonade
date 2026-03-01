@@ -4,6 +4,20 @@ export const PAUSED = 0;
 export const LOADING = 1;
 export const PLAYING = 2;
 
+export const LoadingIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18px" height="18px" style={{opacity:1}}>
+    <circle cx="3" cy="9" r="2" fill="currentColor">
+      <animate id="SVG9IgbRbsl" attributeName="r" begin="0;SVGFUNpCWdG.end-0.35s" dur="0.95s" values="3;.2;3"/>
+    </circle>
+    <circle cx="9" cy="9" r="2" fill="currentColor">
+      <animate attributeName="r" begin="SVG9IgbRbsl.end-0.7s" dur="0.95s" values="3;.2;3"/>
+    </circle>
+    <circle cx="16" cy="9" r="2" fill="currentColor">
+      <animate id="SVGFUNpCWdG" attributeName="r" begin="SVG9IgbRbsl.end-0.55s" dur="0.95s" values="3;.2;3"/>
+    </circle>
+  </svg>
+);
+
 interface  AudioButtonProps {
   textMessage: any;
   role?: string;
@@ -13,21 +27,6 @@ interface  AudioButtonProps {
 }
 
 const AudioButton: React.FC<AudioButtonProps> = React.memo(function AudioButton({ textMessage, role, buttonIndex, onClickFunction, buttonContext}) {
-  const LoadingIcon = () => {
-    return (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18px" height="18px"  style={{opacity:1}}>
-        <circle cx="3" cy="9" r="2" fill="currentColor">
-          <animate id="SVG9IgbRbsl" attributeName="r" begin="0;SVGFUNpCWdG.end-0.35s" dur="0.95s" values="3;.2;3"/>
-        </circle>
-        <circle cx="9" cy="9" r="2" fill="currentColor">
-          <animate attributeName="r" begin="SVG9IgbRbsl.end-0.7s" dur="0.95s" values="3;.2;3"/>
-        </circle>
-        <circle cx="16" cy="9" r="2" fill="currentColor">
-          <animate id="SVGFUNpCWdG" attributeName="r" begin="SVG9IgbRbsl.end-0.55s" dur="0.95s" values="3;.2;3"/>
-        </circle>
-      </svg>
-    )
-  }
 
   const PausedIcon = () => {
     return (
