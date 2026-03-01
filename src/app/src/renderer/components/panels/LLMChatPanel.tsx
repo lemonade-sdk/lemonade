@@ -327,7 +327,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   };
 
   const sendMessage = async (textOverride?: string) => {
-    const textToSend = textOverride ?? inputValue;
+    const textToSend = typeof textOverride === 'string' ? textOverride : inputValue;
     if ((!textToSend.trim() && uploadedImages.length === 0) || isBusy) return;
 
     const ready = await runPreFlight('llm', {
