@@ -39,13 +39,6 @@ public:
 
         return false;
 #else
-        // Skip lock file when running under systemd, unless explicitly disabled
-        const char* journal_stream = std::getenv("JOURNAL_STREAM");
-        const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
-        if (journal_stream && !disable_journal) {
-            return false;  // Systemd ensures single instance
-        }
-
         std::string lock_file = "/tmp/lemonade_" + app_name + ".lock";
         int fd = open(lock_file.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0666);
 
