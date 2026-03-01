@@ -1331,7 +1331,8 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
             }
         }
 
-        // Special rule: filter out gpt-oss-20b-FLM on systems with less than 64 GB RAM
+        // Special rule: filter out gpt-oss-20b-FLM on Windows systems with less than 64 GB RAM
+#ifdef _WIN32
         if (!filter_out && name == "gpt-oss-20b-FLM" && system_ram_gb > 0.0 && system_ram_gb < 64.0) {
             filter_out = true;
             std::ostringstream oss;
@@ -1340,6 +1341,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                 << "Your system has " << system_ram_gb << " GB.";
             filter_reason = oss.str();
         }
+#endif
 
         if (filter_out) {
             filtered_count++;
