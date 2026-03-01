@@ -277,6 +277,13 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         }
     }
     if (recipe == "flm") {
+#ifdef __linux__
+        const char* beta_flm = std::getenv("LEMONADE_FLM_LINUX_BETA");
+        if (!beta_flm || (std::string(beta_flm) != "1" && std::string(beta_flm) != "true")) {
+            error_message = "FLM on Linux is currently in beta.";
+            return false;
+        }
+#endif
         if (!utils::run_flm_validate("", error_message)) {
             return false;
         }
@@ -1177,6 +1184,12 @@ bool needs_gfx1151_cwsr_fix() {
 // by the model manager when a user tries to download/load an FLM model.
 bool check_flm_validation_fails(std::string& error_message) {
 #ifdef __linux__
+    const char* beta_flm = std::getenv("LEMONADE_FLM_LINUX_BETA");
+    if (!beta_flm || (std::string(beta_flm) != "1" && std::string(beta_flm) != "true")) {
+        error_message = "FLM on Linux is currently in beta.";
+        return false;
+    }
+
     std::string flm_path = utils::find_flm_executable();
     if (flm_path.empty()) {
         // No FLM installed - not a system check issue
@@ -1219,6 +1232,12 @@ std::string identify_npu_arch() {
         return "XDNA2";
     }
 #else
+    // Linux: check for beta flag
+    const char* beta_flm = std::getenv("LEMONADE_FLM_LINUX_BETA");
+    if (!beta_flm || (std::string(beta_flm) != "1" && std::string(beta_flm) != "true")) {
+        return "";
+    }
+
     // Linux: check amdxdna driver + vbnv for NPU generation
     std::string sysfs_arch = identify_npu_arch_from_sysfs();
     if (!sysfs_arch.empty()) {
@@ -2074,6 +2093,13 @@ NPUInfo LinuxSystemInfo::get_npu_device() {
     NPUInfo npu;
     npu.name = "AMD NPU";
     npu.available = false;
+
+    // Check for beta flag
+    const char* beta_flm = std::getenv("LEMONADE_FLM_LINUX_BETA");
+    if (!beta_flm || (std::string(beta_flm) != "1" && std::string(beta_flm) != "true")) {
+        npu.error = "FLM on Linux is currently in beta.";
+        return npu;
+    }
 
     fs::path accel_path = "/sys/class/accel";
     if (!fs::exists(accel_path) || !fs::is_directory(accel_path)) {

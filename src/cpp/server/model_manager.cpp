@@ -1110,8 +1110,12 @@ static bool is_npu_available(const json& hardware) {
 }
 
 static bool is_flm_available(const json& hardware) {
-    // FLM models are available if NPU hardware is present
-    // The FLM executable will be obtained as needed
+#ifdef __linux__
+    const char* beta_flm = std::getenv("LEMONADE_FLM_LINUX_BETA");
+    if (!beta_flm || (std::string(beta_flm) != "1" && std::string(beta_flm) != "true")) {
+        return false;
+    }
+#endif
     return is_npu_available(hardware);
 }
 
