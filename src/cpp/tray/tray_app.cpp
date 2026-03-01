@@ -1015,6 +1015,17 @@ bool TrayApp::is_server_running_on_port(int port) {
     }
 }
 
+// Helper: returns true if the router is reachable via HTTP on the given port.
+// Used to confirm liveness when PID-based checks are unreliable (e.g. Flatpak
+// PID namespace isolation on Linux) or unavailable (macOS fallback).
+static bool http_server_alive(int port) {
+    httplib::Client cli("localhost", port);
+    cli.set_connection_timeout(1);
+    cli.set_read_timeout(1);
+    auto res = cli.Get("/api/version");
+    return res != nullptr;
+}
+
 // Helper: Get server info (returns {pid, port} or {0, 0} if not found)
 std::pair<int, int> TrayApp::get_server_info() {
     // Query OS for listening TCP connections and find lemonade-router.exe
@@ -1128,22 +1139,35 @@ std::pair<int, int> TrayApp::get_server_info() {
             return {pid, port};
         }
 
+        // getpgid() can return -1 for a live process in sandboxed environments
+        // (e.g. Flatpak on Linux) where the PID is namespace-internal and
+        // invisible to us. Confirm via HTTP before treating as stale.
+        if (http_server_alive(port)) {
+            return {pid, port};
+        }
+
         // Stale PID file, remove it
         remove("/tmp/lemonade-router.pid");
     }
 
-#ifdef __APPLE__
-    // macOS port-based fallback (no systemd available)
-    {
-        httplib::Client cli("localhost", server_config_.port);
-        cli.set_connection_timeout(1);
-        auto res = cli.Get("/api/version");
-        if (res) {
-            int found_pid = 0;
+    // Port-based fallback: no PID file, or stale PID with no HTTP response
+    if (http_server_alive(server_config_.port)) {
+        int found_pid = 0;
 
-            // Try lsof first
-            std::string cmd = "lsof -ti tcp:" + std::to_string(server_config_.port) + " 2>/dev/null | head -1";
-            FILE* pipe = popen(cmd.c_str(), "r");
+        // Try lsof first
+        std::string cmd = "lsof -ti tcp:" + std::to_string(server_config_.port) + " 2>/dev/null | head -1";
+        FILE* pipe = popen(cmd.c_str(), "r");
+        if (pipe) {
+            char buf[64];
+            if (fgets(buf, sizeof(buf), pipe)) {
+                found_pid = std::atoi(buf);
+            }
+            pclose(pipe);
+        }
+
+        // Try pgrep as fallback
+        if (found_pid <= 0) {
+            pipe = popen("pgrep -x lemonade-router 2>/dev/null | head -1", "r");
             if (pipe) {
                 char buf[64];
                 if (fgets(buf, sizeof(buf), pipe)) {
@@ -1151,25 +1175,12 @@ std::pair<int, int> TrayApp::get_server_info() {
                 }
                 pclose(pipe);
             }
+        }
 
-            // Try pgrep as fallback
-            if (found_pid <= 0) {
-                pipe = popen("pgrep -x lemonade-router 2>/dev/null | head -1", "r");
-                if (pipe) {
-                    char buf[64];
-                    if (fgets(buf, sizeof(buf), pipe)) {
-                        found_pid = std::atoi(buf);
-                    }
-                    pclose(pipe);
-                }
-            }
-
-            if (found_pid > 0) {
-                return {found_pid, server_config_.port};
-            }
+        if (found_pid > 0) {
+            return {found_pid, server_config_.port};
         }
     }
-#endif
 #endif
 
     return {0, 0};  // Server not found
