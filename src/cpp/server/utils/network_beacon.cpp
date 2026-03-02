@@ -1,6 +1,8 @@
 #include "lemon/utils/network_beacon.h"
 
+#include <cerrno>
 #include <chrono>
+#include <iostream>
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
@@ -133,7 +135,9 @@ std::vector<NetworkInterfaceInfo> NetworkBeacon::getLocalRFC1918Interfaces() {
 
             // Compute broadcast from IP and prefix length
             uint32_t ipAddr = ntohl(sa->sin_addr.s_addr);
-            uint32_t mask = (unicast->OnLinkPrefixLength == 0) ? 0 : (~0U << (32 - unicast->OnLinkPrefixLength));
+            uint32_t prefixLength = static_cast<uint32_t>(unicast->OnLinkPrefixLength);
+            if (prefixLength > 32) prefixLength = 32;
+            uint32_t mask = (prefixLength == 0) ? 0U : (~0U << (32 - prefixLength));
             uint32_t bcast = ipAddr | ~mask;
 
             struct in_addr bcastAddr;
@@ -176,13 +180,6 @@ std::vector<NetworkInterfaceInfo> NetworkBeacon::getLocalRFC1918Interfaces() {
 #endif
 
     return interfaces;
-}
-
-void NetworkBeacon::updatePayloadString(const std::string& str) {
-    // We lock the mutex to ensure the broadcast thread isn't
-    // reading the payload while we modify it.
-    std::lock_guard<std::mutex> lock(_netMtx);
-    _payload = str;
 }
 
 std::string NetworkBeacon::buildStandardPayloadPattern(std::string hostname, std::string hostUrl) {
@@ -228,6 +225,7 @@ void NetworkBeacon::stopBroadcasting() {
 void NetworkBeacon::broadcastThreadLoop() {
     int interval;
     int serverPort;
+    int port;
     std::string hostname = getLocalHostname();
 
     {
@@ -237,12 +235,13 @@ void NetworkBeacon::broadcastThreadLoop() {
         setsockopt(_socket, SOL_SOCKET, SO_BROADCAST, (char*)&broadcastEnable, sizeof(broadcastEnable));
         interval = _broadcastIntervalSeconds;
         serverPort = _serverPort;
+        port = _port;
     }
 
     // Loopback address for same-machine discovery
     sockaddr_in loopbackAddr{};
     loopbackAddr.sin_family = AF_INET;
-    loopbackAddr.sin_port = htons(_port);
+    loopbackAddr.sin_port = htons(port);
     loopbackAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
     while (true)
@@ -256,7 +255,11 @@ void NetworkBeacon::broadcastThreadLoop() {
         auto interfaces = getLocalRFC1918Interfaces();
         for (const auto& iface : interfaces) {
             // Skip loopback interfaces here, handled separately below
-            if (iface.ipAddress.rfind("127.", 0) == 0) continue;
+            struct sockaddr_in loopCheck{};
+            if (inet_pton(AF_INET, iface.ipAddress.c_str(), &loopCheck.sin_addr) == 1) {
+                uint32_t ip = ntohl(loopCheck.sin_addr.s_addr);
+                if ((ip & 0xFF000000u) == 0x7F000000u) continue;
+            }
 
             std::string payload = buildStandardPayloadPattern(
                 hostname,
@@ -265,10 +268,16 @@ void NetworkBeacon::broadcastThreadLoop() {
 
             sockaddr_in destAddr{};
             destAddr.sin_family = AF_INET;
-            destAddr.sin_port = htons(_port);
+            destAddr.sin_port = htons(port);
             inet_pton(AF_INET, iface.broadcastAddress.c_str(), &destAddr.sin_addr);
 
-            sendto(_socket, payload.c_str(), (int)payload.size(), 0, (sockaddr*)&destAddr, sizeof(destAddr));
+            if (sendto(_socket, payload.c_str(), (int)payload.size(), 0, (sockaddr*)&destAddr, sizeof(destAddr)) == -1) {
+#ifdef _WIN32
+                std::cerr << "[NetworkBeacon] sendto failed, error=" << WSAGetLastError() << std::endl;
+#else
+                std::cerr << "[NetworkBeacon] sendto failed, errno=" << errno << std::endl;
+#endif
+            }
         }
 
         // Always send on loopback for same-machine discovery
@@ -276,7 +285,13 @@ void NetworkBeacon::broadcastThreadLoop() {
             hostname,
             "http://127.0.0.1:" + std::to_string(serverPort) + "/api/v1/"
         );
-        sendto(_socket, loopbackPayload.c_str(), (int)loopbackPayload.size(), 0, (sockaddr*)&loopbackAddr, sizeof(loopbackAddr));
+        if (sendto(_socket, loopbackPayload.c_str(), (int)loopbackPayload.size(), 0, (sockaddr*)&loopbackAddr, sizeof(loopbackAddr)) == -1) {
+#ifdef _WIN32
+            std::cerr << "[NetworkBeacon] sendto failed, error=" << WSAGetLastError() << std::endl;
+#else
+            std::cerr << "[NetworkBeacon] sendto failed, errno=" << errno << std::endl;
+#endif
+        }
 
         std::this_thread::sleep_for(std::chrono::seconds(interval));
     }

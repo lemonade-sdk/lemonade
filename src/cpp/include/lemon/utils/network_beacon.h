@@ -34,8 +34,6 @@ public:
     void startBroadcasting(int beaconPort, int serverPort, uint16_t intervalSeconds);
     void stopBroadcasting();
 
-    void updatePayloadString(const std::string& str);
-
 private:
     std::mutex _netMtx;
     std::thread _netThread;
@@ -46,8 +44,6 @@ private:
     SOCKET _socket;
     bool _isInitialized;
     uint16_t _broadcastIntervalSeconds;
-    std::string _payload;
-
     void cleanup();
     void createSocket();
     void broadcastThreadLoop();
