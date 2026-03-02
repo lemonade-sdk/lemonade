@@ -1316,9 +1316,9 @@
     },
     "Z-Image-Turbo": {
         "checkpoints": {
-            "main": "Comfy-Org/z_image:split_files/diffusion_models/z_image_bf16.safetensors",
-            "text_encoder": "Comfy-Org/z_image:split_files/text_encoders/qwen_3_4b.safetensors",
-            "vae": "Comfy-Org/z_image:split_files/vae/ae.safetensors"
+            "main": "Comfy-Org/z_image_turbo:split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+            "text_encoder": "Comfy-Org/z_image_turbo:split_files/text_encoders/qwen_3_4b.safetensors",
+            "vae": "Comfy-Org/z_image_turbo:split_files/vae/ae.safetensors"
         },
         "recipe": "sd-cpp",
         "suggested": true,
