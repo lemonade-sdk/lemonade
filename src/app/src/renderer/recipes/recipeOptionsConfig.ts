@@ -66,6 +66,7 @@ export interface StableDiffusionOptions {
   cfgScale: NumericOption;
   width: NumericOption;
   height: NumericOption;
+  imageRequestTimeout: NumericOption;
   saveOptions: BooleanOption;
 }
 
@@ -206,6 +207,15 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     label: 'Height',
     description: 'Image height in pixels',
   },
+  imageRequestTimeout: {
+    type: 'numeric',
+    default: 0,
+    min: 0,
+    max: 86400,
+    step: 1,
+    label: 'Image Request Timeout',
+    description: 'Overall timeout for image generation requests in seconds (0 disables the timeout)',
+  },
 
   // Common option - save settings
   saveOptions: {
@@ -231,7 +241,7 @@ export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
   'whispercpp': ['whispercppBackend', 'saveOptions'],
   'flm': ['ctxSize', 'saveOptions'],
   'ryzenai-llm': ['ctxSize', 'saveOptions'],
-  'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'saveOptions'],
+  'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'imageRequestTimeout', 'saveOptions'],
 };
 
 /**
@@ -262,6 +272,7 @@ const FRONTEND_TO_API_MAP: Record<string, string> = {
   whispercppBackend: 'whispercpp_backend',
   sdcppBackend: 'sd-cpp_backend',
   cfgScale: 'cfg_scale',
+  imageRequestTimeout: 'image_request_timeout',
   saveOptions: 'save_options',
 };
 
