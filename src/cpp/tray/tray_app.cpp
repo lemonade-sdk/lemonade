@@ -1129,7 +1129,8 @@ std::pair<int, int> TrayApp::get_server_info() {
     }
 
     // Unix: Read from PID file
-    std::ifstream pid_file("/tmp/lemonade-router.pid");
+    std::string pid_file_path = lemon::utils::get_runtime_dir() + "/lemonade-router.pid";
+    std::ifstream pid_file(pid_file_path);
     if (pid_file.is_open()) {
         int pid, port;
         pid_file >> pid >> port;
@@ -1148,7 +1149,7 @@ std::pair<int, int> TrayApp::get_server_info() {
         }
 
         // Stale PID file, remove it
-        remove("/tmp/lemonade-router.pid");
+        remove(pid_file_path.c_str());
     }
 
     // Port-based fallback: no PID file, or stale PID with no HTTP response
@@ -2165,7 +2166,7 @@ int TrayApp::execute_stop_command() {
         if (router_gone && tray_gone && all_children_gone) {
             // Additional check: verify the lock file can be acquired
             // This is a belt-and-suspenders check to ensure the lock is truly released
-            std::string lock_file = "/tmp/lemonade_Server.lock";
+            std::string lock_file = lemon::utils::get_runtime_dir() + "/lemonade_Server.lock";
             int fd = open(lock_file.c_str(), O_RDWR | O_CREAT, 0666);
             if (fd != -1) {
                 if (flock(fd, LOCK_EX | LOCK_NB) == 0) {
@@ -2249,16 +2250,16 @@ bool TrayApp::start_server() {
                 log_file_ = "-";  // Special value: don't redirect stdout/stderr
                 DEBUG_LOG(this, "Detected systemd environment - logging will go to journal");
             } else {
-                log_file_ = "/tmp/lemonade-server.log";
+                log_file_ = lemon::utils::get_runtime_dir() + "/lemonade-server.log";
                 DEBUG_LOG(this, "Using default log file: " << log_file_);
             }
         } else {
             if (unit_name) free(unit_name);
-            log_file_ = "/tmp/lemonade-server.log";
+            log_file_ = lemon::utils::get_runtime_dir() + "/lemonade-server.log";
             DEBUG_LOG(this, "Using default log file: " << log_file_);
         }
         #else
-        log_file_ = "/tmp/lemonade-server.log";
+        log_file_ = lemon::utils::get_runtime_dir() + "/lemonade-server.log";
         DEBUG_LOG(this, "Using default log file: " << log_file_);
         #endif
         #endif
