@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <sys/file.h>
 #include <errno.h>
+#include "lemon/utils/path_utils.h"
 #endif
 
 namespace lemon {
@@ -39,7 +40,7 @@ public:
 
         return false;
 #else
-        std::string lock_file = "/tmp/lemonade_" + app_name + ".lock";
+        std::string lock_file = utils::get_runtime_dir() + "/lemonade_" + app_name + ".lock";
         int fd = open(lock_file.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0666);
 
         // If the file exists and has been created by another user, let's try again in read-only mode

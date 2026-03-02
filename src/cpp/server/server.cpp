@@ -84,14 +84,14 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
             log_file_path_ = "";  // Empty signals journald usage
             std::cout << "[Server] Detected systemd environment - will use journald for log streaming" << std::endl;
         } else {
-            log_file_path_ = "/tmp/lemonade-server.log";
+            log_file_path_ = utils::get_runtime_dir() + "/lemonade-server.log";
         }
     } else {
         if (unit_name) free(unit_name);
-        log_file_path_ = "/tmp/lemonade-server.log";
+        log_file_path_ = utils::get_runtime_dir() + "/lemonade-server.log";
     }
 #else
-    log_file_path_ = "/tmp/lemonade-server.log";
+    log_file_path_ = utils::get_runtime_dir() + "/lemonade-server.log";
 #endif
 #endif
 

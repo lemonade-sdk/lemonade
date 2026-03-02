@@ -755,24 +755,34 @@ jobs:
       - name: Print server logs on failure
         if: failure()
         run: |
+          # Resolve runtime dir: $XDG_RUNTIME_DIR/lemonade when available, else /tmp
+          LEMON_RUNTIME_DIR="${XDG_RUNTIME_DIR:+${XDG_RUNTIME_DIR}/lemonade}"
+          LEMON_RUNTIME_DIR="${LEMON_RUNTIME_DIR:-/tmp}"
+
           echo "=== Server Log (if exists) ==="
-          if [ -f /tmp/lemonade-server.log ]; then
-            echo "Last 100 lines of /tmp/lemonade-server.log:"
-            tail -100 /tmp/lemonade-server.log
+          LOG_FILE="${LEMON_RUNTIME_DIR}/lemonade-server.log"
+          # Also check /tmp as a safety net when XDG was active but log went to fallback
+          if [ ! -f "$LOG_FILE" ]; then LOG_FILE="/tmp/lemonade-server.log"; fi
+          if [ -f "$LOG_FILE" ]; then
+            echo "Last 100 lines of ${LOG_FILE}:"
+            tail -100 "$LOG_FILE"
           else
-            echo "Log file /tmp/lemonade-server.log not found"
+            echo "Log file not found (checked ${LEMON_RUNTIME_DIR} and /tmp)"
           fi
 
           echo ""
           echo "=== Router PID file (if exists) ==="
-          if [ -f /tmp/lemonade-router.pid ]; then
-            cat /tmp/lemonade-router.pid
+          PID_FILE="${LEMON_RUNTIME_DIR}/lemonade-router.pid"
+          if [ ! -f "$PID_FILE" ]; then PID_FILE="/tmp/lemonade-router.pid"; fi
+          if [ -f "$PID_FILE" ]; then
+            cat "$PID_FILE"
           else
             echo "PID file not found"
           fi
 
           echo ""
           echo "=== Lock file status ==="
+          ls -la "${LEMON_RUNTIME_DIR}"/lemonade*.lock 2>/dev/null || true
           ls -la /tmp/lemonade*.lock 2>/dev/null || echo "No lock files found"
 
       - name: Cleanup
