@@ -144,7 +144,8 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
 void WrappedServer::forward_streaming_request(const std::string& endpoint,
                                               const std::string& request_body,
                                               httplib::DataSink& sink,
-                                              bool sse) {
+                                              bool sse,
+                                              long timeout_seconds) {
     if (!is_process_running()) {
         std::string error_msg = "data: {\"error\":{\"message\":\"No model loaded: " + server_name_ +
                                "\",\"type\":\"model_not_loaded\"}}\n\n";
@@ -168,10 +169,10 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                     telemetry_.tokens_per_second = telemetry.tokens_per_second;
                     // Note: decode_token_times is not available from streaming proxy
                 },
-                -1
+                timeout_seconds
             );
         } else {
-            StreamingProxy::forward_byte_stream(url, request_body, sink, -1);
+            StreamingProxy::forward_byte_stream(url, request_body, sink, timeout_seconds);
         }
     } catch (const std::exception& e) {
         // Log the error but don't crash the server

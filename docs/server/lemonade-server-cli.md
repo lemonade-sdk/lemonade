@@ -56,6 +56,7 @@ lemonade-server run MODEL_NAME [options]
 | `--llamacpp-args [args]`       | Default custom arguments to pass to llama-server. Must not conflict with arguments managed by Lemonade (e.g., `-m`, `--port`, `--ctx-size`, `-ngl`). Can be overridden per-model via the `/api/v1/load` endpoint. Example: `--llamacpp-args "--flash-attn on --no-mmap"` | "" |
 | `--extra-models-dir [path]`    | Experimental feature. Secondary directory to scan for LLM GGUF model files. Audio, embedding, reranking, and non-GGUF files are not supported, yet. | None |
 | `--max-loaded-models [N]`  | Maximum number of models to keep loaded per type slot (LLMs, audio, image, etc.). Use `-1` for unlimited. Example: `--max-loaded-models 5` allows up to 5 of each model type simultaneously. | `1` |
+| `--http-timeout [seconds]` | Timeout for HTTP requests between the router and backends in seconds. | 300 |
 | `--save-options` | Only available for the run command. Saves the context size, LlamaCpp backend and custom llama-server arguments as default for running this model. Unspecified values will be saved using their default value. | False |
 
 ### Environment Variables
@@ -75,6 +76,7 @@ These settings can also be provided via environment variables that Lemonade Serv
 | `LEMONADE_MAX_LOADED_MODELS`       | Maximum number of models to keep loaded per type slot (LLMs, audio, image, etc.). Use `-1` for unlimited, or a positive integer. Default: `1`           |
 | `LEMONADE_DISABLE_MODEL_FILTERING` | Set to `1` to disable hardware-based model filtering (e.g., RAM amount, NPU availability) and show all models regardless of system capabilities         |
 | `LEMONADE_ENABLE_DGPU_GTT`         | Set to `1` to include GTT for hardware-based model filtering |
+| `LEMONADE_HTTP_TIMEOUT`            | Timeout for HTTP requests to backends in seconds |
 
 #### Custom Backend Binaries
 
