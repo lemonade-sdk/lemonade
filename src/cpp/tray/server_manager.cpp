@@ -366,8 +366,10 @@ bool ServerManager::spawn_process() {
         }
     }
 
-    // Multi-model support
-    cmdline += " --max-loaded-models " + std::to_string(max_loaded_models_);
+    // Multi-model support (only if not default)
+    if (max_loaded_models_ != 1) {
+        cmdline += " --max-loaded-models " + std::to_string(max_loaded_models_);
+    }
     // Extra models directory
     if (!extra_models_dir_.empty()) {
         cmdline += " --extra-models-dir \"" + extra_models_dir_ + "\"";
@@ -558,13 +560,17 @@ bool ServerManager::spawn_process() {
 
         std::vector<const char*> args;
         args.push_back(server_binary_path_.c_str());
+
         args.push_back("--port");
         std::string port_str = std::to_string(port_);
         args.push_back(port_str.c_str());
         args.push_back("--host");
         args.push_back(host_.c_str());
-        args.push_back("--log-level");
-        args.push_back(log_level_.c_str());
+
+        if (log_level_ != "info") {
+            args.push_back("--log-level");
+            args.push_back(log_level_.c_str());
+        }
 
         std::vector<std::string> recipe_cli = lemon::RecipeOptions::to_cli_options(recipe_options_);
 
@@ -572,10 +578,13 @@ bool ServerManager::spawn_process() {
             args.push_back(arg.c_str());
         }
 
-        // Multi-model support
-        args.push_back("--max-loaded-models");
-        std::string max_models_str = std::to_string(max_loaded_models_);
-        args.push_back(max_models_str.c_str());
+        // Multi-model support (only if not default)
+        std::string max_models_str;
+        if (max_loaded_models_ != 1) {
+            args.push_back("--max-loaded-models");
+            max_models_str = std::to_string(max_loaded_models_);
+            args.push_back(max_models_str.c_str());
+        }
 
         // Extra models directory
         if (!extra_models_dir_.empty()) {
