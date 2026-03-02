@@ -49,6 +49,7 @@ WRAPPED_SERVER_CAPABILITIES = {
         },
         "test_models": {
             "llm": "LFM2-1.2B-GGUF",
+            "llm_metal": "Tiny-Test-Model-GGUF",
             "embedding": "nomic-embed-text-v2-moe-GGUF",
             "reranking": "jina-reranker-v1-tiny-en-GGUF",
         },
