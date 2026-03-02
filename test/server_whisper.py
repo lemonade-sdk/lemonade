@@ -5,19 +5,23 @@ Tests the /audio/transcriptions endpoint (HTTP) and the
 /api/v1/realtime WebSocket endpoint with Whisper models.
 
 Usage:
-    python server_whisper.py
-    python server_whisper.py --backend npu
+    python server_whisper.py --wrapped-server whispercpp --backend cpu
+    python server_whisper.py --wrapped-server whispercpp --backend npu
+    python server_whisper.py --wrapped-server whispercpp --backend vulkan
+    python server_whisper.py --wrapped-server flm
     python server_whisper.py --server-per-test
     python server_whisper.py --server-binary /path/to/lemonade-server
+
+    # Backward compatible (defaults to whispercpp):
+    python server_whisper.py --backend cpu
 """
 
 import asyncio
 import base64
 import os
 import struct
-import sys
-import tempfile
 import time
+import tempfile
 import wave
 
 import requests
@@ -27,9 +31,13 @@ from openai import AsyncOpenAI
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
+    get_config,
+)
+from utils.capabilities import (
+    skip_if_unsupported,
+    get_test_model,
 )
 from utils.test_models import (
-    WHISPER_MODEL,
     TEST_AUDIO_URL,
     PORT,
     TIMEOUT_MODEL_OPERATION,
@@ -37,8 +45,24 @@ from utils.test_models import (
 )
 
 
-# Global variable to store the backend to test
-WHISPER_BACKEND = None
+def _get_whisper_model():
+    """Get the audio test model from capabilities."""
+    return get_test_model("audio")
+
+
+def _get_whispercpp_backend():
+    """Get the whispercpp_backend parameter for load requests, or None for non-whispercpp servers."""
+    config = get_config()
+    wrapped_server = config.get("wrapped_server")
+    backend = config.get("backend")
+
+    # Only pass whispercpp_backend when using the whispercpp wrapped server
+    if wrapped_server == "whispercpp" and backend:
+        return backend
+    # Backward compat: no --wrapped-server but --backend specified -> assume whispercpp
+    if wrapped_server is None and backend:
+        return backend
+    return None
 
 
 class WhisperTests(ServerTestBase):
@@ -83,26 +107,34 @@ class WhisperTests(ServerTestBase):
             f"Test audio file not found at {self._test_audio_path}",
         )
 
+        model = _get_whisper_model()
+        whispercpp_backend = _get_whispercpp_backend()
+
         # Load model with specified backend if provided
-        if WHISPER_BACKEND:
-            print(f"[INFO] Loading model with {WHISPER_BACKEND} backend")
+        if whispercpp_backend:
+            print(f"[INFO] Loading model with {whispercpp_backend} backend")
+            load_payload = {
+                "model_name": model,
+                "whispercpp_backend": whispercpp_backend,
+            }
             load_response = requests.post(
                 f"{self.base_url}/load",
-                json={
-                    "model_name": WHISPER_MODEL,
-                    "whispercpp_backend": WHISPER_BACKEND
-                },
+                json=load_payload,
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
             if load_response.status_code != 200:
-                self.skipTest(f"{WHISPER_BACKEND} backend not available: {load_response.text}")
+                self.skipTest(
+                    f"{whispercpp_backend} backend not available: {load_response.text}"
+                )
                 return
 
         with open(self._test_audio_path, "rb") as audio_file:
             files = {"file": ("test_speech.wav", audio_file, "audio/wav")}
-            data = {"model": WHISPER_MODEL, "response_format": "json"}
+            data = {"model": model, "response_format": "json"}
 
-            backend_msg = f" ({WHISPER_BACKEND} backend)" if WHISPER_BACKEND else ""
+            backend_msg = (
+                f" ({whispercpp_backend} backend)" if whispercpp_backend else ""
+            )
             print(f"[INFO] Sending transcription request{backend_msg}")
             response = requests.post(
                 f"{self.base_url}/audio/transcriptions",
@@ -130,10 +162,12 @@ class WhisperTests(ServerTestBase):
         """Test audio transcription with explicit language parameter."""
         self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
 
+        model = _get_whisper_model()
+
         with open(self._test_audio_path, "rb") as audio_file:
             files = {"file": ("test_speech.wav", audio_file, "audio/wav")}
             data = {
-                "model": WHISPER_MODEL,
+                "model": model,
                 "language": "en",  # Explicitly set English
                 "response_format": "json",
             }
@@ -160,7 +194,8 @@ class WhisperTests(ServerTestBase):
 
     def test_003_transcription_missing_file_error(self):
         """Test error handling when file is missing."""
-        data = {"model": WHISPER_MODEL}
+        model = _get_whisper_model()
+        data = {"model": model}
 
         response = requests.post(
             f"{self.base_url}/audio/transcriptions",
@@ -195,21 +230,25 @@ class WhisperTests(ServerTestBase):
         )
         print(f"[OK] Correctly rejected request without model: {response.status_code}")
 
+    @skip_if_unsupported("rai_cache")
     def test_005_transcription_npu_backend(self):
         """Test NPU backend with automatic .rai cache download."""
+        whispercpp_backend = _get_whispercpp_backend()
+
         # Skip if a different backend was specified via CLI
-        if WHISPER_BACKEND and WHISPER_BACKEND != "npu":
-            self.skipTest(f"Skipping NPU test (testing {WHISPER_BACKEND} backend)")
+        if whispercpp_backend and whispercpp_backend != "npu":
+            self.skipTest(f"Skipping NPU test (testing {whispercpp_backend} backend)")
             return
 
+        model = _get_whisper_model()
         print("\n[INFO] Testing NPU backend (requires NPU hardware)")
 
         # Load model with NPU backend
         load_response = requests.post(
             f"{self.base_url}/load",
             json={
-                "model_name": WHISPER_MODEL,
-                "whispercpp_backend": "npu"
+                "model_name": model,
+                "whispercpp_backend": "npu",
             },
             timeout=TIMEOUT_MODEL_OPERATION,
         )
@@ -224,7 +263,7 @@ class WhisperTests(ServerTestBase):
         # Verify transcription works with NPU backend
         with open(self._test_audio_path, "rb") as audio_file:
             files = {"file": ("test_speech.wav", audio_file, "audio/wav")}
-            data = {"model": WHISPER_MODEL, "response_format": "json"}
+            data = {"model": model, "response_format": "json"}
 
             print(f"[INFO] Testing NPU transcription")
             response = requests.post(
@@ -278,8 +317,7 @@ class WhisperTests(ServerTestBase):
         # Convert stereo to mono
         if n_channels == 2:
             samples = [
-                (samples[i] + samples[i + 1]) // 2
-                for i in range(0, len(samples), 2)
+                (samples[i] + samples[i + 1]) // 2 for i in range(0, len(samples), 2)
             ]
 
         # Resample to 16kHz if needed
@@ -288,8 +326,7 @@ class WhisperTests(ServerTestBase):
             ratio = framerate / target_rate
             new_len = int(len(samples) / ratio)
             samples = [
-                samples[min(int(i * ratio), len(samples) - 1)]
-                for i in range(new_len)
+                samples[min(int(i * ratio), len(samples) - 1)] for i in range(new_len)
             ]
 
         return struct.pack(f"<{len(samples)}h", *samples)
@@ -300,7 +337,9 @@ class WhisperTests(ServerTestBase):
         self.assertEqual(response.status_code, 200, "Failed to fetch /health")
         health = response.json()
         ws_port = health.get("websocket_port")
-        self.assertIsNotNone(ws_port, "Server did not provide websocket_port in /health")
+        self.assertIsNotNone(
+            ws_port, "Server did not provide websocket_port in /health"
+        )
         return ws_port
 
     def _make_openai_client(self):
@@ -312,17 +351,19 @@ class WhisperTests(ServerTestBase):
             websocket_base_url=f"ws://localhost:{ws_port}",
         )
 
+    @skip_if_unsupported("realtime_websocket")
     def test_006_realtime_websocket_connect(self):
         """Test WebSocket connection and session creation via OpenAI SDK."""
         asyncio.run(self._test_006_realtime_websocket_connect())
 
     async def _test_006_realtime_websocket_connect(self):
+        model = _get_whisper_model()
         ws_port = self._get_websocket_port()
         print(f"[INFO] WebSocket port from /health: {ws_port}")
 
         client = self._make_openai_client()
         print(f"[INFO] Connecting via OpenAI SDK (ws://localhost:{ws_port})")
-        async with client.beta.realtime.connect(model=WHISPER_MODEL) as conn:
+        async with client.beta.realtime.connect(model=model) as conn:
             # Should receive session.created on connect
             event = await asyncio.wait_for(conn.recv(), timeout=10)
             self.assertEqual(
@@ -337,7 +378,7 @@ class WhisperTests(ServerTestBase):
             print(f"[OK] Session created: {event.session}")
 
             # Send session update with model
-            await conn.session.update(session={"model": WHISPER_MODEL})
+            await conn.session.update(session={"model": model})
 
             # Should receive session.updated
             event = await asyncio.wait_for(conn.recv(), timeout=10)
@@ -346,18 +387,19 @@ class WhisperTests(ServerTestBase):
                 "session.updated",
                 f"Expected session.updated, got {event.type}",
             )
-            print(f"[OK] Session updated with model {WHISPER_MODEL}")
+            print(f"[OK] Session updated with model {model}")
 
         print("[OK] WebSocket connection lifecycle passed")
 
+    @skip_if_unsupported("realtime_websocket")
     def test_007_realtime_websocket_transcription(self):
         """Test full realtime transcription via OpenAI SDK: send audio chunks, receive transcript."""
         asyncio.run(self._test_007_realtime_websocket_transcription())
 
     async def _test_007_realtime_websocket_transcription(self):
-        self.assertIsNotNone(
-            self._test_audio_path, "Test audio file not downloaded"
-        )
+        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
+
+        model = _get_whisper_model()
 
         # Load audio as PCM16 mono 16kHz
         pcm_data = self._load_pcm16_from_wav()
@@ -371,20 +413,19 @@ class WhisperTests(ServerTestBase):
         # Split into ~256ms chunks (4096 samples * 2 bytes = 8192 bytes)
         chunk_size = 8192
         chunks = [
-            pcm_data[i : i + chunk_size]
-            for i in range(0, len(pcm_data), chunk_size)
+            pcm_data[i : i + chunk_size] for i in range(0, len(pcm_data), chunk_size)
         ]
         print(f"[INFO] Split into {len(chunks)} chunks")
 
         client = self._make_openai_client()
 
-        async with client.beta.realtime.connect(model=WHISPER_MODEL) as conn:
+        async with client.beta.realtime.connect(model=model) as conn:
             # Wait for session created
             event = await asyncio.wait_for(conn.recv(), timeout=10)
             self.assertEqual(event.type, "session.created")
 
             # Configure model
-            await conn.session.update(session={"model": WHISPER_MODEL})
+            await conn.session.update(session={"model": model})
             event = await asyncio.wait_for(conn.recv(), timeout=10)
             self.assertEqual(event.type, "session.updated")
 
@@ -417,9 +458,7 @@ class WhisperTests(ServerTestBase):
                 except asyncio.TimeoutError:
                     break
 
-        self.assertIsNotNone(
-            transcript, "Should receive a transcription result"
-        )
+        self.assertIsNotNone(transcript, "Should receive a transcription result")
         self.assertGreater(
             len(transcript.strip()),
             0,
@@ -429,16 +468,9 @@ class WhisperTests(ServerTestBase):
 
 
 if __name__ == "__main__":
-    # Parse backend argument if provided
-    import argparse
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--backend", type=str, default=None, help="WhisperCpp backend to test (cpu, vulkan, rocm, npu)")
-    args, remaining = parser.parse_known_args()
-    
-    if args.backend:
-        WHISPER_BACKEND = args.backend
-        print(f"[INFO] Testing WhisperCpp with {WHISPER_BACKEND} backend")
-        # Remove --backend from sys.argv so run_server_tests doesn't see it
-        sys.argv = [sys.argv[0]] + remaining
-    
-    run_server_tests(WhisperTests, "WHISPER TRANSCRIPTION TESTS")
+    run_server_tests(
+        WhisperTests,
+        "WHISPER / AUDIO TRANSCRIPTION TESTS",
+        modality="whisper",
+        default_wrapped_server="whispercpp",
+    )

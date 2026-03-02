@@ -610,8 +610,13 @@ jobs:
             runner: [rai300_400, Windows]
           - name: whisper
             script: server_whisper.py
-            extra_args: ""
+            extra_args: "--wrapped-server whispercpp"
             backends: "cpu npu"
+            runner: [rai300_400, Windows]
+          - name: flm-whisper
+            script: server_whisper.py
+            extra_args: "--wrapped-server flm"
+            backends: ""
             runner: [rai300_400, Windows]
           - name: stable-diffusion
             script: server_sd.py
@@ -705,7 +710,7 @@ jobs:
             backends: "cpu rocm"
           - name: whisper
             script: server_whisper.py
-            extra_args: ""
+            extra_args: "--wrapped-server whispercpp"
             backends: "cpu vulkan"
           - name: text-to-speech
             script: server_tts.py

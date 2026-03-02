@@ -773,4 +773,4 @@ class LLMTests(ServerTestBase):
 
 
 if __name__ == "__main__":
-    run_server_tests(LLMTests, "LLM/EMBEDDING/RERANKING TESTS")
+    run_server_tests(LLMTests, "LLM/EMBEDDING/RERANKING TESTS", modality="llm")
