@@ -37,7 +37,7 @@ void StreamingProxy::forward_sse_stream(
             return true; // Continue streaming
         },
         {}, // Empty headers map
-        timeout_seconds
+        timeout_seconds == -1 ? utils::HttpClient::get_default_timeout() : timeout_seconds
     );
 
     if (result.status_code != 200) {
@@ -89,7 +89,7 @@ void StreamingProxy::forward_byte_stream(
             return true; // Continue streaming
         },
         {}, // Empty headers map
-        timeout_seconds
+        timeout_seconds == -1 ? utils::HttpClient::get_default_timeout() : timeout_seconds
     );
 
     if (result.status_code != 200) {

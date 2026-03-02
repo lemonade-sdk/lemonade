@@ -74,7 +74,8 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
     std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
 
     try {
-        auto response = utils::HttpClient::post(url, request.dump(), headers, timeout_seconds);
+        auto response = utils::HttpClient::post(url, request.dump(), headers,
+                                               timeout_seconds == -1 ? utils::HttpClient::get_default_timeout() : timeout_seconds);
 
         if (response.status_code == 200) {
             return json::parse(response.body);
@@ -111,7 +112,8 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
     std::string url = get_base_url() + endpoint;
 
     try {
-        auto response = utils::HttpClient::post_multipart(url, fields, timeout_seconds);
+        auto response = utils::HttpClient::post_multipart(url, fields,
+                                                         timeout_seconds == -1 ? utils::HttpClient::get_default_timeout() : timeout_seconds);
 
         if (response.status_code == 200) {
             return json::parse(response.body);
@@ -166,10 +168,10 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                     telemetry_.tokens_per_second = telemetry.tokens_per_second;
                     // Note: decode_token_times is not available from streaming proxy
                 },
-                INFERENCE_TIMEOUT_SECONDS
+                -1
             );
         } else {
-            StreamingProxy::forward_byte_stream(url, request_body, sink, INFERENCE_TIMEOUT_SECONDS);
+            StreamingProxy::forward_byte_stream(url, request_body, sink, -1);
         }
     } catch (const std::exception& e) {
         // Log the error but don't crash the server

@@ -55,6 +55,15 @@ struct DownloadOptions {
 
 class HttpClient {
 public:
+    // Set default timeout for all requests
+    static void set_default_timeout(long timeout_seconds) {
+        default_timeout_seconds_ = timeout_seconds;
+    }
+
+    static long get_default_timeout() {
+        return default_timeout_seconds_;
+    }
+
     // Simple GET request
     static HttpResponse get(const std::string& url,
                            const std::map<std::string, std::string>& headers = {});
@@ -63,19 +72,19 @@ public:
     static HttpResponse post(const std::string& url,
                             const std::string& body,
                             const std::map<std::string, std::string>& headers = {},
-                            long timeout_seconds = 300);
+                            long timeout_seconds = -1);
 
     // Multipart form data POST request
     static HttpResponse post_multipart(const std::string& url,
                                        const std::vector<MultipartField>& fields,
-                                       long timeout_seconds = 300);
+                                       long timeout_seconds = -1);
 
     // Streaming POST request (calls callback for each chunk as it arrives)
     static HttpResponse post_stream(const std::string& url,
                                    const std::string& body,
                                    StreamCallback stream_callback,
                                    const std::map<std::string, std::string>& headers = {},
-                                   long timeout_seconds = 300);
+                                   long timeout_seconds = -1);
 
     // Download file to disk with automatic retry and resume support
     static DownloadResult download_file(const std::string& url,
@@ -88,6 +97,8 @@ public:
     static bool is_reachable(const std::string& url, int timeout_seconds = 5);
 
 private:
+    static long default_timeout_seconds_;
+
     // Single download attempt, may resume from offset
     static DownloadResult download_attempt(const std::string& url,
                                            const std::string& output_path,

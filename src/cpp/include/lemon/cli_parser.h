@@ -16,6 +16,7 @@ struct ServerConfig {
     json recipe_options = json::object();
     std::string extra_models_dir = "";  // Secondary directory for GGUF model discovery
     bool no_broadcast = false;  // Disable UDP broadcasting on private networks
+    long http_timeout = 300;    // Default HTTP timeout in seconds
 
     // Multi-model support: Max loaded models per type slot
     int max_loaded_models = 1;
