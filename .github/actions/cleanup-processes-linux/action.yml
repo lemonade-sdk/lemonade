@@ -85,11 +85,16 @@ runs:
         fi
 
         # Clean up lock files and PID files
+        # Check both /tmp (fallback) and $XDG_RUNTIME_DIR/lemonade (when set)
         echo ""
         echo "Cleaning up lock and PID files..."
         rm -f /tmp/lemonade*.lock 2>/dev/null || true
         rm -f /tmp/lemonade*.pid 2>/dev/null || true
         rm -f /tmp/lemonade-router.pid 2>/dev/null || true
+        if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+          rm -f "${XDG_RUNTIME_DIR}/lemonade/lemonade"*.lock 2>/dev/null || true
+          rm -f "${XDG_RUNTIME_DIR}/lemonade/lemonade"*.pid 2>/dev/null || true
+        fi
         echo "Lock and PID files cleaned."
 
         # Clean up log files
@@ -98,6 +103,9 @@ runs:
         rm -f /tmp/lemonade*.log 2>/dev/null || true
         rm -f /tmp/lemonade-server*.log 2>/dev/null || true
         rm -f /tmp/lemonade-router*.log 2>/dev/null || true
+        if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+          rm -f "${XDG_RUNTIME_DIR}/lemonade/lemonade"*.log 2>/dev/null || true
+        fi
         echo "Log files cleaned."
 
         # Clean up installation directories

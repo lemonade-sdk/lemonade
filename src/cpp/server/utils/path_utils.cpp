@@ -204,6 +204,37 @@ std::string get_cache_dir() {
     return ".cache/lemonade";
 }
 
+std::string get_runtime_dir() {
+#ifdef _WIN32
+    char temp_path[MAX_PATH];
+    GetTempPathA(MAX_PATH, temp_path);
+    return std::string(temp_path);
+#else
+    // Use $XDG_RUNTIME_DIR/lemonade only when the base directory is set,
+    // actually exists on disk, and is writable by the current process.
+    // This guards against CI environments, containers, or minimal systems
+    // where the variable might be set but the directory is absent/unwritable.
+    const char* xdg = std::getenv("XDG_RUNTIME_DIR");
+    if (xdg && xdg[0] != '\0') {
+        std::error_code ec;
+        fs::path base(xdg);
+        if (fs::is_directory(base, ec) && !ec && access(xdg, W_OK) == 0) {
+            fs::path lemon_dir = base / "lemonade";
+            ec.clear();
+            fs::create_directory(lemon_dir, ec);
+            // Treat "already exists as a directory" as success: some platforms
+            // set ec to EEXIST even though the standard says they shouldn't.
+            std::error_code ec2;
+            if (!ec || fs::is_directory(lemon_dir, ec2)) {
+                return lemon_dir.string();
+            }
+        }
+    }
+    // Fallback: /tmp for CI runners and systems without XDG session support
+    return "/tmp";
+#endif
+}
+
 std::string get_downloaded_bin_dir() {
     // Use cache directory on all platforms for consistent multi-user support
     // This is important for All Users installs on Windows where Program Files is read-only

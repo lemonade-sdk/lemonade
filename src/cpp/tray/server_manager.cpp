@@ -44,6 +44,7 @@
 // Use cpp-httplib for HTTP client (must be after Windows headers on Windows)
 // Note: Not using OpenSSL support since we only connect to localhost
 #include "lemon_tray/server_manager.h"
+#include "lemon/utils/path_utils.h"
 
 namespace lemon_tray {
 
@@ -777,7 +778,7 @@ bool ServerManager::terminate_router_tree() {
 }
 
 void ServerManager::write_pid_file() {
-    std::string pid_file_path = "/tmp/lemonade-router.pid";
+    std::string pid_file_path = lemon::utils::get_runtime_dir() + "/lemonade-router.pid";
     DEBUG_LOG(this, "write_pid_file() called - PID: " << server_pid_ << ", Port: " << port_);
 
     std::ofstream pid_file(pid_file_path);
@@ -793,7 +794,7 @@ void ServerManager::write_pid_file() {
 }
 
 void ServerManager::remove_pid_file() {
-    std::string pid_file_path = "/tmp/lemonade-router.pid";
+    std::string pid_file_path = lemon::utils::get_runtime_dir() + "/lemonade-router.pid";
     if (remove(pid_file_path.c_str()) == 0) {
         DEBUG_LOG(this, "Removed PID file: " << pid_file_path);
     }

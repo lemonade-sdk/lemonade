@@ -40,6 +40,15 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message);
 std::string get_cache_dir();
 
 /**
+ * Returns a per-user runtime directory for lemonade's PID/lock/log files.
+ * On Unix, uses $XDG_RUNTIME_DIR/lemonade when $XDG_RUNTIME_DIR is set,
+ * exists, and is writable (creates the subdirectory if needed).
+ * Falls back to /tmp when XDG_RUNTIME_DIR is unset or unusable (e.g. CI).
+ * On Windows, returns the system temp directory.
+ */
+std::string get_runtime_dir();
+
+/**
  * Get the directory where backend executables will be downloaded.
  * This is in the user's cache directory (~/.cache/lemonade/bin on all platforms)
  * to support All Users installations where the install directory may be read-only.
