@@ -1264,6 +1264,11 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 <td>""</td>
 </tr>
 <tr>
+<td><code>--flm-args [args]</code></td>
+<td>Custom arguments to pass to FLM (FastFlowLM) server. Must not conflict with arguments managed by Lemonade (e.g., <code>--host</code>, <code>--port</code>, <code>--ctx-len</code>). Commonly used for NPU concurrency tuning. Can be overridden per-model via the <code>/api/v1/load</code> endpoint. Example: <code>--flm-args "-s 20 -q 15"</code> (socket connections and queue length).</td>
+<td>""</td>
+</tr>
+<tr>
 <td><code>--extra-models-dir [path]</code></td>
 <td>Experimental feature. Secondary directory to scan for LLM GGUF model files. Audio, embedding, reranking, and non-GGUF files are not supported, yet.</td>
 <td>None</td>
@@ -1317,6 +1322,10 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 <tr>
 <td><code>LEMONADE_LLAMACPP_ARGS</code></td>
 <td>Custom arguments to pass to llama-server</td>
+</tr>
+<tr>
+<td><code>LEMONADE_FLM_ARGS</code></td>
+<td>Custom arguments to pass to FLM server</td>
 </tr>
 <tr>
 <td><code>LEMONADE_EXTRA_MODELS_DIR</code></td>
