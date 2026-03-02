@@ -23,185 +23,138 @@
   <div class="navbar-placeholder"></div>
 
   <!-- Article Content -->
-  <main class="main">
-    <article class="blog-article">
-      <!-- Hero Section -->
+  <main class="main blog-main">
+    <article class="blog-article blog-article-unified blog-article-arcade">
       <div class="hero-section">
         <div class="hero-content">
-          <div class="hero-badge">🎮 New App</div>
-          <h1 class="hero-title">Introducing Lemonade Arcade: <br> AI-Powered Retro Game Creation</h1>
-          <div class="hero-subtitle" id="article-subtitle">
-            <!-- Content will be populated by JavaScript -->
-          </div>
+          <div class="hero-badge">New App</div>
+          <h1 class="hero-title">Introducing Lemonade Arcade: AI-Powered Retro Game Creation</h1>
+          <div class="hero-subtitle" id="article-subtitle"></div>
           <div class="hero-meta">
-            <div class="meta-item">
-              <span>📅</span>
-              <span>August 22, 2025</span>
-            </div>
-            <div class="meta-item">
-              <span>✍️</span>
-              <span>Lemonade Team</span>
-            </div>
-            <div class="meta-item">
-              <span>📖</span>
-              <span>Blog Post</span>
-            </div>
+            <div class="meta-item"><span class="meta-icon">Date:</span>August 22, 2025</div>
+            <div class="meta-item meta-authors"><span class="meta-icon">Author:</span>Lemonade Team</div>
           </div>
         </div>
       </div>
 
-
       <div class="article-content">
-          <div class="section-card">
-            <!-- Hero Image -->
-            <div style="text-align: center; margin: 2rem 0;">
-              <img src="https://github.com/lemonade-sdk/lemonade-arcade/raw/main/img/banner.png" alt="Lemonade Arcade Banner" style="max-width: 100%; height: auto; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
-            </div>
-          <h2 class="section-title">What if your GPU could imagine games?</h2>
-          <p>Meet Lemonade Arcade, a new application that transforms your GPU into a creative engine for retro-style games. Just enter a prompt with your vision and within minutes, a playable Python game pops open.</p>
+        <div class="section-card">
+          <div class="section-header">
+            <span class="section-kicker">Overview</span>
+            <h2 class="section-title">What if your GPU could imagine games?</h2>
+            <p>Meet Lemonade Arcade, a new application that transforms your GPU into a creative engine for retro-style games. Just enter a prompt with your vision and within minutes, a playable Python game pops open.</p>
+          </div>
 
-          <!-- Lemonade Arcade Demo GIF -->
-          <div style="text-align: center; margin: 2rem 0;">
-            <img src="https://github.com/lemonade-sdk/assets/raw/main/arcade/LemonadeArcade_GIF_Smallest.gif" alt="Lemonade Arcade Demo" style="max-width: 100%; height: auto; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+          <div class="blog-media">
+            <img src="https://github.com/lemonade-sdk/lemonade-arcade/raw/main/img/banner.png" alt="Lemonade Arcade Banner">
+          </div>
+
+          <div class="blog-media">
+            <img src="https://github.com/lemonade-sdk/assets/raw/main/arcade/LemonadeArcade_GIF_Smallest.gif" alt="Lemonade Arcade Demo">
           </div>
 
           <div class="feature-grid">
             <div class="feature-item">
-              <div style="display: flex; align-items: center; margin-bottom: 0.75rem;">
-                <span class="feature-icon">🕹️</span>
-                <strong>AI Game Generation</strong>
-              </div>
-              <p style="margin: 0; color: #666;">Input your idea, for example "asteroids with rainbow lasers" and in minutes, get a playable game.</p>
+              <div class="feature-item-head"><span class="feature-icon" aria-hidden="true"></span><span>AI game generation</span></div>
+              <p>Input your idea, such as "asteroids with rainbow lasers," and get a playable game in minutes.</p>
             </div>
             <div class="feature-item">
-              <div style="display: flex; align-items: center; margin-bottom: 0.75rem;">
-                <span class="feature-icon">📚</span>
-                <strong>Game Library & Easy Management</strong>
-              </div>
-              <p style="margin: 0; color: #666;">All creations saved and ready to replay. View source code and original prompts.</p>
+              <div class="feature-item-head"><span class="feature-icon" aria-hidden="true"></span><span>Game library and management</span></div>
+              <p>All creations are saved and ready to replay with source code and original prompts.</p>
             </div>
             <div class="feature-item">
-              <div style="display: flex; align-items: center; margin-bottom: 0.75rem;">
-                <span class="feature-icon">🍋</span>
-                <strong>Lemonade Integration</strong>
-              </div>
-              <p style="margin: 0; color: #666;">Lemonade Server is fully integrated allowing the application to performantly run the LLM locally.</p>
+              <div class="feature-item-head"><span class="feature-icon" aria-hidden="true"></span><span>Lemonade integration</span></div>
+              <p>Lemonade Server is integrated to run the LLM locally with strong performance.</p>
             </div>
           </div>
         </div>
 
         <div class="section-card">
-          <h2 class="section-title">Powered by Qwen3-Coder-30B MoE LLM</h2>
-          <p>Under the hood of Lemonade Arcade is a 30 billion parameter language model, served locally via Lemonade Server. This powerful setup ensures fast, responsive game generation—provided your hardware meets the specifications.</p>
+          <div class="section-header">
+            <span class="section-kicker">Model Stack</span>
+            <h2 class="section-title">Powered by Qwen3-Coder-30B MoE LLM</h2>
+            <p>Under the hood of Lemonade Arcade is a 30 billion parameter language model, served locally via Lemonade Server. This setup provides fast, responsive game generation when your hardware meets the requirements.</p>
+          </div>
 
-          <div class="model-showcase">
+          <div class="model-showcase model-showcase-single">
             <div class="model-card-enhanced">
-              <div class="model-title">
-                Chat-Style Interface
-                <span class="model-badge">Familiar</span>
+              <div class="model-title">Chat-style interface <span class="model-badge">Familiar</span></div>
+              <p>Simple chat interface for describing game ideas.</p>
+              <div class="model-stat-grid">
+                <div class="model-stat-row"><span>Input</span><strong>Natural-language prompts</strong></div>
+                <div class="model-stat-row"><span>Output</span><strong>Playable Python games</strong></div>
               </div>
-              <p style="font-size: 1rem; color: #666; margin-bottom: 1rem;">Simple chat interface for describing your game ideas</p>
-              <div style="background: rgba(255, 224, 102, 0.1); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                  <span style="font-weight: 600;">Input Method:</span>
-                  <span>Natural Language</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                  <span style="font-weight: 600;">Output:</span>
-                  <span>Playable Python Games</span>
-                </div>
-              </div>
-              <p style="font-size: 0.9rem; color: #888; margin: 0;">Just type what you want, and watch it come to life</p>
+              <p>Just type what you want and watch it come to life.</p>
             </div>
           </div>
         </div>
 
         <div class="section-card">
-          <h2 class="section-title">From Prompt to Playable</h2>
-          <p>Lemonade Arcade combines the simplicity of a chat-style interface with the magic of a game emulator. But instead of emulating old games, it generates entirely new ones based on your ideas. Whether you're a developer, hobbyist, or just curious about AI creativity, Lemonade Arcade makes game creation fast, fun, and endlessly remixable.</p>
+          <div class="section-header">
+            <span class="section-kicker">Workflow</span>
+            <h2 class="section-title">From prompt to playable</h2>
+            <p>Lemonade Arcade combines the simplicity of a chat-style interface with the magic of a game emulator. Instead of emulating old games, it generates entirely new ones from your ideas. Whether you're a developer, hobbyist, or just curious about AI creativity, Lemonade Arcade makes game creation fast, fun, and endlessly remixable.</p>
+          </div>
 
-          <h3 style="color: #333; margin: 2rem 0 1rem 0; font-size: 1.3rem;">How It Works</h3>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin: 1.5rem 0;">
-            <div style="background: linear-gradient(135deg, #fff9e6 0%, #fff5cc 100%); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(255, 224, 102, 0.3);">
-              <h4 style="margin: 0 0 1rem 0; color: #e6b800; display: flex; align-items: center; gap: 0.5rem;">
-                <span>💭</span>
-                1. Describe Your Game
-              </h4>
-              <p style="margin: 0; color: #666;">Enter a simple prompt describing the game you want to create.</p>
+          <h3>How it works</h3>
+          <div class="blog-steps-grid">
+            <div class="step-card">
+              <h4>1. Describe your game</h4>
+              <p>Enter a simple prompt describing the game you want to create.</p>
             </div>
-            <div style="background: linear-gradient(135deg, #fff9e6 0%, #fff5cc 100%); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(255, 224, 102, 0.3);">
-              <h4 style="margin: 0 0 1rem 0; color: #e6b800; display: flex; align-items: center; gap: 0.5rem;">
-                <span>⚡</span>
-                2. AI Generation
-              </h4>
-              <p style="margin: 0; color: #666;">The 30B parameter model generates Python game code.</p>
+            <div class="step-card">
+              <h4>2. AI generation</h4>
+              <p>The 30B parameter model generates Python game code.</p>
             </div>
-            <div style="background: linear-gradient(135deg, #fff9e6 0%, #fff5cc 100%); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(255, 224, 102, 0.3);">
-              <h4 style="margin: 0 0 1rem 0; color: #e6b800; display: flex; align-items: center; gap: 0.5rem;">
-                <span>🎮</span>
-                3. Play Instantly
-              </h4>
-              <p style="margin: 0; color: #666;">Your game opens and is ready to play within minutes.</p>
+            <div class="step-card">
+              <h4>3. Play instantly</h4>
+              <p>Your game opens and is ready to play within minutes.</p>
             </div>
           </div>
 
-          <h3 style="color: #333; margin: 2rem 0 1rem 0; font-size: 1.3rem;">Example Prompt</h3>
+          <h3>Example prompt</h3>
           <div class="enhanced-code-block">
             <div class="code-header">
               <span class="code-title">Space Invaders Twist</span>
-              <div class="code-dots">
-                <div class="code-dot red"></div>
-                <div class="code-dot yellow"></div>
-                <div class="code-dot green"></div>
-              </div>
+              <div class="code-dots"><div class="code-dot red"></div><div class="code-dot yellow"></div><div class="code-dot green"></div></div>
             </div>
-            <pre><code>"Make Space Invaders, but I can fly around the whole screen instead of being stuck on the bottom"</code></pre>
+            <pre><code>"space invaders with exploding bullets and rainbow colors"</code></pre>
+          </div>
+
+          <div class="enhanced-code-block">
+            <div class="code-header">
+              <span class="code-title">Pong in 2D</span>
+              <div class="code-dots"><div class="code-dot red"></div><div class="code-dot yellow"></div><div class="code-dot green"></div></div>
             </div>
-          <div style="text-align: center; margin-top: 1rem;">
-            <img src="https://github.com/lemonade-sdk/assets/raw/main/arcade/space_invaders_x.gif?raw=true" alt="Space Invaders X" style="max-width: 100%; border-radius: 12px;" />
+            <pre><code>"Pong, but the paddles can move in 2D"</code></pre>
+          </div>
+
+          <div class="enhanced-code-block">
+            <div class="code-header">
+              <span class="code-title">Flappy Bird Coins</span>
+              <div class="code-dots"><div class="code-dot red"></div><div class="code-dot yellow"></div><div class="code-dot green"></div></div>
+            </div>
+            <pre><code>"Flappy bird with coins for me to collect"</code></pre>
+          </div>
+
+          <div class="blog-media arcade-demo-media">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/arcade/aracde-201-demo-shiny.gif" alt="Space Invaders X">
           </div>
         </div>
 
-        <!-- Call to Action Section -->
-        <div class="cta-section">
+        <div class="cta-separator" aria-hidden="true"></div>
+
+        <div class="cta-section cta-section-minimal">
           <div class="cta-content">
-            <h2 class="cta-title">Ready to Create Games with AI?</h2>
-            <p style="font-size: 1.1rem; margin: 0 0 2rem 0; color: #333;">Transform your ideas into playable games with the power of AI and Lemonade Server!</p>
-
-            <div class="cta-links">
-              <a href="https://github.com/lemonade-sdk/lemonade-arcade/releases/latest/download/LemonadeArcade.exe" class="cta-link" target="_blank" rel="noopener">
-                <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
-                  <span>📥</span>
-                  <span>Download Lemonade Arcade</span>
-                </div>
-              </a>
-              <a href="https://discord.gg/5xXzkMu8Zk" class="cta-link" target="_blank" rel="noopener">
-                <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
-                  <span>💬</span>
-                  <span>Join Discord</span>
-                </div>
-              </a>
-              <a href="https://github.com/lemonade-sdk/lemonade-arcade/" class="cta-link" target="_blank" rel="noopener">
-                <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
-                  <span>🐙</span>
-                  <span>GitHub Repo</span>
-                </div>
-              </a>
-            </div>
-
-            <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(255, 255, 255, 0.8); border-radius: 12px; backdrop-filter: blur(10px);">
-              <p style="margin: 0; font-size: 1.1rem; font-weight: 600; color: #333;">
-                🎮 Experience the future of game creation—where your imagination meets AI power!
-              </p>
+            <h2 class="cta-title">Ready to create games with AI?</h2>
+            <p class="cta-subtitle">Transform your ideas into playable games with the power of AI and Lemonade Server.</p>
+            <div class="cta-actions">
+              <a href="https://github.com/lemonade-sdk/infinity-arcade" class="download-btn" target="_blank" rel="noopener">Download Lemonade Arcade</a>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Back to News Button -->
-      <div class="article-navigation">
-        <a href="index.html" class="back-to-news-btn">← Back to News</a>
-      </div>
     </article>
   </main>
 
