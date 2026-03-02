@@ -2091,12 +2091,13 @@ package managers and create the build directory.</p>
 - Fully functional for server operations and model management
 - Uses permissively licensed dependencies only (MIT, Apache 2.0, BSD, curl license)
 - Clean .deb package with only runtime files (no development headers)
-- PID file system (<code>/tmp/lemonade-router.pid</code>) for reliable process management
+- PID file system for reliable process management
 - Proper graceful shutdown - all child processes cleaned up correctly
 - File locations:
   - Installed binaries: <code>/opt/bin</code>
   - Downloaded backends (llama-server, ryzenai-server): <code>~/.cache/lemonade/bin/</code>
-  - Model downloads: <code>~/.cache/huggingface/</code> (follows HF conventions)</p>
+  - Model downloads: <code>~/.cache/huggingface/</code> (follows HF conventions)
+  - Runtime files (PID, lock, log): <code>$XDG_RUNTIME_DIR/lemonade/</code> when set and writable, otherwise <code>/tmp/</code></p>
 <p><strong>macOS (beta):</strong>
 - Uses native system frameworks (Cocoa, Foundation)
 - ARM Macs use Metal backend by default for llama.cpp
@@ -2470,7 +2471,8 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 - Only the <code>serve</code> command is blocked when a server is running
 - Commands like <code>status</code>, <code>list</code>, <code>pull</code>, <code>delete</code>, <code>stop</code> can run alongside an active server
 - Provides clear error messages with suggestions when blocked
-- <strong>Linux-specific:</strong> Uses PID file (<code>/tmp/lemonade-router.pid</code>) for efficient server discovery and port detection
+- <strong>Linux-specific:</strong> Uses a PID file (<code>lemonade-router.pid</code>) for efficient server discovery and port detection
+  - Stored in <code>$XDG_RUNTIME_DIR/lemonade/</code> when the XDG runtime directory is set and writable, otherwise falls back to <code>/tmp/</code>
   - Avoids port scanning, finds exact server PID and port instantly
   - Validated on read (checks if process is still alive)
   - Automatically cleaned up on graceful shutdown</p>
