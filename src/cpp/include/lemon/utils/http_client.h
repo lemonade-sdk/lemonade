@@ -72,7 +72,6 @@ public:
     static HttpResponse post(const std::string& url,
                             const std::string& body,
                             const std::map<std::string, std::string>& headers = {},
-                            const std::map<std::string, std::string>& headers = {},
                             long timeout_seconds = 300);
 
     // Multipart form data POST request
