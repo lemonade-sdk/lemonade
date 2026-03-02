@@ -105,10 +105,10 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"whispercpp", "npu", {"windows"}, {
         {"amd_npu", {"XDNA2"}},
     }},
-    {"whispercpp", "cpu", {"windows", "linux"}, {
+    {"whispercpp", "vulkan", {"linux"}, {
         {"cpu", {"x86_64"}},
     }},
-    {"whispercpp", "vulkan", {"linux"}, {
+    {"whispercpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
     }},
 
