@@ -727,7 +727,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                 )}
                 <RecordButton
                   disabled={isBusy}
-                  modelsData={modelsData}
                   inputValue={inputValue}
                   setInputValue={setInputValue}
                   textareaRef={inputTextareaRef}
