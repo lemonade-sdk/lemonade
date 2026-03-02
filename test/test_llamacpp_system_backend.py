@@ -171,11 +171,11 @@ class LlamaCppSystemBackendTests(ServerTestBase):
     def test_005_prefer_system_llamacpp_disabled_or_unset(self):
         """
         Verify behavior of LEMONADE_LLAMACPP_PREFER_SYSTEM when llama-server is in PATH.
-        - When unset: system should be default (first in preference order)
+        - When unset: system should NOT be default (explicitly disabled by default)
         - When set to 'false': system should be skipped, fallback to next backend
         """
         self._add_dummy_llama_server_to_path()
-        # Test with unset (default behavior) - system should be default since it's first in preference order
+        # Test with unset (default behavior) - system should NOT be default (it's disabled by default)
         os.environ.pop("LEMONADE_LLAMACPP_PREFER_SYSTEM", None)
         self.stop_server()
         self.start_server()
@@ -184,8 +184,8 @@ class LlamaCppSystemBackendTests(ServerTestBase):
         data = response.json()
         self.assertIn("recipes", data)
         self.assertIn("llamacpp", data["recipes"])
-        # System backend is first in preference order, so when available and unset, it should be default
-        self.assertEqual(data["recipes"]["llamacpp"]["default_backend"], "system")
+        # By default, system backend is not preferred, should fall back to next backend
+        self.assertNotEqual(data["recipes"]["llamacpp"]["default_backend"], "system")
 
         backends = self._get_llamacpp_backends()
         self.assertIn("system", backends)
@@ -193,7 +193,7 @@ class LlamaCppSystemBackendTests(ServerTestBase):
 
         self.stop_server()
 
-        # Test with false - system backend should be explicitly skipped
+        # Test with false - system backend should be explicitly skipped (same as default)
         os.environ["LEMONADE_LLAMACPP_PREFER_SYSTEM"] = "false"
         self.start_server()
 
@@ -201,7 +201,7 @@ class LlamaCppSystemBackendTests(ServerTestBase):
         data = response.json()
         self.assertIn("recipes", data)
         self.assertIn("llamacpp", data["recipes"])
-        # When explicitly set to false, system should not be default
+        # When explicitly set to false, system should not be default (same as unset)
         self.assertNotEqual(data["recipes"]["llamacpp"]["default_backend"], "system")
 
         backends = self._get_llamacpp_backends()

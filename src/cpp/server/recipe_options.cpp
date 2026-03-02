@@ -145,6 +145,7 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
             std::string default_backend = result.backends.empty() ? "" : result.backends[0];
 
             // Check for LEMONADE_LLAMACPP_PREFER_SYSTEM if this is the llamacpp backend option
+            // By default, system backend is not preferred unless explicitly enabled
             if (opt_name == "llamacpp_backend") {
                 const char* prefer_system_env = std::getenv("LEMONADE_LLAMACPP_PREFER_SYSTEM");
                 if (prefer_system_env && std::string(prefer_system_env) == "true") {
@@ -153,6 +154,17 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
                     if (it != result.backends.end()) {
                         // If system is preferred and available, make it the default
                         default_backend = "system";
+                    }
+                } else {
+                    // System backend is not preferred by default, skip it if it's the current default
+                    if (default_backend == "system") {
+                        // Find the next available backend that's not 'system'
+                        for (const auto& backend : result.backends) {
+                            if (backend != "system") {
+                                default_backend = backend;
+                                break;
+                            }
+                        }
                     }
                 }
             }
