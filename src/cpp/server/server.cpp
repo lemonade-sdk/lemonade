@@ -819,7 +819,7 @@ std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
     struct addrinfo hints = {0};
     hints.ai_family = ai_family;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_ADDRCONFIG; // Optional: Only return IPs configured on system
+    hints.ai_flags = 0; // No AI_ADDRCONFIG: allows loopback resolution when offline
 
     struct addrinfo *result = nullptr;
 
@@ -878,6 +878,11 @@ void Server::run() {
 
     std::string ipv4 = resolve_host_to_ip(AF_INET, host_);
     std::string ipv6 = resolve_host_to_ip(AF_INET6, host_);
+
+    if (ipv4.empty() && ipv6.empty()) {
+        throw std::runtime_error("Failed to resolve host '" + host_ + "' to any address. "
+                                 "Cannot start server.");
+    }
 
     running_ = true;
 
