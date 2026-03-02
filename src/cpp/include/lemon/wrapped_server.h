@@ -134,7 +134,7 @@ public:
                                            const std::string& request_body,
                                            httplib::DataSink& sink,
                                            bool sse = true,
-                                           long timeout_seconds = -1);
+                                           long timeout_seconds = INFERENCE_TIMEOUT_SECONDS);
 
     // Get the server address
     std::string get_address() const {
@@ -166,12 +166,12 @@ protected:
     virtual bool wait_for_ready(const std::string& endpoint, long timeout_seconds = 600, long poll_interval_ms = 100);
 
     // Common method to forward requests to the wrapped server (non-streaming)
-    json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = -1);
+    json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = INFERENCE_TIMEOUT_SECONDS);
 
     // Forward multipart form data to the wrapped server
     json forward_multipart_request(const std::string& endpoint,
                                    const std::vector<utils::MultipartField>& fields,
-                                   long timeout_seconds = -1);
+                                   long timeout_seconds = INFERENCE_TIMEOUT_SECONDS);
 
     // Validate that the process is running (platform-agnostic check)
     bool is_process_running() const;
