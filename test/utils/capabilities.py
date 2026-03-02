@@ -134,7 +134,7 @@ CAPABILITIES = {
                 "transcription": True,
                 "transcription_with_language": True,
                 "rai_cache": False,
-                "realtime_websocket": False,
+                "realtime_websocket": True,
             },
             "test_models": {
                 "audio": "whisper-v3-turbo-FLM",
