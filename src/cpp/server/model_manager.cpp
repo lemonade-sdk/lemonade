@@ -701,6 +701,18 @@ static void parse_legacy_mmproj(ModelInfo& info, const json& model_json) {
     }
 }
 
+static void parse_composite_models(ModelInfo& info, const json& model_json) {
+    if (!model_json.contains("composite_models") || !model_json["composite_models"].is_array()) {
+        return;
+    }
+
+    for (const auto& component : model_json["composite_models"]) {
+        if (component.is_string()) {
+            info.composite_models.push_back(component.get<std::string>());
+        }
+    }
+}
+
 void ModelManager::build_cache() {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
@@ -720,6 +732,7 @@ void ModelManager::build_cache() {
         info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
         parse_legacy_mmproj(info, value);
         load_checkpoints(info, value);
+        parse_composite_models(info, value);
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
@@ -755,6 +768,7 @@ void ModelManager::build_cache() {
         info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
         parse_legacy_mmproj(info, value);
         load_checkpoints(info, value);
+        parse_composite_models(info, value);
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", true);
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
@@ -831,7 +845,17 @@ void ModelManager::build_cache() {
 
     int downloaded_count = 0;
     for (auto& [name, info] : all_models) {
-        if (info.recipe == "flm") {
+        if (info.recipe == "macro") {
+            bool all_components_downloaded = !info.composite_models.empty();
+            for (const auto& component_name : info.composite_models) {
+                auto component_it = all_models.find(component_name);
+                if (component_it == all_models.end() || !component_it->second.downloaded) {
+                    all_components_downloaded = false;
+                    break;
+                }
+            }
+            info.downloaded = all_components_downloaded;
+        } else if (info.recipe == "flm") {
             info.downloaded = flm_set.count(info.checkpoint()) > 0;
         } else {
             // Check if model file/dir exists
@@ -917,6 +941,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
     parse_legacy_mmproj(info, *model_json);
     load_checkpoints(info, *model_json);
+    parse_composite_models(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
     info.recipe_options = RecipeOptions(info.recipe, JsonUtils::get_or_default(recipe_options_, model_name, json::object()));
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
@@ -944,7 +969,17 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     }
 
     // Check download status
-    if (info.recipe == "flm") {
+    if (info.recipe == "macro") {
+        bool all_components_downloaded = !info.composite_models.empty();
+        for (const auto& component_name : info.composite_models) {
+            auto component_it = models_cache_.find(component_name);
+            if (component_it == models_cache_.end() || !component_it->second.downloaded) {
+                all_components_downloaded = false;
+                break;
+            }
+        }
+        info.downloaded = all_components_downloaded;
+    } else if (info.recipe == "flm") {
         auto flm_models = get_flm_installed_models();
         info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint()) != flm_models.end();
     } else {
@@ -1294,6 +1329,13 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         const std::string& recipe = info.recipe;
         bool filter_out = false;
         std::string filter_reason;
+
+        // Macro models are UI-level bundles that orchestrate component models.
+        // They should always be visible if present in the registry.
+        if (recipe == "macro") {
+            filtered[name] = info;
+            continue;
+        }
 
         // Check recipe support using the centralized system_info recipes structure
         std::string unsupported_reason = SystemInfo::check_recipe_supported(recipe);
@@ -2465,6 +2507,7 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
     info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
     parse_legacy_mmproj(info, *model_json);
     load_checkpoints(info, *model_json);
+    parse_composite_models(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", false);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");

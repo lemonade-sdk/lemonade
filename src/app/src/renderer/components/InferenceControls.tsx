@@ -12,6 +12,7 @@ interface InferenceControlsProps {
   sendIcon?: React.ReactNode;
   sendTitle?: string;
   leftControls?: React.ReactNode;
+  rightControls?: React.ReactNode;
   modelSelector: React.ReactNode;
 }
 
@@ -33,6 +34,7 @@ const InferenceControls: React.FC<InferenceControlsProps> = ({
   sendIcon,
   sendTitle,
   leftControls,
+  rightControls,
   modelSelector,
 }) => {
   const renderActionButton = () => {
@@ -70,6 +72,7 @@ const InferenceControls: React.FC<InferenceControlsProps> = ({
         {leftControls}
         {modelSelector}
       </div>
+      {rightControls}
       {renderActionButton()}
     </div>
   );

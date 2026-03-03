@@ -1347,6 +1347,34 @@
             "height": 1024
         }
     },
+    "Lemonade Ultra": {
+        "checkpoint": "macro:lemonade-ultra",
+        "recipe": "macro",
+        "suggested": true,
+        "labels": [
+            "experience"
+        ],
+        "composite_models": [
+            "gpt-oss-120b-mxfp-GGUF",
+            "Z-Image-Turbo",
+            "Whisper-Large-v3-Turbo",
+            "kokoro-v1"
+        ]
+    },
+    "Lemonade Medium": {
+        "checkpoint": "macro:lemonade-medium",
+        "recipe": "macro",
+        "suggested": true,
+        "labels": [
+            "experience"
+        ],
+        "composite_models": [
+            "gpt-oss-20b-mxfp4-GGUF",
+            "SDXL-Turbo",
+            "Whisper-Large-v3-Turbo",
+            "kokoro-v1"
+        ]
+    },
     "kokoro-v1": {
         "checkpoint": "mikkoph/kokoro-onnx",
         "recipe": "kokoro",

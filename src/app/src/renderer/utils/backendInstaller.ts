@@ -3,6 +3,7 @@ import { serverFetch } from './serverConfig';
 import { fetchSystemInfoData, Recipes } from './systemData';
 import { ModelsData } from './modelData';
 import { toFrontendOptionName, OPTION_DEFINITIONS } from '../recipes/recipeOptionsConfig';
+import { getCompositeModels, isMacroModel } from './macroModels';
 
 function extractServerErrorMessage(errorText: string, fallback: string): string {
   if (!errorText) return fallback;
@@ -499,111 +500,147 @@ export async function ensureModelReady(
     loadBody?: Record<string, unknown>;
   },
 ): Promise<void> {
-  // Step 1: Check if model is already loaded via health endpoint
-  if (!options?.skipHealthCheck) {
-    try {
-      const healthResponse = await serverFetch('/health');
-      if (healthResponse.ok) {
-        const healthData = await healthResponse.json();
-        const allLoaded: any[] = healthData.all_models_loaded || [];
-        const isLoaded = allLoaded.some(
-          (m: any) => m.model_name === modelName
-        );
-        if (isLoaded) {
-          return; // Model is already loaded — fast path
-        }
-      }
-    } catch {
-      // Health check failed — continue with the full pre-flight
-    }
+  await ensureModelReadyInternal(modelName, modelsData, options, new Set<string>());
+}
+
+async function ensureModelReadyInternal(
+  modelName: string,
+  modelsData: ModelsData,
+  options: {
+    onModelLoading?: () => void;
+    skipHealthCheck?: boolean;
+    loadBody?: Record<string, unknown>;
+  } | undefined,
+  visited: Set<string>,
+): Promise<void> {
+  if (visited.has(modelName)) {
+    throw new Error(`Circular macro model dependency detected for "${modelName}".`);
   }
+  visited.add(modelName);
+  try {
+    const modelInfo = modelsData[modelName];
+    if (isMacroModel(modelInfo)) {
+      options?.onModelLoading?.();
+      const components = getCompositeModels(modelInfo);
+      for (const component of components) {
+        if (!modelsData[component]) {
+          throw new Error(`Macro model "${modelName}" references missing component "${component}".`);
+        }
+        await ensureModelReadyInternal(component, modelsData, {
+          onModelLoading: options?.onModelLoading,
+          skipHealthCheck: options?.skipHealthCheck,
+        }, visited);
+      }
+      return;
+    }
 
-  // Step 2: Signal UI that model loading is in progress
-  options?.onModelLoading?.();
+    // Step 1: Check if model is already loaded via health endpoint
+    if (!options?.skipHealthCheck) {
+      try {
+        const healthResponse = await serverFetch('/health');
+        if (healthResponse.ok) {
+          const healthData = await healthResponse.json();
+          const allLoaded: any[] = healthData.all_models_loaded || [];
+          const isLoaded = allLoaded.some(
+            (m: any) => m.model_name === modelName
+          );
+          if (isLoaded) {
+            return; // Model is already loaded — fast path
+          }
+        }
+      } catch {
+        // Health check failed — continue with the full pre-flight
+      }
+    }
 
-  // Step 3: Ensure backend is installed (fetch fresh system info to avoid stale closure)
-  const modelInfo = modelsData[modelName];
-  const recipe = modelInfo?.recipe;
-  if (recipe) {
-    // If loadBody specifies an explicit backend, install that one specifically
-    const explicitBackend = extractExplicitBackend(options?.loadBody);
-    if (explicitBackend) {
-      const freshSystemData = await fetchSystemInfoData();
-      const freshRecipes = freshSystemData.info?.recipes;
-      const recipeInfo = freshRecipes?.[explicitBackend.recipe];
-      const backendInfo = recipeInfo?.backends?.[explicitBackend.backend];
+    // Step 2: Signal UI that model loading is in progress
+    options?.onModelLoading?.();
 
-      if (backendInfo) {
-        if (backendInfo.state === 'installable' || backendInfo.state === 'update_required') {
-          await installBackend(explicitBackend.recipe, explicitBackend.backend, true);
-        } else if (backendInfo.state === 'unsupported') {
-          const reason = backendInfo.message || 'Backend is not supported on this system.';
-          throw new Error(`${explicitBackend.recipe}:${explicitBackend.backend} is unsupported. ${reason}`);
+    // Step 3: Ensure backend is installed (fetch fresh system info to avoid stale closure)
+    const recipe = modelInfo?.recipe;
+    if (recipe) {
+      // If loadBody specifies an explicit backend, install that one specifically
+      const explicitBackend = extractExplicitBackend(options?.loadBody);
+      if (explicitBackend) {
+        const freshSystemData = await fetchSystemInfoData();
+        const freshRecipes = freshSystemData.info?.recipes;
+        const recipeInfo = freshRecipes?.[explicitBackend.recipe];
+        const backendInfo = recipeInfo?.backends?.[explicitBackend.backend];
+
+        if (backendInfo) {
+          if (backendInfo.state === 'installable' || backendInfo.state === 'update_required') {
+            await installBackend(explicitBackend.recipe, explicitBackend.backend, true);
+          } else if (backendInfo.state === 'unsupported') {
+            const reason = backendInfo.message || 'Backend is not supported on this system.';
+            throw new Error(`${explicitBackend.recipe}:${explicitBackend.backend} is unsupported. ${reason}`);
+          }
+        } else {
+          throw new Error(`Selected backend not found: ${explicitBackend.recipe}:${explicitBackend.backend}`);
         }
       } else {
-        throw new Error(`Selected backend not found: ${explicitBackend.recipe}:${explicitBackend.backend}`);
+        const freshSystemData = await fetchSystemInfoData();
+        const freshRecipes = freshSystemData.info?.recipes;
+        await ensureBackendForRecipe(recipe, freshRecipes);
       }
-    } else {
-      const freshSystemData = await fetchSystemInfoData();
-      const freshRecipes = freshSystemData.info?.recipes;
-      await ensureBackendForRecipe(recipe, freshRecipes);
     }
-  }
 
-  // Step 4: Check if model is downloaded
-  let isDownloaded = modelInfo?.downloaded === true;
-  if (!isDownloaded) {
-    // Re-verify via /models?show_all=true in case modelsData is stale
-    try {
-      const modelsResponse = await serverFetch('/models?show_all=true');
-      if (modelsResponse.ok) {
-        const data = await modelsResponse.json();
-        const modelList = Array.isArray(data) ? data : data.data || [];
-        const freshModel = modelList.find((m: any) => m.id === modelName);
-        isDownloaded = freshModel?.downloaded === true;
-      }
-    } catch {
-      // If re-check fails, proceed — pull will be a no-op if already downloaded
-    }
-  }
-
-  // Step 5: Pull model if not downloaded (shows in Download Manager)
-  if (!isDownloaded) {
-    await pullModel(modelName);
-  }
-
-  // Step 6: Load model into memory (merge loadBody if provided)
-  const loadModel = async () => {
-    const loadPayload: Record<string, unknown> = { model_name: modelName, ...options?.loadBody };
-    const loadResponse = await serverFetch('/load', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(loadPayload),
-    });
-
-    if (!loadResponse.ok) {
-      const errorData = await loadResponse.json().catch(() => ({}));
-      const errorMsg = errorData.error || `Failed to load model: ${loadResponse.statusText}`;
-
-      // If model was invalidated (e.g., corrupted or removed), re-pull and retry once
-      if (errorMsg.includes('model_invalidated') || errorMsg.includes('not found')) {
-        console.warn('Model invalidated, re-pulling and retrying load...');
-        await pullModel(modelName);
-        const retryResponse = await serverFetch('/load', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(loadPayload),
-        });
-        if (!retryResponse.ok) {
-          const retryError = await retryResponse.json().catch(() => ({}));
-          throw new Error(retryError.error || `Failed to load model after re-pull: ${retryResponse.statusText}`);
+    // Step 4: Check if model is downloaded
+    let isDownloaded = modelInfo?.downloaded === true;
+    if (!isDownloaded) {
+      // Re-verify via /models?show_all=true in case modelsData is stale
+      try {
+        const modelsResponse = await serverFetch('/models?show_all=true');
+        if (modelsResponse.ok) {
+          const data = await modelsResponse.json();
+          const modelList = Array.isArray(data) ? data : data.data || [];
+          const freshModel = modelList.find((m: any) => m.id === modelName);
+          isDownloaded = freshModel?.downloaded === true;
         }
-        return;
+      } catch {
+        // If re-check fails, proceed — pull will be a no-op if already downloaded
       }
-
-      throw new Error(errorMsg);
     }
-  };
 
-  await loadModel();
+    // Step 5: Pull model if not downloaded (shows in Download Manager)
+    if (!isDownloaded) {
+      await pullModel(modelName);
+    }
+
+    // Step 6: Load model into memory (merge loadBody if provided)
+    const loadModel = async () => {
+      const loadPayload: Record<string, unknown> = { model_name: modelName, ...options?.loadBody };
+      const loadResponse = await serverFetch('/load', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(loadPayload),
+      });
+
+      if (!loadResponse.ok) {
+        const errorData = await loadResponse.json().catch(() => ({}));
+        const errorMsg = errorData.error || `Failed to load model: ${loadResponse.statusText}`;
+
+        // If model was invalidated (e.g., corrupted or removed), re-pull and retry once
+        if (errorMsg.includes('model_invalidated') || errorMsg.includes('not found')) {
+          console.warn('Model invalidated, re-pulling and retrying load...');
+          await pullModel(modelName);
+          const retryResponse = await serverFetch('/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(loadPayload),
+          });
+          if (!retryResponse.ok) {
+            const retryError = await retryResponse.json().catch(() => ({}));
+            throw new Error(retryError.error || `Failed to load model after re-pull: ${retryResponse.statusText}`);
+          }
+          return;
+        }
+
+        throw new Error(errorMsg);
+      }
+    };
+
+    await loadModel();
+  } finally {
+    visited.delete(modelName);
+  }
 }

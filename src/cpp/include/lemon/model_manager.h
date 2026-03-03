@@ -45,6 +45,7 @@ struct ModelInfo {
     std::map<std::string, std::string> resolved_paths; // Absolute path to model file/directory on disk
     std::string recipe;
     std::vector<std::string> labels;
+    std::vector<std::string> composite_models;
     bool suggested = false;
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available

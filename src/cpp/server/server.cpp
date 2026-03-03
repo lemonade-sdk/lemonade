@@ -408,6 +408,7 @@ void Server::setup_static_files(httplib::Server &web_server) {
                 {"recipe", info.recipe},
                 {"labels", info.labels},
                 {"suggested", info.suggested},
+                {"composite_models", info.composite_models},
                 {"mmproj", info.mmproj()}
             };
 
@@ -1262,6 +1263,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"downloaded", info.downloaded},
         {"suggested", info.suggested},
         {"labels", info.labels},
+        {"composite_models", info.composite_models},
         {"recipe_options", info.recipe_options.to_json()},
     };
 

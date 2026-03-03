@@ -16,6 +16,7 @@ import SettingsPanel from './SettingsPanel';
 import BackendManager from './BackendManager';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
+import { getCompositeModels, isMacroFullyDownloaded, isMacroFullyLoaded, isMacroModel } from './utils/macroModels';
 
 interface ModelManagerProps {
   isVisible: boolean;
@@ -260,8 +261,52 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     return `${size.toFixed(2)} GB`;
   };
 
+  const getModelSize = (modelName: string, info: ModelInfo): number | undefined => {
+    if (!isMacroModel(info)) {
+      return info.size;
+    }
+    const components = getCompositeModels(info);
+    if (components.length === 0) return info.size;
+    const total = components.reduce((sum, component) => sum + (modelsData[component]?.size || 0), 0);
+    return total > 0 ? total : info.size;
+  };
+
+  const getDisplayLabelsForModel = (modelName: string, info: ModelInfo): string[] => {
+    if (isMacroModel(info)) {
+      // Experiences intentionally show a single, consistent legend marker.
+      return ['experience'];
+    }
+    return (info.labels || []).filter((label): label is string => typeof label === 'string' && label.length > 0);
+  };
+
+  const getModelDownloadedState = (modelName: string, info: ModelInfo): boolean => {
+    if (isMacroModel(info)) {
+      return isMacroFullyDownloaded(modelName, modelsData);
+    }
+    return modelsData[modelName]?.downloaded ?? false;
+  };
+
+  const getModelLoadedState = (modelName: string, info: ModelInfo): boolean => {
+    if (isMacroModel(info)) {
+      return isMacroFullyLoaded(modelName, modelsData, loadedModels);
+    }
+    return loadedModels.has(modelName);
+  };
+
+  const getModelLoadingState = (modelName: string, info: ModelInfo): boolean => {
+    if (isMacroModel(info)) {
+      // Macro loading should only reflect an explicit load action for that macro.
+      // Shared component models (e.g. whisper/kokoro) can overlap across macros.
+      // If we derive macro loading from component loading, one macro can appear
+      // as loading when only a different macro was requested.
+      return loadingModels.has(modelName);
+    }
+    return loadingModels.has(modelName);
+  };
+
   const getCategoryLabel = (category: string): string => {
     const labels: { [key: string]: string } = {
+      'experience': 'Experience',
       'reasoning': 'Reasoning',
       'coding': 'Coding',
       'vision': 'Vision',
@@ -279,7 +324,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
 
   const groupedModels = organizationMode === 'recipe' ? groupModelsByRecipe() : groupModelsByCategory();
   const availableModelCount = getFilteredModels().length;
-  const categories = Object.keys(groupedModels).sort();
+  const categories = Object.keys(groupedModels).sort((a, b) => {
+    if (organizationMode === 'recipe') {
+      if (a === 'macro') return -1;
+      if (b === 'macro') return 1;
+      return (RECIPE_DISPLAY_NAMES[a] || a).localeCompare(RECIPE_DISPLAY_NAMES[b] || b);
+    }
+    return getCategoryLabel(a).localeCompare(getCategoryLabel(b));
+  });
 
   // Auto-expand all categories when searching
   const shouldShowCategory = (category: string): boolean => {
@@ -458,6 +510,37 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
         return;
       }
 
+      if (isMacroModel(modelData)) {
+        const components = getCompositeModels(modelData);
+        if (components.length === 0) {
+          showError(`Macro model "${modelName}" has no component models.`);
+          return;
+        }
+
+        setLoadingModels(prev => {
+          const next = new Set(prev);
+          next.add(modelName);
+          components.forEach((component) => next.add(component));
+          return next;
+        });
+        window.dispatchEvent(new CustomEvent('modelLoadStart', { detail: { modelId: modelName } }));
+
+        for (const component of components) {
+          if (!modelsData[component]) {
+            throw new Error(`Missing component model "${component}" for ${modelName}.`);
+          }
+          await ensureModelReady(component, modelsData, {
+            onModelLoading: () => {},
+            skipHealthCheck: false,
+          });
+        }
+
+        await fetchCurrentLoadedModel();
+        window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
+        window.dispatchEvent(new CustomEvent('modelsUpdated'));
+        return;
+      }
+
       setLoadingModels(prev => new Set(prev).add(modelName));
       window.dispatchEvent(new CustomEvent('modelLoadStart', { detail: { modelId: modelName } }));
 
@@ -484,13 +567,40 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
         showError(`Failed to load model: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
 
-      setLoadingModels(prev => { const s = new Set(prev); s.delete(modelName); return s; });
+      setLoadingModels(prev => {
+        const next = new Set(prev);
+        next.delete(modelName);
+        const info = modelsData[modelName];
+        if (isMacroModel(info)) {
+          getCompositeModels(info).forEach((component) => next.delete(component));
+        }
+        return next;
+      });
       window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
     }
   };
 
   const handleUnloadModel = async (modelName: string) => {
     try {
+      const modelData = modelsData[modelName];
+      if (modelData && isMacroModel(modelData)) {
+        const components = getCompositeModels(modelData);
+        for (const component of components) {
+          if (!loadedModels.has(component)) continue;
+          const response = await serverFetch('/unload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_name: component })
+          });
+          if (!response.ok) {
+            throw new Error(`Failed to unload model: ${response.statusText}`);
+          }
+        }
+        await fetchCurrentLoadedModel();
+        window.dispatchEvent(new CustomEvent('modelUnload'));
+        return;
+      }
+
       const response = await serverFetch('/unload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -558,14 +668,21 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       {categories.map(category => (
         <div key={category} className="model-category">
           <div
-            className="model-category-header"
+            className={`model-category-header ${organizationMode === 'recipe' && category === 'macro' ? 'experience-category-header' : ''}`}
             onClick={() => toggleCategory(category)}
           >
             <span className={`category-chevron ${shouldShowCategory(category) ? 'expanded' : ''}`}>
               <ChevronRight size={11} strokeWidth={2.1} />
             </span>
-            <span className="category-label">{getDisplayLabel(category)}</span>
-            <span className="category-count">({groupedModels[category].length})</span>
+            <span className="category-label-wrap">
+              <span className="category-label">{getDisplayLabel(category)}</span>
+              {organizationMode === 'recipe' && category === 'macro' && (
+                <span className="category-subtitle">Chat, image, and voice together</span>
+              )}
+            </span>
+            {!(organizationMode === 'recipe' && category === 'macro') && (
+              <span className="category-count">({groupedModels[category].length})</span>
+            )}
           </div>
 
           {shouldShowCategory(category) && (
@@ -580,10 +697,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                                    setOptionsModel(null);
                                    handleLoadModel(modelName, options);
                                  }}/>
-              {groupedModels[category].map(model => {
-                const isDownloaded = modelsData[model.name]?.downloaded ?? false;
-                const isLoaded = loadedModels.has(model.name);
-                const isLoading = loadingModels.has(model.name);
+              {(category === 'macro'
+                ? [...groupedModels[category]].sort((a, b) => {
+                    const aSize = getModelSize(a.name, a.info) || 0;
+                    const bSize = getModelSize(b.name, b.info) || 0;
+                    if (bSize !== aSize) return bSize - aSize;
+                    return a.name.localeCompare(b.name);
+                  })
+                : groupedModels[category]
+              ).map(model => {
+                const isMacro = isMacroModel(model.info);
+                const isDownloaded = getModelDownloadedState(model.name, model.info);
+                const isLoaded = getModelLoadedState(model.name, model.info);
+                const isLoading = getModelLoadingState(model.name, model.info);
 
                 let statusClass = 'not-downloaded';
                 let statusTitle = 'Not downloaded';
@@ -593,13 +719,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                   statusTitle = 'Loading...';
                 } else if (isLoaded) {
                   statusClass = 'loaded';
-                  statusTitle = 'Model is loaded';
+                  statusTitle = isMacro ? 'Experience is active' : 'Model is loaded';
                 } else if (isDownloaded) {
                   statusClass = 'available';
-                  statusTitle = 'Available locally';
+                  statusTitle = isMacro ? 'All component models are available' : 'Available locally';
                 }
-
                 const isHovered = hoveredModel === model.name;
+                const displayLabels = getDisplayLabelsForModel(model.name, model.info);
                 const renderLoadOptionsButton = () => (
                   <button
                     className="model-action-btn load-btn"
@@ -638,10 +764,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                           ●
                         </span>
                         <span className="model-name">{model.name}</span>
-                        <span className="model-size">{formatSize(model.info.size)}</span>
+                        <span className="model-size">{formatSize(getModelSize(model.name, model.info))}</span>
                         {isHovered && (
                           <span className="model-actions">
-                            {!isDownloaded && (
+                            {!isMacro && !isDownloaded && (
                               <button
                                 className="model-action-btn download-btn"
                                 onClick={(e) => {
@@ -657,7 +783,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                                 </svg>
                               </button>
                             )}
-                            {isDownloaded && !isLoaded && !isLoading && (
+                            {(!isLoaded && !isLoading && (isDownloaded || isMacro)) && (
                               <>
                                 <button
                                   className="model-action-btn load-btn"
@@ -671,25 +797,29 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                                     <polygon points="5 3 19 12 5 21" fill="currentColor" />
                                   </svg>
                                 </button>
-                                <button
-                                  className="model-action-btn delete-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteModel(model.name);
-                                  }}
-                                  title="Delete model"
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <polyline points="3 6 5 6 21 6" />
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                  </svg>
-                                </button>
-                                {renderLoadOptionsButton()}
+                                {!isMacro && (
+                                  <>
+                                    <button
+                                      className="model-action-btn delete-btn"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteModel(model.name);
+                                      }}
+                                      title="Delete model"
+                                    >
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <polyline points="3 6 5 6 21 6" />
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                      </svg>
+                                    </button>
+                                    {renderLoadOptionsButton()}
+                                  </>
+                                )}
                               </>
                             )}
                             {isLoaded && (
                               <>
-                                {renderLoadOptionsButton()}
+                                {!isMacro && renderLoadOptionsButton()}
                                 <button
                                   className="model-action-btn unload-btn"
                                   onClick={(e) => {
@@ -704,27 +834,29 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                                     <path d="M5 20H19" />
                                   </svg>
                                 </button>
-                                <button
-                                  className="model-action-btn delete-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteModel(model.name);
-                                  }}
-                                  title="Delete model"
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <polyline points="3 6 5 6 21 6" />
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                  </svg>
-                                </button>
+                                {!isMacro && (
+                                  <button
+                                    className="model-action-btn delete-btn"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteModel(model.name);
+                                    }}
+                                    title="Delete model"
+                                  >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                      <polyline points="3 6 5 6 21 6" />
+                                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                    </svg>
+                                  </button>
+                                )}
                               </>
                             )}
                           </span>
                         )}
                       </div>
-                      {model.info.labels && model.info.labels.length > 0 && (
+                      {displayLabels.length > 0 && (
                         <span className="model-labels">
-                          {model.info.labels.map(label => (
+                          {displayLabels.map(label => (
                             <span
                               key={label}
                               className={`model-label label-${label}`}

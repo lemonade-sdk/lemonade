@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { Boxes, ChevronLeft, Cpu, Settings as SettingsIcon, Store } from 'lucide-react';
 import TitleBar from './TitleBar';
 import ChatWindow from './ChatWindow';
 import ModelManager, { LeftPanelView } from './ModelManager';
@@ -14,6 +14,7 @@ import '../../styles.css';
 
 const LAYOUT_CONSTANTS = {
   modelManagerMinWidth: 200,
+  sereneRailWidth: 40,
   mainContentMinWidth: 300,
   chatMinWidth: 250,
   dividerWidth: 4,
@@ -28,10 +29,14 @@ const AppContent: React.FC = () => {
   const [externalContentUrl, setExternalContentUrl] = useState<string | null>(null);
   const [isLogsVisible, setIsLogsVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isLogsVisible);
   const [isDownloadManagerVisible, setIsDownloadManagerVisible] = useState(false);
+  const [sereneExperienceActive, setSereneExperienceActive] = useState(false);
+  const [panelRevealInSerene, setPanelRevealInSerene] = useState(false);
   const [modelManagerWidth, setModelManagerWidth] = useState(DEFAULT_LAYOUT_SETTINGS.modelManagerWidth);
   const [chatWidth, setChatWidth] = useState(DEFAULT_LAYOUT_SETTINGS.chatWidth);
   const [logsHeight, setLogsHeight] = useState(DEFAULT_LAYOUT_SETTINGS.logsHeight);
   const [layoutLoaded, setLayoutLoaded] = useState(false);
+  const detachedSereneRailVisible = sereneExperienceActive && !panelRevealInSerene;
+  const effectiveModelManagerVisible = isModelManagerVisible && (!sereneExperienceActive || panelRevealInSerene);
   const isDraggingRef = useRef<'left' | 'right' | 'bottom' | null>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -130,11 +135,36 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const handleSereneModeChanged = (event: Event) => {
+      const customEvent = event as CustomEvent<{ active?: boolean }>;
+      setSereneExperienceActive(!!customEvent.detail?.active);
+    };
+    window.addEventListener('sereneExperienceModeChanged' as any, handleSereneModeChanged);
+    return () => {
+      window.removeEventListener('sereneExperienceModeChanged' as any, handleSereneModeChanged);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sereneExperienceActive) {
+      setPanelRevealInSerene(false);
+    }
+  }, [sereneExperienceActive]);
+
+  useEffect(() => {
+    if (sereneExperienceActive && !isModelManagerVisible) {
+      setPanelRevealInSerene(false);
+    }
+  }, [sereneExperienceActive, isModelManagerVisible]);
+
+  useEffect(() => {
     const hasMainColumn = isLogsVisible;
     let computedMinWidth = 0;
 
-    if (isModelManagerVisible) {
+    if (effectiveModelManagerVisible) {
       computedMinWidth += LAYOUT_CONSTANTS.modelManagerMinWidth;
+    } else if (detachedSereneRailVisible) {
+      computedMinWidth += LAYOUT_CONSTANTS.sereneRailWidth;
     }
 
     if (hasMainColumn) {
@@ -146,7 +176,7 @@ const AppContent: React.FC = () => {
     }
 
     let dividerCount = 0;
-    if (isModelManagerVisible && (hasMainColumn || isChatVisible)) {
+    if (effectiveModelManagerVisible && (hasMainColumn || isChatVisible)) {
       dividerCount += 1;
     }
     if (hasMainColumn && isChatVisible) {
@@ -159,7 +189,7 @@ const AppContent: React.FC = () => {
     if (window?.api?.updateMinWidth) {
       window.api.updateMinWidth(targetWidth);
     }
-  }, [isModelManagerVisible, isLogsVisible, isChatVisible]);
+  }, [effectiveModelManagerVisible, detachedSereneRailVisible, isLogsVisible, isChatVisible]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -183,13 +213,17 @@ const AppContent: React.FC = () => {
         const appLayout = document.querySelector('.app-layout') as HTMLElement | null;
         const appWidth = appLayout?.clientWidth || window.innerWidth;
 
-        const leftPanelWidth = isModelManagerVisible ? modelManagerWidth : 0;
+        const leftPanelWidth = effectiveModelManagerVisible
+          ? modelManagerWidth
+          : detachedSereneRailVisible
+            ? LAYOUT_CONSTANTS.sereneRailWidth
+            : 0;
         const hasCenterColumn = isLogsVisible;
         const minCenterWidth = hasCenterColumn ? 300 : 0; // keep in sync with CSS min-width
 
         // Account for vertical dividers (each 4px wide)
         const dividerCount =
-          ((isModelManagerVisible && (hasCenterColumn || isChatVisible)) ? 1 : 0) +
+          ((effectiveModelManagerVisible && (hasCenterColumn || isChatVisible)) ? 1 : 0) +
           ((hasCenterColumn && isChatVisible) ? 1 : 0);
         const dividerSpace = dividerCount * 4;
 
@@ -227,7 +261,8 @@ const AppContent: React.FC = () => {
   }, [
     chatWidth,
     isChatVisible,
-    isModelManagerVisible,
+    effectiveModelManagerVisible,
+    detachedSereneRailVisible,
     isLogsVisible,
     modelManagerWidth,
     logsHeight,
@@ -253,6 +288,12 @@ const AppContent: React.FC = () => {
     setIsDownloadManagerVisible(false);
   }, []);
 
+  const openPanelFromSereneRail = (view: LeftPanelView) => {
+    setLeftPanelView(view);
+    setIsModelManagerVisible(true);
+    setPanelRevealInSerene(true);
+  };
+
   return (
     <ModelsProvider>
       <TitleBar
@@ -270,7 +311,24 @@ const AppContent: React.FC = () => {
         onClose={handleCloseDownloadManager}
       />
       <div className="app-layout">
-        {isModelManagerVisible && (
+        {detachedSereneRailVisible && (
+          <div className="serene-left-rail">
+            <button className={`left-panel-mode-btn ${leftPanelView === 'models' ? 'active' : ''}`} onClick={() => openPanelFromSereneRail('models')} title="Models" aria-label="Models">
+              <Boxes size={14} strokeWidth={1.9} />
+            </button>
+            <button className={`left-panel-mode-btn ${leftPanelView === 'backends' ? 'active' : ''}`} onClick={() => openPanelFromSereneRail('backends')} title="Backends" aria-label="Backends">
+              <Cpu size={14} strokeWidth={1.9} />
+            </button>
+            <button className={`left-panel-mode-btn ${leftPanelView === 'marketplace' ? 'active' : ''}`} onClick={() => openPanelFromSereneRail('marketplace')} title="Marketplace" aria-label="Marketplace">
+              <Store size={14} strokeWidth={1.9} />
+            </button>
+            <div className="left-panel-mode-rail-spacer" />
+            <button className={`left-panel-mode-btn ${leftPanelView === 'settings' ? 'active' : ''}`} onClick={() => openPanelFromSereneRail('settings')} title="Settings" aria-label="Settings">
+              <SettingsIcon size={14} strokeWidth={1.9} />
+            </button>
+          </div>
+        )}
+        {effectiveModelManagerVisible && (
           <>
             <ModelManager
               isVisible={true}

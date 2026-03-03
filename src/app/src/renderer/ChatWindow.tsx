@@ -13,6 +13,7 @@ import TranscriptionPanel from './components/panels/TranscriptionPanel';
 import ImageGenerationPanel from './components/panels/ImageGenerationPanel';
 import TTSPanel from './components/panels/TTSPanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
+import { isMacroModel } from './utils/macroModels';
 
 interface ChatWindowProps {
   isVisible: boolean;
@@ -40,6 +41,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     if (!selectedModel) return 'llm';
     const info = modelsData[selectedModel];
     if (!info) return 'llm';
+    if (isMacroModel(info)) return 'llm';
     if (info.labels?.includes('embeddings') || (info as any)?.embedding) return 'embedding';
     if (info.labels?.includes('reranking') || (info as any)?.reranking) return 'reranking';
     if (info.labels?.includes('transcription')) return 'transcription';
@@ -63,13 +65,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     return modelsData[selectedModel]?.labels?.includes('vision') || false;
   }, [selectedModel, modelsData]);
 
+  const isMacroSelected = useMemo(() => {
+    if (!selectedModel) return false;
+    return isMacroModel(modelsData[selectedModel]);
+  }, [selectedModel, modelsData]);
+
   const fetchLoadedModel = async () => {
     try {
       const response = await serverFetch('/health');
       const data = await response.json();
       if (data?.model_loaded) {
         setCurrentLoadedModel(data.model_loaded);
-        if (!userHasSelectedModel) {
+        const selectedInfo = selectedModel ? modelsData[selectedModel] : undefined;
+        const keepMacroSelection = !!selectedInfo && isMacroModel(selectedInfo);
+        if (!userHasSelectedModel && !keepMacroSelection) {
           setSelectedModel(data.model_loaded);
         }
       } else {
@@ -135,11 +144,37 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
         unsubscribeSettings();
       }
     };
-  }, [setSelectedModel, setUserHasSelectedModel]);
+  }, [setSelectedModel, setUserHasSelectedModel, selectedModel, modelsData, userHasSelectedModel]);
 
   const handleNewChat = () => {
     inference.reset();
     setResetKey(k => k + 1);
+  };
+
+  const handleUnloadExperience = async () => {
+    const modelToUnload = currentLoadedModel || selectedModel;
+    if (!modelToUnload || inference.isBusy) return;
+
+    try {
+      const response = await serverFetch('/unload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: modelToUnload }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to unload model: ${response.statusText}`);
+      }
+
+      inference.reset();
+      setCurrentLoadedModel(null);
+      setSelectedModel('');
+      setUserHasSelectedModel(false);
+      window.dispatchEvent(new CustomEvent('modelUnload'));
+    } catch (error) {
+      console.error('Failed to unload serene experience model:', error);
+      showError(`Failed to unload model: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
   if (!isVisible) return null;
@@ -161,29 +196,79 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     showError,
     appSettings,
   };
+  const sereneExperienceMode = activeModelType === 'llm' && isMacroSelected;
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('sereneExperienceModeChanged', { detail: { active: sereneExperienceMode } }));
+    return () => {
+      window.dispatchEvent(new CustomEvent('sereneExperienceModeChanged', { detail: { active: false } }));
+    };
+  }, [sereneExperienceMode]);
 
   return (
-    <div className={`chat-window ${activeModelType === 'llm' ? 'chat-window-llm' : ''}`} style={width ? { width: `${width}px` } : undefined}>
+    <div
+      className={`chat-window ${activeModelType === 'llm' ? 'chat-window-llm' : ''} ${isMacroSelected ? 'chat-window-experience' : ''} ${sereneExperienceMode ? 'chat-window-serene' : ''}`}
+      style={width ? { width: `${width}px` } : undefined}
+    >
       <ToastContainer toasts={toasts} onRemove={removeToast} />
-      <div className="chat-header">
-        <h3>{headerTitle}</h3>
-        <button
-          className="new-chat-button"
-          onClick={handleNewChat}
-          disabled={inference.isBusy}
-          title={activeModelType === 'llm' ? 'Start a new chat' : 'Clear'}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M21 3V8M21 8H16M21 8L18 5.29168C16.4077 3.86656 14.3051 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21C16.2832 21 19.8675 18.008 20.777 14"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      </div>
+      {sereneExperienceMode && selectedModel && (
+        <div className="serene-chat-topbar">
+          <div className="serene-chat-topbar-left">
+            <div className="serene-chat-model-name">{selectedModel}</div>
+            <button
+              className="model-action-btn unload-btn active-model-eject-button serene-unload-icon-button"
+              onClick={handleUnloadExperience}
+              disabled={inference.isBusy}
+              title="Eject experience"
+              aria-label="Unload experience"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 11L12 8L15 11" />
+                <path d="M12 8V16" />
+                <path d="M5 20H19" />
+              </svg>
+            </button>
+          </div>
+          <button
+            className="serene-refresh-button"
+            onClick={handleNewChat}
+            disabled={inference.isBusy}
+            title="Start a new chat"
+            aria-label="Start a new chat"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M21 3V8M21 8H16M21 8L18 5.29168C16.4077 3.86656 14.3051 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21C16.2832 21 19.8675 18.008 20.777 14"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+      )}
+      {!sereneExperienceMode && (
+        <div className="chat-header">
+          <h3>{headerTitle}</h3>
+          {isMacroSelected && <span className="chat-experience-badge">Lemonade Experience</span>}
+          <button
+            className="new-chat-button"
+            onClick={handleNewChat}
+            disabled={inference.isBusy}
+            title={activeModelType === 'llm' ? 'Start a new chat' : 'Clear'}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M21 3V8M21 8H16M21 8L18 5.29168C16.4077 3.86656 14.3051 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21C16.2832 21 19.8675 18.008 20.777 14"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {activeModelType === 'embedding' && <EmbeddingPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'reranking' && <RerankingPanel key={resetKey} {...sharedProps} />}
@@ -197,6 +282,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
           isVision={isVision}
           currentLoadedModel={currentLoadedModel}
           setCurrentLoadedModel={setCurrentLoadedModel}
+          sereneMode={sereneExperienceMode}
         />
       )}
     </div>
