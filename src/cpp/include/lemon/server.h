@@ -30,7 +30,7 @@ public:
            int max_loaded_models,
            const std::string& extra_models_dir,
            bool no_broadcast,
-           long http_timeout = 300);
+           long http_timeout);
 
     ~Server();
 
