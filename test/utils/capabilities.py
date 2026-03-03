@@ -107,7 +107,7 @@ CAPABILITIES = {
                 "reranking": False,
                 "tool_calls": False,
                 "tool_calls_streaming": False,
-                "multi_model": True,
+                "multi_model": False,
                 "stop_parameter": False,
                 "echo_parameter": False,
                 "generation_parameters": False,
