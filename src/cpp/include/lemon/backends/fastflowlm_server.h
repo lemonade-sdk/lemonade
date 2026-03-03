@@ -79,7 +79,7 @@ public:
                                    const std::string& request_body,
                                    httplib::DataSink& sink,
                                    bool sse = true,
-                                   long timeout_seconds = 0) override;
+                                   long timeout_seconds) override;
 
 private:
     // Static helpers for install logic (no instance state needed)

@@ -60,7 +60,7 @@ public:
     virtual ~WrappedServer() = default;
 
     // Timeout for inference requests (0 = infinite)
-    static constexpr long INFERENCE_TIMEOUT_SECONDS = 300;
+    static constexpr long INFERENCE_TIMEOUT_SECONDS;
 
     // Set log level
     void set_log_level(const std::string& log_level) { log_level_ = log_level; }
