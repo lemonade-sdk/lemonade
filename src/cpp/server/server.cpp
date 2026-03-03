@@ -932,21 +932,23 @@ void Server::run() {
         });
     }
 
-    //For now we will use getLocalHostname to get the machines hostname.
-    //This allows external devices to not have to do a rDNS lookup.
-    bool RFC1918_IP = udp_beacon_.isRFC1918(ipv4);
-    if(RFC1918_IP && !no_broadcast_) {
+    //Enumerate all RFC1918 interfaces to determine if we can broadcast.
+    //The beacon will send per-interface with the correct IP in the payload.
+    auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
+    if(!rfc1918Interfaces.empty() && !no_broadcast_) {
+        std::cout << "[Server] [Net Broadcast] Broadcasting on " << rfc1918Interfaces.size()
+                  << " RFC1918 interface(s):";
+        for (const auto& iface : rfc1918Interfaces) {
+            std::cout << " " << iface.ipAddress << " (bcast " << iface.broadcastAddress << ")";
+        }
+        std::cout << std::endl;
         udp_beacon_.startBroadcasting(
             8000, //Broadcast port best to not make it adjustable, so clients dont have to scan.
-            udp_beacon_.buildStandardPayloadPattern
-            (
-                udp_beacon_.getLocalHostname(),
-                "http://" + ipv4 + ":" + std::to_string(port_) + "/api/v1/"
-            ),
+            port_,
             2
         );
     }
-    else if (RFC1918_IP && no_broadcast_) {
+    else if (!rfc1918Interfaces.empty() && no_broadcast_) {
         std::cout << "[Server] [Net Broadcast] Broadcasting disabled by --no-broadcast option" << std::endl;
     }
     else {
