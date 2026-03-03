@@ -57,8 +57,18 @@ lemonade-server run MODEL_NAME [options]
 | `--flm-args [args]`            | Custom arguments to pass to FLM (FastFlowLM) server. Must not conflict with arguments managed by Lemonade (e.g., `--host`, `--port`, `--ctx-len`). Commonly used for NPU concurrency tuning. Can be overridden per-model via the `/api/v1/load` endpoint. Example: `--flm-args "-s 20 -q 15"` (socket connections and queue length). | "" |
 | `--extra-models-dir [path]`    | Experimental feature. Secondary directory to scan for LLM GGUF model files. Audio, embedding, reranking, and non-GGUF files are not supported, yet. | None |
 | `--max-loaded-models [N]`  | Maximum number of models to keep loaded per type slot (LLMs, audio, image, etc.). Use `-1` for unlimited. Example: `--max-loaded-models 5` allows up to 5 of each model type simultaneously. | `1` |
-| `--http-timeout [seconds]` | Timeout for HTTP requests between the router and backends in seconds. | 300 |
+| `--http-timeout [seconds]` | Global default timeout for HTTP requests (including model downloads and backend communication). This value sets the `CURLOPT_TIMEOUT` in the underlying HTTP client. | 300 |
 | `--save-options` | Only available for the run command. Saves the context size, LlamaCpp backend and custom llama-server arguments as default for running this model. Unspecified values will be saved using their default value. | False |
+
+### Timeout Configuration
+
+Lemonade uses several timeout values to ensure stability:
+
+| Timeout Name | Controlled By | Default | Description |
+|--------------|---------------|---------|-------------|
+| **Global HTTP Timeout** | `--http-timeout` | 300s | Sets the base timeout for all `curl` operations, including model downloads and management tasks. |
+| **Inference Timeout** | Internal constant | 300s | Applied specifically to inference requests (chat, completion) to backends. This is a safety margin for long-running generations. |
+| **Readiness Timeout** | Internal constant | 600s | Maximum time the router waits for a backend server to become healthy after starting it. |
 
 ### Environment Variables
 
