@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Boxes, ChevronLeft, Cpu, Settings as SettingsIcon, Store } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import TitleBar from './TitleBar';
 import ChatWindow from './ChatWindow';
 import ModelManager, { LeftPanelView } from './ModelManager';
@@ -29,14 +29,10 @@ const AppContent: React.FC = () => {
   const [externalContentUrl, setExternalContentUrl] = useState<string | null>(null);
   const [isLogsVisible, setIsLogsVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isLogsVisible);
   const [isDownloadManagerVisible, setIsDownloadManagerVisible] = useState(false);
-  const [experienceModeActive, setExperienceModeActive] = useState(false);
-  const [panelRevealInExperience, setPanelRevealInExperience] = useState(false);
   const [modelManagerWidth, setModelManagerWidth] = useState(DEFAULT_LAYOUT_SETTINGS.modelManagerWidth);
   const [chatWidth, setChatWidth] = useState(DEFAULT_LAYOUT_SETTINGS.chatWidth);
   const [logsHeight, setLogsHeight] = useState(DEFAULT_LAYOUT_SETTINGS.logsHeight);
   const [layoutLoaded, setLayoutLoaded] = useState(false);
-  const detachedExperienceRailVisible = experienceModeActive && !panelRevealInExperience;
-  const effectiveModelManagerVisible = isModelManagerVisible && (!experienceModeActive || panelRevealInExperience);
   const isDraggingRef = useRef<'left' | 'right' | 'bottom' | null>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -137,7 +133,9 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     const handleExperienceModeChanged = (event: Event) => {
       const customEvent = event as CustomEvent<{ active?: boolean }>;
-      setExperienceModeActive(!!customEvent.detail?.active);
+      if (customEvent.detail?.active) {
+        setIsModelManagerVisible(false);
+      }
     };
     window.addEventListener('experienceModeChanged' as any, handleExperienceModeChanged);
     return () => {
@@ -146,25 +144,11 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!experienceModeActive) {
-      setPanelRevealInExperience(false);
-    }
-  }, [experienceModeActive]);
-
-  useEffect(() => {
-    if (experienceModeActive && !isModelManagerVisible) {
-      setPanelRevealInExperience(false);
-    }
-  }, [experienceModeActive, isModelManagerVisible]);
-
-  useEffect(() => {
     const hasMainColumn = isLogsVisible;
-    let computedMinWidth = 0;
+    let computedMinWidth = LAYOUT_CONSTANTS.experienceRailWidth; // Rail always visible
 
-    if (effectiveModelManagerVisible) {
+    if (isModelManagerVisible) {
       computedMinWidth += LAYOUT_CONSTANTS.modelManagerMinWidth;
-    } else if (detachedExperienceRailVisible) {
-      computedMinWidth += LAYOUT_CONSTANTS.experienceRailWidth;
     }
 
     if (hasMainColumn) {
@@ -176,7 +160,7 @@ const AppContent: React.FC = () => {
     }
 
     let dividerCount = 0;
-    if (effectiveModelManagerVisible && (hasMainColumn || isChatVisible)) {
+    if (isModelManagerVisible && (hasMainColumn || isChatVisible)) {
       dividerCount += 1;
     }
     if (hasMainColumn && isChatVisible) {
@@ -189,7 +173,7 @@ const AppContent: React.FC = () => {
     if (window?.api?.updateMinWidth) {
       window.api.updateMinWidth(targetWidth);
     }
-  }, [effectiveModelManagerVisible, detachedExperienceRailVisible, isLogsVisible, isChatVisible]);
+  }, [isModelManagerVisible, isLogsVisible, isChatVisible]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -213,17 +197,15 @@ const AppContent: React.FC = () => {
         const appLayout = document.querySelector('.app-layout') as HTMLElement | null;
         const appWidth = appLayout?.clientWidth || window.innerWidth;
 
-        const leftPanelWidth = effectiveModelManagerVisible
-          ? modelManagerWidth
-          : detachedExperienceRailVisible
-            ? LAYOUT_CONSTANTS.experienceRailWidth
-            : 0;
+        const leftPanelWidth = isModelManagerVisible
+          ? modelManagerWidth + LAYOUT_CONSTANTS.experienceRailWidth
+          : LAYOUT_CONSTANTS.experienceRailWidth;
         const hasCenterColumn = isLogsVisible;
         const minCenterWidth = hasCenterColumn ? 300 : 0; // keep in sync with CSS min-width
 
         // Account for vertical dividers (each 4px wide)
         const dividerCount =
-          ((effectiveModelManagerVisible && (hasCenterColumn || isChatVisible)) ? 1 : 0) +
+          ((isModelManagerVisible && (hasCenterColumn || isChatVisible)) ? 1 : 0) +
           ((hasCenterColumn && isChatVisible) ? 1 : 0);
         const dividerSpace = dividerCount * 4;
 
@@ -261,8 +243,7 @@ const AppContent: React.FC = () => {
   }, [
     chatWidth,
     isChatVisible,
-    effectiveModelManagerVisible,
-    detachedExperienceRailVisible,
+    isModelManagerVisible,
     isLogsVisible,
     modelManagerWidth,
     logsHeight,
@@ -288,12 +269,6 @@ const AppContent: React.FC = () => {
     setIsDownloadManagerVisible(false);
   }, []);
 
-  const openPanelFromExperienceRail = (view: LeftPanelView) => {
-    setLeftPanelView(view);
-    setIsModelManagerVisible(true);
-    setPanelRevealInExperience(true);
-  };
-
   return (
     <ModelsProvider>
       <TitleBar
@@ -311,35 +286,15 @@ const AppContent: React.FC = () => {
         onClose={handleCloseDownloadManager}
       />
       <div className="app-layout">
-        {detachedExperienceRailVisible && (
-          <div className="experience-left-rail">
-            <button className={`left-panel-mode-btn ${leftPanelView === 'models' ? 'active' : ''}`} onClick={() => openPanelFromExperienceRail('models')} title="Models" aria-label="Models">
-              <Boxes size={14} strokeWidth={1.9} />
-            </button>
-            <button className={`left-panel-mode-btn ${leftPanelView === 'backends' ? 'active' : ''}`} onClick={() => openPanelFromExperienceRail('backends')} title="Backends" aria-label="Backends">
-              <Cpu size={14} strokeWidth={1.9} />
-            </button>
-            <button className={`left-panel-mode-btn ${leftPanelView === 'marketplace' ? 'active' : ''}`} onClick={() => openPanelFromExperienceRail('marketplace')} title="Marketplace" aria-label="Marketplace">
-              <Store size={14} strokeWidth={1.9} />
-            </button>
-            <div className="left-panel-mode-rail-spacer" />
-            <button className={`left-panel-mode-btn ${leftPanelView === 'settings' ? 'active' : ''}`} onClick={() => openPanelFromExperienceRail('settings')} title="Settings" aria-label="Settings">
-              <SettingsIcon size={14} strokeWidth={1.9} />
-            </button>
-          </div>
-        )}
-        {effectiveModelManagerVisible && (
-          <>
-            <ModelManager
-              isVisible={true}
-              width={modelManagerWidth}
-              currentView={leftPanelView}
-              onViewChange={setLeftPanelView}
-            />
-            {(isLogsVisible || isChatVisible) && (
-              <ResizableDivider onMouseDown={handleLeftDividerMouseDown}/>
-            )}
-          </>
+        <ModelManager
+          isContentVisible={isModelManagerVisible}
+          onContentVisibilityChange={setIsModelManagerVisible}
+          width={isModelManagerVisible ? modelManagerWidth : LAYOUT_CONSTANTS.experienceRailWidth}
+          currentView={leftPanelView}
+          onViewChange={setLeftPanelView}
+        />
+        {isModelManagerVisible && (isLogsVisible || isChatVisible) && (
+          <ResizableDivider onMouseDown={handleLeftDividerMouseDown}/>
         )}
         {isLogsVisible && (
           <div className="main-content-container">

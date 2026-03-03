@@ -797,8 +797,6 @@ footer {
     height: 100%;
     flex-shrink: 0;
     flex-grow: 0;
-    min-width: 200px;
-    max-width: 500px;
 }
 
 .model-manager.experience-mode {
@@ -824,18 +822,6 @@ footer {
     padding: 10px 4px;
     flex-shrink: 0;
     position: relative;
-}
-
-.experience-left-rail {
-    width: 40px;
-    border-right: 1px solid #1a1a1a;
-    background: linear-gradient(180deg, #090909 0%, #070707 100%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 4px;
-    flex-shrink: 0;
 }
 
 .left-panel-mode-rail-spacer {

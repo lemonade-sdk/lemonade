@@ -20,7 +20,8 @@ import { EjectIcon } from './components/Icons';
 import { getExperienceComponents, isExperienceFullyDownloaded, isExperienceFullyLoaded, isExperienceModel, isModelEffectivelyDownloaded } from './utils/experienceModels';
 
 interface ModelManagerProps {
-  isVisible: boolean;
+  isContentVisible: boolean;
+  onContentVisibilityChange: (visible: boolean) => void;
   width?: number;
   currentView: LeftPanelView;
   onViewChange: (view: LeftPanelView) => void;
@@ -39,7 +40,7 @@ const createEmptyModelForm = () => ({
   reranking: false,
 });
 
-const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, currentView, onViewChange }) => {
+const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContentVisibilityChange, width = 280, currentView, onViewChange }) => {
   // Get shared model data from context
   const { modelsData, suggestedModels, refresh: refreshModels } = useModels();
   // Get system context for lazy loading system info
@@ -310,8 +311,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     };
     return labels[category] || category.charAt(0).toUpperCase() + category.slice(1);
   };
-
-  if (!isVisible) return null;
 
   const groupedModels = organizationMode === 'recipe' ? groupModelsByRecipe() : groupModelsByCategory();
   const availableModelCount = getFilteredModels().length;
@@ -863,28 +862,37 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     </>
   );
 
+  const handleRailClick = (view: LeftPanelView) => {
+    if (view === currentView && isContentVisible) {
+      onContentVisibilityChange(false);
+    } else {
+      onViewChange(view);
+      onContentVisibilityChange(true);
+    }
+  };
+
   return (
     <div className="model-manager" style={{ width: `${width}px` }}>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       <ConfirmDialog />
       <div className="left-panel-shell">
         <div className="left-panel-mode-rail">
-          <button className={`left-panel-mode-btn ${currentView === 'models' ? 'active' : ''}`} onClick={() => onViewChange('models')} title="Models" aria-label="Models">
+          <button className={`left-panel-mode-btn ${currentView === 'models' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('models')} title="Models" aria-label="Models">
             <Boxes size={14} strokeWidth={1.9} />
           </button>
-          <button className={`left-panel-mode-btn ${currentView === 'backends' ? 'active' : ''}`} onClick={() => onViewChange('backends')} title="Backends" aria-label="Backends">
+          <button className={`left-panel-mode-btn ${currentView === 'backends' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('backends')} title="Backends" aria-label="Backends">
             <Cpu size={14} strokeWidth={1.9} />
           </button>
-          <button className={`left-panel-mode-btn ${currentView === 'marketplace' ? 'active' : ''}`} onClick={() => onViewChange('marketplace')} title="Marketplace" aria-label="Marketplace">
+          <button className={`left-panel-mode-btn ${currentView === 'marketplace' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('marketplace')} title="Marketplace" aria-label="Marketplace">
             <Store size={14} strokeWidth={1.9} />
           </button>
           <div className="left-panel-mode-rail-spacer" />
-          <button className={`left-panel-mode-btn ${currentView === 'settings' ? 'active' : ''}`} onClick={() => onViewChange('settings')} title="Settings" aria-label="Settings">
+          <button className={`left-panel-mode-btn ${currentView === 'settings' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('settings')} title="Settings" aria-label="Settings">
             <SettingsIcon size={14} strokeWidth={1.9} />
           </button>
         </div>
 
-        <div className={`left-panel-main ${showFilterPanel ? 'filter-menu-open' : ''}`}>
+        {isContentVisible && <div className={`left-panel-main ${showFilterPanel ? 'filter-menu-open' : ''}`}>
           <div className="model-manager-header">
             <div className="left-panel-header-top">
               <h3>{viewTitle}</h3>
@@ -1134,7 +1142,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
               )}
             </div>
           )}
-        </div>
+        </div>}
       </div>
     </div>
   );
