@@ -29,6 +29,8 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/audio/speech` - Text to speech (text -> audio)
 - WS `/realtime` - Realtime Audio Transcription (streaming audio -> text, OpenAI SDK compatible)
 - POST `/api/v1/images/generations` - Image Generation (prompt -> image)
+- POST `/api/v1/images/edits` - Image Editing (image + prompt -> edited image)
+- POST `/api/v1/images/variations` - Image Variations (image -> varied image)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
 
@@ -797,6 +799,112 @@ Image Generation API. You provide a text prompt and receive a generated image. T
             "response_format": "b64_json"
           }'
     ```
+
+### `POST /api/v1/images/edits` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Image Editing API. You provide a source image and a text prompt describing the desired change, and receive an edited image. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend.
+
+> **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Use editing-capable models such as `Flux-2-Klein-4B` or `SD-Turbo`.
+>
+> **Performance:** CPU inference takes several minutes per image. GPU (ROCm) is significantly faster.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `model` | Yes | The Stable Diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` | Yes | The source image file to edit (PNG). Sent as a file in multipart/form-data. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `prompt` | Yes | A text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `mask` | No | An optional mask image (PNG). White areas indicate regions to edit; black areas are preserved. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `size` | No | The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `n` | No | Number of images to generate. Default: `1`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `steps` | No | Number of inference steps. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `cfg_scale` | No | Classifier-free guidance scale. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `seed` | No | Random seed for reproducibility. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+#### Example request
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/images/edits \
+      -F "model=Flux-2-Klein-4B" \
+      -F "prompt=Add a red barn and mountains in the background, photorealistic" \
+      -F "size=512x512" \
+      -F "n=1" \
+      -F "response_format=b64_json" \
+      -F "image=@/path/to/source_image.png"
+    ```
+
+=== "Python (OpenAI client)"
+
+    ```python
+    from openai import OpenAI
+    client = OpenAI(base_url="http://localhost:8000/api/v1", api_key="not-needed")
+    with open("source_image.png", "rb") as image_file:
+        response = client.images.edit(
+            model="Flux-2-Klein-4B",
+            image=image_file,
+            prompt="Add a red barn and mountains in the background, photorealistic",
+            size="512x512",
+        )
+    import base64
+    image_data = base64.b64decode(response.data[0].b64_json)
+    open("edited_image.png", "wb").write(image_data)
+    ```
+
+---
+
+### `POST /api/v1/images/variations` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Image Variations API. You provide a source image and receive a variation of it. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend.
+
+> **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Unlike `/images/edits`, no `prompt` parameter is accepted — the model generates a variation based solely on the input image.
+>
+> **Performance:** CPU inference takes several minutes per image. GPU (ROCm) is significantly faster.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `model` | Yes | The Stable Diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` | Yes | The source image file (PNG). Sent as a file in multipart/form-data. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `size` | No | The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `n` | No | Number of variations to generate. Default: `1`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+
+#### Example request
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/images/variations \
+      -F "model=Flux-2-Klein-4B" \
+      -F "size=512x512" \
+      -F "n=1" \
+      -F "response_format=b64_json" \
+      -F "image=@/path/to/source_image.png"
+    ```
+
+=== "Python (OpenAI client)"
+
+    ```python
+    from openai import OpenAI
+    client = OpenAI(base_url="http://localhost:8000/api/v1", api_key="not-needed")
+    with open("source_image.png", "rb") as image_file:
+        response = client.images.create_variation(
+            model="Flux-2-Klein-4B",
+            image=image_file,
+            size="512x512",
+            n=1,
+        )
+    import base64
+    image_data = base64.b64decode(response.data[0].b64_json)
+    open("variation.png", "wb").write(image_data)
+    ```
+
+---
 
 ### `POST /api/v1/audio/speech` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
