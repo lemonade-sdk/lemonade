@@ -106,7 +106,7 @@ export function useOmniChat(): UseOmniChatReturn {
           messages: apiMessages,
           stream: true,
           omni: {
-            tools: ['generate_image', 'describe_image', 'transcribe_audio', 'text_to_speech', 'edit_image',
+            tools: ['generate_image', 'describe_image', 'analyze_image', 'transcribe_audio', 'text_to_speech', 'edit_image',
                     'read_file', 'write_file', 'list_directory', 'web_search',
                     'list_models', 'load_model', 'run_command'],
           },

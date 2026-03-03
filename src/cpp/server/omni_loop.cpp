@@ -12,6 +12,10 @@
 #include <set>
 #include <algorithm>
 #include <cstdio>
+#include <chrono>
+#include <thread>
+#include <atomic>
+#include <future>
 
 #ifdef _WIN32
 #define popen _popen
@@ -94,8 +98,10 @@ json OmniLoop::build_conversation(const json& request, const OmniConfig& config)
          "**Shell & Filesystem:**\n"
          "- run_command: Run a command on the user's computer. "
          "On Windows commands run in PowerShell — write native PowerShell directly (do NOT wrap in `powershell -command`). "
+         "IMPORTANT: On Windows, `curl` is aliased to `Invoke-WebRequest` which has different syntax and will hang. "
+         "Use `curl.exe` (with .exe) for real curl, or use `Invoke-WebRequest -Uri <url>` for HTTP requests. "
          "On Linux/Mac commands run in bash. "
-         "This is your most versatile tool — use it when no specialized tool fits better.\n"
+         "Commands time out after 30 seconds. Never run interactive or long-running commands.\n"
          "- read_file: Read a file's contents. Use for reading known file paths.\n"
          "- write_file: Create or overwrite a file. Creates parent directories automatically.\n"
          "- list_directory: List files in a directory. Use for quick directory listings.\n\n"
@@ -1205,35 +1211,54 @@ ToolResult OmniLoop::execute_run_command(const json& args, const std::string& to
             std::ofstream f(ps1_file);
             f << command;
         }
-        std::string full_cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"" + ps1_file + "\" 2>&1";
+        std::string full_cmd = "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"" + ps1_file + "\" 2>&1";
 #else
         std::string full_cmd = command + " 2>&1";
 #endif
 
         std::string output;
         const size_t max_output = 100 * 1024; // 100KB cap
+        const int timeout_secs = 30;
 
-        FILE* pipe = popen(full_cmd.c_str(), "r");
-        if (!pipe) {
-            throw std::runtime_error("Failed to execute command");
-        }
-
-        char buffer[4096];
-        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            output += buffer;
-            if (output.size() > max_output) {
-                output += "\n... (output truncated at 100KB)";
-                break;
+        // Run the command in a separate thread with a timeout to prevent
+        // hanging on interactive prompts (e.g. curl → Invoke-WebRequest on Windows).
+        int exit_code = -1;
+        auto cmd_future = std::async(std::launch::async, [&]() {
+            FILE* pipe = popen(full_cmd.c_str(), "r");
+            if (!pipe) {
+                throw std::runtime_error("Failed to execute command");
             }
+
+            char buffer[4096];
+            while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+                output += buffer;
+                if (output.size() > max_output) {
+                    output += "\n... (output truncated at 100KB)";
+                    break;
+                }
+            }
+
+            return pclose(pipe);
+        });
+
+        auto status = cmd_future.wait_for(std::chrono::seconds(timeout_secs));
+        if (status == std::future_status::timeout) {
+            output += "\n(command timed out after " + std::to_string(timeout_secs) + " seconds — "
+                      "it may have hung waiting for input)";
+            exit_code = 124; // Same as timeout(1) exit code
+            std::cout << "[OmniLoop] Command timed out after " << timeout_secs << "s" << std::endl;
+        } else {
+            exit_code = cmd_future.get();
         }
 
-        int exit_code = pclose(pipe);
 #ifdef _WIN32
         // On Windows, pclose returns the process exit code directly.
         // Clean up the temp .ps1 file.
         std::remove(ps1_file.c_str());
 #else
-        exit_code = WEXITSTATUS(exit_code);
+        if (status != std::future_status::timeout) {
+            exit_code = WEXITSTATUS(exit_code);
+        }
 #endif
 
         result.result_data = {
