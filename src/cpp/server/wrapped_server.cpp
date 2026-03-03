@@ -22,7 +22,17 @@ int WrappedServer::choose_port() {
 bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_seconds, long poll_interval_ms) {
     std::string health_url = get_base_url() + endpoint;
 
-    std::cout << "Waiting for " + server_name_ + " to be ready..." << std::endl;
+    // Use global default if not specified
+    if (timeout_seconds == 0) {
+        timeout_seconds = utils::HttpClient::get_default_timeout();
+    }
+
+    // Ensure we have a sane minimum for slow hardware/NPU setup
+    if (timeout_seconds < 300) {
+        timeout_seconds = 300;
+    }
+
+    std::cout << "Waiting for " + server_name_ + " to be ready (timeout: " << timeout_seconds << "s)..." << std::endl;
 
     const int max_attempts = (timeout_seconds * 1000) / poll_interval_ms;
 

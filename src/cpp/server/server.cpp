@@ -56,12 +56,12 @@ static const json MIME_TYPES = {
 Server::Server(int port, const std::string& host, const std::string& log_level,
                const json& default_options, int max_loaded_models,
                const std::string& extra_models_dir, bool no_broadcast,
-               long http_timeout)
+               long global_timeout)
     : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
       no_broadcast_(no_broadcast), running_(false), udp_beacon_() {
 
     // Set global HttpClient timeout
-    utils::HttpClient::set_default_timeout(http_timeout);
+    utils::HttpClient::set_default_timeout(global_timeout);
 
     // Detect log file path (same location as tray uses)
     // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
