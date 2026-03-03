@@ -38,6 +38,7 @@ private:
     void handle_ps(const httplib::Request& req, httplib::Response& res);
     void handle_version(const httplib::Request& req, httplib::Response& res);
     void handle_anthropic_messages(const httplib::Request& req, httplib::Response& res);
+    void register_anthropic_routes(httplib::Server& server, const std::shared_ptr<OllamaApi>& self);
 
     // Helpers
     void auto_load_model(const std::string& model);
