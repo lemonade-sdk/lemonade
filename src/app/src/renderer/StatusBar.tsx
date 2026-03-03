@@ -13,6 +13,7 @@ interface SystemStats {
   memory_gb: number;
   gpu_percent: number | null;
   vram_gb: number | null;
+  npu_percent: number | null;
 }
 
 const StatusBar: React.FC = () => {
@@ -27,6 +28,7 @@ const StatusBar: React.FC = () => {
     memory_gb: 0,
     gpu_percent: null,
     vram_gb: null,
+    npu_percent: null,
   });
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
   const [serverUrl, setServerUrl] = useState<string>('');
@@ -68,6 +70,7 @@ const StatusBar: React.FC = () => {
           memory_gb: stats.memory_gb ?? 0,
           gpu_percent: stats.gpu_percent ?? null,
           vram_gb: stats.vram_gb ?? null,
+          npu_percent: stats.npu_percent ?? null,
         });
       }
     } catch {
@@ -207,6 +210,13 @@ const StatusBar: React.FC = () => {
           <span className="status-bar-label status-bar-label-long">VRAM:</span>
           <span className="status-bar-label status-bar-label-short">VRAM:</span>
           <span className="status-bar-value">{formatVram(systemStats.vram_gb)}</span>
+        </div>
+      )}
+      {systemStats.npu_percent !== null && (
+        <div className="status-bar-item">
+          <span className="status-bar-label status-bar-label-long">NPU:</span>
+          <span className="status-bar-label status-bar-label-short">NPU:</span>
+          <span className="status-bar-value">{formatPercent(systemStats.npu_percent)}</span>
         </div>
       )}
     </div>
