@@ -101,6 +101,42 @@ WrappedServer* Router::find_npu_server() const {
     return nullptr;
 }
 
+// Helper: Find NPU server with a specific recipe
+WrappedServer* Router::find_npu_server_by_recipe(const std::string& recipe) const {
+    for (const auto& server : loaded_servers_) {
+        if ((server->get_device_type() & DEVICE_NPU) &&
+            server->get_recipe_options().get_recipe() == recipe) {
+            return server.get();
+        }
+    }
+    return nullptr;
+}
+
+// Helper: Find FLM server of a specific model type
+WrappedServer* Router::find_flm_server_by_type(ModelType type) const {
+    for (const auto& server : loaded_servers_) {
+        if (server->get_recipe_options().get_recipe() == "flm" &&
+            server->get_model_type() == type) {
+            return server.get();
+        }
+    }
+    return nullptr;
+}
+
+// Helper: Evict all NPU servers
+void Router::evict_all_npu_servers() {
+    std::vector<WrappedServer*> npu_servers;
+    for (const auto& server : loaded_servers_) {
+        if (server->get_device_type() & DEVICE_NPU) {
+            npu_servers.push_back(server.get());
+        }
+    }
+    for (auto* server : npu_servers) {
+        std::cout << "[Router] Evicting NPU server: " << server->get_model_name() << std::endl;
+        evict_server(server);
+    }
+}
+
 // Helper: Evict a specific server
 void Router::evict_server(WrappedServer* server) {
     if (!server) return;
@@ -225,13 +261,42 @@ void Router::load_model(const std::string& model_name,
         // Get max models for this type (same limit for all types)
         int max_models = max_loaded_models_;
 
-        // NPU EXCLUSIVITY CHECK (from spec: Additional NPU Rules)
+        // NPU EXCLUSIVITY CHECK (recipe-aware rules)
+        // FLM can run up to 3 concurrent NPU processes (1 LLM + 1 audio + 1 embedding)
+        // RyzenAI and WhisperCpp lock the entire NPU exclusively
         if (device_type & DEVICE_NPU) {
-            WrappedServer* npu_server = find_npu_server();
-            if (npu_server) {
-                std::cout << "[Router] NPU is occupied by: " << npu_server->get_model_name()
-                          << ", evicting..." << std::endl;
-                evict_server(npu_server);
+            if (model_info.recipe == "ryzenai-llm" || model_info.recipe == "whispercpp") {
+                // Exclusive NPU recipes - evict ALL NPU servers
+                if (has_npu_server()) {
+                    std::cout << "[Router] " << model_info.recipe
+                              << " requires exclusive NPU access, evicting all NPU servers..." << std::endl;
+                    evict_all_npu_servers();
+                }
+            } else if (model_info.recipe == "flm") {
+                // FLM can coexist with other FLM types, but not with exclusive-NPU recipes
+                // 1. Evict any exclusive-NPU server (mutually exclusive)
+                for (const std::string& exclusive_recipe : {"ryzenai-llm", "whispercpp"}) {
+                    WrappedServer* exclusive_server = find_npu_server_by_recipe(exclusive_recipe);
+                    if (exclusive_server) {
+                        std::cout << "[Router] FLM cannot coexist with " << exclusive_recipe
+                                  << ", evicting: " << exclusive_server->get_model_name() << std::endl;
+                        evict_server(exclusive_server);
+                    }
+                }
+                // 2. Evict FLM of the SAME model type (max 1 per type: 1 LLM, 1 audio, 1 embed)
+                WrappedServer* same_type_flm = find_flm_server_by_type(model_type);
+                if (same_type_flm) {
+                    std::cout << "[Router] FLM " << model_type_to_string(model_type)
+                              << " slot occupied by: " << same_type_flm->get_model_name()
+                              << ", evicting..." << std::endl;
+                    evict_server(same_type_flm);
+                }
+            } else {
+                // Unknown NPU recipe - default to exclusive access
+                if (has_npu_server()) {
+                    std::cout << "[Router] Unknown NPU recipe, evicting all NPU servers..." << std::endl;
+                    evict_all_npu_servers();
+                }
             }
         }
 

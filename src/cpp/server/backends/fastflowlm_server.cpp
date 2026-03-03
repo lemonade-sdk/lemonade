@@ -215,16 +215,38 @@ void FastFlowLMServer::load(const std::string& model_name,
     // Get flm executable path
     std::string flm_path = get_flm_path();
 
-    // Construct flm serve command
+    // Construct flm serve command based on model type
     // Bind to localhost only for security
-    std::vector<std::string> args = {
-        "serve",
-        model_info.checkpoint(),
-        "--ctx-len", std::to_string(ctx_size),
-        "--port", std::to_string(port_),
-        "--host", "127.0.0.1",
-        "--quiet"
-    };
+    std::vector<std::string> args;
+    if (model_type_ == ModelType::AUDIO) {
+        // ASR mode: flm serve --asr 1
+        args = {
+            "serve",
+            "--asr", "1",
+            "--port", std::to_string(port_),
+            "--host", "127.0.0.1",
+            "--quiet"
+        };
+    } else if (model_type_ == ModelType::EMBEDDING) {
+        // Embedding mode: flm serve --embed 1
+        args = {
+            "serve",
+            "--embed", "1",
+            "--port", std::to_string(port_),
+            "--host", "127.0.0.1",
+            "--quiet"
+        };
+    } else {
+        // LLM mode (default): flm serve <checkpoint> --ctx-len N
+        args = {
+            "serve",
+            model_info.checkpoint(),
+            "--ctx-len", std::to_string(ctx_size),
+            "--port", std::to_string(port_),
+            "--host", "127.0.0.1",
+            "--quiet"
+        };
+    }
 
     // Parse and append custom flm_args if provided
     if (!flm_args.empty()) {
@@ -303,6 +325,12 @@ bool FastFlowLMServer::wait_for_ready() {
 }
 
 json FastFlowLMServer::chat_completion(const json& request) {
+    if (model_type_ == ModelType::AUDIO || model_type_ == ModelType::EMBEDDING) {
+        return ErrorResponse::from_exception(
+            UnsupportedOperationException("Chat completion", "FLM " + model_type_to_string(model_type_) + " model")
+        );
+    }
+
     // FLM requires the checkpoint name in the request (e.g., "gemma3:4b")
     // (whereas llama-server ignores the model name field)
     json modified_request = request;
@@ -312,6 +340,12 @@ json FastFlowLMServer::chat_completion(const json& request) {
 }
 
 json FastFlowLMServer::completion(const json& request) {
+    if (model_type_ == ModelType::AUDIO || model_type_ == ModelType::EMBEDDING) {
+        return ErrorResponse::from_exception(
+            UnsupportedOperationException("Text completion", "FLM " + model_type_to_string(model_type_) + " model")
+        );
+    }
+
     // FLM requires the checkpoint name in the request (e.g., "lfm2:1.2b")
     // (whereas llama-server ignores the model name field)
     json modified_request = request;
@@ -321,11 +355,87 @@ json FastFlowLMServer::completion(const json& request) {
 }
 
 json FastFlowLMServer::embeddings(const json& request) {
+    if (model_type_ == ModelType::AUDIO) {
+        return ErrorResponse::from_exception(
+            UnsupportedOperationException("Embeddings", "FLM " + model_type_to_string(model_type_) + " model")
+        );
+    }
     return forward_request("/v1/embeddings", request);
 }
 
 json FastFlowLMServer::reranking(const json& request) {
+    if (model_type_ != ModelType::LLM) {
+        return ErrorResponse::from_exception(
+            UnsupportedOperationException("Reranking", "FLM " + model_type_to_string(model_type_) + " model")
+        );
+    }
     return forward_request("/v1/rerank", request);
+}
+
+json FastFlowLMServer::audio_transcriptions(const json& request) {
+    if (model_type_ != ModelType::AUDIO) {
+        return ErrorResponse::from_exception(
+            UnsupportedOperationException("Audio transcription", "FLM " + model_type_to_string(model_type_) + " model")
+        );
+    }
+
+    try {
+        // Extract audio data from request (same format as WhisperServer)
+        if (!request.contains("file_data")) {
+            throw std::runtime_error("Missing 'file_data' in request");
+        }
+
+        std::string audio_data = request["file_data"].get<std::string>();
+        std::string filename = request.value("filename", "audio.wav");
+
+        // Determine content type from filename extension
+        std::filesystem::path filepath(filename);
+        std::string ext = filepath.extension().string();
+        std::string content_type = "audio/wav";
+        if (ext == ".mp3") content_type = "audio/mpeg";
+        else if (ext == ".m4a") content_type = "audio/mp4";
+        else if (ext == ".ogg") content_type = "audio/ogg";
+        else if (ext == ".flac") content_type = "audio/flac";
+        else if (ext == ".webm") content_type = "audio/webm";
+
+        // Build multipart fields for FLM's /v1/audio/transcriptions endpoint
+        std::vector<utils::MultipartField> fields;
+
+        // Audio file field
+        fields.push_back({
+            "file",
+            audio_data,
+            filepath.filename().string(),
+            content_type
+        });
+
+        // Model field (required by OpenAI API format)
+        fields.push_back({"model", checkpoint_, "", ""});
+
+        // Optional parameters
+        if (request.contains("language")) {
+            fields.push_back({"language", request["language"].get<std::string>(), "", ""});
+        }
+        if (request.contains("prompt")) {
+            fields.push_back({"prompt", request["prompt"].get<std::string>(), "", ""});
+        }
+        if (request.contains("response_format")) {
+            fields.push_back({"response_format", request["response_format"].get<std::string>(), "", ""});
+        }
+        if (request.contains("temperature")) {
+            fields.push_back({"temperature", std::to_string(request["temperature"].get<double>()), "", ""});
+        }
+
+        return forward_multipart_request("/v1/audio/transcriptions", fields);
+
+    } catch (const std::exception& e) {
+        return json{
+            {"error", {
+                {"message", std::string("Transcription failed: ") + e.what()},
+                {"type", "audio_processing_error"}
+            }}
+        };
+    }
 }
 
 json FastFlowLMServer::responses(const json& request) {
@@ -339,6 +449,14 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
                                                   const std::string& request_body,
                                                   httplib::DataSink& sink,
                                                   bool sse) {
+    // Streaming is only supported for LLM models
+    if (model_type_ == ModelType::AUDIO || model_type_ == ModelType::EMBEDDING) {
+        std::string error_msg = "data: {\"error\":{\"message\":\"Streaming not supported for FLM "
+            + model_type_to_string(model_type_) + " model\",\"type\":\"unsupported_operation\"}}\n\n";
+        sink.write(error_msg.c_str(), error_msg.size());
+        return;
+    }
+
     // FLM requires the checkpoint name in the model field (e.g., "gemma3:4b"),
     // not the Lemonade model name (e.g., "Gemma3-4b-it-FLM")
     try {

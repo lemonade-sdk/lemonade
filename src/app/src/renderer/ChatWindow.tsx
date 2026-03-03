@@ -42,9 +42,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     if (!info) return 'llm';
     if (info.labels?.includes('embeddings') || (info as any)?.embedding) return 'embedding';
     if (info.labels?.includes('reranking') || (info as any)?.reranking) return 'reranking';
-    if (info.recipe === 'whispercpp') return 'transcription';
-    if (info.recipe === 'sd-cpp' || info.labels?.includes('image')) return 'image';
-    if (info.recipe === 'kokoro') return 'speech';
+    if (info.labels?.includes('transcription')) return 'transcription';
+    if (info.labels?.includes('image')) return 'image';
+    if (info.labels?.includes('speech')) return 'speech';
     return 'llm';
   }, [selectedModel, modelsData]);
 

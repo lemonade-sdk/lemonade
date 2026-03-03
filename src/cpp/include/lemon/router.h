@@ -113,6 +113,9 @@ private:
     WrappedServer* find_lru_server_by_type(ModelType type) const;
     bool has_npu_server() const;
     WrappedServer* find_npu_server() const;
+    WrappedServer* find_npu_server_by_recipe(const std::string& recipe) const;
+    WrappedServer* find_flm_server_by_type(ModelType type) const;
+    void evict_all_npu_servers();
     void evict_server(WrappedServer* server);
     void evict_all_servers();
     std::unique_ptr<WrappedServer> create_backend_server(const ModelInfo& model_info);
