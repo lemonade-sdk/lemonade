@@ -107,6 +107,9 @@ public:
 
     // Generate human-readable error message for unsupported backend
     static std::string get_unsupported_backend_error(const std::string& recipe, const std::string& backend);
+
+    // Check if the process is running under systemd
+    static bool is_running_under_systemd();
 };
 
 // Windows implementation
