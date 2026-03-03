@@ -1,5 +1,11 @@
 PORTIONS LICENSED AS FOLLOWS
 
+## amdxdna_accel.h
+
+The file `src/cpp/include/lemon/amdxdna_accel.h` is licensed under GPL-2.0 WITH Linux-syscall-note.
+
+The Linux-syscall-note exception allows this GPL-licensed kernel UAPI header to be included in userspace applications without imposing GPL requirements on the application itself. This exception is standard for Linux kernel headers that define the userspace API for system calls and ioctl operations.
+
 ## llama.cpp
 
 Binaries for llama.cpp are downloaded under the MIT license from https://github.com/ggml-org/llama.cpp, as well as https://github.com/lemonade-sdk/llamacpp-rocm (which uses https://github.com/ggml-org/llama.cpp to build them.)

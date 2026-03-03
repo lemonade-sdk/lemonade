@@ -48,7 +48,7 @@ declare global {
       getServerAPIKey?: () => Promise<string | null>;
       onServerPortUpdated?: (callback: (port: number) => void) => void | (() => void);
       onConnectionSettingsUpdated?: (callback: (baseURL: string, apiKey: string) => void) => void | (() => void);
-      getSystemStats?: () => Promise<{ cpu_percent: number | null; memory_gb: number; gpu_percent: number | null; vram_gb: number | null }>;
+      getSystemStats?: () => Promise<{ cpu_percent: number | null; memory_gb: number; gpu_percent: number | null; vram_gb: number | null; npu_percent: number | null }>;
       getSystemInfo?: () => Promise<{ system: string; os: string; cpu: string; gpus: string[]; gtt_gb?: string; vram_gb?: string }>;
       getLocalMarketplaceUrl?: () => Promise<string | null>;
     };
