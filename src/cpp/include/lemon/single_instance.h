@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include "lemon/system_info.h"
 #ifdef _WIN32
 #include <windows.h>
 #include <tlhelp32.h>

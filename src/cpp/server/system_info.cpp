@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <regex>
+#include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -25,6 +26,11 @@
 
 #ifdef __APPLE__
 #include <sys/sysctl.h>
+#include <unistd.h>
+#endif
+
+#ifdef __linux__
+#include <unistd.h>
 #endif
 
 #ifdef __linux__
@@ -36,6 +42,10 @@
 
 #ifndef _WIN32
 #include <sys/wait.h>
+#endif
+
+#ifdef HAVE_SYSTEMD
+#include <systemd/sd-login.h>
 #endif
 
 namespace lemon {
@@ -2833,12 +2843,12 @@ json SystemInfoCache::get_system_info_with_cache() {
         } else {
             // Provide friendly message about why we're detecting hardware
             if (cache_exists) {
-                std::cout << "[Server] Collecting system info (Lemonade was updated)" << std::endl;
+                LOG(INFO, "Server") << "Collecting system info (Lemonade was updated)" << std::endl;
 
                 // Perform version-specific cleanup (e.g., removing stale backend binaries)
                 cache.perform_upgrade_cleanup();
             } else {
-                std::cout << "[Server] Collecting system info" << std::endl;
+                LOG(INFO, "Server") << "Collecting system info" << std::endl;
             }
 
             // Get system info (OS, Processor, Memory, OEM System, BIOS, etc.)
@@ -2864,14 +2874,14 @@ json SystemInfoCache::get_system_info_with_cache() {
 
     } catch (const std::exception& e) {
         // Catastrophic failure - return minimal info but don't crash
-        std::cerr << "[Server] System info failed: " << e.what() << std::endl;
+        LOG(ERROR, "Server") << "System info failed: " << e.what() << std::endl;
         system_info = {
             {"OS Version", "Unknown"},
             {"error", e.what()},
             {"devices", json::object()}
         };
     } catch (...) {
-        std::cerr << "[Server] System info failed with unknown error" << std::endl;
+        LOG(ERROR, "Server") << "System info failed with unknown error" << std::endl;
         system_info = {
             {"OS Version", "Unknown"},
             {"error", "Unknown error"},
@@ -2886,5 +2896,35 @@ json SystemInfoCache::get_system_info_with_cache() {
     return system_info;
 }
 
+
+bool SystemInfo::is_running_under_systemd() {
+#ifdef _WIN32
+    return false;
+#else
+    const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
+    if (disable_journal && (std::string(disable_journal) == "1" || std::string(disable_journal) == "true")) {
+        return false;
+    }
+
+#ifdef HAVE_SYSTEMD
+    // Use systemd journal only when actually running as lemonade-server.service.
+    // sd_pid_get_unit() reads the process's cgroup assignment (not environment variables),
+    // so it cannot give false positives from inherited env vars like JOURNAL_STREAM or
+    // INVOCATION_ID, both of which are inherited by all child processes in a systemd session.
+    char* unit_name = nullptr;
+    if (sd_pid_get_unit(0, &unit_name) >= 0) {
+        const char* service_name_env = std::getenv("LEMONADE_SYSTEMD_UNIT");
+        const char* service_name = service_name_env ? service_name_env : LEMONADE_SYSTEMD_UNIT_NAME;
+        bool is_service = (strcmp(unit_name, service_name) == 0);
+        free(unit_name);
+        return is_service;
+    }
+#endif
+
+    const char* journal_stream = std::getenv("JOURNAL_STREAM");
+    const char* invocation_id = std::getenv("INVOCATION_ID");
+    return (journal_stream || invocation_id) && !isatty(STDOUT_FILENO);
+#endif
+}
 
 } // namespace lemon

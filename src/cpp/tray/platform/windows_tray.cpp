@@ -4,17 +4,12 @@
 #include <iostream>
 #include <codecvt>
 #include <locale>
+#include <lemon/utils/aixlog.hpp>
 
 // Undefine Windows macros that conflict with our enums
 #ifdef ERROR
 #undef ERROR
 #endif
-
-// Helper macro for debug logging
-#define DEBUG_LOG_TRAY(tray, msg) \
-    if ((tray)->is_debug()) { \
-        std::cout << "DEBUG: " << msg << std::endl; \
-    }
 
 // NOTIFYICON_VERSION_4 specific messages (these are defined in shellapi.h, but define if missing)
 #ifndef NIN_SELECT
@@ -60,7 +55,6 @@ WindowsTray::WindowsTray()
     , notification_icon_(nullptr)
     , should_exit_(false)
     , next_menu_id_(MENU_ID_START)
-    , log_level_("info")  // Default to info level
 {
     ZeroMemory(&nid_, sizeof(nid_));
 }
@@ -76,34 +70,34 @@ WindowsTray::~WindowsTray() {
 }
 
 bool WindowsTray::initialize(const std::string& app_name, const std::string& icon_path) {
-    DEBUG_LOG_TRAY(this, "WindowsTray::initialize() called");
+    LOG(DEBUG, "WindowsTray") << "WindowsTray::initialize() called" << std::endl;
     app_name_ = app_name;
     icon_path_ = icon_path;
     tooltip_ = app_name;
 
-    DEBUG_LOG_TRAY(this, "Registering window class...");
+    LOG(DEBUG, "WindowsTray") << "Registering window class..." << std::endl;
     if (!register_window_class()) {
-        std::cerr << "Failed to register window class" << std::endl;
+        LOG(ERROR, "WindowsTray") << "Failed to register window class" << std::endl;
         return false;
     }
 
-    DEBUG_LOG_TRAY(this, "Creating hidden window...");
+    LOG(DEBUG, "WindowsTray") << "Creating hidden window..." << std::endl;
     if (!create_window()) {
-        std::cerr << "Failed to create window" << std::endl;
+        LOG(ERROR, "WindowsTray") << "Failed to create window" << std::endl;
         return false;
     }
 
-    DEBUG_LOG_TRAY(this, "Adding tray icon...");
+    LOG(DEBUG, "WindowsTray") << "Adding tray icon..." << std::endl;
     if (!add_tray_icon()) {
-        std::cerr << "Failed to add tray icon" << std::endl;
+        LOG(ERROR, "WindowsTray") << "Failed to add tray icon" << std::endl;
         return false;
     }
 
-    DEBUG_LOG_TRAY(this, "Tray icon added successfully!");
+    LOG(DEBUG, "WindowsTray") << "Tray icon added successfully!" << std::endl;
 
     // Call ready callback if set
     if (ready_callback_) {
-        DEBUG_LOG_TRAY(this, "Calling ready callback...");
+        LOG(DEBUG, "WindowsTray") << "Calling ready callback..." << std::endl;
         ready_callback_();
     }
 
@@ -122,7 +116,7 @@ bool WindowsTray::register_window_class() {
     if (!RegisterClassExW(&wc)) {
         DWORD error = GetLastError();
         if (error != ERROR_CLASS_ALREADY_EXISTS) {
-            std::cerr << "RegisterClassExW failed with error: " << error << std::endl;
+            LOG(ERROR, "WindowsTray") << "RegisterClassExW failed with error: " << error << std::endl;
             return false;
         }
     }
@@ -145,7 +139,7 @@ bool WindowsTray::create_window() {
     );
 
     if (!hwnd_) {
-        std::cerr << "CreateWindowExW failed with error: " << GetLastError() << std::endl;
+        LOG(ERROR, "WindowsTray") << "CreateWindowExW failed with error: " << GetLastError() << std::endl;
         return false;
     }
 
@@ -172,7 +166,7 @@ bool WindowsTray::add_tray_icon() {
     );
 
     if (!nid_.hIcon) {
-        std::cerr << "Failed to load icon from: " << icon_path_ << std::endl;
+        LOG(ERROR, "WindowsTray") << "Failed to load icon from: " << icon_path_ << std::endl;
         // Use default application icon as fallback
         nid_.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
     }
@@ -185,7 +179,7 @@ bool WindowsTray::add_tray_icon() {
     wcsncpy_s(nid_.szTip, tooltip_wide.c_str(), _TRUNCATE);
 
     if (!Shell_NotifyIconW(NIM_ADD, &nid_)) {
-        std::cerr << "Shell_NotifyIconW failed" << std::endl;
+        LOG(ERROR, "WindowsTray") << "Shell_NotifyIconW failed" << std::endl;
         return false;
     }
 
@@ -218,24 +212,24 @@ void WindowsTray::stop() {
 }
 
 void WindowsTray::set_menu(const Menu& menu) {
-    DEBUG_LOG_TRAY(this, "WindowsTray::set_menu() called with " << menu.items.size() << " items");
+    LOG(DEBUG, "WindowsTray") << "WindowsTray::set_menu() called with " << menu.items.size() << " items" << std::endl;
     current_menu_ = menu;
 
     // Destroy old menu if exists
     if (hmenu_) {
-        DEBUG_LOG_TRAY(this, "Destroying old menu");
+        LOG(DEBUG, "WindowsTray") << "Destroying old menu" << std::endl;
         DestroyMenu(hmenu_);
         hmenu_ = nullptr;
     }
 
     // Create new menu
-    DEBUG_LOG_TRAY(this, "Creating new popup menu");
+    LOG(DEBUG, "WindowsTray") << "Creating new popup menu" << std::endl;
     hmenu_ = create_popup_menu(current_menu_);
 
     if (hmenu_) {
-        DEBUG_LOG_TRAY(this, "Menu created successfully, handle: " << hmenu_);
+        LOG(DEBUG, "WindowsTray") << "Menu created successfully, handle: " << hmenu_ << std::endl;
     } else {
-        DEBUG_LOG_TRAY(this, "ERROR - Failed to create menu!");
+        LOG(DEBUG, "WindowsTray") << "ERROR - Failed to create menu!" << std::endl;
     }
 }
 
@@ -288,23 +282,23 @@ void WindowsTray::add_menu_items(HMENU hmenu, const std::vector<MenuItem>& items
 }
 
 void WindowsTray::show_context_menu() {
-    DEBUG_LOG_TRAY(this, "show_context_menu() called");
+    LOG(DEBUG, "WindowsTray") << "show_context_menu() called" << std::endl;
 
     if (!hmenu_) {
-        DEBUG_LOG_TRAY(this, "ERROR - hmenu_ is null!");
+        LOG(DEBUG, "WindowsTray") << "ERROR - hmenu_ is null!" << std::endl;
         return;
     }
 
-    DEBUG_LOG_TRAY(this, "Getting cursor position...");
+    LOG(DEBUG, "WindowsTray") << "Getting cursor position..." << std::endl;
     POINT cursor_pos;
     GetCursorPos(&cursor_pos);
-    DEBUG_LOG_TRAY(this, "Cursor at: " << cursor_pos.x << ", " << cursor_pos.y);
+    LOG(DEBUG, "WindowsTray") << "Cursor at: " << cursor_pos.x << ", " << cursor_pos.y << std::endl;
 
     // Required for menu to close properly
-    DEBUG_LOG_TRAY(this, "Setting foreground window...");
+    LOG(DEBUG, "WindowsTray") << "Setting foreground window..." << std::endl;
     SetForegroundWindow(hwnd_);
 
-    DEBUG_LOG_TRAY(this, "Showing popup menu...");
+    LOG(DEBUG, "WindowsTray") << "Showing popup menu..." << std::endl;
     BOOL result = TrackPopupMenu(
         hmenu_,
         TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_RIGHTALIGN,
@@ -315,9 +309,9 @@ void WindowsTray::show_context_menu() {
         nullptr
     );
 
-    DEBUG_LOG_TRAY(this, "TrackPopupMenu returned: " << result);
+    LOG(DEBUG, "WindowsTray") << "TrackPopupMenu returned: " << result << std::endl;
     if (!result) {
-        DEBUG_LOG_TRAY(this, "TrackPopupMenu failed with error: " << GetLastError());
+        LOG(DEBUG, "WindowsTray") << "TrackPopupMenu failed with error: " << GetLastError() << std::endl;
     }
 
     // Required for menu to close properly
@@ -376,10 +370,6 @@ void WindowsTray::set_tooltip(const std::string& tooltip) {
     Shell_NotifyIconW(NIM_MODIFY, &nid_);
 }
 
-void WindowsTray::set_log_level(const std::string& log_level) {
-    log_level_ = log_level;
-}
-
 void WindowsTray::set_ready_callback(std::function<void()> callback) {
     ready_callback_ = callback;
 }
@@ -428,10 +418,10 @@ void WindowsTray::on_tray_icon(LPARAM lparam) {
     // Only log important events to avoid spam
     switch (msg) {
         case WM_RBUTTONUP:
-            DEBUG_LOG_TRAY(this, "Right-click detected (WM_RBUTTONUP)");
+            LOG(DEBUG, "WindowsTray") << "Right-click detected (WM_RBUTTONUP)" << std::endl;
             // Trigger menu update callback if set (to refresh server state)
             if (menu_update_callback_) {
-                DEBUG_LOG_TRAY(this, "Calling menu update callback...");
+                LOG(DEBUG, "WindowsTray") << "Calling menu update callback..." << std::endl;
                 menu_update_callback_();
             }
             show_context_menu();
@@ -442,32 +432,32 @@ void WindowsTray::on_tray_icon(LPARAM lparam) {
             break;
 
         case WM_CONTEXTMENU:
-            DEBUG_LOG_TRAY(this, "Context menu event detected");
+            LOG(DEBUG, "WindowsTray") << "Context menu event detected" << std::endl;
             // Don't call show_context_menu here, it's already shown by WM_RBUTTONUP
             break;
 
         case WM_LBUTTONUP:
-            DEBUG_LOG_TRAY(this, "Left-click detected (showing menu)");
+            LOG(DEBUG, "WindowsTray") << "Left-click detected (showing menu)" << std::endl;
             // Trigger menu update callback if set (to refresh server state)
             if (menu_update_callback_) {
-                DEBUG_LOG_TRAY(this, "Calling menu update callback...");
+                LOG(DEBUG, "WindowsTray") << "Calling menu update callback..." << std::endl;
                 menu_update_callback_();
             }
             show_context_menu();
             break;
 
         case WM_LBUTTONDBLCLK:
-            DEBUG_LOG_TRAY(this, "Double-click detected");
+            LOG(DEBUG, "WindowsTray") << "Double-click detected" << std::endl;
             // Could add double-click action here if desired
             break;
 
         case NIN_SELECT:
-            DEBUG_LOG_TRAY(this, "Icon selected (NIN_SELECT)");
+            LOG(DEBUG, "WindowsTray") << "Icon selected (NIN_SELECT)" << std::endl;
             // Could show menu or perform default action
             break;
 
         case NIN_KEYSELECT:
-            DEBUG_LOG_TRAY(this, "Icon activated with keyboard (NIN_KEYSELECT)");
+            LOG(DEBUG, "WindowsTray") << "Icon activated with keyboard (NIN_KEYSELECT)" << std::endl;
             show_context_menu();
             break;
 
@@ -504,7 +494,7 @@ void WindowsTray::on_tray_icon(LPARAM lparam) {
 
         default:
             // Only log unexpected events
-            DEBUG_LOG_TRAY(this, "Unhandled tray event: " << msg << " (raw: " << lparam << ")");
+            LOG(DEBUG, "WindowsTray") << "Unhandled tray event: " << msg << " (raw: " << lparam << ")" << std::endl;
             break;
     }
 }

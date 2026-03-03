@@ -4,6 +4,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <lemon/utils/aixlog.hpp>
 
 // macOS imports for system tray
 #import <Cocoa/Cocoa.h>
@@ -156,7 +157,7 @@ MacOSTray::MacOSTray() : impl_(nullptr), tooltip_("") {}
 
 MacOSTray::~MacOSTray() {
     if (impl_) {
-        CFRelease(impl_); 
+        CFRelease(impl_);
         impl_ = nullptr;
     }
 }
@@ -169,13 +170,13 @@ bool MacOSTray::initialize(const std::string& app_name, const std::string& icon_
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
 
     MacOSTrayImpl* trayImpl = [[MacOSTrayImpl alloc] init];
-    
+
     if (ready_callback_) {
         trayImpl.readyCallback = [[CallbackWrapper alloc] initWithCallback:ready_callback_];
     }
-    
+
     // ARC Retain
-    impl_ = (__bridge_retained void*)trayImpl; 
+    impl_ = (__bridge_retained void*)trayImpl;
 
     NSStatusBar *statusBar = [NSStatusBar systemStatusBar];
     trayImpl.statusItem = [statusBar statusItemWithLength:NSVariableStatusItemLength];
@@ -214,13 +215,9 @@ bool MacOSTray::initialize(const std::string& app_name, const std::string& icon_
 }
 
 void MacOSTray::run() {
-    if (log_level_ == "debug") {
-        std::cout << "[macOS Tray] Entering Run Loop..." << std::endl;
-        
-    }
+    LOG(DEBUG, "macOS Tray") << "Entering Run Loop..." << std::endl;
     [NSApp run];
 }
-
 void MacOSTray::stop() {
     if (impl_) {
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -275,31 +272,32 @@ void MacOSTray::show_notification(const std::string& title, const std::string& m
                     UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
                     content.title = nsTitle;
                     content.body = nsMessage;
-                    
+
                     NSString *uuid = [[NSUUID UUID] UUIDString];
                     UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:uuid content:content trigger:nil];
                     [center addNotificationRequest:request withCompletionHandler:nil];
                 }
             }];
         }
-    } 
-    // 2. CLI/Debug Mode (No Bundle ID) - Uses Deprecated API safely
-    else {
-        if (current_log_level == "debug") std::cout << "[macOS Tray] Using legacy notification fallback" << std::endl;
-        
-        // Silence warnings for this specific block
+    }
+        // 2. CLI/Debug Mode (No Bundle ID) - Uses Deprecated API safely
+        else {
+            LOG(DEBUG, "macOS Tray") << "Using legacy notification fallback" << std::endl;
+
+            // Silence warnings for this specific block
+
         #pragma clang diagnostic push
         #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        
+
         NSUserNotification *notification = [[NSUserNotification alloc] init];
         notification.title = nsTitle;
         notification.informativeText = nsMessage;
         notification.soundName = NSUserNotificationDefaultSoundName;
-        
+
         MacOSTrayImpl* trayImpl = (__bridge MacOSTrayImpl*)impl_;
         [[NSUserNotificationCenter defaultUserNotificationCenter] setDelegate:trayImpl];
         [[NSUserNotificationCenter defaultUserNotificationCenter] deliverNotification:notification];
-        
+
         #pragma clang diagnostic pop
     }
 }
@@ -344,10 +342,6 @@ void MacOSTray::set_tooltip(const std::string& tooltip) {
 
 void MacOSTray::set_ready_callback(std::function<void()> callback) {
     ready_callback_ = callback;
-}
-
-void MacOSTray::set_log_level(const std::string& log_level) {
-    log_level_ = log_level;
 }
 
 } // namespace lemon_tray

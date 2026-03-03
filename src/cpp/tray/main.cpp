@@ -2,6 +2,7 @@
 #include "lemon/cli_parser.h"
 #include <iostream>
 #include <exception>
+#include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -21,13 +22,18 @@ int main(int argc, char* argv[]) {
             return parser.get_exit_code();
         }
 
-        lemon_tray::TrayApp app(parser.get_config(), parser.get_tray_config());
+        // Initialize logging
+        auto config = parser.get_config();
+        auto sink = std::make_shared<AixLog::SinkCout>(AixLog::Filter(AixLog::to_severity(config.log_level)), "%Y-%m-%d %H:%M:%S.#ms [#severity] (#tag_func) #message");
+        AixLog::Log::init({sink});
+
+        lemon_tray::TrayApp app(config, parser.get_tray_config());
         return app.run();
     } catch (const std::exception& e) {
-        std::cerr << "Fatal error: " << e.what() << std::endl;
+        LOG(ERROR) << "Fatal error: " << e.what() << std::endl;
         return 1;
     } catch (...) {
-        std::cerr << "Unknown fatal error" << std::endl;
+        LOG(ERROR) << "Unknown fatal error" << std::endl;
         return 1;
     }
 }

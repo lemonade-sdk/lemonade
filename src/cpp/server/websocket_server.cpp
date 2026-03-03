@@ -3,6 +3,7 @@
 #include "lemon/utils/process_manager.h"
 #include <iostream>
 #include <sstream>
+#include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
 
@@ -11,7 +12,7 @@ WebSocketServer::WebSocketServer(Router* router)
     , router_(router)
     , session_manager_(std::make_unique<RealtimeSessionManager>(router))
     , ws_server_(port_, "0.0.0.0") {
-    std::cout << "[WebSocket] Allocated port: " << port_ << std::endl;
+    LOG(INFO, "WebSocket") << "Allocated port: " << port_ << std::endl;
 }
 
 WebSocketServer::~WebSocketServer() {
@@ -33,7 +34,7 @@ bool WebSocketServer::start() {
 
             switch (msg->type) {
                 case ix::WebSocketMessageType::Open: {
-                    std::cout << "[WebSocket] New connection from: "
+                    LOG(INFO, "WebSocket") << "New connection from: "
                               << connectionState->getRemoteIp()
                               << " (id: " << conn_id << ")" << std::endl;
 
@@ -42,7 +43,7 @@ bool WebSocketServer::start() {
                 }
 
                 case ix::WebSocketMessageType::Close: {
-                    std::cout << "[WebSocket] Connection closed: "
+                    LOG(INFO, "WebSocket") << "Connection closed: "
                               << connectionState->getRemoteIp() << std::endl;
                     handle_close(conn_id);
                     break;
@@ -51,7 +52,7 @@ bool WebSocketServer::start() {
                 case ix::WebSocketMessageType::Message: {
                     if (msg->binary) {
                         // Binary messages not supported for now
-                        std::cerr << "[WebSocket] Received unsupported binary message" << std::endl;
+                        LOG(ERROR, "WebSocket") << "Received unsupported binary message" << std::endl;
                     } else {
                         handle_message(conn_id, msg->str);
                     }
@@ -59,7 +60,7 @@ bool WebSocketServer::start() {
                 }
 
                 case ix::WebSocketMessageType::Error: {
-                    std::cerr << "[WebSocket] Error: " << msg->errorInfo.reason << std::endl;
+                    LOG(ERROR, "WebSocket") << "Error: " << msg->errorInfo.reason << std::endl;
                     break;
                 }
 
@@ -78,7 +79,7 @@ bool WebSocketServer::start() {
     // Start listening
     auto result = ws_server_.listen();
     if (!result.first) {
-        std::cerr << "[WebSocket] Failed to start server on port " << port_
+        LOG(ERROR, "WebSocket") << "Failed to start server on port " << port_
                   << ": " << result.second << std::endl;
         return false;
     }
@@ -87,7 +88,7 @@ bool WebSocketServer::start() {
     ws_server_.start();
     running_.store(true);
 
-    std::cout << "[WebSocket] Server started on port " << port_ << std::endl;
+    LOG(INFO, "WebSocket") << "Server started on port " << port_ << std::endl;
     return true;
 }
 
@@ -109,7 +110,7 @@ void WebSocketServer::stop() {
         connection_websockets_.clear();
     }
 
-    std::cout << "[WebSocket] Server stopped" << std::endl;
+    LOG(INFO, "WebSocket") << "Server stopped" << std::endl;
 }
 
 void WebSocketServer::handle_connection(const std::string& connection_id, ix::WebSocket* ws, const std::string& url) {
@@ -122,7 +123,7 @@ void WebSocketServer::handle_connection(const std::string& connection_id, ix::We
     // Get model from URL (OpenAI SDK compatible)
     if (params.count("model")) {
         initial_config["model"] = params["model"];
-        std::cout << "[WebSocket] Model from URL: " << params["model"] << std::endl;
+        LOG(INFO, "WebSocket") << "Model from URL: " << params["model"] << std::endl;
     }
 
     // Store WebSocket pointer for this connection
@@ -152,7 +153,7 @@ void WebSocketServer::handle_message(const std::string& connection_id, const std
         std::lock_guard<std::mutex> lock(connections_mutex_);
         auto it = connection_sessions_.find(connection_id);
         if (it == connection_sessions_.end()) {
-            std::cerr << "[WebSocket] Message from unknown connection" << std::endl;
+            LOG(ERROR, "WebSocket") << "Message from unknown connection" << std::endl;
             return;
         }
         session_id = it->second;
@@ -262,7 +263,7 @@ void WebSocketServer::send_json(const std::string& connection_id, const json& ms
             it->second->send(msg.dump());
         }
     } catch (const std::exception& e) {
-        std::cerr << "[WebSocket] Error sending message to " << connection_id
+        LOG(ERROR, "WebSocket") << "Error sending message to " << connection_id
                   << ": " << e.what() << std::endl;
     }
 }

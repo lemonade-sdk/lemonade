@@ -176,6 +176,7 @@ if(WIN32)
     )
 
     target_link_libraries(lemonade-tray PRIVATE
+        nlohmann_json::nlohmann_json
         user32
         shell32
     )
@@ -191,6 +192,10 @@ if(WIN32)
     # ============================================================
     add_executable(lemonade-log-viewer
         log-viewer.cpp
+    )
+
+    target_link_libraries(lemonade-log-viewer PRIVATE
+        nlohmann_json::nlohmann_json
     )
 
     set_target_properties(lemonade-log-viewer PROPERTIES

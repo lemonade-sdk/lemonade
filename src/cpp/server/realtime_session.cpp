@@ -4,6 +4,7 @@
 #include <chrono>
 #include <iostream>
 #include <cmath>
+#include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -154,7 +155,7 @@ void RealtimeSessionManager::append_audio(const std::string& session_id, const s
     // Log buffer growth periodically (every ~5 seconds at 256ms chunks ≈ every 20 chunks)
     static int chunk_count = 0;
     if (++chunk_count % 20 == 1) {
-        std::cout << "[RealtimeSession] Audio buffer: " << session->audio_buffer.duration_ms()
+        LOG(DEBUG, "RealtimeSession") << "Audio buffer: " << session->audio_buffer.duration_ms()
                   << "ms (" << session->audio_buffer.sample_count() << " samples)" << std::endl;
     }
 
@@ -176,7 +177,7 @@ void RealtimeSessionManager::process_vad(std::shared_ptr<RealtimeSession> sessio
         float rms = std::sqrt(sum_sq / static_cast<float>(recent_audio.size()));
         static int vad_log_count = 0;
         if (++vad_log_count % 20 == 1) {
-            std::cout << "[RealtimeSession] VAD: RMS=" << rms
+            LOG(DEBUG, "RealtimeSession") << "VAD: RMS=" << rms
                       << " speech_active=" << session->vad.is_speech_active() << std::endl;
         }
     }
@@ -185,7 +186,7 @@ void RealtimeSessionManager::process_vad(std::shared_ptr<RealtimeSession> sessio
 
     switch (event) {
         case SimpleVAD::Event::SpeechStart: {
-            std::cout << "[RealtimeSession] VAD: SpeechStart detected" << std::endl;
+            LOG(DEBUG, "RealtimeSession") << "VAD: SpeechStart detected" << std::endl;
             session->audio_start_ms = session->vad.speech_start_ms();
             session->last_interim_transcription_ms = 0;  // Reset interim tracking for new utterance
 
@@ -200,7 +201,7 @@ void RealtimeSessionManager::process_vad(std::shared_ptr<RealtimeSession> sessio
         }
 
         case SimpleVAD::Event::SpeechEnd: {
-            std::cout << "[RealtimeSession] VAD: SpeechEnd detected, triggering transcription" << std::endl;
+            LOG(DEBUG, "RealtimeSession") << "VAD: SpeechEnd detected, triggering transcription" << std::endl;
             int64_t audio_end_ms = session->vad.speech_end_ms();
 
             if (session->send_message) {
@@ -257,7 +258,7 @@ void RealtimeSessionManager::transcribe_interim(std::shared_ptr<RealtimeSession>
     std::string model = session->model;
     session->last_interim_transcription_ms = session->audio_buffer.duration_ms();
 
-    std::cout << "[RealtimeSession] Firing interim transcription at "
+    LOG(DEBUG, "RealtimeSession") << "Firing interim transcription at "
               << session->last_interim_transcription_ms << "ms" << std::endl;
 
     auto future = std::async(std::launch::async,
@@ -364,10 +365,10 @@ void RealtimeSessionManager::transcribe_wav(
 
         // Call router for transcription
         const char* tag = is_interim ? "interim" : "final";
-        std::cout << "[RealtimeSession] Calling Whisper " << tag << " transcription ("
+        LOG(DEBUG, "RealtimeSession") << "Calling Whisper " << tag << " transcription ("
                   << wav_data.size() << " bytes)..." << std::endl;
         json response = router_->audio_transcriptions(request);
-        std::cout << "[RealtimeSession] Whisper " << tag << " response: " << response.dump() << std::endl;
+        LOG(DEBUG, "RealtimeSession") << "Whisper " << tag << " response: " << response.dump() << std::endl;
 
         // Send transcription result if session is still active
         if (session->send_message && session->session_active.load()) {
@@ -376,7 +377,7 @@ void RealtimeSessionManager::transcribe_wav(
                 transcript = response["text"].get<std::string>();
             }
 
-            std::cout << "[RealtimeSession] Sending " << tag << " transcript to client: \""
+            LOG(DEBUG, "RealtimeSession") << "Sending " << tag << " transcript to client: \""
                       << transcript << "\"" << std::endl;
 
             if (is_interim) {
@@ -397,7 +398,7 @@ void RealtimeSessionManager::transcribe_wav(
         }
 
     } catch (const std::exception& e) {
-        std::cerr << "[RealtimeSession] Transcription error: " << e.what() << std::endl;
+        LOG(ERROR, "RealtimeSession") << "Transcription error: " << e.what() << std::endl;
 
         if (session->send_message && session->session_active.load()) {
             json error_msg = {

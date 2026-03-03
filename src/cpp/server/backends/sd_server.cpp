@@ -9,6 +9,7 @@
 #include <httplib.h>
 #include <iostream>
 #include <filesystem>
+#include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -63,9 +64,7 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 
 SDServer::SDServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("sd-server", log_level, model_manager, backend_manager) {
-    if (is_debug()) {
-        std::cout << "[SDServer] Created with log_level=" << log_level << std::endl;
-    }
+    LOG(DEBUG, "SDServer") << "Created with log_level=" << log_level << std::endl;
 }
 
 SDServer::~SDServer() {
@@ -76,8 +75,8 @@ void SDServer::load(const std::string& model_name,
                     const ModelInfo& model_info,
                     const RecipeOptions& options,
                     bool /* do_not_upgrade */) {
-    std::cout << "[SDServer] Loading model: " << model_name << std::endl;
-    std::cout << "[SDServer] Per-model settings: " << options.to_log_string() << std::endl;
+    LOG(INFO, "SDServer") << "Loading model: " << model_name << std::endl;
+    LOG(DEBUG, "SDServer") << "Per-model settings: " << options.to_log_string() << std::endl;
 
     std::string backend = options.get_option("sd-cpp_backend");
 
@@ -101,7 +100,7 @@ void SDServer::load(const std::string& model_name,
         throw std::runtime_error("Model file does not exist: " + model_path);
     }
 
-    std::cout << "[SDServer] Using model: " << model_path << std::endl;
+    LOG(DEBUG, "SDServer") << "Using model: " << model_path << std::endl;
 
     // Get sd-server executable path
     std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, backend);
@@ -112,7 +111,7 @@ void SDServer::load(const std::string& model_name,
         throw std::runtime_error("Failed to find an available port");
     }
 
-    std::cout << "[SDServer] Starting server on port " << port_ << " (backend: " << backend << ")" << std::endl;
+    LOG(INFO, "SDServer") << "Starting server on port " << port_ << " (backend: " << backend << ")" << std::endl;
 
     // Build command line arguments
     std::vector<std::string> args = {
@@ -149,9 +148,7 @@ void SDServer::load(const std::string& model_name,
     }
 
     env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
-    if (is_debug()) {
-        std::cout << "[SDServer] Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
-    }
+    LOG(DEBUG, "SDServer") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
 #else
     // ROCm builds on Windows require hipblaslt.dll, rocblas.dll, amdhip64.dll, etc.
     // These DLLs are distributed alongside sd-server.exe but need PATH to be set for loading
@@ -165,7 +162,7 @@ void SDServer::load(const std::string& model_name,
         }
         env_vars.push_back({"PATH", new_path});
 
-        std::cout << "[SDServer] ROCm backend: added " << exe_dir.string() << " to PATH" << std::endl;
+        LOG(INFO, "SDServer") << "ROCm backend: added " << exe_dir.string() << " to PATH" << std::endl;
     }
 #endif
 
@@ -183,7 +180,7 @@ void SDServer::load(const std::string& model_name,
         throw std::runtime_error("Failed to start sd-server process");
     }
 
-    std::cout << "[SDServer] Process started with PID: " << process_handle_.pid << std::endl;
+    LOG(INFO, "SDServer") << "Process started with PID: " << process_handle_.pid << std::endl;
 
     // Wait for server to be ready
     if (!wait_for_ready("/")) {
@@ -191,12 +188,12 @@ void SDServer::load(const std::string& model_name,
         throw std::runtime_error("sd-server failed to start or become ready");
     }
 
-    std::cout << "[SDServer] Server is ready at http://127.0.0.1:" << port_ << std::endl;
+    LOG(INFO, "SDServer") << "Server is ready at http://127.0.0.1:" << port_ << std::endl;
 }
 
 void SDServer::unload() {
     if (process_handle_.pid != 0) {
-        std::cout << "[SDServer] Stopping server (PID: " << process_handle_.pid << ")" << std::endl;
+        LOG(INFO, "SDServer") << "Stopping server (PID: " << process_handle_.pid << ")" << std::endl;
         utils::ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
         port_ = 0;
@@ -252,10 +249,8 @@ json SDServer::image_generations(const json& request) {
         sd_request["prompt"] = prompt;
     }
 
-    if (is_debug()) {
-        std::cout << "[SDServer] Forwarding request to sd-server: "
+    LOG(DEBUG, "SDServer") << "Forwarding request to sd-server: "
                   << sd_request.dump(2) << std::endl;
-    }
 
     // Use base class forward_request with 10 minute timeout for image generation
     return forward_request("/v1/images/generations", sd_request, 600);
@@ -306,13 +301,11 @@ json SDServer::image_edits(const json& request) {
         fields.push_back({"mask", mask_binary, "mask.png", "image/png"});
     }
 
-    if (is_debug()) {
-        std::cout << "[SDServer] Forwarding image edits to /v1/images/edits (multipart)"
+    LOG(DEBUG, "SDServer") << "Forwarding image edits to /v1/images/edits (multipart)"
                   << " prompt=" << prompt
                   << " n=" << request.value("n", 1)
                   << " size=" << request.value("size", "")
                   << std::endl;
-    }
 
     return forward_multipart_request("/v1/images/edits", fields, 600);
 }
@@ -336,13 +329,11 @@ json SDServer::image_variations(const json& request) {
         fields.push_back({"image[]", image_binary, "image.png", "image/png"});
     }
 
-    if (is_debug()) {
-        std::cout << "[SDServer] Forwarding image variations to /v1/images/edits (multipart)"
+    LOG(DEBUG, "SDServer") << "Forwarding image variations to /v1/images/edits (multipart)"
                   << " prompt=variation"
                   << " n=" << request.value("n", 1)
                   << " size=" << request.value("size", "")
                   << std::endl;
-    }
 
     return forward_multipart_request("/v1/images/edits", fields, 600);
 }
