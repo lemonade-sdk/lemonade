@@ -411,6 +411,11 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 }
 
 std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
+    // Experience models are virtual bundles with no direct checkpoint to resolve
+    if (info.recipe == "experience") {
+        return "";
+    }
+
     // FLM models use checkpoint as-is (e.g., "gemma3:4b")
     if (info.recipe == "flm") {
         return checkpoint;

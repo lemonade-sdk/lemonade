@@ -129,7 +129,7 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
     const modelList = Array.isArray(data) ? data : data.data || [];
 
     return modelList.reduce((acc: ModelsData, model: any) => {
-      if (!model.id || !model.checkpoint || !model.recipe) {
+      if (!model.id || !model.recipe) {
         return acc;
       }
 

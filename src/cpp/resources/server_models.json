@@ -1348,12 +1348,9 @@
         }
     },
     "Lemonade Ultra": {
-        "checkpoint": "experience:lemonade-ultra",
+        "checkpoint": "",
         "recipe": "experience",
         "suggested": true,
-        "labels": [
-            "experience"
-        ],
         "composite_models": [
             "gpt-oss-120b-mxfp-GGUF",
             "Z-Image-Turbo",
@@ -1362,12 +1359,9 @@
         ]
     },
     "Lemonade Medium": {
-        "checkpoint": "experience:lemonade-medium",
+        "checkpoint": "",
         "recipe": "experience",
         "suggested": true,
-        "labels": [
-            "experience"
-        ],
         "composite_models": [
             "gpt-oss-20b-mxfp4-GGUF",
             "SDXL-Turbo",
