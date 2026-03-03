@@ -1,6 +1,7 @@
 #ifdef _WIN32
 
 #include "wmi_helper.h"
+#include <lemon/utils/aixlog.hpp>
 #include <iostream>
 #include <locale>
 #include <codecvt>
@@ -221,7 +222,7 @@ uint64_t get_property_uint64(IWbemClassObject* pObj, const std::wstring& prop_na
         }
     } catch (const std::exception& e) {
         // Parsing failed - return 0 instead of crashing
-        std::cerr << "[WMI WARNING] Failed to parse uint64 property: " << e.what() << std::endl;
+        LOG(WARNING, "WMI") << "Failed to parse uint64 property: " << e.what() << std::endl;
         result = 0;
     }
 

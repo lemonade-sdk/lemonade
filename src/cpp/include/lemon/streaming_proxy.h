@@ -5,6 +5,8 @@
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "utils/http_client.h"
+#include "utils/aixlog.hpp"
+#include <iomanip>
 
 namespace lemon {
 
@@ -20,14 +22,14 @@ public:
 
         void print() const {
             if (input_tokens > 0 || output_tokens > 0) {
-                std::cout << "\n=== Telemetry ===" << std::endl;
-                std::cout << "Input tokens:  " << input_tokens << std::endl;
-                std::cout << "Output tokens: " << output_tokens << std::endl;
-                std::cout << "TTFT (s):      " << std::fixed << std::setprecision(3)
+                LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
+                LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
+                LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
+                LOG(INFO, "Telemetry") << "TTFT (s):      " << std::fixed << std::setprecision(3)
                           << time_to_first_token << std::endl;
-                std::cout << "TPS:           " << std::fixed << std::setprecision(2)
+                LOG(INFO, "Telemetry") << "TPS:           " << std::fixed << std::setprecision(2)
                           << tokens_per_second << std::endl;
-                std::cout << "=================" << std::endl;
+                LOG(INFO, "Telemetry") << "=================" << std::endl;
             }
         }
     };

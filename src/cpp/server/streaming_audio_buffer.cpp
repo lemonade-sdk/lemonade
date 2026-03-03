@@ -3,6 +3,7 @@
 #include <cstring>
 #include <algorithm>
 #include <iostream>
+#include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
 
@@ -31,20 +32,20 @@ void StreamingAudioBuffer::append(const std::string& base64_audio) {
     static bool logged_first = false;
     if (!logged_first && num_samples > 0) {
         logged_first = true;
-        std::cout << "[AudioBuffer] base64 length=" << base64_audio.size()
+        LOG(DEBUG, "AudioBuffer") << "base64 length=" << base64_audio.size()
                   << " decoded bytes=" << raw_size
                   << " samples=" << num_samples << std::endl;
-        std::cout << "[AudioBuffer] first 8 raw bytes:";
-        for (size_t i = 0; i < std::min(raw_size, size_t(8)); i++) {
-            std::cout << " " << static_cast<int>(raw_bytes[i]);
+        LOG(DEBUG, "AudioBuffer") << "first 8 raw bytes:";
+        for (size_t i = 0; i < (std::min)(raw_size, size_t(8)); i++) {
+            LOG(DEBUG, "AudioBuffer") << " " << static_cast<int>(raw_bytes[i]);
         }
-        std::cout << std::endl;
-        std::cout << "[AudioBuffer] first 4 int16 samples:";
-        for (size_t i = 0; i < std::min(num_samples, size_t(4)); i++) {
-            std::cout << " " << new_samples[i];
+        LOG(DEBUG, "AudioBuffer") << std::endl;
+        LOG(DEBUG, "AudioBuffer") << "first 4 int16 samples:";
+        for (size_t i = 0; i < (std::min)(num_samples, size_t(4)); i++) {
+            LOG(DEBUG, "AudioBuffer") << " " << new_samples[i];
         }
-        std::cout << std::endl;
-        std::cout << "[AudioBuffer] base64 prefix: " << base64_audio.substr(0, 40) << std::endl;
+        LOG(DEBUG, "AudioBuffer") << std::endl;
+        LOG(DEBUG, "AudioBuffer") << "base64 prefix: " << base64_audio.substr(0, 40) << std::endl;
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
