@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
 
 namespace lemon {
@@ -33,6 +34,21 @@ std::string find_flm_executable();
  * @return true if validation succeeds, false otherwise.
  */
 bool run_flm_validate(const std::string& flm_path, std::string& error_message);
+
+/**
+ * Get an environment variable as UTF-8 text.
+ */
+std::string get_environment_variable_utf8(const std::string& name);
+
+/**
+ * Convert a UTF-8 path string to a std::filesystem::path.
+ */
+std::filesystem::path path_from_utf8(const std::string& path);
+
+/**
+ * Convert a std::filesystem::path to a UTF-8 string.
+ */
+std::string path_to_utf8(const std::filesystem::path& path);
 
 /**
  * Get the cache directory
