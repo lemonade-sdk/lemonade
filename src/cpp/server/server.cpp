@@ -896,6 +896,12 @@ void Server::run() {
     //The beacon will send per-interface with the correct IP in the payload.
     auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
     if(!rfc1918Interfaces.empty() && !no_broadcast_) {
+        std::cout << "[Server] [Net Broadcast] Broadcasting on " << rfc1918Interfaces.size()
+                  << " RFC1918 interface(s):";
+        for (const auto& iface : rfc1918Interfaces) {
+            std::cout << " " << iface.ipAddress << " (bcast " << iface.broadcastAddress << ")";
+        }
+        std::cout << std::endl;
         udp_beacon_.startBroadcasting(
             8000, //Broadcast port best to not make it adjustable, so clients dont have to scan.
             port_,
