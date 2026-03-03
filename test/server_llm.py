@@ -514,7 +514,7 @@ class LLMTests(ServerTestBase):
         self.assertGreater(len(response.data[0].embedding), 0)
         print(f"Embedding dimension: {len(response.data[0].embedding)}")
 
-    @skip_if_unsupported("embeddings")
+    @skip_if_unsupported("embeddings_batch")
     def test_016_embeddings_array_of_strings(self):
         """Test embeddings with array of strings."""
         client = self.get_openai_client()
@@ -533,7 +533,7 @@ class LLMTests(ServerTestBase):
             self.assertGreater(len(embedding.embedding), 0)
             print(f"Embedding {i+1} dimension: {len(embedding.embedding)}")
 
-    @skip_if_unsupported("embeddings")
+    @skip_if_unsupported("embeddings_batch")
     def test_017_embeddings_semantic_similarity(self):
         """Test that semantically similar texts have similar embeddings."""
         client = self.get_openai_client()
@@ -773,4 +773,4 @@ class LLMTests(ServerTestBase):
 
 
 if __name__ == "__main__":
-    run_server_tests(LLMTests, "LLM/EMBEDDING/RERANKING TESTS")
+    run_server_tests(LLMTests, "LLM/EMBEDDING/RERANKING TESTS", modality="llm")

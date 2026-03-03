@@ -1095,6 +1095,20 @@
         "suggested": true,
         "size": 3.39
     },
+    "whisper-v3-turbo-FLM": {
+        "checkpoint": "whisper-v3:turbo",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": ["audio", "transcription"],
+        "size": 1.6
+    },
+    "embed-gemma-300m-FLM": {
+        "checkpoint": "embed-gemma:300m",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": ["embeddings"],
+        "size": 0.3
+    },
     "Whisper-Tiny": {
         "checkpoints": {
             "main": "ggerganov/whisper.cpp:ggml-tiny.bin",

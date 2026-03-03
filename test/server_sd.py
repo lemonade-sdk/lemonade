@@ -512,4 +512,5 @@ if __name__ == "__main__":
         StableDiffusionTests,
         "STABLE DIFFUSION TESTS",
         wrapped_server="sd-cpp",
+        modality="stable_diffusion",
     )
