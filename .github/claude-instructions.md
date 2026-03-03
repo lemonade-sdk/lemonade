@@ -98,9 +98,3 @@ The desktop app is React 19 + TypeScript in `src/app/`. Key components: `ChatWin
 
 Tests are Python-based integration tests in `test/`. Key test files: `server_endpoints.py`, `server_llm.py`, `server_sd.py`, `server_whisper.py`, `server_tts.py`, `server_system_info.py`, `server_cli.py`. Test utilities in `test/utils/` with `server_base.py` providing the base test class.
 
-## Contributing Rules
-
-- Open an Issue before submitting major PRs
-- UI/frontend changes are handled by core maintainers only
-- Python formatting with Black is required
-- PRs trigger CI for linting, formatting, unit tests, and end-to-end tests
