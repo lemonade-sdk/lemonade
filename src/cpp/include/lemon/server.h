@@ -120,6 +120,7 @@ private:
     double get_cpu_usage();
     double get_gpu_usage();
     double get_vram_usage();
+    double get_npu_utilization();
 
     int port_;
     std::string host_;

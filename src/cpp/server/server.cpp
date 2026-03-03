@@ -18,6 +18,7 @@
 #include <mutex>
 #include <filesystem>
 #include <algorithm>
+#include <cmath>
 
 #ifdef _WIN32
     #include <windows.h>
@@ -32,6 +33,13 @@
 
 #ifdef __APPLE__
     #include <sys/sysctl.h>
+#endif
+
+#ifdef __linux__
+    #include <sys/ioctl.h>
+    #include <fcntl.h>
+    #include <unistd.h>
+    #include "lemon/amdxdna_accel.h"
 #endif
 
 #ifdef HAVE_SYSTEMD
@@ -2752,13 +2760,16 @@ void Server::resolve_and_register_local_model(
 
     // Build checkpoint for registration - store as relative path from HF cache
     std::string checkpoint_to_register;
+    std::filesystem::path hf_cache_path = utils::path_from_utf8(hf_cache);
     if (!resolved_checkpoint.empty()) {
-        std::filesystem::path rel = std::filesystem::relative(resolved_checkpoint, hf_cache);
-        checkpoint_to_register = rel.string();
+        std::filesystem::path rel = std::filesystem::relative(
+            utils::path_from_utf8(resolved_checkpoint), hf_cache_path);
+        checkpoint_to_register = utils::path_to_utf8(rel);
     } else {
         // Fallback - use dest_path relative to hf_cache
-        std::filesystem::path rel = std::filesystem::relative(dest_path, hf_cache);
-        checkpoint_to_register = rel.string();
+        std::filesystem::path rel = std::filesystem::relative(
+            utils::path_from_utf8(dest_path), hf_cache_path);
+        checkpoint_to_register = utils::path_to_utf8(rel);
     }
 
     std::cout << "[Server] Registering model with checkpoint: " << checkpoint_to_register << std::endl;
@@ -3072,6 +3083,59 @@ double Server::get_vram_usage() {
 #endif
 }
 
+// Helper: Get NPU utilization (AMD NPU on Linux)
+double Server::get_npu_utilization() {
+#ifdef __linux__
+    try {
+        std::string accel_path = "/dev/accel/accel0";
+        if (!fs::exists(accel_path)) {
+            return -1.0;
+        }
+
+        int fd = open(accel_path.c_str(), O_RDWR);
+        if (fd < 0) {
+            return -1.0;
+        }
+
+        amdxdna_drm_query_sensor sensors[16] = {};
+        amdxdna_drm_get_info get_info = {};
+        get_info.param = DRM_AMDXDNA_QUERY_SENSORS;
+        get_info.buffer_size = sizeof(sensors);
+        get_info.buffer = (uintptr_t)sensors;
+
+        if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) < 0) {
+            close(fd);
+            return -1.0;
+        }
+
+        close(fd);
+
+        int num_sensors = get_info.buffer_size / sizeof(amdxdna_drm_query_sensor);
+        double usage_sum = 0.0;
+        int usage_count = 0;
+        for (int i = 0; i < num_sensors; ++i) {
+            if (sensors[i].type == AMDXDNA_SENSOR_TYPE_COLUMN_UTILIZATION) {
+                double val = (double)sensors[i].input * std::pow(10.0, sensors[i].unitm);
+                usage_sum += val;
+                usage_count++;
+            }
+        }
+
+        if (usage_count > 0) {
+            // Return average utilization percentage [0, 100]
+            return (usage_sum / usage_count);
+        }
+
+        return -1.0;
+    } catch (...) {
+        return -1.0;
+    }
+#else
+    // NPU monitoring not implemented for Windows/macOS
+    return -1.0;
+#endif
+}
+
 void Server::handle_system_stats(const httplib::Request& req, httplib::Response& res) {
     // For HEAD requests, just return 200 OK without processing
     if (req.method == "HEAD") {
@@ -3137,6 +3201,10 @@ void Server::handle_system_stats(const httplib::Request& req, httplib::Response&
     // VRAM usage
     double vram_gb = get_vram_usage();
     stats["vram_gb"] = (vram_gb >= 0) ? nlohmann::json(vram_gb) : nlohmann::json();
+
+    // NPU Utilization
+    double npu_percent = get_npu_utilization();
+    stats["npu_percent"] = (npu_percent >= 0) ? nlohmann::json(npu_percent) : nlohmann::json();
 
     res.set_content(stats.dump(), "application/json");
 }
