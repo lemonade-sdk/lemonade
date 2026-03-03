@@ -60,6 +60,11 @@ const AppContent: React.FC = () => {
       } catch (error) {
         console.error('Failed to load layout settings:', error);
       } finally {
+        // Override with URL parameters if present
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('logs') === 'true') {
+          setIsLogsVisible(true);
+        }
         setLayoutLoaded(true);
       }
     };

@@ -161,6 +161,17 @@ CLIParser::CLIParser()
         ->type_name("HOST")
         ->default_val(config_.host);
 
+    // Logs
+    CLI::App* logs = app_.add_subcommand("logs", "Show server logs in web app");
+    logs->add_option("--port", config_.port, "Port number the server is running on")
+        ->envname("LEMONADE_PORT")
+        ->type_name("PORT")
+        ->default_val(config_.port);
+    logs->add_option("--host", config_.host, "Host the server is running on")
+        ->envname("LEMONADE_HOST")
+        ->type_name("HOST")
+        ->default_val(config_.host);
+
     // Stop
     CLI::App* stop = app_.add_subcommand("stop", "Stop the server");
     stop->add_option("--port", config_.port, "Port number the server is running on")

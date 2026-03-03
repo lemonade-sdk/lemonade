@@ -551,6 +551,8 @@ int TrayApp::run() {
         return execute_stop_command();
     } else if (tray_config_.command == "recipes") {
         return execute_recipes_command();
+    } else if (tray_config_.command == "logs") {
+        return execute_logs_command();
     } else if (tray_config_.command == "serve" || tray_config_.command == "run") {
         auto connect_to_running_server = [this, &server_already_running, &run_command_already_executed](const char* context) -> int {
             std::cout << "Lemonade Server is " << context << " already running. Connecting to it..." << std::endl;
@@ -2630,82 +2632,32 @@ void TrayApp::on_change_context_size(int new_ctx_size) {
 }
 
 void TrayApp::on_show_logs() {
-    if (log_file_.empty()) {
-        show_notification("Error", "No log file configured");
-        return;
+    std::string connect_host = server_config_.host;
+    if (connect_host.empty() || connect_host == "0.0.0.0") {
+        connect_host = "localhost";
+    }
+    std::string web_app_url = "http://" + connect_host + ":" + std::to_string(server_config_.port) + "/?logs=true";
+    std::cout << "Opening web app logs at: " << web_app_url << std::endl;
+    open_url(web_app_url);
+}
+
+int TrayApp::execute_logs_command() {
+    auto [pid, port] = get_server_info();
+
+    if (port == 0) {
+        std::cout << "Lemonade Server is not running" << std::endl;
+        return 1;
     }
 
-#ifdef _WIN32
-    // Close existing log viewer if any
-    if (log_viewer_process_) {
-        TerminateProcess(log_viewer_process_, 0);
-        CloseHandle(log_viewer_process_);
-        log_viewer_process_ = nullptr;
+    std::string connect_host = server_config_.host;
+    if (connect_host.empty() || connect_host == "0.0.0.0") {
+        connect_host = "localhost";
     }
+    std::string web_app_url = "http://" + connect_host + ":" + std::to_string(port) + "/?logs=true";
+    std::cout << "Opening web app logs at: " << web_app_url << std::endl;
+    open_url(web_app_url);
 
-    // Find lemonade-log-viewer.exe in the same directory as this executable
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
-    std::string exeDir = exePath;
-    size_t lastSlash = exeDir.find_last_of("\\/");
-    if (lastSlash != std::string::npos) {
-        exeDir = exeDir.substr(0, lastSlash);
-    }
-
-    std::string logViewerPath = exeDir + "\\lemonade-log-viewer.exe";
-    std::string cmd = "\"" + logViewerPath + "\" \"" + log_file_ + "\"";
-
-    STARTUPINFOA si = {};
-    si.cb = sizeof(si);
-    PROCESS_INFORMATION pi = {};
-
-    if (CreateProcessA(
-        nullptr,
-        const_cast<char*>(cmd.c_str()),
-        nullptr,
-        nullptr,
-        FALSE,
-        CREATE_NEW_CONSOLE,
-        nullptr,
-        nullptr,
-        &si,
-        &pi))
-    {
-        log_viewer_process_ = pi.hProcess;
-        CloseHandle(pi.hThread);
-    } else {
-        show_notification("Error", "Failed to open log viewer");
-    }
-#elif defined(__APPLE__)
-    // Kill existing log viewer if any
-    if (log_viewer_pid_ > 0) {
-        kill(log_viewer_pid_, SIGTERM);
-        log_viewer_pid_ = 0;
-    }
-    // Use open command to open log file in default editor instead of Terminal.app
-    std::string cmd = "open \"" + log_file_ + "\"";
-    int result = system(cmd.c_str());
-    if (result != 0) {
-        show_notification("Error", "Failed to open log file");
-    }
-#else
-    // Kill existing log viewer if any
-    if (log_viewer_pid_ > 0) {
-        kill(log_viewer_pid_, SIGTERM);
-        log_viewer_pid_ = 0;
-    }
-
-    // Fork and open gnome-terminal or xterm
-    pid_t pid = fork();
-    if (pid == 0) {
-        // Child process
-        std::string cmd = "gnome-terminal -- tail -f '" + log_file_ + "' || xterm -e tail -f '" + log_file_ + "'";
-        execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
-        exit(0);
-    } else if (pid > 0) {
-        log_viewer_pid_ = pid;
-    }
-#endif
+    return 0;
 }
 
 void TrayApp::on_open_documentation() {
