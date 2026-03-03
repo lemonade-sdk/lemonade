@@ -263,22 +263,25 @@ void Router::load_model(const std::string& model_name,
 
         // NPU EXCLUSIVITY CHECK (recipe-aware rules)
         // FLM can run up to 3 concurrent NPU processes (1 LLM + 1 audio + 1 embedding)
-        // RyzenAI locks the entire NPU exclusively
+        // RyzenAI and WhisperCpp lock the entire NPU exclusively
         if (device_type & DEVICE_NPU) {
-            if (model_info.recipe == "ryzenai-llm") {
-                // RyzenAI locks entire NPU - evict ALL NPU servers (both FLM and RyzenAI)
+            if (model_info.recipe == "ryzenai-llm" || model_info.recipe == "whispercpp") {
+                // Exclusive NPU recipes - evict ALL NPU servers
                 if (has_npu_server()) {
-                    std::cout << "[Router] RyzenAI requires exclusive NPU access, evicting all NPU servers..." << std::endl;
+                    std::cout << "[Router] " << model_info.recipe
+                              << " requires exclusive NPU access, evicting all NPU servers..." << std::endl;
                     evict_all_npu_servers();
                 }
             } else if (model_info.recipe == "flm") {
-                // FLM can coexist with other FLM types, but not with RyzenAI
-                // 1. Evict any RyzenAI server (mutually exclusive)
-                WrappedServer* ryzenai_server = find_npu_server_by_recipe("ryzenai-llm");
-                if (ryzenai_server) {
-                    std::cout << "[Router] FLM cannot coexist with RyzenAI, evicting: "
-                              << ryzenai_server->get_model_name() << std::endl;
-                    evict_server(ryzenai_server);
+                // FLM can coexist with other FLM types, but not with exclusive-NPU recipes
+                // 1. Evict any exclusive-NPU server (mutually exclusive)
+                for (const std::string& exclusive_recipe : {"ryzenai-llm", "whispercpp"}) {
+                    WrappedServer* exclusive_server = find_npu_server_by_recipe(exclusive_recipe);
+                    if (exclusive_server) {
+                        std::cout << "[Router] FLM cannot coexist with " << exclusive_recipe
+                                  << ", evicting: " << exclusive_server->get_model_name() << std::endl;
+                        evict_server(exclusive_server);
+                    }
                 }
                 // 2. Evict FLM of the SAME model type (max 1 per type: 1 LLM, 1 audio, 1 embed)
                 WrappedServer* same_type_flm = find_flm_server_by_type(model_type);
@@ -290,11 +293,9 @@ void Router::load_model(const std::string& model_name,
                 }
             } else {
                 // Unknown NPU recipe - default to exclusive access
-                WrappedServer* npu_server = find_npu_server();
-                if (npu_server) {
-                    std::cout << "[Router] NPU is occupied by: " << npu_server->get_model_name()
-                              << ", evicting..." << std::endl;
-                    evict_server(npu_server);
+                if (has_npu_server()) {
+                    std::cout << "[Router] Unknown NPU recipe, evicting all NPU servers..." << std::endl;
+                    evict_all_npu_servers();
                 }
             }
         }
