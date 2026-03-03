@@ -61,6 +61,8 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const [isMicRecording, setIsMicRecording] = useState(false);
   const [expandedThinking, setExpandedThinking] = useState<Set<number>>(new Set());
   const [isUserAtBottom, setIsUserAtBottom] = useState(true);
+  const [isExperienceLayoutActive, setIsExperienceLayoutActive] = useState(experienceMode);
+  const [modeTransitionClass, setModeTransitionClass] = useState('');
   const userScrolledAwayRef = useRef(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -76,6 +78,34 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const autoScrollResetRef = useRef<number | null>(null);
   const autoScrollRafRef = useRef<number | null>(null);
   const pendingAutoScrollRef = useRef(false);
+  const modeTransitionTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const TRANSITION_MS = 420;
+    if (modeTransitionTimerRef.current !== null) {
+      window.clearTimeout(modeTransitionTimerRef.current);
+      modeTransitionTimerRef.current = null;
+    }
+
+    if (experienceMode) {
+      setIsExperienceLayoutActive(true);
+      setModeTransitionClass('mode-transition-to-experience');
+      modeTransitionTimerRef.current = window.setTimeout(() => {
+        setModeTransitionClass('');
+        modeTransitionTimerRef.current = null;
+      }, TRANSITION_MS);
+      return;
+    }
+
+    if (isExperienceLayoutActive) {
+      setModeTransitionClass('mode-transition-to-llm');
+      modeTransitionTimerRef.current = window.setTimeout(() => {
+        setIsExperienceLayoutActive(false);
+        setModeTransitionClass('');
+        modeTransitionTimerRef.current = null;
+      }, TRANSITION_MS);
+    }
+  }, [experienceMode, isExperienceLayoutActive]);
 
   // Consolidated image handlers
   const createImageHandlers = (
@@ -126,6 +156,9 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     return () => {
       abortControllerRef.current?.abort();
       stopMicDictation();
+      if (modeTransitionTimerRef.current !== null) {
+        window.clearTimeout(modeTransitionTimerRef.current);
+      }
     };
   }, []);
 
@@ -674,7 +707,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   };
 
   return (
-    <div className={`llm-chat-panel ${experienceMode && messages.length === 0 ? 'experience-empty-chat' : ''}`}>
+    <div className={`llm-chat-panel ${isExperienceLayoutActive && messages.length === 0 ? 'experience-empty-chat' : ''} ${modeTransitionClass}`}>
       {experienceMode && selectedModel && (
         <div className="experience-topbar">
           <div className="experience-topbar-left">

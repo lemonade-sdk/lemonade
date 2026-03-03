@@ -2749,8 +2749,8 @@ footer {
     --experience-topbar-height: 62px;
     --experience-bottom-gradient-height: 240px;
     --experience-composer-width: min(920px, 66.666%);
-    --experience-composer-height: 54px;
-    --experience-composer-radius: 22px;
+    --experience-composer-height: auto;
+    --experience-composer-radius: 8px;
     --experience-composer-side-padding: 10px;
     --experience-composer-left-padding: 16px;
     --experience-composer-send-reserved-space: 52px;
