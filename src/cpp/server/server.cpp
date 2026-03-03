@@ -2236,6 +2236,7 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
 
         auto response = router_->image_edits(request_json);
         if (response.contains("error")) {
+            LOG(ERROR, "Server") << "Image edits backend error: " << response.dump() << std::endl;
             res.status = 500;
         }
         res.set_content(response.dump(), "application/json");
@@ -2287,6 +2288,7 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
 
         auto response = router_->image_variations(request_json);
         if (response.contains("error")) {
+            LOG(ERROR, "Server") << "Image variations backend error: " << response.dump() << std::endl;
             res.status = 500;
         }
         res.set_content(response.dump(), "application/json");
