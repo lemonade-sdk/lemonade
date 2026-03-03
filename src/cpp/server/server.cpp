@@ -2756,13 +2756,16 @@ void Server::resolve_and_register_local_model(
 
     // Build checkpoint for registration - store as relative path from HF cache
     std::string checkpoint_to_register;
+    std::filesystem::path hf_cache_path = utils::path_from_utf8(hf_cache);
     if (!resolved_checkpoint.empty()) {
-        std::filesystem::path rel = std::filesystem::relative(resolved_checkpoint, hf_cache);
-        checkpoint_to_register = rel.string();
+        std::filesystem::path rel = std::filesystem::relative(
+            utils::path_from_utf8(resolved_checkpoint), hf_cache_path);
+        checkpoint_to_register = utils::path_to_utf8(rel);
     } else {
         // Fallback - use dest_path relative to hf_cache
-        std::filesystem::path rel = std::filesystem::relative(dest_path, hf_cache);
-        checkpoint_to_register = rel.string();
+        std::filesystem::path rel = std::filesystem::relative(
+            utils::path_from_utf8(dest_path), hf_cache_path);
+        checkpoint_to_register = utils::path_to_utf8(rel);
     }
 
     std::cout << "[Server] Registering model with checkpoint: " << checkpoint_to_register << std::endl;
