@@ -120,10 +120,7 @@ class ServerConfig {
    * Get the full API base URL
    */
   getApiBaseUrl(): string {
-    if (this.explicitBaseUrl) {
-      return `${this.explicitBaseUrl}/api/v1`;
-    }
-    return `http://localhost:${this.port}/api/v1`;
+    return `${this.getServerBaseUrl()}/api/v1`;
   }
 
   /**
@@ -134,6 +131,14 @@ class ServerConfig {
       return this.explicitBaseUrl;
     }
     return `http://localhost:${this.port}`;
+  }
+
+  /**
+   * Get the server hostname
+   */
+  getServerHost(): string {
+    const url = new URL(this.getServerBaseUrl());
+    return url.hostname;
   }
 
   /**
@@ -324,6 +329,7 @@ export const serverConfig = new ServerConfig();
 // Export convenience functions
 export const getApiBaseUrl = () => serverConfig.getApiBaseUrl();
 export const getServerBaseUrl = () => serverConfig.getServerBaseUrl();
+export const getServerHost = () => serverConfig.getServerHost();
 export const getAPIKey = () => serverConfig.getAPIKey();
 export const getServerPort = () => serverConfig.getPort();
 export const discoverServerPort = () => serverConfig.discoverPort();
