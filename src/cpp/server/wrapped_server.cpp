@@ -75,7 +75,7 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
 
     try {
         auto response = utils::HttpClient::post(url, request.dump(), headers,
-                                               timeout_seconds);
+                                               300);
 
         if (response.status_code == 200) {
             return json::parse(response.body);
@@ -113,7 +113,7 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
 
     try {
         auto response = utils::HttpClient::post_multipart(url, fields,
-                                                         timeout_seconds);
+                                                         300);
 
         if (response.status_code == 200) {
             return json::parse(response.body);

@@ -37,7 +37,7 @@ void StreamingProxy::forward_sse_stream(
             return true; // Continue streaming
         },
         {}, // Empty headers map
-        timeout_seconds
+        300
     );
 
     if (result.status_code != 200) {
@@ -89,7 +89,7 @@ void StreamingProxy::forward_byte_stream(
             return true; // Continue streaming
         },
         {}, // Empty headers map
-        timeout_seconds
+        300
     );
 
     if (result.status_code != 200) {
