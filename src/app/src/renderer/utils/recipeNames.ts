@@ -1,5 +1,5 @@
 export const RECIPE_DISPLAY_NAMES: Record<string, string> = {
-  'macro': 'Experiences',
+  'experience': 'Experiences',
   'flm': 'FastFlowLM NPU',
   'llamacpp': 'Llama.cpp GPU',
   'ryzenai-llm': 'Ryzen AI LLM',

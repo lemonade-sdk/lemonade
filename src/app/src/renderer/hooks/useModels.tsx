@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ModelsData, ModelInfo, USER_MODEL_PREFIX, fetchSupportedModelsData } from '../utils/modelData';
 import { onServerPortChange } from '../utils/serverConfig';
-import { isMacroFullyDownloaded, isMacroModel } from '../utils/macroModels';
+import { isExperienceFullyDownloaded, isExperienceModel } from '../utils/experienceModels';
 
 // Default model to use when no models are downloaded (first-time user experience)
 export const DEFAULT_MODEL_ID = 'Qwen3-0.6B-GGUF';
@@ -54,8 +54,8 @@ export const ModelsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const userHasSelectedModelRef = useRef(false);
 
   const isEffectivelyDownloaded = useCallback((modelId: string, info: ModelInfo, data: ModelsData): boolean => {
-    if (isMacroModel(info)) {
-      return isMacroFullyDownloaded(modelId, data);
+    if (isExperienceModel(info)) {
+      return isExperienceFullyDownloaded(modelId, data);
     }
     return info.downloaded === true;
   }, []);

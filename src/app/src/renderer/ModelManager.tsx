@@ -16,7 +16,7 @@ import SettingsPanel from './SettingsPanel';
 import BackendManager from './BackendManager';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
-import { getCompositeModels, isMacroFullyDownloaded, isMacroFullyLoaded, isMacroModel } from './utils/macroModels';
+import { getExperienceComponents, isExperienceFullyDownloaded, isExperienceFullyLoaded, isExperienceModel } from './utils/experienceModels';
 
 interface ModelManagerProps {
   isVisible: boolean;
@@ -262,17 +262,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   };
 
   const getModelSize = (modelName: string, info: ModelInfo): number | undefined => {
-    if (!isMacroModel(info)) {
+    if (!isExperienceModel(info)) {
       return info.size;
     }
-    const components = getCompositeModels(info);
+    const components = getExperienceComponents(info);
     if (components.length === 0) return info.size;
     const total = components.reduce((sum, component) => sum + (modelsData[component]?.size || 0), 0);
     return total > 0 ? total : info.size;
   };
 
   const getDisplayLabelsForModel = (modelName: string, info: ModelInfo): string[] => {
-    if (isMacroModel(info)) {
+    if (isExperienceModel(info)) {
       // Experiences intentionally show a single, consistent legend marker.
       return ['experience'];
     }
@@ -280,27 +280,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   };
 
   const getModelDownloadedState = (modelName: string, info: ModelInfo): boolean => {
-    if (isMacroModel(info)) {
-      return isMacroFullyDownloaded(modelName, modelsData);
+    if (isExperienceModel(info)) {
+      return isExperienceFullyDownloaded(modelName, modelsData);
     }
     return modelsData[modelName]?.downloaded ?? false;
   };
 
   const getModelLoadedState = (modelName: string, info: ModelInfo): boolean => {
-    if (isMacroModel(info)) {
-      return isMacroFullyLoaded(modelName, modelsData, loadedModels);
+    if (isExperienceModel(info)) {
+      return isExperienceFullyLoaded(modelName, modelsData, loadedModels);
     }
     return loadedModels.has(modelName);
   };
 
-  const getModelLoadingState = (modelName: string, info: ModelInfo): boolean => {
-    if (isMacroModel(info)) {
-      // Macro loading should only reflect an explicit load action for that macro.
-      // Shared component models (e.g. whisper/kokoro) can overlap across macros.
-      // If we derive macro loading from component loading, one macro can appear
-      // as loading when only a different macro was requested.
-      return loadingModels.has(modelName);
-    }
+  const getModelLoadingState = (modelName: string): boolean => {
     return loadingModels.has(modelName);
   };
 
@@ -326,8 +319,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   const availableModelCount = getFilteredModels().length;
   const categories = Object.keys(groupedModels).sort((a, b) => {
     if (organizationMode === 'recipe') {
-      if (a === 'macro') return -1;
-      if (b === 'macro') return 1;
+      if (a === 'experience') return -1;
+      if (b === 'experience') return 1;
       return (RECIPE_DISPLAY_NAMES[a] || a).localeCompare(RECIPE_DISPLAY_NAMES[b] || b);
     }
     return getCategoryLabel(a).localeCompare(getCategoryLabel(b));
@@ -510,10 +503,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
         return;
       }
 
-      if (isMacroModel(modelData)) {
-        const components = getCompositeModels(modelData);
+      if (isExperienceModel(modelData)) {
+        const components = getExperienceComponents(modelData);
         if (components.length === 0) {
-          showError(`Macro model "${modelName}" has no component models.`);
+          showError(`Experience model "${modelName}" has no component models.`);
           return;
         }
 
@@ -571,8 +564,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
         const next = new Set(prev);
         next.delete(modelName);
         const info = modelsData[modelName];
-        if (isMacroModel(info)) {
-          getCompositeModels(info).forEach((component) => next.delete(component));
+        if (isExperienceModel(info)) {
+          getExperienceComponents(info).forEach((component) => next.delete(component));
         }
         return next;
       });
@@ -583,8 +576,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   const handleUnloadModel = async (modelName: string) => {
     try {
       const modelData = modelsData[modelName];
-      if (modelData && isMacroModel(modelData)) {
-        const components = getCompositeModels(modelData);
+      if (modelData && isExperienceModel(modelData)) {
+        const components = getExperienceComponents(modelData);
         for (const component of components) {
           if (!loadedModels.has(component)) continue;
           const response = await serverFetch('/unload', {
@@ -668,7 +661,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       {categories.map(category => (
         <div key={category} className="model-category">
           <div
-            className={`model-category-header ${organizationMode === 'recipe' && category === 'macro' ? 'experience-category-header' : ''}`}
+            className={`model-category-header ${organizationMode === 'recipe' && category === 'experience' ? 'experience-category-header' : ''}`}
             onClick={() => toggleCategory(category)}
           >
             <span className={`category-chevron ${shouldShowCategory(category) ? 'expanded' : ''}`}>
@@ -676,11 +669,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
             </span>
             <span className="category-label-wrap">
               <span className="category-label">{getDisplayLabel(category)}</span>
-              {organizationMode === 'recipe' && category === 'macro' && (
+              {organizationMode === 'recipe' && category === 'experience' && (
                 <span className="category-subtitle">Chat, image, and voice together</span>
               )}
             </span>
-            {!(organizationMode === 'recipe' && category === 'macro') && (
+            {!(organizationMode === 'recipe' && category === 'experience') && (
               <span className="category-count">({groupedModels[category].length})</span>
             )}
           </div>
@@ -697,7 +690,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                                    setOptionsModel(null);
                                    handleLoadModel(modelName, options);
                                  }}/>
-              {(category === 'macro'
+              {(category === 'experience'
                 ? [...groupedModels[category]].sort((a, b) => {
                     const aSize = getModelSize(a.name, a.info) || 0;
                     const bSize = getModelSize(b.name, b.info) || 0;
@@ -706,10 +699,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                   })
                 : groupedModels[category]
               ).map(model => {
-                const isMacro = isMacroModel(model.info);
+                const isExperience =isExperienceModel(model.info);
                 const isDownloaded = getModelDownloadedState(model.name, model.info);
                 const isLoaded = getModelLoadedState(model.name, model.info);
-                const isLoading = getModelLoadingState(model.name, model.info);
+                const isLoading = getModelLoadingState(model.name);
 
                 let statusClass = 'not-downloaded';
                 let statusTitle = 'Not downloaded';
@@ -719,10 +712,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                   statusTitle = 'Loading...';
                 } else if (isLoaded) {
                   statusClass = 'loaded';
-                  statusTitle = isMacro ? 'Experience is active' : 'Model is loaded';
+                  statusTitle = isExperience ? 'Experience is active' : 'Model is loaded';
                 } else if (isDownloaded) {
                   statusClass = 'available';
-                  statusTitle = isMacro ? 'All component models are available' : 'Available locally';
+                  statusTitle = isExperience ? 'All component models are available' : 'Available locally';
                 }
                 const isHovered = hoveredModel === model.name;
                 const displayLabels = getDisplayLabelsForModel(model.name, model.info);
@@ -767,7 +760,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                         <span className="model-size">{formatSize(getModelSize(model.name, model.info))}</span>
                         {isHovered && (
                           <span className="model-actions">
-                            {!isMacro && !isDownloaded && (
+                            {!isExperience && !isDownloaded && (
                               <button
                                 className="model-action-btn download-btn"
                                 onClick={(e) => {
@@ -783,7 +776,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                                 </svg>
                               </button>
                             )}
-                            {(!isLoaded && !isLoading && (isDownloaded || isMacro)) && (
+                            {(!isLoaded && !isLoading && (isDownloaded || isExperience)) && (
                               <>
                                 <button
                                   className="model-action-btn load-btn"
@@ -797,7 +790,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                                     <polygon points="5 3 19 12 5 21" fill="currentColor" />
                                   </svg>
                                 </button>
-                                {!isMacro && (
+                                {!isExperience && (
                                   <>
                                     <button
                                       className="model-action-btn delete-btn"
@@ -819,7 +812,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                             )}
                             {isLoaded && (
                               <>
-                                {!isMacro && renderLoadOptionsButton()}
+                                {!isExperience && renderLoadOptionsButton()}
                                 <button
                                   className="model-action-btn unload-btn"
                                   onClick={(e) => {
@@ -834,7 +827,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                                     <path d="M5 20H19" />
                                   </svg>
                                 </button>
-                                {!isMacro && (
+                                {!isExperience && (
                                   <button
                                     className="model-action-btn delete-btn"
                                     onClick={(e) => {

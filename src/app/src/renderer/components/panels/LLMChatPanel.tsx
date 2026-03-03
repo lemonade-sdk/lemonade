@@ -19,7 +19,7 @@ import ModelSelector from '../ModelSelector';
 import ImagePreviewList from '../ImagePreviewList';
 import EmptyState from '../EmptyState';
 import TypingIndicator from '../TypingIndicator';
-import { getMacroPrimaryChatModel } from '../../utils/macroModels';
+import { getExperiencePrimaryChatModel } from '../../utils/experienceModels';
 
 interface LLMChatPanelProps {
   isBusy: boolean;
@@ -31,21 +31,24 @@ interface LLMChatPanelProps {
   showError: (msg: string) => void;
   appSettings: AppSettings | null;
   isVision: boolean;
-  sereneMode?: boolean;
+  experienceMode?: boolean;
   currentLoadedModel: string | null;
   setCurrentLoadedModel: React.Dispatch<React.SetStateAction<string | null>>;
+  onNewChat?: () => void;
+  onUnloadExperience?: () => void;
 }
 
 const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   isBusy, isPreFlight, isInferring, activeModality,
   runPreFlight, reset, showError, appSettings,
-  isVision, sereneMode = false, currentLoadedModel, setCurrentLoadedModel,
+  isVision, experienceMode = false, currentLoadedModel, setCurrentLoadedModel,
+  onNewChat, onUnloadExperience,
 }) => {
   const { selectedModel, modelsData } = useModels();
   const { systemInfo } = useSystem();
   const tts = useTTS(appSettings, modelsData);
   const chatModelName = useMemo(
-    () => getMacroPrimaryChatModel(selectedModel, modelsData),
+    () => getExperiencePrimaryChatModel(selectedModel, modelsData),
     [selectedModel, modelsData],
   );
 
@@ -122,15 +125,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
-      const recognition = speechRecognitionRef.current;
-      if (recognition) {
-        try {
-          recognition.stop();
-        } catch {
-          // no-op
-        }
-        speechRecognitionRef.current = null;
-      }
+      stopMicDictation();
     };
   }, []);
 
@@ -679,16 +674,74 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   };
 
   return (
-    <div className={`llm-chat-panel ${sereneMode && messages.length === 0 ? 'serene-empty-chat' : ''}`}>
+    <div className={`llm-chat-panel ${experienceMode && messages.length === 0 ? 'experience-empty-chat' : ''}`}>
+      {experienceMode && selectedModel && (
+        <div className="experience-topbar">
+          <div className="experience-topbar-left">
+            <div className="experience-model-name">{selectedModel}</div>
+            <button
+              className="model-action-btn unload-btn active-model-eject-button experience-unload-icon-button"
+              onClick={onUnloadExperience}
+              disabled={isBusy}
+              title="Eject experience"
+              aria-label="Unload experience"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 11L12 8L15 11" />
+                <path d="M12 8V16" />
+                <path d="M5 20H19" />
+              </svg>
+            </button>
+          </div>
+          <button
+            className="experience-refresh-button"
+            onClick={onNewChat}
+            disabled={isBusy}
+            title="Start a new chat"
+            aria-label="Start a new chat"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M21 3V8M21 8H16M21 8L18 5.29168C16.4077 3.86656 14.3051 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21C16.2832 21 19.8675 18.008 20.777 14"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+      )}
+      {!experienceMode && (
+        <div className="chat-header">
+          <h3>LLM Chat</h3>
+          <button
+            className="new-chat-button"
+            onClick={onNewChat}
+            disabled={isBusy}
+            title="Start a new chat"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M21 3V8M21 8H16M21 8L18 5.29168C16.4077 3.86656 14.3051 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21C16.2832 21 19.8675 18.008 20.777 14"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+      )}
       <div
         className="chat-messages"
         ref={messagesContainerRef}
         onScroll={handleScroll}
         onClick={editingIndex !== null ? cancelEdit : undefined}
       >
-        {messages.length === 0 && !sereneMode && <EmptyState title="Lemonade Chat" />}
-        {messages.length === 0 && sereneMode && (
-          <div className="serene-empty-message">Chat and create, naturally.</div>
+        {messages.length === 0 && !experienceMode && <EmptyState title="Lemonade Chat" />}
+        {messages.length === 0 && experienceMode && (
+          <div className="experience-empty-message">Chat and create, naturally.</div>
         )}
         {messages.map((message, index) => {
           const isGrayedOut = editingIndex !== null && index > editingIndex;
@@ -796,7 +849,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             onSend={sendMessage}
             onStop={handleStopGeneration}
             sendDisabled={!inputValue.trim() && uploadedImages.length === 0}
-            modelSelector={sereneMode ? null : <ModelSelector disabled={isBusy} />}
+            modelSelector={experienceMode ? null : <ModelSelector disabled={isBusy} />}
             rightControls={
               <button
                 className={`chat-mic-button${isMicRecording ? ' recording' : ''}`}
@@ -808,7 +861,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
               </button>
             }
             leftControls={
-              (isVision || sereneMode) ? (
+              (isVision || experienceMode) ? (
                 <>
                   <input
                     ref={fileInputRef}

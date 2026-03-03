@@ -1348,8 +1348,8 @@
         }
     },
     "Lemonade Ultra": {
-        "checkpoint": "macro:lemonade-ultra",
-        "recipe": "macro",
+        "checkpoint": "experience:lemonade-ultra",
+        "recipe": "experience",
         "suggested": true,
         "labels": [
             "experience"
@@ -1362,8 +1362,8 @@
         ]
     },
     "Lemonade Medium": {
-        "checkpoint": "macro:lemonade-medium",
-        "recipe": "macro",
+        "checkpoint": "experience:lemonade-medium",
+        "recipe": "experience",
         "suggested": true,
         "labels": [
             "experience"

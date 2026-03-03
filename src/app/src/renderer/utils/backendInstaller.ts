@@ -3,7 +3,7 @@ import { serverFetch } from './serverConfig';
 import { fetchSystemInfoData, Recipes } from './systemData';
 import { ModelsData } from './modelData';
 import { toFrontendOptionName, OPTION_DEFINITIONS } from '../recipes/recipeOptionsConfig';
-import { getCompositeModels, isMacroModel } from './macroModels';
+import { getExperienceComponents, isExperienceModel } from './experienceModels';
 
 function extractServerErrorMessage(errorText: string, fallback: string): string {
   if (!errorText) return fallback;
@@ -514,17 +514,17 @@ async function ensureModelReadyInternal(
   visited: Set<string>,
 ): Promise<void> {
   if (visited.has(modelName)) {
-    throw new Error(`Circular macro model dependency detected for "${modelName}".`);
+    throw new Error(`Circular experience model dependency detected for "${modelName}".`);
   }
   visited.add(modelName);
   try {
     const modelInfo = modelsData[modelName];
-    if (isMacroModel(modelInfo)) {
+    if (isExperienceModel(modelInfo)) {
       options?.onModelLoading?.();
-      const components = getCompositeModels(modelInfo);
+      const components = getExperienceComponents(modelInfo);
       for (const component of components) {
         if (!modelsData[component]) {
-          throw new Error(`Macro model "${modelName}" references missing component "${component}".`);
+          throw new Error(`Experience model "${modelName}" references missing component "${component}".`);
         }
         await ensureModelReadyInternal(component, modelsData, {
           onModelLoading: options?.onModelLoading,

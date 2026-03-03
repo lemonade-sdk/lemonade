@@ -713,6 +713,19 @@ static void parse_composite_models(ModelInfo& info, const json& model_json) {
     }
 }
 
+// Check if all component models of an experience/composite model are downloaded.
+static bool check_composite_downloaded(const ModelInfo& info,
+                                        const std::map<std::string, ModelInfo>& model_map) {
+    if (info.composite_models.empty()) return false;
+    for (const auto& component_name : info.composite_models) {
+        auto it = model_map.find(component_name);
+        if (it == model_map.end() || !it->second.downloaded) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void ModelManager::build_cache() {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
@@ -844,17 +857,10 @@ void ModelManager::build_cache() {
     std::unordered_set<std::string> flm_set(flm_models.begin(), flm_models.end());
 
     int downloaded_count = 0;
+    // First pass: determine download status for non-macro models
     for (auto& [name, info] : all_models) {
-        if (info.recipe == "macro") {
-            bool all_components_downloaded = !info.composite_models.empty();
-            for (const auto& component_name : info.composite_models) {
-                auto component_it = all_models.find(component_name);
-                if (component_it == all_models.end() || !component_it->second.downloaded) {
-                    all_components_downloaded = false;
-                    break;
-                }
-            }
-            info.downloaded = all_components_downloaded;
+        if (info.recipe == "experience") {
+            continue;  // Handled in second pass after components are resolved
         } else if (info.recipe == "flm") {
             info.downloaded = flm_set.count(info.checkpoint()) > 0;
         } else {
@@ -899,7 +905,19 @@ void ModelManager::build_cache() {
         if (info.downloaded) {
             downloaded_count++;
         }
+    }
 
+    // Second pass: determine download status for macro models
+    // (must happen after component models have their downloaded status set)
+    for (auto& [name, info] : all_models) {
+        if (info.recipe != "experience") continue;
+        info.downloaded = check_composite_downloaded(info, all_models);
+        if (info.downloaded) {
+            downloaded_count++;
+        }
+    }
+
+    for (auto& [name, info] : all_models) {
         models_cache_[name] = info;
     }
 
@@ -969,16 +987,8 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     }
 
     // Check download status
-    if (info.recipe == "macro") {
-        bool all_components_downloaded = !info.composite_models.empty();
-        for (const auto& component_name : info.composite_models) {
-            auto component_it = models_cache_.find(component_name);
-            if (component_it == models_cache_.end() || !component_it->second.downloaded) {
-                all_components_downloaded = false;
-                break;
-            }
-        }
-        info.downloaded = all_components_downloaded;
+    if (info.recipe == "experience") {
+        info.downloaded = check_composite_downloaded(info, models_cache_);
     } else if (info.recipe == "flm") {
         auto flm_models = get_flm_installed_models();
         info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint()) != flm_models.end();
@@ -1330,9 +1340,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         bool filter_out = false;
         std::string filter_reason;
 
-        // Macro models are UI-level bundles that orchestrate component models.
+        // Experience models are UI-level bundles that orchestrate component models.
         // They should always be visible if present in the registry.
-        if (recipe == "macro") {
+        if (recipe == "experience") {
             filtered[name] = info;
             continue;
         }

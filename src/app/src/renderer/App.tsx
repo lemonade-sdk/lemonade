@@ -14,7 +14,7 @@ import '../../styles.css';
 
 const LAYOUT_CONSTANTS = {
   modelManagerMinWidth: 200,
-  sereneRailWidth: 40,
+  experienceRailWidth: 40,
   mainContentMinWidth: 300,
   chatMinWidth: 250,
   dividerWidth: 4,
@@ -29,14 +29,14 @@ const AppContent: React.FC = () => {
   const [externalContentUrl, setExternalContentUrl] = useState<string | null>(null);
   const [isLogsVisible, setIsLogsVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isLogsVisible);
   const [isDownloadManagerVisible, setIsDownloadManagerVisible] = useState(false);
-  const [sereneExperienceActive, setSereneExperienceActive] = useState(false);
-  const [panelRevealInSerene, setPanelRevealInSerene] = useState(false);
+  const [experienceModeActive, setExperienceModeActive] = useState(false);
+  const [panelRevealInExperience, setPanelRevealInExperience] = useState(false);
   const [modelManagerWidth, setModelManagerWidth] = useState(DEFAULT_LAYOUT_SETTINGS.modelManagerWidth);
   const [chatWidth, setChatWidth] = useState(DEFAULT_LAYOUT_SETTINGS.chatWidth);
   const [logsHeight, setLogsHeight] = useState(DEFAULT_LAYOUT_SETTINGS.logsHeight);
   const [layoutLoaded, setLayoutLoaded] = useState(false);
-  const detachedSereneRailVisible = sereneExperienceActive && !panelRevealInSerene;
-  const effectiveModelManagerVisible = isModelManagerVisible && (!sereneExperienceActive || panelRevealInSerene);
+  const detachedExperienceRailVisible = experienceModeActive && !panelRevealInExperience;
+  const effectiveModelManagerVisible = isModelManagerVisible && (!experienceModeActive || panelRevealInExperience);
   const isDraggingRef = useRef<'left' | 'right' | 'bottom' | null>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -135,27 +135,27 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const handleSereneModeChanged = (event: Event) => {
+    const handleExperienceModeChanged = (event: Event) => {
       const customEvent = event as CustomEvent<{ active?: boolean }>;
-      setSereneExperienceActive(!!customEvent.detail?.active);
+      setExperienceModeActive(!!customEvent.detail?.active);
     };
-    window.addEventListener('sereneExperienceModeChanged' as any, handleSereneModeChanged);
+    window.addEventListener('experienceModeChanged' as any, handleExperienceModeChanged);
     return () => {
-      window.removeEventListener('sereneExperienceModeChanged' as any, handleSereneModeChanged);
+      window.removeEventListener('experienceModeChanged' as any, handleExperienceModeChanged);
     };
   }, []);
 
   useEffect(() => {
-    if (!sereneExperienceActive) {
-      setPanelRevealInSerene(false);
+    if (!experienceModeActive) {
+      setPanelRevealInExperience(false);
     }
-  }, [sereneExperienceActive]);
+  }, [experienceModeActive]);
 
   useEffect(() => {
-    if (sereneExperienceActive && !isModelManagerVisible) {
-      setPanelRevealInSerene(false);
+    if (experienceModeActive && !isModelManagerVisible) {
+      setPanelRevealInExperience(false);
     }
-  }, [sereneExperienceActive, isModelManagerVisible]);
+  }, [experienceModeActive, isModelManagerVisible]);
 
   useEffect(() => {
     const hasMainColumn = isLogsVisible;
@@ -163,8 +163,8 @@ const AppContent: React.FC = () => {
 
     if (effectiveModelManagerVisible) {
       computedMinWidth += LAYOUT_CONSTANTS.modelManagerMinWidth;
-    } else if (detachedSereneRailVisible) {
-      computedMinWidth += LAYOUT_CONSTANTS.sereneRailWidth;
+    } else if (detachedExperienceRailVisible) {
+      computedMinWidth += LAYOUT_CONSTANTS.experienceRailWidth;
     }
 
     if (hasMainColumn) {
@@ -189,7 +189,7 @@ const AppContent: React.FC = () => {
     if (window?.api?.updateMinWidth) {
       window.api.updateMinWidth(targetWidth);
     }
-  }, [effectiveModelManagerVisible, detachedSereneRailVisible, isLogsVisible, isChatVisible]);
+  }, [effectiveModelManagerVisible, detachedExperienceRailVisible, isLogsVisible, isChatVisible]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -215,8 +215,8 @@ const AppContent: React.FC = () => {
 
         const leftPanelWidth = effectiveModelManagerVisible
           ? modelManagerWidth
-          : detachedSereneRailVisible
-            ? LAYOUT_CONSTANTS.sereneRailWidth
+          : detachedExperienceRailVisible
+            ? LAYOUT_CONSTANTS.experienceRailWidth
             : 0;
         const hasCenterColumn = isLogsVisible;
         const minCenterWidth = hasCenterColumn ? 300 : 0; // keep in sync with CSS min-width
@@ -262,7 +262,7 @@ const AppContent: React.FC = () => {
     chatWidth,
     isChatVisible,
     effectiveModelManagerVisible,
-    detachedSereneRailVisible,
+    detachedExperienceRailVisible,
     isLogsVisible,
     modelManagerWidth,
     logsHeight,
@@ -288,10 +288,10 @@ const AppContent: React.FC = () => {
     setIsDownloadManagerVisible(false);
   }, []);
 
-  const openPanelFromSereneRail = (view: LeftPanelView) => {
+  const openPanelFromExperienceRail = (view: LeftPanelView) => {
     setLeftPanelView(view);
     setIsModelManagerVisible(true);
-    setPanelRevealInSerene(true);
+    setPanelRevealInExperience(true);
   };
 
   return (
@@ -311,19 +311,19 @@ const AppContent: React.FC = () => {
         onClose={handleCloseDownloadManager}
       />
       <div className="app-layout">
-        {detachedSereneRailVisible && (
-          <div className="serene-left-rail">
-            <button className={`left-panel-mode-btn ${leftPanelView === 'models' ? 'active' : ''}`} onClick={() => openPanelFromSereneRail('models')} title="Models" aria-label="Models">
+        {detachedExperienceRailVisible && (
+          <div className="experience-left-rail">
+            <button className={`left-panel-mode-btn ${leftPanelView === 'models' ? 'active' : ''}`} onClick={() => openPanelFromExperienceRail('models')} title="Models" aria-label="Models">
               <Boxes size={14} strokeWidth={1.9} />
             </button>
-            <button className={`left-panel-mode-btn ${leftPanelView === 'backends' ? 'active' : ''}`} onClick={() => openPanelFromSereneRail('backends')} title="Backends" aria-label="Backends">
+            <button className={`left-panel-mode-btn ${leftPanelView === 'backends' ? 'active' : ''}`} onClick={() => openPanelFromExperienceRail('backends')} title="Backends" aria-label="Backends">
               <Cpu size={14} strokeWidth={1.9} />
             </button>
-            <button className={`left-panel-mode-btn ${leftPanelView === 'marketplace' ? 'active' : ''}`} onClick={() => openPanelFromSereneRail('marketplace')} title="Marketplace" aria-label="Marketplace">
+            <button className={`left-panel-mode-btn ${leftPanelView === 'marketplace' ? 'active' : ''}`} onClick={() => openPanelFromExperienceRail('marketplace')} title="Marketplace" aria-label="Marketplace">
               <Store size={14} strokeWidth={1.9} />
             </button>
             <div className="left-panel-mode-rail-spacer" />
-            <button className={`left-panel-mode-btn ${leftPanelView === 'settings' ? 'active' : ''}`} onClick={() => openPanelFromSereneRail('settings')} title="Settings" aria-label="Settings">
+            <button className={`left-panel-mode-btn ${leftPanelView === 'settings' ? 'active' : ''}`} onClick={() => openPanelFromExperienceRail('settings')} title="Settings" aria-label="Settings">
               <SettingsIcon size={14} strokeWidth={1.9} />
             </button>
           </div>
