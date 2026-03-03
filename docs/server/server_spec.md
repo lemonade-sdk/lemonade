@@ -871,7 +871,7 @@ Image Variations API. You provide a source image and receive a variation of it. 
 | `model` | Yes | The Stable Diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `image` | Yes | The source image file (PNG). Sent as a file in multipart/form-data. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `size` | No | The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `n` | No | Number of variations to generate. Default: `1`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `n` | No | Number of variations to generate. Integer between 1 and 10 inclusive. Default: `1`. Values outside this range result in a 400 Bad Request error. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 
 #### Example request
