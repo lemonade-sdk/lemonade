@@ -13,7 +13,8 @@ import TranscriptionPanel from './components/panels/TranscriptionPanel';
 import ImageGenerationPanel from './components/panels/ImageGenerationPanel';
 import TTSPanel from './components/panels/TTSPanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
-import { isExperienceModel } from './utils/experienceModels';
+import { RefreshIcon } from './components/Icons';
+import { isExperienceModel, getExperienceComponents } from './utils/experienceModels';
 
 interface ChatWindowProps {
   isVisible: boolean;
@@ -72,10 +73,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
 
   const experienceMode = activeModelType === 'llm' && isExperienceSelected;
 
+  const prevExperienceModeRef = useRef(experienceMode);
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent('experienceModeChanged', { detail: { active: experienceMode } }));
+    if (prevExperienceModeRef.current !== experienceMode) {
+      prevExperienceModeRef.current = experienceMode;
+      window.dispatchEvent(new CustomEvent('experienceModeChanged', { detail: { active: experienceMode } }));
+    }
     return () => {
-      window.dispatchEvent(new CustomEvent('experienceModeChanged', { detail: { active: false } }));
+      if (prevExperienceModeRef.current) {
+        prevExperienceModeRef.current = false;
+        window.dispatchEvent(new CustomEvent('experienceModeChanged', { detail: { active: false } }));
+      }
     };
   }, [experienceMode]);
 
@@ -169,18 +177,22 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   };
 
   const handleUnloadExperienceModel = async () => {
-    const modelToUnload = currentLoadedModel || selectedModel;
-    if (!modelToUnload || inference.isBusy) return;
+    if (!selectedModel || inference.isBusy) return;
 
     try {
-      const response = await serverFetch('/unload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_name: modelToUnload }),
-      });
+      const info = modelsData[selectedModel];
+      const components = isExperienceModel(info) ? getExperienceComponents(info) : [selectedModel];
 
-      if (!response.ok) {
-        throw new Error(`Failed to unload model: ${response.statusText}`);
+      for (const component of components) {
+        const response = await serverFetch('/unload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model_name: component }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to unload ${component}: ${response.statusText}`);
+        }
       }
 
       inference.reset();
@@ -228,15 +240,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
             disabled={inference.isBusy}
             title="Clear"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M21 3V8M21 8H16M21 8L18 5.29168C16.4077 3.86656 14.3051 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21C16.2832 21 19.8675 18.008 20.777 14"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <RefreshIcon />
           </button>
         </div>
       )}

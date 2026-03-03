@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ModelsData, ModelInfo, USER_MODEL_PREFIX, fetchSupportedModelsData } from '../utils/modelData';
 import { onServerPortChange } from '../utils/serverConfig';
-import { isExperienceFullyDownloaded, isExperienceModel } from '../utils/experienceModels';
+import { isModelEffectivelyDownloaded } from '../utils/experienceModels';
 
 // Default model to use when no models are downloaded (first-time user experience)
 export const DEFAULT_MODEL_ID = 'Qwen3-0.6B-GGUF';
@@ -53,19 +53,12 @@ export const ModelsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isLoading, setIsLoading] = useState(true);
   const userHasSelectedModelRef = useRef(false);
 
-  const isEffectivelyDownloaded = useCallback((modelId: string, info: ModelInfo, data: ModelsData): boolean => {
-    if (isExperienceModel(info)) {
-      return isExperienceFullyDownloaded(modelId, data);
-    }
-    return info.downloaded === true;
-  }, []);
-
   // Derive downloaded models from modelsData
   const downloadedModels = useMemo<DownloadedModel[]>(() => {
     return Object.entries(modelsData)
-      .filter(([id, info]) => isEffectivelyDownloaded(id, info, modelsData))
+      .filter(([id, info]) => isModelEffectivelyDownloaded(id, info, modelsData))
       .map(([id, info]) => ({ id, info }));
-  }, [modelsData, isEffectivelyDownloaded]);
+  }, [modelsData]);
 
   // Derive suggested models for Model Manager (suggested + user models)
   const suggestedModels = useMemo<SuggestedModel[]>(() => {
@@ -83,7 +76,7 @@ export const ModelsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setModelsData(data);
 
       // Check if any models are downloaded
-      const hasDownloadedModels = Object.entries(data).some(([id, info]) => isEffectivelyDownloaded(id, info, data));
+      const hasDownloadedModels = Object.entries(data).some(([id, info]) => isModelEffectivelyDownloaded(id, info, data));
 
       if (!hasDownloadedModels) {
         // No models downloaded - show default model in dropdown
@@ -97,15 +90,15 @@ export const ModelsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setSelectedModelState(prev => {
           // If no selection or selection is the fake default, use first downloaded model
           if (!prev || prev === DEFAULT_MODEL_ID) {
-            const firstDownloaded = Object.entries(data).find(([id, info]) => isEffectivelyDownloaded(id, info, data));
+            const firstDownloaded = Object.entries(data).find(([id, info]) => isModelEffectivelyDownloaded(id, info, data));
             return firstDownloaded ? firstDownloaded[0] : '';
           }
           // If the previously selected model is still downloaded, keep it
-          if (data[prev] && isEffectivelyDownloaded(prev, data[prev], data)) {
+          if (data[prev] && isModelEffectivelyDownloaded(prev, data[prev], data)) {
             return prev;
           }
           // Otherwise, select the first downloaded model
-          const firstDownloaded = Object.entries(data).find(([id, info]) => isEffectivelyDownloaded(id, info, data));
+          const firstDownloaded = Object.entries(data).find(([id, info]) => isModelEffectivelyDownloaded(id, info, data));
           return firstDownloaded ? firstDownloaded[0] : '';
         });
       }
@@ -114,7 +107,7 @@ export const ModelsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } finally {
       setIsLoading(false);
     }
-  }, [isEffectivelyDownloaded]);
+  }, []);
 
   // Wrapper for setSelectedModel that also clears default pending state if needed
   const setSelectedModel = useCallback((model: string) => {

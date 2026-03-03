@@ -13,6 +13,13 @@ export const isExperienceModel = (info?: ModelInfo): boolean => {
   return !!info && info.recipe === 'experience' && getExperienceComponents(info).length > 0;
 };
 
+export const isModelEffectivelyDownloaded = (modelName: string, info: ModelInfo | undefined, modelsData: ModelsData): boolean => {
+  if (isExperienceModel(info)) {
+    return isExperienceFullyDownloaded(modelName, modelsData);
+  }
+  return info?.downloaded === true;
+};
+
 export const isExperienceFullyDownloaded = (modelName: string, modelsData: ModelsData): boolean => {
   const info = modelsData[modelName];
   const components = getExperienceComponents(info);

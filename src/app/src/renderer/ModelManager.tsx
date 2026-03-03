@@ -16,7 +16,8 @@ import SettingsPanel from './SettingsPanel';
 import BackendManager from './BackendManager';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
-import { getExperienceComponents, isExperienceFullyDownloaded, isExperienceFullyLoaded, isExperienceModel } from './utils/experienceModels';
+import { EjectIcon } from './components/Icons';
+import { getExperienceComponents, isExperienceFullyDownloaded, isExperienceFullyLoaded, isExperienceModel, isModelEffectivelyDownloaded } from './utils/experienceModels';
 
 interface ModelManagerProps {
   isVisible: boolean;
@@ -280,10 +281,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   };
 
   const getModelDownloadedState = (modelName: string, info: ModelInfo): boolean => {
-    if (isExperienceModel(info)) {
-      return isExperienceFullyDownloaded(modelName, modelsData);
-    }
-    return modelsData[modelName]?.downloaded ?? false;
+    return isModelEffectivelyDownloaded(modelName, info, modelsData);
   };
 
   const getModelLoadedState = (modelName: string, info: ModelInfo): boolean => {
@@ -821,11 +819,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                                   }}
                                   title="Eject model"
                                 >
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M9 11L12 8L15 11" />
-                                    <path d="M12 8V16" />
-                                    <path d="M5 20H19" />
-                                  </svg>
+                                  <EjectIcon />
                                 </button>
                                 {!isExperience && (
                                   <button
@@ -988,11 +982,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                       <span className="loaded-model-name">{modelName}</span>
                     </div>
                     <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M9 11L12 8L15 11" />
-                        <path d="M12 8V16" />
-                        <path d="M5 20H19" />
-                      </svg>
+                      <EjectIcon />
                     </button>
                   </div>
                 ))}

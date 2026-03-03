@@ -13,7 +13,7 @@ import { ModelsData } from '../../utils/modelData';
 import { useTTS } from '../../hooks/useTTS';
 import { Message, MessageContent, TextContent, ImageContent } from '../../utils/chatTypes';
 import { adjustTextareaHeight } from '../../utils/textareaUtils';
-import { SendIcon, ImageUploadIcon, MicrophoneIcon } from '../Icons';
+import { SendIcon, ImageUploadIcon, MicrophoneIcon, RefreshIcon, EjectIcon } from '../Icons';
 import InferenceControls from '../InferenceControls';
 import ModelSelector from '../ModelSelector';
 import ImagePreviewList from '../ImagePreviewList';
@@ -341,7 +341,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     if ((!inputValue.trim() && uploadedImages.length === 0) || isBusy) return;
 
     const ready = await runPreFlight('llm', {
-      modelName: selectedModel,
+      modelName: chatModelName,
       modelsData,
       onError: (msg) => {
         setMessages(prev => [...prev, { role: 'assistant', content: `Error preparing model: ${msg}` }]);
@@ -407,7 +407,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     if ((!editingValue.trim() && editingImages.length === 0) || editingIndex === null || isBusy) return;
 
     const ready = await runPreFlight('llm', {
-      modelName: selectedModel,
+      modelName: chatModelName,
       modelsData,
       onError: showError,
     });
@@ -686,11 +686,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
               title="Eject experience"
               aria-label="Unload experience"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M9 11L12 8L15 11" />
-                <path d="M12 8V16" />
-                <path d="M5 20H19" />
-              </svg>
+              <EjectIcon />
             </button>
           </div>
           <button
@@ -700,15 +696,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             title="Start a new chat"
             aria-label="Start a new chat"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M21 3V8M21 8H16M21 8L18 5.29168C16.4077 3.86656 14.3051 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21C16.2832 21 19.8675 18.008 20.777 14"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <RefreshIcon />
           </button>
         </div>
       )}
@@ -721,15 +709,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             disabled={isBusy}
             title="Start a new chat"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M21 3V8M21 8H16M21 8L18 5.29168C16.4077 3.86656 14.3051 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21C16.2832 21 19.8675 18.008 20.777 14"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <RefreshIcon />
           </button>
         </div>
       )}

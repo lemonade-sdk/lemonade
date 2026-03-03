@@ -857,7 +857,7 @@ void ModelManager::build_cache() {
     std::unordered_set<std::string> flm_set(flm_models.begin(), flm_models.end());
 
     int downloaded_count = 0;
-    // First pass: determine download status for non-macro models
+    // First pass: determine download status for non-experience models
     for (auto& [name, info] : all_models) {
         if (info.recipe == "experience") {
             continue;  // Handled in second pass after components are resolved
@@ -907,7 +907,7 @@ void ModelManager::build_cache() {
         }
     }
 
-    // Second pass: determine download status for macro models
+    // Second pass: determine download status for experience models
     // (must happen after component models have their downloaded status set)
     for (auto& [name, info] : all_models) {
         if (info.recipe != "experience") continue;
