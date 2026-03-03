@@ -2166,8 +2166,12 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         // Extract optional numeric inference parameters
         auto parse_int_field = [&](const std::string& field) -> bool {
             if (!req.form.has_field(field)) return true;
+            const std::string& val = req.form.get_field(field);
             try {
-                request_json[field] = std::stoi(req.form.get_field(field));
+                size_t pos;
+                int parsed = std::stoi(val, &pos);
+                if (pos != val.size()) throw std::invalid_argument("trailing characters");
+                request_json[field] = parsed;
             } catch (const std::exception&) {
                 res.status = 400;
                 nlohmann::json error = {{"error", {
@@ -2181,8 +2185,13 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         };
         auto parse_float_field = [&](const std::string& field) -> bool {
             if (!req.form.has_field(field)) return true;
+            const std::string& val = req.form.get_field(field);
             try {
-                request_json[field] = std::stof(req.form.get_field(field));
+                size_t pos;
+                float parsed = std::stof(val, &pos);
+                if (pos != val.size()) throw std::invalid_argument("trailing characters");
+                if (std::isnan(parsed) || std::isinf(parsed)) throw std::invalid_argument("nan/inf not allowed");
+                request_json[field] = parsed;
             } catch (const std::exception&) {
                 res.status = 400;
                 nlohmann::json error = {{"error", {

@@ -865,7 +865,7 @@ Image Editing API. You provide a source image and a text prompt describing the d
 
 Image Variations API. You provide a source image and receive a variation of it. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend.
 
-> **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Unlike `/images/edits`, no `prompt` parameter is accepted — the model generates a variation based solely on the input image.
+> **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Unlike `/images/edits`, a `prompt` parameter is not supported and will be ignored — the model generates a variation based solely on the input image.
 >
 > **Performance:** CPU inference takes several minutes per image. GPU (ROCm) is significantly faster.
 
