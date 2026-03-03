@@ -533,7 +533,7 @@ class LLMTests(ServerTestBase):
             self.assertGreater(len(embedding.embedding), 0)
             print(f"Embedding {i+1} dimension: {len(embedding.embedding)}")
 
-    @skip_if_unsupported("embeddings")
+    @skip_if_unsupported("embeddings_batch")
     def test_017_embeddings_semantic_similarity(self):
         """Test that semantically similar texts have similar embeddings."""
         client = self.get_openai_client()
