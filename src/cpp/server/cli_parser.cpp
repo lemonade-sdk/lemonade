@@ -54,6 +54,12 @@ static void add_serve_options(CLI::App* serve, ServerConfig& config) {
         ->expected(0, 1)
         ->default_val(config.no_broadcast);
 
+    serve->add_option("--global-timeout", config.global_timeout,
+                   "Global timeout for HTTP requests, inference, and readiness checks in seconds")
+        ->envname("LEMONADE_GLOBAL_TIMEOUT")
+        ->type_name("SECONDS")
+        ->default_val(config.global_timeout);
+
     // Multi-model support: Max loaded models per type slot
     serve->add_option("--max-loaded-models", config.max_loaded_models,
                    "Max models per type slot (LLMs, audio, image, etc.). Use -1 for unlimited.")

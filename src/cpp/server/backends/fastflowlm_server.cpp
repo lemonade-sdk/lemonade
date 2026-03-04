@@ -446,7 +446,8 @@ json FastFlowLMServer::responses(const json& request) {
 void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
                                                   const std::string& request_body,
                                                   httplib::DataSink& sink,
-                                                  bool sse) {
+                                                  bool sse,
+                                                  long timeout_seconds) {
     // Streaming is only supported for LLM models
     if (model_type_ == ModelType::AUDIO || model_type_ == ModelType::EMBEDDING) {
         std::string error_msg = "data: {\"error\":{\"message\":\"Streaming not supported for FLM "
@@ -463,10 +464,10 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
         std::string modified_body = request.dump();
 
         // Call base class with modified request
-        WrappedServer::forward_streaming_request(endpoint, modified_body, sink, sse);
+        WrappedServer::forward_streaming_request(endpoint, modified_body, sink, sse, timeout_seconds);
     } catch (const json::exception& e) {
         // If JSON parsing fails, forward original request
-        WrappedServer::forward_streaming_request(endpoint, request_body, sink, sse);
+        WrappedServer::forward_streaming_request(endpoint, request_body, sink, sse, timeout_seconds);
     }
 }
 

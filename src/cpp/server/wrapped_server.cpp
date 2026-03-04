@@ -23,6 +23,12 @@ int WrappedServer::choose_port() {
 bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_seconds, long poll_interval_ms) {
     std::string health_url = get_base_url() + endpoint;
 
+    // Use global default if not specified
+    if (timeout_seconds == 0) {
+        timeout_seconds = utils::HttpClient::get_default_timeout();
+    }
+
+    std::cout << "Waiting for " + server_name_ + " to be ready (timeout: " << timeout_seconds << "s)..." << std::endl;
     LOG(DEBUG, "WrappedServer") << "Waiting for " + server_name_ + " to be ready..." << std::endl;
 
     const int max_attempts = (timeout_seconds * 1000) / poll_interval_ms;
@@ -75,7 +81,8 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
     std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
 
     try {
-        auto response = utils::HttpClient::post(url, request.dump(), headers, timeout_seconds);
+        auto response = utils::HttpClient::post(url, request.dump(), headers,
+                                               timeout_seconds);
 
         if (response.status_code == 200) {
             return json::parse(response.body);
@@ -112,7 +119,8 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
     std::string url = get_base_url() + endpoint;
 
     try {
-        auto response = utils::HttpClient::post_multipart(url, fields, timeout_seconds);
+        auto response = utils::HttpClient::post_multipart(url, fields,
+                                                         timeout_seconds);
 
         if (response.status_code == 200) {
             return json::parse(response.body);
@@ -143,7 +151,8 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
 void WrappedServer::forward_streaming_request(const std::string& endpoint,
                                               const std::string& request_body,
                                               httplib::DataSink& sink,
-                                              bool sse) {
+                                              bool sse,
+                                              long timeout_seconds) {
     if (!is_process_running()) {
         std::string error_msg = "data: {\"error\":{\"message\":\"No model loaded: " + server_name_ +
                                "\",\"type\":\"model_not_loaded\"}}\n\n";
@@ -167,10 +176,10 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                     telemetry_.tokens_per_second = telemetry.tokens_per_second;
                     // Note: decode_token_times is not available from streaming proxy
                 },
-                INFERENCE_TIMEOUT_SECONDS
+                timeout_seconds
             );
         } else {
-            StreamingProxy::forward_byte_stream(url, request_body, sink, INFERENCE_TIMEOUT_SECONDS);
+            StreamingProxy::forward_byte_stream(url, request_body, sink, timeout_seconds);
         }
     } catch (const std::exception& e) {
         // Log the error but don't crash the server
