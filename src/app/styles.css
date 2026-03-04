@@ -6279,3 +6279,49 @@ footer {
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
+
+/* Model family member pills */
+.family-members {
+    display: flex;
+    gap: 6px;
+    padding: 2px 12px 4px 32px;
+    flex-wrap: wrap;
+}
+
+.family-member-pill {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    color: #666;
+    background: rgba(255, 255, 255, 0.03);
+    transition: all 0.15s ease;
+}
+
+.family-member-pill:hover {
+    color: #999;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.family-member-pill.pill-available {
+    color: #ccc;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.family-member-pill.pill-loaded {
+    color: #48BB78;
+    border-color: rgba(72, 187, 120, 0.4);
+}
+
+.family-member-pill.selected {
+    background: rgba(100, 149, 237, 0.25);
+    border-color: rgba(100, 149, 237, 0.5);
+    color: #fff;
+}
+
+.family-member-pill.selected.pill-loaded {
+    background: rgba(72, 187, 120, 0.2);
+    border-color: rgba(72, 187, 120, 0.5);
+    color: #48BB78;
+}

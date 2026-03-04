@@ -17,6 +17,58 @@ import BackendManager from './BackendManager';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 
+interface ModelFamily {
+  displayName: string;
+  regex: RegExp;
+  defaultMember: string;
+}
+
+const MODEL_FAMILIES: ModelFamily[] = [
+  {
+    displayName: 'Qwen3-GGUF',
+    regex: /^Qwen3-(\d+\.?\d*B)-GGUF$/,
+    defaultMember: '4B',
+  },
+];
+
+type ModelListItem =
+  | { type: 'model'; name: string; info: ModelInfo }
+  | { type: 'family'; family: ModelFamily; members: { label: string; name: string; info: ModelInfo }[] };
+
+function buildModelList(
+  models: Array<{ name: string; info: ModelInfo }>
+): ModelListItem[] {
+  const items: ModelListItem[] = [];
+  const consumed = new Set<string>();
+
+  for (const family of MODEL_FAMILIES) {
+    const members: { label: string; name: string; info: ModelInfo }[] = [];
+    for (const m of models) {
+      const match = family.regex.exec(m.name);
+      if (match) {
+        members.push({ label: match[1], name: m.name, info: m.info });
+        consumed.add(m.name);
+      }
+    }
+    if (members.length > 1) {
+      // Sort by numeric parameter count
+      members.sort((a, b) => parseFloat(a.label) - parseFloat(b.label));
+      items.push({ type: 'family', family, members });
+    } else {
+      // Single match or none — don't group, keep as individual
+      members.forEach(m => consumed.delete(m.name));
+    }
+  }
+
+  for (const m of models) {
+    if (!consumed.has(m.name)) {
+      items.push({ type: 'model', name: m.name, info: m.info });
+    }
+  }
+
+  return items;
+}
+
 interface ModelManagerProps {
   isVisible: boolean;
   width?: number;
@@ -57,6 +109,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   const [newModel, setNewModel] = useState(createEmptyModelForm);
   const [selectedMarketplaceCategory, setSelectedMarketplaceCategory] = useState<string>('all');
   const [marketplaceCategories, setMarketplaceCategories] = useState<MarketplaceCategory[]>([]);
+  const [selectedFamilyMembers, setSelectedFamilyMembers] = useState<Record<string, string>>({});
   const filterAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
@@ -553,194 +606,278 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
         : 'Filter settings...';
   const showInlineFilterButton = currentView === 'models' || currentView === 'marketplace';
 
-  const renderModelsView = () => (
-    <>
-      {categories.map(category => (
-        <div key={category} className="model-category">
-          <div
-            className="model-category-header"
-            onClick={() => toggleCategory(category)}
+  const selectFamilyMember = (familyName: string, memberLabel: string) => {
+    setSelectedFamilyMembers(prev => ({ ...prev, [familyName]: memberLabel }));
+  };
+
+  const getModelStatus = (modelName: string) => {
+    const isDownloaded = modelsData[modelName]?.downloaded ?? false;
+    const isLoaded = loadedModels.has(modelName);
+    const isLoading = loadingModels.has(modelName);
+
+    let statusClass = 'not-downloaded';
+    let statusTitle = 'Not downloaded';
+
+    if (isLoading) {
+      statusClass = 'loading';
+      statusTitle = 'Loading...';
+    } else if (isLoaded) {
+      statusClass = 'loaded';
+      statusTitle = 'Model is loaded';
+    } else if (isDownloaded) {
+      statusClass = 'available';
+      statusTitle = 'Available locally';
+    }
+
+    return { isDownloaded, isLoaded, isLoading, statusClass, statusTitle };
+  };
+
+  const renderLoadOptionsButton = (modelName: string) => (
+    <button
+      className="model-action-btn load-btn"
+      onClick={(e) => {
+        e.stopPropagation();
+        setOptionsModel(modelName);
+        setShowModelOptionsModal(true);
+      }}
+      title="Load model with options"
+    >
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+           xmlns="http://www.w3.org/2000/svg">
+        <path
+          d="M6.5 1.5H9.5L9.9 3.4C10.4 3.6 10.9 3.9 11.3 4.2L13.1 3.5L14.6 6L13.1 7.4C13.2 7.9 13.2 8.1 13.2 8.5C13.2 8.9 13.2 9.1 13.1 9.6L14.6 11L13.1 13.5L11.3 12.8C10.9 13.1 10.4 13.4 9.9 13.6L9.5 15.5H6.5L6.1 13.6C5.6 13.4 5.1 13.1 4.7 12.8L2.9 13.5L1.4 11L2.9 9.6C2.8 9.1 2.8 8.9 2.8 8.5C2.8 8.1 2.8 7.9 2.9 7.4L1.4 6L2.9 3.5L4.7 4.2C5.1 3.9 5.6 3.6 6.1 3.4L6.5 1.5Z"
+          stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"
+          strokeLinejoin="round"/>
+        <circle cx="8" cy="8.5" r="2.5" stroke="currentColor"
+                strokeWidth="1.2"/>
+      </svg>
+    </button>
+  );
+
+  const renderActionButtons = (modelName: string, isHovered: boolean) => {
+    const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
+    if (!isHovered) return null;
+    return (
+      <span className="model-actions">
+        {!isDownloaded && (
+          <button
+            className="model-action-btn download-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDownloadModel(modelName);
+            }}
+            title="Download model"
           >
-            <span className={`category-chevron ${shouldShowCategory(category) ? 'expanded' : ''}`}>
-              <ChevronRight size={11} strokeWidth={2.1} />
-            </span>
-            <span className="category-label">{getDisplayLabel(category)}</span>
-            <span className="category-count">({groupedModels[category].length})</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
+        )}
+        {isDownloaded && !isLoaded && !isLoading && (
+          <>
+            <button
+              className="model-action-btn load-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleLoadModel(modelName);
+              }}
+              title="Load model"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polygon points="5 3 19 12 5 21" fill="currentColor" />
+              </svg>
+            </button>
+            <button
+              className="model-action-btn delete-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteModel(modelName);
+              }}
+              title="Delete model"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+            </button>
+            {renderLoadOptionsButton(modelName)}
+          </>
+        )}
+        {isLoaded && (
+          <>
+            {renderLoadOptionsButton(modelName)}
+            <button
+              className="model-action-btn unload-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleUnloadModel(modelName);
+              }}
+              title="Eject model"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 11L12 8L15 11" />
+                <path d="M12 8V16" />
+                <path d="M5 20H19" />
+              </svg>
+            </button>
+            <button
+              className="model-action-btn delete-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteModel(modelName);
+              }}
+              title="Delete model"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+            </button>
+          </>
+        )}
+      </span>
+    );
+  };
+
+  const renderModelItem = (modelName: string, modelInfo: ModelInfo, hoverKey: string) => {
+    const { isDownloaded, statusClass, statusTitle } = getModelStatus(modelName);
+    const isHovered = hoveredModel === hoverKey;
+    return (
+      <div
+        key={modelName}
+        className={`model-item model-catalog-item ${isDownloaded ? 'downloaded' : ''}`}
+        onMouseEnter={() => setHoveredModel(hoverKey)}
+        onMouseLeave={() => setHoveredModel(null)}
+      >
+        <div className="model-item-content">
+          <div className="model-info-left">
+            <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
+            <span className="model-name">{modelName}</span>
+            <span className="model-size">{formatSize(modelInfo.size)}</span>
+            {renderActionButtons(modelName, isHovered)}
           </div>
-
-          {shouldShowCategory(category) && (
-            <div className="model-list">
-              <ModelOptionsModal model={optionsModel} isOpen={showModelOptionsModal}
-                                 onCancel={() => {
-                                   setShowModelOptionsModal(false);
-                                   setOptionsModel(null);
-                                 }}
-                                 onSubmit={(modelName, options) => {
-                                   setShowModelOptionsModal(false);
-                                   setOptionsModel(null);
-                                   handleLoadModel(modelName, options);
-                                 }}/>
-              {groupedModels[category].map(model => {
-                const isDownloaded = modelsData[model.name]?.downloaded ?? false;
-                const isLoaded = loadedModels.has(model.name);
-                const isLoading = loadingModels.has(model.name);
-
-                let statusClass = 'not-downloaded';
-                let statusTitle = 'Not downloaded';
-
-                if (isLoading) {
-                  statusClass = 'loading';
-                  statusTitle = 'Loading...';
-                } else if (isLoaded) {
-                  statusClass = 'loaded';
-                  statusTitle = 'Model is loaded';
-                } else if (isDownloaded) {
-                  statusClass = 'available';
-                  statusTitle = 'Available locally';
-                }
-
-                const isHovered = hoveredModel === model.name;
-                const renderLoadOptionsButton = () => (
-                  <button
-                    className="model-action-btn load-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setOptionsModel(model.name);
-                      setShowModelOptionsModal(true);
-                    }}
-                    title="Load model with options"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
-                         xmlns="http://www.w3.org/2000/svg">
-                      <path
-                        d="M6.5 1.5H9.5L9.9 3.4C10.4 3.6 10.9 3.9 11.3 4.2L13.1 3.5L14.6 6L13.1 7.4C13.2 7.9 13.2 8.1 13.2 8.5C13.2 8.9 13.2 9.1 13.1 9.6L14.6 11L13.1 13.5L11.3 12.8C10.9 13.1 10.4 13.4 9.9 13.6L9.5 15.5H6.5L6.1 13.6C5.6 13.4 5.1 13.1 4.7 12.8L2.9 13.5L1.4 11L2.9 9.6C2.8 9.1 2.8 8.9 2.8 8.5C2.8 8.1 2.8 7.9 2.9 7.4L1.4 6L2.9 3.5L4.7 4.2C5.1 3.9 5.6 3.6 6.1 3.4L6.5 1.5Z"
-                        stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"
-                        strokeLinejoin="round"/>
-                      <circle cx="8" cy="8.5" r="2.5" stroke="currentColor"
-                              strokeWidth="1.2"/>
-                    </svg>
-                  </button>
-                );
-
-                return (
-                  <div
-                    key={model.name}
-                    className={`model-item model-catalog-item ${isDownloaded ? 'downloaded' : ''}`}
-                    onMouseEnter={() => setHoveredModel(model.name)}
-                    onMouseLeave={() => setHoveredModel(null)}
-                  >
-                    <div className="model-item-content">
-                      <div className="model-info-left">
-                        <span
-                          className={`model-status-indicator ${statusClass}`}
-                          title={statusTitle}
-                        >
-                          ●
-                        </span>
-                        <span className="model-name">{model.name}</span>
-                        <span className="model-size">{formatSize(model.info.size)}</span>
-                        {isHovered && (
-                          <span className="model-actions">
-                            {!isDownloaded && (
-                              <button
-                                className="model-action-btn download-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDownloadModel(model.name);
-                                }}
-                                title="Download model"
-                              >
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                  <polyline points="7 10 12 15 17 10" />
-                                  <line x1="12" y1="15" x2="12" y2="3" />
-                                </svg>
-                              </button>
-                            )}
-                            {isDownloaded && !isLoaded && !isLoading && (
-                              <>
-                                <button
-                                  className="model-action-btn load-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleLoadModel(model.name);
-                                  }}
-                                  title="Load model"
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <polygon points="5 3 19 12 5 21" fill="currentColor" />
-                                  </svg>
-                                </button>
-                                <button
-                                  className="model-action-btn delete-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteModel(model.name);
-                                  }}
-                                  title="Delete model"
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <polyline points="3 6 5 6 21 6" />
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                  </svg>
-                                </button>
-                                {renderLoadOptionsButton()}
-                              </>
-                            )}
-                            {isLoaded && (
-                              <>
-                                {renderLoadOptionsButton()}
-                                <button
-                                  className="model-action-btn unload-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleUnloadModel(model.name);
-                                  }}
-                                  title="Eject model"
-                                >
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M9 11L12 8L15 11" />
-                                    <path d="M12 8V16" />
-                                    <path d="M5 20H19" />
-                                  </svg>
-                                </button>
-                                <button
-                                  className="model-action-btn delete-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteModel(model.name);
-                                  }}
-                                  title="Delete model"
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <polyline points="3 6 5 6 21 6" />
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                  </svg>
-                                </button>
-                              </>
-                            )}
-                          </span>
-                        )}
-                      </div>
-                      {model.info.labels && model.info.labels.length > 0 && (
-                        <span className="model-labels">
-                          {model.info.labels.map(label => (
-                            <span
-                              key={label}
-                              className={`model-label label-${label}`}
-                              title={getCategoryLabel(label)}
-                            />
-                          ))}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          {modelInfo.labels && modelInfo.labels.length > 0 && (
+            <span className="model-labels">
+              {modelInfo.labels.map(label => (
+                <span key={label} className={`model-label label-${label}`} title={getCategoryLabel(label)} />
+              ))}
+            </span>
           )}
         </div>
-      ))}
+      </div>
+    );
+  };
+
+  const renderFamilyItem = (item: Extract<ModelListItem, { type: 'family' }>) => {
+    const { family, members } = item;
+    const activeMemberLabel = selectedFamilyMembers[family.displayName] || family.defaultMember;
+    const activeMember = members.find(m => m.label === activeMemberLabel) || members[0];
+
+    // Aggregate status: best across all members
+    const anyLoaded = members.some(m => loadedModels.has(m.name));
+    const anyDownloaded = members.some(m => modelsData[m.name]?.downloaded);
+    const anyLoading = members.some(m => loadingModels.has(m.name));
+    let aggStatusClass = 'not-downloaded';
+    let aggStatusTitle = 'No members downloaded';
+    if (anyLoading) {
+      aggStatusClass = 'loading';
+      aggStatusTitle = 'A member is loading...';
+    } else if (anyLoaded) {
+      aggStatusClass = 'loaded';
+      aggStatusTitle = 'A member is loaded';
+    } else if (anyDownloaded) {
+      aggStatusClass = 'available';
+      aggStatusTitle = 'A member is available locally';
+    }
+
+    const isHovered = hoveredModel === family.displayName;
+    const activeModelDownloaded = modelsData[activeMember.name]?.downloaded ?? false;
+
+    return (
+      <div key={family.displayName}>
+        <div
+          className={`model-item model-catalog-item ${activeModelDownloaded ? 'downloaded' : ''}`}
+          onMouseEnter={() => setHoveredModel(family.displayName)}
+          onMouseLeave={() => setHoveredModel(null)}
+        >
+          <div className="model-item-content">
+            <div className="model-info-left">
+              <span className={`model-status-indicator ${aggStatusClass}`} title={aggStatusTitle}>●</span>
+              <span className="model-name">{family.displayName}</span>
+              <span className="model-size">{formatSize(activeMember.info.size)}</span>
+              {renderActionButtons(activeMember.name, isHovered)}
+            </div>
+            {activeMember.info.labels && activeMember.info.labels.length > 0 && (
+              <span className="model-labels">
+                {activeMember.info.labels.map(label => (
+                  <span key={label} className={`model-label label-${label}`} title={getCategoryLabel(label)} />
+                ))}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="family-members">
+          {members.map(m => {
+            const memberDownloaded = modelsData[m.name]?.downloaded ?? false;
+            const memberLoaded = loadedModels.has(m.name);
+            const pillStatus = memberLoaded ? 'pill-loaded' : memberDownloaded ? 'pill-available' : '';
+            return (
+              <span
+                key={m.label}
+                className={`family-member-pill ${pillStatus} ${m.label === activeMemberLabel ? 'selected' : ''}`}
+                onClick={(e) => { e.stopPropagation(); selectFamilyMember(family.displayName, m.label); }}
+              >
+                {m.label}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderModelsView = () => (
+    <>
+      {categories.map(category => {
+        const listItems = buildModelList(groupedModels[category]);
+        return (
+          <div key={category} className="model-category">
+            <div
+              className="model-category-header"
+              onClick={() => toggleCategory(category)}
+            >
+              <span className={`category-chevron ${shouldShowCategory(category) ? 'expanded' : ''}`}>
+                <ChevronRight size={11} strokeWidth={2.1} />
+              </span>
+              <span className="category-label">{getDisplayLabel(category)}</span>
+              <span className="category-count">({groupedModels[category].length})</span>
+            </div>
+
+            {shouldShowCategory(category) && (
+              <div className="model-list">
+                <ModelOptionsModal model={optionsModel} isOpen={showModelOptionsModal}
+                                   onCancel={() => {
+                                     setShowModelOptionsModal(false);
+                                     setOptionsModel(null);
+                                   }}
+                                   onSubmit={(modelName, options) => {
+                                     setShowModelOptionsModal(false);
+                                     setOptionsModel(null);
+                                     handleLoadModel(modelName, options);
+                                   }}/>
+                {listItems.map(item => {
+                  if (item.type === 'family') {
+                    return renderFamilyItem(item);
+                  }
+                  return renderModelItem(item.name, item.info, item.name);
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </>
   );
 
