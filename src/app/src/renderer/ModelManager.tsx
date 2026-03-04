@@ -844,27 +844,26 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     const activeModelDownloaded = modelsData[activeMember.name]?.downloaded ?? false;
 
     return (
-      <div key={family.displayName}>
-        <div
-          className={`model-item model-catalog-item ${activeModelDownloaded ? 'downloaded' : ''}`}
-          onMouseEnter={() => setHoveredModel(family.displayName)}
-          onMouseLeave={() => setHoveredModel(null)}
-        >
-          <div className="model-item-content">
-            <div className="model-info-left">
-              <span className={`model-status-indicator ${aggStatusClass}`} title={aggStatusTitle}>●</span>
-              <span className="model-name">{family.displayName}</span>
-              <span className="model-size">{formatSize(activeMember.info.size)}</span>
-              {renderActionButtons(activeMember.name, isHovered)}
-            </div>
-            {activeMember.info.labels && activeMember.info.labels.length > 0 && (
-              <span className="model-labels">
-                {activeMember.info.labels.map(label => (
-                  <span key={label} className={`model-label label-${label}`} title={getCategoryLabel(label)} />
-                ))}
-              </span>
-            )}
+      <div
+        key={family.displayName}
+        className={`model-item model-catalog-item ${activeModelDownloaded ? 'downloaded' : ''}`}
+        onMouseEnter={() => setHoveredModel(family.displayName)}
+        onMouseLeave={() => setHoveredModel(null)}
+      >
+        <div className="model-item-content">
+          <div className="model-info-left">
+            <span className={`model-status-indicator ${aggStatusClass}`} title={aggStatusTitle}>●</span>
+            <span className="model-name">{family.displayName}</span>
+            <span className="model-size">{formatSize(activeMember.info.size)}</span>
+            {renderActionButtons(activeMember.name, isHovered)}
           </div>
+          {activeMember.info.labels && activeMember.info.labels.length > 0 && (
+            <span className="model-labels">
+              {activeMember.info.labels.map(label => (
+                <span key={label} className={`model-label label-${label}`} title={getCategoryLabel(label)} />
+              ))}
+            </span>
+          )}
         </div>
         <div className="family-members">
           {members.map(m => {
