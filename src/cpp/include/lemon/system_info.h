@@ -30,6 +30,9 @@ struct GPUInfo : DeviceInfo {
 struct NPUInfo : DeviceInfo {
     std::string driver_version;
     std::string power_mode;
+    uint64_t tops_max = 0;
+    uint64_t tops_curr = 0;
+    float utilization = 0.0f;
 };
 
 //Enums
@@ -104,6 +107,9 @@ public:
 
     // Generate human-readable error message for unsupported backend
     static std::string get_unsupported_backend_error(const std::string& recipe, const std::string& backend);
+
+    // Check if the process is running under systemd
+    static bool is_running_under_systemd();
 };
 
 // Windows implementation

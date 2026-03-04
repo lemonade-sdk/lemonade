@@ -1,11 +1,12 @@
 #include "lemon/ollama_api.h"
 #include "lemon/model_types.h"
 #include <iostream>
+#include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
 
 // ============================================================================
-// Helper: extract parameter size from model name
+// extract parameter size from model name
 // e.g. "Qwen3-0.6B-GGUF" → "0.6B", "Gemma-3-4b-it-GGUF" → "4B"
 // ============================================================================
 static std::string extract_parameter_size(const std::string& model_name) {
@@ -40,7 +41,7 @@ static std::string extract_parameter_size(const std::string& model_name) {
 }
 
 // ============================================================================
-// Helper: extract quantization level from checkpoint string
+// extract quantization level from checkpoint string
 // e.g. "unsloth/Qwen3-0.6B-GGUF:Q4_0" → "Q4_0"
 //      "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M" → "Q4_K_M"
 //      "unsloth/gemma-3-270m-it-GGUF:gemma-3-270m-it-UD-IQ2_M.gguf" → "IQ2_M"
@@ -184,11 +185,11 @@ void OllamaApi::register_routes(httplib::Server& server) {
     server.Post("/api/push", not_supported);
     server.Post(R"(/api/blobs/(.+))", not_supported);
 
-    std::cout << "[OllamaApi] Ollama-compatible routes registered" << std::endl;
+    LOG(DEBUG, "OllamaApi") << "Ollama-compatible routes registered" << std::endl;
 }
 
 // ============================================================================
-// Helper: normalize model name (strip ":latest" suffix)
+// normalize model name (strip ":latest" suffix)
 // ============================================================================
 std::string OllamaApi::normalize_model_name(const std::string& name) {
     const std::string suffix = ":latest";
@@ -200,7 +201,7 @@ std::string OllamaApi::normalize_model_name(const std::string& name) {
 }
 
 // ============================================================================
-// Helper: auto-load model if needed (mirrors Server::auto_load_model_if_needed)
+// auto-load model if needed (mirrors Server::auto_load_model_if_needed)
 // ============================================================================
 void OllamaApi::auto_load_model(const std::string& model) {
     std::string name = normalize_model_name(model);
@@ -209,7 +210,7 @@ void OllamaApi::auto_load_model(const std::string& model) {
         return;
     }
 
-    std::cout << "[OllamaApi] Auto-loading model: " << name << std::endl;
+    LOG(INFO, "OllamaApi") << "Auto-loading model: " << name << std::endl;
 
     if (!model_manager_->model_exists(name)) {
         throw std::runtime_error("model '" + name + "' not found");
@@ -219,21 +220,17 @@ void OllamaApi::auto_load_model(const std::string& model) {
 
     // Download if not cached
     if (info.recipe != "flm" && !model_manager_->is_model_downloaded(name)) {
-        std::cout << "[OllamaApi] Model not cached, downloading..." << std::endl;
+        LOG(INFO, "OllamaApi") << "Model not cached, downloading..." << std::endl;
         model_manager_->download_registered_model(info, true);
         info = model_manager_->get_model_info(name);
     }
 
     router_->load_model(name, info, RecipeOptions(info.recipe, json::object()), true);
-    std::cout << "[OllamaApi] Model loaded: " << name << std::endl;
+    LOG(INFO, "OllamaApi") << "Model loaded: " << name << std::endl;
 }
 
-// ============================================================================
-// Helper: build Ollama model entry from ModelInfo
-// ============================================================================
-// ============================================================================
-// Helper: build Ollama "details" object from model name, recipe, and checkpoint
-// ============================================================================
+// build Ollama model entry from ModelInfo
+// build Ollama "details" object from model name, recipe, and checkpoint
 static json build_ollama_details(const std::string& model_name,
                                   const std::string& recipe,
                                   const std::string& checkpoint) {
@@ -526,7 +523,7 @@ void OllamaApi::stream_sse_to_ndjson(const std::string& openai_body,
                     return false;
                 }
             } catch (const std::exception& e) {
-                std::cerr << "[OllamaApi] Failed to parse SSE chunk: " << e.what() << std::endl;
+                LOG(ERROR, "OllamaApi") << "Failed to parse SSE chunk: " << e.what() << std::endl;
             }
         }
         return true;
@@ -560,7 +557,7 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
         auto messages = request_json.value("messages", json::array());
         if (messages.empty() && request_json.contains("keep_alive") &&
             request_json["keep_alive"] == 0) {
-            std::cout << "[OllamaApi] POST /api/chat - Unloading model: " << model << std::endl;
+            LOG(INFO, "OllamaApi") << "POST /api/chat - Unloading model: " << model << std::endl;
             try {
                 router_->unload_model(model);
             } catch (...) {
@@ -594,7 +591,7 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
         auto openai_req = convert_ollama_to_openai_chat(request_json);
 
         if (stream) {
-            std::cout << "[OllamaApi] POST /api/chat - Streaming (model: " << model << ")" << std::endl;
+            LOG(INFO, "OllamaApi") << "POST /api/chat - Streaming (model: " << model << ")" << std::endl;
 
             // Set streaming body as OpenAI format with stream=true
             openai_req["stream"] = true;
@@ -629,7 +626,7 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
                 }
             );
         } else {
-            std::cout << "[OllamaApi] POST /api/chat - Non-streaming (model: " << model << ")" << std::endl;
+            LOG(INFO, "OllamaApi") << "POST /api/chat - Non-streaming (model: " << model << ")" << std::endl;
 
             auto openai_response = router_->chat_completion(openai_req);
             auto ollama_response = convert_openai_chat_to_ollama(openai_response, model);
@@ -637,7 +634,7 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
         }
 
     } catch (const std::exception& e) {
-        std::cerr << "[OllamaApi] Error in /api/chat: " << e.what() << std::endl;
+        LOG(ERROR, "OllamaApi") << "Error in /api/chat: " << e.what() << std::endl;
         res.status = 500;
         json error = {{"error", std::string(e.what())}};
         res.set_content(error.dump(), "application/json");
@@ -662,7 +659,7 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
         std::string prompt = request_json.value("prompt", "");
         if (prompt.empty() && request_json.contains("keep_alive") &&
             request_json["keep_alive"] == 0) {
-            std::cout << "[OllamaApi] POST /api/generate - Unloading model: " << model << std::endl;
+            LOG(INFO, "OllamaApi") << "POST /api/generate - Unloading model: " << model << std::endl;
             try {
                 router_->unload_model(model);
             } catch (...) {
@@ -703,7 +700,7 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
         auto openai_req = convert_ollama_to_openai_completion(request_json);
 
         if (stream) {
-            std::cout << "[OllamaApi] POST /api/generate - Streaming (model: " << model << ")" << std::endl;
+            LOG(INFO, "OllamaApi") << "POST /api/generate - Streaming (model: " << model << ")" << std::endl;
 
             openai_req["stream"] = true;
             std::string openai_body = openai_req.dump();
@@ -754,7 +751,7 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
                 }
             );
         } else {
-            std::cout << "[OllamaApi] POST /api/generate - Non-streaming (model: " << model << ")" << std::endl;
+            LOG(INFO, "OllamaApi") << "POST /api/generate - Non-streaming (model: " << model << ")" << std::endl;
 
             auto openai_response = router_->completion(openai_req);
 
@@ -790,7 +787,7 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
         }
 
     } catch (const std::exception& e) {
-        std::cerr << "[OllamaApi] Error in /api/generate: " << e.what() << std::endl;
+        LOG(ERROR, "OllamaApi") << "Error in /api/generate: " << e.what() << std::endl;
         res.status = 500;
         json error = {{"error", std::string(e.what())}};
         res.set_content(error.dump(), "application/json");
@@ -802,7 +799,7 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
 // ============================================================================
 void OllamaApi::handle_generate_image(const json& request_json, httplib::Response& res, const std::string& model) {
     try {
-        std::cout << "[OllamaApi] POST /api/generate - Image generation (model: " << model << ")" << std::endl;
+        LOG(INFO, "OllamaApi") << "POST /api/generate - Image generation (model: " << model << ")" << std::endl;
 
         std::string prompt = request_json.value("prompt", "");
 
@@ -880,7 +877,7 @@ void OllamaApi::handle_generate_image(const json& request_json, httplib::Respons
         res.set_content(ollama_res.dump(), "application/json");
 
     } catch (const std::exception& e) {
-        std::cerr << "[OllamaApi] Error in image generation: " << e.what() << std::endl;
+        LOG(ERROR, "OllamaApi") << "Error in image generation: " << e.what() << std::endl;
         res.status = 500;
         json error = {{"error", std::string(e.what())}};
         res.set_content(error.dump(), "application/json");
@@ -904,7 +901,7 @@ void OllamaApi::handle_tags(const httplib::Request& req, httplib::Response& res)
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
-        std::cerr << "[OllamaApi] Error in /api/tags: " << e.what() << std::endl;
+        LOG(ERROR, "OllamaApi") << "Error in /api/tags: " << e.what() << std::endl;
         res.status = 500;
         json error = {{"error", std::string(e.what())}};
         res.set_content(error.dump(), "application/json");
@@ -950,7 +947,7 @@ void OllamaApi::handle_show(const httplib::Request& req, httplib::Response& res)
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
-        std::cerr << "[OllamaApi] Error in /api/show: " << e.what() << std::endl;
+        LOG(ERROR, "OllamaApi") << "Error in /api/show: " << e.what() << std::endl;
         res.status = 500;
         json error = {{"error", std::string(e.what())}};
         res.set_content(error.dump(), "application/json");
@@ -983,7 +980,7 @@ void OllamaApi::handle_delete(const httplib::Request& req, httplib::Response& re
         res.status = 200;
 
     } catch (const std::exception& e) {
-        std::cerr << "[OllamaApi] Error in /api/delete: " << e.what() << std::endl;
+        LOG(ERROR, "OllamaApi") << "Error in /api/delete: " << e.what() << std::endl;
         std::string error_msg = e.what();
         if (error_msg.find("not found") != std::string::npos ||
             error_msg.find("not supported") != std::string::npos) {
@@ -1019,7 +1016,7 @@ void OllamaApi::handle_pull(const httplib::Request& req, httplib::Response& res)
             return;
         }
 
-        std::cout << "[OllamaApi] POST /api/pull - Pulling model: " << name << std::endl;
+        LOG(INFO, "OllamaApi") << "POST /api/pull - Pulling model: " << name << std::endl;
 
         if (stream) {
             res.set_chunked_content_provider(
@@ -1079,7 +1076,7 @@ void OllamaApi::handle_pull(const httplib::Request& req, httplib::Response& res)
         }
 
     } catch (const std::exception& e) {
-        std::cerr << "[OllamaApi] Error in /api/pull: " << e.what() << std::endl;
+        LOG(ERROR, "OllamaApi") << "Error in /api/pull: " << e.what() << std::endl;
         res.status = 500;
         json error = {{"error", std::string(e.what())}};
         res.set_content(error.dump(), "application/json");
@@ -1144,7 +1141,7 @@ void OllamaApi::handle_embed(const httplib::Request& req, httplib::Response& res
         res.set_content(ollama_res.dump(), "application/json");
 
     } catch (const std::exception& e) {
-        std::cerr << "[OllamaApi] Error in /api/embed: " << e.what() << std::endl;
+        LOG(ERROR, "OllamaApi") << "Error in /api/embed: " << e.what() << std::endl;
         res.status = 500;
         json error = {{"error", std::string(e.what())}};
         res.set_content(error.dump(), "application/json");
@@ -1205,7 +1202,7 @@ void OllamaApi::handle_embeddings(const httplib::Request& req, httplib::Response
         res.set_content(ollama_res.dump(), "application/json");
 
     } catch (const std::exception& e) {
-        std::cerr << "[OllamaApi] Error in /api/embeddings: " << e.what() << std::endl;
+        LOG(ERROR, "OllamaApi") << "Error in /api/embeddings: " << e.what() << std::endl;
         res.status = 500;
         json error = {{"error", std::string(e.what())}};
         res.set_content(error.dump(), "application/json");
@@ -1243,7 +1240,7 @@ void OllamaApi::handle_ps(const httplib::Request& req, httplib::Response& res) {
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
-        std::cerr << "[OllamaApi] Error in /api/ps: " << e.what() << std::endl;
+        LOG(ERROR, "OllamaApi") << "Error in /api/ps: " << e.what() << std::endl;
         res.status = 500;
         json error = {{"error", std::string(e.what())}};
         res.set_content(error.dump(), "application/json");

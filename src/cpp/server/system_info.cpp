@@ -8,11 +8,13 @@
 #include <cstdlib>
 #include <iostream>
 #include <regex>
+#include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <cctype>
 #include <set>
 #include <map>
 #include <vector>
+#include <cmath>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -24,10 +26,26 @@
 
 #ifdef __APPLE__
 #include <sys/sysctl.h>
+#include <unistd.h>
+#endif
+
+#ifdef __linux__
+#include <unistd.h>
+#endif
+
+#ifdef __linux__
+#include <sys/ioctl.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include "lemon/amdxdna_accel.h"
 #endif
 
 #ifndef _WIN32
 #include <sys/wait.h>
+#endif
+
+#ifdef HAVE_SYSTEMD
+#include <systemd/sd-login.h>
 #endif
 
 namespace lemon {
@@ -277,13 +295,6 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         }
     }
     if (recipe == "flm") {
-#ifdef __linux__
-        const char* beta_flm = std::getenv("LEMONADE_FLM_LINUX_BETA");
-        if (!beta_flm || (std::string(beta_flm) != "1" && std::string(beta_flm) != "true")) {
-            error_message = "FLM on Linux is currently in beta.";
-            return false;
-        }
-#endif
         if (!utils::run_flm_validate("", error_message)) {
             return false;
         }
@@ -524,6 +535,10 @@ json SystemInfo::get_device_dict() {
             {"available", npu.available}
         };
         devices["amd_npu"]["family"] = identify_npu_arch();
+        if (npu.tops_max > 0) {
+            devices["amd_npu"]["tops_max_int"] = npu.tops_max;
+        }
+        devices["amd_npu"]["utilization"] = npu.utilization;
         if (!npu.power_mode.empty()) {
             devices["amd_npu"]["power_mode"] = npu.power_mode;
         }
@@ -1184,12 +1199,6 @@ bool needs_gfx1151_cwsr_fix() {
 // by the model manager when a user tries to download/load an FLM model.
 bool check_flm_validation_fails(std::string& error_message) {
 #ifdef __linux__
-    const char* beta_flm = std::getenv("LEMONADE_FLM_LINUX_BETA");
-    if (!beta_flm || (std::string(beta_flm) != "1" && std::string(beta_flm) != "true")) {
-        error_message = "FLM on Linux is currently in beta.";
-        return false;
-    }
-
     std::string flm_path = utils::find_flm_executable();
     if (flm_path.empty()) {
         // No FLM installed - not a system check issue
@@ -1232,11 +1241,6 @@ std::string identify_npu_arch() {
         return "XDNA2";
     }
 #else
-    // Linux: check for beta flag
-    const char* beta_flm = std::getenv("LEMONADE_FLM_LINUX_BETA");
-    if (!beta_flm || (std::string(beta_flm) != "1" && std::string(beta_flm) != "true")) {
-        return "";
-    }
 
     // Linux: check amdxdna driver + vbnv for NPU generation
     std::string sysfs_arch = identify_npu_arch_from_sysfs();
@@ -2094,13 +2098,6 @@ NPUInfo LinuxSystemInfo::get_npu_device() {
     npu.name = "AMD NPU";
     npu.available = false;
 
-    // Check for beta flag
-    const char* beta_flm = std::getenv("LEMONADE_FLM_LINUX_BETA");
-    if (!beta_flm || (std::string(beta_flm) != "1" && std::string(beta_flm) != "true")) {
-        npu.error = "FLM on Linux is currently in beta.";
-        return npu;
-    }
-
     fs::path accel_path = "/sys/class/accel";
     if (!fs::exists(accel_path) || !fs::is_directory(accel_path)) {
         npu.error = "No NPU device found";
@@ -2135,6 +2132,70 @@ NPUInfo LinuxSystemInfo::get_npu_device() {
                 if (!vbnv_content.empty()) {
                     npu.name = "AMD NPU (" + vbnv_content + ")";
                 }
+            }
+        }
+
+        // Try to query TOPs and Power Mode via IOCTL
+        std::string accel_dev = "/dev/accel/accel0";
+        if (fs::exists(accel_dev)) {
+            int fd = open(accel_dev.c_str(), O_RDWR);
+            if (fd >= 0) {
+                // Query Resource Info (TOPs)
+                amdxdna_drm_get_resource_info res_info = {};
+                amdxdna_drm_get_info get_info = {};
+                get_info.param = DRM_AMDXDNA_QUERY_RESOURCE_INFO;
+                get_info.buffer_size = sizeof(res_info);
+                get_info.buffer = (uintptr_t)&res_info;
+
+                if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) >= 0) {
+                    npu.tops_max = res_info.npu_tops_max;
+                    npu.tops_curr = res_info.npu_tops_curr;
+                }
+
+                // Query Sensors (Utilization)
+                amdxdna_drm_query_sensor sensors[16] = {};
+                get_info.param = DRM_AMDXDNA_QUERY_SENSORS;
+                get_info.buffer_size = sizeof(sensors);
+                get_info.buffer = (uintptr_t)sensors;
+
+                if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) >= 0) {
+                    int num_sensors = get_info.buffer_size / sizeof(amdxdna_drm_query_sensor);
+                    double usage_sum = 0.0;
+                    int usage_count = 0;
+                    for (int i = 0; i < num_sensors; ++i) {
+                        if (sensors[i].type == AMDXDNA_SENSOR_TYPE_COLUMN_UTILIZATION) {
+                            double val = (double)sensors[i].input * std::pow(10.0, sensors[i].unitm);
+                            usage_sum += val;
+                            usage_count++;
+                        }
+                    }
+                    if (usage_count > 0) {
+                        npu.utilization = (float)(usage_sum / usage_count);
+                    }
+                }
+
+                // Query Power Mode
+                amdxdna_drm_get_power_mode pwr_info = {};
+                get_info.param = DRM_AMDXDNA_GET_POWER_MODE;
+                get_info.buffer_size = sizeof(pwr_info);
+                get_info.buffer = (uintptr_t)&pwr_info;
+
+                if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) >= 0) {
+                    static const std::map<int, std::string> POWER_MODE_MAP = {
+                        {POWER_MODE_DEFAULT, "DEFAULT"},
+                        {POWER_MODE_LOW, "LOW"},
+                        {POWER_MODE_MEDIUM, "MEDIUM"},
+                        {POWER_MODE_HIGH, "HIGH"},
+                        {POWER_MODE_TURBO, "TURBO"}
+                    };
+                    auto it = POWER_MODE_MAP.find(pwr_info.power_mode);
+                    if (it != POWER_MODE_MAP.end()) {
+                        npu.power_mode = it->second;
+                    } else {
+                        npu.power_mode = "Unknown (" + std::to_string(pwr_info.power_mode) + ")";
+                    }
+                }
+                close(fd);
             }
         }
 
@@ -2782,12 +2843,12 @@ json SystemInfoCache::get_system_info_with_cache() {
         } else {
             // Provide friendly message about why we're detecting hardware
             if (cache_exists) {
-                std::cout << "[Server] Collecting system info (Lemonade was updated)" << std::endl;
+                LOG(INFO, "Server") << "Collecting system info (Lemonade was updated)" << std::endl;
 
                 // Perform version-specific cleanup (e.g., removing stale backend binaries)
                 cache.perform_upgrade_cleanup();
             } else {
-                std::cout << "[Server] Collecting system info" << std::endl;
+                LOG(INFO, "Server") << "Collecting system info" << std::endl;
             }
 
             // Get system info (OS, Processor, Memory, OEM System, BIOS, etc.)
@@ -2813,14 +2874,14 @@ json SystemInfoCache::get_system_info_with_cache() {
 
     } catch (const std::exception& e) {
         // Catastrophic failure - return minimal info but don't crash
-        std::cerr << "[Server] System info failed: " << e.what() << std::endl;
+        LOG(ERROR, "Server") << "System info failed: " << e.what() << std::endl;
         system_info = {
             {"OS Version", "Unknown"},
             {"error", e.what()},
             {"devices", json::object()}
         };
     } catch (...) {
-        std::cerr << "[Server] System info failed with unknown error" << std::endl;
+        LOG(ERROR, "Server") << "System info failed with unknown error" << std::endl;
         system_info = {
             {"OS Version", "Unknown"},
             {"error", "Unknown error"},
@@ -2835,5 +2896,35 @@ json SystemInfoCache::get_system_info_with_cache() {
     return system_info;
 }
 
+
+bool SystemInfo::is_running_under_systemd() {
+#ifdef _WIN32
+    return false;
+#else
+    const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
+    if (disable_journal && (std::string(disable_journal) == "1" || std::string(disable_journal) == "true")) {
+        return false;
+    }
+
+#ifdef HAVE_SYSTEMD
+    // Use systemd journal only when actually running as lemonade-server.service.
+    // sd_pid_get_unit() reads the process's cgroup assignment (not environment variables),
+    // so it cannot give false positives from inherited env vars like JOURNAL_STREAM or
+    // INVOCATION_ID, both of which are inherited by all child processes in a systemd session.
+    char* unit_name = nullptr;
+    if (sd_pid_get_unit(0, &unit_name) >= 0) {
+        const char* service_name_env = std::getenv("LEMONADE_SYSTEMD_UNIT");
+        const char* service_name = service_name_env ? service_name_env : LEMONADE_SYSTEMD_UNIT_NAME;
+        bool is_service = (strcmp(unit_name, service_name) == 0);
+        free(unit_name);
+        return is_service;
+    }
+#endif
+
+    const char* journal_stream = std::getenv("JOURNAL_STREAM");
+    const char* invocation_id = std::getenv("INVOCATION_ID");
+    return (journal_stream || invocation_id) && !isatty(STDOUT_FILENO);
+#endif
+}
 
 } // namespace lemon

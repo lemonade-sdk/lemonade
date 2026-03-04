@@ -1,4 +1,6 @@
 #include <lemon/utils/http_client.h>
+#include <lemon/utils/path_utils.h>
+#include <lemon/utils/aixlog.hpp>
 #include <curl/curl.h>
 #include <sstream>
 #include <stdexcept>
@@ -213,7 +215,7 @@ static size_t stream_write_callback(char* ptr, size_t size, size_t nmemb, void* 
         size_t total_size = size * nmemb;
 
         if (!data || !data->callback || !*(data->callback)) {
-            std::cerr << "[HttpClient ERROR] Callback data is null!" << std::endl;
+            LOG(ERROR, "HttpClient") << "Callback data is null!" << std::endl;
             return 0;
         }
 
@@ -223,10 +225,10 @@ static size_t stream_write_callback(char* ptr, size_t size, size_t nmemb, void* 
 
         return total_size;
     } catch (const std::exception& e) {
-        std::cerr << "[HttpClient ERROR] Exception in stream callback: " << e.what() << std::endl;
+        LOG(ERROR, "HttpClient") << "Exception in stream callback: " << e.what() << std::endl;
         return 0;
     } catch (...) {
-        std::cerr << "[HttpClient ERROR] Unknown exception in stream callback" << std::endl;
+        LOG(ERROR, "HttpClient") << "Unknown exception in stream callback" << std::endl;
         return 0;
     }
 }
@@ -275,7 +277,7 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     // (backend closes connection after sending all data)
     if (res != CURLE_OK && res != CURLE_PARTIAL_FILE && res != CURLE_RECV_ERROR) {
         std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
-        std::cerr << "[HttpClient ERROR] " << error << std::endl;
+        LOG(ERROR, "HttpClient") << "" << error << std::endl;
         curl_slist_free_all(header_list);
         curl_easy_cleanup(curl);
         throw std::runtime_error(error);
@@ -283,7 +285,7 @@ HttpResponse HttpClient::post_stream(const std::string& url,
 
     // Log if we got a non-OK CURL code but continue (normal for streaming)
     if (res != CURLE_OK) {
-        std::cerr << "[HttpClient] Stream ended with: " << curl_easy_strerror(res)
+        LOG(ERROR, "HttpClient") << "Stream ended with: " << curl_easy_strerror(res)
                   << " (response code: " << response_code << ")" << std::endl;
     }
 
@@ -308,7 +310,13 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     }
 
     const char* mode = (resume_from > 0) ? "ab" : "wb";
+    fs::path output_path_fs = path_from_utf8(output_path);
+#ifdef _WIN32
+    std::wstring wide_mode = (resume_from > 0) ? L"ab" : L"wb";
+    FILE* fp = _wfopen(output_path_fs.c_str(), wide_mode.c_str());
+#else
     FILE* fp = fopen(output_path.c_str(), mode);
+#endif
     if (!fp) {
         result.error_message = "Failed to open file for writing: " + output_path;
         curl_easy_cleanup(curl);
@@ -402,8 +410,8 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
         }
 
         size_t current_file_size = 0;
-        if (fs::exists(output_path)) {
-            current_file_size = fs::file_size(output_path);
+        if (fs::exists(output_path_fs)) {
+            current_file_size = fs::file_size(output_path_fs);
         }
         result.can_resume = retryable && (current_file_size > 0);
 
@@ -454,7 +462,7 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
 
                     if (remote_size > 0 && static_cast<size_t>(remote_size) <= resume_from) {
                         // Local file is >= remote size, file is complete
-                        std::cout << "\n[Download] File verified complete (local: "
+                        LOG(INFO, "Download") << " File verified complete (local: "
                                   << (resume_from / (1024.0 * 1024.0)) << " MB, remote: "
                                   << (remote_size / (1024.0 * 1024.0)) << " MB)" << std::endl;
                         result.success = true;
@@ -502,22 +510,24 @@ DownloadResult HttpClient::download_file(const std::string& url,
 
     // Use .partial extension for in-progress downloads
     std::string partial_path = output_path + ".partial";
+    fs::path output_path_fs = path_from_utf8(output_path);
+    fs::path partial_path_fs = path_from_utf8(partial_path);
 
     // Check if final file already exists and is complete
-    if (fs::exists(output_path) && !fs::exists(partial_path)) {
+    if (fs::exists(output_path_fs) && !fs::exists(partial_path_fs)) {
         // Final file exists with no partial - consider it complete
         final_result.success = true;
         final_result.bytes_downloaded = 0;
-        std::cout << "[Download] File already exists: " << output_path << std::endl;
+        LOG(INFO, "Download") << "File already exists: " << output_path << std::endl;
         return final_result;
     }
 
     // Check for existing partial file to resume
     size_t resume_offset = 0;
-    if (options.resume_partial && fs::exists(partial_path)) {
-        resume_offset = fs::file_size(partial_path);
+    if (options.resume_partial && fs::exists(partial_path_fs)) {
+        resume_offset = fs::file_size(partial_path_fs);
         if (resume_offset > 0) {
-            std::cout << "\n[Download] Found partial file ("
+            LOG(INFO, "Download") << " Found partial file ("
                       << std::fixed << std::setprecision(1)
                       << (resume_offset / (1024.0 * 1024.0))
                       << " MB), resuming..." << std::endl;
@@ -526,18 +536,18 @@ DownloadResult HttpClient::download_file(const std::string& url,
 
     for (int attempt = 0; attempt <= options.max_retries; ++attempt) {
         if (attempt > 0) {
-            std::cout << "\n[Download] Retry " << attempt << "/" << options.max_retries
+            LOG(INFO, "Download") << " Retry " << attempt << "/" << options.max_retries
                       << " after " << (retry_delay_ms / 1000.0) << "s..." << std::endl;
             std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
 
             // Exponential backoff (parentheses avoid Windows min/max macro)
             retry_delay_ms = (std::min)(retry_delay_ms * 2, options.max_retry_delay_ms);
 
-            if (options.resume_partial && fs::exists(partial_path)) {
-                size_t new_offset = fs::file_size(partial_path);
+            if (options.resume_partial && fs::exists(partial_path_fs)) {
+                size_t new_offset = fs::file_size(partial_path_fs);
                 if (new_offset > resume_offset) {
                     resume_offset = new_offset;
-                    std::cout << "[Download] Resuming from "
+                    LOG(INFO, "Download") << "Resuming from "
                               << std::fixed << std::setprecision(1)
                               << (resume_offset / (1024.0 * 1024.0)) << " MB" << std::endl;
                 }
@@ -563,19 +573,19 @@ DownloadResult HttpClient::download_file(const std::string& url,
 
         // If cancelled by user, return immediately without retrying
         if (final_result.cancelled) {
-            std::cout << "\n[Download] Cancelled by user" << std::endl;
+            LOG(INFO, "Download") << " Cancelled by user" << std::endl;
             return final_result;
         }
 
         if (final_result.success) {
             // Download complete - rename .partial to final path
             std::error_code ec;
-            fs::rename(partial_path, output_path, ec);
+            fs::rename(partial_path_fs, output_path_fs, ec);
             if (ec) {
                 // Rename failed - try copy and delete
-                fs::copy_file(partial_path, output_path, fs::copy_options::overwrite_existing, ec);
+                fs::copy_file(partial_path_fs, output_path_fs, fs::copy_options::overwrite_existing, ec);
                 if (!ec) {
-                    fs::remove(partial_path, ec);
+                    fs::remove(partial_path_fs, ec);
                 }
             }
             if (ec) {
@@ -586,16 +596,16 @@ DownloadResult HttpClient::download_file(const std::string& url,
         }
 
         if (!final_result.can_resume && attempt < options.max_retries) {
-            std::cerr << "\n[Download] Error (attempt " << (attempt + 1) << "): "
+            LOG(ERROR, "HttpClient") << "\n[Download] Error (attempt " << (attempt + 1) << "): "
                       << final_result.error_message << std::endl;
 
-            if (fs::exists(partial_path)) {
-                std::cerr << "[Download] Removing incomplete file for fresh retry..." << std::endl;
-                fs::remove(partial_path);
+            if (fs::exists(partial_path_fs)) {
+                LOG(WARNING, "HttpClient") << "[Download] Removing incomplete file for fresh retry..." << std::endl;
+                fs::remove(partial_path_fs);
             }
             resume_offset = 0;
         } else if (final_result.can_resume) {
-            std::cerr << "\n[Download] Connection interrupted (attempt " << (attempt + 1) << "): "
+            LOG(WARNING, "HttpClient") << "\n[Download] Connection interrupted (attempt " << (attempt + 1) << "): "
                       << final_result.curl_error << std::endl;
         } else {
             break;
@@ -606,8 +616,8 @@ DownloadResult HttpClient::download_file(const std::string& url,
     oss << "Download failed after " << (options.max_retries + 1) << " attempts.\n";
     oss << "Last error: " << final_result.error_message;
 
-    if (fs::exists(partial_path)) {
-        size_t partial_size = fs::file_size(partial_path);
+    if (fs::exists(partial_path_fs)) {
+        size_t partial_size = fs::file_size(partial_path_fs);
         if (partial_size > 0) {
             oss << "\n\nPartial file preserved: " << partial_path;
             oss << "\nPartial size: " << std::fixed << std::setprecision(1)

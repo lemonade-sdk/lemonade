@@ -97,12 +97,28 @@ CLIParser::CLIParser()
 
     // List
     CLI::App* list = app_.add_subcommand("list", "List available models");
+    list->add_option("--port", config_.port, "Port number the server is running on")
+        ->envname("LEMONADE_PORT")
+        ->type_name("PORT")
+        ->default_val(config_.port);
+    list->add_option("--host", config_.host, "Host the server is running on")
+        ->envname("LEMONADE_HOST")
+        ->type_name("HOST")
+        ->default_val(config_.host);
 
     // Pull
     CLI::App* pull = app_.add_subcommand("pull", "Download a model");
     pull->add_option("model", tray_config_.model, "The model to download. Can be a name or JSON file")
         ->type_name("MODEL")
         ->required();
+    pull->add_option("--port", config_.port, "Port number the server is running on")
+        ->envname("LEMONADE_PORT")
+        ->type_name("PORT")
+        ->default_val(config_.port);
+    pull->add_option("--host", config_.host, "Host the server is running on")
+        ->envname("LEMONADE_HOST")
+        ->type_name("HOST")
+        ->default_val(config_.host);
     pull->add_option("--checkpoint", tray_config_.checkpoint, "Hugging Face checkpoint (format: org/model:variant) OR an absolute local path to a model directory. When a local path is provided, files are copied to the HuggingFace cache and registered.")
         ->type_name("CHECKPOINT");
     pull->add_option("--recipe", tray_config_.recipe, "Inference recipe to use. Required when using a local path.")
@@ -119,12 +135,36 @@ CLIParser::CLIParser()
     // Delete
     CLI::App* del = app_.add_subcommand("delete", "Delete a model");
     del->add_option("model", tray_config_.model, "The model to delete")->required();
+    del->add_option("--port", config_.port, "Port number the server is running on")
+        ->envname("LEMONADE_PORT")
+        ->type_name("PORT")
+        ->default_val(config_.port);
+    del->add_option("--host", config_.host, "Host the server is running on")
+        ->envname("LEMONADE_HOST")
+        ->type_name("HOST")
+        ->default_val(config_.host);
 
     // Status
     CLI::App* status = app_.add_subcommand("status", "Check server status");
+    status->add_option("--port", config_.port, "Port number the server is running on")
+        ->envname("LEMONADE_PORT")
+        ->type_name("PORT")
+        ->default_val(config_.port);
+    status->add_option("--host", config_.host, "Host the server is running on")
+        ->envname("LEMONADE_HOST")
+        ->type_name("HOST")
+        ->default_val(config_.host);
 
     // Stop
     CLI::App* stop = app_.add_subcommand("stop", "Stop the server");
+    stop->add_option("--port", config_.port, "Port number the server is running on")
+        ->envname("LEMONADE_PORT")
+        ->type_name("PORT")
+        ->default_val(config_.port);
+    stop->add_option("--host", config_.host, "Host the server is running on")
+        ->envname("LEMONADE_HOST")
+        ->type_name("HOST")
+        ->default_val(config_.host);
 
     // Recipes
     CLI::App* recipes = app_.add_subcommand("recipes", "List and manage execution backends");
