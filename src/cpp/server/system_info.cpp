@@ -762,6 +762,16 @@ json SystemInfo::build_recipes_info(const json& devices) {
         detected_devices.push_back({"metal", "Apple Metal", "metal", true});
     }
 
+    // Check if user prefers system llamacpp backend (off by default)
+    bool prefer_llamacpp_system = false;
+    const char* prefer_system_env = std::getenv("LEMONADE_LLAMACPP_PREFER_SYSTEM");
+    if (prefer_system_env) {
+        std::string pref_val(prefer_system_env);
+        if (pref_val == "true" || pref_val == "1") {
+            prefer_llamacpp_system = true;
+        }
+    }
+
     // Build recipes from the definition table
     for (const auto& def : RECIPE_DEFS) {
         // Skip if not supported on current OS
@@ -962,54 +972,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
             recipes[def.recipe] = {{"backends", json::object()}};
         }
         recipes[def.recipe]["backends"][def.backend] = backend;
-    }
 
-    // Set default_backend for each recipe based on preference order from RECIPE_DEFS
-    // Special case for llamacpp: Skip 'system' backend by default unless explicitly enabled
-    bool prefer_llamacpp_system = false;  // Default to not preferring system backend
-    const char* prefer_system_env = std::getenv("LEMONADE_LLAMACPP_PREFER_SYSTEM");
-    if (prefer_system_env) {
-        std::string pref_val(prefer_system_env);
-        if (pref_val == "true" || pref_val == "1") {
-            prefer_llamacpp_system = true;
-        }
-        // "false" or "0" keeps prefer_llamacpp_system = false (default)
-    }
-
-    for (auto& [recipe_name, recipe_info] : recipes.items()) {
-        std::string chosen_default;
-
-        // If llamacpp system preference is enabled, check it first
-        if (recipe_name == "llamacpp" && prefer_llamacpp_system) {
-            if (recipe_info["backends"].contains("system")) {
-                std::string state = recipe_info["backends"]["system"].value("state", "unsupported");
-                if (state != "unsupported") {
-                    chosen_default = "system";
-                }
-            }
-        }
-
-        // Otherwise find first supported backend in RECIPE_DEFS order
-        if (chosen_default.empty()) {
-            for (const auto& def : RECIPE_DEFS) {
-                if (def.recipe == recipe_name) {
-                    // Skip 'system' backend unless explicitly preferred
-                    if (def.backend == "system" && recipe_name == "llamacpp" && !prefer_llamacpp_system) {
-                        continue;
-                    }
-                    if (recipe_info["backends"].contains(def.backend)) {
-                        std::string state = recipe_info["backends"][def.backend].value("state", "unsupported");
-                        if (state != "unsupported") {
-                            chosen_default = def.backend;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (!chosen_default.empty()) {
-            recipe_info["default_backend"] = chosen_default;
+        // First supported backend in RECIPE_DEFS order becomes the default.
+        // Skip 'system' backend unless explicitly preferred via env var.
+        bool skip_as_default = (def.backend == "system" && !prefer_llamacpp_system);
+        if (supported && !skip_as_default && !recipes[def.recipe].contains("default_backend")) {
+            recipes[def.recipe]["default_backend"] = def.backend;
         }
     }
 
