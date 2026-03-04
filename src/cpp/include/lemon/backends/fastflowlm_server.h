@@ -94,10 +94,6 @@ private:
     static std::string get_flm_installed_version();
     static bool compare_versions(const std::string& v1, const std::string& v2);
 
-    // NPU driver check (static - no instance state needed)
-    static std::string get_min_npu_driver_version();
-    static std::string get_npu_driver_version();
-    static bool check_npu_driver_version();
     bool validate();
 
     // Installation - returns true if FLM was upgraded (may invalidate existing models)

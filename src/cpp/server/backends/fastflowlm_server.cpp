@@ -52,7 +52,6 @@ bool FastFlowLMServer::check() {
     }
 
     validate();
-    check_npu_driver_version();
 
     std::string version = get_flm_installed_version();
     if (!version.empty() && version != "unknown") {
@@ -103,9 +102,6 @@ void FastFlowLMServer::install(const std::string& backend) {
 
 std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade) {
     LOG(INFO, "FastFlowLM") << "Pulling model with FLM: " << checkpoint << std::endl;
-
-    // Check NPU driver version before pulling models (throws on failure)
-    check_npu_driver_version();
 
     // Use flm pull command to download the model
     std::string flm_path = get_flm_path();
@@ -512,34 +508,6 @@ std::string FastFlowLMServer::get_flm_required_version() {
     }
 }
 
-std::string FastFlowLMServer::get_min_npu_driver_version() {
-    // Get minimum NPU driver version from backend_versions.json
-#ifdef _WIN32
-    std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-
-    try {
-        json config = utils::JsonUtils::load_from_file(config_path);
-
-        if (!config.contains("flm") || !config["flm"].is_object()) {
-            return "32.0.203.311";  // Fallback default
-        }
-
-        const auto& flm_config = config["flm"];
-
-        // Windows: use min_npu_driver field
-        if (!flm_config.contains("min_npu_driver") || !flm_config["min_npu_driver"].is_string()) {
-            return "32.0.203.311";  // Fallback default
-        }
-        return flm_config["min_npu_driver"].get<std::string>();
-
-    } catch (const std::exception& e) {
-        LOG(ERROR, "FastFlowLM") << "Error reading backend_versions.json: " << e.what() << std::endl;
-        return "32.0.203.311";  // Fallback default for Windows
-    }
-#endif
-    return "";
-}
-
 // Function-local static for version cache (shared across all callers)
 static std::string& get_cached_version() {
     static std::string cached_version;
@@ -648,71 +616,6 @@ std::string FastFlowLMServer::get_flm_installed_version() {
 
 void FastFlowLMServer::invalidate_version_cache() {
     get_cached_version().clear();
-}
-
-std::string FastFlowLMServer::get_npu_driver_version() {
-#ifdef _WIN32
-    // Use WMI to query NPU driver version
-    wmi::WMIConnection wmi;
-    if (!wmi.is_valid()) {
-        return "";
-    }
-
-    std::string version;
-    // Query for "NPU Compute Accelerator Device"
-    std::wstring query = L"SELECT DriverVersion FROM Win32_PnPSignedDriver WHERE DeviceName LIKE '%NPU Compute Accelerator Device%'";
-
-    wmi.query(query, [&version](IWbemClassObject* pObj) {
-        if (version.empty()) {  // Only get first result
-            version = wmi::get_property_string(pObj, L"DriverVersion");
-        }
-    });
-
-    return version;
-#else
-    return "";
-#endif
-}
-
-bool FastFlowLMServer::check_npu_driver_version() {
-    std::string version = get_npu_driver_version();
-    std::string min_version = get_min_npu_driver_version();
-
-    if (version.empty()) {
-#ifdef _WIN32
-        LOG(INFO, "FastFlowLM") << "NPU Driver Version: Unknown (Could not detect)" << std::endl;
-#elif defined(__linux__)
-        LOG(INFO, "FastFlowLM") << "Kernel Version: Unknown (Could not detect)" << std::endl;
-#endif
-        return true;  // Assume OK if we can't detect, to not block users with unusual setups
-    }
-
-#ifdef _WIN32
-    LOG(INFO, "FastFlowLM") << "NPU Driver Version: " << version << std::endl;
-#elif defined(__linux__)
-    LOG(INFO, "FastFlowLM") << "Kernel Version: " << version << std::endl;
-#endif
-
-    // Parse and compare versions using utility
-    utils::Version current = utils::Version::parse(version);
-    utils::Version minimum = utils::Version::parse(min_version);
-
-    // Check if current < minimum (i.e., not >=)
-    if (!(current >= minimum)) {
-        std::string error_msg;
-        std::string fix_url;
-
-        error_msg = "NPU driver version " + version + " is older than required " + min_version;
-        fix_url = DRIVER_INSTALL_URL;
-
-        throw FLMCheckException(
-            FLMCheckException::ErrorType::DRIVER_TOO_OLD,
-            error_msg,
-            fix_url
-        );
-    }
-
-    return true;
 }
 
 bool FastFlowLMServer::compare_versions(const std::string& v1, const std::string& v2) {

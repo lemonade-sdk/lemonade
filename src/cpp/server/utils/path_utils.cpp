@@ -405,9 +405,14 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
     try {
         if (!output.empty()) {
             json j = JsonUtils::parse(output);
-            if (j.is_object() && j.contains("ok")) {
-                bool ok = j["ok"].get<bool>();
-                if (ok) {
+            if (j.is_object()) {
+                // Check for overall status (Linux uses "ok", Windows uses "ready")
+                bool validation_ok = false;
+                if (j.contains("ready")) {
+                    validation_ok = j["ready"].get<bool>();
+                }
+
+                if (validation_ok) {
                     error_message.clear();
                     return true;
                 }
@@ -427,6 +432,10 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
 
                 if (j.contains("memlock_ok") && !j["memlock_ok"].get<bool>()) {
                     errors.push_back("Memlock limits are too low.");
+                }
+
+                if (j.contains("npu_driver_ok") && !j["npu_driver_ok"].get<bool>()) {
+                    errors.push_back("NPU driver version is too old.");
                 }
 
                 if (errors.empty()) {
