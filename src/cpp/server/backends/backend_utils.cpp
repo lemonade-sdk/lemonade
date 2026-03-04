@@ -167,6 +167,15 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_backend_binary_path(const BackendSpec& spec, const std::string& backend) {
+        if (backend == "system") {
+            // Check if binary exists in PATH
+            std::string path = utils::find_executable_in_path(spec.binary);
+            if (!path.empty()) {
+                return spec.binary;
+            }
+            throw std::runtime_error(spec.binary + " not found in PATH");
+        }
+
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
 
         if (!exe_path.empty()) {
@@ -189,6 +198,9 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_installed_version_file(const BackendSpec& spec, const std::string& backend) {
+        if (backend == "system") {
+            return "";
+        }
         std::string install_dir = get_install_directory(spec.recipe, backend);
         return get_version_file(install_dir);
     }

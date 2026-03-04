@@ -204,6 +204,55 @@ std::string find_flm_executable() {
 #endif
 }
 
+std::string find_executable_in_path(const std::string& executable_name) {
+#ifdef _WIN32
+    char found_path[MAX_PATH];
+    DWORD result = SearchPathA(
+        nullptr,      // Use system PATH
+        executable_name.c_str(), // File to search for
+        nullptr,      // No default extension needed
+        MAX_PATH,
+        found_path,
+        nullptr
+    );
+
+    if (result > 0 && result < MAX_PATH) {
+        return found_path;
+    }
+
+    return "";
+#else
+    // On Linux/Mac, check PATH using which
+    std::string command = "which " + executable_name + " > /dev/null 2>&1";
+    if (system(command.c_str()) == 0) {
+        return executable_name; // Return the executable name itself, relying on PATH for execution
+    }
+    return "";
+#endif
+}
+
+bool is_ggml_hip_plugin_available() {
+#ifdef __linux__
+    // On Linux x86_64, check common system library paths for the HIP plugin
+    std::vector<std::string> possible_paths = {
+        // Debian/Ubuntu multiarch path (most common)
+        "/usr/lib/x86_64-linux-gnu/ggml/backends0/libggml-hip.so",
+        // Standard Linux paths
+        "/usr/lib/ggml/backends0/libggml-hip.so",
+        "/usr/lib64/ggml/backends0/libggml-hip.so"
+    };
+
+    // Check all possible paths
+    for (const auto& path : possible_paths) {
+        if (fs::exists(path)) {
+            return true;
+        }
+    }
+#endif
+
+    return false;
+}
+
 std::string get_cache_dir() {
     std::string cache_dir_env = get_environment_variable_utf8("LEMONADE_CACHE_DIR");
     if (!cache_dir_env.empty()) {

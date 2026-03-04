@@ -430,6 +430,14 @@ class ServerTestBase(unittest.IsolatedAsyncioTestCase):
         """
         return get_test_model(model_type)
 
+    def start_server(self, **kwargs):
+        """Helper to start the server from within a test."""
+        return start_server(**kwargs)
+
+    def stop_server(self):
+        """Helper to stop the server from within a test."""
+        stop_lemonade()
+
 
 def run_server_tests(
     test_class,

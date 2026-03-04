@@ -872,7 +872,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        test_type: [cli, endpoints, system-info, ollama]
+        test_type: [cli, endpoints, system-info, ollama, llamacpp-system]
         exclude:
           - os: macos-latest
             test_type: system-info
@@ -1023,6 +1023,9 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "ollama" ]; then
               echo "Running Ollama API tests..."
               $VENV_PYTHON test/test_ollama.py --server-binary "$SERVER_BINARY"
+          elif [ "${{ matrix.test_type }}" = "llamacpp-system" ]; then
+              echo "Running LlamaCpp System Backend tests..."
+              $VENV_PYTHON test/test_llamacpp_system_backend.py --server-binary "$SERVER_BINARY"
           fi
 
           echo "${{ matrix.test_type }} tests PASSED!"
