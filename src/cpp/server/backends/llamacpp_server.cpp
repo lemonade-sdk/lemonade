@@ -157,6 +157,10 @@ static std::string validate_custom_args(const std::string& custom_args_str,
 InstallParams LlamaCppServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
 
+    if (backend == "system") {
+        return params; // Return empty params for system backend
+    }
+
     if (backend == "rocm") {
         params.repo = "lemonade-sdk/llamacpp-rocm";
         std::string target_arch = SystemInfo::get_rocm_arch();
@@ -363,7 +367,9 @@ void LlamaCppServer::load(const std::string& model_name,
 #endif
 
     // Start process (inherit output if debug logging enabled, filter health check spam)
-    process_handle_ = ProcessManager::start_process(executable, args, "", is_debug(), true, env_vars);
+    // Keep llama-server output visible at info log level.
+    bool inherit_llama_output = (log_level_ == "info") || is_debug();
+    process_handle_ = ProcessManager::start_process(executable, args, "", inherit_llama_output, true, env_vars);
 
     // Wait for server to be ready
     if (!wait_for_ready("/health")) {

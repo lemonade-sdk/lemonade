@@ -10,8 +10,9 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
-  issues: write
+  pull-requests: read
+  issues: read
+  id-token: write
 
 jobs:
   claude-review:
@@ -33,53 +34,83 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          model: claude-sonnet-4-6
-          custom_instructions_file: ".github/claude-instructions.md"
-          custom_instructions: |
-            You are a senior code reviewer for the Lemonade project.
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
 
-            ## Review Depth
-            Perform a thorough, multi-pass review:
+            You are a senior code reviewer for the Lemonade project. Read .github/claude-instructions.md for full project context and critical invariants.
 
-            **Pass 1 - Correctness & Bugs:**
-            - Logic errors, off-by-one, null/dangling pointers, use-after-free
-            - Missing error handling, unchecked return values
-            - Resource leaks (memory, file handles, sockets, subprocesses)
-            - Race conditions, deadlocks, thread safety issues
+            ## Your Task
 
-            **Pass 2 - Architecture & Design:**
-            - Does this fit the existing architecture? (backend subprocess model, WrappedServer abstraction, router pattern)
-            - Are the critical invariants maintained? (quad-prefix registration, NPU exclusivity, cross-platform)
-            - Is this the right abstraction level? Over-engineering? Under-engineering?
-            - Will this cause problems at scale or under concurrent load?
+            1. Use `gh pr diff $PR_NUMBER` and `gh pr view $PR_NUMBER` to understand the changes.
+            2. Use Read/Glob/Grep to examine relevant source files for deeper context.
+            3. Perform a thorough review covering: correctness/bugs, architecture/design, API compatibility, security, and maintainability.
+            4. Post your review using the two-part format described below.
 
-            **Pass 3 - API & Compatibility:**
-            - Does this break OpenAI SDK compatibility?
-            - Does this break Ollama-compatible endpoints?
-            - Are new endpoints registered under all 4 path prefixes?
-            - Are request/response schemas consistent with existing endpoints?
+            ## Output Format
 
-            **Pass 4 - Security:**
-            - Command injection (especially subprocess spawning)
-            - Path traversal (model downloads, file operations)
-            - Input validation at system boundaries
-            - Secrets/credentials exposure
+            You MUST post your review in exactly two parts:
 
-            **Pass 5 - Maintainability:**
-            - Code style compliance (C++17, snake_case, CamelCase, 4-space indent)
-            - Python Black formatting
-            - Test coverage for new functionality
-            - Are there edge cases not handled?
+            ### Part 1: Inline comments on blocking issues only
 
-            ## Review Style
-            - Be specific: reference exact lines, suggest concrete fixes
-            - Categorize findings: [Bug], [Architecture], [Security], [Style], [Nit], [Question]
-            - For non-obvious issues, explain WHY it's a problem with a concrete scenario
-            - Ask clarifying questions to the PR author when intent is unclear
-            - Acknowledge good patterns and decisions, not just problems
-            - If the PR is large, summarize the overall design assessment before line-level comments
+            For each finding that MUST be fixed before merge (bugs, security issues, broken invariants), post an inline comment on the specific line using the GitHub API:
+
+            ```bash
+            gh api repos/OWNER/REPO/pulls/PR_NUMBER/comments \
+              -f body="**[Bug]** Description of the issue and suggested fix" \
+              -f path="src/file.cpp" \
+              -F line=42 \
+              -f commit_id="$(gh pr view PR_NUMBER --json headRefOid -q .headRefOid)"
+            ```
+
+            Keep inline comments short: 1-3 sentences. State the problem and the fix. No preamble.
+
+            ### Part 2: Summary comment via `gh pr comment`
+
+            Post ONE summary comment with this exact template:
+
+            ```
+            ## Review Summary
+
+            **Verdict:** APPROVE / REQUEST_CHANGES / COMMENT
+
+            ### Blocking (must fix)
+            - **[Bug]** `file.cpp:42` — Brief description ([inline comment](link))
+            - **[Security]** `file.cpp:99` — Brief description ([inline comment](link))
+
+            ### Non-blocking (suggestions)
+            - **[Architecture]** Brief suggestion — one sentence why
+            - **[Style]** Brief nit — one sentence
+
+            ### Good stuff
+            - Solid approach to X
+            - Clean implementation of Y
+            ```
+
+            ## Rules
+
+            - Be CONCISE. Each finding is 1-2 sentences max. No paragraphs.
+            - Inline comments are ONLY for blocking issues. Non-blocking goes in the summary only.
+            - Use the category tags: [Bug], [Security], [Architecture], [Style], [Nit], [Question]
+            - Always include a verdict: APPROVE if no blocking issues, REQUEST_CHANGES if there are blocking issues.
+            - If something is unclear, use [Question] in the summary — do not assume.
+            - Reference specific lines (file:line) in the summary for traceability.
+            - Do NOT repeat the same finding in both inline and summary — the summary just links to the inline comment.
+
+            ## Review Focus (Lemonade-specific)
+
+            - New endpoints registered under all 4 prefixes (`/api/v0/`, `/api/v1/`, `/v0/`, `/v1/`)
+            - NPU exclusivity maintained in router
+            - Backends stay as subprocesses (not in-process)
+            - WrappedServer contract fulfilled for new backends
+            - Cross-platform: Windows/Linux/macOS guards for platform-specific code
+            - Thread safety for concurrent HTTP request handling
+            - C++17, snake_case functions, CamelCase types, 4-space indent
+            - Python files formatted with Black
+          claude_args: '--model claude-sonnet-4-6 --allowed-tools "Read,Glob,Grep,Bash(gh api:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*)"'
+          show_full_output: true

@@ -96,8 +96,6 @@ bool ServerManager::start_server(
             server_started_ = true;
 
 #ifndef _WIN32
-            // Write PID file on Linux for efficient server discovery
-            LOG(DEBUG, "ServerManager") << "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")" << std::endl;
             write_pid_file();
 #endif
 
@@ -125,21 +123,12 @@ bool ServerManager::start_server(
 
         // Success! Server is ready immediately
         if (!is_ephemeral) {
-            LOG(INFO, "ServerManager") << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
+            LOG(INFO, "ServerManager") << "Lemonade Server v" << LEMON_VERSION_STRING << " started" << std::endl;
             // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
             std::string display_host = get_connection_host();
-            LOG(INFO, "ServerManager") << "API endpoint: http://" << display_host << ":" << port_ << "/api/v1" << std::endl;
-            LOG(INFO, "ServerManager") << "Connect your apps to the endpoint above." << std::endl;
+            LOG(INFO, "ServerManager") << "Connect your apps to API endpoint: http://" << display_host << ":" << port_ << "/api/v1" << std::endl;
             LOG(INFO, "ServerManager") << "Documentation: https://lemonade-server.ai/" << std::endl;
         }
-
-        server_started_ = true;
-
-#ifndef _WIN32
-        // Write PID file on Linux for efficient server discovery
-        LOG(DEBUG, "ServerManager") << "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")" << std::endl;
-        write_pid_file();
-#endif
 
         return true;
 
@@ -366,8 +355,10 @@ bool ServerManager::spawn_process() {
         }
     }
 
-    // Multi-model support
-    cmdline += " --max-loaded-models " + std::to_string(max_loaded_models_);
+    // Multi-model support (only if not default)
+    if (max_loaded_models_ != 1) {
+        cmdline += " --max-loaded-models " + std::to_string(max_loaded_models_);
+    }
     // Extra models directory
     if (!extra_models_dir_.empty()) {
         cmdline += " --extra-models-dir \"" + extra_models_dir_ + "\"";
@@ -558,13 +549,17 @@ bool ServerManager::spawn_process() {
 
         std::vector<const char*> args;
         args.push_back(server_binary_path_.c_str());
+
         args.push_back("--port");
         std::string port_str = std::to_string(port_);
         args.push_back(port_str.c_str());
         args.push_back("--host");
         args.push_back(host_.c_str());
-        args.push_back("--log-level");
-        args.push_back(log_level_.c_str());
+
+        if (log_level_ != "info") {
+            args.push_back("--log-level");
+            args.push_back(log_level_.c_str());
+        }
 
         std::vector<std::string> recipe_cli = lemon::RecipeOptions::to_cli_options(recipe_options_);
 
@@ -572,10 +567,13 @@ bool ServerManager::spawn_process() {
             args.push_back(arg.c_str());
         }
 
-        // Multi-model support
-        args.push_back("--max-loaded-models");
-        std::string max_models_str = std::to_string(max_loaded_models_);
-        args.push_back(max_models_str.c_str());
+        // Multi-model support (only if not default)
+        std::string max_models_str;
+        if (max_loaded_models_ != 1) {
+            args.push_back("--max-loaded-models");
+            max_models_str = std::to_string(max_loaded_models_);
+            args.push_back(max_models_str.c_str());
+        }
 
         // Extra models directory
         if (!extra_models_dir_.empty()) {
@@ -760,8 +758,7 @@ void ServerManager::write_pid_file() {
     if (pid_file.is_open()) {
         pid_file << server_pid_ << "\n" << port_ << "\n";
         pid_file.close();
-        LOG(DEBUG, "ServerManager") << "Wrote PID file: " << pid_file_path << " (PID: " << server_pid_ << ", Port: " << port_ << ")" << std::endl;
-        LOG(INFO, "ServerManager") << "PID file created: " << pid_file_path << std::endl;
+        LOG(DEBUG, "ServerManager") << "PID file created: " << pid_file_path << std::endl;
     } else {
         LOG(ERROR, "ServerManager") << "Failed to open PID file for writing: " << pid_file_path << std::endl;
         LOG(ERROR, "ServerManager") << "Error: " << strerror(errno) << std::endl;
