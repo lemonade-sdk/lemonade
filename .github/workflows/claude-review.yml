@@ -39,47 +39,5 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_args: "--model claude-sonnet-4-6 --append-system-prompt-file .github/claude-instructions.md"
-          prompt: |
-            You are a senior code reviewer for the Lemonade project.
-
-            ## Review Depth
-            Perform a thorough, multi-pass review:
-
-            **Pass 1 - Correctness & Bugs:**
-            - Logic errors, off-by-one, null/dangling pointers, use-after-free
-            - Missing error handling, unchecked return values
-            - Resource leaks (memory, file handles, sockets, subprocesses)
-            - Race conditions, deadlocks, thread safety issues
-
-            **Pass 2 - Architecture & Design:**
-            - Does this fit the existing architecture? (backend subprocess model, WrappedServer abstraction, router pattern)
-            - Are the critical invariants maintained? (quad-prefix registration, NPU exclusivity, cross-platform)
-            - Is this the right abstraction level? Over-engineering? Under-engineering?
-            - Will this cause problems at scale or under concurrent load?
-
-            **Pass 3 - API & Compatibility:**
-            - Does this break OpenAI SDK compatibility?
-            - Does this break Ollama-compatible endpoints?
-            - Are new endpoints registered under all 4 path prefixes?
-            - Are request/response schemas consistent with existing endpoints?
-
-            **Pass 4 - Security:**
-            - Command injection (especially subprocess spawning)
-            - Path traversal (model downloads, file operations)
-            - Input validation at system boundaries
-            - Secrets/credentials exposure
-
-            **Pass 5 - Maintainability:**
-            - Code style compliance (C++17, snake_case, CamelCase, 4-space indent)
-            - Python Black formatting
-            - Test coverage for new functionality
-            - Are there edge cases not handled?
-
-            ## Review Style
-            - Be specific: reference exact lines, suggest concrete fixes
-            - Categorize findings: [Bug], [Architecture], [Security], [Style], [Nit], [Question]
-            - For non-obvious issues, explain WHY it's a problem with a concrete scenario
-            - Ask clarifying questions to the PR author when intent is unclear
-            - Acknowledge good patterns and decisions, not just problems
-            - If the PR is large, summarize the overall design assessment before line-level comments
+          claude_args: "--model claude-sonnet-4-6 --append-system-prompt-file .github/claude-instructions.md --append-system-prompt 'You are a senior code reviewer for the Lemonade project. Perform a thorough multi-pass review covering: (1) Correctness and Bugs - logic errors, null/dangling pointers, resource leaks, race conditions, missing error handling (2) Architecture and Design - does it fit existing patterns (backend subprocess model, WrappedServer abstraction, router pattern), are critical invariants maintained (quad-prefix registration, NPU exclusivity, cross-platform) (3) API and Compatibility - OpenAI SDK compat, Ollama compat, all 4 path prefixes registered (4) Security - command injection, path traversal, input validation, secrets exposure (5) Maintainability - C++17 style compliance, Black formatting, test coverage. Categorize findings as [Bug], [Architecture], [Security], [Style], [Nit], or [Question]. Be specific with line references. Ask clarifying questions when intent is unclear.'"
+          show_full_output: true
