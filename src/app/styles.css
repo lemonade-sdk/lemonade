@@ -1521,6 +1521,7 @@ footer {
 }
 
 .model-item {
+    --catalog-status-indicator-width: 10px;
     padding: 2px 12px;
     cursor: pointer;
     transition: background-color 0.15s ease;
@@ -1618,6 +1619,11 @@ footer {
     line-height: 1;
     flex-shrink: 0;
     justify-self: center;
+}
+
+.model-catalog-item .model-status-indicator {
+    width: var(--catalog-status-indicator-width);
+    text-align: center;
 }
 
 /* Model is currently loaded (green) */
@@ -6302,7 +6308,7 @@ footer {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 2px 12px 4px 22px;
+    padding: 8px 44px 5px calc(var(--catalog-status-indicator-width) + 6px);
     flex-wrap: wrap;
     min-height: 22px;
     position: relative;
@@ -6322,18 +6328,22 @@ footer {
 
 .family-member-pill {
     font-size: 10px;
-    padding: 1px 6px;
+    padding: 2px 8px;
+    min-height: 18px;
+    display: inline-flex;
+    align-items: center;
     border-radius: 6px;
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.14);
     cursor: pointer;
-    color: #666;
-    background: rgba(255, 255, 255, 0.03);
+    color: #8b8b8b;
+    background: rgba(255, 255, 255, 0.05);
     transition: all 0.15s ease;
 }
 
 .family-member-pill:hover {
-    color: #999;
-    background: rgba(255, 255, 255, 0.08);
+    color: #d0d0d0;
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.28);
 }
 
 .family-member-pill.pill-available {
