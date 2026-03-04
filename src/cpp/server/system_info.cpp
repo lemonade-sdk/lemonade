@@ -999,9 +999,27 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
         return result;
     }
 
-    // Collect supported backends and capture first error (in preference order from RECIPE_DEFS)
+    // If a default_backend is specified, add it first (if supported)
+    std::string default_backend;
+    if (recipe_info.contains("default_backend")) {
+        default_backend = recipe_info["default_backend"].get<std::string>();
+        if (recipe_info["backends"].contains(default_backend)) {
+            const auto& backend = recipe_info["backends"][default_backend];
+            std::string state = backend.value("state", "unsupported");
+            if (state != "unsupported") {
+                result.backends.push_back(default_backend);
+            }
+        }
+    }
+
+    // Collect remaining supported backends and capture first error (in preference order from RECIPE_DEFS)
     for (const auto& def : RECIPE_DEFS) {
         if (def.recipe == recipe) {
+            // Skip the default_backend since we already added it
+            if (def.backend == default_backend) {
+                continue;
+            }
+
             if (recipe_info["backends"].contains(def.backend)) {
                 const auto& backend = recipe_info["backends"][def.backend];
                 std::string state = backend.value("state", "unsupported");
