@@ -5,6 +5,7 @@ import { useModels } from './useModels';
 import { useAudioCapture } from './useAudioCapture';
 import { TranscriptionWebSocket } from '../utils/websocketClient';
 import { adjustTextareaHeight } from '../utils/textareaUtils';
+import { serverFetch } from '../utils/serverConfig';
 
 interface UseVoiceTranscriptionOptions {
   inputValue: string;
@@ -78,7 +79,9 @@ export function useVoiceTranscription({
 
   const closeWs = useCallback(() => {
     if (wsClientRef.current) {
-      wsClientRef.current.clearAudio();
+      // Commit rather than clear: tells the server to transcribe any buffered
+      // audio before the connection closes, so the final text reaches the client.
+      wsClientRef.current.commitAudio();
       const wsToClose = wsClientRef.current;
       wsClientRef.current = null;
       setTimeout(() => wsToClose.close(), 3000);
@@ -140,15 +143,31 @@ export function useVoiceTranscription({
     baseTextRef.current = inputValue;
     finalsRef.current = '';
 
+    // Prefer an already-loaded whisper model to avoid an unnecessary reload.
+    let modelToUse = whisperModel;
+    try {
+      const healthRes = await serverFetch('/health');
+      if (healthRes.ok) {
+        const health = await healthRes.json();
+        const allLoaded: { model_name: string }[] = health.all_models_loaded || [];
+        const loadedWhisper = allLoaded.find(
+          (m) => modelsData[m.model_name]?.recipe === 'whispercpp',
+        );
+        if (loadedWhisper) modelToUse = loadedWhisper.model_name;
+      }
+    } catch {
+      // Health check failed — fall back to the default selected model
+    }
+
     const ready = await runPreFlight('transcription', {
-      modelName: whisperModel,
+      modelName: modelToUse,
       modelsData,
       onError: (msg) => onError(`Error preparing model: ${msg}`),
     });
     if (!ready) return;
 
     try {
-      wsClientRef.current = await TranscriptionWebSocket.connect(whisperModel, {
+      wsClientRef.current = await TranscriptionWebSocket.connect(modelToUse, {
         onTranscription: handleTranscription,
         onSpeechEvent: () => {},
         onError: (err) => onError(err),
