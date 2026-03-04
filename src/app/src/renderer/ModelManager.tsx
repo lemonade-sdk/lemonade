@@ -24,6 +24,19 @@ interface ModelManagerProps {
   onViewChange: (view: LeftPanelView) => void;
 }
 
+interface ModelJSON {
+  id?: string,
+  model_name?: string,
+  recipe: string,
+  recipe_options?: object,
+  checkpoint?: string,
+  checkpoints?: string[],
+  downloaded?: boolean,
+  labels?: string[],
+  size?: number,
+  image_defaults?: []
+}
+
 export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'settings';
 
 const createEmptyModelForm = () => ({
@@ -58,6 +71,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   const [selectedMarketplaceCategory, setSelectedMarketplaceCategory] = useState<string>('all');
   const [marketplaceCategories, setMarketplaceCategories] = useState<MarketplaceCategory[]>([]);
   const filterAnchorRef = useRef<HTMLDivElement | null>(null);
+  const addModelFromJSONRef = useRef<HTMLInputElement>(null);
+
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -381,7 +396,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       setLoadingModels(prev => new Set(prev).add(modelName));
 
       // Use the single consolidated download function
-      await pullModel(modelName, { registrationData });
+      await pullModel(modelName, { registrationData: registrationData });
 
       await fetchCurrentLoadedModel();
       showSuccess(`Model "${modelName}" downloaded successfully.`);
@@ -535,6 +550,49 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       showError(`Failed to delete model: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
+
+  const handleUploadModel = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    const file = files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const result = JSON.parse(e.target?.result as string);
+        uploadModelJSON(result);
+      } catch(err: any) {
+        showError(`Failed to parse JSON file. ${err}`);
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  }
+
+  const uploadModelJSON = (json: ModelJSON) => {
+    let modelName: string;
+
+    if (!json.recipe) {
+      showError("Invalid model JSON. Recipe is missing");
+      return;
+    }
+
+    if(!json.model_name && !json.id) {
+      showError("Invalid model JSON. Either model or id must be present.");
+      return;
+    }
+
+    modelName = json.model_name ? json.model_name : json.id as string;
+
+    if (json.checkpoint && json.checkpoints) delete json.checkpoint;
+    if (json.model_name) delete json.model_name;
+    if(json.id) delete json.id;
+
+    handleDownloadModel(modelName as string, json as ModelRegistrationData);
+  }
 
   const viewTitle = currentView === 'models'
     ? 'Model Manager'
@@ -905,15 +963,21 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
           {currentView === 'models' && (
             <div className="model-manager-footer">
               {!showAddModelForm ? (
-                <button
-                  className="add-model-button"
-                  onClick={() => {
-                    setNewModel(createEmptyModelForm());
-                    setShowAddModelForm(true);
-                  }}
-                >
-                  Add a model
-                </button>
+                <div className="add-model-buttons-container">
+                  <input ref={addModelFromJSONRef} type="file" accept=".json" onChange={handleUploadModel} style={{ display: 'none' }}/>
+                  <button className="add-model-button" onClick={() => addModelFromJSONRef.current?.click()} title="Import JSON">
+                    Import a model
+                  </button>
+                  <button
+                    className="add-model-button"
+                    onClick={() => {
+                      setNewModel(createEmptyModelForm());
+                      setShowAddModelForm(true);
+                    }}
+                  >
+                    Add a model
+                  </button>
+                </div>
               ) : (
                 <div className="add-model-form">
                   <div className="form-section">
