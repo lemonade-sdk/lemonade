@@ -16,6 +16,8 @@
 #include <thread>
 #include <chrono>
 #include <string>
+#include <algorithm>
+#include <cctype>
 #include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
@@ -46,6 +48,25 @@ static bool should_filter_line(const std::string& line) {
             line.find("Enter 'exit' to stop the server") != std::string::npos);
 }
 
+static bool is_error_line(const std::string& line) {
+    std::string lowered = line;
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return lowered.find("error") != std::string::npos;
+}
+
+static void log_process_line(const std::string& line) {
+    if (should_filter_line(line)) {
+        return;
+    }
+
+    if (is_error_line(line)) {
+        LOG(ERROR, "Process") << line << std::endl;
+    } else {
+        LOG(INFO, "Process") << line << std::endl;
+    }
+}
+
 #ifdef _WIN32
 // Thread function to read from pipe and filter output
 static DWORD WINAPI output_filter_thread(LPVOID param) {
@@ -64,16 +85,13 @@ static DWORD WINAPI output_filter_thread(LPVOID param) {
             std::string line = line_buffer.substr(0, pos);
             line_buffer = line_buffer.substr(pos + 1);
 
-            // Only print if not a health check line
-            if (!should_filter_line(line)) {
-                LOG(INFO, "Process") << line << std::endl;
-            }
+            log_process_line(line);
         }
     }
 
     // Print any remaining partial line
-    if (!line_buffer.empty() && !should_filter_line(line_buffer)) {
-        LOG(INFO, "Process") << line_buffer << std::endl;
+    if (!line_buffer.empty()) {
+        log_process_line(line_buffer);
     }
 
     CloseHandle(pipe);
@@ -320,14 +338,12 @@ ProcessHandle ProcessManager::start_process(
                     std::string line = line_buffer.substr(0, pos);
                     line_buffer = line_buffer.substr(pos + 1);
 
-                    if (!should_filter_line(line)) {
-                        LOG(INFO, "Process") << line << std::endl;
-                    }
+                    log_process_line(line);
                 }
             }
 
-            if (!line_buffer.empty() && !should_filter_line(line_buffer)) {
-                LOG(INFO, "Process") << line_buffer << std::endl;
+            if (!line_buffer.empty()) {
+                log_process_line(line_buffer);
             }
 
             close(fd);
@@ -347,15 +363,12 @@ ProcessHandle ProcessManager::start_process(
                     std::string line = line_buffer.substr(0, pos);
                     line_buffer = line_buffer.substr(pos + 1);
 
-                    if (!should_filter_line(line)) {
-                        // llama-server emits regular startup/status logs, these should be logged as INFO
-                        LOG(INFO, "Process") << line << std::endl;
-                    }
+                    log_process_line(line);
                 }
             }
 
-            if (!line_buffer.empty() && !should_filter_line(line_buffer)) {
-                LOG(INFO, "Process") << line_buffer << std::endl;
+            if (!line_buffer.empty()) {
+                log_process_line(line_buffer);
             }
 
             close(fd);
