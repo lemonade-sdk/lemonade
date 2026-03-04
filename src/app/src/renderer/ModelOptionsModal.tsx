@@ -418,10 +418,25 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
         ) : (
           <div className="model-options-content">
             <div className="model-options-category-header">
-              <h3>Name: {modelName}</h3>
-              <h5>Checkpoint: {modelUrl ? (
-                <a href={modelUrl} target="_blank">{modelInfo?.checkpoint}</a>
-              ) : modelInfo?.checkpoint}</h5>
+              <h3>
+                <span className="model-options-field-label">Name:</span>{' '}
+                <span className="model-options-field-value">{modelName}</span>
+              </h3>
+              <h5>
+                <span className="model-options-field-label">Checkpoint:</span>{' '}
+                <span className="model-options-field-value">
+                  {modelUrl ? (
+                    <a
+                      className="model-options-checkpoint-link"
+                      href={modelUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {modelInfo?.checkpoint}
+                    </a>
+                  ) : modelInfo?.checkpoint}
+                </span>
+              </h5>
             </div>
 
             {renderOptions()}
