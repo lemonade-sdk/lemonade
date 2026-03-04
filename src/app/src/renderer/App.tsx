@@ -14,6 +14,7 @@ import '../../styles.css';
 
 const LAYOUT_CONSTANTS = {
   modelManagerMinWidth: 200,
+  experienceRailWidth: 40,
   mainContentMinWidth: 300,
   chatMinWidth: 250,
   dividerWidth: 4,
@@ -135,8 +136,21 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const handleExperienceModeChanged = (event: Event) => {
+      const customEvent = event as CustomEvent<{ active?: boolean }>;
+      if (customEvent.detail?.active) {
+        setIsModelManagerVisible(false);
+      }
+    };
+    window.addEventListener('experienceModeChanged' as any, handleExperienceModeChanged);
+    return () => {
+      window.removeEventListener('experienceModeChanged' as any, handleExperienceModeChanged);
+    };
+  }, []);
+
+  useEffect(() => {
     const hasMainColumn = isLogsVisible;
-    let computedMinWidth = 0;
+    let computedMinWidth = LAYOUT_CONSTANTS.experienceRailWidth; // Rail always visible
 
     if (isModelManagerVisible) {
       computedMinWidth += LAYOUT_CONSTANTS.modelManagerMinWidth;
@@ -188,7 +202,9 @@ const AppContent: React.FC = () => {
         const appLayout = document.querySelector('.app-layout') as HTMLElement | null;
         const appWidth = appLayout?.clientWidth || window.innerWidth;
 
-        const leftPanelWidth = isModelManagerVisible ? modelManagerWidth : 0;
+        const leftPanelWidth = isModelManagerVisible
+          ? modelManagerWidth + LAYOUT_CONSTANTS.experienceRailWidth
+          : LAYOUT_CONSTANTS.experienceRailWidth;
         const hasCenterColumn = isLogsVisible;
         const minCenterWidth = hasCenterColumn ? 300 : 0; // keep in sync with CSS min-width
 
@@ -275,18 +291,15 @@ const AppContent: React.FC = () => {
         onClose={handleCloseDownloadManager}
       />
       <div className="app-layout">
-        {isModelManagerVisible && (
-          <>
-            <ModelManager
-              isVisible={true}
-              width={modelManagerWidth}
-              currentView={leftPanelView}
-              onViewChange={setLeftPanelView}
-            />
-            {(isLogsVisible || isChatVisible) && (
-              <ResizableDivider onMouseDown={handleLeftDividerMouseDown}/>
-            )}
-          </>
+        <ModelManager
+          isContentVisible={isModelManagerVisible}
+          onContentVisibilityChange={setIsModelManagerVisible}
+          width={isModelManagerVisible ? modelManagerWidth : LAYOUT_CONSTANTS.experienceRailWidth}
+          currentView={leftPanelView}
+          onViewChange={setLeftPanelView}
+        />
+        {isModelManagerVisible && (isLogsVisible || isChatVisible) && (
+          <ResizableDivider onMouseDown={handleLeftDividerMouseDown}/>
         )}
         {isLogsVisible && (
           <div className="main-content-container">
