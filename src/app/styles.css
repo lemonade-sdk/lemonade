@@ -140,7 +140,7 @@ body {
     pointer-events: none;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
 }
 
 .app-title {
@@ -1534,6 +1534,16 @@ footer {
     border-left-color: #666;
 }
 
+.model-family-item {
+    padding-top: 3px;
+    padding-bottom: 3px;
+}
+
+.model-family-item:hover {
+    background: rgba(255, 255, 255, 0.035);
+    border-left-color: #777;
+}
+
 .model-item-content {
     display: flex;
     align-items: center;
@@ -1612,6 +1622,11 @@ footer {
     cursor: default;
     min-width: 0;
     white-space: nowrap;
+}
+
+.family-model-name {
+    font-weight: 560;
+    color: #f1f1f1;
 }
 
 .model-status-indicator {
@@ -4159,7 +4174,7 @@ footer {
 
 .settings-help-about-key {
     font-size: 0.66rem;
-    color: #8f8f8f;
+    color: #9a9a9a;
     text-transform: uppercase;
     letter-spacing: 0.45px;
 }
@@ -6303,12 +6318,12 @@ footer {
     to { transform: rotate(360deg); }
 }
 
-/* Model family member pills */
+/* Compact family rows with visible variant tokens */
 .family-members {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 44px 5px calc(var(--catalog-status-indicator-width) + 6px);
+    padding: 5px 44px 4px calc(var(--catalog-status-indicator-width) + 13px);
     flex-wrap: wrap;
     min-height: 22px;
     position: relative;
@@ -6316,7 +6331,7 @@ footer {
 
 .family-actions {
     position: absolute;
-    right: 12px;
+    right: -6px;
     top: 50%;
     transform: translateY(-50%);
     visibility: hidden;
@@ -6327,40 +6342,52 @@ footer {
 }
 
 .family-member-pill {
-    font-size: 10px;
-    padding: 2px 8px;
-    min-height: 18px;
+    font-size: 0.74rem;
+    padding: 0;
+    min-height: 0;
     display: inline-flex;
     align-items: center;
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 0;
+    border: none;
     cursor: pointer;
-    color: #8b8b8b;
-    background: rgba(255, 255, 255, 0.05);
-    transition: all 0.15s ease;
+    color: #8f8f8f;
+    background: transparent;
+    line-height: 1.15;
+    position: relative;
+    transition: color 0.15s ease;
 }
 
 .family-member-pill:hover {
-    color: #d0d0d0;
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.28);
+    color: #d2d2d2;
 }
 
 .family-member-pill.pill-available {
-    color: #ccc;
+    color: #d6d6d6;
 }
 
 .family-member-pill.pill-loaded {
-    color: #48BB78;
+    color: #d6d6d6;
 }
 
-/* Selected pill — soft white outline (green if loaded) */
 .family-member-pill.selected {
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    color: #fff;
+    color: #d6d6d6;
+}
+
+.family-member-pill.selected::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -2px;
+    height: 1px;
+    border-radius: 1px;
+    background: rgba(255, 255, 255, 0.48);
 }
 
 .family-member-pill.selected.pill-loaded {
-    border-color: rgba(72, 187, 120, 0.5);
-    color: #48BB78;
+    color: #d6d6d6;
+}
+
+.family-member-pill.selected.pill-loaded::after {
+    background: rgba(255, 255, 255, 0.48);
 }

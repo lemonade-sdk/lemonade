@@ -48,7 +48,7 @@ const MODEL_FAMILIES: ModelFamily[] = [
   {
     displayName: 'Qwen3-VL-Instruct-GGUF',
     regex: /^Qwen3-VL-(\d+\.?\d*B)-Instruct-GGUF$/,
-    defaultMember: '2B',
+    defaultMember: '4B',
   },
   {
     displayName: 'Llama-3.2-Instruct-GGUF',
@@ -654,10 +654,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
         : 'Filter settings...';
   const showInlineFilterButton = currentView === 'models' || currentView === 'marketplace';
 
-  const selectFamilyMember = (familyName: string, memberLabel: string) => {
-    setSelectedFamilyMembers(prev => ({ ...prev, [familyName]: memberLabel }));
-  };
-
   const getModelStatus = (modelName: string) => {
     const isDownloaded = modelsData[modelName]?.downloaded ?? false;
     const isLoaded = loadedModels.has(modelName);
@@ -811,6 +807,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     );
   };
 
+  const selectFamilyMember = (familyName: string, memberLabel: string) => {
+    setSelectedFamilyMembers(prev => ({ ...prev, [familyName]: memberLabel }));
+  };
+
   const renderFamilyItem = (item: Extract<ModelListItem, { type: 'family' }>) => {
     const { family, members } = item;
     const activeMemberLabel = selectedFamilyMembers[family.displayName] || family.defaultMember;
@@ -843,14 +843,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     return (
       <div
         key={family.displayName}
-        className={`model-item model-catalog-item ${activeModelDownloaded ? 'downloaded' : ''}`}
+        className={`model-item model-catalog-item model-family-item ${activeModelDownloaded ? 'downloaded' : ''}`}
         onMouseEnter={() => setHoveredModel(family.displayName)}
         onMouseLeave={() => setHoveredModel(null)}
       >
         <div className="model-item-content">
           <div className="model-info-left">
             <span className={`model-status-indicator ${aggStatusClass}`} title={aggStatusTitle}>●</span>
-            <span className="model-name">{family.displayName}</span>
+            <span className="model-name family-model-name">{family.displayName}</span>
             <span className="model-size">{formatSize(activeMember.info.size)}</span>
           </div>
           {activeMember.info.labels && activeMember.info.labels.length > 0 && (
