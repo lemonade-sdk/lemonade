@@ -2,6 +2,10 @@
 #include "lemon/model_types.h"
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
+#include <sstream>
+#include <algorithm>
+#include <thread>
+#include <vector>
 
 namespace lemon {
 
@@ -174,6 +178,8 @@ void OllamaApi::register_routes(httplib::Server& server) {
     server.Get("/api/version", [self](const httplib::Request& req, httplib::Response& res) {
         self->handle_version(req, res);
     });
+
+    register_anthropic_routes(server, self);
 
     // 501 stubs for unsupported endpoints
     auto not_supported = [](const httplib::Request&, httplib::Response& res) {
@@ -914,7 +920,9 @@ void OllamaApi::handle_tags(const httplib::Request& req, httplib::Response& res)
 void OllamaApi::handle_show(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = json::parse(req.body);
-        std::string name = normalize_model_name(request_json.value("name", request_json.value("model", "")));
+
+        std::string name = normalize_model_name((!request_json.value("model", "").empty() && request_json.value("name", "").empty()) ?
+        request_json.value("model", "") : request_json.value("name", ""));
 
         if (name.empty()) {
             res.status = 400;
