@@ -732,6 +732,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#timeout-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timeout Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#environment-variables" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1029,6 +1040,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#timeout-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timeout Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#environment-variables" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1279,9 +1301,46 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 <td><code>1</code></td>
 </tr>
 <tr>
+<td><code>--global-timeout [seconds]</code></td>
+<td>Global default timeout for HTTP requests, inference, and readiness checks in seconds. This value sets the <code>CURLOPT_TIMEOUT</code> in the underlying HTTP client and overrides internal defaults for inference and backend startup.</td>
+<td>300</td>
+</tr>
+<tr>
 <td><code>--save-options</code></td>
 <td>Only available for the run command. Saves the context size, LlamaCpp backend and custom llama-server arguments as default for running this model. Unspecified values will be saved using their default value.</td>
 <td>False</td>
+</tr>
+</tbody>
+</table>
+<h3 id="timeout-configuration">Timeout Configuration</h3>
+<p>Lemonade uses a unified timeout strategy controlled by the <code>--global-timeout</code> CLI flag. This value ensures stability across different operations:</p>
+<table>
+<thead>
+<tr>
+<th>Timeout Name</th>
+<th>Controlled By</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Global HTTP Timeout</strong></td>
+<td><code>--global-timeout</code></td>
+<td>300s</td>
+<td>Sets the base timeout for all <code>curl</code> operations, including model downloads and management tasks.</td>
+</tr>
+<tr>
+<td><strong>Inference Timeout</strong></td>
+<td><code>--global-timeout</code></td>
+<td>300s</td>
+<td>Applied specifically to inference requests (chat, completion) to backends. For very long generations, increasing the global timeout may be necessary.</td>
+</tr>
+<tr>
+<td><strong>Readiness Timeout</strong></td>
+<td><code>--global-timeout</code></td>
+<td>300s*</td>
+<td>Maximum time the router waits for a backend server to become healthy after starting it. *Note: If not explicitly set, backends may use up to 600s for initial setup.</td>
 </tr>
 </tbody>
 </table>
@@ -1342,6 +1401,10 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 <tr>
 <td><code>LEMONADE_ENABLE_DGPU_GTT</code></td>
 <td>Set to <code>1</code> to include GTT for hardware-based model filtering</td>
+</tr>
+<tr>
+<td><code>LEMONADE_GLOBAL_TIMEOUT</code></td>
+<td>Global default timeout for HTTP requests, inference, and readiness checks in seconds</td>
 </tr>
 </tbody>
 </table>
