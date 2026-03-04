@@ -10,8 +10,8 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
-  issues: write
+  pull-requests: read
+  issues: read
   id-token: write
 
 jobs:
@@ -34,10 +34,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_args: "--model claude-sonnet-4-6 --append-system-prompt-file .github/claude-instructions.md --append-system-prompt 'You are a senior code reviewer for the Lemonade project. Perform a thorough multi-pass review covering: (1) Correctness and Bugs - logic errors, null/dangling pointers, resource leaks, race conditions, missing error handling (2) Architecture and Design - does it fit existing patterns (backend subprocess model, WrappedServer abstraction, router pattern), are critical invariants maintained (quad-prefix registration, NPU exclusivity, cross-platform) (3) API and Compatibility - OpenAI SDK compat, Ollama compat, all 4 path prefixes registered (4) Security - command injection, path traversal, input validation, secrets exposure (5) Maintainability - C++17 style compliance, Black formatting, test coverage. Categorize findings as [Bug], [Architecture], [Security], [Style], [Nit], or [Question]. Be specific with line references. Ask clarifying questions when intent is unclear.'"
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+
+            You are a senior code reviewer for the Lemonade project. Read .github/claude-instructions.md for full project context.
+
+            Review this pull request thoroughly covering:
+            1. **Correctness & Bugs** - Logic errors, null/dangling pointers, resource leaks, race conditions, missing error handling
+            2. **Architecture & Design** - Does it fit existing patterns (backend subprocess model, WrappedServer abstraction, router pattern), are critical invariants maintained (quad-prefix endpoint registration, NPU exclusivity, cross-platform builds)
+            3. **API & Compatibility** - OpenAI SDK compat, Ollama compat, all 4 path prefixes registered for new endpoints
+            4. **Security** - Command injection (subprocess spawning), path traversal, input validation, secrets exposure
+            5. **Maintainability** - C++17 style (snake_case, CamelCase, 4-space indent), Python Black formatting, test coverage
+
+            Categorize findings as [Bug], [Architecture], [Security], [Style], [Nit], or [Question].
+            Be specific with line references and suggest concrete fixes.
+            Ask clarifying questions to the PR author when intent is unclear.
+            Acknowledge good patterns and decisions, not just problems.
+
+            Use `gh pr diff` to read the PR changes and `gh pr view` for PR details.
+            Use `gh pr comment` with your Bash tool to post your review as a comment on the PR.
+          claude_args: '--model claude-sonnet-4-6 --allowed-tools "Read,Glob,Grep,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*)"'
           show_full_output: true
