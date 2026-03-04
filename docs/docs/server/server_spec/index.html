@@ -818,6 +818,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#anthropic-compatible-api-initial" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anthropic-Compatible API (Initial)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2149,6 +2160,17 @@
     <span class="md-ellipsis">
       
         Ollama-Compatible API
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#anthropic-compatible-api-initial" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anthropic-Compatible API (Initial)
       
     </span>
   </a>
@@ -3508,6 +3530,25 @@
 </tr>
 </tbody>
 </table>
+<h3 id="anthropic-compatible-api-initial">Anthropic-Compatible API (Initial)</h3>
+<p>Lemonade supports an initial Anthropic Messages compatibility endpoint for applications that call Claude-style APIs.</p>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Status</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST /v1/messages</code></td>
+<td>Supported</td>
+<td>Supports both streaming and non-streaming. Query params like <code>?beta=true</code> are accepted.</td>
+</tr>
+</tbody>
+</table>
+<p>Current scope focuses on message generation parity for common fields (<code>model</code>, <code>messages</code>, <code>system</code>, <code>max_tokens</code>, <code>temperature</code>, <code>stream</code>, and basic <code>tools</code>). Unsupported or unimplemented Anthropic-specific fields are ignored and surfaced via warning logs/headers.</p>
 <h2 id="multi-model-support">Multi-Model Support</h2>
 <p>Lemonade Server supports loading multiple models simultaneously, allowing you to keep frequently-used models in memory for faster switching. The server uses a Least Recently Used (LRU) cache policy to automatically manage model eviction when limits are reached.</p>
 <h3 id="configuration">Configuration</h3>
