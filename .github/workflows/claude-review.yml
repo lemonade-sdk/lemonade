@@ -12,6 +12,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  id-token: write
 
 jobs:
   claude-review:
@@ -38,9 +39,8 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          model: claude-sonnet-4-6
-          custom_instructions_file: ".github/claude-instructions.md"
-          custom_instructions: |
+          claude_args: "--model claude-sonnet-4-6 --append-system-prompt-file .github/claude-instructions.md"
+          prompt: |
             You are a senior code reviewer for the Lemonade project.
 
             ## Review Depth
