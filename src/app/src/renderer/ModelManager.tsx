@@ -80,8 +80,9 @@ type ModelListItem =
 function buildModelList(
   models: Array<{ name: string; info: ModelInfo }>
 ): ModelListItem[] {
-  const items: ModelListItem[] = [];
+  // Build family groups
   const consumed = new Set<string>();
+  const familyItems: ModelListItem[] = [];
 
   for (const family of MODEL_FAMILIES) {
     const members: { label: string; name: string; info: ModelInfo }[] = [];
@@ -93,22 +94,27 @@ function buildModelList(
       }
     }
     if (members.length > 1) {
-      // Sort by numeric parameter count
       members.sort((a, b) => parseFloat(a.label) - parseFloat(b.label));
-      items.push({ type: 'family', family, members });
+      familyItems.push({ type: 'family', family, members });
     } else {
-      // Single match or none — don't group, keep as individual
       members.forEach(m => consumed.delete(m.name));
     }
   }
 
-  for (const m of models) {
-    if (!consumed.has(m.name)) {
-      items.push({ type: 'model', name: m.name, info: m.info });
-    }
-  }
+  // Build individual items for non-consumed models
+  const individualItems: ModelListItem[] = models
+    .filter(m => !consumed.has(m.name))
+    .map(m => ({ type: 'model' as const, name: m.name, info: m.info }));
 
-  return items;
+  // Merge and sort alphabetically by display name
+  const allItems = [...familyItems, ...individualItems];
+  allItems.sort((a, b) => {
+    const nameA = a.type === 'family' ? a.family.displayName : a.name;
+    const nameB = b.type === 'family' ? b.family.displayName : b.name;
+    return nameA.localeCompare(nameB);
+  });
+
+  return allItems;
 }
 
 interface ModelManagerProps {
