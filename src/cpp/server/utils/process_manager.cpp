@@ -348,13 +348,14 @@ ProcessHandle ProcessManager::start_process(
                     line_buffer = line_buffer.substr(pos + 1);
 
                     if (!should_filter_line(line)) {
-                        LOG(ERROR, "Process") << line << std::endl;
+                        // llama-server emits regular startup/status logs, these should be logged as INFO
+                        LOG(INFO, "Process") << line << std::endl;
                     }
                 }
             }
 
             if (!line_buffer.empty() && !should_filter_line(line_buffer)) {
-                LOG(ERROR, "Process") << line_buffer << std::endl;
+                LOG(INFO, "Process") << line_buffer << std::endl;
             }
 
             close(fd);

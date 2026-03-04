@@ -362,7 +362,8 @@ void LlamaCppServer::load(const std::string& model_name,
     }
 #endif
 
-    // Keep llama-server output visible at info+ while still suppressing at warning/error.
+    // Start process (inherit output if debug logging enabled, filter health check spam)
+    // Keep llama-server output visible at info log level.
     bool inherit_llama_output = (log_level_ == "info") || is_debug();
     process_handle_ = ProcessManager::start_process(executable, args, "", inherit_llama_output, true, env_vars);
 
