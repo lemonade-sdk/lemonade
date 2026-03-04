@@ -377,9 +377,7 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
 
     std::string command = "\"" + flm_exe + "\" validate --json";
 #ifdef _WIN32
-    //TODO: Update to 0.9.35 command if 0.9.35+ present
-    //pipe = _popen(command.c_str(), "r");
-    return true;
+    pipe = _popen(command.c_str(), "r");
 #else
     pipe = popen(command.c_str(), "r");
 #endif
