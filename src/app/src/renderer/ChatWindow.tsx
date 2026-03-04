@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   AppSettings,
   mergeWithDefaultSettings,
@@ -13,6 +13,8 @@ import TranscriptionPanel from './components/panels/TranscriptionPanel';
 import ImageGenerationPanel from './components/panels/ImageGenerationPanel';
 import TTSPanel from './components/panels/TTSPanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
+import { RefreshIcon } from './components/Icons';
+import { isExperienceModel, getExperienceComponents } from './utils/experienceModels';
 
 interface ChatWindowProps {
   isVisible: boolean;
@@ -40,6 +42,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     if (!selectedModel) return 'llm';
     const info = modelsData[selectedModel];
     if (!info) return 'llm';
+    if (isExperienceModel(info)) return 'llm';
     if (info.labels?.includes('embeddings') || (info as any)?.embedding) return 'embedding';
     if (info.labels?.includes('reranking') || (info as any)?.reranking) return 'reranking';
     if (info.labels?.includes('transcription')) return 'transcription';
@@ -63,13 +66,44 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     return modelsData[selectedModel]?.labels?.includes('vision') || false;
   }, [selectedModel, modelsData]);
 
-  const fetchLoadedModel = async () => {
+  const isExperienceSelected = useMemo(() => {
+    if (!selectedModel) return false;
+    return isExperienceModel(modelsData[selectedModel]);
+  }, [selectedModel, modelsData]);
+
+  const experienceMode = activeModelType === 'llm' && isExperienceSelected;
+
+  const prevExperienceModeRef = useRef(experienceMode);
+  useEffect(() => {
+    if (prevExperienceModeRef.current !== experienceMode) {
+      prevExperienceModeRef.current = experienceMode;
+      window.dispatchEvent(new CustomEvent('experienceModeChanged', { detail: { active: experienceMode } }));
+    }
+    return () => {
+      if (prevExperienceModeRef.current) {
+        prevExperienceModeRef.current = false;
+        window.dispatchEvent(new CustomEvent('experienceModeChanged', { detail: { active: false } }));
+      }
+    };
+  }, [experienceMode]);
+
+  // Use refs so the mount-once effect can read current values without re-running
+  const selectedModelRef = useRef(selectedModel);
+  selectedModelRef.current = selectedModel;
+  const modelsDataRef = useRef(modelsData);
+  modelsDataRef.current = modelsData;
+  const userHasSelectedModelRef = useRef(userHasSelectedModel);
+  userHasSelectedModelRef.current = userHasSelectedModel;
+
+  const fetchLoadedModel = useCallback(async () => {
     try {
       const response = await serverFetch('/health');
       const data = await response.json();
       if (data?.model_loaded) {
         setCurrentLoadedModel(data.model_loaded);
-        if (!userHasSelectedModel) {
+        const selectedInfo = selectedModelRef.current ? modelsDataRef.current[selectedModelRef.current] : undefined;
+        const keepExperienceSelection = !!selectedInfo && isExperienceModel(selectedInfo);
+        if (!userHasSelectedModelRef.current && !keepExperienceSelection) {
           setSelectedModel(data.model_loaded);
         }
       } else {
@@ -78,7 +112,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     } catch (error) {
       console.error('Failed to fetch loaded model:', error);
     }
-  };
+  }, [setSelectedModel]);
 
   useEffect(() => {
     fetchLoadedModel();
@@ -135,11 +169,41 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
         unsubscribeSettings();
       }
     };
-  }, [setSelectedModel, setUserHasSelectedModel]);
+  }, [fetchLoadedModel, setSelectedModel, setUserHasSelectedModel]);
 
   const handleNewChat = () => {
     inference.reset();
     setResetKey(k => k + 1);
+  };
+
+  const handleUnloadExperienceModel = async () => {
+    if (!selectedModel || inference.isBusy) return;
+
+    try {
+      const info = modelsData[selectedModel];
+      const components = isExperienceModel(info) ? getExperienceComponents(info) : [selectedModel];
+
+      for (const component of components) {
+        const response = await serverFetch('/unload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model_name: component }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to unload ${component}: ${response.statusText}`);
+        }
+      }
+
+      inference.reset();
+      setCurrentLoadedModel(null);
+      setSelectedModel('');
+      setUserHasSelectedModel(false);
+      window.dispatchEvent(new CustomEvent('modelUnload'));
+    } catch (error) {
+      console.error('Failed to unload experience model:', error);
+      showError(`Failed to unload model: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
   if (!isVisible) return null;
@@ -161,29 +225,25 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     showError,
     appSettings,
   };
-
   return (
-    <div className={`chat-window ${activeModelType === 'llm' ? 'chat-window-llm' : ''}`} style={width ? { width: `${width}px` } : undefined}>
+    <div
+      className={`chat-window ${activeModelType === 'llm' ? 'chat-window-llm' : ''} ${isExperienceSelected ? 'chat-window-experience' : ''} ${experienceMode ? 'chat-window-experience-mode' : ''}`}
+      style={width ? { width: `${width}px` } : undefined}
+    >
       <ToastContainer toasts={toasts} onRemove={removeToast} />
-      <div className="chat-header">
-        <h3>{headerTitle}</h3>
-        <button
-          className="new-chat-button"
-          onClick={handleNewChat}
-          disabled={inference.isBusy}
-          title={activeModelType === 'llm' ? 'Start a new chat' : 'Clear'}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M21 3V8M21 8H16M21 8L18 5.29168C16.4077 3.86656 14.3051 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21C16.2832 21 19.8675 18.008 20.777 14"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      </div>
+      {activeModelType !== 'llm' && (
+        <div className="chat-header">
+          <h3>{headerTitle}</h3>
+          <button
+            className="new-chat-button"
+            onClick={handleNewChat}
+            disabled={inference.isBusy}
+            title="Clear"
+          >
+            <RefreshIcon />
+          </button>
+        </div>
+      )}
 
       {activeModelType === 'embedding' && <EmbeddingPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'reranking' && <RerankingPanel key={resetKey} {...sharedProps} />}
@@ -197,6 +257,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
           isVision={isVision}
           currentLoadedModel={currentLoadedModel}
           setCurrentLoadedModel={setCurrentLoadedModel}
+          experienceMode={experienceMode}
+          onNewChat={handleNewChat}
+          onUnloadExperience={handleUnloadExperienceModel}
         />
       )}
     </div>

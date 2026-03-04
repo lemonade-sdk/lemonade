@@ -14,6 +14,7 @@ export interface ModelInfo {
   suggested: boolean;
   size?: number;
   labels?: string[];
+  composite_models?: string[];
   max_prompt_length?: number;
   mmproj?: string;
   source?: string;
@@ -98,6 +99,11 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
     normalized.model_name = modelName;
   }
 
+  const compositeModels = info['composite_models'];
+  if (Array.isArray(compositeModels)) {
+    normalized.composite_models = compositeModels.filter((model): model is string => typeof model === 'string');
+  }
+
   const reasoning = info['reasoning'];
   if (typeof reasoning === 'boolean') {
     normalized.reasoning = reasoning;
@@ -124,7 +130,7 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
     const modelList = Array.isArray(data) ? data : data.data || [];
 
     return modelList.reduce((acc: ModelsData, model: any) => {
-      if (!model.id || !model.checkpoint || !model.recipe) {
+      if (!model.id || !model.recipe) {
         return acc;
       }
 
@@ -158,6 +164,10 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
 
       if (typeof model.model_name === 'string' && model.model_name) {
         modelInfo.model_name = model.model_name;
+      }
+
+      if (Array.isArray(model.composite_models)) {
+        modelInfo.composite_models = model.composite_models.filter((component: unknown): component is string => typeof component === 'string');
       }
 
       if (model.recipe_options && typeof model.recipe_options === 'object') {
