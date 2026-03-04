@@ -771,6 +771,51 @@
         ],
         "size": 45.1
     },
+    "Qwen3.5-0.8B-GGUF": {
+        "checkpoint": "unsloth/Qwen3.5-0.8B-GGUF:Qwen3.5-0.8B-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision",
+            "tool-calling"
+        ],
+        "size": 0.56
+    },
+    "Qwen3.5-2B-GGUF": {
+        "checkpoint": "unsloth/Qwen3.5-2B-GGUF:Qwen3.5-2B-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision",
+            "tool-calling"
+        ],
+        "size": 1.34
+    },
+    "Qwen3.5-4B-GGUF": {
+        "checkpoint": "unsloth/Qwen3.5-4B-GGUF:Qwen3.5-4B-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision",
+            "tool-calling",
+            "hot"
+        ],
+        "size": 2.91
+    },
+    "Qwen3.5-9B-GGUF": {
+        "checkpoint": "unsloth/Qwen3.5-9B-GGUF:Qwen3.5-9B-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision",
+            "tool-calling"
+        ],
+        "size": 5.97
+    },
     "Qwen3.5-35B-A3B-GGUF": {
         "checkpoint": "unsloth/Qwen3.5-35B-A3B-GGUF:Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
         "mmproj": "mmproj-F16.gguf",
@@ -964,7 +1009,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
-            "hot"
+            "tool-calling"
         ],
         "size": 17.6
     },
@@ -1027,7 +1072,6 @@
         "recipe": "flm",
         "suggested": true,
         "labels": [
-            "hot",
             "vision"
         ],
         "size": 3.85
