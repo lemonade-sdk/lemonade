@@ -761,8 +761,7 @@ void ServerManager::write_pid_file() {
     if (pid_file.is_open()) {
         pid_file << server_pid_ << "\n" << port_ << "\n";
         pid_file.close();
-        LOG(DEBUG, "ServerManager") << "Wrote PID file: " << pid_file_path << " (PID: " << server_pid_ << ", Port: " << port_ << ")" << std::endl;
-        LOG(INFO, "ServerManager") << "PID file created: " << pid_file_path << std::endl;
+        LOG(DEBUG, "ServerManager") << "PID file created: " << pid_file_path << std::endl;
     } else {
         LOG(ERROR, "ServerManager") << "Failed to open PID file for writing: " << pid_file_path << std::endl;
         LOG(ERROR, "ServerManager") << "Error: " << strerror(errno) << std::endl;
