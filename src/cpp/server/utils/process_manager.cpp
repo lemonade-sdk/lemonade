@@ -54,17 +54,6 @@ static bool should_filter_line(const std::string& line) {
 // - To include a double quote in an argument, escape it with a backslash
 // - Backslashes before a double quote are also escaped
 static std::string escape_windows_arg(const std::string& arg) {
-    // If the argument contains spaces, quotes, or other special characters,
-    // we need to wrap it in quotes and escape internal quotes
-    bool needs_quoting = arg.empty() ||
-                         arg.find(' ') != std::string::npos ||
-                         arg.find('\t') != std::string::npos ||
-                         arg.find('"') != std::string::npos;
-
-    if (!needs_quoting) {
-        return arg;
-    }
-
     std::string result = "\"";
     for (size_t i = 0; i < arg.size(); ++i) {
         if (arg[i] == '"') {
