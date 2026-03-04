@@ -7,16 +7,6 @@ import { TranscriptionWebSocket } from '../utils/websocketClient';
 import { adjustTextareaHeight } from '../utils/textareaUtils';
 import { serverFetch } from '../utils/serverConfig';
 
-// How long to keep the WebSocket open after stop() waiting for the server's
-// 'completed' transcript message. Slow models (e.g. Whisper Large) can take
-// several seconds to finish inference.
-const WS_CLOSE_TIMEOUT_MS = 30_000;
-
-// If 'completed' event never arrives (server error / crash), submit
-// whatever text is buffered after this delay. Kept in sync with the socket
-// timeout so both paths resolve at the same time.
-const TRANSCRIPT_FALLBACK_MS = WS_CLOSE_TIMEOUT_MS;
-
 interface UseVoiceTranscriptionOptions {
   inputValue: string;
   setInputValue: (value: string) => void;
@@ -70,12 +60,10 @@ export function useVoiceTranscription({
   // Refs that must survive across renders and WS callbacks without stale closures
   const wsClientRef = useRef<TranscriptionWebSocket | null>(null);
   const wsToCloseRef = useRef<TranscriptionWebSocket | null>(null);
-  const wsCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRecordingRef = useRef(false);
   const finalsRef = useRef('');
   const baseTextRef = useRef('');
   const pendingAutoSubmitRef = useRef(false);
-  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Always-current refs for values used inside WS callbacks
   const inputValueRef = useRef(inputValue);
@@ -103,19 +91,7 @@ export function useVoiceTranscription({
   useEffect(() => () => {
     if (isRecordingRef.current) stopRecording();
     wsClientRef.current?.close();
-    if (wsCloseTimerRef.current) clearTimeout(wsCloseTimerRef.current);
     wsToCloseRef.current?.close();
-    if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
-  }, []);
-
-  // Called once the final transcript is handled (or the safety timeout fires).
-  const flushWsClose = useCallback(() => {
-    if (wsCloseTimerRef.current) {
-      clearTimeout(wsCloseTimerRef.current);
-      wsCloseTimerRef.current = null;
-    }
-    wsToCloseRef.current?.close();
-    wsToCloseRef.current = null;
   }, []);
 
   // VAD path: server already transcribed — discard any remaining buffer and
@@ -136,10 +112,8 @@ export function useVoiceTranscription({
       wsClientRef.current.commitAudio();
       wsToCloseRef.current = wsClientRef.current;
       wsClientRef.current = null;
-      // Safety timeout — close regardless if no response.
-      wsCloseTimerRef.current = setTimeout(flushWsClose, WS_CLOSE_TIMEOUT_MS);
     }
-  }, [flushWsClose]);
+  }, []);
 
   const doAutoStop = useCallback((transcribedValue: string) => {
     isRecordingRef.current = false;
@@ -181,13 +155,13 @@ export function useVoiceTranscription({
     } else if (pendingAutoSubmitRef.current) {
       // Manual stop already happened; 'completed' arrived — close socket and submit.
       pendingAutoSubmitRef.current = false;
-      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
       finalsRef.current = '';
       baseTextRef.current = '';
-      flushWsClose();
+      wsToCloseRef.current?.close();
+      wsToCloseRef.current = null;
       onAutoSubmitRef.current?.(newValue.trim());
     }
-  }, [textareaRef, doAutoStop, flushWsClose]);
+  }, [textareaRef, doAutoStop]);
 
   const start = useCallback(async () => {
     if (!whisperModel) {
@@ -225,7 +199,7 @@ export function useVoiceTranscription({
     }
   }, [whisperModel, modelsData, inputValue, handleTranscription, startRecording, runPreFlight, reset, onError]);
 
-  // Manual stop — mic stops immediately; wait for completed before submitting (3s fallback)
+  // Manual stop — mic stops immediately; wait for completed before submitting
   const stop = useCallback(() => {
     stopRecording();
     isRecordingRef.current = false;
@@ -234,19 +208,7 @@ export function useVoiceTranscription({
     reset();
 
     pendingAutoSubmitRef.current = true;
-    // Fallback: if 'completed' never arrives (e.g. server error), submit whatever
-    // text is in the input after the timeout (matches the socket safety timeout).
-    fallbackTimerRef.current = setTimeout(() => {
-      if (pendingAutoSubmitRef.current) {
-        pendingAutoSubmitRef.current = false;
-        finalsRef.current = '';
-        baseTextRef.current = '';
-        flushWsClose();
-        const text = inputValueRef.current.trim();
-        if (text) onAutoSubmitRef.current?.(text);
-      }
-    }, TRANSCRIPT_FALLBACK_MS);
-  }, [stopRecording, reset, closeWs, flushWsClose]);
+  }, [stopRecording, reset, closeWs]);
 
   return { whisperModel, isRecording, start, stop };
 }

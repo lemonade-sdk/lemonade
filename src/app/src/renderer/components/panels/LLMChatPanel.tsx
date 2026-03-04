@@ -328,7 +328,9 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
   const sendMessage = async (textOverride?: string) => {
     const textToSend = typeof textOverride === 'string' ? textOverride : inputValue;
-    if ((!textToSend.trim() && uploadedImages.length === 0) || isBusy) return;
+    // When called from voice auto-submit, `isBusy` may still be stale-true
+    // because the state update hasn't flushed yet.
+    if (!textToSend.trim() && uploadedImages.length === 0) return;
 
     const ready = await runPreFlight('llm', {
       modelName: selectedModel,
