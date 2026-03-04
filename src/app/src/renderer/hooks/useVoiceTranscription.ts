@@ -18,23 +18,23 @@ interface UseVoiceTranscriptionOptions {
 }
 
 interface UseVoiceTranscriptionResult {
-  whisperModel: string | undefined;
+  activeModel: string | undefined;
   isRecording: boolean;
   start: () => Promise<void>;
   stop: () => void;
 }
 
 /**
- * Returns the name of an already-loaded whispercpp model from the server, or
+ * Returns the name of an already-loaded audio model from the server, or
  * `null` if none is loaded or the health check fails.
  */
-async function fetchLoadedWhisperModel(modelsData: ModelsData): Promise<string | null> {
+async function fetchLoadedAudioModel(modelsData: ModelsData): Promise<string | null> {
   try {
     const res = await serverFetch('/health');
     if (!res.ok) return null;
     const health = await res.json();
     const allLoaded: { model_name: string }[] = health.all_models_loaded || [];
-    const loaded = allLoaded.find((m) => modelsData[m.model_name]?.recipe === 'whispercpp');
+    const loaded = allLoaded.find((m) => modelsData[m.model_name]?.labels?.includes('audio'));
     return loaded?.model_name ?? null;
   } catch {
     return null;
@@ -51,9 +51,14 @@ export function useVoiceTranscription({
   onError,
 }: UseVoiceTranscriptionOptions): UseVoiceTranscriptionResult {
   const { modelsData } = useModels();
-  const whisperModel = Object.entries(modelsData).find(
-    ([, info]) => info.recipe === 'whispercpp' && info.downloaded
-  )?.[0] ?? Object.keys(modelsData).find(name => modelsData[name].recipe === 'whispercpp');
+  const audioModels = Object.keys(modelsData).filter(name => modelsData[name]?.labels?.includes('audio'));
+
+  // Prefer the smallest downloaded model (fastest for real-time), fall back to any audio model.
+  const activeModel =
+    audioModels
+      .filter(name => modelsData[name].downloaded)
+      .sort((a, b) => (modelsData[a].size ?? Infinity) - (modelsData[b].size ?? Infinity))[0]
+    ?? audioModels[0];
 
   const [isRecording, setIsRecording] = useState(false);
 
@@ -164,15 +169,15 @@ export function useVoiceTranscription({
   }, [textareaRef, doAutoStop]);
 
   const start = useCallback(async () => {
-    if (!whisperModel) {
+    if (!activeModel) {
       onError('No Whisper model available. Pull one from the Model Manager first.');
       return;
     }
     baseTextRef.current = inputValue;
     finalsRef.current = '';
 
-    // Prefer an already-loaded whisper model to avoid an unnecessary reload.
-    const modelToUse = (await fetchLoadedWhisperModel(modelsData)) ?? whisperModel;
+    // Prefer an already-loaded model to avoid an unnecessary reload.
+    const modelToUse = (await fetchLoadedAudioModel(modelsData)) ?? activeModel;
 
     const ready = await runPreFlight('transcription', {
       modelName: modelToUse,
@@ -197,7 +202,7 @@ export function useVoiceTranscription({
       wsClientRef.current = null;
       reset();
     }
-  }, [whisperModel, modelsData, inputValue, handleTranscription, startRecording, runPreFlight, reset, onError]);
+  }, [activeModel, modelsData, inputValue, handleTranscription, startRecording, runPreFlight, reset, onError]);
 
   // Manual stop — mic stops immediately; wait for completed before submitting
   const stop = useCallback(() => {
@@ -210,5 +215,5 @@ export function useVoiceTranscription({
     pendingAutoSubmitRef.current = true;
   }, [stopRecording, reset, closeWs]);
 
-  return { whisperModel, isRecording, start, stop };
+  return {  activeModel, isRecording, start, stop };
 }

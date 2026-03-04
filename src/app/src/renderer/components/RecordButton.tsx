@@ -16,10 +16,10 @@ interface RecordButtonProps {
 }
 
 const RecordButton: React.FC<RecordButtonProps> = (props) => {
-  const { whisperModel, isRecording, start, stop } =
+  const { activeModel, isRecording, start, stop } =
     useVoiceTranscription(props);
 
-  const title = !whisperModel
+  const title = !activeModel
     ? 'No Whisper model available'
     : isRecording ? 'Stop recording'
     : 'Record voice (auto-loads Whisper)';
