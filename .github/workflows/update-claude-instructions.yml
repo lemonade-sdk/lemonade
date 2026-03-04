@@ -1,0 +1,52 @@
+name: Update Claude Instructions
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "src/cpp/**"
+      - "src/app/**"
+      - "CMakeLists.txt"
+      - "test/**"
+      - "src/cpp/resources/server_models.json"
+      - "src/cpp/resources/backend_versions.json"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-instructions:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: update-claude-instructions
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-sonnet-4-6
+          prompt: |
+            Your task is to update the file `.github/claude-instructions.md` to reflect the current state of the codebase. This file is used as context for Claude code reviews.
+
+            Do the following:
+            1. Read the current `.github/claude-instructions.md`
+            2. Analyze the codebase to find any changes since the file was last updated:
+               - New or removed endpoints in `src/cpp/server/server.cpp`
+               - New or removed backends (WrappedServer subclasses)
+               - Changes to the model registry format in `src/cpp/resources/server_models.json`
+               - New key files or architectural changes
+               - New test files in `test/`
+               - Changes to build configuration in `CMakeLists.txt`
+               - Changes to the Electron/web app structure
+            3. Update ONLY the sections that have actually changed. Do not rewrite sections that are still accurate.
+            4. Preserve the existing structure, formatting, and the "Critical Invariants" section (only update invariants if the code shows they have changed).
+            5. If nothing meaningful has changed, do not modify the file.
+
+            IMPORTANT: Only update facts that are verifiable from the source code. Do not add speculative or aspirational content.
+          direct_prompt: true
+          allowed_tools: "Read,Glob,Grep,Edit,Write"

@@ -573,6 +573,7 @@ set(SOURCES
     src/cpp/server/backends/backend_utils.cpp
     src/cpp/server/backend_manager.cpp
     src/cpp/server/ollama_api.cpp
+    src/cpp/server/anthropic_api.cpp
     $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/streaming_audio_buffer.cpp>
     $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/vad.cpp>
     $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/realtime_session.cpp>
