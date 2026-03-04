@@ -81,7 +81,8 @@ public:
     void forward_streaming_request(const std::string& endpoint,
                                    const std::string& request_body,
                                    httplib::DataSink& sink,
-                                   bool sse = true) override;
+                                   bool sse = true,
+                                   long timeout_seconds = 0) override;
 
 private:
     // Static helpers for install logic (no instance state needed)
