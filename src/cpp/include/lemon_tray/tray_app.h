@@ -65,6 +65,7 @@ private:
     int execute_status_command();
     int execute_stop_command();
     int execute_recipes_command();
+    int execute_logs_command();
 
     // Helper functions for command execution
     bool is_server_running_on_port(int port);
