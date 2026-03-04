@@ -6300,9 +6300,24 @@ footer {
 /* Model family member pills */
 .family-members {
     display: flex;
+    align-items: center;
     gap: 6px;
-    padding: 2px 12px 4px 32px;
+    padding: 2px 12px 4px 22px;
     flex-wrap: wrap;
+    min-height: 22px;
+    position: relative;
+}
+
+.family-actions {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    visibility: hidden;
+}
+
+.model-item:hover > .family-members > .family-actions {
+    visibility: visible;
 }
 
 .family-member-pill {

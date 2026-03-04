@@ -702,18 +702,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     </button>
   );
 
-  const renderActionButtons = (modelName: string, isHovered: boolean) => {
+  const renderActionButtonsContent = (modelName: string) => {
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
-    if (!isHovered) return null;
     return (
-      <span className="model-actions">
+      <>
         {!isDownloaded && (
           <button
             className="model-action-btn download-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDownloadModel(modelName);
-            }}
+            onClick={(e) => { e.stopPropagation(); handleDownloadModel(modelName); }}
             title="Download model"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -727,10 +723,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
           <>
             <button
               className="model-action-btn load-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleLoadModel(modelName);
-              }}
+              onClick={(e) => { e.stopPropagation(); handleLoadModel(modelName); }}
               title="Load model"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -739,10 +732,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
             </button>
             <button
               className="model-action-btn delete-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteModel(modelName);
-              }}
+              onClick={(e) => { e.stopPropagation(); handleDeleteModel(modelName); }}
               title="Delete model"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -758,10 +748,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
             {renderLoadOptionsButton(modelName)}
             <button
               className="model-action-btn unload-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleUnloadModel(modelName);
-              }}
+              onClick={(e) => { e.stopPropagation(); handleUnloadModel(modelName); }}
               title="Eject model"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -772,10 +759,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
             </button>
             <button
               className="model-action-btn delete-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteModel(modelName);
-              }}
+              onClick={(e) => { e.stopPropagation(); handleDeleteModel(modelName); }}
               title="Delete model"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -785,6 +769,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
             </button>
           </>
         )}
+      </>
+    );
+  };
+
+  const renderActionButtons = (modelName: string, isHovered: boolean) => {
+    if (!isHovered) return null;
+    return (
+      <span className="model-actions">
+        {renderActionButtonsContent(modelName)}
       </span>
     );
   };
@@ -823,10 +816,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     const activeMemberLabel = selectedFamilyMembers[family.displayName] || family.defaultMember;
     const activeMember = members.find(m => m.label === activeMemberLabel) || members[0];
 
-    // Aggregate status: best across all members
-    const anyLoaded = members.some(m => loadedModels.has(m.name));
-    const anyDownloaded = members.some(m => modelsData[m.name]?.downloaded);
-    const anyLoading = members.some(m => loadingModels.has(m.name));
+    // Aggregate status: best across all members (single pass)
+    let anyLoaded = false, anyDownloaded = false, anyLoading = false;
+    for (const m of members) {
+      if (loadedModels.has(m.name)) anyLoaded = true;
+      if (modelsData[m.name]?.downloaded) anyDownloaded = true;
+      if (loadingModels.has(m.name)) anyLoading = true;
+      if (anyLoaded && anyDownloaded && anyLoading) break;
+    }
     let aggStatusClass = 'not-downloaded';
     let aggStatusTitle = 'No members downloaded';
     if (anyLoading) {
@@ -855,7 +852,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
             <span className={`model-status-indicator ${aggStatusClass}`} title={aggStatusTitle}>●</span>
             <span className="model-name">{family.displayName}</span>
             <span className="model-size">{formatSize(activeMember.info.size)}</span>
-            {renderActionButtons(activeMember.name, isHovered)}
           </div>
           {activeMember.info.labels && activeMember.info.labels.length > 0 && (
             <span className="model-labels">
@@ -880,6 +876,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
               </span>
             );
           })}
+          <span className="model-actions family-actions">
+            {renderActionButtonsContent(activeMember.name)}
+          </span>
         </div>
       </div>
     );
