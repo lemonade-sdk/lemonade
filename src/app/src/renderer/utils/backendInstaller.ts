@@ -338,23 +338,10 @@ export async function pullModel(
 
   try {
     // Build request body — include registration data for custom models
-    let requestBody: Record<string, unknown>;
+    let requestBody: Record<string, unknown> = { model_name: modelName, stream: true };
 
-    if(options?.isExportedModel && options?.registrationData) {
-      requestBody = {...options.registrationData} as Record<string, any>;
-      requestBody.stream = true;
-    } else {
-      requestBody = { model_name: modelName, stream: true }
-      if (options?.registrationData) {
-        const rd = options.registrationData;
-        requestBody.checkpoint = rd.checkpoint;
-        requestBody.recipe = rd.recipe;
-        if (rd.mmproj) requestBody.mmproj = rd.mmproj;
-        if (rd.reasoning) requestBody.reasoning = rd.reasoning;
-        if (rd.vision) requestBody.vision = rd.vision;
-        if (rd.embedding) requestBody.embedding = rd.embedding;
-        if (rd.reranking) requestBody.reranking = rd.reranking;
-      }
+    if(options?.registrationData) {
+      Object.assign(requestBody, options.registrationData);
     }
 
     const response = await serverFetch('/pull', {

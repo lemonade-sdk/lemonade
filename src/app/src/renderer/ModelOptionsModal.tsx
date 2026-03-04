@@ -211,11 +211,10 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   };
 
   const handleModelExport = () => {
-    URL.revokeObjectURL(exportModelBtn!.current!.href);
     let modelName = (modelInfo?.id as string).startsWith("user.") ? modelInfo?.id : `user.${modelInfo?.id}`;
 
     let modelToExport = {
-      "model": modelName,
+      "model_name": modelName,
       "downloaded": modelInfo?.downloaded,
       "labels": modelInfo?.labels,
       "recipe": modelInfo?.recipe,
@@ -233,7 +232,8 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     const blob = new Blob([model], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     exportModelBtn!.current!.href = url;
-    exportModelBtn!.current!.download = modelToExport?.model ? `${modelToExport?.model}.json` as string: 'model.json';
+    exportModelBtn!.current!.download = modelToExport?.model_name ? `${modelToExport?.model_name}.json` as string: 'model.json';
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   const handleCancel = () => {

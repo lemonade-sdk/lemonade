@@ -26,7 +26,7 @@ interface ModelManagerProps {
 
 interface ModelJSON {
   id?: string,
-  model?: string,
+  model_name?: string,
   recipe: string,
   recipe_options?: object,
   checkpoint?: string,
@@ -371,7 +371,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     }));
   };
 
-  const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData, isExportedModel?: boolean) => {
+  const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData) => {
     let downloadId: string | null = null;
 
     try {
@@ -396,7 +396,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       setLoadingModels(prev => new Set(prev).add(modelName));
 
       // Use the single consolidated download function
-      await pullModel(modelName, { registrationData: registrationData, isExportedModel: isExportedModel });
+      await pullModel(modelName, { registrationData: registrationData });
 
       await fetchCurrentLoadedModel();
       showSuccess(`Model "${modelName}" downloaded successfully.`);
@@ -561,23 +561,37 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     const file = files[0];
     const reader = new FileReader();
     reader.onload = (e) => {
-      const result = JSON.parse(e.target?.result as string);
-      uploadModelJSON(result);
+      try {
+        const result = JSON.parse(e.target?.result as string);
+        uploadModelJSON(result);
+      } catch(err: any) {
+        showError(`Failed to parse JSON file. ${err}`);
+      }
     };
     reader.readAsText(file);
     event.target.value = '';
   }
 
   const uploadModelJSON = (json: ModelJSON) => {
-    if (json.checkpoint && json.checkpoints) delete json.checkpoint;
-    if (json.id && json.model) delete json.id;
+    let modelName: string;
 
-    if(json.id && !json.model) {
-      json.model = json.id;
-      delete json.id;
+    if (!json.recipe) {
+      showError("Invalid model JSON. Recipe is missing");
+      return;
     }
 
-    handleDownloadModel(json.model as string, json as ModelRegistrationData, true);
+    if(!json.model_name && !json.id) {
+      showError("Invalid model JSON. Either model or id must be present.");
+      return;
+    }
+
+    modelName = json.model_name ? json.model_name : json.id as string;
+
+    if (json.checkpoint && json.checkpoints) delete json.checkpoint;
+    if (json.model_name) delete json.model_name;
+    if(json.id) delete json.id;
+
+    handleDownloadModel(modelName as string, json as ModelRegistrationData);
   }
 
   const viewTitle = currentView === 'models'
