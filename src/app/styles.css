@@ -1534,14 +1534,45 @@ footer {
     border-left-color: #666;
 }
 
-.model-family-item {
-    padding-top: 3px;
-    padding-bottom: 3px;
+.model-family-group {
+    margin: 0;
 }
 
-.model-family-item:hover {
-    background: rgba(255, 255, 255, 0.035);
-    border-left-color: #777;
+.model-family-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px 4px 13px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.model-family-header:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.family-chevron {
+    font-size: 0.56rem;
+    transition: transform 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    line-height: 1;
+    color: #f2f2f2;
+    flex-shrink: 0;
+}
+
+.family-chevron.expanded {
+    transform: rotate(90deg);
+}
+
+.model-family-members-list {
+    padding-left: 6px;
+}
+
+.model-family-member-row {
+    padding-left: 28px;
 }
 
 .model-item-content {
@@ -6318,62 +6349,4 @@ footer {
     to { transform: rotate(360deg); }
 }
 
-/* Compact family rows with visible variant tokens */
-.family-members {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 44px 4px calc(var(--catalog-status-indicator-width) + 13px);
-    flex-wrap: wrap;
-    min-height: 22px;
-    position: relative;
-}
-
-.family-actions {
-    position: absolute;
-    right: -6px;
-    top: 50%;
-    transform: translateY(-50%);
-    visibility: hidden;
-}
-
-.model-item:hover > .family-members > .family-actions {
-    visibility: visible;
-}
-
-.family-member-pill {
-    font-size: 0.74rem;
-    padding: 0;
-    min-height: 0;
-    display: inline-flex;
-    align-items: center;
-    border-radius: 0;
-    border: none;
-    cursor: pointer;
-    color: #8f8f8f;
-    background: transparent;
-    line-height: 1.15;
-    position: relative;
-    transition: color 0.15s ease;
-}
-
-.family-member-pill:hover {
-    color: #d2d2d2;
-}
-
-.family-member-pill.pill-available,
-.family-member-pill.pill-loaded,
-.family-member-pill.selected {
-    color: #d6d6d6;
-}
-
-.family-member-pill.selected::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: -2px;
-    height: 1px;
-    border-radius: 1px;
-    background: rgba(255, 255, 255, 0.48);
-}
+/* Family member rows are now regular model-item rows, no special pill styles needed */

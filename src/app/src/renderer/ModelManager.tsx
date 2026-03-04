@@ -23,53 +23,58 @@ interface ModelFamily {
   defaultMember: string;
 }
 
+const SIZE_TOKEN = String.raw`(\d+\.?\d*B(?:-A\d+\.?\d*B)?)`;
+
+function buildFamilyRegex(prefix: string, suffix = '-GGUF$'): RegExp {
+  return new RegExp(`^${prefix}-${SIZE_TOKEN}${suffix}`);
+}
+
 const MODEL_FAMILIES: ModelFamily[] = [
-  // Standard *B families
+  // Standardized family matching: capture *B or *B-A*B.
   {
-    displayName: 'Qwen3-GGUF',
-    regex: /^Qwen3-(\d+\.?\d*B)-GGUF$/,
+    displayName: 'Qwen3',
+    regex: buildFamilyRegex('Qwen3'),
     defaultMember: '4B',
   },
   {
-    displayName: 'Qwen3.5-GGUF',
-    regex: /^Qwen3\.5-(\d+\.?\d*B)-GGUF$/,
+    displayName: 'Qwen3-Instruct-2507',
+    regex: buildFamilyRegex('Qwen3', '-Instruct-2507-GGUF$'),
     defaultMember: '4B',
   },
   {
-    displayName: 'Qwen3-Embedding-GGUF',
-    regex: /^Qwen3-Embedding-(\d+\.?\d*B)-GGUF$/,
+    displayName: 'Qwen3.5',
+    regex: buildFamilyRegex('Qwen3\\.5'),
+    defaultMember: '4B',
+  },
+  {
+    displayName: 'Qwen3-Embedding',
+    regex: buildFamilyRegex('Qwen3-Embedding'),
     defaultMember: '0.6B',
   },
   {
-    displayName: 'Qwen2.5-VL-Instruct-GGUF',
-    regex: /^Qwen2\.5-VL-(\d+\.?\d*B)-Instruct-GGUF$/,
+    displayName: 'Qwen2.5-VL-Instruct',
+    regex: buildFamilyRegex('Qwen2\\.5-VL', '-Instruct-GGUF$'),
     defaultMember: '3B',
   },
   {
-    displayName: 'Qwen3-VL-Instruct-GGUF',
-    regex: /^Qwen3-VL-(\d+\.?\d*B)-Instruct-GGUF$/,
+    displayName: 'Qwen3-VL-Instruct',
+    regex: buildFamilyRegex('Qwen3-VL', '-Instruct-GGUF$'),
     defaultMember: '4B',
   },
   {
-    displayName: 'Llama-3.2-Instruct-GGUF',
-    regex: /^Llama-3\.2-(\d+\.?\d*B)-Instruct-GGUF$/,
+    displayName: 'Llama-3.2-Instruct',
+    regex: buildFamilyRegex('Llama-3\\.2', '-Instruct-GGUF$'),
     defaultMember: '3B',
   },
   {
-    displayName: 'gpt-oss-GGUF',
+    displayName: 'gpt-oss',
     regex: /^gpt-oss-(\d+\.?\d*b)-mxfp4?-GGUF$/,
     defaultMember: '20b',
   },
-  // MoE families (capture the full NB-ANB token as the member label)
   {
-    displayName: 'LFM2-MoE-GGUF',
-    regex: /^LFM2-(\d+\.?\d*B-A\d+\.?\d*B)-GGUF$/,
+    displayName: 'LFM2',
+    regex: buildFamilyRegex('LFM2'),
     defaultMember: '8B-A1B',
-  },
-  {
-    displayName: 'Qwen3.5-MoE-GGUF',
-    regex: /^Qwen3\.5-(\d+\.?\d*B-A\d+\.?\d*B)-GGUF$/,
-    defaultMember: '35B-A3B',
   },
 ];
 
@@ -158,6 +163,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   const [selectedMarketplaceCategory, setSelectedMarketplaceCategory] = useState<string>('all');
   const [marketplaceCategories, setMarketplaceCategories] = useState<MarketplaceCategory[]>([]);
   const [selectedFamilyMembers, setSelectedFamilyMembers] = useState<Record<string, string>>({});
+  const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
   const filterAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
@@ -814,75 +820,66 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     setSelectedFamilyMembers(prev => ({ ...prev, [familyName]: memberLabel }));
   };
 
+  const toggleFamily = (familyName: string) => {
+    setExpandedFamilies(prev => {
+      const next = new Set(prev);
+      if (next.has(familyName)) next.delete(familyName);
+      else next.add(familyName);
+      return next;
+    });
+  };
+
   const renderFamilyItem = (item: Extract<ModelListItem, { type: 'family' }>) => {
     const { family, members } = item;
-    const activeMemberLabel = selectedFamilyMembers[family.displayName] || family.defaultMember;
-    const activeMember = members.find(m => m.label === activeMemberLabel) || members[0];
+    const isExpanded = expandedFamilies.has(family.displayName);
 
-    // Aggregate status: best across all members (single pass)
-    let anyLoaded = false, anyDownloaded = false, anyLoading = false;
-    for (const m of members) {
-      if (loadedModels.has(m.name)) anyLoaded = true;
-      if (modelsData[m.name]?.downloaded) anyDownloaded = true;
-      if (loadingModels.has(m.name)) anyLoading = true;
-      if (anyLoaded && anyDownloaded && anyLoading) break;
-    }
-    let aggStatusClass = 'not-downloaded';
-    let aggStatusTitle = 'No members downloaded';
-    if (anyLoading) {
-      aggStatusClass = 'loading';
-      aggStatusTitle = 'A member is loading...';
-    } else if (anyLoaded) {
-      aggStatusClass = 'loaded';
-      aggStatusTitle = 'A member is loaded';
-    } else if (anyDownloaded) {
-      aggStatusClass = 'available';
-      aggStatusTitle = 'A member is available locally';
-    }
-
-    const isHovered = hoveredModel === family.displayName;
-    const activeModelDownloaded = modelsData[activeMember.name]?.downloaded ?? false;
+    // Collect shared labels from first member (labels are shared at family level)
+    const sharedLabels = members[0]?.info.labels;
 
     return (
-      <div
-        key={family.displayName}
-        className={`model-item model-catalog-item model-family-item ${activeModelDownloaded ? 'downloaded' : ''}`}
-        onMouseEnter={() => setHoveredModel(family.displayName)}
-        onMouseLeave={() => setHoveredModel(null)}
-      >
-        <div className="model-item-content">
-          <div className="model-info-left">
-            <span className={`model-status-indicator ${aggStatusClass}`} title={aggStatusTitle}>●</span>
-            <span className="model-name family-model-name">{family.displayName}</span>
-            <span className="model-size">{formatSize(activeMember.info.size)}</span>
-          </div>
-          {activeMember.info.labels && activeMember.info.labels.length > 0 && (
+      <div key={family.displayName} className="model-family-group">
+        <div
+          className="model-family-header"
+          onClick={() => toggleFamily(family.displayName)}
+        >
+          <span className={`family-chevron ${isExpanded ? 'expanded' : ''}`}>
+            <ChevronRight size={11} strokeWidth={2.1} />
+          </span>
+          <span className="model-name family-model-name">{family.displayName}</span>
+          {sharedLabels && sharedLabels.length > 0 && (
             <span className="model-labels">
-              {activeMember.info.labels.map(label => (
+              {sharedLabels.map(label => (
                 <span key={label} className={`model-label label-${label}`} title={getCategoryLabel(label)} />
               ))}
             </span>
           )}
         </div>
-        <div className="family-members">
-          {members.map(m => {
-            const memberDownloaded = modelsData[m.name]?.downloaded ?? false;
-            const memberLoaded = loadedModels.has(m.name);
-            const pillStatus = memberLoaded ? 'pill-loaded' : memberDownloaded ? 'pill-available' : '';
-            return (
-              <span
-                key={m.label}
-                className={`family-member-pill ${pillStatus} ${m.label === activeMemberLabel ? 'selected' : ''}`}
-                onClick={(e) => { e.stopPropagation(); selectFamilyMember(family.displayName, m.label); }}
-              >
-                {m.label}
-              </span>
-            );
-          })}
-          <span className="model-actions family-actions">
-            {renderActionButtonsContent(activeMember.name)}
-          </span>
-        </div>
+        {isExpanded && (
+          <div className="model-family-members-list">
+            {members.map(m => {
+              const { isDownloaded, statusClass, statusTitle } = getModelStatus(m.name);
+              const memberHoverKey = `family-${family.displayName}-${m.label}`;
+              const isHovered = hoveredModel === memberHoverKey;
+              return (
+                <div
+                  key={m.name}
+                  className={`model-item model-catalog-item model-family-member-row ${isDownloaded ? 'downloaded' : ''}`}
+                  onMouseEnter={() => setHoveredModel(memberHoverKey)}
+                  onMouseLeave={() => setHoveredModel(null)}
+                >
+                  <div className="model-item-content">
+                    <div className="model-info-left">
+                      <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
+                      <span className="model-name">{m.label}</span>
+                      <span className="model-size">{formatSize(m.info.size)}</span>
+                      {renderActionButtons(m.name, isHovered)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   };
