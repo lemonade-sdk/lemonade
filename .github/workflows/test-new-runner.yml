@@ -3,8 +3,6 @@ permissions:
   contents: read
 
 on:
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
     inputs:
       runner:
@@ -17,7 +15,7 @@ on:
 
 jobs:
   test-runner:
-    runs-on: [self-hosted, test]
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
