@@ -144,14 +144,6 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
             const auto& result = backend_cache[recipe];
             std::string default_backend = result.backends.empty() ? "" : result.backends[0];
 
-            // Pre-populate storage with the dynamically detected default so it's
-            // available even when the user doesn't explicitly pass the flag.
-            // (add_option_function's callback only fires on explicit CLI input,
-            // and default_val only affects help text display.)
-            if (!default_backend.empty()) {
-                storage[opt_name] = default_backend;
-            }
-
             o = app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val(default_backend);
             o->check(CLI::IsMember(result.backends));
@@ -256,6 +248,22 @@ RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
 }
 
 json RecipeOptions::get_option(const std::string& opt) const {
-    return options_.contains(opt) ? options_[opt] : DEFAULTS[opt];
+    if (options_.contains(opt)) {
+        return options_[opt];
+    }
+
+    // Dynamic defaults for backends if not explicitly set
+    const std::string backend_suffix = "_backend";
+    if (opt.size() > backend_suffix.size() &&
+        opt.compare(opt.size() - backend_suffix.size(), backend_suffix.size(), backend_suffix) == 0) {
+
+        std::string recipe = opt.substr(0, opt.size() - backend_suffix.size());
+        auto result = SystemInfo::get_supported_backends(recipe);
+        if (!result.backends.empty()) {
+            return result.backends[0];
+        }
+    }
+
+    return DEFAULTS.contains(opt) ? DEFAULTS[opt] : json();
 }
 }

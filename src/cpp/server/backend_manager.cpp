@@ -25,6 +25,12 @@ BackendManager::BackendManager() {
 }
 
 std::string BackendManager::get_version_from_config(const std::string& recipe, const std::string& backend) {
+    // The "system" backend doesn't have a version in backend_versions.json
+    // because it uses a pre-installed binary from the system PATH
+    if (backend == "system") {
+        return "";
+    }
+
     if (!backend_versions_.contains(recipe) || !backend_versions_[recipe].is_object()) {
         throw std::runtime_error("backend_versions.json is missing '" + recipe + "' section");
     }
@@ -65,6 +71,12 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
                                      DownloadProgressCallback progress_cb) {
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << backend << std::endl;
+
+    // System backend uses a pre-installed binary from PATH - nothing to install
+    if (backend == "system") {
+        update_recipes_cache_entry(recipe, backend, true);
+        return;
+    }
 
     // FLM special case - uses installer exe with its own install logic
     if (recipe == "flm") {
