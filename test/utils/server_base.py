@@ -39,6 +39,8 @@ from .capabilities import (
     get_capabilities,
     get_test_model,
     WRAPPED_SERVER_CAPABILITIES,
+    get_all_wrapped_server_names,
+    get_wrapped_servers_for_modality,
 )
 from .test_models import (
     PORT,
@@ -53,22 +55,31 @@ _config = {
     "server_binary": None,
     "wrapped_server": None,
     "backend": None,
+    "modality": None,
     "server_per_test": False,
     "offline": False,
     "additional_server_args": [],
 }
 
 
-def parse_args(additional_args=None):
+def parse_args(additional_args=None, modality=None):
     """
     Parse command line arguments for test configuration.
 
     Args:
         additional_args: List of additional arguments to add to the server command
+        modality: Modality key (e.g., "llm", "whisper", "stable_diffusion").
+                  When set, validates --wrapped-server against that modality's backends.
 
     Returns:
         Parsed args namespace
     """
+    # Determine valid --wrapped-server choices based on modality
+    if modality:
+        valid_servers = sorted(get_wrapped_servers_for_modality(modality))
+    else:
+        valid_servers = sorted(get_all_wrapped_server_names())
+
     parser = argparse.ArgumentParser(description="Test lemonade server", add_help=False)
     parser.add_argument(
         "--offline",
@@ -84,7 +95,7 @@ def parse_args(additional_args=None):
     parser.add_argument(
         "--wrapped-server",
         type=str,
-        choices=list(WRAPPED_SERVER_CAPABILITIES.keys()),
+        choices=valid_servers,
         help="Which wrapped server to test (llamacpp, ryzenai, flm, etc.)",
     )
     parser.add_argument(
@@ -105,13 +116,14 @@ def parse_args(additional_args=None):
     _config["server_binary"] = args.server_binary
     _config["wrapped_server"] = args.wrapped_server
     _config["backend"] = args.backend
+    _config["modality"] = modality
     _config["server_per_test"] = args.server_per_test
     _config["offline"] = args.offline
     _config["additional_server_args"] = additional_args or []
 
     # Set current config for capability checks
     if args.wrapped_server:
-        set_current_config(args.wrapped_server, args.backend)
+        set_current_config(args.wrapped_server, args.backend, modality)
 
     return args
 
@@ -418,6 +430,14 @@ class ServerTestBase(unittest.IsolatedAsyncioTestCase):
         """
         return get_test_model(model_type)
 
+    def start_server(self, **kwargs):
+        """Helper to start the server from within a test."""
+        return start_server(**kwargs)
+
+    def stop_server(self):
+        """Helper to stop the server from within a test."""
+        stop_lemonade()
+
 
 def run_server_tests(
     test_class,
@@ -425,6 +445,8 @@ def run_server_tests(
     wrapped_server=None,
     backend=None,
     additional_args=None,
+    modality=None,
+    default_wrapped_server=None,
 ):
     """
     Run server tests with the given test class.
@@ -438,16 +460,31 @@ def run_server_tests(
         wrapped_server: Override wrapped server from command line
         backend: Override backend from command line
         additional_args: Additional args to pass to server
+        modality: Modality key (e.g., "llm", "whisper", "stable_diffusion")
+        default_wrapped_server: Default wrapped server when none specified on CLI
     """
     # Parse args and configure
-    args = parse_args(additional_args)
+    args = parse_args(additional_args, modality=modality)
 
     # Allow overrides
     if wrapped_server:
         _config["wrapped_server"] = wrapped_server
-        set_current_config(wrapped_server, backend or _config["backend"])
+        set_current_config(
+            wrapped_server,
+            backend or _config["backend"],
+            modality or _config["modality"],
+        )
     if backend:
         _config["backend"] = backend
+
+    # Apply default wrapped server if none was specified via CLI or override
+    if not _config["wrapped_server"] and default_wrapped_server:
+        _config["wrapped_server"] = default_wrapped_server
+        set_current_config(
+            default_wrapped_server,
+            _config["backend"],
+            _config["modality"],
+        )
 
     ws = _config.get("wrapped_server", "unknown")
     be = _config.get("backend", "default")

@@ -25,8 +25,7 @@ public:
     void set_icon(const std::string& icon_path) override;
     void set_tooltip(const std::string& tooltip) override;
     void set_ready_callback(std::function<void()> callback) override;
-    void set_log_level(const std::string& log_level) override;
-    
+
 private:
     void* impl_; // Pointer to Objective-C implementation
     std::string tooltip_;

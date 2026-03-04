@@ -29,7 +29,8 @@ public:
            const json& default_options,
            int max_loaded_models,
            const std::string& extra_models_dir,
-           bool no_broadcast);
+           bool no_broadcast,
+           long http_timeout);
 
     ~Server();
 
@@ -119,6 +120,7 @@ private:
     double get_cpu_usage();
     double get_gpu_usage();
     double get_vram_usage();
+    double get_npu_utilization();
 
     int port_;
     std::string host_;

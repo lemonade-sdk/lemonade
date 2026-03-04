@@ -29,7 +29,7 @@ private:
     std::string fix_url_;
 };
 
-class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer {
+class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer, public IAudioServer {
 public:
     inline static const BackendSpec SPEC = BackendSpec(
         // recipe
@@ -42,7 +42,7 @@ public:
     #endif
     );
 
-    FastFlowLMServer(const std::string& log_level = "info", ModelManager* model_manager = nullptr,
+    FastFlowLMServer(const std::string& log_level, ModelManager* model_manager = nullptr,
                      BackendManager* backend_manager = nullptr);
 
     ~FastFlowLMServer() override;
@@ -71,6 +71,9 @@ public:
     // IRerankingServer implementation
     json reranking(const json& request) override;
 
+    // IAudioServer implementation
+    json audio_transcriptions(const json& request) override;
+
     // FLM uses /api/tags for readiness check instead of /health
     bool wait_for_ready();
 
@@ -78,7 +81,8 @@ public:
     void forward_streaming_request(const std::string& endpoint,
                                    const std::string& request_body,
                                    httplib::DataSink& sink,
-                                   bool sse = true) override;
+                                   bool sse = true,
+                                   long timeout_seconds = 0) override;
 
 private:
     // Static helpers for install logic (no instance state needed)

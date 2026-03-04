@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include "lemon/system_info.h"
 #ifdef _WIN32
 #include <windows.h>
 #include <tlhelp32.h>
@@ -9,6 +10,7 @@
 #include <unistd.h>
 #include <sys/file.h>
 #include <errno.h>
+#include "lemon/utils/path_utils.h"
 #endif
 
 namespace lemon {
@@ -39,14 +41,7 @@ public:
 
         return false;
 #else
-        // Skip lock file when running under systemd, unless explicitly disabled
-        const char* journal_stream = std::getenv("JOURNAL_STREAM");
-        const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
-        if (journal_stream && !disable_journal) {
-            return false;  // Systemd ensures single instance
-        }
-
-        std::string lock_file = "/tmp/lemonade_" + app_name + ".lock";
+        std::string lock_file = utils::get_runtime_dir() + "/lemonade_" + app_name + ".lock";
         int fd = open(lock_file.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0666);
 
         // If the file exists and has been created by another user, let's try again in read-only mode

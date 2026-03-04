@@ -5,6 +5,7 @@
 #include "lemon/error_types.h"
 #include <iostream>
 #include <filesystem>
+#include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -47,7 +48,7 @@ void RyzenAIServer::load(const std::string& model_name,
                         const ModelInfo& model_info,
                         const RecipeOptions& options,
                         bool do_not_upgrade) {
-    std::cout << "[RyzenAI-Server] Loading model: " << model_name << std::endl;
+    LOG(DEBUG, "RyzenAI") << "Loading model: " << model_name << std::endl;
     int ctx_size = options.get_option("ctx_size");
 
     // Install/check RyzenAI-Server (will download if not found)
@@ -59,7 +60,7 @@ void RyzenAIServer::load(const std::string& model_name,
         throw std::runtime_error("RyzenAI-Server executable not found even after installation attempt");
     }
 
-    std::cout << "[RyzenAI-Server] Found ryzenai-server at: " << ryzenai_server_path << std::endl;
+    LOG(DEBUG, "RyzenAI") << "Found ryzenai-server at: " << ryzenai_server_path << std::endl;
 
     // Model path should have been set via set_model_path() before calling load()
     if (model_path_.empty()) {
@@ -72,7 +73,7 @@ void RyzenAIServer::load(const std::string& model_name,
 
     model_name_ = model_name;
 
-    std::cout << "[RyzenAI-Server] Model path: " << model_path_ << std::endl;
+    LOG(DEBUG, "RyzenAI") << "Model path: " << model_path_ << std::endl;
 
     // Find available port
     port_ = choose_port();
@@ -89,11 +90,11 @@ void RyzenAIServer::load(const std::string& model_name,
     }
 
     // Log the full command line
-    std::cout << "[RyzenAI-Server] Starting: \"" << ryzenai_server_path << "\"";
+    LOG(DEBUG, "RyzenAI") << "Starting: \"" << ryzenai_server_path << "\"";
     for (const auto& arg : args) {
-        std::cout << " \"" << arg << "\"";
+        LOG(DEBUG, "RyzenAI") << " \"" << arg << "\"";
     }
-    std::cout << std::endl;
+    LOG(DEBUG, "RyzenAI") << std::endl;
 
     // Start the process (filter health check spam)
     process_handle_ = utils::ProcessManager::start_process(
@@ -108,8 +109,8 @@ void RyzenAIServer::load(const std::string& model_name,
         throw std::runtime_error("Failed to start ryzenai-server process");
     }
 
-    std::cout << "[ProcessManager] Process started successfully, PID: "
-              << process_handle_.pid << std::endl;
+    LOG(DEBUG, "ProcessManager") << "Process started successfully, PID: "
+                << process_handle_.pid << std::endl;
 
     // Wait for server to be ready
     if (!wait_for_ready("/health")) {
@@ -119,7 +120,7 @@ void RyzenAIServer::load(const std::string& model_name,
     }
 
     is_loaded_ = true;
-    std::cout << "[RyzenAI-Server] Model loaded on port " << port_ << std::endl;
+    LOG(INFO, "RyzenAI") << "Model loaded on port " << port_ << std::endl;
 }
 
 void RyzenAIServer::unload() {
@@ -127,7 +128,7 @@ void RyzenAIServer::unload() {
         return;
     }
 
-    std::cout << "[RyzenAI-Server] Unloading model..." << std::endl;
+    LOG(DEBUG, "RyzenAI") << "Unloading model..." << std::endl;
 
 #ifdef _WIN32
     if (process_handle_.handle) {

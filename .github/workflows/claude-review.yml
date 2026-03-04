@@ -1,0 +1,85 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [review_requested]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  claude-review:
+    # Only run for maintainers (OWNER, MEMBER, COLLABORATOR)
+    # Triggers on: @claude mention in comments, or assigning claude as reviewer
+    if: |
+      (github.event_name == 'pull_request' &&
+       github.event.action == 'review_requested' &&
+       github.event.requested_reviewer.login == 'claude[bot]') ||
+      ((github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') &&
+       contains(github.event.comment.body, '@claude') &&
+       (github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
+    runs-on: ubuntu-latest
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-sonnet-4-6
+          custom_instructions_file: ".github/claude-instructions.md"
+          custom_instructions: |
+            You are a senior code reviewer for the Lemonade project.
+
+            ## Review Depth
+            Perform a thorough, multi-pass review:
+
+            **Pass 1 - Correctness & Bugs:**
+            - Logic errors, off-by-one, null/dangling pointers, use-after-free
+            - Missing error handling, unchecked return values
+            - Resource leaks (memory, file handles, sockets, subprocesses)
+            - Race conditions, deadlocks, thread safety issues
+
+            **Pass 2 - Architecture & Design:**
+            - Does this fit the existing architecture? (backend subprocess model, WrappedServer abstraction, router pattern)
+            - Are the critical invariants maintained? (quad-prefix registration, NPU exclusivity, cross-platform)
+            - Is this the right abstraction level? Over-engineering? Under-engineering?
+            - Will this cause problems at scale or under concurrent load?
+
+            **Pass 3 - API & Compatibility:**
+            - Does this break OpenAI SDK compatibility?
+            - Does this break Ollama-compatible endpoints?
+            - Are new endpoints registered under all 4 path prefixes?
+            - Are request/response schemas consistent with existing endpoints?
+
+            **Pass 4 - Security:**
+            - Command injection (especially subprocess spawning)
+            - Path traversal (model downloads, file operations)
+            - Input validation at system boundaries
+            - Secrets/credentials exposure
+
+            **Pass 5 - Maintainability:**
+            - Code style compliance (C++17, snake_case, CamelCase, 4-space indent)
+            - Python Black formatting
+            - Test coverage for new functionality
+            - Are there edge cases not handled?
+
+            ## Review Style
+            - Be specific: reference exact lines, suggest concrete fixes
+            - Categorize findings: [Bug], [Architecture], [Security], [Style], [Nit], [Question]
+            - For non-obvious issues, explain WHY it's a problem with a concrete scenario
+            - Ask clarifying questions to the PR author when intent is unclear
+            - Acknowledge good patterns and decisions, not just problems
+            - If the PR is large, summarize the overall design assessment before line-level comments

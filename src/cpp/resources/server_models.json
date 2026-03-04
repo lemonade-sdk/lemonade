@@ -596,7 +596,9 @@
         "checkpoint": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": [],
+        "labels": [
+            "tool-calling"
+        ],
         "size": 2.5
     },
     "Qwen3-30B-A3B-GGUF": {
@@ -612,6 +614,9 @@
         "checkpoint": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Qwen3-30B-A3B-Instruct-2507-Q4_0.gguf",
         "recipe": "llamacpp",
         "suggested": true,
+        "labels": [
+            "tool-calling"
+        ],
         "size": 17.4
     },
     "Qwen3-Coder-30B-A3B-Instruct-GGUF": {
@@ -761,7 +766,9 @@
         "checkpoint": "unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF:Qwen3-Next-80B-A3B-Instruct-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": [],
+        "labels": [
+            "tool-calling"
+        ],
         "size": 45.1
     },
     "Qwen3.5-35B-A3B-GGUF": {
@@ -771,6 +778,7 @@
         "suggested": true,
         "labels": [
             "vision",
+            "tool-calling",
             "hot"
         ],
         "size": 19.7
@@ -782,6 +790,7 @@
         "suggested": true,
         "labels": [
             "vision",
+            "tool-calling",
             "hot"
         ],
         "size": 68.4
@@ -792,7 +801,8 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
-            "vision"
+            "vision",
+            "tool-calling"
         ],
         "size": 16.7
     },
@@ -1035,6 +1045,9 @@
         "checkpoint": "qwen3-it:4b",
         "recipe": "flm",
         "suggested": true,
+        "labels": [
+            "tool-calling"
+        ],
         "size": 3.07
     },
     "Qwen3-8b-FLM": {
@@ -1081,6 +1094,20 @@
         "recipe": "flm",
         "suggested": true,
         "size": 3.39
+    },
+    "whisper-v3-turbo-FLM": {
+        "checkpoint": "whisper-v3:turbo",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": ["audio", "transcription"],
+        "size": 1.6
+    },
+    "embed-gemma-300m-FLM": {
+        "checkpoint": "embed-gemma:300m",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": ["embeddings"],
+        "size": 0.3
     },
     "Whisper-Tiny": {
         "checkpoints": {
@@ -1303,9 +1330,9 @@
     },
     "Z-Image-Turbo": {
         "checkpoints": {
-            "main": "Comfy-Org/z_image:split_files/diffusion_models/z_image_bf16.safetensors",
-            "text_encoder": "Comfy-Org/z_image:split_files/text_encoders/qwen_3_4b.safetensors",
-            "vae": "Comfy-Org/z_image:split_files/vae/ae.safetensors"
+            "main": "Comfy-Org/z_image_turbo:split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+            "text_encoder": "Comfy-Org/z_image_turbo:split_files/text_encoders/qwen_3_4b.safetensors",
+            "vae": "Comfy-Org/z_image_turbo:split_files/vae/ae.safetensors"
         },
         "recipe": "sd-cpp",
         "suggested": true,

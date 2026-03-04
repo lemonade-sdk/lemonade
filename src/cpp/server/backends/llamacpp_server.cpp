@@ -6,6 +6,7 @@
 #include "lemon/system_info.h"
 #include <iostream>
 #include <filesystem>
+#include <lemon/utils/aixlog.hpp>
 #include <cstdlib>
 #include <set>
 
@@ -156,6 +157,10 @@ static std::string validate_custom_args(const std::string& custom_args_str,
 InstallParams LlamaCppServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
 
+    if (backend == "system") {
+        return params; // Return empty params for system backend
+    }
+
     if (backend == "rocm") {
         params.repo = "lemonade-sdk/llamacpp-rocm";
         std::string target_arch = SystemInfo::get_rocm_arch();
@@ -213,10 +218,10 @@ void LlamaCppServer::load(const std::string& model_name,
                          const ModelInfo& model_info,
                          const RecipeOptions& options,
                          bool do_not_upgrade) {
-    std::cout << "[LlamaCpp] Loading model: " << model_name << std::endl;
+    LOG(INFO, "LlamaCpp") << "Loading model: " << model_name << std::endl;
 
     // Llamacpp Backend logging
-    std::cout << "[LlamaCpp] Per-model settings: " << options.to_log_string() << std::endl;
+    LOG(DEBUG, "LlamaCpp") << "Per-model settings: " << options.to_log_string() << std::endl;
 
     int ctx_size = options.get_option("ctx_size");
     std::string llamacpp_backend = options.get_option("llamacpp_backend");
@@ -233,7 +238,7 @@ void LlamaCppServer::load(const std::string& model_name,
         throw std::runtime_error("GGUF file not found for checkpoint: " + model_info.checkpoint());
     }
 
-    std::cout << "[LlamaCpp] Using GGUF: " << gguf_path << std::endl;
+    LOG(DEBUG, "LlamaCpp") << "Using GGUF: " << gguf_path << std::endl;
 
     // Get mmproj path for vision models
     std::string mmproj_path = model_info.resolved_path("mmproj");
@@ -264,14 +269,14 @@ void LlamaCppServer::load(const std::string& model_name,
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
     push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
 
-    std::cout << "[LlamaCpp] Using backend: " << llamacpp_backend << "\n"
+    LOG(DEBUG, "LlamaCpp") << "Using backend: " << llamacpp_backend << "\n"
             << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
 
     // Add mmproj file if present (for vision models)
     if (!mmproj_path.empty()) {
         push_arg(args, reserved_flags, "--mmproj", mmproj_path);
         if (!use_gpu) {
-            std::cout << "[LlamaCpp] Skipping mmproj argument since GPU mode is not enabled" << std::endl;
+            LOG(DEBUG, "LlamaCpp") << "Skipping mmproj argument since GPU mode is not enabled" << std::endl;
             push_arg(args, reserved_flags, "--no-mmproj-offload");
         }
     }
@@ -299,21 +304,21 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // Add embeddings support if the model supports it
     if (supports_embeddings) {
-        std::cout << "[LlamaCpp] Model supports embeddings, adding --embeddings flag" << std::endl;
+        LOG(INFO, "LlamaCpp") << "Model supports embeddings, adding --embeddings flag" << std::endl;
         push_arg(args, reserved_flags, "--embeddings");
     }
     push_reserved(reserved_flags, "--embeddings", std::vector<std::string>{"--embedding"});
 
     // Add reranking support if the model supports it
     if (supports_reranking) {
-        std::cout << "[LlamaCpp] Model supports reranking, adding --reranking flag" << std::endl;
+        LOG(INFO, "LlamaCpp") << "Model supports reranking, adding --reranking flag" << std::endl;
         push_arg(args, reserved_flags, "--reranking");
     }
     push_reserved(reserved_flags, "--reranking", std::vector<std::string>{"--rerank"});
 
     // Configure GPU layers
     std::string gpu_layers = use_gpu ? "99" : "0";  // 99 for GPU, 0 for CPU-only
-    std::cout << "[LlamaCpp] ngl set to " << gpu_layers << std::endl;
+    LOG(DEBUG, "LlamaCpp") << "ngl set to " << gpu_layers << std::endl;
     push_arg(args, reserved_flags, "-ngl", gpu_layers, std::vector<std::string>{"--gpu-layers", "--n-gpu-layers"});
 
     // Validate and append custom arguments
@@ -325,12 +330,12 @@ void LlamaCppServer::load(const std::string& model_name,
             );
         }
 
-        std::cout << "[LlamaCpp] Adding custom arguments: " << llamacpp_args << std::endl;
+        LOG(DEBUG, "LlamaCpp") << "Adding custom arguments: " << llamacpp_args << std::endl;
         std::vector<std::string> custom_args_vec = parse_custom_args(llamacpp_args);
         args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
     }
 
-    std::cout << "[LlamaCpp] Starting llama-server..." << std::endl;
+    LOG(INFO, "LlamaCpp") << "Starting llama-server..." << std::endl;
 
     // For ROCm on Linux, set LD_LIBRARY_PATH to include the ROCm library directory
     std::vector<std::pair<std::string, std::string>> env_vars;
@@ -347,7 +352,7 @@ void LlamaCppServer::load(const std::string& model_name,
         }
 
         env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
-        std::cout << "[LlamaCpp] Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+        LOG(DEBUG, "LlamaCpp") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
     }
 #else
     // For ROCm on Windows with gfx1151, set OCL_SET_SVMSIZE
@@ -356,7 +361,7 @@ void LlamaCppServer::load(const std::string& model_name,
         std::string arch = lemon::SystemInfo::get_rocm_arch();
         if (arch == "gfx1151") {
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
-            std::cout << "[LlamaCpp] Setting OCL_SET_SVM_SIZE=262144 for gfx1151 (enables loading larger models)" << std::endl;
+            LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151 (enables loading larger models)" << std::endl;
         }
     }
 #endif
@@ -371,11 +376,11 @@ void LlamaCppServer::load(const std::string& model_name,
         throw std::runtime_error("llama-server failed to start");
     }
 
-    std::cout << "[LlamaCpp] Model loaded on port " << port_ << std::endl;
+    LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << port_ << std::endl;
 }
 
 void LlamaCppServer::unload() {
-    std::cout << "[LlamaCpp] Unloading model..." << std::endl;
+    LOG(INFO, "LlamaCpp") << "Unloading model..." << std::endl;
 #ifdef _WIN32
     if (process_handle_.handle) {
 #else

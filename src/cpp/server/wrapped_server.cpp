@@ -7,6 +7,7 @@
 #include <thread>
 #include <chrono>
 #include <iostream>
+#include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
 
@@ -15,14 +16,20 @@ int WrappedServer::choose_port() {
     if (port_ < 0) {
         throw std::runtime_error("Failed to find free port for " + server_name_);
     }
-    std::cout << server_name_ << " will use port: " << port_ << std::endl;
+    LOG(DEBUG, "WrappedServer") << server_name_ << " will use port: " << port_ << std::endl;
     return port_;
 }
 
 bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_seconds, long poll_interval_ms) {
     std::string health_url = get_base_url() + endpoint;
 
-    std::cout << "Waiting for " + server_name_ + " to be ready..." << std::endl;
+    // Use global default if not specified
+    if (timeout_seconds == 0) {
+        timeout_seconds = utils::HttpClient::get_default_timeout();
+    }
+
+    std::cout << "Waiting for " + server_name_ + " to be ready (timeout: " << timeout_seconds << "s)..." << std::endl;
+    LOG(DEBUG, "WrappedServer") << "Waiting for " + server_name_ + " to be ready..." << std::endl;
 
     const int max_attempts = (timeout_seconds * 1000) / poll_interval_ms;
 
@@ -30,18 +37,18 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
         // Check if process is still running
         if (!utils::ProcessManager::is_running(process_handle_)) {
             int exit_code = utils::ProcessManager::get_exit_code(process_handle_);
-            std::cerr << "[ERROR] " << server_name_ << " process has terminated with exit code: "
+            LOG(ERROR, "WrappedServer") << server_name_ << " process has terminated with exit code: "
                      << exit_code << std::endl;
-            std::cerr << "[ERROR] This usually means:" << std::endl;
-            std::cerr << "  - Missing required drivers or dependencies" << std::endl;
-            std::cerr << "  - Incompatible model file" << std::endl;
-            std::cerr << "  - Try running the server manually to see the actual error" << std::endl;
+            LOG(ERROR, "WrappedServer") << "This usually means:" << std::endl;
+            LOG(ERROR, "WrappedServer") << "  - Missing required drivers or dependencies" << std::endl;
+            LOG(ERROR, "WrappedServer") << "  - Incompatible model file" << std::endl;
+            LOG(ERROR, "WrappedServer") << "  - Try running the server manually to see the actual error" << std::endl;
             return false;
         }
 
         // Try both health endpoints
         if (utils::HttpClient::is_reachable(health_url, 1)) {
-            std::cout << server_name_ + " is ready!" << std::endl;
+            LOG(INFO, "WrappedServer") << server_name_ + " is ready!" << std::endl;
             return true;
         }
 
@@ -49,11 +56,11 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
 
         // Print progress every 10 seconds
         if (i % 100 == 0 && i > 0) {
-            std::cout << "Still waiting for " + server_name_ + "..." << std::endl;
+            LOG(DEBUG, "WrappedServer") << "Still waiting for " + server_name_ + "..." << std::endl;
         }
     }
 
-    std::cerr << server_name_ + " failed to start within timeout" << std::endl;
+    LOG(ERROR, "WrappedServer") << server_name_ + " failed to start within timeout" << std::endl;
     return false;
 }
 
@@ -74,7 +81,8 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
     std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
 
     try {
-        auto response = utils::HttpClient::post(url, request.dump(), headers, timeout_seconds);
+        auto response = utils::HttpClient::post(url, request.dump(), headers,
+                                               timeout_seconds);
 
         if (response.status_code == 200) {
             return json::parse(response.body);
@@ -111,12 +119,13 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
     std::string url = get_base_url() + endpoint;
 
     try {
-        auto response = utils::HttpClient::post_multipart(url, fields, timeout_seconds);
+        auto response = utils::HttpClient::post_multipart(url, fields,
+                                                         timeout_seconds);
 
         if (response.status_code == 200) {
             return json::parse(response.body);
         } else {
-            std::cerr << "[WrappedServer] Backend returned HTTP " << response.status_code
+            LOG(ERROR, "WrappedServer") << "Backend returned HTTP " << response.status_code
                       << " for multipart request: " << response.body << std::endl;
             json error_details;
             try {
@@ -142,7 +151,8 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
 void WrappedServer::forward_streaming_request(const std::string& endpoint,
                                               const std::string& request_body,
                                               httplib::DataSink& sink,
-                                              bool sse) {
+                                              bool sse,
+                                              long timeout_seconds) {
     if (!is_process_running()) {
         std::string error_msg = "data: {\"error\":{\"message\":\"No model loaded: " + server_name_ +
                                "\",\"type\":\"model_not_loaded\"}}\n\n";
@@ -166,14 +176,14 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                     telemetry_.tokens_per_second = telemetry.tokens_per_second;
                     // Note: decode_token_times is not available from streaming proxy
                 },
-                INFERENCE_TIMEOUT_SECONDS
+                timeout_seconds
             );
         } else {
-            StreamingProxy::forward_byte_stream(url, request_body, sink, INFERENCE_TIMEOUT_SECONDS);
+            StreamingProxy::forward_byte_stream(url, request_body, sink, timeout_seconds);
         }
     } catch (const std::exception& e) {
         // Log the error but don't crash the server
-        std::cerr << "[WrappedServer ERROR] Streaming request failed: " << e.what() << std::endl;
+        LOG(ERROR, "WrappedServer") << "Streaming request failed: " << e.what() << std::endl;
         // Try to send error to client if possible
         try {
             std::string error_msg = "data: {\"error\":{\"message\":\"" + std::string(e.what()) +

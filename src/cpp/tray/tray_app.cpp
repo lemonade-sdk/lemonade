@@ -8,6 +8,7 @@
 #include <lemon/version.h>
 #include <lemon/utils/path_utils.h>
 #include <httplib.h>
+#include <lemon/utils/aixlog.hpp>
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -40,6 +41,7 @@
 #ifdef HAVE_SYSTEMD
 #include <systemd/sd-bus.h>
 #include <systemd/sd-daemon.h>
+#include <systemd/sd-login.h>
 #endif
 #endif
 
@@ -71,7 +73,7 @@ static bool is_local_path(const std::string& path) {
 }
 
 #if !defined(_WIN32)
-// Helper: Check if systemd is running and a unit is active
+// Check if systemd is running and a unit is active
 static bool is_systemd_service_active(const char* unit_name) {
 #ifdef HAVE_SYSTEMD
     if (!unit_name || unit_name[0] == '\0') {
@@ -154,7 +156,7 @@ static bool is_systemd_service_active(const char* unit_name) {
 #endif
 }
 
-// Helper: Get systemd service MainPID (returns 0 if unavailable)
+// Get systemd service MainPID (returns 0 if unavailable)
 static int get_systemd_service_main_pid(const char* unit_name) {
 #ifdef HAVE_SYSTEMD
     if (!unit_name || unit_name[0] == '\0') {
@@ -232,7 +234,7 @@ static int get_systemd_service_main_pid(const char* unit_name) {
 #endif
 }
 
-// Helper: Check if systemd service is active in another process (not this one)
+// Check if systemd service is active in another process (not this one)
 static bool is_systemd_service_active_other_process(const char* unit_name) {
 #ifdef HAVE_SYSTEMD
     if (!is_systemd_service_active(unit_name)) {
@@ -251,7 +253,7 @@ static bool is_systemd_service_active_other_process(const char* unit_name) {
 #endif
 }
 
-// Helper: Known systemd unit names for lemonade server (native or snap)
+// Known systemd unit names for lemonade server (native or snap)
 static const char* kSystemdUnitNames[] = {
     "lemonade-server.service",
     "snap.lemonade-server.daemon.service"
@@ -288,13 +290,16 @@ static bool is_systemd_any_service_active_other_process() {
 }
 #endif
 
-// Helper macro for debug logging
-#define DEBUG_LOG(app, msg) \
-    if ((app)->server_config_.log_level == "debug") { \
-        std::cout << "DEBUG: " << msg << std::endl; \
-    }
+static bool is_service_active() {
+#ifdef HAVE_SYSTEMD
+    return is_any_systemd_service_active();
+#else
+    return false;
+#endif
+}
 
 #ifndef _WIN32
+
 // Initialize static signal pipe
 int TrayApp::signal_pipe_[2] = {-1, -1};
 #endif
@@ -463,7 +468,7 @@ TrayApp::TrayApp(const lemon::ServerConfig& server_config, const lemon::TrayConf
 #else
     // Create self-pipe for safe signal handling
     if (pipe(signal_pipe_) == -1) {
-        std::cerr << "Failed to create signal pipe: " << strerror(errno) << std::endl;
+    std::cerr << "Failed to create signal pipe: " << strerror(errno) << std::endl;
         exit(1);
     }
 
@@ -481,7 +486,7 @@ TrayApp::TrayApp(const lemon::ServerConfig& server_config, const lemon::TrayConf
     signal(SIGCHLD, sigchld_handler);
 #endif
 
-    DEBUG_LOG(this, "Signal handlers installed");
+    LOG(DEBUG, "TrayApp") << "Signal handlers installed" << std::endl;
 }
 
 TrayApp::~TrayApp() {
@@ -511,15 +516,15 @@ TrayApp::~TrayApp() {
 }
 
 int TrayApp::run() {
-    DEBUG_LOG(this, "TrayApp::run() starting...");
-    DEBUG_LOG(this, "Command: " << tray_config_.command);
+    LOG(DEBUG, "TrayApp") << "TrayApp::run() starting..." << std::endl;
+    LOG(DEBUG, "TrayApp") << "Command: " << tray_config_.command << std::endl;
 
     bool server_already_running = false;
     bool run_command_already_executed = false;
 
     // Find server binary automatically (needed for most commands)
     if (server_binary_.empty()) {
-        DEBUG_LOG(this, "Searching for server binary...");
+    LOG(DEBUG, "TrayApp") << "Searching for server binary..." << std::endl;
         if (!find_server_binary()) {
             std::cerr << "Error: Could not find lemonade-router binary" << std::endl;
 #ifdef _WIN32
@@ -531,7 +536,7 @@ int TrayApp::run() {
         }
     }
 
-    DEBUG_LOG(this, "Using server binary: " << server_binary_);
+    LOG(DEBUG, "TrayApp") << "Using server binary: " << server_binary_ << std::endl;
 
     // Handle commands
     if (tray_config_.command == "list") {
@@ -719,17 +724,18 @@ int TrayApp::run() {
 
     if (!server_already_running && tray_config_.command != "tray") {
         // Create server manager
-        DEBUG_LOG(this, "Creating server manager...");
+    LOG(DEBUG, "TrayApp") << "Creating server manager..." << std::endl;
         server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
 
         // Start server
-        DEBUG_LOG(this, "Starting server...");
+    LOG(DEBUG, "TrayApp") << "Starting server..." << std::endl;
         if (!start_server()) {
             std::cerr << "Error: Failed to start server" << std::endl;
             return 1;
         }
 
-        DEBUG_LOG(this, "Server started successfully!");
+                LOG(DEBUG, "TrayApp") << "Server started successfully!" << std::endl;
+
         if (tray_config_.command == "serve" && tray_config_.save_options) {
             tray_config_.save_options = false;
             std::cerr << "Warning: Argument --save-options only available for the run command. Ignoring.\n";
@@ -748,7 +754,9 @@ int TrayApp::run() {
 
     // If no-tray mode, just wait for server to exit
     if (tray_config_.no_tray) {
-        std::cout << "Press Ctrl+C to stop" << std::endl;
+        if (!is_service_active()) {
+            std::cout << "Press Ctrl+C to stop" << std::endl;
+        }
 
 #ifdef _WIN32
         // Windows: simple sleep loop (signal handler handles Ctrl+C via console_ctrl_handler)
@@ -801,89 +809,86 @@ int TrayApp::run() {
         return 1;
     }
 
-    DEBUG_LOG(this, "Tray created successfully");
-
-    // Set log level for the tray
-    tray_->set_log_level(server_config_.log_level);
+    LOG(DEBUG, "TrayApp") << "Tray created successfully" << std::endl;
 
     // Set ready callback
-    DEBUG_LOG(this, "Setting ready callback...");
+    LOG(DEBUG, "TrayApp") << "Setting ready callback..." << std::endl;
     tray_->set_ready_callback([this]() {
-        DEBUG_LOG(this, "Ready callback triggered!");
+    LOG(DEBUG, "TrayApp") << "Ready callback triggered!" << std::endl;
         show_notification("Woohoo!", "Lemonade Server is running! Right-click the tray icon to access options.");
     });
 
     // Set menu update callback to refresh state before showing menu (Windows only)
-    DEBUG_LOG(this, "Setting menu update callback...");
+    LOG(DEBUG, "TrayApp") << "Setting menu update callback..." << std::endl;
 #ifdef _WIN32
     if (auto* windows_tray = dynamic_cast<WindowsTray*>(tray_.get())) {
         windows_tray->set_menu_update_callback([this]() {
-            DEBUG_LOG(this, "Refreshing menu state from server...");
+        LOG(DEBUG, "TrayApp") << "Refreshing menu state from server..." << std::endl;
             refresh_menu();
         });
     }
 #endif
 
     // Find icon path (matching the CMake resources structure)
-    DEBUG_LOG(this, "Searching for icon...");
+    LOG(DEBUG, "TrayApp") << "Searching for icon..." << std::endl;
     std::string icon_path;
 
 #ifdef __APPLE__
     // On macOS, look for icon in /Library/Application Support/lemonade/resources
     icon_path = "/Library/Application Support/lemonade/resources/static/favicon.ico";
-    DEBUG_LOG(this, "Checking macOS Application Support icon at: " << icon_path);
+    LOG(DEBUG, "TrayApp") << "Checking macOS Application Support icon at: " << icon_path << std::endl;
 
     if (!fs::exists(icon_path)) {
         std::cout << "WARNING: Icon not found at /Library/Application Support/lemonade/resources/favicon.ico, will use default icon" << std::endl;
     } else {
-        DEBUG_LOG(this, "Icon found at: " << icon_path);
+    LOG(DEBUG, "TrayApp") << "Icon found at: " << icon_path << std::endl;
     }
 #else
     // On other platforms, find icon file path
     icon_path = "resources/static/favicon.ico";
-    DEBUG_LOG(this, "Checking icon at: " << fs::absolute(icon_path).string());
+    LOG(DEBUG, "TrayApp") << "Checking icon at: " << fs::absolute(icon_path).string() << std::endl;
 
 
     if (!fs::exists(icon_path)) {
         // Try relative to executable directory
         fs::path exe_path = fs::path(server_binary_).parent_path();
         icon_path = (exe_path / "resources" / "static" / "favicon.ico").string();
-        DEBUG_LOG(this, "Icon not found, trying: " << icon_path);
+    LOG(DEBUG, "TrayApp") << "Icon not found, trying: " << icon_path << std::endl;
 
 
         // If still not found, try without static subdir (fallback)
         if (!fs::exists(icon_path)) {
             icon_path = (exe_path / "resources" / "favicon.ico").string();
-            DEBUG_LOG(this, "Icon not found, trying fallback: " << icon_path);
+        LOG(DEBUG, "TrayApp") << "Icon not found, trying fallback: " << icon_path << std::endl;
         }
     }
 
 
     if (fs::exists(icon_path)) {
-        DEBUG_LOG(this, "Icon found at: " << icon_path);
+    LOG(DEBUG, "TrayApp") << "Icon found at: " << icon_path << std::endl;
     } else {
         std::cout << "WARNING: Icon not found at any location, will use default icon" << std::endl;
     }
 #endif
 
     // Initialize tray
-    DEBUG_LOG(this, "Initializing tray with icon: " << icon_path);
+    LOG(DEBUG, "TrayApp") << "Initializing tray with icon: " << icon_path << std::endl;
     if (!tray_->initialize("Lemonade Server", icon_path)) {
         std::cerr << "Error: Failed to initialize tray" << std::endl;
         return 1;
     }
 
-    DEBUG_LOG(this, "Tray initialized successfully");
+    LOG(DEBUG, "TrayApp") << "Tray initialized successfully" << std::endl;
 
     // Build initial menu
-    DEBUG_LOG(this, "Building menu...");
+    LOG(DEBUG, "TrayApp") << "Building menu..." << std::endl;
     build_menu();
-    DEBUG_LOG(this, "Menu built successfully");
+    LOG(DEBUG, "TrayApp") << "Menu built successfully" << std::endl;
 
 #ifndef _WIN32
     // On Linux, start a background thread to monitor the signal pipe
     // This allows us to handle Ctrl+C cleanly even when tray is running
-    DEBUG_LOG(this, "Starting signal monitor thread...");
+    LOG(DEBUG, "TrayApp") << "Starting signal monitor thread..." << std::endl;
     signal_monitor_thread_ = std::thread([this]() {
         #ifdef __APPLE__
         auto last_tick = std::chrono::steady_clock::now();
@@ -900,7 +905,7 @@ int TrayApp::run() {
             auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_tick).count() >= 5) {
 
-                DEBUG_LOG(this, "Checking if menu needs refresh");
+            LOG(DEBUG, "TrayApp") << "Checking if menu needs refresh" << std::endl;
                 refresh_menu();
 
                 // Reset the tracker
@@ -920,14 +925,14 @@ int TrayApp::run() {
                 break;
             }
         }
-        DEBUG_LOG(this, "Signal monitor thread exiting");
+    LOG(DEBUG, "TrayApp") << "Signal monitor thread exiting" << std::endl;
     });
 #endif
-    DEBUG_LOG(this, "Menu built, entering event loop...");
+    LOG(DEBUG, "TrayApp") << "Menu built, entering event loop..." << std::endl;
     // Run tray event loop
     tray_->run();
     //Initialize thread to constantly update the tray models
-    DEBUG_LOG(this, "Event loop exited");
+    LOG(DEBUG, "TrayApp") << "Event loop exited" << std::endl;
     return 0;
 }
 
@@ -992,7 +997,7 @@ bool TrayApp::find_server_binary() {
     for (const auto& path : search_paths) {
         if (fs::exists(path)) {
             server_binary_ = fs::absolute(path).string();
-            DEBUG_LOG(this, "Found server binary: " << server_binary_);
+        LOG(DEBUG, "TrayApp") << "Found server binary: " << server_binary_ << std::endl;
             return true;
         }
     }
@@ -1005,7 +1010,6 @@ bool TrayApp::setup_logging() {
     return true;
 }
 
-// Helper: Check if server is running on a specific port
 bool TrayApp::is_server_running_on_port(int port) {
     try {
         auto health = server_manager_->get_health();
@@ -1015,7 +1019,14 @@ bool TrayApp::is_server_running_on_port(int port) {
     }
 }
 
-// Helper: Get server info (returns {pid, port} or {0, 0} if not found)
+static bool http_server_alive(int port) {
+    httplib::Client cli("localhost", port);
+    cli.set_connection_timeout(1);
+    cli.set_read_timeout(1);
+    auto res = cli.Get("/api/version");
+    return res != nullptr;
+}
+
 std::pair<int, int> TrayApp::get_server_info() {
     // Query OS for listening TCP connections and find lemonade-router.exe
 #ifdef _WIN32
@@ -1117,7 +1128,8 @@ std::pair<int, int> TrayApp::get_server_info() {
     }
 
     // Unix: Read from PID file
-    std::ifstream pid_file("/tmp/lemonade-router.pid");
+    std::string pid_file_path = lemon::utils::get_runtime_dir() + "/lemonade-router.pid";
+    std::ifstream pid_file(pid_file_path);
     if (pid_file.is_open()) {
         int pid, port;
         pid_file >> pid >> port;
@@ -1128,22 +1140,35 @@ std::pair<int, int> TrayApp::get_server_info() {
             return {pid, port};
         }
 
+        // getpgid() can return -1 for a live process in sandboxed environments
+        // (e.g. Flatpak on Linux) where the PID is namespace-internal and
+        // invisible to us. Confirm via HTTP before treating as stale.
+        if (http_server_alive(port)) {
+            return {pid, port};
+        }
+
         // Stale PID file, remove it
-        remove("/tmp/lemonade-router.pid");
+        remove(pid_file_path.c_str());
     }
 
-#ifdef __APPLE__
-    // macOS port-based fallback (no systemd available)
-    {
-        httplib::Client cli("localhost", server_config_.port);
-        cli.set_connection_timeout(1);
-        auto res = cli.Get("/api/version");
-        if (res) {
-            int found_pid = 0;
+    // Port-based fallback: no PID file, or stale PID with no HTTP response
+    if (http_server_alive(server_config_.port)) {
+        int found_pid = 0;
 
-            // Try lsof first
-            std::string cmd = "lsof -ti tcp:" + std::to_string(server_config_.port) + " 2>/dev/null | head -1";
-            FILE* pipe = popen(cmd.c_str(), "r");
+        // Try lsof first
+        std::string cmd = "lsof -ti tcp:" + std::to_string(server_config_.port) + " 2>/dev/null | head -1";
+        FILE* pipe = popen(cmd.c_str(), "r");
+        if (pipe) {
+            char buf[64];
+            if (fgets(buf, sizeof(buf), pipe)) {
+                found_pid = std::atoi(buf);
+            }
+            pclose(pipe);
+        }
+
+        // Try pgrep as fallback
+        if (found_pid <= 0) {
+            pipe = popen("pgrep -x lemonade-router 2>/dev/null | head -1", "r");
             if (pipe) {
                 char buf[64];
                 if (fgets(buf, sizeof(buf), pipe)) {
@@ -1151,37 +1176,23 @@ std::pair<int, int> TrayApp::get_server_info() {
                 }
                 pclose(pipe);
             }
+        }
 
-            // Try pgrep as fallback
-            if (found_pid <= 0) {
-                pipe = popen("pgrep -x lemonade-router 2>/dev/null | head -1", "r");
-                if (pipe) {
-                    char buf[64];
-                    if (fgets(buf, sizeof(buf), pipe)) {
-                        found_pid = std::atoi(buf);
-                    }
-                    pclose(pipe);
-                }
-            }
-
-            if (found_pid > 0) {
-                return {found_pid, server_config_.port};
-            }
+        if (found_pid > 0) {
+            return {found_pid, server_config_.port};
         }
     }
-#endif
 #endif
 
     return {0, 0};  // Server not found
 }
 
-// Helper: Start ephemeral server
 bool TrayApp::start_ephemeral_server(int port) {
     if (!server_manager_) {
         server_manager_ = std::make_unique<ServerManager>(server_config_.host, port);
     }
 
-    DEBUG_LOG(this, "Starting ephemeral server on port " << port << "...");
+    LOG(DEBUG, "TrayApp") << "Starting ephemeral server on port " << port << "..." << std::endl;
 
     bool success = server_manager_->start_server(
         server_binary_,
@@ -1225,16 +1236,15 @@ int TrayApp::server_call(std::function<int(std::unique_ptr<ServerManager> const 
 
     // Stop ephemeral server
     if (!server_was_running) {
-        DEBUG_LOG(this, "Stopping ephemeral server...");
+    LOG(DEBUG, "TrayApp") << "Stopping ephemeral server..." << std::endl;
         stop_server();
     }
 
     return res;
 }
 
-// Command: list
 int TrayApp::execute_list_command() {
-    DEBUG_LOG(this, "Listing available models...");
+    LOG(DEBUG, "TrayApp") << "Listing available models..." << std::endl;
 
     // Get models from server with show_all=true to include download status
     return server_call([](std::unique_ptr<ServerManager> const &server_manager) {
@@ -1274,7 +1284,6 @@ int TrayApp::execute_list_command() {
     });
 }
 
-// Command: pull
 int TrayApp::execute_pull_command() {
     // Track if this is a local import (affects how we call the server)
     bool local_import = false;
@@ -1558,7 +1567,6 @@ int TrayApp::execute_pull_command() {
     });
 }
 
-// Command: delete
 int TrayApp::execute_delete_command() {
     std::cout << "Deleting model: " << tray_config_.model << std::endl;
 
@@ -1588,7 +1596,6 @@ int TrayApp::execute_delete_command() {
     });
 }
 
-// Command: run
 int TrayApp::execute_run_command() {
     std::cout << "Running model: " << tray_config_.model << std::endl;
 
@@ -1625,7 +1632,6 @@ int TrayApp::execute_run_command() {
     return 0;
 }
 
-// Command: status
 int TrayApp::execute_status_command() {
     auto [pid, port] = get_server_info();
 
@@ -1638,7 +1644,6 @@ int TrayApp::execute_status_command() {
     }
 }
 
-// Command: recipes
 int TrayApp::execute_recipes_command() {
     // Handle --install flag
     if (!tray_config_.install_backend.empty()) {
@@ -1849,7 +1854,6 @@ static bool is_process_alive(int pid) {
 #endif
 }
 
-// Command: stop
 int TrayApp::execute_stop_command() {
     auto [pid, port] = get_server_info();
 
@@ -2153,7 +2157,7 @@ int TrayApp::execute_stop_command() {
         if (router_gone && tray_gone && all_children_gone) {
             // Additional check: verify the lock file can be acquired
             // This is a belt-and-suspenders check to ensure the lock is truly released
-            std::string lock_file = "/tmp/lemonade_Server.lock";
+            std::string lock_file = lemon::utils::get_runtime_dir() + "/lemonade_Server.lock";
             int fd = open(lock_file.c_str(), O_RDWR | O_CREAT, 0666);
             if (fd != -1) {
                 if (flock(fd, LOCK_EX | LOCK_NB) == 0) {
@@ -2220,17 +2224,35 @@ bool TrayApp::start_server() {
             log_file_ = "lemonade-server.log";
         }
         #else
-        // Use systemd journal if JOURNAL_STREAM is set, unless explicitly disabled
-        // LEMONADE_DISABLE_SYSTEMD_JOURNAL can be set in CI to force file logging
-        const char* journal_stream = std::getenv("JOURNAL_STREAM");
+        // Use systemd journal only when actually running as lemonade-server.service.
+        // sd_pid_get_unit() reads the process's cgroup assignment (not environment variables),
+        // so it cannot give false positives from inherited env vars like JOURNAL_STREAM or
+        // INVOCATION_ID, both of which are inherited by all child processes in a systemd session.
+        // LEMONADE_DISABLE_SYSTEMD_JOURNAL overrides this for testing/CI.
+        #ifdef HAVE_SYSTEMD
+        const char* service_name_env = std::getenv("LEMONADE_SYSTEMD_UNIT");
+        const char* service_name = service_name_env ? service_name_env : LEMONADE_SYSTEMD_UNIT_NAME;
+        char* unit_name = nullptr;
         const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
-        if (journal_stream && !disable_journal) {
-            log_file_ = "-";  // Special value: don't redirect stdout/stderr
-            DEBUG_LOG(this, "Detected systemd environment - logging will go to journal");
+        if (!disable_journal && sd_pid_get_unit(0, &unit_name) >= 0) {
+            bool is_service = (strcmp(unit_name, service_name) == 0);
+            free(unit_name);
+            if (is_service) {
+                log_file_ = "-";  // Special value: don't redirect stdout/stderr
+                LOG(DEBUG, "TrayApp") << "Detected systemd environment - logging will go to journal" << std::endl;
+            } else {
+                log_file_ = lemon::utils::get_runtime_dir() + "/lemonade-server.log";
+                LOG(DEBUG, "TrayApp") << "Using default log file: " << log_file_ << std::endl;
+            }
         } else {
-            log_file_ = "/tmp/lemonade-server.log";
-            DEBUG_LOG(this, "Using default log file: " << log_file_);
+            if (unit_name) free(unit_name);
+            log_file_ = lemon::utils::get_runtime_dir() + "/lemonade-server.log";
+            LOG(DEBUG, "TrayApp") << "Using default log file: " << log_file_ << std::endl;
         }
+        #else
+        log_file_ = lemon::utils::get_runtime_dir() + "/lemonade-server.log";
+        LOG(DEBUG, "TrayApp") << "Using default log file: " << log_file_ << std::endl;
+        #endif
         #endif
     }
 
@@ -2241,7 +2263,7 @@ bool TrayApp::start_server() {
         log_file_,
         server_config_.log_level,  // Pass log level to ServerManager
         true,               // Always show console output for serve command
-        false,              // is_ephemeral = false (persistent server, show startup message with URL)
+        is_service_active(), // is_ephemeral = true if systemd (suppress startup message)
         server_config_.host,        // Pass host to ServerManager
         server_config_.max_loaded_models,
         server_config_.extra_models_dir  // Pass extra models directory
@@ -2285,7 +2307,7 @@ void TrayApp::refresh_menu() {
 
     // Only refresh if something has actually changed
     if (menu_needs_refresh()) {
-        DEBUG_LOG(this, "Menu state changed, rebuilding menu");
+    LOG(DEBUG, "TrayApp") << "Menu state changed, rebuilding menu" << std::endl;
         build_menu();
     }
 }
@@ -2737,7 +2759,7 @@ void TrayApp::shutdown() {
 
     // Only print debug message if we actually have something to shutdown
     if (server_manager_ || tray_) {
-        DEBUG_LOG(this, "Shutting down gracefully...");
+        LOG(DEBUG, "TrayApp") << "Shutting down gracefully..." << std::endl;
     }
 
     // Close log viewer if open
@@ -2914,10 +2936,10 @@ bool TrayApp::find_electron_app() {
         return true;
     }
 
-    std::cerr << "Warning: Could not find Electron app" << std::endl;
-    std::cerr << "  Checked: " << production_path.string() << std::endl;
-    std::cerr << "  Checked: " << dev_path.string() << std::endl;
-    std::cerr << "  Checked: " << legacy_dev_path.string() << std::endl;
+    LOG(DEBUG, "TrayApp") << "Warning: Could not find Electron app" << std::endl;
+    LOG(DEBUG, "TrayApp") << "  Checked: " << production_path.string() << std::endl;
+    LOG(DEBUG, "TrayApp") << "  Checked: " << dev_path.string() << std::endl;
+    LOG(DEBUG, "TrayApp") << "  Checked: " << legacy_dev_path.string() << std::endl;
     return false;
 }
 
@@ -3198,7 +3220,7 @@ std::vector<ModelInfo> TrayApp::get_downloaded_models() {
                 }
             }
         } else {
-            DEBUG_LOG(this, "No 'data' array in models response");
+        LOG(DEBUG, "TrayApp") << "No 'data' array in models response" << std::endl;
         }
 
         return models;

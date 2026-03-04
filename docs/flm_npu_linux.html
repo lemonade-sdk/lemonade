@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Setting up NPU software stack - Lemonade Server</title>
+  <title>Setting up FLM NPU software stack - Lemonade Server</title>
   <link rel="icon" href="./assets/favicon.ico">
   <link rel="stylesheet" href="assets/website-styles.css">
 </head>
@@ -13,12 +13,29 @@
   <main class="main">
     <div class="hero-section">
       <div class="main-heading">
-        Setting up NPU software stack
+        Setting up FLM NPU software stack
       </div>
     </div>
 
     <!-- NPU Setup Content -->
     <div class="install-content">
+      <div class="install-section">
+        <h2>System requirements</h2>
+        <p>
+          FLM on Linux requires an <strong>AMD XDNA 2</strong> NPU.
+        </p>
+        <ul>
+          <li><strong>Ryzen™ AI Max 300-series:</strong> Strix Halo</li>
+          <li><strong>Ryzen™ AI 300-series:</strong> Kraken Point, Strix Point</li>
+          <li><strong>Ryzen™ AI 400-series:</strong> Gorgon Point</li>
+          <li><strong>Ryzen™ AI Z2 Extreme:</strong> For example, ASUS ROG Ally X handhelds</li>
+        </ul>
+        <div class="option-note">
+          <strong>Note:</strong> XDNA 1 NPUs are not supported (including Ryzen™ AI 7000-series,
+          8000-series, and 200-series chips).
+        </div>
+      </div>
+
       <div class="install-section">
         <h2>Background</h2>
         <p>
@@ -35,6 +52,11 @@
           <li><strong>Runtime:</strong> FLM (FastFlowLM) installed</li>
           <li><strong>System limits:</strong> Sufficient memlock limits (handled by Lemonade's systemd service)</li>
         </ul>
+        <p>
+          NOTE: This is a beta feature right now, and to use it you will need to
+          run lemonade-server with the environment variable
+          <code>LEMONADE_FLM_LINUX_BETA=1</code> set.
+        </p>
       </div>
 
       <div class="install-section">
@@ -46,7 +68,7 @@
             <option value="ubuntu-24">Ubuntu 24.04</option>
             <option value="ubuntu-25">Ubuntu 25.10</option>
             <option value="ubuntu-26">Ubuntu 26.04</option>
-            <option value="arch">Arch</option>
+            <option value="arch">Arch Linux</option>
             <option value="other">Other</option>
           </select>
         </div>
@@ -166,6 +188,9 @@
               <li>Update kernel to 7.0-rc2 or later:<br>
                 <div class="code-block"><code>sudo pacman -Sy linux</code></div>
               </li>
+              <li>For older kernels (6.18, 6.19), use the amdxdna-dkms package from AUR<br>
+                <div class="code-block"><code>paru -S amdxdna-dkms</code></div>
+              </li>
               <li>Update linux-firmware to 20260221 or later:<br>
                 <div class="code-block"><code>sudo pacman -Sy linux-firmware</code></div>
               </li>
@@ -283,8 +308,8 @@
         </div>
         <p>Add these lines at the end:</p>
         <div class="code-block">
-          <code>*    soft    memlock    unlimited
-       * hard    memlock    unlimited</code>
+          <pre><code>*    soft    memlock    unlimited
+*    hard    memlock    unlimited</code></pre>
         </div>
         <p>Then <strong>log out and log back in</strong> for changes to take effect.</p>
       </div>

@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <thread>
 #include <chrono>
+#include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
 
@@ -18,12 +19,18 @@ BackendManager::BackendManager() {
         std::string config_path = utils::get_resource_path("resources/backend_versions.json");
         backend_versions_ = utils::JsonUtils::load_from_file(config_path);
     } catch (const std::exception& e) {
-        std::cerr << "[BackendManager] Warning: Could not load backend_versions.json: " << e.what() << std::endl;
+        LOG(WARNING, "BackendManager") << "Could not load backend_versions.json: " << e.what() << std::endl;
         backend_versions_ = json::object();
     }
 }
 
 std::string BackendManager::get_version_from_config(const std::string& recipe, const std::string& backend) {
+    // The "system" backend doesn't have a version in backend_versions.json
+    // because it uses a pre-installed binary from the system PATH
+    if (backend == "system") {
+        return "";
+    }
+
     if (!backend_versions_.contains(recipe) || !backend_versions_[recipe].is_object()) {
         throw std::runtime_error("backend_versions.json is missing '" + recipe + "' section");
     }
@@ -63,7 +70,13 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
                                      DownloadProgressCallback progress_cb) {
-    std::cout << "[BackendManager] Installing " << recipe << ":" << backend << std::endl;
+    LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << backend << std::endl;
+
+    // System backend uses a pre-installed binary from PATH - nothing to install
+    if (backend == "system") {
+        update_recipes_cache_entry(recipe, backend, true);
+        return;
+    }
 
     // FLM special case - uses installer exe with its own install logic
     if (recipe == "flm") {
@@ -94,7 +107,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 }
 
 void BackendManager::uninstall_backend(const std::string& recipe, const std::string& backend) {
-    std::cout << "[BackendManager] Uninstalling " << recipe << ":" << backend << std::endl;
+    LOG(DEBUG, "BackendManager") << "Uninstalling " << recipe << ":" << backend << std::endl;
 
     if (recipe == "flm") {
         throw std::runtime_error("Uninstall FastFlowLM using their Windows uninstaller.");
@@ -119,9 +132,9 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
         if (ec && fs::exists(install_dir)) {
             throw std::runtime_error("Failed to remove " + install_dir + ": " + ec.message());
         }
-        std::cout << "[BackendManager] Removed: " << install_dir << std::endl;
+        LOG(DEBUG, "BackendManager") << "Removed: " << install_dir << std::endl;
     } else {
-        std::cout << "[BackendManager] Nothing to uninstall at: " << install_dir << std::endl;
+        LOG(DEBUG, "BackendManager") << "Nothing to uninstall at: " << install_dir << std::endl;
     }
 
     update_recipes_cache_entry(recipe, backend, false);

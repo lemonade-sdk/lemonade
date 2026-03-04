@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 9.4.1)
+project(lemon_cpp VERSION 9.4.2)
 
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -573,6 +573,7 @@ set(SOURCES
     src/cpp/server/backends/backend_utils.cpp
     src/cpp/server/backend_manager.cpp
     src/cpp/server/ollama_api.cpp
+    src/cpp/server/anthropic_api.cpp
     $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/streaming_audio_buffer.cpp>
     $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/vad.cpp>
     $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/realtime_session.cpp>
@@ -691,9 +692,13 @@ elseif(UNIX)
     if(PkgConfig_FOUND)
         pkg_check_modules(SYSTEMD QUIET libsystemd)
         if(SYSTEMD_FOUND)
+            set(LEMONADE_SYSTEMD_UNIT_NAME "lemonade-server.service" CACHE STRING
+                "Systemd unit name to match for journald log mode (overridable at runtime via LEMONADE_SYSTEMD_UNIT env var)")
             target_include_directories(${EXECUTABLE_NAME} PRIVATE ${SYSTEMD_INCLUDE_DIRS})
             target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${SYSTEMD_LIBRARIES})
-            target_compile_definitions(${EXECUTABLE_NAME} PRIVATE HAVE_SYSTEMD)
+            target_compile_definitions(${EXECUTABLE_NAME} PRIVATE
+                HAVE_SYSTEMD
+                LEMONADE_SYSTEMD_UNIT_NAME="${LEMONADE_SYSTEMD_UNIT_NAME}")
         endif()
     endif()
 endif()

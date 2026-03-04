@@ -606,12 +606,17 @@ jobs:
           - name: flm
             script: server_llm.py
             extra_args: "--wrapped-server flm"
-            backends: ""
+            backends: "npu"
             runner: [rai300_400, Windows]
           - name: whisper
             script: server_whisper.py
-            extra_args: ""
+            extra_args: "--wrapped-server whispercpp"
             backends: "cpu npu"
+            runner: [rai300_400, Windows]
+          - name: flm-whisper
+            script: server_whisper.py
+            extra_args: "--wrapped-server flm"
+            backends: "npu"
             runner: [rai300_400, Windows]
           - name: stable-diffusion
             script: server_sd.py
@@ -705,7 +710,7 @@ jobs:
             backends: "cpu rocm"
           - name: whisper
             script: server_whisper.py
-            extra_args: ""
+            extra_args: "--wrapped-server whispercpp"
             backends: "cpu vulkan"
           - name: text-to-speech
             script: server_tts.py
@@ -755,24 +760,34 @@ jobs:
       - name: Print server logs on failure
         if: failure()
         run: |
+          # Resolve runtime dir: $XDG_RUNTIME_DIR/lemonade when available, else /tmp
+          LEMON_RUNTIME_DIR="${XDG_RUNTIME_DIR:+${XDG_RUNTIME_DIR}/lemonade}"
+          LEMON_RUNTIME_DIR="${LEMON_RUNTIME_DIR:-/tmp}"
+
           echo "=== Server Log (if exists) ==="
-          if [ -f /tmp/lemonade-server.log ]; then
-            echo "Last 100 lines of /tmp/lemonade-server.log:"
-            tail -100 /tmp/lemonade-server.log
+          LOG_FILE="${LEMON_RUNTIME_DIR}/lemonade-server.log"
+          # Also check /tmp as a safety net when XDG was active but log went to fallback
+          if [ ! -f "$LOG_FILE" ]; then LOG_FILE="/tmp/lemonade-server.log"; fi
+          if [ -f "$LOG_FILE" ]; then
+            echo "Last 100 lines of ${LOG_FILE}:"
+            tail -100 "$LOG_FILE"
           else
-            echo "Log file /tmp/lemonade-server.log not found"
+            echo "Log file not found (checked ${LEMON_RUNTIME_DIR} and /tmp)"
           fi
 
           echo ""
           echo "=== Router PID file (if exists) ==="
-          if [ -f /tmp/lemonade-router.pid ]; then
-            cat /tmp/lemonade-router.pid
+          PID_FILE="${LEMON_RUNTIME_DIR}/lemonade-router.pid"
+          if [ ! -f "$PID_FILE" ]; then PID_FILE="/tmp/lemonade-router.pid"; fi
+          if [ -f "$PID_FILE" ]; then
+            cat "$PID_FILE"
           else
             echo "PID file not found"
           fi
 
           echo ""
           echo "=== Lock file status ==="
+          ls -la "${LEMON_RUNTIME_DIR}"/lemonade*.lock 2>/dev/null || true
           ls -la /tmp/lemonade*.lock 2>/dev/null || echo "No lock files found"
 
       - name: Cleanup
@@ -857,7 +872,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        test_type: [cli, endpoints, system-info, ollama]
+        test_type: [cli, endpoints, system-info, ollama, llamacpp-system]
         exclude:
           - os: macos-latest
             test_type: system-info
@@ -1008,6 +1023,9 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "ollama" ]; then
               echo "Running Ollama API tests..."
               $VENV_PYTHON test/test_ollama.py --server-binary "$SERVER_BINARY"
+          elif [ "${{ matrix.test_type }}" = "llamacpp-system" ]; then
+              echo "Running LlamaCpp System Backend tests..."
+              $VENV_PYTHON test/test_llamacpp_system_backend.py --server-binary "$SERVER_BINARY"
           fi
 
           echo "${{ matrix.test_type }} tests PASSED!"

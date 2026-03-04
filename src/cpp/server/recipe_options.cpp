@@ -21,7 +21,9 @@ static const json DEFAULTS = {
     {"steps", 20},
     {"cfg_scale", 7.0},
     {"width", 512},
-    {"height", 512}
+    {"height", 512},
+    // FLM-specific options
+    {"flm_args", ""}       // Custom arguments to pass to flm serve
 };
 
 // CLI_OPTIONS without allowed_values for inference engines (will be set dynamically)
@@ -49,7 +51,6 @@ static const json CLI_OPTIONS = {
     {"--sdcpp", {
         {"option_name", "sd-cpp_backend"},
         {"type_name", "BACKEND"},
-        {"allowed_values", {"cpu", "rocm"}},
         {"envname", "LEMONADE_SDCPP"},
         {"help", "SD.cpp backend to use (cpu for CPU, rocm for AMD GPU)"}
     }},
@@ -57,7 +58,6 @@ static const json CLI_OPTIONS = {
     {"--whispercpp", {
         {"option_name", "whispercpp_backend"},
         {"type_name", "BACKEND"},
-        {"allowed_values", {"cpu", "npu", "vulkan"}},
         {"envname", "LEMONADE_WHISPERCPP"},
         {"help", "WhisperCpp backend to use"}
     }},
@@ -86,6 +86,13 @@ static const json CLI_OPTIONS = {
         {"envname", "LEMONADE_HEIGHT"},
         {"help", "Image height in pixels"}
     }},
+    // FLM-specific options
+    {"--flm-args", {
+        {"option_name", "flm_args"},
+        {"type_name", "ARGS"},
+        {"envname", "LEMONADE_FLM_ARGS"},
+        {"help", "Custom arguments to pass to flm serve (e.g., \"--socket 20 --q-len 15\")"}
+    }},
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
@@ -93,7 +100,9 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
         return {"ctx_size", "llamacpp_backend", "llamacpp_args"};
     } else if (recipe == "whispercpp") {
         return {"whispercpp_backend"};
-    } else if (recipe == "ryzenai-llm" || recipe == "flm") {
+    } else if (recipe == "flm") {
+        return {"ctx_size", "flm_args"};
+    } else if (recipe == "ryzenai-llm") {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
         return {"sd-cpp_backend", "steps", "cfg_scale", "width", "height"};
@@ -102,48 +111,40 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     }
 }
 
-static const bool is_empty_option(json option) {
+static bool is_empty_option(json option) {
     return (option.is_number() && (option == -1)) ||
            (option.is_string() && (option == ""));
 }
 
-void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
-    // Cache for supported backends per recipe (computed once per recipe)
-    static std::map<std::string, SystemInfo::SupportedBackendsResult> backend_cache;
+static bool try_get_backend_options(const std::string& opt_name, SystemInfo::SupportedBackendsResult& result) {
+    // Generic handling for any *_backend option
+    // Pattern: {recipe}_backend -> get supported backends for {recipe}
+    const std::string backend_suffix = "_backend";
+    bool is_backend_option = opt_name.size() > backend_suffix.size() &&
+        opt_name.compare(opt_name.size() - backend_suffix.size(), backend_suffix.size(), backend_suffix) == 0;
 
+    if (is_backend_option) {
+        // Extract recipe name (everything before "_backend")
+        std::string recipe = opt_name.substr(0, opt_name.size() - backend_suffix.size());
+        auto tmp = SystemInfo::get_supported_backends(recipe);
+        result.backends = tmp.backends;
+    }
+
+    return is_backend_option;
+}
+
+void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
     for (auto& [key, opt] : CLI_OPTIONS.items()) {
         const std::string opt_name = opt["option_name"];
         CLI::Option* o;
         json defval = DEFAULTS[opt_name];
 
-        // Generic handling for any *_backend option
-        // Pattern: {recipe}_backend -> get supported backends for {recipe}
-        const std::string backend_suffix = "_backend";
-        bool is_backend_option = opt_name.size() > backend_suffix.size() &&
-            opt_name.compare(opt_name.size() - backend_suffix.size(), backend_suffix.size(), backend_suffix) == 0;
-
-        if (is_backend_option) {
-            // Extract recipe name (everything before "_backend")
-            std::string recipe = opt_name.substr(0, opt_name.size() - backend_suffix.size());
-
-            // Get supported backends (cached)
-            if (backend_cache.find(recipe) == backend_cache.end()) {
-                backend_cache[recipe] = SystemInfo::get_supported_backends(recipe);
-            }
-            const auto& result = backend_cache[recipe];
-            std::string default_backend = result.backends.empty() ? "" : result.backends[0];
-
-            // Pre-populate storage with the dynamically detected default so it's
-            // available even when the user doesn't explicitly pass the flag.
-            // (add_option_function's callback only fires on explicit CLI input,
-            // and default_val only affects help text display.)
-            if (!default_backend.empty()) {
-                storage[opt_name] = default_backend;
-            }
-
+        SystemInfo::SupportedBackendsResult backend_result;
+        if (try_get_backend_options(opt_name, backend_result)) {
+            std::string default_backend = backend_result.backends.empty() ? "" : backend_result.backends[0];
             o = app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val(default_backend);
-            o->check(CLI::IsMember(result.backends));
+            o->check(CLI::IsMember(backend_result.backends));
         } else if (defval.is_number_float()) {
             o = app.add_option_function<double>(key, [opt_name, &storage = storage](double val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val((double) defval);
@@ -198,14 +199,6 @@ RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
     }
 }
 
-static const std::string inherit_string(const std::string& a, const std::string& b) {
-    return a.empty() ? a : b;
-}
-
-static const int inherit_int(int a, int b) {
-    return a != -1 ? a : b;
-}
-
 static std::string format_option_for_logging(const json& opt) {
     if (opt.is_number_float()) return std::to_string((double) opt);
     if (opt.is_number_integer()) return std::to_string((int) opt);
@@ -245,6 +238,18 @@ RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
 }
 
 json RecipeOptions::get_option(const std::string& opt) const {
-    return options_.contains(opt) ? options_[opt] : DEFAULTS[opt];
+    if (options_.contains(opt)) {
+        return options_[opt];
+    }
+
+    // Dynamic defaults for backends if not explicitly set
+    SystemInfo::SupportedBackendsResult backend_result;
+    if (try_get_backend_options(opt, backend_result)) {
+        if (!backend_result.backends.empty()) {
+            return backend_result.backends[0];
+        }
+    }
+
+    return DEFAULTS.contains(opt) ? DEFAULTS[opt] : json();
 }
 }

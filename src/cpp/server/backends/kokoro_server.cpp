@@ -7,6 +7,7 @@
 #include <httplib.h>
 #include <iostream>
 #include <vector>
+#include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -45,7 +46,7 @@ KokoroServer::~KokoroServer() {
 }
 
 void KokoroServer::load(const std::string& model_name, const ModelInfo& model_info, const RecipeOptions& options, bool do_not_upgrade) {
-    std::cout << "[KokoroServer] Loading model: " << model_name << std::endl;
+    LOG(INFO, "KokoroServer") << "Loading model: " << model_name << std::endl;
 
     // Install kokoros if needed
     backend_manager_->install_backend(SPEC.recipe, "cpu");
@@ -59,13 +60,13 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     json model_index;
 
     try {
-        std::cout << "[KokoroServer] Reading " << model_path.filename() << std::endl;
+        LOG(INFO, "KokoroServer") << "Reading " << model_path.filename() << std::endl;
         model_index = JsonUtils::load_from_file(model_path.string());
     } catch (const std::exception& e) {
         throw std::runtime_error("Warning: Could not load " + model_path.filename().string() + ": " + e.what());
     }
 
-    std::cout << "[KokoroServer] Using model: " << model_index["model"] << std::endl;
+    LOG(INFO, "KokoroServer") << "Using model: " << model_index["model"] << std::endl;
 
     // Get koko executable path
     std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, "cpu");
@@ -76,7 +77,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
         throw std::runtime_error("Failed to find an available port");
     }
 
-    std::cout << "[KokoroServer] Starting server on port " << port_ << std::endl;
+    LOG(INFO, "KokoroServer") << "Starting server on port " << port_ << std::endl;
 
     std::vector<std::pair<std::string, std::string>> env_vars;
     fs::path exe_dir = fs::path(exe_path).parent_path();
@@ -90,7 +91,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     }
 
     env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
-    std::cout << "[KokoroServer] Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+    LOG(INFO, "KokoroServer") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
 #endif
 
     // Build command line arguments
@@ -118,7 +119,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
         throw std::runtime_error("Failed to start koko process");
     }
 
-    std::cout << "[KokoroServer] Process started with PID: " << process_handle_.pid << std::endl;
+    LOG(INFO, "KokoroServer") << "Process started with PID: " << process_handle_.pid << std::endl;
 
     // Wait for server to be ready
     if (!wait_for_ready("/")) {
@@ -129,7 +130,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
 
 void KokoroServer::unload() {
     if (process_handle_.pid != 0) {
-        std::cout << "[KokoroServer] Stopping server (PID: " << process_handle_.pid << ")" << std::endl;
+        LOG(INFO, "KokoroServer") << "Stopping server (PID: " << process_handle_.pid << ")" << std::endl;
         utils::ProcessManager::stop_process(process_handle_);
         port_ = 0;
         process_handle_ = {nullptr, 0};
