@@ -7,6 +7,16 @@ import { TranscriptionWebSocket } from '../utils/websocketClient';
 import { adjustTextareaHeight } from '../utils/textareaUtils';
 import { serverFetch } from '../utils/serverConfig';
 
+// How long to keep the WebSocket open after stop() waiting for the server's
+// 'completed' transcript message. Slow models (e.g. Whisper Large) can take
+// several seconds to finish inference.
+const WS_CLOSE_TIMEOUT_MS = 30_000;
+
+// If 'completed' event never arrives (server error / crash), submit
+// whatever text is buffered after this delay. Kept in sync with the socket
+// timeout so both paths resolve at the same time.
+const TRANSCRIPT_FALLBACK_MS = WS_CLOSE_TIMEOUT_MS;
+
 interface UseVoiceTranscriptionOptions {
   inputValue: string;
   setInputValue: (value: string) => void;
@@ -22,6 +32,23 @@ interface UseVoiceTranscriptionResult {
   isRecording: boolean;
   start: () => Promise<void>;
   stop: () => void;
+}
+
+/**
+ * Returns the name of an already-loaded whispercpp model from the server, or
+ * `null` if none is loaded or the health check fails.
+ */
+async function fetchLoadedWhisperModel(modelsData: ModelsData): Promise<string | null> {
+  try {
+    const res = await serverFetch('/health');
+    if (!res.ok) return null;
+    const health = await res.json();
+    const allLoaded: { model_name: string }[] = health.all_models_loaded || [];
+    const loaded = allLoaded.find((m) => modelsData[m.model_name]?.recipe === 'whispercpp');
+    return loaded?.model_name ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function useVoiceTranscription({
@@ -42,6 +69,8 @@ export function useVoiceTranscription({
 
   // Refs that must survive across renders and WS callbacks without stale closures
   const wsClientRef = useRef<TranscriptionWebSocket | null>(null);
+  const wsToCloseRef = useRef<TranscriptionWebSocket | null>(null);
+  const wsCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRecordingRef = useRef(false);
   const finalsRef = useRef('');
   const baseTextRef = useRef('');
@@ -74,19 +103,32 @@ export function useVoiceTranscription({
   useEffect(() => () => {
     if (isRecordingRef.current) stopRecording();
     wsClientRef.current?.close();
+    if (wsCloseTimerRef.current) clearTimeout(wsCloseTimerRef.current);
+    wsToCloseRef.current?.close();
     if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+  }, []);
+
+  // Called once the final transcript is handled (or the safety timeout fires).
+  const flushWsClose = useCallback(() => {
+    if (wsCloseTimerRef.current) {
+      clearTimeout(wsCloseTimerRef.current);
+      wsCloseTimerRef.current = null;
+    }
+    wsToCloseRef.current?.close();
+    wsToCloseRef.current = null;
   }, []);
 
   const closeWs = useCallback(() => {
     if (wsClientRef.current) {
-      // Commit rather than clear: tells the server to transcribe any buffered
-      // audio before the connection closes, so the final text reaches the client.
+      // Commit: tell the server to transcribe buffered audio.
+      // Keep the socket open so the 'completed' message can be delivered
       wsClientRef.current.commitAudio();
-      const wsToClose = wsClientRef.current;
+      wsToCloseRef.current = wsClientRef.current;
       wsClientRef.current = null;
-      setTimeout(() => wsToClose.close(), 3000);
+      // Safety timeout — close regardless if no response.
+      wsCloseTimerRef.current = setTimeout(flushWsClose, WS_CLOSE_TIMEOUT_MS);
     }
-  }, []);
+  }, [flushWsClose]);
 
   const doAutoStop = useCallback((transcribedValue: string) => {
     isRecordingRef.current = false;
@@ -126,14 +168,15 @@ export function useVoiceTranscription({
       // VAD-triggered end of speech — auto stop and submit
       doAutoStop(newValue.trim());
     } else if (pendingAutoSubmitRef.current) {
-      // Manual stop already happened; completed arrived within grace window
+      // Manual stop already happened; 'completed' arrived — close socket and submit.
       pendingAutoSubmitRef.current = false;
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
       finalsRef.current = '';
       baseTextRef.current = '';
+      flushWsClose();
       onAutoSubmitRef.current?.(newValue.trim());
     }
-  }, [textareaRef, doAutoStop]);
+  }, [textareaRef, doAutoStop, flushWsClose]);
 
   const start = useCallback(async () => {
     if (!whisperModel) {
@@ -144,20 +187,7 @@ export function useVoiceTranscription({
     finalsRef.current = '';
 
     // Prefer an already-loaded whisper model to avoid an unnecessary reload.
-    let modelToUse = whisperModel;
-    try {
-      const healthRes = await serverFetch('/health');
-      if (healthRes.ok) {
-        const health = await healthRes.json();
-        const allLoaded: { model_name: string }[] = health.all_models_loaded || [];
-        const loadedWhisper = allLoaded.find(
-          (m) => modelsData[m.model_name]?.recipe === 'whispercpp',
-        );
-        if (loadedWhisper) modelToUse = loadedWhisper.model_name;
-      }
-    } catch {
-      // Health check failed — fall back to the default selected model
-    }
+    const modelToUse = (await fetchLoadedWhisperModel(modelsData)) ?? whisperModel;
 
     const ready = await runPreFlight('transcription', {
       modelName: modelToUse,
@@ -193,16 +223,19 @@ export function useVoiceTranscription({
     reset();
 
     pendingAutoSubmitRef.current = true;
+    // Fallback: if 'completed' never arrives (e.g. server error), submit whatever
+    // text is in the input after the timeout (matches the socket safety timeout).
     fallbackTimerRef.current = setTimeout(() => {
       if (pendingAutoSubmitRef.current) {
         pendingAutoSubmitRef.current = false;
         finalsRef.current = '';
         baseTextRef.current = '';
+        flushWsClose();
         const text = inputValueRef.current.trim();
         if (text) onAutoSubmitRef.current?.(text);
       }
-    }, 3000);
-  }, [stopRecording, reset, closeWs]);
+    }, TRANSCRIPT_FALLBACK_MS);
+  }, [stopRecording, reset, closeWs, flushWsClose]);
 
   return { whisperModel, isRecording, start, stop };
 }
