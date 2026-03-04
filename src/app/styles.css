@@ -6361,14 +6361,8 @@ footer {
     color: #d2d2d2;
 }
 
-.family-member-pill.pill-available {
-    color: #d6d6d6;
-}
-
-.family-member-pill.pill-loaded {
-    color: #d6d6d6;
-}
-
+.family-member-pill.pill-available,
+.family-member-pill.pill-loaded,
 .family-member-pill.selected {
     color: #d6d6d6;
 }
@@ -6381,13 +6375,5 @@ footer {
     bottom: -2px;
     height: 1px;
     border-radius: 1px;
-    background: rgba(255, 255, 255, 0.48);
-}
-
-.family-member-pill.selected.pill-loaded {
-    color: #d6d6d6;
-}
-
-.family-member-pill.selected.pill-loaded::after {
     background: rgba(255, 255, 255, 0.48);
 }

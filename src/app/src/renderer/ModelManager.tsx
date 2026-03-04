@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Boxes, ChevronRight, Cpu, Settings as SettingsIcon, SlidersHorizontal, Store } from 'lucide-react';
 import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
@@ -269,17 +269,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     };
   }, [showFilterPanel]);
 
-  // Auto-expand the single category if only one is available
-  useEffect(() => {
-    const groupedModels = organizationMode === 'recipe' ? groupModelsByRecipe() : groupModelsByCategory();
-    const categories = Object.keys(groupedModels);
-
-    // If only one category exists and it's not already expanded, expand it
-    if (categories.length === 1 && !expandedCategories.has(categories[0])) {
-      setExpandedCategories(new Set([categories[0]]));
-    }
-  }, [suggestedModels, organizationMode, showDownloadedOnly, searchQuery]);
-
   const getFilteredModels = () => {
     let filtered = suggestedModels;
 
@@ -338,6 +327,29 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     return grouped;
   };
 
+  const groupedModels = useMemo(
+    () => organizationMode === 'recipe' ? groupModelsByRecipe() : groupModelsByCategory(),
+    [suggestedModels, modelsData, organizationMode, showDownloadedOnly, searchQuery]
+  );
+  const availableModelCount = useMemo(
+    () => Object.values(groupedModels).reduce((sum, arr) => sum + arr.length, 0),
+    [groupedModels]
+  );
+  const categories = useMemo(() => Object.keys(groupedModels).sort(), [groupedModels]);
+  const builtModelLists = useMemo(
+    () => Object.fromEntries(
+      Object.entries(groupedModels).map(([cat, models]) => [cat, buildModelList(models)])
+    ),
+    [groupedModels]
+  );
+
+  // Auto-expand the single category if only one is available
+  useEffect(() => {
+    if (categories.length === 1 && !expandedCategories.has(categories[0])) {
+      setExpandedCategories(new Set([categories[0]]));
+    }
+  }, [categories]);
+
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev => {
       const newSet = new Set(prev);
@@ -377,10 +389,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   };
 
   if (!isVisible) return null;
-
-  const groupedModels = organizationMode === 'recipe' ? groupModelsByRecipe() : groupModelsByCategory();
-  const availableModelCount = getFilteredModels().length;
-  const categories = Object.keys(groupedModels).sort();
 
   // Auto-expand all categories when searching
   const shouldShowCategory = (category: string): boolean => {
@@ -698,6 +706,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     </button>
   );
 
+  const renderDeleteButton = (modelName: string) => (
+    <button
+      className="model-action-btn delete-btn"
+      onClick={(e) => { e.stopPropagation(); handleDeleteModel(modelName); }}
+      title="Delete model"
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="3 6 5 6 21 6" />
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      </svg>
+    </button>
+  );
+
   const renderActionButtonsContent = (modelName: string) => {
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
     return (
@@ -726,16 +747,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                 <polygon points="5 3 19 12 5 21" fill="currentColor" />
               </svg>
             </button>
-            <button
-              className="model-action-btn delete-btn"
-              onClick={(e) => { e.stopPropagation(); handleDeleteModel(modelName); }}
-              title="Delete model"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-              </svg>
-            </button>
+            {renderDeleteButton(modelName)}
             {renderLoadOptionsButton(modelName)}
           </>
         )}
@@ -752,16 +764,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                 <path d="M5 20H19" />
               </svg>
             </button>
-            <button
-              className="model-action-btn delete-btn"
-              onClick={(e) => { e.stopPropagation(); handleDeleteModel(modelName); }}
-              title="Delete model"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-              </svg>
-            </button>
+            {renderDeleteButton(modelName)}
             {renderLoadOptionsButton(modelName)}
           </>
         )}
@@ -887,7 +890,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   const renderModelsView = () => (
     <>
       {categories.map(category => {
-        const listItems = buildModelList(groupedModels[category]);
+        const listItems = builtModelLists[category] || [];
         return (
           <div key={category} className="model-category">
             <div
