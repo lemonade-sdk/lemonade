@@ -2004,6 +2004,15 @@ footer {
     font-size: 0.6rem;
 }
 
+.add-model-buttons-container {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  height: max-content;
+  box-sizing: border-box;
+  gap: 6px;
+}
+
 .add-model-button {
     width: 100%;
     padding: 6px 10px;
@@ -4055,6 +4064,7 @@ footer {
     cursor: pointer;
     border-radius: 6px;
     transition: all 0.2s ease;
+    text-decoration: none;
 }
 
 .settings-save-button:hover {

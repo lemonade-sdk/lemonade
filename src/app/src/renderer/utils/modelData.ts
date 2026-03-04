@@ -9,6 +9,7 @@ export interface ImageDefaults {
 
 export interface ModelInfo {
   checkpoint: string;
+  checkpoints?: string[];
   recipe: string;
   suggested: boolean;
   size?: number;
