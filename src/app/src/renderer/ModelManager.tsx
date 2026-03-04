@@ -24,10 +24,52 @@ interface ModelFamily {
 }
 
 const MODEL_FAMILIES: ModelFamily[] = [
+  // Standard *B families
   {
     displayName: 'Qwen3-GGUF',
     regex: /^Qwen3-(\d+\.?\d*B)-GGUF$/,
     defaultMember: '4B',
+  },
+  {
+    displayName: 'Qwen3.5-GGUF',
+    regex: /^Qwen3\.5-(\d+\.?\d*B)-GGUF$/,
+    defaultMember: '4B',
+  },
+  {
+    displayName: 'Qwen3-Embedding-GGUF',
+    regex: /^Qwen3-Embedding-(\d+\.?\d*B)-GGUF$/,
+    defaultMember: '0.6B',
+  },
+  {
+    displayName: 'Qwen2.5-VL-Instruct-GGUF',
+    regex: /^Qwen2\.5-VL-(\d+\.?\d*B)-Instruct-GGUF$/,
+    defaultMember: '3B',
+  },
+  {
+    displayName: 'Qwen3-VL-Instruct-GGUF',
+    regex: /^Qwen3-VL-(\d+\.?\d*B)-Instruct-GGUF$/,
+    defaultMember: '2B',
+  },
+  {
+    displayName: 'Llama-3.2-Instruct-GGUF',
+    regex: /^Llama-3\.2-(\d+\.?\d*B)-Instruct-GGUF$/,
+    defaultMember: '3B',
+  },
+  {
+    displayName: 'gpt-oss-GGUF',
+    regex: /^gpt-oss-(\d+\.?\d*b)-mxfp4?-GGUF$/,
+    defaultMember: '20b',
+  },
+  // MoE families (capture the full NB-ANB token as the member label)
+  {
+    displayName: 'LFM2-MoE-GGUF',
+    regex: /^LFM2-(\d+\.?\d*B-A\d+\.?\d*B)-GGUF$/,
+    defaultMember: '8B-A1B',
+  },
+  {
+    displayName: 'Qwen3.5-MoE-GGUF',
+    regex: /^Qwen3\.5-(\d+\.?\d*B-A\d+\.?\d*B)-GGUF$/,
+    defaultMember: '35B-A3B',
   },
 ];
 
