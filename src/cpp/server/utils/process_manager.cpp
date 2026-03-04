@@ -47,6 +47,45 @@ static bool should_filter_line(const std::string& line) {
 }
 
 #ifdef _WIN32
+// Helper function to escape arguments for Windows command line
+// Windows command-line parsing rules:
+// - Arguments are separated by spaces (or tabs)
+// - Double quotes can be used to include spaces in arguments
+// - To include a double quote in an argument, escape it with a backslash
+// - Backslashes before a double quote are also escaped
+static std::string escape_windows_arg(const std::string& arg) {
+    // If the argument contains spaces, quotes, or other special characters,
+    // we need to wrap it in quotes and escape internal quotes
+    bool needs_quoting = arg.empty() ||
+                         arg.find(' ') != std::string::npos ||
+                         arg.find('\t') != std::string::npos ||
+                         arg.find('"') != std::string::npos;
+
+    if (!needs_quoting) {
+        return arg;
+    }
+
+    std::string result = "\"";
+    for (size_t i = 0; i < arg.size(); ++i) {
+        if (arg[i] == '"') {
+            // Escape the quote with a backslash
+            result += "\\\"";
+        } else if (arg[i] == '\\') {
+            // Check if this backslash is followed by a quote
+            // If so, we need to escape the backslash too
+            if (i + 1 < arg.size() && arg[i + 1] == '"') {
+                result += "\\\\";
+            } else {
+                result += '\\';
+            }
+        } else {
+            result += arg[i];
+        }
+    }
+    result += "\"";
+    return result;
+}
+
 // Thread function to read from pipe and filter output
 static DWORD WINAPI output_filter_thread(LPVOID param) {
     HANDLE pipe = static_cast<HANDLE>(param);
@@ -95,9 +134,9 @@ ProcessHandle ProcessManager::start_process(
 
 #ifdef _WIN32
     // Windows implementation
-    std::string cmdline = "\"" + executable + "\"";
+    std::string cmdline = escape_windows_arg(executable);
     for (const auto& arg : args) {
-        cmdline += " \"" + arg + "\"";
+        cmdline += " " + escape_windows_arg(arg);
     }
 
     STARTUPINFOA si;
@@ -519,9 +558,9 @@ int ProcessManager::run_process_with_output(
 
 #ifdef _WIN32
     // Windows implementation
-    std::string cmdline = "\"" + executable + "\"";
+    std::string cmdline = escape_windows_arg(executable);
     for (const auto& arg : args) {
-        cmdline += " \"" + arg + "\"";
+        cmdline += " " + escape_windows_arg(arg);
     }
 
     // Create pipes for stdout
