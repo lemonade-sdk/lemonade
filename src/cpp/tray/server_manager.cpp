@@ -96,8 +96,6 @@ bool ServerManager::start_server(
             server_started_ = true;
 
 #ifndef _WIN32
-            // Write PID file on Linux for efficient server discovery
-            LOG(DEBUG, "ServerManager") << "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")" << std::endl;
             write_pid_file();
 #endif
 
