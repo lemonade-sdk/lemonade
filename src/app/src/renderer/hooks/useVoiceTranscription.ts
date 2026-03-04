@@ -118,10 +118,21 @@ export function useVoiceTranscription({
     wsToCloseRef.current = null;
   }, []);
 
+  // VAD path: server already transcribed — discard any remaining buffer and
+  // close immediately. Do NOT commit, which would trigger a second transcription
+  // on the residual (silent) audio and produce [BLANK_AUDIO].
+  const discardWs = useCallback(() => {
+    if (wsClientRef.current) {
+      wsClientRef.current.clearAudio();
+      wsClientRef.current.close();
+      wsClientRef.current = null;
+    }
+  }, []);
+
+  // Manual-stop path: commit buffered audio so the server transcribes it, then
+  // keep the socket alive until the 'completed' response arrives.
   const closeWs = useCallback(() => {
     if (wsClientRef.current) {
-      // Commit: tell the server to transcribe buffered audio.
-      // Keep the socket open so the 'completed' message can be delivered
       wsClientRef.current.commitAudio();
       wsToCloseRef.current = wsClientRef.current;
       wsClientRef.current = null;
@@ -133,13 +144,13 @@ export function useVoiceTranscription({
   const doAutoStop = useCallback((transcribedValue: string) => {
     isRecordingRef.current = false;
     stopRecordingRef.current();
-    closeWs();
+    discardWs();
     finalsRef.current = '';
     baseTextRef.current = '';
     setIsRecording(false);
     resetRef.current();
     onAutoSubmitRef.current?.(transcribedValue);
-  }, [closeWs]);
+  }, [discardWs]);
 
   // Stable callback given to the WS at connect time; uses refs so it never goes stale.
   const handleTranscription = useCallback((text: string, isFinal: boolean) => {
