@@ -98,6 +98,7 @@ public:
     static std::vector<RecipeStatus> get_all_recipe_statuses();
 
     static std::string get_flm_version();
+    static std::string get_system_llamacpp_version();
 
     // Device support detection
     static std::string get_rocm_arch();
@@ -107,6 +108,9 @@ public:
 
     // Generate human-readable error message for unsupported backend
     static std::string get_unsupported_backend_error(const std::string& recipe, const std::string& backend);
+
+    // Check if the process is running under systemd
+    static bool is_running_under_systemd();
 };
 
 // Windows implementation

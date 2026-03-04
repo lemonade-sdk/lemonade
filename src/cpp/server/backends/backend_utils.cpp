@@ -13,6 +13,7 @@
 #include <fstream>
 #include <iostream>
 #include <cstdlib>
+#include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <nlohmann/json.hpp>
 
@@ -69,10 +70,10 @@ namespace lemon::backends {
         ensure_directory(dest_dir);
 #ifdef _WIN32
         if (is_native_tar_available()) {
-            std::cout << "[" << backend_name << "] Extracting ZIP with native tar to " << dest_dir << std::endl;
+            LOG(DEBUG, backend_name) << "Extracting ZIP with native tar to " << dest_dir << std::endl;
             command = get_native_tar_path() + " -xf \"" + zip_path + "\" -C \"" + dest_dir + "\"";
         } else {
-            std::cout << "[" << backend_name << "] Extracting ZIP via PowerShell to " << dest_dir << std::endl;
+            LOG(DEBUG, backend_name) << "Extracting ZIP via PowerShell to " << dest_dir << std::endl;
             std::string powershell_path = "powershell";
             const char* system_root = std::getenv("SystemRoot");
             if (system_root) {
@@ -82,15 +83,15 @@ namespace lemon::backends {
                     "' -DestinationPath '" + dest_dir + "' -Force\"";
         }
 #elif defined(__APPLE__) || defined(__linux__)
-        std::cout << "[" << backend_name << "] Extracting zip to " << dest_dir << std::endl;
+        LOG(DEBUG, backend_name) << "Extracting zip to " << dest_dir << std::endl;
         command = "unzip -o -q \"" + zip_path + "\" -d \"" + dest_dir + "\"";
 #endif
         int result = system(command.c_str());
         if (result != 0) {
             #ifdef _WIN32
-                std::cerr << "[" << backend_name << "] Extraction failed with code: " << result << std::endl;
+                LOG(ERROR, backend_name) << "Extraction failed with code: " << result << std::endl;
             #else
-                std::cerr << "[" << backend_name << "] Extraction failed. Ensure 'unzip' is installed. Code: " << result << std::endl;
+                LOG(ERROR, backend_name) << "Extraction failed. Ensure 'unzip' is installed. Code: " << result << std::endl;
             #endif
             return false;
         }
@@ -100,10 +101,10 @@ namespace lemon::backends {
     bool BackendUtils::extract_tarball(const std::string& tarball_path, const std::string& dest_dir, const std::string& backend_name) {
         std::string command;
         ensure_directory(dest_dir);
-        std::cout << "[" << backend_name << "] Extracting tarball to " << dest_dir << std::endl;
+        LOG(DEBUG, backend_name) << "Extracting tarball to " << dest_dir << std::endl;
 #ifdef _WIN32
         if (!is_native_tar_available()) {
-            std::cerr << "[" << backend_name << "] Error: 'tar' command not found. Windows 10 (17063+) required." << std::endl;
+            LOG(ERROR, backend_name) << "Error: 'tar' command not found. Windows 10 (17063+) required." << std::endl;
             return false;
         }
         command = get_native_tar_path() + " -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
@@ -112,7 +113,7 @@ namespace lemon::backends {
 #endif
         int result = system(command.c_str());
         if (result != 0) {
-            std::cerr << "[" << backend_name << "] Extraction failed with code: " << result << std::endl;
+            LOG(ERROR, backend_name) << "Extraction failed with code: " << result << std::endl;
             return false;
         }
         return true;
@@ -166,6 +167,15 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_backend_binary_path(const BackendSpec& spec, const std::string& backend) {
+        if (backend == "system") {
+            // Check if binary exists in PATH
+            std::string path = utils::find_executable_in_path(spec.binary);
+            if (!path.empty()) {
+                return spec.binary;
+            }
+            throw std::runtime_error(spec.binary + " not found in PATH");
+        }
+
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
 
         if (!exe_path.empty()) {
@@ -188,6 +198,9 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_installed_version_file(const BackendSpec& spec, const std::string& backend) {
+        if (backend == "system") {
+            return "";
+        }
         std::string install_dir = get_install_directory(spec.recipe, backend);
         return get_version_file(install_dir);
     }
@@ -235,7 +248,7 @@ namespace lemon::backends {
                 vf.close();
 
                 if (installed_version != expected_version) {
-                    std::cout << "[" << spec.log_name() << "] Upgrading " << spec.binary << " from " << installed_version
+                    LOG(INFO, spec.log_name()) << "Upgrading " << spec.binary << " from " << installed_version
                             << " to " << expected_version << std::endl;
                     needs_install = true;
                     fs::remove_all(install_dir);
@@ -244,7 +257,7 @@ namespace lemon::backends {
         }
 
         if (needs_install) {
-            std::cout << "[" << spec.log_name() << "] Installing " << spec.binary << " (version: "
+            LOG(INFO, spec.log_name()) << "Installing " << spec.binary << " (version: "
                     << expected_version << ")" << std::endl;
 
             // Create install directory
@@ -260,8 +273,8 @@ namespace lemon::backends {
             std::string zip_ext = is_tarball(filename) ? ".tar.gz" : ".zip";
             std::string zip_path = (cache_dir / (zip_name + "_" + expected_version + zip_ext)).string();
 
-            std::cout << "[" << spec.log_name() << "] Downloading from: " << url << std::endl;
-            std::cout << "[" << spec.log_name() << "] Downloading to: " << zip_path << std::endl;
+            LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;
+            LOG(DEBUG, spec.log_name()) << "Downloading to: " << zip_path << std::endl;
 
             // Create the appropriate progress callback
             // If an external progress_cb is provided, wrap it as a ProgressCallback for HttpClient
@@ -294,7 +307,7 @@ namespace lemon::backends {
                                         " - " + download_result.error_message);
             }
 
-            std::cout << std::endl << "[" << spec.log_name() << "] Download complete!" << std::endl;
+            LOG(DEBUG, spec.log_name()) << "Download complete!" << std::endl;
 
             // Verify the downloaded file
             if (!fs::exists(zip_path)) {
@@ -302,7 +315,7 @@ namespace lemon::backends {
             }
 
             std::uintmax_t file_size = fs::file_size(zip_path);
-            std::cout << "[" << spec.log_name() << "] Downloaded archive file size: "
+            LOG(DEBUG, spec.log_name()) << "Downloaded archive file size: "
                     << (file_size / 1024 / 1024) << " MB" << std::endl;
 
             // Extract
@@ -315,13 +328,13 @@ namespace lemon::backends {
             // Verify extraction
             exe_path = find_executable_in_install_dir(install_dir, spec.binary);
             if (exe_path.empty()) {
-                std::cerr << "[" << spec.log_name() << "] ERROR: Extraction completed but executable not found" << std::endl;
+                LOG(ERROR, spec.log_name()) << "Extraction completed but executable not found" << std::endl;
                 fs::remove(zip_path);
                 fs::remove_all(install_dir);
                 throw std::runtime_error("Extraction failed: executable not found");
             }
 
-            std::cout << "[" << spec.log_name() << "] Executable verified at: " << exe_path << std::endl;
+            LOG(DEBUG, spec.log_name()) << "Executable verified at: " << exe_path << std::endl;
 
             // Save version info
             std::ofstream vf(version_file);
@@ -349,9 +362,9 @@ namespace lemon::backends {
                 progress_cb(p);
             }
 
-            std::cout << "[" << spec.log_name() << "] Installation complete!" << std::endl;
+            LOG(DEBUG, spec.log_name()) << "Installation complete!" << std::endl;
         } else {
-            std::cout << "[" << spec.log_name() << "] Found executable at: " << exe_path << std::endl;
+            LOG(DEBUG, spec.log_name()) << "Found executable at: " << exe_path << std::endl;
 
             // Even if already installed, send a completion event so callers know it's done
             if (progress_cb) {

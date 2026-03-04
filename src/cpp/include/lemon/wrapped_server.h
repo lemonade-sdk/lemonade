@@ -50,7 +50,7 @@ struct Telemetry {
 
 class WrappedServer : public ICompletionServer {
 public:
-    WrappedServer(const std::string& server_name, const std::string& log_level = "info",
+    WrappedServer(const std::string& server_name, const std::string& log_level,
                   ModelManager* model_manager = nullptr, BackendManager* backend_manager = nullptr)
         : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level),
           model_manager_(model_manager), backend_manager_(backend_manager),
@@ -59,8 +59,6 @@ public:
 
     virtual ~WrappedServer() = default;
 
-    // Timeout for inference requests (0 = infinite)
-    static constexpr long INFERENCE_TIMEOUT_SECONDS = 0;
 
     // Set log level
     void set_log_level(const std::string& log_level) { log_level_ = log_level; }
@@ -133,7 +131,8 @@ public:
     virtual void forward_streaming_request(const std::string& endpoint,
                                            const std::string& request_body,
                                            httplib::DataSink& sink,
-                                           bool sse = true);
+                                           bool sse = true,
+                                           long timeout_seconds = 0);
 
     // Get the server address
     std::string get_address() const {
@@ -165,12 +164,12 @@ protected:
     virtual bool wait_for_ready(const std::string& endpoint, long timeout_seconds = 600, long poll_interval_ms = 100);
 
     // Common method to forward requests to the wrapped server (non-streaming)
-    json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = INFERENCE_TIMEOUT_SECONDS);
+    json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = 0);
 
     // Forward multipart form data to the wrapped server
     json forward_multipart_request(const std::string& endpoint,
                                    const std::vector<utils::MultipartField>& fields,
-                                   long timeout_seconds = INFERENCE_TIMEOUT_SECONDS);
+                                   long timeout_seconds = 0);
 
     // Validate that the process is running (platform-agnostic check)
     bool is_process_running() const;

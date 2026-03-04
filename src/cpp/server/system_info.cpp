@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <regex>
+#include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -25,6 +26,11 @@
 
 #ifdef __APPLE__
 #include <sys/sysctl.h>
+#include <unistd.h>
+#endif
+
+#ifdef __linux__
+#include <unistd.h>
 #endif
 
 #ifdef __linux__
@@ -36,6 +42,10 @@
 
 #ifndef _WIN32
 #include <sys/wait.h>
+#endif
+
+#ifdef HAVE_SYSTEMD
+#include <systemd/sd-login.h>
 #endif
 
 namespace lemon {
@@ -91,7 +101,10 @@ struct RecipeBackendDef {
 //
 // Empty family set {} means "all families of that device type"
 static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
-    // llamacpp with multiple backends (order = preference: metal > vulkan > rocm > cpu)
+    // llamacpp with multiple backends (order = preference: system > metal > vulkan > rocm > cpu)
+    {"llamacpp", "system", {"linux"}, {
+        {"cpu", {"x86_64"}}, // Placeholder, actual check is PATH-based
+    }},
     {"llamacpp", "metal", {"macos"},
     {
         {"metal", {}},
@@ -279,6 +292,22 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
     if (spec) {
         try {
             BackendUtils::get_backend_binary_path(*spec, backend);
+
+            // For system llamacpp backend, also verify the HIP plugin is available
+            // This is required for ROCm GPU acceleration with dynamically loaded backends
+            if (recipe == "llamacpp" && backend == "system") {
+#ifdef __linux__
+                // Check if AMD GPU driver is loaded (KFD indicates amdgpu driver)
+                if (fs::exists("/sys/class/kfd")) {
+                    // System has AMD GPU(s), so we need the HIP plugin
+                    if (!is_ggml_hip_plugin_available()) {
+                        error_message = "HIP plugin libggml-hip.so not installed";
+                        return false;
+                    }
+                }
+#endif
+            }
+
             return true;
         } catch (...) {
             return false;
@@ -354,9 +383,16 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
 }
 
 static std::string get_recipe_version(const std::string& recipe, const std::string& backend) {
+    if (recipe == "llamacpp" && backend == "system") {
+        return SystemInfo::get_system_llamacpp_version();
+    }
     auto* spec = try_get_spec_for_recipe(recipe);
     if (spec) {
-        return read_version_file(BackendUtils::get_installed_version_file(*spec, backend));
+        std::string version_file = BackendUtils::get_installed_version_file(*spec, backend);
+        if (version_file.empty()) {
+            return "unknown";
+        }
+        return read_version_file(version_file);
     }
     if (recipe == "flm") {
         return SystemInfo::get_flm_version();
@@ -726,6 +762,16 @@ json SystemInfo::build_recipes_info(const json& devices) {
         detected_devices.push_back({"metal", "Apple Metal", "metal", true});
     }
 
+    // Check if user prefers system llamacpp backend (off by default)
+    bool prefer_llamacpp_system = false;
+    const char* prefer_system_env = std::getenv("LEMONADE_LLAMACPP_PREFER_SYSTEM");
+    if (prefer_system_env) {
+        std::string pref_val(prefer_system_env);
+        if (pref_val == "true" || pref_val == "1") {
+            prefer_llamacpp_system = true;
+        }
+    }
+
     // Build recipes from the definition table
     for (const auto& def : RECIPE_DEFS) {
         // Skip if not supported on current OS
@@ -815,10 +861,27 @@ json SystemInfo::build_recipes_info(const json& devices) {
             {"devices", unique_matching}
         };
 
+        // Special case for 'system' backend: it's either installed or unsupported.
+        // It's never 'installable' because Lemonade cannot install system packages.
+        if (def.backend == "system") {
+            if (available) {
+                supported = true; // Ensure it's not marked unsupported due to device logic
+            } else {
+                supported = false;
+                // Only set generic error if a specific error wasn't already set
+                if (install_error.empty()) {
+                    auto* spec = backends::try_get_spec_for_recipe(def.recipe);
+                    install_error = (spec ? spec->binary : "binary") + " not found in PATH";
+                }
+            }
+        }
+
         if (!supported) {
             std::string message;
 
-            if (!missing_devices.empty()) {
+            if (def.backend == "system" && !available) {
+                message = install_error;
+            } else if (!missing_devices.empty()) {
                 // Device type not present - include required family if specified
                 const auto& [device_type, required_families] = missing_devices[0];
                 if (!required_families.empty()) {
@@ -910,8 +973,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
         recipes[def.recipe]["backends"][def.backend] = backend;
 
-        // First supported backend encountered in RECIPE_DEFS order is the default.
-        if (supported && !recipes[def.recipe].contains("default_backend")) {
+        // First supported backend in RECIPE_DEFS order becomes the default.
+        // Skip 'system' backend unless explicitly preferred via env var.
+        bool skip_as_default = (def.backend == "system" && !prefer_llamacpp_system);
+        if (supported && !skip_as_default && !recipes[def.recipe].contains("default_backend")) {
             recipes[def.recipe]["default_backend"] = def.backend;
         }
     }
@@ -934,9 +999,27 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
         return result;
     }
 
-    // Collect supported backends and capture first error (in preference order from RECIPE_DEFS)
+    // If a default_backend is specified, add it first (if supported)
+    std::string default_backend;
+    if (recipe_info.contains("default_backend")) {
+        default_backend = recipe_info["default_backend"].get<std::string>();
+        if (recipe_info["backends"].contains(default_backend)) {
+            const auto& backend = recipe_info["backends"][default_backend];
+            std::string state = backend.value("state", "unsupported");
+            if (state != "unsupported") {
+                result.backends.push_back(default_backend);
+            }
+        }
+    }
+
+    // Collect remaining supported backends and capture first error (in preference order from RECIPE_DEFS)
     for (const auto& def : RECIPE_DEFS) {
         if (def.recipe == recipe) {
+            // Skip the default_backend since we already added it
+            if (def.backend == default_backend) {
+                continue;
+            }
+
             if (recipe_info["backends"].contains(def.backend)) {
                 const auto& backend = recipe_info["backends"][def.backend];
                 std::string state = backend.value("state", "unsupported");
@@ -1013,6 +1096,47 @@ static std::string read_version_file(const fs::path& version_file) {
             }
         }
     }
+    return "unknown";
+}
+
+std::string SystemInfo::get_system_llamacpp_version() {
+    #ifdef _WIN32
+    FILE* pipe = _popen("llama-server --version 2>NUL", "r");
+    #else
+    FILE* pipe = popen("llama-server --version 2>/dev/null", "r");
+    #endif
+
+    if (!pipe) {
+        return "unknown";
+    }
+
+    char buffer[256];
+    std::string output;
+    if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output = buffer;
+    }
+
+    #ifdef _WIN32
+    _pclose(pipe);
+    #else
+    pclose(pipe);
+    #endif
+
+    // Parse version from output like "version: 3432 (e2b2a632)" or "llama.cpp version b3432"
+    if (!output.empty()) {
+        // Try to find a version number
+        std::regex version_regex(R"(version:\s*(\d+)|version\s+b?(\d+))");
+        std::smatch match;
+        if (std::regex_search(output, match, version_regex)) {
+            for (size_t i = 1; i < match.size(); ++i) {
+                if (match[i].matched) {
+                    return "b" + match[i].str();
+                }
+            }
+        }
+        return "detected";
+    }
+
     return "unknown";
 }
 
@@ -2833,12 +2957,12 @@ json SystemInfoCache::get_system_info_with_cache() {
         } else {
             // Provide friendly message about why we're detecting hardware
             if (cache_exists) {
-                std::cout << "[Server] Collecting system info (Lemonade was updated)" << std::endl;
+                LOG(INFO, "Server") << "Collecting system info (Lemonade was updated)" << std::endl;
 
                 // Perform version-specific cleanup (e.g., removing stale backend binaries)
                 cache.perform_upgrade_cleanup();
             } else {
-                std::cout << "[Server] Collecting system info" << std::endl;
+                LOG(INFO, "Server") << "Collecting system info" << std::endl;
             }
 
             // Get system info (OS, Processor, Memory, OEM System, BIOS, etc.)
@@ -2864,14 +2988,14 @@ json SystemInfoCache::get_system_info_with_cache() {
 
     } catch (const std::exception& e) {
         // Catastrophic failure - return minimal info but don't crash
-        std::cerr << "[Server] System info failed: " << e.what() << std::endl;
+        LOG(ERROR, "Server") << "System info failed: " << e.what() << std::endl;
         system_info = {
             {"OS Version", "Unknown"},
             {"error", e.what()},
             {"devices", json::object()}
         };
     } catch (...) {
-        std::cerr << "[Server] System info failed with unknown error" << std::endl;
+        LOG(ERROR, "Server") << "System info failed with unknown error" << std::endl;
         system_info = {
             {"OS Version", "Unknown"},
             {"error", "Unknown error"},
@@ -2886,5 +3010,35 @@ json SystemInfoCache::get_system_info_with_cache() {
     return system_info;
 }
 
+
+bool SystemInfo::is_running_under_systemd() {
+#ifdef _WIN32
+    return false;
+#else
+    const char* disable_journal = std::getenv("LEMONADE_DISABLE_SYSTEMD_JOURNAL");
+    if (disable_journal && (std::string(disable_journal) == "1" || std::string(disable_journal) == "true")) {
+        return false;
+    }
+
+#ifdef HAVE_SYSTEMD
+    // Use systemd journal only when actually running as lemonade-server.service.
+    // sd_pid_get_unit() reads the process's cgroup assignment (not environment variables),
+    // so it cannot give false positives from inherited env vars like JOURNAL_STREAM or
+    // INVOCATION_ID, both of which are inherited by all child processes in a systemd session.
+    char* unit_name = nullptr;
+    if (sd_pid_get_unit(0, &unit_name) >= 0) {
+        const char* service_name_env = std::getenv("LEMONADE_SYSTEMD_UNIT");
+        const char* service_name = service_name_env ? service_name_env : LEMONADE_SYSTEMD_UNIT_NAME;
+        bool is_service = (strcmp(unit_name, service_name) == 0);
+        free(unit_name);
+        return is_service;
+    }
+#endif
+
+    const char* journal_stream = std::getenv("JOURNAL_STREAM");
+    const char* invocation_id = std::getenv("INVOCATION_ID");
+    return (journal_stream || invocation_id) && !isatty(STDOUT_FILENO);
+#endif
+}
 
 } // namespace lemon

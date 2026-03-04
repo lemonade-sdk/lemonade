@@ -15,6 +15,7 @@
 #include <chrono>
 #include <unordered_set>
 #include <iomanip>
+#include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -223,28 +224,28 @@ std::string ModelManager::get_recipe_options_file() {
 
 std::string ModelManager::get_hf_cache_dir() const {
     // Check HF_HUB_CACHE first (highest priority)
-    const char* hf_hub_cache_env = std::getenv("HF_HUB_CACHE");
-    if (hf_hub_cache_env) {
-        return std::string(hf_hub_cache_env);
+    std::string hf_hub_cache_env = get_environment_variable_utf8("HF_HUB_CACHE");
+    if (!hf_hub_cache_env.empty()) {
+        return hf_hub_cache_env;
     }
 
     // Check HF_HOME second (append /hub)
-    const char* hf_home_env = std::getenv("HF_HOME");
-    if (hf_home_env) {
-        return std::string(hf_home_env) + "/hub";
+    std::string hf_home_env = get_environment_variable_utf8("HF_HOME");
+    if (!hf_home_env.empty()) {
+        return hf_home_env + "/hub";
     }
 
     // Default platform-specific paths
 #ifdef _WIN32
-    const char* userprofile = std::getenv("USERPROFILE");
-    if (userprofile) {
-        return std::string(userprofile) + "\\.cache\\huggingface\\hub";
+    std::string userprofile = get_environment_variable_utf8("USERPROFILE");
+    if (!userprofile.empty()) {
+        return userprofile + "\\.cache\\huggingface\\hub";
     }
     return "C:\\.cache\\huggingface\\hub";
 #else
-    const char* home = std::getenv("HOME");
-    if (home) {
-        return std::string(home) + "/.cache/huggingface/hub";
+    std::string home = get_environment_variable_utf8("HOME");
+    if (!home.empty()) {
+        return home + "/.cache/huggingface/hub";
     }
     return "/tmp/.cache/huggingface/hub";
 #endif
@@ -258,7 +259,7 @@ void ModelManager::set_extra_models_dir(const std::string& dir) {
     cache_valid_ = false;
 
     if (!extra_models_dir_.empty()) {
-        std::cout << "[ModelManager] Extra models directory set to: " << extra_models_dir_ << std::endl;
+        LOG(INFO, "ModelManager") << "Extra models directory set to: " << extra_models_dir_ << std::endl;
     }
 }
 
@@ -277,7 +278,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
     std::string search_dir = extra_models_dir_;
 
-    std::cout << "[ModelManager] Scanning for GGUF models in: " << search_dir << std::endl;
+    LOG(INFO, "ModelManager") << "Scanning for GGUF models in: " << search_dir << std::endl;
 
     // Configuration for discovered models (single source of truth)
     static constexpr const char* EXTRA_MODEL_PREFIX = "extra.";
@@ -322,7 +323,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             }
         }
     } catch (const std::exception& e) {
-        std::cerr << "[ModelManager] Error scanning directory " << search_dir << ": " << e.what() << std::endl;
+        LOG(ERROR, "ModelManager") << "Error scanning directory " << search_dir << ": " << e.what() << std::endl;
         return discovered;
     }
 
@@ -405,7 +406,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         discovered[model_name] = info;
     }
 
-    std::cout << "[ModelManager] Discovered " << discovered.size() << " models from extra directory" << std::endl;
+    LOG(INFO, "ModelManager") << "Discovered " << discovered.size() << " models from extra directory" << std::endl;
 
     return discovered;
 }
@@ -453,13 +454,14 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
     }
 
     std::string model_cache_path = hf_cache + "/" + cache_dir_name;
+    fs::path model_cache_path_fs = path_from_utf8(model_cache_path);
 
     // For RyzenAI LLM models, look for genai_config.json directory
     if (info.recipe == "ryzenai-llm") {
-        if (fs::exists(model_cache_path)) {
-            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+        if (fs::exists(model_cache_path_fs)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
                 if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
-                    return entry.path().parent_path().string();
+                    return path_to_utf8(entry.path().parent_path());
                 }
             }
         }
@@ -468,10 +470,10 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
     // For kokoro models, look for index.json directory
     if (info.recipe == "kokoro") {
-        if (fs::exists(model_cache_path)) {
-            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+        if (fs::exists(model_cache_path_fs)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
                 if (entry.is_regular_file() && entry.path().filename() == "index.json") {
-                    return entry.path().string();
+                    return path_to_utf8(entry.path());
                 }
             }
         }
@@ -482,17 +484,17 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
     // For whispercpp, find the .bin model file
     if (info.recipe == "whispercpp" && variant.empty()) {
         // No variant specified - use fallback logic to find any .bin file
-        if (!fs::exists(model_cache_path)) {
+        if (!fs::exists(model_cache_path_fs)) {
             return model_cache_path;  // Return directory path even if not found
         }
 
         // Collect all .bin files
         std::vector<std::string> all_bin_files;
-        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
             if (entry.is_regular_file()) {
                 std::string filename = entry.path().filename().string();
                 if (filename.find(".bin") != std::string::npos) {
-                    all_bin_files.push_back(entry.path().string());
+                    all_bin_files.push_back(path_to_utf8(entry.path()));
                 }
             }
         }
@@ -510,20 +512,20 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
     // For llamacpp, find the GGUF file with advanced sharded model support
     if (info.recipe == "llamacpp" && type == "main") {
-        if (!fs::exists(model_cache_path)) {
+        if (!fs::exists(model_cache_path_fs)) {
             return model_cache_path;  // Return directory path even if not found
         }
 
         // Collect all GGUF files (exclude mmproj files)
         std::vector<std::string> all_gguf_files;
-        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
             if (entry.is_regular_file()) {
                 std::string filename = entry.path().filename().string();
                 std::string filename_lower = filename;
                 std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
 
                 if (filename.find(".gguf") != std::string::npos && filename_lower.find("mmproj") == std::string::npos) {
-                    all_gguf_files.push_back(entry.path().string());
+                    all_gguf_files.push_back(path_to_utf8(entry.path()));
                 }
             }
         }
@@ -548,7 +550,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
         // Case 2: Exact filename match (variant ends with .gguf)
         if (variant.find(".gguf") != std::string::npos) {
             for (const auto& filepath : all_gguf_files) {
-                std::string filename = fs::path(filepath).filename().string();
+                std::string filename = path_from_utf8(filepath).filename().string();
                 if (filename == variant) {
                     return filepath;
                 }
@@ -563,7 +565,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
         std::vector<std::string> matching_files;
         for (const auto& filepath : all_gguf_files) {
-            std::string filename = fs::path(filepath).filename().string();
+            std::string filename = path_from_utf8(filepath).filename().string();
             std::string filename_lower = filename;
             std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
 
@@ -582,7 +584,8 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
         for (const auto& filepath : all_gguf_files) {
             // Get relative path from model cache path
-            std::string relative_path = filepath.substr(model_cache_path.length());
+            std::string relative_path = path_to_utf8(
+                path_from_utf8(filepath).lexically_relative(model_cache_path_fs));
             std::string relative_lower = relative_path;
             std::transform(relative_lower.begin(), relative_lower.end(), relative_lower.begin(), ::tolower);
 
@@ -598,18 +601,17 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
     // Everything else
     if (!variant.empty()) {
         // Try to find the exact variant in snapshots subdirectories
-        if (fs::exists(model_cache_path)) {
-            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+        if (fs::exists(model_cache_path_fs)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
                 if (entry.is_regular_file()) {
                     std::string filename = entry.path().filename().string();
                     if (filename == variant) {
-                        return entry.path().string();
+                        return path_to_utf8(entry.path());
                     }
                 } else if (entry.is_directory()) {
-                    // variant could be a path
-                    std::string variant_path = (entry.path() / variant).string();
+                    fs::path variant_path = entry.path() / path_from_utf8(variant);
                     if (fs::exists(variant_path)) {
-                        return variant_path;
+                        return path_to_utf8(variant_path);
                     }
                 }
             }
@@ -634,9 +636,9 @@ json ModelManager::load_server_models() {
         std::string models_path = get_resource_path("resources/server_models.json");
         return JsonUtils::load_from_file(models_path);
     } catch (const std::exception& e) {
-        std::cerr << "ERROR: Failed to load server_models.json: " << e.what() << std::endl;
-        std::cerr << "This is a critical file required for the application to run." << std::endl;
-        std::cerr << "Executable directory: " << get_executable_dir() << std::endl;
+        LOG(ERROR, "ModelManager") << "Failed to load server_models.json: " << e.what() << std::endl;
+        LOG(ERROR, "ModelManager") << "This is a critical file required for the application to run." << std::endl;
+        LOG(ERROR, "ModelManager") << "Executable directory: " << get_executable_dir() << std::endl;
         throw std::runtime_error("Failed to load server_models.json");
     }
 }
@@ -647,10 +649,10 @@ json ModelManager::load_optional_json(const std::string& path) {
     }
 
     try {
-        std::cout << "[ModelManager] Loading " << fs::path(path).filename() << std::endl;
+        LOG(INFO, "ModelManager") << "Loading " << fs::path(path).filename() << std::endl;
         return JsonUtils::load_from_file(path);
     } catch (const std::exception& e) {
-        std::cerr << "Warning: Could not load " << fs::path(path).filename() << ": " << e.what() << std::endl;
+        LOG(WARNING, "ModelManager") << "Could not load " << fs::path(path).filename() << ": " << e.what() << std::endl;
         return json::object();
     }
 }
@@ -660,7 +662,7 @@ static void save_user_json(const std::string& save_path, const json& to_save) {
     fs::path dir = fs::path(save_path).parent_path();
     fs::create_directories(dir);
 
-    std::cout << "[ModelManager] Saving " << fs::path(save_path).filename() << std::endl;
+    LOG(INFO, "ModelManager") << "Saving " << fs::path(save_path).filename() << std::endl;
     JsonUtils::save_to_file(to_save, save_path);
 }
 
@@ -669,7 +671,7 @@ void ModelManager::save_user_models(const json& user_models) {
 }
 
 void ModelManager::save_model_options(const ModelInfo& info) {
-    std::cout << "[ModelManager] Saving options for model: " << info.model_name << std::endl;
+    LOG(INFO, "ModelManager") << "Saving options for model: " << info.model_name << std::endl;
     // Persist changes
     recipe_options_[info.model_name] = info.recipe_options.to_json();
     update_model_options_in_cache(info);
@@ -738,7 +740,7 @@ void ModelManager::build_cache() {
         return;
     }
 
-    std::cout << "[ModelManager] Building models cache..." << std::endl;
+    LOG(INFO, "ModelManager") << "Building models cache..." << std::endl;
 
     models_cache_.clear();
     std::map<std::string, ModelInfo> all_models;
@@ -823,7 +825,7 @@ void ModelManager::build_cache() {
     for (const auto& [name, info] : discovered_models) {
         // Check for conflicts with registered models
         if (all_models.find(name) != all_models.end()) {
-            std::cout << "[ModelManager] Warning: Discovered model '" << name
+            LOG(INFO, "ModelManager") << "Warning: Discovered model '" << name
                       << "' conflicts with registered model, skipping." << std::endl;
             continue;
         }
@@ -843,7 +845,7 @@ void ModelManager::build_cache() {
 
         // User-saved recipe options override image_defaults
         if (JsonUtils::has_key(recipe_options_, name)) {
-            std::cout << "[ModelManager] Found recipe options for model: " << name << std::endl;
+            LOG(INFO, "ModelManager") << "Found recipe options for model: " << name << std::endl;
             auto saved_options = recipe_options_[name];
             // Merge saved options over base options
             for (auto& [key, value] : saved_options.items()) {
@@ -927,7 +929,7 @@ void ModelManager::build_cache() {
     }
 
     cache_valid_ = true;
-    std::cout << "[ModelManager] Cache built: " << models_cache_.size()
+    LOG(INFO, "ModelManager") << "Cache built: " << models_cache_.size()
               << " total, " << downloaded_count << " downloaded" << std::endl;
 }
 
@@ -954,7 +956,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     }
 
     if (!model_json) {
-        std::cerr << "[ModelManager] Warning: '" << model_name << "' not found in JSON" << std::endl;
+        LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in JSON" << std::endl;
         return;
     }
 
@@ -987,7 +989,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     auto filtered = filter_models_by_backend(temp_map);
 
     if (filtered.empty()) {
-        std::cout << "[ModelManager] Model '" << model_name << "' filtered out by backend availability" << std::endl;
+        LOG(INFO, "ModelManager") << "Model '" << model_name << "' filtered out by backend availability" << std::endl;
         return; // Backend not available, don't add to cache
     }
 
@@ -1027,7 +1029,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     }
 
     models_cache_[model_name] = info;
-    std::cout << "[ModelManager] Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
+    LOG(INFO, "ModelManager") << "Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
 }
 
 void ModelManager::update_model_options_in_cache(const ModelInfo& info) {
@@ -1041,7 +1043,7 @@ void ModelManager::update_model_options_in_cache(const ModelInfo& info) {
     if (it != models_cache_.end()) {
         it->second.recipe_options = info.recipe_options;
     } else {
-        std::cerr << "[ModelManager] Warning: '" << info.model_name << "' not found in cache" << std::endl;
+        LOG(WARNING, "ModelManager") << "'" << info.model_name << "' not found in cache" << std::endl;
     }
 }
 
@@ -1060,15 +1062,15 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
         // The path changes now that files exist on disk
         if (downloaded) {
             resolve_all_model_paths(it->second);
-            std::cout << "[ModelManager] Updated '" << model_name
+            LOG(INFO, "ModelManager") << "Updated '" << model_name
                       << "' downloaded=" << downloaded
                       << ", resolved_path=" << it->second.resolved_path() << std::endl;
         } else {
-            std::cout << "[ModelManager] Updated '" << model_name
+            LOG(INFO, "ModelManager") << "Updated '" << model_name
                       << "' downloaded=" << downloaded << std::endl;
         }
     } else {
-        std::cerr << "[ModelManager] Warning: '" << model_name << "' not found in cache" << std::endl;
+        LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in cache" << std::endl;
     }
 }
 
@@ -1086,11 +1088,11 @@ void ModelManager::remove_model_from_cache(const std::string& model_name) {
         bool is_user_model = model_name.substr(0, 5) == "user.";
         if (is_user_model || it->second.source == "local_upload") {
             models_cache_.erase(model_name);
-            std::cout << "[ModelManager] Removed '" << model_name << "' from cache" << std::endl;
+            LOG(INFO, "ModelManager") << "Removed '" << model_name << "' from cache" << std::endl;
         } else {
             // Registered model - just mark as not downloaded
             it->second.downloaded = false;
-            std::cout << "[ModelManager] Marked '" << model_name << "' as not downloaded" << std::endl;
+            LOG(INFO, "ModelManager") << "Marked '" << model_name << "' as not downloaded" << std::endl;
         }
     }
 }
@@ -1116,7 +1118,7 @@ void ModelManager::refresh_flm_download_status() {
 
             // Log changes for debugging
             if (was_downloaded != info.downloaded) {
-                std::cout << "[ModelManager] FLM status changed: " << name
+                LOG(INFO, "ModelManager") << "FLM status changed: " << name
                           << " (checkpoint: " << info.checkpoint() << ") -> "
                           << (info.downloaded ? "downloaded" : "not downloaded") << std::endl;
             }
@@ -1159,16 +1161,6 @@ static bool is_npu_available(const json& hardware) {
     return false;
 }
 
-static bool is_flm_available(const json& hardware) {
-    return is_npu_available(hardware);
-}
-
-static bool is_ryzenai_llm_available(const json& hardware) {
-    // RyzenAI LLM models are available if NPU hardware is present
-    // The ryzenai-server executable will be obtained as needed
-    return is_npu_available(hardware);
-}
-
 // Helper function to parse physical memory string (e.g., "32.00 GB") to GB as double
 // Returns 0.0 if parsing fails
 static double parse_physical_memory_gb(const std::string& memory_str) {
@@ -1208,9 +1200,9 @@ double get_max_memory_of_device(json device, MemoryAllocBehavior mem_alloc_behav
     if (device.contains("vram_gb")) {
         vram_gb = device["vram_gb"].get<double>();
     }
-    if (device.contains("dynamic_mem_gb"))
+    if (device.contains("virtual_mem_gb"))
     {
-        virtual_mem_gb = device["dynamic_mem_gb"].get<double>();
+        virtual_mem_gb = device["virtual_mem_gb"].get<double>();
     }
 
     switch (mem_alloc_behavior)
@@ -1256,33 +1248,26 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
     if (enable_dgpu_gtt)
     {
-      std::cout << "[ModelManager]: LEMONADE_ENABLE_DGPU_GTT has been set to true." << std::endl
+      LOG(INFO, "ModelManager") << "LEMONADE_ENABLE_DGPU_GTT has been set to true." << std::endl
                 << "     Models are being filtered assuming GTT memory." << std::endl
                 << "     Using GTT on a dGPU will have a significant performance impact." << std::endl;
     }
 
     std::map<std::string, ModelInfo> filtered;
 
-    // Clear the filtered-out models cache (will be repopulated below)
     filtered_out_models_.clear();
 
-    // Detect platform
 #ifdef __APPLE__
     bool is_macos = true;
 #else
     bool is_macos = false;
 #endif
 
-    // Get hardware info once (this will print the message)
     json system_info = SystemInfoCache::get_system_info_with_cache();
     json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
 
-    // Check backend availability (passing hardware info)
     bool npu_available = is_npu_available(hardware);
-    bool flm_available = is_flm_available(hardware);
-    bool ryzenai_llm_available = is_ryzenai_llm_available(hardware);
 
-    // Get largest VRAM object for memory-based filtering
     double largest_mem_pool_gb = 0.0;
     double curr_mem_pool_gb = 0.0;
 
@@ -1303,16 +1288,13 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         }
     }
 
-    // Get system RAM for memory-based filtering
     double system_ram_gb = 0.0;
     if (system_info.contains("Physical Memory") && system_info["Physical Memory"].is_string()) {
         system_ram_gb = parse_physical_memory_gb(system_info["Physical Memory"].get<std::string>());
     }
 
-    // Use the largest of the two values
     double max_model_size_gb = largest_mem_pool_gb > (system_ram_gb * 0.8) ? largest_mem_pool_gb : (system_ram_gb * 0.8);
 
-    // Get processor and OS for user-friendly error messages
     std::string processor = "Unknown";
     std::string os_version = "Unknown";
     if (system_info.contains("Processor") && system_info["Processor"].is_string()) {
@@ -1322,19 +1304,16 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         os_version = system_info["OS Version"].get<std::string>();
     }
 
-    // Debug output (only shown once during startup)
     static bool debug_printed = false;
     if (!debug_printed) {
-        std::cout << "[ModelManager] Backend availability:" << std::endl;
-        std::cout << "  - NPU hardware: " << (npu_available ? "Yes" : "No") << std::endl;
-        std::cout << "  - FLM available: " << (flm_available ? "Yes" : "No") << std::endl;
-        std::cout << "  - RyzenAI LLM available: " << (ryzenai_llm_available ? "Yes" : "No") << std::endl;
+        LOG(INFO, "ModelManager") << "Backend availability:" << std::endl;
+        LOG(INFO, "ModelManager") << "  - NPU hardware: " << (npu_available ? "Yes" : "No") << std::endl;
         if (system_ram_gb > 0.0) {
-            std::cout << "  - System RAM: " << std::fixed << std::setprecision(1) << system_ram_gb
+            LOG(INFO, "ModelManager") << "  - System RAM: " << std::fixed << std::setprecision(1) << system_ram_gb
                       << " GB (max model size: " << max_model_size_gb << " GB)" << std::endl;
         }
         if (largest_mem_pool_gb > 0.0) {
-            std::cout << "  - Largest memory pool: " << std::fixed << std::setprecision(1) << largest_mem_pool_gb << std::endl;
+            LOG(INFO, "ModelManager") << "  - Largest memory pool: " << std::fixed << std::setprecision(1) << largest_mem_pool_gb << std::endl;
         }
         debug_printed = true;
     }
@@ -1644,7 +1623,7 @@ void ModelManager::download_model(const std::string& model_name,
             }
         }
 
-        std::cout << "Registering new user model: " << model_name << std::endl;
+        LOG(INFO, "ModelManager") << "Registering new user model: " << model_name << std::endl;
     } else {
         // Model is registered - if checkpoint not provided, look up from registry
         // otherwise overwrite registration
@@ -1677,16 +1656,16 @@ void ModelManager::download_model(const std::string& model_name,
         );
     }
 
-    std::cout << "Downloading model: " << repo_id;
+    LOG(INFO, "ModelManager") << "Downloading model: " << repo_id;
     if (!variant.empty()) {
-        std::cout << " (variant: " << variant << ")";
+        LOG(INFO, "ModelManager") << " (variant: " << variant << ")";
     }
-    std::cout << std::endl;
+    LOG(INFO, "ModelManager") << std::endl;
 
     // Check if offline mode
     const char* offline_env = std::getenv("LEMONADE_OFFLINE");
     if (offline_env && std::string(offline_env) == "1") {
-        std::cout << "Offline mode enabled, skipping download" << std::endl;
+        LOG(INFO, "ModelManager") << "Offline mode enabled, skipping download" << std::endl;
         return;
     }
 
@@ -1696,7 +1675,7 @@ void ModelManager::download_model(const std::string& model_name,
     //   - Load/inference endpoints: Don't check HuggingFace for updates (use cache if available)
     //   - Pull endpoint: Always check HuggingFace for latest version (do_not_upgrade=false)
     if (do_not_upgrade && is_model_downloaded(model_name)) {
-        std::cout << "[ModelManager] Model already downloaded and do_not_upgrade=true, using cached version" << std::endl;
+        LOG(INFO, "ModelManager") << "Model already downloaded and do_not_upgrade=true, using cached version" << std::endl;
         return;
     }
 
@@ -1734,7 +1713,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         // Create parent directory for file (handles folders in filenames)
         fs::create_directories(fs::path(output_path).parent_path());
 
-        std::cout << "[ModelManager] Downloading: " << filename << "..." << std::endl;
+        LOG(INFO, "ModelManager") << "Downloading: " << filename << "..." << std::endl;
 
         // Send progress update if callback provided (and check for cancellation)
         if (progress_callback) {
@@ -1746,7 +1725,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             progress.bytes_total = file_size;
             progress.percent = 0;
             if (!progress_callback(progress)) {
-                std::cout << "[ModelManager] Download cancelled by client" << std::endl;
+                LOG(INFO, "ModelManager") << "Download cancelled by client" << std::endl;
                 throw std::runtime_error("Download cancelled");
             }
         }
@@ -1789,12 +1768,12 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 
         // Check if download was cancelled
         if (result.cancelled) {
-            std::cout << "[ModelManager] Download cancelled by client" << std::endl;
+            LOG(INFO, "ModelManager") << "Download cancelled by client" << std::endl;
             throw std::runtime_error("Download cancelled");
         }
 
         if (result.success) {
-            std::cout << "\n[ModelManager] Downloaded: " << filename << std::endl;
+            LOG(INFO, "ModelManager") << "Downloaded: " << filename << std::endl;
         } else {
             // Build a detailed error message
             std::ostringstream error_msg;
@@ -1818,7 +1797,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
     }
 
     // Validate all expected files exist after download
-    std::cout << "[ModelManager] Validating downloaded files..." << std::endl;
+    LOG(INFO, "ModelManager") << "Validating downloaded files..." << std::endl;
     bool all_valid = true;
     for (const auto& file_desc : manifest["files"]) {
         std::string filename = file_desc["name"].get<std::string>();
@@ -1830,13 +1809,13 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         // Check for .partial file (incomplete download)
         if (fs::exists(partial_path)) {
             all_valid = false;
-            std::cerr << "[ModelManager] Incomplete file found: " << filename << ".partial" << std::endl;
+            LOG(ERROR, "ModelManager") << "Incomplete file found: " << filename << ".partial" << std::endl;
             continue;
         }
 
         if (!fs::exists(expected_path)) {
             all_valid = false;
-            std::cerr << "[ModelManager] Missing file: " << filename << std::endl;
+            LOG(ERROR, "ModelManager") << "Missing file: " << filename << std::endl;
             continue;
         }
 
@@ -1845,7 +1824,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             size_t actual_size = fs::file_size(expected_path);
             if (actual_size != expected_size) {
                 all_valid = false;
-                std::cerr << "[ModelManager] Size mismatch for " << filename
+                LOG(ERROR, "ModelManager") << "Size mismatch for " << filename
                             << ": expected " << expected_size << " bytes, got " << actual_size << " bytes" << std::endl;
             }
         }
@@ -1879,9 +1858,10 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
     // Get Hugging Face cache directory
     std::string hf_cache = get_hf_cache_dir();
+    fs::path hf_cache_path = path_from_utf8(hf_cache);
 
     // Create cache directory structure
-    fs::create_directories(hf_cache);
+    fs::create_directories(hf_cache_path);
 
     std::string cache_dir_name = "models--";
     for (char c : main_repo_id) {
@@ -1892,7 +1872,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         }
     }
 
-    std::string model_cache_path = hf_cache + "/" + cache_dir_name;
+    fs::path model_cache_path = hf_cache_path / cache_dir_name;
     fs::create_directories(model_cache_path);
 
     // Get HF token if available
@@ -1910,7 +1890,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     // (download_model) to avoid this API call when using cached models.
     std::string api_url = "https://huggingface.co/api/models/" + main_repo_id;
 
-    std::cout << "[ModelManager] Fetching repository file list from Hugging Face..." << std::endl;
+    LOG(INFO, "ModelManager") << "Fetching repository file list from Hugging Face..." << std::endl;
     auto response = HttpClient::get(api_url, headers);
 
     if (response.status_code != 200) {
@@ -1930,21 +1910,21 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     std::string commit_hash;
     if (model_info.contains("sha") && model_info["sha"].is_string()) {
         commit_hash = model_info["sha"].get<std::string>();
-        std::cout << "[ModelManager] Using commit hash: " << commit_hash << std::endl;
+        LOG(INFO, "ModelManager") << "Using commit hash: " << commit_hash << std::endl;
     } else {
         // Fallback to "main" if sha is not available
         commit_hash = "main";
-        std::cout << "[ModelManager] Warning: No commit hash found in API response, using 'main'" << std::endl;
+        LOG(INFO, "ModelManager") << "Warning: No commit hash found in API response, using 'main'" << std::endl;
     }
 
     // Create snapshot directory using commit hash
-    std::string snapshot_path = model_cache_path + "/snapshots/" + commit_hash;
+    fs::path snapshot_path = model_cache_path / "snapshots" / commit_hash;
     fs::create_directories(snapshot_path);
 
     // Create refs/main file pointing to this commit (matching huggingface_hub behavior)
-    std::string refs_dir = model_cache_path + "/refs";
+    fs::path refs_dir = model_cache_path / "refs";
     fs::create_directories(refs_dir);
-    std::string refs_main_path = refs_dir + "/main";
+    fs::path refs_main_path = refs_dir / "main";
     std::ofstream refs_file(refs_main_path);
     if (refs_file.is_open()) {
         refs_file << commit_hash;
@@ -1959,7 +1939,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         }
     }
 
-    std::cout << "[ModelManager] Repository contains " << repo_files.size() << " files" << std::endl;
+    LOG(INFO, "ModelManager") << "Repository contains " << repo_files.size() << " files" << std::endl;
 
     // Check if this is a GGUF model (variant provided) or non-GGUF (variant empty)
     if (!main_variant.empty()) {
@@ -1971,7 +1951,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             // For safetensors files, just download the specified file directly
             if (std::find(repo_files.begin(), repo_files.end(), main_variant) != repo_files.end()) {
                 files_to_download[main_repo_id].push_back(main_variant);
-                std::cout << "[ModelManager] Found safetensors file: " << main_variant << std::endl;
+                LOG(INFO, "ModelManager") << "Found safetensors file: " << main_variant << std::endl;
             } else {
                 throw std::runtime_error("Safetensors file not found in repository: " + main_variant);
             }
@@ -2024,20 +2004,20 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
 
     int total_files = 0;
-    std::cout << "[ModelManager] Identified files to download:" << std::endl;
+    LOG(INFO, "ModelManager") << "Identified files to download:" << std::endl;
 
     for (auto const& [repo_id, files] : files_to_download) {
         for (const auto& filename : files) {
             total_files++;
-            std::cout << "  - " << filename << std::endl;
+            LOG(INFO, "ModelManager") << "  - " << filename << std::endl;
         }
     }
 
-    std::cout << "  Total file count: " << total_files << std::endl;
+    LOG(INFO, "ModelManager") << "  Total file count: " << total_files << std::endl;
 
     // Create download manifest to track incomplete downloads
     // This allows us to detect partially downloaded models
-    std::string manifest_path = snapshot_path + "/.download_manifest.json";
+    std::string manifest_path = path_to_utf8(snapshot_path / ".download_manifest.json");
 
     // Fetch file sizes from the tree API (the models API doesn't include sizes)
     std::map<std::string, size_t> file_sizes;
@@ -2057,9 +2037,9 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
                     }
                 }
             }
-            std::cout << "[ModelManager] Retrieved file sizes for " << file_sizes.size() << " files" << std::endl;
+            LOG(INFO, "ModelManager") << "Retrieved file sizes for " << file_sizes.size() << " files" << std::endl;
         } else {
-            std::cout << "[ModelManager] Warning: Could not fetch file sizes (tree API returned "
+            LOG(INFO, "ModelManager") << "Warning: Could not fetch file sizes (tree API returned "
                         << tree_response.status_code << ")" << std::endl;
         }
     }
@@ -2068,7 +2048,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     json manifest;
     manifest["repo_id"] = main_repo_id;
     manifest["commit_hash"] = commit_hash;
-    manifest["download_path"] = snapshot_path;
+    manifest["download_path"] = path_to_utf8(snapshot_path);
     manifest["files_count"] = total_files;
     manifest["files"] = json::array();
     for (auto const& [repo_id, files] : files_to_download) {
@@ -2084,14 +2064,14 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
     // Write manifest (indicates download in progress)
     JsonUtils::save_to_file(manifest, manifest_path);
-    std::cout << "[ModelManager] Created download manifest" << std::endl;
+    LOG(INFO, "ModelManager") << "Created download manifest" << std::endl;
 
     download_from_manifest(manifest, headers, progress_callback);
 
     // All files validated - remove manifest to mark download as complete
     if (fs::exists(manifest_path)) {
         fs::remove(manifest_path);
-        std::cout << "[ModelManager] Removed download manifest (download complete)" << std::endl;
+        LOG(INFO, "ModelManager") << "Removed download manifest (download complete)" << std::endl;
     }
 
     // Send completion event
@@ -2106,17 +2086,17 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         (void)progress_callback(progress);  // Ignore return - download already complete
     }
 
-    std::cout << "[ModelManager] ✓ All files downloaded and validated successfully!" << std::endl;
-    std::cout << "[ModelManager DEBUG] Download location: " << snapshot_path << std::endl;
+    LOG(INFO, "ModelManager") << "✓ All files downloaded and validated successfully!" << std::endl;
+    LOG(INFO, "ModelManager") << "Download location: " << path_to_utf8(snapshot_path) << std::endl;
 }
 
 void ModelManager::download_from_flm(const std::string& checkpoint,
                                      bool do_not_upgrade,
                                      DownloadProgressCallback progress_callback) {
-    std::cout << "[ModelManager] Pulling FLM model: " << checkpoint << std::endl;
+    LOG(INFO, "ModelManager") << "Pulling FLM model: " << checkpoint << std::endl;
 
     // Ensure FLM is installed
-    std::cout << "[ModelManager] Checking FLM installation..." << std::endl;
+    LOG(INFO, "ModelManager") << "Checking FLM installation..." << std::endl;
     try {
         backends::FastFlowLMServer flm_installer("info", this, nullptr);
         try {
@@ -2129,7 +2109,7 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
             }
         }
     } catch (const std::exception& e) {
-        std::cerr << "[ModelManager ERROR] FLM check/install failed: " << e.what() << std::endl;
+        LOG(ERROR, "ModelManager") << "FLM check/install failed: " << e.what() << std::endl;
         throw;
     }
 
@@ -2142,11 +2122,11 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
         args.push_back("--force");
     }
 
-    std::cout << "[ProcessManager] Starting process: \"" << flm_path << "\"";
+    LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
     for (const auto& arg : args) {
-        std::cout << " \"" << arg << "\"";
+        LOG(INFO, "ProcessManager") << " \"" << arg << "\"";
     }
-    std::cout << std::endl;
+    LOG(INFO, "ProcessManager") << std::endl;
 
     // State for parsing FLM output
     int total_files = 0;
@@ -2159,7 +2139,7 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
         flm_path, args,
         [&](const std::string& line) -> bool {
             // Always print the line to console
-            std::cout << line << std::endl;
+            LOG(INFO, "FLM") << line << std::endl;
 
             // Parse FLM output to extract progress information
             // Pattern: "[FLM]  Downloading X/Y: filename"
@@ -2317,12 +2297,12 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
     );
 
     if (cancelled) {
-        std::cout << "[ModelManager] FLM download cancelled by client" << std::endl;
+        LOG(INFO, "ModelManager") << "FLM download cancelled by client" << std::endl;
         throw std::runtime_error("Download cancelled");
     }
 
     if (exit_code != 0) {
-        std::cerr << "[ModelManager ERROR] FLM pull failed with exit code: " << exit_code << std::endl;
+        LOG(ERROR, "ModelManager") << "FLM pull failed with exit code: " << exit_code << std::endl;
         throw std::runtime_error("FLM pull failed with exit code: " + std::to_string(exit_code));
     }
 
@@ -2336,15 +2316,15 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
         (void)progress_callback(progress);  // Ignore return - download already complete
     }
 
-    std::cout << "[ModelManager] FLM model pull completed successfully" << std::endl;
+    LOG(INFO, "ModelManager") << "FLM model pull completed successfully" << std::endl;
 }
 
 void ModelManager::delete_model(const std::string& model_name) {
     auto info = get_model_info(model_name);
 
-    std::cout << "[ModelManager] Deleting model: " << model_name << std::endl;
-    std::cout << "[ModelManager] Checkpoint: " << info.checkpoint() << std::endl;
-    std::cout << "[ModelManager] Recipe: " << info.recipe << std::endl;
+    LOG(INFO, "ModelManager") << "Deleting model: " << model_name << std::endl;
+    LOG(INFO, "ModelManager") << "Checkpoint: " << info.checkpoint() << std::endl;
+    LOG(INFO, "ModelManager") << "Recipe: " << info.recipe << std::endl;
 
     // Handle extra models (from --extra-models-dir) - these are user-managed external files
     if (model_name.substr(0, 6) == "extra.") {
@@ -2354,7 +2334,7 @@ void ModelManager::delete_model(const std::string& model_name) {
 
     // Handle FLM models separately
     if (info.recipe == "flm") {
-        std::cout << "[ModelManager] Deleting FLM model: " << info.checkpoint() << std::endl;
+        LOG(INFO, "ModelManager") << "Deleting FLM model: " << info.checkpoint() << std::endl;
 
         // Validate checkpoint is not empty
         if (info.checkpoint().empty()) {
@@ -2372,11 +2352,11 @@ void ModelManager::delete_model(const std::string& model_name) {
         // Prepare arguments for 'flm remove' command
         std::vector<std::string> args = {"remove", info.checkpoint()};
 
-        std::cout << "[ProcessManager] Starting process: \"" << flm_path << "\"";
+        LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
         for (const auto& arg : args) {
-            std::cout << " \"" << arg << "\"";
+            LOG(INFO, "ProcessManager") << " \"" << arg << "\"";
         }
-        std::cout << std::endl;
+        LOG(INFO, "ProcessManager") << std::endl;
 
         // Run flm remove command
         auto handle = utils::ProcessManager::start_process(flm_path, args, "", false);
@@ -2387,7 +2367,7 @@ void ModelManager::delete_model(const std::string& model_name) {
             if (!utils::ProcessManager::is_running(handle)) {
                 int exit_code = utils::ProcessManager::get_exit_code(handle);
                 if (exit_code != 0) {
-                    std::cerr << "[ModelManager ERROR] FLM remove failed with exit code: " << exit_code << std::endl;
+                    LOG(ERROR, "ModelManager") << "FLM remove failed with exit code: " << exit_code << std::endl;
                     throw std::runtime_error("Failed to delete FLM model " + model_name + ": FLM remove failed with exit code " + std::to_string(exit_code));
                 }
                 break;
@@ -2397,11 +2377,11 @@ void ModelManager::delete_model(const std::string& model_name) {
 
         // Check if process is still running (timeout)
         if (utils::ProcessManager::is_running(handle)) {
-            std::cerr << "[ModelManager ERROR] FLM remove timed out" << std::endl;
+            LOG(ERROR, "ModelManager") << "FLM remove timed out" << std::endl;
             throw std::runtime_error("Failed to delete FLM model " + model_name + ": FLM remove timed out");
         }
 
-        std::cout << "[ModelManager] ✓ Successfully deleted FLM model: " << model_name << std::endl;
+        LOG(INFO, "ModelManager") << "Successfully deleted FLM model: " << model_name << std::endl;
 
         // Remove from user models if it's a user model
         if (model_name.substr(0, 5) == "user.") {
@@ -2410,7 +2390,7 @@ void ModelManager::delete_model(const std::string& model_name) {
             updated_user_models.erase(clean_name);
             save_user_models(updated_user_models);
             user_models_ = updated_user_models;
-            std::cout << "[ModelManager] ✓ Removed from user_models.json" << std::endl;
+            LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
         }
 
         // Remove from cache after successful deletion
@@ -2426,14 +2406,14 @@ void ModelManager::delete_model(const std::string& model_name) {
 
     // Find the models--* directory from resolved_path
     // resolved_path could be a file or directory, we need to find the models-- ancestor
-    fs::path path_obj(info.resolved_path());
+    fs::path path_obj(path_from_utf8(info.resolved_path()));
     std::string model_cache_path;
 
     // Walk up the directory tree to find models--* directory
     while (!path_obj.empty() && path_obj.has_filename()) {
         std::string dirname = path_obj.filename().string();
         if (dirname.find("models--") == 0) {
-            model_cache_path = path_obj.string();
+            model_cache_path = path_to_utf8(path_obj);
             break;
         }
         path_obj = path_obj.parent_path();
@@ -2443,14 +2423,15 @@ void ModelManager::delete_model(const std::string& model_name) {
         throw std::runtime_error("Could not find models-- directory in path: " + info.resolved_path());
     }
 
-    std::cout << "[ModelManager] Cache path: " << model_cache_path << std::endl;
+    LOG(INFO, "ModelManager") << "Cache path: " << model_cache_path << std::endl;
 
-    if (fs::exists(model_cache_path)) {
-        std::cout << "[ModelManager] Removing directory..." << std::endl;
-        fs::remove_all(model_cache_path);
-        std::cout << "[ModelManager] ✓ Deleted model files: " << model_name << std::endl;
+    fs::path model_cache_path_fs = path_from_utf8(model_cache_path);
+    if (fs::exists(model_cache_path_fs)) {
+        LOG(INFO, "ModelManager") << "Removing directory..." << std::endl;
+        fs::remove_all(model_cache_path_fs);
+        LOG(INFO, "ModelManager") << "✓ Deleted model files: " << model_name << std::endl;
     } else {
-        std::cout << "[ModelManager] Warning: Model cache directory not found (may already be deleted)" << std::endl;
+        LOG(INFO, "ModelManager") << "Warning: Model cache directory not found (may already be deleted)" << std::endl;
     }
 
     // Remove from user models if it's a user model
@@ -2460,7 +2441,7 @@ void ModelManager::delete_model(const std::string& model_name) {
         updated_user_models.erase(clean_name);
         save_user_models(updated_user_models);
         user_models_ = updated_user_models;
-        std::cout << "[ModelManager] ✓ Removed from user_models.json" << std::endl;
+        LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
     }
 
     // Remove from cache after successful deletion

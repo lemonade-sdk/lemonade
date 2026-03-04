@@ -20,6 +20,7 @@ import ImagePreviewList from '../ImagePreviewList';
 import EmptyState from '../EmptyState';
 import TypingIndicator from '../TypingIndicator';
 import { getExperiencePrimaryChatModel } from '../../utils/experienceModels';
+import RecordButton from '../RecordButton';
 
 interface LLMChatPanelProps {
   isBusy: boolean;
@@ -370,8 +371,11 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     if (!accumulatedContent) throw new Error('No content received from stream');
   };
 
-  const sendMessage = async () => {
-    if ((!inputValue.trim() && uploadedImages.length === 0) || isBusy) return;
+  const sendMessage = async (textOverride?: string) => {
+    const textToSend = typeof textOverride === 'string' ? textOverride : inputValue;
+    // When called from voice auto-submit, `isBusy` may still be stale-true
+    // because the state update hasn't flushed yet.
+    if (!textToSend.trim() && uploadedImages.length === 0) return;
 
     const ready = await runPreFlight('llm', {
       modelName: chatModelName,
@@ -390,13 +394,13 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     let messageContent: MessageContent;
     if (uploadedImages.length > 0) {
       const contentArray: Array<TextContent | ImageContent> = [];
-      if (inputValue.trim()) contentArray.push({ type: 'text', text: inputValue });
+      if (textToSend.trim()) contentArray.push({ type: 'text', text: textToSend });
       uploadedImages.forEach(imageUrl => {
         contentArray.push({ type: 'image_url', image_url: { url: imageUrl } });
       });
       messageContent = contentArray;
     } else {
-      messageContent = inputValue;
+      messageContent = textToSend;
     }
 
     const userMessage: Message = { role: 'user', content: messageContent };
@@ -858,7 +862,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           <InferenceControls
             isBusy={isBusy}
             isInferring={isInferring}
-            stoppable={true}
+            stoppable={activeModality === 'llm'}
             onSend={sendMessage}
             onStop={handleStopGeneration}
             sendDisabled={!inputValue.trim() && uploadedImages.length === 0}
@@ -874,25 +878,37 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
               </button>
             : undefined}
             leftControls={
-              (isVision || experienceMode) ? (
-                <>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={uploadedImageHandlers.upload}
-                    style={{ display: 'none' }}
-                  />
-                  <button
-                    className="image-upload-button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isBusy}
-                    title="Upload image"
-                  >
-                    <ImageUploadIcon />
-                  </button>
-                </>
-              ) : undefined
+              <>
+                {(isVision || experienceMode) && (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={uploadedImageHandlers.upload}
+                      style={{ display: 'none' }}
+                    />
+                    <button
+                      className="image-upload-button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isBusy}
+                      title="Upload image"
+                    >
+                      <ImageUploadIcon />
+                    </button>
+                  </>
+                )}
+                <RecordButton
+                  disabled={isBusy}
+                  inputValue={inputValue}
+                  setInputValue={setInputValue}
+                  textareaRef={inputTextareaRef}
+                  onError={showError}
+                  runPreFlight={runPreFlight}
+                  reset={reset}
+                  onAutoSubmit={(text) => sendMessage(text)}
+                />
+              </>
             }
           />
         </div>

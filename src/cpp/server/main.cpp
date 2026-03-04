@@ -5,6 +5,11 @@
 #include <lemon/server.h>
 #include <lemon/single_instance.h>
 #include <lemon/version.h>
+#include <lemon/utils/aixlog.hpp>
+
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 using namespace lemon;
 
@@ -15,8 +20,10 @@ static Server* g_server_instance = nullptr;
 // Signal handler for Ctrl+C, SIGTERM, and SIGHUP
 void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
-        std::cout << "\n[Server] Shutdown signal received, exiting..." << std::endl;
-        std::cout.flush();
+#ifndef _WIN32
+        const char* msg = "Shutdown signal received, exiting...\n";
+        (void)write(STDOUT_FILENO, msg, 38);
+#endif
 
         // Don't call server->stop() from signal handler - it can block/deadlock
         // Just set the flag and exit immediately. The OS will clean up resources.
@@ -38,7 +45,7 @@ int main(int argc, char** argv) {
     // Check for single instance early (before parsing args for faster feedback)
     if (SingleInstance::IsAnotherInstanceRunning("Router")) {
         std::cerr << "Error: Another instance of lemonade-router is already running.\n"
-                  << "Only one instance can run at a time.\n" << std::endl;
+                  << "Only one instance can run at a time." << std::endl;
         return 1;
     }
 
@@ -55,19 +62,24 @@ int main(int argc, char** argv) {
         // Get server configuration
         auto config = parser.get_config();
 
+        // Initialize logging
+        auto sink = std::make_shared<AixLog::SinkCout>(AixLog::Filter(AixLog::to_severity(config.log_level)), "%Y-%m-%d %H:%M:%S.#ms [#severity] (#tag_func) #message");
+        AixLog::Log::init({sink});
+
         // Start the server
-        std::cout << "Starting Lemonade Server..." << std::endl;
-        std::cout << "  Version: " << LEMON_VERSION_STRING << std::endl;
-        std::cout << "  Port: " << config.port << std::endl;
-        std::cout << "  Host: " << config.host << std::endl;
-        std::cout << "  Log level: " << config.log_level << std::endl;
+        LOG(INFO) << "Starting Lemonade Server..." << std::endl;
+        LOG(INFO) << "  Version: " << LEMON_VERSION_STRING << std::endl;
+        LOG(INFO) << "  Port: " << config.port << std::endl;
+        LOG(INFO) << "  Host: " << config.host << std::endl;
+        LOG(INFO) << "  Log level: " << config.log_level << std::endl;
         if (!config.extra_models_dir.empty()) {
-            std::cout << "  Extra models dir: " << config.extra_models_dir << std::endl;
+            LOG(INFO) << "  Extra models dir: " << config.extra_models_dir << std::endl;
         }
 
         Server server(config.port, config.host, config.log_level,
                     config.recipe_options, config.max_loaded_models,
-                    config.extra_models_dir, config.no_broadcast);
+                    config.extra_models_dir, config.no_broadcast,
+                    config.global_timeout);
 
         // Register signal handler for Ctrl+C
         g_server_instance = &server;
@@ -82,7 +94,7 @@ int main(int argc, char** argv) {
         return 0;
 
     } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        LOG(ERROR) << "Error: " << e.what() << std::endl;
         return 1;
     }
 }

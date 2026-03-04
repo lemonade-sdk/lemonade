@@ -1,14 +1,29 @@
+// On Windows, set up header guards BEFORE any other includes
+#ifdef _WIN32
+#ifndef _WINSOCKAPI_
+#define _WINSOCKAPI_
+#endif
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <winsock2.h>
+#include <windows.h>
+#pragma comment(lib, "ws2_32.lib")
+#endif
+
 #include <lemon/utils/process_manager.h>
 #include <stdexcept>
 #include <iostream>
 #include <thread>
 #include <chrono>
 #include <string>
+#include <algorithm>
+#include <cctype>
+#include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
-#include <winsock2.h>
-#include <windows.h>
-#pragma comment(lib, "ws2_32.lib")
+#ifdef ERROR
+#undef ERROR
+#endif
 #else
 #include <unistd.h>
 #include <sys/types.h>
@@ -33,6 +48,25 @@ static bool should_filter_line(const std::string& line) {
             line.find("Enter 'exit' to stop the server") != std::string::npos);
 }
 
+static bool is_error_line(const std::string& line) {
+    std::string lowered = line;
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return lowered.find("error") != std::string::npos;
+}
+
+static void log_process_line(const std::string& line) {
+    if (should_filter_line(line)) {
+        return;
+    }
+
+    if (is_error_line(line)) {
+        LOG(ERROR, "Process") << line << std::endl;
+    } else {
+        LOG(INFO, "Process") << line << std::endl;
+    }
+}
+
 #ifdef _WIN32
 // Thread function to read from pipe and filter output
 static DWORD WINAPI output_filter_thread(LPVOID param) {
@@ -51,16 +85,13 @@ static DWORD WINAPI output_filter_thread(LPVOID param) {
             std::string line = line_buffer.substr(0, pos);
             line_buffer = line_buffer.substr(pos + 1);
 
-            // Only print if not a health check line
-            if (!should_filter_line(line)) {
-                std::cout << line << std::endl;
-            }
+            log_process_line(line);
         }
     }
 
     // Print any remaining partial line
-    if (!line_buffer.empty() && !should_filter_line(line_buffer)) {
-        std::cout << line_buffer << std::endl;
+    if (!line_buffer.empty()) {
+        log_process_line(line_buffer);
     }
 
     CloseHandle(pipe);
@@ -124,16 +155,26 @@ ProcessHandle ProcessManager::start_process(
         si.hStdOutput = stdout_write;
         si.hStdError = stderr_write;
 
-        std::cout << "[ProcessManager] Starting process with filtered output: " << cmdline << std::endl;
+        LOG(DEBUG, "ProcessManager") << "Starting process with filtered output: " << cmdline << std::endl;
     } else if (inherit_output) {
         // Direct inheritance without filtering
         si.dwFlags |= STARTF_USESTDHANDLES;
         si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
         si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
         si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
-        std::cout << "[ProcessManager] Starting process with inherited output: " << cmdline << std::endl;
+        LOG(DEBUG, "ProcessManager") << "Starting process with inherited output: " << cmdline << std::endl;
     } else {
-        std::cout << "[ProcessManager] Starting process: " << cmdline << std::endl;
+        // Redirect to NUL to suppress output when not in debug mode
+        si.dwFlags |= STARTF_USESTDHANDLES;
+        si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+
+        HANDLE hNul = CreateFileA("NUL", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hNul != INVALID_HANDLE_VALUE) {
+            // Ensure the NUL handle is inheritable
+            SetHandleInformation(hNul, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+            si.hStdOutput = hNul;
+            si.hStdError = hNul;
+        }
     }
 
     BOOL success = CreateProcessA(
@@ -148,6 +189,11 @@ ProcessHandle ProcessManager::start_process(
         &si,
         &pi
     );
+
+    // If we opened a NUL handle, we can close it now (the child process has its own inherited handle)
+    if (!inherit_output && si.hStdOutput != nullptr && si.hStdOutput != INVALID_HANDLE_VALUE) {
+        CloseHandle(si.hStdOutput);
+    }
 
     if (!success) {
         DWORD error = GetLastError();
@@ -169,7 +215,7 @@ ProcessHandle ProcessManager::start_process(
 
         std::string full_error = "Failed to start process '" + executable +
                                 "': " + error_msg + " (Error code: " + std::to_string(error) + ")";
-        std::cerr << "[ProcessManager ERROR] " << full_error << std::endl;
+        LOG(ERROR, "ProcessManager") << full_error << std::endl;
         throw std::runtime_error(full_error);
     }
 
@@ -183,7 +229,9 @@ ProcessHandle ProcessManager::start_process(
         CreateThread(nullptr, 0, output_filter_thread, stderr_read, 0, nullptr);
     }
 
-    std::cout << "[ProcessManager] Process started successfully, PID: " << pi.dwProcessId << std::endl;
+    if (inherit_output) {
+        LOG(INFO, "ProcessManager") << "Process started successfully, PID: " << pi.dwProcessId << std::endl;
+    }
 
     handle.handle = pi.hProcess;
     handle.pid = pi.dwProcessId;
@@ -198,6 +246,18 @@ ProcessHandle ProcessManager::start_process(
     if (inherit_output && filter_health_logs) {
         if (pipe(stdout_pipe) < 0 || pipe(stderr_pipe) < 0) {
             throw std::runtime_error("Failed to create pipes for output filtering");
+        }
+    }
+
+    if (inherit_output) {
+        std::string cmdline = executable;
+        for (const auto& arg : args) {
+            cmdline += " " + arg;
+        }
+        if (filter_health_logs) {
+            LOG(DEBUG, "ProcessManager") << "Starting process with filtered output: " << cmdline << std::endl;
+        } else {
+            LOG(DEBUG, "ProcessManager") << "Starting process with inherited output: " << cmdline << std::endl;
         }
     }
 
@@ -226,6 +286,14 @@ ProcessHandle ProcessManager::start_process(
             dup2(stderr_pipe[1], STDERR_FILENO);
             close(stdout_pipe[1]);
             close(stderr_pipe[1]);
+        } else if (!inherit_output) {
+            // Redirect to /dev/null to suppress output when not in debug mode
+            int dev_null = open("/dev/null", O_WRONLY);
+            if (dev_null >= 0) {
+                dup2(dev_null, STDOUT_FILENO);
+                dup2(dev_null, STDERR_FILENO);
+                close(dev_null);
+            }
         }
 
         // Prepare argv
@@ -240,11 +308,15 @@ ProcessHandle ProcessManager::start_process(
 
         // If execvp returns, it failed
         std::cerr << "Failed to execute: " << executable << std::endl;
-        exit(1);
+        _exit(1);
     }
 
     // Parent process
     handle.pid = pid;
+
+    if (inherit_output) {
+        LOG(INFO, "ProcessManager") << "Process started successfully, PID: " << pid << std::endl;
+    }
 
     // Start filter threads if needed
     if (inherit_output && filter_health_logs) {
@@ -266,14 +338,12 @@ ProcessHandle ProcessManager::start_process(
                     std::string line = line_buffer.substr(0, pos);
                     line_buffer = line_buffer.substr(pos + 1);
 
-                    if (!should_filter_line(line)) {
-                        std::cout << line << std::endl;
-                    }
+                    log_process_line(line);
                 }
             }
 
-            if (!line_buffer.empty() && !should_filter_line(line_buffer)) {
-                std::cout << line_buffer << std::endl;
+            if (!line_buffer.empty()) {
+                log_process_line(line_buffer);
             }
 
             close(fd);
@@ -293,14 +363,12 @@ ProcessHandle ProcessManager::start_process(
                     std::string line = line_buffer.substr(0, pos);
                     line_buffer = line_buffer.substr(pos + 1);
 
-                    if (!should_filter_line(line)) {
-                        std::cerr << line << std::endl;
-                    }
+                    log_process_line(line);
                 }
             }
 
-            if (!line_buffer.empty() && !should_filter_line(line_buffer)) {
-                std::cerr << line_buffer << std::endl;
+            if (!line_buffer.empty()) {
+                log_process_line(line_buffer);
             }
 
             close(fd);
@@ -336,7 +404,7 @@ void ProcessManager::stop_process(ProcessHandle handle) {
 
         if (!exited_gracefully) {
             // If still alive, force kill
-            std::cerr << "[ProcessManager WARNING] Process did not respond to SIGTERM, using SIGKILL" << std::endl;
+            LOG(WARNING, "ProcessManager") << "Process did not respond to SIGTERM, using SIGKILL" << std::endl;
             kill(handle.pid, SIGKILL);
             waitpid(handle.pid, &status, 0);
         }
@@ -346,7 +414,7 @@ void ProcessManager::stop_process(ProcessHandle handle) {
         // Without this delay, rapid restarts cause the new process to hang waiting
         // for GPU resources that are still being cleaned up.
         // This matches the Python test behavior which has a 5s delay after server start.
-        std::cout << "[ProcessManager] Process terminated, waiting for GPU driver cleanup..." << std::endl;
+        LOG(INFO, "ProcessManager") << "Process terminated, waiting for GPU driver cleanup..." << std::endl;
         std::this_thread::sleep_for(std::chrono::seconds(2));
     }
 #endif

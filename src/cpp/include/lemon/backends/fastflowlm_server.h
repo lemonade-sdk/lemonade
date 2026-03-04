@@ -42,7 +42,7 @@ public:
     #endif
     );
 
-    FastFlowLMServer(const std::string& log_level = "info", ModelManager* model_manager = nullptr,
+    FastFlowLMServer(const std::string& log_level, ModelManager* model_manager = nullptr,
                      BackendManager* backend_manager = nullptr);
 
     ~FastFlowLMServer() override;
@@ -81,7 +81,8 @@ public:
     void forward_streaming_request(const std::string& endpoint,
                                    const std::string& request_body,
                                    httplib::DataSink& sink,
-                                   bool sse = true) override;
+                                   bool sse = true,
+                                   long timeout_seconds = 0) override;
 
 private:
     // Static helpers for install logic (no instance state needed)
