@@ -162,7 +162,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   const [newModel, setNewModel] = useState(createEmptyModelForm);
   const [selectedMarketplaceCategory, setSelectedMarketplaceCategory] = useState<string>('all');
   const [marketplaceCategories, setMarketplaceCategories] = useState<MarketplaceCategory[]>([]);
-  const [selectedFamilyMembers, setSelectedFamilyMembers] = useState<Record<string, string>>({});
   const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
   const filterAnchorRef = useRef<HTMLDivElement | null>(null);
 
@@ -787,20 +786,23 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     );
   };
 
-  const renderModelItem = (modelName: string, modelInfo: ModelInfo, hoverKey: string) => {
+  const renderModelItem = (
+    modelName: string, modelInfo: ModelInfo, hoverKey: string,
+    displayName?: string, extraClass?: string
+  ) => {
     const { isDownloaded, statusClass, statusTitle } = getModelStatus(modelName);
     const isHovered = hoveredModel === hoverKey;
     return (
       <div
         key={modelName}
-        className={`model-item model-catalog-item ${isDownloaded ? 'downloaded' : ''}`}
+        className={`model-item model-catalog-item ${extraClass ?? ''} ${isDownloaded ? 'downloaded' : ''}`}
         onMouseEnter={() => setHoveredModel(hoverKey)}
         onMouseLeave={() => setHoveredModel(null)}
       >
         <div className="model-item-content">
           <div className="model-info-left">
             <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
-            <span className="model-name">{modelName}</span>
+            <span className="model-name">{displayName ?? modelName}</span>
             <span className="model-size">{formatSize(modelInfo.size)}</span>
             {renderActionButtons(modelName, isHovered)}
           </div>
@@ -814,10 +816,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
         </div>
       </div>
     );
-  };
-
-  const selectFamilyMember = (familyName: string, memberLabel: string) => {
-    setSelectedFamilyMembers(prev => ({ ...prev, [familyName]: memberLabel }));
   };
 
   const toggleFamily = (familyName: string) => {
@@ -856,28 +854,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
         </div>
         {isExpanded && (
           <div className="model-family-members-list">
-            {members.map(m => {
-              const { isDownloaded, statusClass, statusTitle } = getModelStatus(m.name);
-              const memberHoverKey = `family-${family.displayName}-${m.label}`;
-              const isHovered = hoveredModel === memberHoverKey;
-              return (
-                <div
-                  key={m.name}
-                  className={`model-item model-catalog-item model-family-member-row ${isDownloaded ? 'downloaded' : ''}`}
-                  onMouseEnter={() => setHoveredModel(memberHoverKey)}
-                  onMouseLeave={() => setHoveredModel(null)}
-                >
-                  <div className="model-item-content">
-                    <div className="model-info-left">
-                      <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
-                      <span className="model-name">{m.label}</span>
-                      <span className="model-size">{formatSize(m.info.size)}</span>
-                      {renderActionButtons(m.name, isHovered)}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {members.map(m =>
+              renderModelItem(
+                m.name, m.info,
+                `family-${family.displayName}-${m.label}`,
+                m.label, 'model-family-member-row'
+              )
+            )}
           </div>
         )}
       </div>

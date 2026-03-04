@@ -6348,5 +6348,3 @@ footer {
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
-
-/* Family member rows are now regular model-item rows, no special pill styles needed */
