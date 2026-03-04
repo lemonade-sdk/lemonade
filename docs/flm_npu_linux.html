@@ -55,6 +55,10 @@
         <p>
           NOTE: This is a beta feature right now, and to use it you will need to
           run lemonade-server with the environment variable
+
+          DOCKER USERS: The beta currently uses `which` to locate your flm binary.
+          If you do not have which in your docker, it will fail to pull models with
+          an error stating FLM cannot be installed automatically on linux.
           <code>LEMONADE_FLM_LINUX_BETA=1</code> set.
         </p>
       </div>
