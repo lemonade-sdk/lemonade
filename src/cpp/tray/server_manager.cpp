@@ -123,11 +123,10 @@ bool ServerManager::start_server(
 
         // Success! Server is ready immediately
         if (!is_ephemeral) {
-            LOG(INFO, "ServerManager") << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
+            LOG(INFO, "ServerManager") << "Lemonade Server v" << LEMON_VERSION_STRING << " started" << std::endl;
             // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
             std::string display_host = get_connection_host();
-            LOG(INFO, "ServerManager") << "API endpoint: http://" << display_host << ":" << port_ << "/api/v1" << std::endl;
-            LOG(INFO, "ServerManager") << "Connect your apps to the endpoint above." << std::endl;
+            LOG(INFO, "ServerManager") << "Connect your apps to API endpoint: http://" << display_host << ":" << port_ << "/api/v1" << std::endl;
             LOG(INFO, "ServerManager") << "Documentation: https://lemonade-server.ai/" << std::endl;
         }
 
