@@ -22,13 +22,17 @@ import { getExperienceComponents, isExperienceFullyDownloaded, isExperienceFully
 interface ModelFamily {
   displayName: string;
   regex: RegExp;
-  defaultMember: string;
 }
 
 const SIZE_TOKEN = String.raw`(\d+\.?\d*B(?:-A\d+\.?\d*B)?)`;
+const FLM_SIZE_TOKEN = String.raw`(\d+\.?\d*[bm])`;
 
 function buildFamilyRegex(prefix: string, suffix = '-GGUF$'): RegExp {
   return new RegExp(`^${prefix}-${SIZE_TOKEN}${suffix}`);
+}
+
+function buildFlmFamilyRegex(prefix: string): RegExp {
+  return new RegExp(`^${prefix}-${FLM_SIZE_TOKEN}-FLM$`);
 }
 
 const MODEL_FAMILIES: ModelFamily[] = [
@@ -36,47 +40,55 @@ const MODEL_FAMILIES: ModelFamily[] = [
   {
     displayName: 'Qwen3',
     regex: buildFamilyRegex('Qwen3'),
-    defaultMember: '4B',
   },
   {
     displayName: 'Qwen3-Instruct-2507',
     regex: buildFamilyRegex('Qwen3', '-Instruct-2507-GGUF$'),
-    defaultMember: '4B',
   },
   {
     displayName: 'Qwen3.5',
     regex: buildFamilyRegex('Qwen3\\.5'),
-    defaultMember: '4B',
   },
   {
     displayName: 'Qwen3-Embedding',
     regex: buildFamilyRegex('Qwen3-Embedding'),
-    defaultMember: '0.6B',
   },
   {
     displayName: 'Qwen2.5-VL-Instruct',
     regex: buildFamilyRegex('Qwen2\\.5-VL', '-Instruct-GGUF$'),
-    defaultMember: '3B',
   },
   {
     displayName: 'Qwen3-VL-Instruct',
     regex: buildFamilyRegex('Qwen3-VL', '-Instruct-GGUF$'),
-    defaultMember: '4B',
   },
   {
     displayName: 'Llama-3.2-Instruct',
     regex: buildFamilyRegex('Llama-3\\.2', '-Instruct-GGUF$'),
-    defaultMember: '3B',
   },
   {
     displayName: 'gpt-oss',
     regex: /^gpt-oss-(\d+\.?\d*b)-mxfp4?-GGUF$/,
-    defaultMember: '20b',
   },
   {
     displayName: 'LFM2',
     regex: buildFamilyRegex('LFM2'),
-    defaultMember: '8B-A1B',
+  },
+  // FLM families
+  {
+    displayName: 'Gemma3 FLM',
+    regex: buildFlmFamilyRegex('gemma3'),
+  },
+  {
+    displayName: 'LFM2 FLM',
+    regex: buildFlmFamilyRegex('lfm2'),
+  },
+  {
+    displayName: 'Llama3.2 FLM',
+    regex: buildFlmFamilyRegex('llama3\\.2'),
+  },
+  {
+    displayName: 'Qwen3 FLM',
+    regex: buildFlmFamilyRegex('qwen3'),
   },
 ];
 
