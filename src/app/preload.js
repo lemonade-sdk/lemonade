@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
+  writeClipboard: (text) => ipcRenderer.invoke('write-clipboard', text),
   // Expose any APIs you need here
   isWebApp: false,  // Explicit flag to indicate Electron mode (vs web)
   platform: process.platform,

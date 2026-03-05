@@ -4,6 +4,7 @@ import hljs from 'highlight.js';
 import texmath from 'markdown-it-texmath';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import { writeClipboard } from './utils/clipboardUtils';
 
 interface MarkdownMessageProps {
   content: string;
@@ -158,7 +159,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       const codeText = codeElement.textContent || '';
 
       try {
-        await navigator.clipboard.writeText(codeText);
+        await writeClipboard(codeText);
         button.innerHTML = CHECK_ICON_SVG;
         button.classList.add('copied');
 
