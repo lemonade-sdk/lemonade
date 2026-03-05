@@ -1582,25 +1582,11 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
                 if (m.contains("name") && m["name"].is_string()) {
                     std::string checkpoint = m["name"].get<std::string>();
 
-                    // Capitalize first letter and handle -it suffix for model name
-                    // e.g., "llama3.2:1b" -> "Llama-3.2-1B-FLM"
+                    // Format display name: replace : with -, append -FLM
+                    // e.g., "llama3.2:1b" -> "llama3.2-1b-FLM"
                     std::string display_name = checkpoint;
                     // Replace : with -
                     std::replace(display_name.begin(), display_name.end(), ':', '-');
-                    // Capitalize
-                    if (!display_name.empty()) {
-                        display_name[0] = std::toupper(display_name[0]);
-                    }
-                    // Uppercase 'b' for parameter size (e.g., -1b -> -1B)
-                    size_t b_pos = display_name.find_last_of("0123456789");
-                    if (b_pos != std::string::npos && b_pos + 1 < display_name.length() && display_name[b_pos+1] == 'b') {
-                        display_name[b_pos+1] = 'B';
-                    }
-                    // Handle -it -> -Instruct
-                    size_t it_pos = display_name.find("-it");
-                    if (it_pos != std::string::npos) {
-                        display_name.replace(it_pos, 3, "-Instruct");
-                    }
 
                     std::string model_name = display_name + "-FLM";
 
