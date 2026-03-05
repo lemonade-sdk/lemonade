@@ -16,6 +16,8 @@ import SettingsPanel from './SettingsPanel';
 import BackendManager from './BackendManager';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
+import { EjectIcon } from './components/Icons';
+import { getExperienceComponents, isExperienceFullyDownloaded, isExperienceFullyLoaded, isExperienceModel, isModelEffectivelyDownloaded } from './utils/experienceModels';
 
 interface ModelFamily {
   displayName: string;
@@ -123,10 +125,24 @@ function buildModelList(
 }
 
 interface ModelManagerProps {
-  isVisible: boolean;
+  isContentVisible: boolean;
+  onContentVisibilityChange: (visible: boolean) => void;
   width?: number;
   currentView: LeftPanelView;
   onViewChange: (view: LeftPanelView) => void;
+}
+
+interface ModelJSON {
+  id?: string,
+  model_name?: string,
+  recipe: string,
+  recipe_options?: object,
+  checkpoint?: string,
+  checkpoints?: string[],
+  downloaded?: boolean,
+  labels?: string[],
+  size?: number,
+  image_defaults?: []
 }
 
 export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'settings';
@@ -142,7 +158,7 @@ const createEmptyModelForm = () => ({
   reranking: false,
 });
 
-const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, currentView, onViewChange }) => {
+const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContentVisibilityChange, width = 280, currentView, onViewChange }) => {
   // Get shared model data from context
   const { modelsData, suggestedModels, refresh: refreshModels } = useModels();
   // Get system context for lazy loading system info
@@ -164,6 +180,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   const [marketplaceCategories, setMarketplaceCategories] = useState<MarketplaceCategory[]>([]);
   const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
   const filterAnchorRef = useRef<HTMLDivElement | null>(null);
+  const addModelFromJSONRef = useRef<HTMLInputElement>(null);
+
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -378,8 +396,42 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     return `${size.toFixed(2)} GB`;
   };
 
+  const getModelSize = (modelName: string, info: ModelInfo): number | undefined => {
+    if (!isExperienceModel(info)) {
+      return info.size;
+    }
+    const components = getExperienceComponents(info);
+    if (components.length === 0) return info.size;
+    const total = components.reduce((sum, component) => sum + (modelsData[component]?.size || 0), 0);
+    return total > 0 ? total : info.size;
+  };
+
+  const getDisplayLabelsForModel = (modelName: string, info: ModelInfo): string[] => {
+    if (isExperienceModel(info)) {
+      // Experiences intentionally show a single, consistent legend marker.
+      return ['experience'];
+    }
+    return (info.labels || []).filter((label): label is string => typeof label === 'string' && label.length > 0);
+  };
+
+  const getModelDownloadedState = (modelName: string, info: ModelInfo): boolean => {
+    return isModelEffectivelyDownloaded(modelName, info, modelsData);
+  };
+
+  const getModelLoadedState = (modelName: string, info: ModelInfo): boolean => {
+    if (isExperienceModel(info)) {
+      return isExperienceFullyLoaded(modelName, modelsData, loadedModels);
+    }
+    return loadedModels.has(modelName);
+  };
+
+  const getModelLoadingState = (modelName: string): boolean => {
+    return loadingModels.has(modelName);
+  };
+
   const getCategoryLabel = (category: string): string => {
     const labels: { [key: string]: string } = {
+      'experience': 'Experience',
       'reasoning': 'Reasoning',
       'coding': 'Coding',
       'vision': 'Vision',
@@ -393,7 +445,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     return labels[category] || category.charAt(0).toUpperCase() + category.slice(1);
   };
 
-  if (!isVisible) return null;
+  if (!isContentVisible) return null;
 
   // Auto-expand all categories when searching
   const shouldShowCategory = (category: string): boolean => {
@@ -495,7 +547,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       setLoadingModels(prev => new Set(prev).add(modelName));
 
       // Use the single consolidated download function
-      await pullModel(modelName, { registrationData });
+      await pullModel(modelName, { registrationData: registrationData });
 
       await fetchCurrentLoadedModel();
       showSuccess(`Model "${modelName}" downloaded successfully.`);
@@ -572,6 +624,37 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
         return;
       }
 
+      if (isExperienceModel(modelData)) {
+        const components = getExperienceComponents(modelData);
+        if (components.length === 0) {
+          showError(`Experience model "${modelName}" has no component models.`);
+          return;
+        }
+
+        setLoadingModels(prev => {
+          const next = new Set(prev);
+          next.add(modelName);
+          components.forEach((component) => next.add(component));
+          return next;
+        });
+        window.dispatchEvent(new CustomEvent('modelLoadStart', { detail: { modelId: modelName } }));
+
+        for (const component of components) {
+          if (!modelsData[component]) {
+            throw new Error(`Missing component model "${component}" for ${modelName}.`);
+          }
+          await ensureModelReady(component, modelsData, {
+            onModelLoading: () => {},
+            skipHealthCheck: false,
+          });
+        }
+
+        await fetchCurrentLoadedModel();
+        window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
+        window.dispatchEvent(new CustomEvent('modelsUpdated'));
+        return;
+      }
+
       setLoadingModels(prev => new Set(prev).add(modelName));
       window.dispatchEvent(new CustomEvent('modelLoadStart', { detail: { modelId: modelName } }));
 
@@ -598,13 +681,40 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
         showError(`Failed to load model: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
 
-      setLoadingModels(prev => { const s = new Set(prev); s.delete(modelName); return s; });
+      setLoadingModels(prev => {
+        const next = new Set(prev);
+        next.delete(modelName);
+        const info = modelsData[modelName];
+        if (isExperienceModel(info)) {
+          getExperienceComponents(info).forEach((component) => next.delete(component));
+        }
+        return next;
+      });
       window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
     }
   };
 
   const handleUnloadModel = async (modelName: string) => {
     try {
+      const modelData = modelsData[modelName];
+      if (modelData && isExperienceModel(modelData)) {
+        const components = getExperienceComponents(modelData);
+        for (const component of components) {
+          if (!loadedModels.has(component)) continue;
+          const response = await serverFetch('/unload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_name: component })
+          });
+          if (!response.ok) {
+            throw new Error(`Failed to unload model: ${response.statusText}`);
+          }
+        }
+        await fetchCurrentLoadedModel();
+        window.dispatchEvent(new CustomEvent('modelUnload'));
+        return;
+      }
+
       const response = await serverFetch('/unload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -649,6 +759,49 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       showError(`Failed to delete model: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
+
+  const handleUploadModel = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    const file = files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const result = JSON.parse(e.target?.result as string);
+        uploadModelJSON(result);
+      } catch(err: any) {
+        showError(`Failed to parse JSON file. ${err}`);
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  }
+
+  const uploadModelJSON = (json: ModelJSON) => {
+    let modelName: string;
+
+    if (!json.recipe) {
+      showError("Invalid model JSON. Recipe is missing");
+      return;
+    }
+
+    if(!json.model_name && !json.id) {
+      showError("Invalid model JSON. Either model or id must be present.");
+      return;
+    }
+
+    modelName = json.model_name ? json.model_name : json.id as string;
+
+    if (json.checkpoint && json.checkpoints) delete json.checkpoint;
+    if (json.model_name) delete json.model_name;
+    if(json.id) delete json.id;
+
+    handleDownloadModel(modelName as string, json as ModelRegistrationData);
+  }
 
   const viewTitle = currentView === 'models'
     ? 'Model Manager'
@@ -910,28 +1063,37 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     </>
   );
 
+  const handleRailClick = (view: LeftPanelView) => {
+    if (view === currentView && isContentVisible) {
+      onContentVisibilityChange(false);
+    } else {
+      onViewChange(view);
+      onContentVisibilityChange(true);
+    }
+  };
+
   return (
     <div className="model-manager" style={{ width: `${width}px` }}>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       <ConfirmDialog />
       <div className="left-panel-shell">
         <div className="left-panel-mode-rail">
-          <button className={`left-panel-mode-btn ${currentView === 'models' ? 'active' : ''}`} onClick={() => onViewChange('models')} title="Models" aria-label="Models">
+          <button className={`left-panel-mode-btn ${currentView === 'models' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('models')} title="Models" aria-label="Models">
             <Boxes size={14} strokeWidth={1.9} />
           </button>
-          <button className={`left-panel-mode-btn ${currentView === 'backends' ? 'active' : ''}`} onClick={() => onViewChange('backends')} title="Backends" aria-label="Backends">
+          <button className={`left-panel-mode-btn ${currentView === 'backends' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('backends')} title="Backends" aria-label="Backends">
             <Cpu size={14} strokeWidth={1.9} />
           </button>
-          <button className={`left-panel-mode-btn ${currentView === 'marketplace' ? 'active' : ''}`} onClick={() => onViewChange('marketplace')} title="Marketplace" aria-label="Marketplace">
+          <button className={`left-panel-mode-btn ${currentView === 'marketplace' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('marketplace')} title="Marketplace" aria-label="Marketplace">
             <Store size={14} strokeWidth={1.9} />
           </button>
           <div className="left-panel-mode-rail-spacer" />
-          <button className={`left-panel-mode-btn ${currentView === 'settings' ? 'active' : ''}`} onClick={() => onViewChange('settings')} title="Settings" aria-label="Settings">
+          <button className={`left-panel-mode-btn ${currentView === 'settings' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('settings')} title="Settings" aria-label="Settings">
             <SettingsIcon size={14} strokeWidth={1.9} />
           </button>
         </div>
 
-        <div className={`left-panel-main ${showFilterPanel ? 'filter-menu-open' : ''}`}>
+        {isContentVisible && <div className={`left-panel-main ${showFilterPanel ? 'filter-menu-open' : ''}`}>
           <div className="model-manager-header">
             <div className="left-panel-header-top">
               <h3>{viewTitle}</h3>
@@ -1029,11 +1191,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                       <span className="loaded-model-name">{modelName}</span>
                     </div>
                     <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M9 11L12 8L15 11" />
-                        <path d="M12 8V16" />
-                        <path d="M5 20H19" />
-                      </svg>
+                      <EjectIcon />
                     </button>
                   </div>
                 ))}
@@ -1071,15 +1229,21 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
           {currentView === 'models' && (
             <div className="model-manager-footer">
               {!showAddModelForm ? (
-                <button
-                  className="add-model-button"
-                  onClick={() => {
-                    setNewModel(createEmptyModelForm());
-                    setShowAddModelForm(true);
-                  }}
-                >
-                  Add a model
-                </button>
+                <div className="add-model-buttons-container">
+                  <input ref={addModelFromJSONRef} type="file" accept=".json" onChange={handleUploadModel} style={{ display: 'none' }}/>
+                  <button className="add-model-button" onClick={() => addModelFromJSONRef.current?.click()} title="Import JSON">
+                    Import a model
+                  </button>
+                  <button
+                    className="add-model-button"
+                    onClick={() => {
+                      setNewModel(createEmptyModelForm());
+                      setShowAddModelForm(true);
+                    }}
+                  >
+                    Add a model
+                  </button>
+                </div>
               ) : (
                 <div className="add-model-form">
                   <div className="form-section">
@@ -1185,7 +1349,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
               )}
             </div>
           )}
-        </div>
+        </div>}
       </div>
     </div>
   );

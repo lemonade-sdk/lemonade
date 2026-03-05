@@ -13,12 +13,13 @@ import { ModelsData } from '../../utils/modelData';
 import { useTTS } from '../../hooks/useTTS';
 import { Message, MessageContent, TextContent, ImageContent } from '../../utils/chatTypes';
 import { adjustTextareaHeight } from '../../utils/textareaUtils';
-import { SendIcon, ImageUploadIcon } from '../Icons';
+import { SendIcon, ImageUploadIcon, MicrophoneIcon, RefreshIcon, EjectIcon } from '../Icons';
 import InferenceControls from '../InferenceControls';
 import ModelSelector from '../ModelSelector';
 import ImagePreviewList from '../ImagePreviewList';
 import EmptyState from '../EmptyState';
 import TypingIndicator from '../TypingIndicator';
+import { getExperiencePrimaryChatModel } from '../../utils/experienceModels';
 import RecordButton from '../RecordButton';
 
 interface LLMChatPanelProps {
@@ -31,18 +32,26 @@ interface LLMChatPanelProps {
   showError: (msg: string) => void;
   appSettings: AppSettings | null;
   isVision: boolean;
+  experienceMode?: boolean;
   currentLoadedModel: string | null;
   setCurrentLoadedModel: React.Dispatch<React.SetStateAction<string | null>>;
+  onNewChat?: () => void;
+  onUnloadExperience?: () => void;
 }
 
 const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   isBusy, isPreFlight, isInferring, activeModality,
   runPreFlight, reset, showError, appSettings,
-  isVision, currentLoadedModel, setCurrentLoadedModel,
+  isVision, experienceMode = false, currentLoadedModel, setCurrentLoadedModel,
+  onNewChat, onUnloadExperience,
 }) => {
   const { selectedModel, modelsData } = useModels();
   const { systemInfo } = useSystem();
   const tts = useTTS(appSettings, modelsData);
+  const chatModelName = useMemo(
+    () => getExperiencePrimaryChatModel(selectedModel, modelsData),
+    [selectedModel, modelsData],
+  );
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -50,8 +59,11 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const [editingValue, setEditingValue] = useState('');
   const [editingImages, setEditingImages] = useState<string[]>([]);
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [isMicRecording, setIsMicRecording] = useState(false);
   const [expandedThinking, setExpandedThinking] = useState<Set<number>>(new Set());
   const [isUserAtBottom, setIsUserAtBottom] = useState(true);
+  const [isExperienceLayoutActive, setIsExperienceLayoutActive] = useState(experienceMode);
+  const [modeTransitionClass, setModeTransitionClass] = useState('');
   const userScrolledAwayRef = useRef(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -60,12 +72,41 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const inputTextareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
+  const speechRecognitionRef = useRef<any>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const autoScrollInProgressRef = useRef(false);
   const autoScrollResetRef = useRef<number | null>(null);
   const autoScrollRafRef = useRef<number | null>(null);
   const pendingAutoScrollRef = useRef(false);
+  const modeTransitionTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const TRANSITION_MS = 420;
+    if (modeTransitionTimerRef.current !== null) {
+      window.clearTimeout(modeTransitionTimerRef.current);
+      modeTransitionTimerRef.current = null;
+    }
+
+    if (experienceMode) {
+      setIsExperienceLayoutActive(true);
+      setModeTransitionClass('mode-transition-to-experience');
+      modeTransitionTimerRef.current = window.setTimeout(() => {
+        setModeTransitionClass('');
+        modeTransitionTimerRef.current = null;
+      }, TRANSITION_MS);
+      return;
+    }
+
+    if (isExperienceLayoutActive) {
+      setModeTransitionClass('mode-transition-to-llm');
+      modeTransitionTimerRef.current = window.setTimeout(() => {
+        setIsExperienceLayoutActive(false);
+        setModeTransitionClass('');
+        modeTransitionTimerRef.current = null;
+      }, TRANSITION_MS);
+    }
+  }, [experienceMode, isExperienceLayoutActive]);
 
   // Consolidated image handlers
   const createImageHandlers = (
@@ -115,6 +156,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
+      stopMicDictation();
+      if (modeTransitionTimerRef.current !== null) {
+        window.clearTimeout(modeTransitionTimerRef.current);
+      }
     };
   }, []);
 
@@ -190,7 +235,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   };
 
   const buildChatRequestBody = (messageHistory: Message[]) => ({
-    model: selectedModel,
+    model: chatModelName,
     messages: messageHistory,
     stream: true,
     ...buildChatRequestOverrides(appSettings),
@@ -199,7 +244,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   /** Build an error message enriched with backend action help text when available. */
   const buildErrorMessage = (error: any): string => {
     const errorMessage = error.message || 'Failed to get response from the model.';
-    const modelInfo = modelsData[selectedModel];
+    const modelInfo = modelsData[chatModelName];
     const recipe = modelInfo?.recipe;
     const backendAction = recipe && systemInfo?.recipes?.[recipe]?.backends?.[systemInfo.recipes[recipe].default_backend || '']?.action;
     const helpText = backendAction ? `\n\n${backendAction}` : '';
@@ -233,7 +278,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     let lastRenderUpdateAt = 0;
     let thinkingAutoExpanded = false;
     const STREAM_UPDATE_INTERVAL_MS = 33;
-    const isNewModelLoad = currentLoadedModel !== selectedModel;
+    const isNewModelLoad = currentLoadedModel !== chatModelName;
 
     const flushAssistantUpdate = (force = false) => {
       const now = Date.now();
@@ -305,7 +350,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
               if (content || thinkingContent) {
                 if (!receivedFirstChunk) {
                   receivedFirstChunk = true;
-                  setCurrentLoadedModel(selectedModel);
+                  setCurrentLoadedModel(chatModelName);
                   if (isNewModelLoad) {
                     window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: selectedModel } }));
                   }
@@ -333,7 +378,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     if (!textToSend.trim() && uploadedImages.length === 0) return;
 
     const ready = await runPreFlight('llm', {
-      modelName: selectedModel,
+      modelName: chatModelName,
       modelsData,
       onError: (msg) => {
         setMessages(prev => [...prev, { role: 'assistant', content: `Error preparing model: ${msg}` }]);
@@ -399,7 +444,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     if ((!editingValue.trim() && editingImages.length === 0) || editingIndex === null || isBusy) return;
 
     const ready = await runPreFlight('llm', {
-      modelName: selectedModel,
+      modelName: chatModelName,
       modelsData,
       onError: showError,
     });
@@ -476,6 +521,81 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
   const handleStopGeneration = () => {
     if (abortControllerRef.current) abortControllerRef.current.abort();
+  };
+
+  const stopMicDictation = () => {
+    const recognition = speechRecognitionRef.current;
+    if (recognition) {
+      try {
+        recognition.stop();
+      } catch {
+        // no-op
+      }
+      speechRecognitionRef.current = null;
+    }
+    setIsMicRecording(false);
+  };
+
+  const toggleMicDictation = () => {
+    if (isMicRecording) {
+      stopMicDictation();
+      return;
+    }
+
+    const SpeechRecognitionCtor =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
+      showError('Microphone dictation is not supported in this environment.');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognitionCtor();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          if (result.isFinal) {
+            transcript += result[0]?.transcript || '';
+          }
+        }
+
+        const trimmed = transcript.trim();
+        if (!trimmed) return;
+
+        setInputValue(prev => (prev.trim().length > 0 ? `${prev}${prev.endsWith(' ') ? '' : ' '}${trimmed}` : trimmed));
+
+        window.requestAnimationFrame(() => {
+          if (!inputTextareaRef.current) return;
+          adjustTextareaHeight(inputTextareaRef.current);
+          inputTextareaRef.current.focus();
+          const len = inputTextareaRef.current.value.length;
+          inputTextareaRef.current.setSelectionRange(len, len);
+        });
+      };
+
+      recognition.onerror = (event: any) => {
+        if (event?.error === 'aborted' || event?.error === 'no-speech') return;
+        showError(`Microphone error: ${event?.error || 'unknown error'}`);
+      };
+
+      recognition.onend = () => {
+        setIsMicRecording(false);
+        speechRecognitionRef.current = null;
+      };
+
+      recognition.start();
+      speechRecognitionRef.current = recognition;
+      setIsMicRecording(true);
+    } catch {
+      showError('Failed to start microphone dictation.');
+      setIsMicRecording(false);
+      speechRecognitionRef.current = null;
+    }
   };
 
   const toggleThinking = (index: number) => {
@@ -591,14 +711,55 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   };
 
   return (
-    <>
+    <div className={`llm-chat-panel ${isExperienceLayoutActive && messages.length === 0 ? 'experience-empty-chat' : ''} ${modeTransitionClass}`}>
+      {experienceMode && selectedModel && (
+        <div className="experience-topbar">
+          <div className="experience-topbar-left">
+            <div className="experience-model-name">{selectedModel}</div>
+            <button
+              className="model-action-btn unload-btn active-model-eject-button experience-unload-icon-button"
+              onClick={onUnloadExperience}
+              disabled={isBusy}
+              title="Eject experience"
+              aria-label="Unload experience"
+            >
+              <EjectIcon />
+            </button>
+          </div>
+          <button
+            className="experience-refresh-button"
+            onClick={onNewChat}
+            disabled={isBusy}
+            title="Start a new chat"
+            aria-label="Start a new chat"
+          >
+            <RefreshIcon />
+          </button>
+        </div>
+      )}
+      {!experienceMode && (
+        <div className="chat-header">
+          <h3>LLM Chat</h3>
+          <button
+            className="new-chat-button"
+            onClick={onNewChat}
+            disabled={isBusy}
+            title="Start a new chat"
+          >
+            <RefreshIcon />
+          </button>
+        </div>
+      )}
       <div
         className="chat-messages"
         ref={messagesContainerRef}
         onScroll={handleScroll}
         onClick={editingIndex !== null ? cancelEdit : undefined}
       >
-        {messages.length === 0 && <EmptyState title="Lemonade Chat" />}
+        {messages.length === 0 && !experienceMode && <EmptyState title="Lemonade Chat" />}
+        {messages.length === 0 && experienceMode && (
+          <div className="experience-empty-message">Chat and create, naturally.</div>
+        )}
         {messages.map((message, index) => {
           const isGrayedOut = editingIndex !== null && index > editingIndex;
           return (
@@ -705,10 +866,20 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             onSend={sendMessage}
             onStop={handleStopGeneration}
             sendDisabled={!inputValue.trim() && uploadedImages.length === 0}
-            modelSelector={<ModelSelector disabled={isBusy} />}
+            modelSelector={experienceMode ? null : <ModelSelector disabled={isBusy} />}
+            rightControls={experienceMode ?
+              <button
+                className={`chat-mic-button${isMicRecording ? ' recording' : ''}`}
+                onClick={toggleMicDictation}
+                title={isMicRecording ? 'Stop microphone input' : 'Start microphone input'}
+                aria-label={isMicRecording ? 'Stop microphone input' : 'Start microphone input'}
+              >
+                <MicrophoneIcon active={isMicRecording} />
+              </button>
+            : undefined}
             leftControls={
               <>
-                {isVision && (
+                {(isVision || experienceMode) && (
                   <>
                     <input
                       ref={fileInputRef}
@@ -742,7 +913,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           />
         </div>
       </div>
-    </>
+    </div>
   );
 };
 
