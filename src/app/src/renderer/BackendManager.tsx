@@ -5,6 +5,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { installBackend, uninstallBackend } from './utils/backendInstaller';
 import { Recipe, BackendInfo } from './utils/systemData';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
+import { writeClipboard } from './utils/clipboardUtils';
 
 const RECIPE_ORDER = new Map([
   'llamacpp',
@@ -188,7 +189,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
         }
       }
 
-      await navigator.clipboard.writeText(action);
+      await writeClipboard(action);
       showSuccess(`Copied action for ${RECIPE_DISPLAY_NAMES[recipe] || recipe} ${backend}.`);
     } catch {
       showError('Failed to copy action to clipboard.');
