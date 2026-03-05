@@ -42,16 +42,16 @@ interface BackendManagerProps {
 }
 
 const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError, showSuccess }) => {
-  const { systemInfo, isLoading, ensureSystemInfoLoaded } = useSystem();
+  const { systemInfo, isLoading, refresh } = useSystem();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const [installingBackends, setInstallingBackends] = useState<Set<string>>(new Set());
   const [hoveredBackend, setHoveredBackend] = useState<string | null>(null);
   const [backendAssetSizes, setBackendAssetSizes] = useState<Record<string, number>>({});
 
-  // Ensure system info is loaded when the backend manager is opened
+  // Refresh system info when the backend manager is opened
   useEffect(() => {
-    ensureSystemInfoLoaded();
-  }, [ensureSystemInfoLoaded]);
+    refresh();
+  }, [refresh]);
 
   const recipes = systemInfo?.recipes;
 
