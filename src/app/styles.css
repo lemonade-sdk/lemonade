@@ -140,7 +140,7 @@ body {
     pointer-events: none;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
 }
 
 .app-title {
@@ -1213,7 +1213,7 @@ footer {
     letter-spacing: 0.2px;
     text-transform: uppercase;
     padding: 2px 6px;
-    border-radius: 999px;
+    border-radius: 6px;
     border: 1px solid rgba(255, 255, 255, 0.09);
     background: rgba(255, 255, 255, 0.02);
     flex-shrink: 0;
@@ -1523,7 +1523,6 @@ footer {
     font-size: 0.85rem;
     font-weight: 600;
     color: #aaa;
-    text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
@@ -1532,8 +1531,26 @@ footer {
     font-size: 0.65rem;
     font-weight: 600;
     color: #aaa;
-    text-transform: uppercase;
     letter-spacing: 0.5px;
+}
+
+.model-options-field-label {
+    text-transform: uppercase;
+}
+
+.model-options-field-value {
+    text-transform: none;
+}
+
+.model-options-category-header .model-options-checkpoint-link {
+    color: #75abd7;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.model-options-category-header .model-options-checkpoint-link:hover {
+    color: #96c5e9;
+    text-decoration: none;
 }
 
 .model-options-section {
@@ -1581,7 +1598,8 @@ footer {
 }
 
 .model-item {
-    padding: 4px 12px;
+    --catalog-status-indicator-width: 10px;
+    padding: 2px 12px;
     cursor: pointer;
     transition: background-color 0.15s ease;
     border-left: 2px solid transparent;
@@ -1591,6 +1609,47 @@ footer {
 .model-item:hover {
     background: rgba(255, 255, 255, 0.04);
     border-left-color: #666;
+}
+
+.model-family-group {
+    margin: 0;
+}
+
+.model-family-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px 4px 13px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.model-family-header:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.family-chevron {
+    font-size: 0.56rem;
+    transition: transform 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    line-height: 1;
+    color: #f2f2f2;
+    flex-shrink: 0;
+}
+
+.family-chevron.expanded {
+    transform: rotate(90deg);
+}
+
+.model-family-members-list {
+    padding-left: 6px;
+}
+
+.model-family-member-row {
+    padding-left: 28px;
 }
 
 .model-item-content {
@@ -1673,11 +1732,21 @@ footer {
     white-space: nowrap;
 }
 
+.family-model-name {
+    font-weight: 560;
+    color: #f1f1f1;
+}
+
 .model-status-indicator {
     font-size: 0.72rem;
     line-height: 1;
     flex-shrink: 0;
     justify-self: center;
+}
+
+.model-catalog-item .model-status-indicator {
+    width: var(--catalog-status-indicator-width);
+    text-align: center;
 }
 
 /* Model is currently loaded (green) */
@@ -4582,7 +4651,7 @@ footer {
 
 .settings-help-about-key {
     font-size: 0.66rem;
-    color: #8f8f8f;
+    color: #9a9a9a;
     text-transform: uppercase;
     letter-spacing: 0.45px;
 }
