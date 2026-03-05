@@ -1701,14 +1701,25 @@ int TrayApp::execute_launch_command() {
         return 1;
     }
 
-    std::cout << "Loading model: " << tray_config_.launch_model << std::endl;
-    auto launch_server_manager = std::make_unique<ServerManager>(host, port);
-    if (!launch_server_manager->load_model(tray_config_.launch_model, nlohmann::json::object(), false)) {
-        std::cerr << "Error: Failed to load model '" << tray_config_.launch_model << "'." << std::endl;
-        return 1;
-    }
+    // Start model preload in the background so agent launch is not blocked.
+    const std::string load_host = host;
+    const int load_port = port;
+    const std::string load_model = tray_config_.launch_model;
+    std::thread([load_host, load_port, load_model]() {
+        try {
+            auto load_manager = std::make_unique<ServerManager>(load_host, load_port);
+            load_manager->load_model(load_model, nlohmann::json::object(), false);
+        } catch (...) {
+            // Silently ignore — the agent TUI owns stdout/stderr now.
+        }
+    }).detach();
 
+    std::cout << "Loading model in background: " << tray_config_.launch_model << std::endl;
     std::cout << "Launching " << tray_config_.launch_agent << "..." << std::endl;
+
+    // Disable all logging before the agent takes over the terminal.
+    AixLog::Log::init({});
+
     lemon::utils::ProcessHandle handle;
     try {
         handle = lemon::utils::ProcessManager::start_process(
