@@ -8,6 +8,7 @@ The `lemonade-server` command-line interface (CLI) provides a set of utility com
 - [Options for serve and run](#options-for-serve-and-run)
   - [Environment Variables](#environment-variables) | [Custom Backend Binaries](#custom-backend-binaries) | [API Key and Security](#api-key-and-security)
 - [Options for pull](#options-for-pull)
+- [Options for launch](#options-for-launch)
 - [Lemonade Desktop App](#lemonade-desktop-app) | [Remote Server Connection](#remote-server-connection)
 
 ## Commands
@@ -22,6 +23,7 @@ The `lemonade-server` command-line interface (CLI) provides a set of utility com
 | `stop`              | Stop any running Lemonade Server process. |
 | `pull MODEL_NAME`   | Install an LLM named `MODEL_NAME`. See [pull command options](#options-for-pull) for registering custom models. |
 | `run MODEL_NAME`    | Start the server (if not already running) and chat with the specified model. Supports the same options as `serve`. |
+| `launch AGENT -m MODEL_NAME` | Launch a local coding agent (`claude` or `codex`) connected to a running Lemonade server. |
 | `list`              | List all models. |
 | `delete MODEL_NAME` | Delete a model and its files from local storage. |
 
@@ -176,6 +178,37 @@ lemonade-server pull user.nomic-embed \
 ```
 
 For more information about model formats and recipes, see the [API documentation](../lemonade_api.md) and the [server models guide](https://lemonade-server.ai/models.html).
+
+## Options for launch
+
+Use the `launch` command to start a coding agent CLI connected to an already-running Lemonade server:
+
+```bash
+lemonade-server launch <claude|codex> -m <model_name> [--host HOST] [--port PORT]
+```
+
+| Option | Description | Required |
+|--------|-------------|----------|
+| `agent` | Agent CLI to launch (`claude` or `codex`) | Yes |
+| `-m, --model MODEL_NAME` | Model name to preload and use in the agent session | Yes |
+| `--host HOST` | Server host (also supports `LEMONADE_HOST`) | No |
+| `--port PORT` | Server port (also supports `LEMONADE_PORT`) | No |
+
+Notes:
+- `launch` does not start the Lemonade server. It first checks `/api/version` on the target host/port and exits with an error if unreachable.
+- If `--port` is not provided and the host is local (`localhost`, `127.0.0.1`, `0.0.0.0`, or empty), Lemonade auto-discovers a running server port.
+- Model loading is started in a background thread so agent startup is immediate.
+- The launched agent process takes over the terminal and Lemonade waits for that process to exit.
+
+Examples:
+
+```bash
+# Launch Codex against a local running server (auto-detect port)
+lemonade-server launch codex -m Qwen3-Coder-Next-GGUF
+
+# Launch Claude against an explicit endpoint
+lemonade-server launch claude -m Qwen3-Coder-Next-GGUF --host 127.0.0.1 --port 8000
+```
 
 ## Lemonade Desktop App
 
