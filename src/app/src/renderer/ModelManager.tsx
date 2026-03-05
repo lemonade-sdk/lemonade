@@ -445,8 +445,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
     return labels[category] || category.charAt(0).toUpperCase() + category.slice(1);
   };
 
-  if (!isContentVisible) return null;
-
   // Auto-expand all categories when searching
   const shouldShowCategory = (category: string): boolean => {
     if (searchQuery.trim()) {
