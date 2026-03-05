@@ -1,4 +1,5 @@
 #include "lemon_tray/tray_app.h"
+#include "lemon_tray/agent_launcher.h"
 #ifdef _WIN32
 #include "lemon_tray/platform/windows_tray.h"  // For set_menu_update_callback
 #endif
@@ -6,6 +7,7 @@
 #include <lemon/single_instance.h>
 #include <lemon/system_info.h>
 #include <lemon/version.h>
+#include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <httplib.h>
 #include <lemon/utils/aixlog.hpp>
@@ -522,8 +524,9 @@ int TrayApp::run() {
     bool server_already_running = false;
     bool run_command_already_executed = false;
 
-    // Find server binary automatically (needed for most commands)
-    if (server_binary_.empty()) {
+    // Find server binary automatically (not needed for launch/status/stop)
+    if (server_binary_.empty() && tray_config_.command != "launch" &&
+        tray_config_.command != "status" && tray_config_.command != "stop") {
     LOG(DEBUG, "TrayApp") << "Searching for server binary..." << std::endl;
         if (!find_server_binary()) {
             std::cerr << "Error: Could not find lemonade-router binary" << std::endl;
@@ -553,6 +556,8 @@ int TrayApp::run() {
         return execute_recipes_command();
     } else if (tray_config_.command == "logs") {
         return execute_logs_command();
+    } else if (tray_config_.command == "launch") {
+        return execute_launch_command();
     } else if (tray_config_.command == "serve" || tray_config_.command == "run") {
         auto connect_to_running_server = [this, &server_already_running, &run_command_already_executed](const char* context) -> int {
             std::cout << "Lemonade Server is " << context << " already running. Connecting to it..." << std::endl;
@@ -1644,6 +1649,81 @@ int TrayApp::execute_status_command() {
         std::cout << "Server is not running" << std::endl;
         return 1;
     }
+}
+
+int TrayApp::execute_launch_command() {
+    AgentConfig agent_config;
+    std::string config_error;
+
+    const std::string requested_host = server_config_.host;
+
+    int port = server_config_.port;
+    const bool local_host_target = requested_host.empty() || requested_host == "localhost" ||
+                                   requested_host == "127.0.0.1" || requested_host == "0.0.0.0";
+    if (!tray_config_.launch_port_specified && local_host_target) {
+        auto [pid, discovered_port] = get_server_info();
+        (void)pid;
+        if (discovered_port > 0) {
+            port = discovered_port;
+        }
+    }
+
+    std::string host = server_config_.host;
+    if (host.empty() || host == "0.0.0.0") {
+        host = "127.0.0.1";
+    }
+    if (host == "localhost") {
+        host = "127.0.0.1";
+    }
+
+    if (!build_agent_config(tray_config_.launch_agent, host, port, tray_config_.launch_model,
+                            agent_config, config_error)) {
+        std::cerr << "Error: " << config_error << std::endl;
+        return 1;
+    }
+
+    const std::string agent_binary = find_agent_binary(agent_config);
+    if (agent_binary.empty()) {
+        std::cerr << "Error: Could not find '" << tray_config_.launch_agent << "' executable." << std::endl;
+        if (!agent_config.install_instructions.empty()) {
+            std::cerr << agent_config.install_instructions << std::endl;
+        }
+        return 1;
+    }
+
+    httplib::Client cli(host, port);
+    cli.set_connection_timeout(1);
+    cli.set_read_timeout(1);
+    auto health = cli.Get("/api/version");
+    if (!health) {
+        std::cerr << "Error: Lemonade server is not reachable at http://" << host << ":" << port << "." << std::endl;
+        std::cerr << "Start the server first with: lemonade-server serve --no-tray" << std::endl;
+        return 1;
+    }
+
+    std::cout << "Loading model: " << tray_config_.launch_model << std::endl;
+    auto launch_server_manager = std::make_unique<ServerManager>(host, port);
+    if (!launch_server_manager->load_model(tray_config_.launch_model, nlohmann::json::object(), false)) {
+        std::cerr << "Error: Failed to load model '" << tray_config_.launch_model << "'." << std::endl;
+        return 1;
+    }
+
+    std::cout << "Launching " << tray_config_.launch_agent << "..." << std::endl;
+    lemon::utils::ProcessHandle handle;
+    try {
+        handle = lemon::utils::ProcessManager::start_process(
+            agent_binary,
+            agent_config.extra_args,
+            "",
+            true,
+            false,
+            agent_config.env_vars);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: Failed to launch agent process: " << e.what() << std::endl;
+        return 1;
+    }
+
+    return lemon::utils::ProcessManager::wait_for_exit(handle, -1);
 }
 
 int TrayApp::execute_recipes_command() {

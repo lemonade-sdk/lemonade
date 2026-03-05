@@ -33,6 +33,11 @@ struct TrayConfig {
 
     std::string model;
 
+    // Launch command options
+    std::string launch_agent = "";  // "claude" or "codex"
+    std::string launch_model = "";
+    bool launch_port_specified = false;
+
     // Run options
     bool save_options = false;
 
@@ -74,6 +79,7 @@ private:
     ServerConfig config_;
 #ifdef LEMONADE_TRAY
     TrayConfig tray_config_;
+    CLI::Option* launch_port_option_ = nullptr;
 #endif
     bool should_continue_ = true;
     int exit_code_ = 0;
