@@ -1601,27 +1601,13 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
                         info.size = m["footprint"].get<double>();
                     }
 
-                    // Family/labels
-                    if (m.contains("details") && m["details"].is_object()) {
-                        auto details = m["details"];
-                        if (details.contains("family") && details["family"].is_string()) {
-                            std::string family = details["family"].get<std::string>();
-                            if (family == "deepseek-r1" || family == "qwen3" || family.find("tk") != std::string::npos) {
-                                info.labels.push_back("reasoning");
-                            }
-                            if (family.find("whisper") != std::string::npos) {
-                                info.labels.push_back("audio");
-                                info.labels.push_back("transcription");
-                            }
-                            if (family.find("embed") != std::string::npos) {
-                                info.labels.push_back("embeddings");
+                    // Labels from FLM metadata
+                    if (m.contains("label") && m["label"].is_array()) {
+                        for (const auto& l : m["label"]) {
+                            if (l.is_string()) {
+                                info.labels.push_back(l.get<std::string>());
                             }
                         }
-                    }
-
-                    // VLM support
-                    if (m.value("vlm", false) || (m.contains("details") && m["details"].value("family", "") == "gemma3")) {
-                        info.labels.push_back("vision");
                     }
 
                     // Populate type and device fields (multi-model support)
