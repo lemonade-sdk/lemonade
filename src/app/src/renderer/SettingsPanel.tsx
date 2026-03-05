@@ -1,5 +1,5 @@
 import React, { ReactElement, useEffect, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight } from './components/Icons';
 import {
   AppSettings,
   BASE_SETTING_VALUES,

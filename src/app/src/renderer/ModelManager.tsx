@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Boxes, ChevronRight, Cpu, Settings as SettingsIcon, SlidersHorizontal, Store } from 'lucide-react';
+import { Boxes, ChevronRight, Cpu, Settings, SlidersHorizontal, Store } from './components/Icons';
 import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -1087,7 +1087,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
           </button>
           <div className="left-panel-mode-rail-spacer" />
           <button className={`left-panel-mode-btn ${currentView === 'settings' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('settings')} title="Settings" aria-label="Settings">
-            <SettingsIcon size={14} strokeWidth={1.9} />
+            <Settings size={14} strokeWidth={1.9} />
           </button>
         </div>
 

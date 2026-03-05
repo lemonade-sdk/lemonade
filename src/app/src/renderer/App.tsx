@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft } from './components/Icons';
 import TitleBar from './TitleBar';
 import ChatWindow from './ChatWindow';
 import ModelManager, { LeftPanelView } from './ModelManager';
