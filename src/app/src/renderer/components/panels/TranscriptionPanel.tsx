@@ -327,14 +327,16 @@ const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
                     />
                   </svg>
                 </button>
-                <button
-                  className={`audio-file-button${isLiveRecording ? ' recording' : ''}`}
-                  onClick={isLiveRecording ? handleMicStop : handleMicStart}
-                  disabled={isBusy && !isLiveRecording}
-                  title={isLiveRecording ? 'Stop recording' : 'Start live recording'}
-                >
-                  <MicrophoneIcon active={isLiveRecording} />
-                </button>
+                {window.isSecureContext && (
+                  <button
+                    className={`audio-file-button${isLiveRecording ? ' recording' : ''}`}
+                    onClick={isLiveRecording ? handleMicStop : handleMicStart}
+                    disabled={isBusy && !isLiveRecording}
+                    title={isLiveRecording ? 'Stop recording' : 'Start live recording'}
+                  >
+                    <MicrophoneIcon active={isLiveRecording} />
+                  </button>
+                )}
               </>
             }
           />
