@@ -836,7 +836,7 @@ Image Editing API. You provide a source image and a text prompt describing the d
 | `background` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `quality` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `input_fidelity` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
-| `output_compression` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `output_compression` | No | OpenAI API compatibility field. Accepted; silently ignored by the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 
 #### Example request
 

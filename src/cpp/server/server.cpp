@@ -2058,7 +2058,10 @@ bool Server::parse_n_from_form(const httplib::Request& req, httplib::Response& r
     }
     int n;
     try {
-        n = std::stoi(req.form.get_field("n"));
+        size_t pos;
+        const std::string& val = req.form.get_field("n");
+        n = std::stoi(val, &pos);
+        if (pos != val.size()) throw std::invalid_argument("trailing characters");
     } catch (const std::exception&) {
         res.status = 400;
         nlohmann::json error = {{"error", {
@@ -2154,7 +2157,10 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         if (req.form.has_field("output_compression")) {
             int output_compression;
             try {
-                output_compression = std::stoi(req.form.get_field("output_compression"));
+                size_t pos;
+                const std::string& val = req.form.get_field("output_compression");
+                output_compression = std::stoi(val, &pos);
+                if (pos != val.size()) throw std::invalid_argument("trailing characters");
             } catch (const std::exception&) {
                 res.status = 400;
                 nlohmann::json error = {{"error", {
