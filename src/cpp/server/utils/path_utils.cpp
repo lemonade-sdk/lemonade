@@ -406,7 +406,7 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
         if (!output.empty()) {
             json j = JsonUtils::parse(output);
             if (j.is_object()) {
-                // Check for overall status (Linux uses "ok", Windows uses "ready")
+                // Check for overall status
                 bool validation_ok = false;
                 if (j.contains("ready")) {
                     validation_ok = j["ready"].get<bool>();
