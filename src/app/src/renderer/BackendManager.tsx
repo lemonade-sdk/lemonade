@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { ChevronLeft } from 'lucide-react';
+
 import { useSystem } from './hooks/useSystem';
 import { useConfirmDialog } from './ConfirmDialog';
 import { installBackend, uninstallBackend } from './utils/backendInstaller';

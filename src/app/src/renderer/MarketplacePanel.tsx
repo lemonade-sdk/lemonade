@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, ExternalLink } from 'lucide-react';
+import { BookOpen, ExternalLink } from './components/Icons';
 import { MarketplaceApp, MarketplaceCategory, APPS_JSON_URL } from './utils/marketplace';
 
 interface MarketplacePanelProps {
