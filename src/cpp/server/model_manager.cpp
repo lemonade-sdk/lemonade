@@ -1611,6 +1611,7 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
                             }
                             if (family.find("whisper") != std::string::npos) {
                                 info.labels.push_back("audio");
+                                info.labels.push_back("transcription");
                             }
                             if (family.find("embed") != std::string::npos) {
                                 info.labels.push_back("embeddings");
