@@ -2,7 +2,11 @@
 
 This guide explains how to manually register custom models in Lemonade Server using the JSON configuration files. This is useful for adding any HuggingFace model that isn't in the built-in model list.
 
-> **Tip:** The easiest way to add a custom model is using the `lemonade-server pull` CLI command or the [`/api/v1/pull` endpoint](./server_spec.md#post-apiv1pull), which automates the registration and download process. This guide covers the underlying JSON files for users who need manual control.
+> **Tip:** The easiest way to add a custom model is using the [`lemonade-server pull` CLI command](./lemonade-server-cli.md#options-for-pull) or the [`/api/v1/pull` endpoint](./server_spec.md#post-apiv1pull), which automate the registration and download process. For example:
+> ```bash
+> lemonade-server pull user.MyModel --checkpoint "org/repo:file.gguf" --recipe llamacpp
+> ```
+> This guide covers the underlying JSON files for users who need manual control.
 
 ## Overview
 
@@ -47,7 +51,7 @@ This file contains a JSON object where each key is a model name and each value d
 | `checkpoints` | Yes* | Object | Alternative to `checkpoint` for models with multiple files. See [Multi-file models](#multi-file-models). |
 | `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`. |
 | `size` | No | Number | Model size in GB. Informational only — displayed in the UI and used for RAM filtering. |
-| `mmproj` | No | String | Filename of the multimodal projector file for vision models (must be in the same HuggingFace repo as the checkpoint). |
+| `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same HuggingFace repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
 | `image_defaults` | No | Object | Default image generation parameters for `sd-cpp` models. See [Image defaults](#image-defaults). |
 
 \* Either `checkpoint` or `checkpoints` is required, but not both.
@@ -56,7 +60,8 @@ This file contains a JSON object where each key is a model name and each value d
 
 The `checkpoint` field uses the format `org/repo:variant`:
 
-- **GGUF models**: `org/repo:filename.gguf` — e.g., `unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M`
+- **GGUF models (exact filename)**: `org/repo:filename.gguf` — e.g., `Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`
+- **GGUF models (quantization shorthand)**: `org/repo:QUANT` — e.g., `unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M`. The server will search the repo for a matching `.gguf` file.
 - **ONNX models**: `org/repo` — e.g., `amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx`
 - **Safetensor models**: `org/repo:filename.safetensors` — e.g., `stabilityai/sd-turbo:sd_turbo.safetensors`
 
@@ -83,7 +88,6 @@ Supported checkpoint keys:
 |-----|---------|-------------|
 | `main` | All | Primary model file |
 | `npu_cache` | whispercpp | NPU-accelerated encoder cache |
-| `mmproj` | llamacpp | Multimodal projector for vision models |
 | `text_encoder` | sd-cpp | Text encoder for image generation models |
 | `vae` | sd-cpp | VAE for image generation models |
 
@@ -99,7 +103,7 @@ For `sd-cpp` recipe models, you can specify default image generation parameters:
         "size": 5.2,
         "image_defaults": {
             "steps": 20,
-            "cfg_scale": 7.5,
+            "cfg_scale": 7.0,
             "width": 512,
             "height": 512
         }
@@ -168,7 +172,11 @@ This file configures per-model runtime settings. Each key is a **full model name
 |--------|---------|-------------|-------------|
 | `ctx_size` | 4096 | `LEMONADE_CTX_SIZE` | Context window size in tokens |
 
-> **Note:** Per-model options can also be configured through the gear icon in the Lemonade desktop app, or via the `save_options` parameter in the [`/api/v1/load` endpoint](./server_spec.md#post-apiv1load).
+#### kokoro
+
+The `kokoro` recipe (text-to-speech) has no configurable options in `recipe_options.json`.
+
+> **Note:** Per-model options can also be configured through the Lemonade desktop app's model settings, or via the `save_options` parameter in the [`/api/v1/load` endpoint](./server_spec.md#post-apiv1load).
 
 ## Complete Examples
 
