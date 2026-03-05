@@ -156,4 +156,3 @@ Here are some general guidelines to observe when creating or modifying workflows
 [Apache 2.0 License](../LICENSE)
 
 Copyright(C) 2024-2025 Advanced Micro Devices, Inc. All rights reserved.
-SPDX-License-Identifier: MIT
