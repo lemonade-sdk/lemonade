@@ -75,19 +75,19 @@ const MODEL_FAMILIES: ModelFamily[] = [
   },
   // FLM families
   {
-    displayName: 'Gemma3',
+    displayName: 'gemma3',
     regex: buildFlmFamilyRegex('gemma3'),
   },
   {
-    displayName: 'LFM2',
+    displayName: 'lfm2',
     regex: buildFlmFamilyRegex('lfm2'),
   },
   {
-    displayName: 'Llama3.2',
+    displayName: 'llama3.2',
     regex: buildFlmFamilyRegex('llama3\\.2'),
   },
   {
-    displayName: 'Qwen3',
+    displayName: 'qwen3',
     regex: buildFlmFamilyRegex('qwen3'),
   },
 ];
