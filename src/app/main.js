@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, session, screen, webFrameMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, session, screen, webFrameMain, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -665,6 +665,10 @@ const startBeaconListener = async () => {
     setTimeout(() => startBeaconListener(), 10000);
   }
 };
+
+ipcMain.handle('write-clipboard', (_event, text) => {
+  clipboard.writeText(String(text));
+});
 
 // Returns the configured server base URL, or null if using localhost discovery
 ipcMain.handle('get-server-base-url', async () => {
