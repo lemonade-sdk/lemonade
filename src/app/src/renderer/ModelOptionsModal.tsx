@@ -48,6 +48,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+  const exportModelBtn = useRef<HTMLAnchorElement | null>(null);
 
   // Fetch options when modal opens
   useEffect(() => {
@@ -208,6 +209,32 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     setNumericDrafts({});
     setOptions(createDefaultOptions(options.recipe));
   };
+
+  const handleModelExport = () => {
+    let modelName = (modelInfo?.id as string).startsWith("user.") ? modelInfo?.id : `user.${modelInfo?.id}`;
+
+    let modelToExport = {
+      "model_name": modelName,
+      "downloaded": modelInfo?.downloaded,
+      "labels": modelInfo?.labels,
+      "recipe": modelInfo?.recipe,
+      "recipe_options": modelInfo?.recipe_options,
+      "size": modelInfo?.size,
+      "checkpoints": modelInfo?.checkpoints,
+      "image_defaults": modelInfo?.image_defaults
+    };
+
+    if(!modelInfo?.checkpoints) {
+      Object.assign(modelToExport, {checkpoint: modelInfo?.checkpoint});
+    }
+
+    const model = JSON.stringify(modelToExport);
+    const blob = new Blob([model], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    exportModelBtn!.current!.href = url;
+    exportModelBtn!.current!.download = modelToExport?.model_name ? `${modelToExport?.model_name}.json` as string: 'model.json';
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
   const handleCancel = () => {
     onCancel();
@@ -436,7 +463,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
           >
             Reset All
           </button>
-
+          <a className="settings-save-button" ref={exportModelBtn} onClick={handleModelExport} href="" download="">Export Model</a>
           <button
             className="settings-save-button"
             onClick={handleCancel}
