@@ -102,6 +102,7 @@ struct FilterThreadParams {
     std::string source_name;
 };
 
+// Thread function to read from pipe and filter output
 static DWORD WINAPI output_filter_thread(LPVOID param) {
     std::unique_ptr<FilterThreadParams> params(static_cast<FilterThreadParams*>(param));
     HANDLE pipe = params->pipe;
@@ -114,6 +115,7 @@ static DWORD WINAPI output_filter_thread(LPVOID param) {
         buffer[bytes_read] = '\0';
         line_buffer += buffer;
 
+        // Process complete lines
         size_t pos;
         while ((pos = line_buffer.find('\n')) != std::string::npos) {
             std::string line = line_buffer.substr(0, pos);
@@ -123,6 +125,7 @@ static DWORD WINAPI output_filter_thread(LPVOID param) {
         }
     }
 
+    // Print any remaining partial line
     if (!line_buffer.empty()) {
         log_process_line(line_buffer, source);
     }
@@ -166,6 +169,7 @@ ProcessHandle ProcessManager::start_process(
     HANDLE stderr_read = nullptr;
     HANDLE stderr_write = nullptr;
 
+    // If inherit_output is true, either use pipes with filtering/tagging or direct inheritance
     if (inherit_output && use_pipes) {
         // Create pipes for stdout and stderr to filter output
         SECURITY_ATTRIBUTES sa;
@@ -193,6 +197,7 @@ ProcessHandle ProcessManager::start_process(
 
         LOG(DEBUG, "ProcessManager") << "Starting process with piped output: " << cmdline << std::endl;
     } else if (inherit_output) {
+        // Direct inheritance without filtering
         si.dwFlags |= STARTF_USESTDHANDLES;
         si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
         si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -258,6 +263,7 @@ ProcessHandle ProcessManager::start_process(
     if (stdout_write) CloseHandle(stdout_write);
     if (stderr_write) CloseHandle(stderr_write);
 
+    // Start filter threads if needed
     if (inherit_output && use_pipes) {
         std::string tag = source_name.empty() ? "Process" : source_name;
         auto* stdout_params = new FilterThreadParams{stdout_read, tag};
@@ -279,6 +285,7 @@ ProcessHandle ProcessManager::start_process(
     int stdout_pipe[2] = {-1, -1};
     int stderr_pipe[2] = {-1, -1};
 
+    // Create pipes for filtering/tagging if requested
     if (inherit_output && use_pipes) {
         if (pipe(stdout_pipe) < 0 || pipe(stderr_pipe) < 0) {
             throw std::runtime_error("Failed to create pipes for output filtering");
@@ -314,6 +321,7 @@ ProcessHandle ProcessManager::start_process(
             setenv(env_pair.first.c_str(), env_pair.second.c_str(), 1);
         }
 
+        // Redirect stdout/stderr to pipes if filtering/tagging
         if (inherit_output && use_pipes) {
             close(stdout_pipe[0]);  // Close read end
             close(stderr_pipe[0]);
@@ -353,12 +361,14 @@ ProcessHandle ProcessManager::start_process(
         LOG(INFO, "ProcessManager") << "Process started successfully, PID: " << pid << std::endl;
     }
 
+    // Start filter threads if needed
     if (inherit_output && use_pipes) {
-        close(stdout_pipe[1]);
+        close(stdout_pipe[1]);  // Close write ends in parent
         close(stderr_pipe[1]);
 
         std::string tag = source_name.empty() ? "Process" : source_name;
 
+        // Start threads to read and filter output
         std::thread([fd = stdout_pipe[0], tag]() {
             char buffer[4096];
             std::string line_buffer;

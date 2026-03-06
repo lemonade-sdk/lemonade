@@ -81,8 +81,9 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     GetTempPathA(MAX_PATH, temp_path);
     log_file_path_ = std::string(temp_path) + "lemonade-server.log";
 #else
+    // Use systemd journal if running under systemd
     if (SystemInfo::is_running_under_systemd()) {
-        log_file_path_ = "";
+        log_file_path_ = "";  // Empty signals journald usage
         LOG(INFO, "Server") << "Detected systemd environment - will use journald for log streaming" << std::endl;
     } else {
         log_file_path_ = utils::get_runtime_dir() + "/lemonade-server.log";
@@ -3322,13 +3323,16 @@ void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& 
         backend_tags.push_back("(Process)");
     }
 
+    // Use chunked streaming
     res.set_chunked_content_provider(
         "text/event-stream",
         [this, tag_pattern, backend_tags](size_t offset, httplib::DataSink& sink) {
+            // Thread-local state for this connection
             static thread_local std::unique_ptr<std::ifstream> log_stream;
             static thread_local std::streampos last_pos = 0;
 
             if (offset == 0) {
+                // First call: open file and read from beginning
                 log_stream = std::make_unique<std::ifstream>(
                     log_file_path_,
                     std::ios::in
@@ -3339,18 +3343,25 @@ void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& 
                     return false;
                 }
 
+                // Start from beginning
                 log_stream->seekg(0, std::ios::beg);
                 last_pos = 0;
 
                 LOG(INFO, "Server") << "Log stream connection opened" << std::endl;
             }
 
+            // Seek to last known position
             log_stream->seekg(last_pos);
 
             std::string line;
             bool sent_data = false;
 
+            // Read and send new lines
             while (std::getline(*log_stream, line)) {
+                // CRITICAL: Update position after each successful line read.
+                // Must do this BEFORE hitting EOF, because tellg() returns -1 at EOF!
+                // Placed before the filter check so that filtered-out lines still
+                // advance the file position (otherwise we'd re-read them forever).
                 last_pos = log_stream->tellg();
 
                 // Apply source filter
@@ -3372,18 +3383,21 @@ void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& 
                     }
                 }
 
+                // Format as SSE: "data: <line>\n\n"
                 std::string sse_msg = "data: " + line + "\n\n";
 
                 if (!sink.write(sse_msg.c_str(), sse_msg.length())) {
                     LOG(INFO, "Server") << "Log stream client disconnected" << std::endl;
-                    return false;
+                    return false;  // Client disconnected
                 }
 
                 sent_data = true;
             }
 
+            // Clear EOF and any other error flags so we can continue reading on next poll
             log_stream->clear();
 
+            // Send heartbeat if no data (keeps connection alive)
             if (!sent_data) {
                 const char* heartbeat = ": heartbeat\n\n";
                 if (!sink.write(heartbeat, strlen(heartbeat))) {
@@ -3392,9 +3406,10 @@ void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& 
                 }
             }
 
+            // Sleep briefly before next poll
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-            return true;
+            return true;  // Keep streaming
         }
     );
 }
