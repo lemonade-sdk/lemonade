@@ -31,6 +31,8 @@
     <img src="https://img.shields.io/badge/code%20style-black-000000.svg" alt="Code style: black" /></a>
   <a href="https://star-history.com/#lemonade-sdk/lemonade">
     <img src="https://img.shields.io/badge/Star%20History-View-brightgreen" alt="Star History Chart" /></a>
+  <a href="https://deepwiki.com/lemonade-sdk/lemonade">
+    <img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
 </p>
 <p align="center">
   <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/banner_02.png?raw=true" alt="Lemonade Banner" />
