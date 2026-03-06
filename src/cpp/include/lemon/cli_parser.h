@@ -36,6 +36,8 @@ struct TrayConfig {
     // Launch command options
     std::string launch_agent = "";  // "claude" or "codex"
     std::string launch_model = "";
+    std::string launch_llamacpp_args = "";
+    bool launch_use_recipe = false;
     bool launch_port_specified = false;
 
     // Run options

@@ -85,6 +85,40 @@ static std::string normalize_connect_host(const std::string& host) {
     return host;
 }
 
+static std::string trim_whitespace(const std::string& value) {
+    const auto begin = value.find_first_not_of(" \t\r\n");
+    if (begin == std::string::npos) {
+        return "";
+    }
+
+    const auto end = value.find_last_not_of(" \t\r\n");
+    return value.substr(begin, end - begin + 1);
+}
+
+static std::string build_launch_llamacpp_args(const lemon::TrayConfig& tray_config) {
+    static const std::string default_args = "-b 16384 -ub 16384 -fa on";
+    const std::string trimmed_user_args = trim_whitespace(tray_config.launch_llamacpp_args);
+
+    if (tray_config.launch_use_recipe) {
+        return trimmed_user_args;
+    }
+
+    if (!trimmed_user_args.empty()) {
+        return trimmed_user_args;
+    }
+
+    return default_args;
+}
+
+static nlohmann::json build_launch_recipe_options(const lemon::TrayConfig& tray_config) {
+    nlohmann::json recipe_options = nlohmann::json::object();
+    const std::string merged_args = build_launch_llamacpp_args(tray_config);
+    if (!merged_args.empty()) {
+        recipe_options["llamacpp_args"] = merged_args;
+    }
+    return recipe_options;
+}
+
 #if !defined(_WIN32)
 // Check if systemd is running and a unit is active
 static bool is_systemd_service_active(const char* unit_name) {
@@ -1654,6 +1688,7 @@ int TrayApp::execute_status_command() {
 int TrayApp::execute_launch_command() {
     AgentConfig agent_config;
     std::string config_error;
+    const nlohmann::json launch_recipe_options = build_launch_recipe_options(tray_config_);
 
     const std::string requested_host = server_config_.host;
 
@@ -1699,10 +1734,10 @@ int TrayApp::execute_launch_command() {
     const std::string load_host = host;
     const int load_port = port;
     const std::string load_model = tray_config_.launch_model;
-    std::thread([load_host, load_port, load_model]() {
+    std::thread([load_host, load_port, load_model, launch_recipe_options]() {
         try {
             auto load_manager = std::make_unique<ServerManager>(load_host, load_port);
-            load_manager->load_model(load_model, nlohmann::json::object(), false);
+            load_manager->load_model(load_model, launch_recipe_options, false);
         } catch (...) {
             // Silently ignore — the agent TUI owns stdout/stderr now.
         }

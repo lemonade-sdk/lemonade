@@ -198,6 +198,12 @@ CLIParser::CLIParser()
     launch->add_option("-m,--model", tray_config_.launch_model, "Model to load and use")
         ->required()
         ->type_name("MODEL");
+    launch->add_option("--llamacpp-args", tray_config_.launch_llamacpp_args,
+        "Custom llama-server arguments for launch; when set, launch defaults are skipped")
+        ->type_name("ARGS");
+    launch->add_flag("--use-recipe", tray_config_.launch_use_recipe,
+        "Use the model's saved recipe options instead of launch llama.cpp defaults")
+        ->default_val(tray_config_.launch_use_recipe);
     launch->add_option("--host", config_.host, "Host the server is running on")
         ->envname("LEMONADE_HOST")
         ->type_name("HOST")
