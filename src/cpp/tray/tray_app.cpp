@@ -2659,24 +2659,7 @@ int TrayApp::execute_logs_command() {
         return 1;
     }
 
-    // Prefer launching the Electron app with the logs tab open
-    if (electron_app_path_.empty()) {
-        find_electron_app();
-    }
-    if (!electron_app_path_.empty()) {
-        launch_electron_app("--show-logs");
-        return 0;
-    }
-
-    // Fallback: open logs in the web app
-    std::string connect_host = server_config_.host;
-    if (connect_host.empty() || connect_host == "0.0.0.0") {
-        connect_host = "localhost";
-    }
-    std::string web_app_url = "http://" + connect_host + ":" + std::to_string(port) + "/?logs=true";
-    std::cout << "Opening web app logs at: " << web_app_url << std::endl;
-    open_url(web_app_url);
-
+    on_show_logs();
     return 0;
 }
 
