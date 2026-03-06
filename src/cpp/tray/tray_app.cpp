@@ -2946,6 +2946,11 @@ void TrayApp::launch_electron_app(const std::string& extra_args) {
     std::string base_url = "http://" + connect_host + ":" + std::to_string(server_config_.port);
     std::cout << "Launching Electron app with server URL: " << base_url << std::endl;
 
+    bool launched_for_logs = extra_args.find("--show-logs") != std::string::npos;
+    std::string already_running_msg = launched_for_logs
+        ? "The Lemonade app is already open. Click View -> Logs to see logs"
+        : "The Lemonade app is already open";
+
 #ifdef _WIN32
     // Single-instance enforcement: Only allow one Electron app to be open at a time
     // Reuse child process tracking to determine if the app is already running
@@ -2954,7 +2959,7 @@ void TrayApp::launch_electron_app(const std::string& extra_args) {
         DWORD exit_code = 0;
         if (GetExitCodeProcess(electron_app_process_, &exit_code) && exit_code == STILL_ACTIVE) {
             std::cout << "Electron app is already running" << std::endl;
-            show_notification("App Already Running", "The Lemonade app is already open");
+            show_notification("App Already Running", already_running_msg);
             return;
         } else {
             // Process has exited, clean up the handle
@@ -3043,7 +3048,7 @@ void TrayApp::launch_electron_app(const std::string& extra_args) {
         // Check if the process is still alive
         if (kill(electron_app_pid_, 0) == 0) {
             std::cout << "Electron app is already running (PID: " << electron_app_pid_ << ")" << std::endl;
-            show_notification("App Already Running", "The Lemonade app is already open");
+            show_notification("App Already Running", already_running_msg);
             return;
         } else {
             // Process has exited, reset the PID
@@ -3082,7 +3087,7 @@ void TrayApp::launch_electron_app(const std::string& extra_args) {
         // Check if the process is still alive (and not a zombie)
         if (is_process_alive_not_zombie(electron_app_pid_)) {
             std::cout << "Electron app is already running (PID: " << electron_app_pid_ << ")" << std::endl;
-            show_notification("App Already Running", "The Lemonade app is already open");
+            show_notification("App Already Running", already_running_msg);
             return;
         } else {
             // Process has exited, reset the PID
