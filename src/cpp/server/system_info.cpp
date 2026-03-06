@@ -1420,7 +1420,7 @@ bool SystemInfo::get_has_igpu() {
 std::string SystemInfo::get_flm_version() {
     // Find the flm executable using shared utility
     std::string flm_path = utils::find_flm_executable();
-    if (flm_path.empty()) {
+    if (flm_path.empty() || !utils::is_safe_executable_path(flm_path)) {
         return "unknown";
     }
 

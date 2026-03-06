@@ -155,16 +155,14 @@ std::string get_resource_path(const std::string& relative_path) {
     return resource_path.string();
 }
 
-// Validate that a path is safe to embed in a shell command.
-// Rejects paths containing shell metacharacters that could enable command injection.
-static bool is_safe_executable_path(const std::string& path) {
+bool is_safe_executable_path(const std::string& path) {
     for (char c : path) {
         // Allow typical path characters: alphanumeric, path separators, dots,
         // hyphens, underscores, spaces, colons (drive letters), parens (Program Files (x86))
         if (std::isalnum(static_cast<unsigned char>(c))) continue;
         switch (c) {
             case '/': case '\\': case '.': case '-': case '_':
-            case ' ': case ':': case '(': case ')':
+            case ' ': case ':': case '(': case ')': case '~':
                 continue;
             default:
                 return false;
