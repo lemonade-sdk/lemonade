@@ -72,22 +72,31 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     // Set global HttpClient timeout
     utils::HttpClient::set_default_timeout(global_timeout);
 
-    // Detect log file path (same location as tray uses)
-    // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
-    // This server only READS from the file for the SSE streaming endpoint
+    // Detect log file path and ensure logs are always written to it.
+    // When launched via tray, stdout is redirected to this file by ServerManager.
+    // When launched directly, we add a file sink so the SSE /logs/stream
+    // endpoint still works (it reads from this file).
 #ifdef _WIN32
     char temp_path[MAX_PATH];
     GetTempPathA(MAX_PATH, temp_path);
     log_file_path_ = std::string(temp_path) + "lemonade-server.log";
 #else
-    // Use systemd journal if running under systemd
     if (SystemInfo::is_running_under_systemd()) {
-        log_file_path_ = "";  // Empty signals journald usage
+        log_file_path_ = "";
         LOG(INFO, "Server") << "Detected systemd environment - will use journald for log streaming" << std::endl;
     } else {
         log_file_path_ = utils::get_runtime_dir() + "/lemonade-server.log";
     }
 #endif
+
+    if (!log_file_path_.empty()) {
+        auto file_sink = std::make_shared<AixLog::SinkFile>(
+            AixLog::Filter(AixLog::to_severity(log_level)),
+            log_file_path_,
+            "%Y-%m-%d %H:%M:%S.#ms [#severity] (#tag_func) #message");
+        AixLog::Log::instance().add_logsink(file_sink);
+        LOG(INFO, "Server") << "Log file: " << log_file_path_ << std::endl;
+    }
 
     http_server_ = std::make_unique<httplib::Server>();
     http_server_v6_ = std::make_unique<httplib::Server>();
@@ -328,9 +337,14 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_log_level(req, res);
     });
 
-    // Log streaming endpoint (SSE)
+    // Log streaming endpoint (SSE) — supports ?source= query param for per-backend filtering
     register_get("logs/stream", [this](const httplib::Request& req, httplib::Response& res) {
         handle_logs_stream(req, res);
+    });
+
+    // List available log sources (loaded backend server names)
+    register_get("logs/sources", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_log_sources(req, res);
     });
 
     // NOTE: /api/v1/halt endpoint removed - use SIGTERM signal instead (like Python server)
@@ -3264,7 +3278,32 @@ void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& 
         return;
     }
 
-    LOG(INFO, "Server") << "Starting log stream for: " << log_file_path_ << std::endl;
+    // Optional source filter: ?source=llama-server  (empty or "all" = no filtering)
+    std::string source_filter;
+    if (req.has_param("source")) {
+        source_filter = req.get_param_value("source");
+        if (source_filter == "all") {
+            source_filter.clear();
+        }
+    }
+
+    // Build the tag pattern to match, e.g. "(llama-server)"
+    // Log format: "2024-01-15 10:30:45.123 [INFO] (tag) message"
+    std::string tag_pattern;
+    if (!source_filter.empty()) {
+        if (source_filter == "lemonade") {
+            // "lemonade" is a meta-source for the router's own logs.
+            // We match by excluding known backend tags — anything not produced
+            // by a backend subprocess is a router/lemonade log.
+            tag_pattern.clear();
+        } else {
+            tag_pattern = "(" + source_filter + ")";
+        }
+    }
+
+    LOG(INFO, "Server") << "Starting log stream for: " << log_file_path_
+                        << (source_filter.empty() ? "" : " (source=" + source_filter + ")")
+                        << std::endl;
 
     // Set SSE headers
     res.set_header("Content-Type", "text/event-stream");
@@ -3272,16 +3311,24 @@ void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& 
     res.set_header("Connection", "keep-alive");
     res.set_header("X-Accel-Buffering", "no");
 
-    // Use chunked streaming
+    // Capture the set of known backend tags for "lemonade" filtering
+    std::vector<std::string> backend_tags;
+    if (source_filter == "lemonade") {
+        auto names = router_->get_loaded_server_names();
+        for (const auto& n : names) {
+            backend_tags.push_back("(" + n + ")");
+        }
+        // Always exclude generic "Process" tag as well
+        backend_tags.push_back("(Process)");
+    }
+
     res.set_chunked_content_provider(
         "text/event-stream",
-        [this](size_t offset, httplib::DataSink& sink) {
-            // Thread-local state for this connection
+        [this, tag_pattern, backend_tags](size_t offset, httplib::DataSink& sink) {
             static thread_local std::unique_ptr<std::ifstream> log_stream;
             static thread_local std::streampos last_pos = 0;
 
             if (offset == 0) {
-                // First call: open file and read from beginning
                 log_stream = std::make_unique<std::ifstream>(
                     log_file_path_,
                     std::ios::in
@@ -3292,42 +3339,51 @@ void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& 
                     return false;
                 }
 
-                // Start from beginning
                 log_stream->seekg(0, std::ios::beg);
                 last_pos = 0;
 
                 LOG(INFO, "Server") << "Log stream connection opened" << std::endl;
             }
 
-            // Seek to last known position
             log_stream->seekg(last_pos);
 
             std::string line;
             bool sent_data = false;
-            int lines_sent = 0;
 
-            // Read and send new lines
             while (std::getline(*log_stream, line)) {
-                // Format as SSE: "data: <line>\n\n"
+                last_pos = log_stream->tellg();
+
+                // Apply source filter
+                if (!tag_pattern.empty()) {
+                    if (line.find(tag_pattern) == std::string::npos) {
+                        continue;
+                    }
+                } else if (!backend_tags.empty()) {
+                    // "lemonade" mode: exclude lines from known backend sources
+                    bool is_backend_line = false;
+                    for (const auto& bt : backend_tags) {
+                        if (line.find(bt) != std::string::npos) {
+                            is_backend_line = true;
+                            break;
+                        }
+                    }
+                    if (is_backend_line) {
+                        continue;
+                    }
+                }
+
                 std::string sse_msg = "data: " + line + "\n\n";
 
                 if (!sink.write(sse_msg.c_str(), sse_msg.length())) {
                     LOG(INFO, "Server") << "Log stream client disconnected" << std::endl;
-                    return false;  // Client disconnected
+                    return false;
                 }
 
                 sent_data = true;
-                lines_sent++;
-
-                // CRITICAL: Update position after each successful line read
-                // Must do this BEFORE hitting EOF, because tellg() returns -1 at EOF!
-                last_pos = log_stream->tellg();
             }
 
-            // Clear EOF and any other error flags so we can continue reading on next poll
             log_stream->clear();
 
-            // Send heartbeat if no data (keeps connection alive)
             if (!sent_data) {
                 const char* heartbeat = ": heartbeat\n\n";
                 if (!sink.write(heartbeat, strlen(heartbeat))) {
@@ -3336,12 +3392,26 @@ void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& 
                 }
             }
 
-            // Sleep briefly before next poll
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-            return true;  // Keep streaming
+            return true;
         }
     );
+}
+
+void Server::handle_log_sources(const httplib::Request& req, httplib::Response& res) {
+    nlohmann::json sources = nlohmann::json::array();
+
+    // "lemonade" represents the router's own logs
+    sources.push_back({{"name", "lemonade"}, {"label", "Lemonade Router"}});
+
+    auto server_names = router_->get_loaded_server_names();
+    for (const auto& name : server_names) {
+        sources.push_back({{"name", name}, {"label", name}});
+    }
+
+    nlohmann::json response = {{"sources", sources}};
+    res.set_content(response.dump(), "application/json");
 }
 
 // ============================================================================

@@ -78,6 +78,9 @@ public:
     void completion_stream(const std::string& request_body, httplib::DataSink& sink);
     void responses_stream(const std::string& request_body, httplib::DataSink& sink);
 
+    // Get distinct server names of currently loaded backends
+    std::vector<std::string> get_loaded_server_names() const;
+
     // Get telemetry data
     json get_stats() const;
 

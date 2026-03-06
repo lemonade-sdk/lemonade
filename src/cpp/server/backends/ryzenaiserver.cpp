@@ -102,7 +102,9 @@ void RyzenAIServer::load(const std::string& model_name,
         args,
         "",
         is_debug(),
-        true
+        true,
+        {},
+        server_name_
     );
 
     if (!utils::ProcessManager::is_running(process_handle_)) {

@@ -112,7 +112,8 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
         "",     // working_dir (empty = current)
         is_debug(),  // inherit_output
         false,
-        env_vars
+        env_vars,
+        server_name_
     );
 
     if (process_handle_.pid == 0) {

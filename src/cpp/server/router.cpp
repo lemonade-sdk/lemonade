@@ -701,6 +701,18 @@ json Router::image_variations(const json& request) {
     });
 }
 
+std::vector<std::string> Router::get_loaded_server_names() const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    std::vector<std::string> names;
+    for (const auto& server : loaded_servers_) {
+        const auto& name = server->get_server_name();
+        if (std::find(names.begin(), names.end(), name) == names.end()) {
+            names.push_back(name);
+        }
+    }
+    return names;
+}
+
 json Router::get_stats() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = get_most_recent_server();

@@ -4049,6 +4049,27 @@ footer {
     background: rgba(136, 136, 136, 0.1);
 }
 
+.logs-source-select {
+    font-size: 0.7rem;
+    padding: 4px 8px;
+    background: #1a1a1a;
+    color: #fff;
+    border: 1px solid #333;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    max-width: 160px;
+}
+
+.logs-source-select:hover {
+    border-color: #555;
+}
+
+.logs-source-select:focus {
+    outline: none;
+    border-color: #666;
+}
+
 .logs-control-btn {
     font-size: 0.7rem;
     padding: 4px 10px;
