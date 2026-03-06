@@ -237,15 +237,9 @@ class FlmStatusTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        parser = argparse.ArgumentParser(description="Test FLM status detection")
-        parser.add_argument(
-            "--server-binary",
-            type=str,
-            default=get_default_server_binary(),
-            help="Path to server binary",
+        cls.server_binary = (
+            getattr(cls, "_cli_server_binary", None) or get_default_server_binary()
         )
-        args, _ = parser.parse_known_args()
-        cls.server_binary = args.server_binary
         cls.server_version = get_server_version(cls.server_binary)
         print(f"[SETUP] Using server version: {cls.server_version}")
 
@@ -810,4 +804,11 @@ class FlmStatusTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    # Parse --server-binary before unittest sees sys.argv
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--server-binary", type=str, default=None)
+    args, remaining = parser.parse_known_args()
+    # Store for setUpClass to pick up
+    FlmStatusTests._cli_server_binary = args.server_binary
+    sys.argv = [sys.argv[0]] + remaining
     unittest.main(verbosity=2)

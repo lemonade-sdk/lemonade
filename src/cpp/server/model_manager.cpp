@@ -1425,8 +1425,8 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
 
     // Find the flm executable using shared utility
     std::string flm_path = utils::find_flm_executable();
-    if (flm_path.empty()) {
-        return installed_models; // FLM not installed
+    if (flm_path.empty() || !utils::is_safe_executable_path(flm_path)) {
+        return installed_models; // FLM not installed or path unsafe
     }
 
     // Run 'flm list --filter installed --quiet --json' to get only installed models
@@ -1507,8 +1507,8 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
 
     // Find the flm executable using shared utility
     std::string flm_path = utils::find_flm_executable();
-    if (flm_path.empty()) {
-        return flm_models; // FLM not installed
+    if (flm_path.empty() || !utils::is_safe_executable_path(flm_path)) {
+        return flm_models; // FLM not installed or path unsafe
     }
 
     // Run 'flm list --json' to get all available models
