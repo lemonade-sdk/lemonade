@@ -1,0 +1,34 @@
+name: "📖 Documentation Issue"
+description: Report missing, incorrect, or unclear documentation
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us improve the Lemonade documentation! Let us know what's missing or could be better.
+
+  - type: input
+    id: page
+    attributes:
+      label: Documentation Page / Section
+      description: "Which page or section of the docs is this about? Provide a URL or path if possible."
+      placeholder: "e.g. https://lemonade-server.ai/docs/server/concepts/ or docs/server/README.md"
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What's Missing or Wrong
+      description: Describe the issue with the current documentation.
+      placeholder: "The section on X doesn't explain how to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Improvement
+      description: If you have a suggestion for how to fix or improve the docs, please share it.
+    validations:
+      required: false
