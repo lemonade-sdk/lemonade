@@ -250,6 +250,11 @@ std::string ModelManager::get_hf_cache_dir() const {
 #endif
 }
 
+void ModelManager::invalidate_models_cache() {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    cache_valid_ = false;
+}
+
 void ModelManager::set_extra_models_dir(const std::string& dir) {
     extra_models_dir_ = dir;
 

@@ -46,7 +46,7 @@ void FastFlowLMServer::install(const std::string& backend) {
 #ifndef _WIN32
     auto status = SystemInfoCache::get_flm_status();
     throw std::runtime_error(
-        "Automatic FLM installation is only supported on Windows. " +
+        "Visit the documentation for installation instructions. " +
         std::string(status.action.empty() ? "" : status.action));
 #else
     LOG(INFO, "FastFlowLM") << "[FastFlowLM] Checking FLM installation..." << std::endl;

@@ -70,6 +70,9 @@ class ModelManager {
 public:
     ModelManager();
 
+    // Invalidate the models cache (e.g. after backend install/uninstall)
+    void invalidate_models_cache();
+
     // Get all supported models from server_models.json
     std::map<std::string, ModelInfo> get_supported_models();
 

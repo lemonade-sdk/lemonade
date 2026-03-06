@@ -2791,48 +2791,13 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         return;
     }
 
-    // Hardware info is cached statically (never changes within a process lifetime)
+    // SystemInfoCache is the single source of truth for hardware + recipes.
+    // Recipes are cached until invalidated by install/uninstall.
     nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache();
 
-    // Check if BackendManager already has a cached recipes section
-    // (populated on first request, then kept current by install/uninstall)
-    if (backend_manager_) {
-        json cached_recipes = backend_manager_->get_recipes_cache();
-        if (!cached_recipes.empty()) {
-            system_info["recipes"] = cached_recipes;
-            res.set_content(system_info.dump(), "application/json");
-            return;
-        }
-    }
-
-    // Recipes are already computed by get_system_info_with_cache() above.
-    // Enrich with release_url, download_filename, and version from BackendManager
-    if (backend_manager_ && system_info.contains("recipes")) {
-        for (auto& [recipe_name, recipe_info] : system_info["recipes"].items()) {
-            if (!recipe_info.contains("backends")) continue;
-            for (auto& [backend_name, backend_info] : recipe_info["backends"].items()) {
-                try {
-                    auto enrichment = backend_manager_->get_backend_enrichment(recipe_name, backend_name);
-                    if (!enrichment.release_url.empty()) {
-                        backend_info["release_url"] = enrichment.release_url;
-                    }
-                    if (!enrichment.download_filename.empty()) {
-                        backend_info["download_filename"] = enrichment.download_filename;
-                    }
-                    // Always provide the configured version so UI can show version+link
-                    // even for not-installed backends
-                    if (!backend_info.contains("version") || backend_info["version"].get<std::string>().empty()) {
-                        if (!enrichment.version.empty()) {
-                            backend_info["version"] = enrichment.version;
-                        }
-                    }
-                } catch (...) {}
-            }
-        }
-
-        // Store in BackendManager's cache — subsequent requests return instantly,
-        // install/uninstall do targeted updates to keep it current.
-        backend_manager_->set_recipes_cache(system_info["recipes"]);
+    // Enrich with release_url, download_filename, version from BackendManager config
+    if (system_info.contains("recipes")) {
+        enrich_recipes(system_info["recipes"]);
     }
 
     res.set_content(system_info.dump(), "application/json");
@@ -3410,12 +3375,41 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
 
         LOG(INFO, "Server") << "Installing backend: " << recipe << ":" << backend << std::endl;
 
+        // Get fresh state before any checks
+        SystemInfoCache::invalidate_recipes();
+
+        // Check if this backend requires manual setup (e.g. FLM on Linux).
+        // If so, return the action URL instead of attempting installation.
+        json system_info = SystemInfoCache::get_system_info_with_cache();
+        if (system_info.contains("recipes") &&
+            system_info["recipes"].contains(recipe) &&
+            system_info["recipes"][recipe].contains("backends") &&
+            system_info["recipes"][recipe]["backends"].contains(backend)) {
+            std::string action = system_info["recipes"][recipe]["backends"][backend].value("action", "");
+            if (action.find(".html") != std::string::npos) {
+                auto url_pos = action.find("https://");
+                if (url_pos != std::string::npos) {
+                    nlohmann::json response = {
+                        {"action", action.substr(url_pos)},
+                        {"recipe", recipe},
+                        {"backend", backend}
+                    };
+                    res.set_content(response.dump(), "application/json");
+                    return;
+                }
+            }
+        }
+
         if (stream) {
             stream_download_operation(res, [this, recipe, backend](DownloadProgressCallback progress_cb) {
                 backend_manager_->install_backend(recipe, backend, progress_cb);
+                SystemInfoCache::invalidate_recipes();
+                model_manager_->invalidate_models_cache();
             });
         } else {
             backend_manager_->install_backend(recipe, backend);
+            SystemInfoCache::invalidate_recipes();
+            model_manager_->invalidate_models_cache();
             nlohmann::json response = {
                 {"status", "success"},
                 {"recipe", recipe},
@@ -3469,6 +3463,9 @@ void Server::handle_uninstall(const httplib::Request& req, httplib::Response& re
 
         backend_manager_->uninstall_backend(recipe, backend);
 
+        SystemInfoCache::invalidate_recipes();
+        model_manager_->invalidate_models_cache();
+
         nlohmann::json response = {
             {"status", "success"},
             {"recipe", recipe},
@@ -3481,6 +3478,30 @@ void Server::handle_uninstall(const httplib::Request& req, httplib::Response& re
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::enrich_recipes(json& recipes) {
+    if (!backend_manager_) return;
+
+    for (auto& [recipe_name, recipe_info] : recipes.items()) {
+        if (!recipe_info.contains("backends")) continue;
+        for (auto& [backend_name, backend_info] : recipe_info["backends"].items()) {
+            try {
+                auto enrichment = backend_manager_->get_backend_enrichment(recipe_name, backend_name);
+                if (!enrichment.release_url.empty()) {
+                    backend_info["release_url"] = enrichment.release_url;
+                }
+                if (!enrichment.download_filename.empty()) {
+                    backend_info["download_filename"] = enrichment.download_filename;
+                }
+                if (!backend_info.contains("version") || backend_info["version"].get<std::string>().empty()) {
+                    if (!enrichment.version.empty()) {
+                        backend_info["version"] = enrichment.version;
+                    }
+                }
+            } catch (...) {}
+        }
     }
 }
 

@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 
 import { useSystem } from './hooks/useSystem';
 import { useConfirmDialog } from './ConfirmDialog';
-import { installBackend, uninstallBackend } from './utils/backendInstaller';
+import { useBackendInstall } from './hooks/useBackendInstall';
 import { Recipe, BackendInfo } from './utils/systemData';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import BackendRow from './components/BackendRow';
@@ -39,7 +39,7 @@ interface BackendManagerProps {
 const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError, showSuccess }) => {
   const { systemInfo, isLoading, refresh } = useSystem();
   const { confirm, ConfirmDialog } = useConfirmDialog();
-  const [installingBackends, setInstallingBackends] = useState<Set<string>>(new Set());
+  const { handleInstall: handleInstallBackend, handleUninstall, isInstalling } = useBackendInstall({ showError, showSuccess });
   const [hoveredBackend, setHoveredBackend] = useState<string | null>(null);
   const [backendAssetSizes, setBackendAssetSizes] = useState<Record<string, number>>({});
 
@@ -139,38 +139,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
     window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
 
-  const handleInstallBackend = useCallback(async (recipe: string, backend: string) => {
-    const key = `${recipe}:${backend}`;
-    setInstallingBackends(prev => new Set(prev).add(key));
-    try {
-      await installBackend(recipe, backend, true);
-      showSuccess(`${RECIPE_DISPLAY_NAMES[recipe] || recipe} ${backend} installed successfully.`);
-      // No manual refreshSystem() needed — installBackend() dispatches 'backendsUpdated'
-      // which useSystem auto-listens for and refreshes.
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      showError(`Failed: ${errorMessage}`);
-
-      // If the error has a help URL in the action, open it
-      const backendInfo = systemInfo?.recipes?.[recipe]?.backends?.[backend];
-      const action = backendInfo?.action;
-
-      // Extract URL from action
-      if (action) {
-        const urlMatch = action.match(/https?:\/\/[^\s]+/);
-        if (urlMatch) {
-          window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: urlMatch[0] } }));
-        }
-      }
-    } finally {
-      setInstallingBackends(prev => {
-        const next = new Set(prev);
-        next.delete(key);
-        return next;
-      });
-    }
-  }, [showError, showSuccess, systemInfo]);
-
   const handleCopyAction = useCallback(async (recipe: string, backend: string, action?: string) => {
     if (!action) return;
     try {
@@ -199,15 +167,8 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
       danger: true
     });
     if (!confirmed) return;
-
-    try {
-      await uninstallBackend(recipe, backend);
-      showSuccess(`${RECIPE_DISPLAY_NAMES[recipe] || recipe} ${backend} uninstalled successfully.`);
-      // No manual refreshSystem() needed — uninstallBackend() dispatches 'backendsUpdated'
-    } catch (error) {
-      showError(`Failed to uninstall backend: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }, [confirm, showError, showSuccess]);
+    await handleUninstall(recipe, backend);
+  }, [confirm, handleUninstall]);
 
   const groupedBackends: Array<[string, Array<[string, BackendInfo]>]> = recipes
     ? Object.entries(recipes)
@@ -272,7 +233,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
                   recipeName={recipeName}
                   backendName={backendName}
                   info={info}
-                  isInstalling={installingBackends.has(key)}
+                  isInstalling={isInstalling(recipeName, backendName)}
                   sizeLabel={getBackendSizeLabel(info)}
                   hoverActions={true}
                   isHovered={hoveredBackend === key}

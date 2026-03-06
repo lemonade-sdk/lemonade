@@ -74,7 +74,6 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     // System backend uses a pre-installed binary from PATH - nothing to install
     if (backend == "system") {
-        update_recipes_cache_entry(recipe, backend, true);
         return;
     }
 
@@ -97,7 +96,6 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
             throw std::runtime_error("FLM installation incomplete: " + status.message +
                 (status.action.empty() ? "" : ". " + status.action));
         }
-        update_recipes_cache_entry(recipe, backend, true);
         return;
     }
 
@@ -109,8 +107,6 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     backends::BackendUtils::install_from_github(
         *spec, params.version, params.repo, params.filename, backend, progress_cb);
-
-    update_recipes_cache_entry(recipe, backend, true);
 }
 
 void BackendManager::uninstall_backend(const std::string& recipe, const std::string& backend) {
@@ -144,7 +140,6 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
         LOG(DEBUG, "BackendManager") << "Nothing to uninstall at: " << install_dir << std::endl;
     }
 
-    update_recipes_cache_entry(recipe, backend, false);
 }
 
 // ============================================================================
@@ -239,58 +234,6 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
         result.version = params.version;
     } catch (...) {}
     return result;
-}
-
-// ============================================================================
-// Recipes cache
-// ============================================================================
-
-void BackendManager::set_recipes_cache(const json& recipes) {
-    std::lock_guard<std::mutex> lock(cache_mutex_);
-    cached_recipes_ = recipes;
-}
-
-json BackendManager::get_recipes_cache() {
-    std::lock_guard<std::mutex> lock(cache_mutex_);
-    return cached_recipes_;
-}
-
-void BackendManager::update_recipes_cache_entry(const std::string& recipe, const std::string& backend, bool installed) {
-    std::lock_guard<std::mutex> lock(cache_mutex_);
-    if (cached_recipes_.empty()) return;
-
-    if (!cached_recipes_.contains(recipe) ||
-        !cached_recipes_[recipe].contains("backends") ||
-        !cached_recipes_[recipe]["backends"].contains(backend)) {
-        return;
-    }
-
-    auto& info = cached_recipes_[recipe]["backends"][backend];
-    const std::string install_action = "lemonade-server recipes --install " + recipe + ":" + backend;
-    const std::string current_state = info.value("state", "unsupported");
-
-    if (current_state == "unsupported") {
-        info["action"] = "";
-    } else if (installed) {
-        info["state"] = "installed";
-        info["message"] = "";
-        info["action"] = "";
-    } else {
-        info["state"] = "installable";
-        info["message"] = "Backend is supported but not installed.";
-        info["action"] = install_action;
-    }
-
-    // Keep enrichment fields current for both installed and uninstalled states.
-    // Version should remain visible in /system-info even when a backend is not installed.
-    auto enrichment = get_backend_enrichment(recipe, backend);
-    if (!enrichment.version.empty()) {
-        info["version"] = enrichment.version;
-    } else {
-        info.erase("version");
-    }
-    if (!enrichment.release_url.empty()) info["release_url"] = enrichment.release_url;
-    if (!enrichment.download_filename.empty()) info["download_filename"] = enrichment.download_filename;
 }
 
 } // namespace lemon

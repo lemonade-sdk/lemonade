@@ -4,7 +4,8 @@ import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch } from './utils/serverConfig';
-import { pullModel, DownloadAbortError, ensureModelReady, installBackend, deleteModel, ensureBackendForRecipe } from './utils/backendInstaller';
+import { pullModel, DownloadAbortError, ensureModelReady, deleteModel, ensureBackendForRecipe } from './utils/backendInstaller';
+import { useBackendInstall } from './hooks/useBackendInstall';
 import { fetchSystemInfoData, BackendInfo } from './utils/systemData';
 import type { ModelRegistrationData } from './utils/backendInstaller';
 import { downloadTracker } from './utils/downloadTracker';
@@ -1080,31 +1081,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
     };
   };
 
-  const [installingBackend, setInstallingBackend] = useState<string | null>(null);
-
-  const handleInstallRecipeBackend = async (recipe: string, backend: string) => {
-    const key = `${recipe}:${backend}`;
-    setInstallingBackend(key);
-    try {
-      await installBackend(recipe, backend, true);
-      showSuccess(`Backend installed successfully. Refreshing models...`);
-      await refreshModels();
-    } catch (error) {
-      showError(`Failed to install backend: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setInstallingBackend(null);
-    }
-  };
-
-  const handleCopyRecipeBackendAction = async (_recipe: string, _backend: string, action?: string) => {
-    if (!action) return;
-    try {
-      await navigator.clipboard.writeText(action);
-      showSuccess('Backend command copied to clipboard.');
-    } catch (error) {
-      showError(`Failed to copy backend command: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  };
+  const { handleInstall: handleInstallRecipeBackend, isInstalling: isBackendInstalling } = useBackendInstall({ showError, showSuccess });
 
   const renderBackendSetupBanner = (recipe: string) => {
     const info = getRecipeBackendInfo(recipe);
@@ -1124,11 +1101,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
           ...systemInfo!.recipes![recipe].backends[info.backend],
           message: info.message || defaultMessage,
         }}
-        isInstalling={installingBackend === `${recipe}:${info.backend}`}
+        isInstalling={isBackendInstalling(recipe, info.backend)}
         sizeLabel={info.size ? `${Math.round(info.size)} MB` : null}
         hoverActions={false}
         onInstall={handleInstallRecipeBackend}
-        onCopyAction={handleCopyRecipeBackendAction}
         className="backend-setup-banner"
       />
     );
