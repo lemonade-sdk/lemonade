@@ -156,6 +156,16 @@ std::string get_resource_path(const std::string& relative_path) {
 }
 
 std::string find_flm_executable() {
+    // Allow mocking for tests
+    // Set to a path to mock FLM, or "none" to simulate FLM not installed
+    const char* mock_path = std::getenv("LEMONADE_MOCK_FLM_PATH");
+    if (mock_path && mock_path[0] != '\0') {
+        if (std::string(mock_path) == "none") {
+            return "";  // Simulate FLM not found
+        }
+        return mock_path;
+    }
+
 #ifdef _WIN32
     // Refresh PATH from Windows registry to pick up any changes since process started
     // This is important because users may install FLM after starting lemonade-server

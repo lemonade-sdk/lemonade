@@ -126,9 +126,6 @@ public:
     // Get list of all available FLM models from 'flm list --json'
     std::vector<ModelInfo> get_flm_available_models();
 
-    // Refresh FLM model download status from 'flm list' (call after FLM install/upgrade)
-    void refresh_flm_download_status();
-
     // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
 

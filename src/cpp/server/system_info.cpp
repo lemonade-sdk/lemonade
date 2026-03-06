@@ -1,6 +1,7 @@
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/utils/version_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/backends/backend_utils.h"
 #include <filesystem>
@@ -14,6 +15,7 @@
 #include <cctype>
 #include <set>
 #include <map>
+#include <mutex>
 #include <vector>
 #include <cmath>
 
@@ -270,6 +272,7 @@ static std::string get_current_os() {
 std::string identify_rocm_arch_from_name(const std::string& device_name);
 std::string identify_npu_arch();
 static std::string read_version_file(const fs::path& version_file);
+static std::string get_expected_backend_version(const std::string& recipe, const std::string& backend);
 
 // Check if device matches constraints (empty constraint set = all families allowed)
 static bool device_matches_constraint(const std::string& device_family,
@@ -315,7 +318,28 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         }
     }
     if (recipe == "flm") {
-        if (!utils::run_flm_validate("", error_message)) {
+        // 1. Is flm binary present?
+        std::string flm_path = utils::find_flm_executable();
+        if (flm_path.empty()) {
+            error_message = "FLM is not installed";
+            return false;
+        }
+        // 2. Is version >= required?
+        std::string version = SystemInfo::get_flm_version();
+        std::string required = get_expected_backend_version("flm", "npu");
+        if (!required.empty()) {
+            if (version == "unknown") {
+                // Can't determine version (FLM too old for --json flag) → treat as outdated
+                error_message = "FLM version unknown, requires " + required;
+                return false;
+            }
+            if (utils::Version::parse(version) < utils::Version::parse(required)) {
+                error_message = "FLM " + version + " installed, requires " + required;
+                return false;
+            }
+        }
+        // 3. Does flm validate pass?
+        if (!utils::run_flm_validate(flm_path, error_message)) {
             return false;
         }
         return true;
@@ -848,61 +872,97 @@ json SystemInfo::build_recipes_info(const json& devices) {
             backend["message"] = message;
             backend["action"] = "";
         } else if (!available) {
-            backend["state"] = "installable";
-            backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
-
-            // Special action for ROCm backend on llamacpp/sd-cpp if CWSR fix is missing
-            if ((def.recipe == "llamacpp" || def.recipe == "sd-cpp") && def.backend == "rocm"
-                && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
-                backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
-            }
-            // For FLM on Linux, the action should be to visit setup documentation
-            else if (def.recipe == "flm") {
+            // FLM uses 5-state model: installable, update_required, action_required
+            // (version checking is inside is_recipe_installed() for FLM)
+            if (def.recipe == "flm") {
+                if (install_error.find("not installed") != std::string::npos) {
+                    backend["state"] = "installable";
+                    backend["message"] = install_error;
 #ifdef __linux__
-                backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html";
+                    backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html";
 #elif defined(_WIN32)
-                // Driver/kernel issue → docs URL (opens iframe)
-                // FLM not installed → install command (auto-installable)
-                if (install_error.find("driver") != std::string::npos ||
-                    install_error.find("Driver") != std::string::npos) {
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+#else
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+#endif
+                } else if (install_error.find("requires") != std::string::npos) {
+                    backend["state"] = "update_required";
+                    backend["message"] = install_error;
+                    // Include the installed version if available
+                    std::string installed_version = get_recipe_version(def.recipe, def.backend);
+                    if (!installed_version.empty() && installed_version != "unknown") {
+                        backend["version"] = installed_version;
+                    }
+#ifdef __linux__
+                    backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html";
+#elif defined(_WIN32)
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+#else
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+#endif
+                } else {
+                    // Validation failure (driver issues, etc.)
+                    backend["state"] = "action_required";
+                    backend["message"] = install_error;
+                    std::string installed_version = get_recipe_version(def.recipe, def.backend);
+                    if (!installed_version.empty() && installed_version != "unknown") {
+                        backend["version"] = installed_version;
+                    }
+#ifdef __linux__
+                    backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html";
+#elif defined(_WIN32)
                     backend["action"] = "Visit https://lemonade-server.ai/driver_install.html";
+#else
+                    backend["action"] = "";
+#endif
+                }
+            } else {
+                backend["state"] = "installable";
+                backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
+
+                // Special action for ROCm backend on llamacpp/sd-cpp if CWSR fix is missing
+                if ((def.recipe == "llamacpp" || def.recipe == "sd-cpp") && def.backend == "rocm"
+                    && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
+                    backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
                 } else {
                     backend["action"] = get_install_command(def.recipe, def.backend);
                 }
-#else
-                backend["action"] = get_install_command(def.recipe, def.backend);
-#endif
-            } else {
-                backend["action"] = get_install_command(def.recipe, def.backend);
             }
         } else {
-            std::string installed_version = get_recipe_version(def.recipe, def.backend);
-            std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
-
-            if (!installed_version.empty() && installed_version != "unknown") {
-                backend["version"] = installed_version;
-            }
-
-            bool version_known = !installed_version.empty() && installed_version != "unknown";
-            bool has_expected = !expected_version.empty();
-            bool needs_update = has_expected && (!version_known || installed_version != expected_version);
-
-            if (needs_update) {
-                backend["state"] = "update_required";
-                backend["message"] = "Backend update is required before use.";
-                backend["action"] = get_install_command(def.recipe, def.backend);
-            } else {
+            // FLM: version check already done in is_recipe_installed(), so skip generic version check
+            if (def.recipe == "flm") {
+                std::string installed_version = get_recipe_version(def.recipe, def.backend);
+                if (!installed_version.empty() && installed_version != "unknown") {
+                    backend["version"] = installed_version;
+                }
                 backend["state"] = "installed";
                 backend["message"] = "";
                 backend["action"] = "";
-            }
-
-            // FLM cannot be uninstalled on Linux (managed by system package manager)
 #ifdef __linux__
-            if (def.recipe == "flm") {
                 backend["can_uninstall"] = false;
-            }
 #endif
+            } else {
+                std::string installed_version = get_recipe_version(def.recipe, def.backend);
+                std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
+
+                if (!installed_version.empty() && installed_version != "unknown") {
+                    backend["version"] = installed_version;
+                }
+
+                bool version_known = !installed_version.empty() && installed_version != "unknown";
+                bool has_expected = !expected_version.empty();
+                bool needs_update = has_expected && (!version_known || installed_version != expected_version);
+
+                if (needs_update) {
+                    backend["state"] = "update_required";
+                    backend["message"] = "Backend update is required before use.";
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+                } else {
+                    backend["state"] = "installed";
+                    backend["message"] = "";
+                    backend["action"] = "";
+                }
+            }
         }
 
         // Note: release_url and download_size_mb are added by Server::handle_system_info()
@@ -1251,32 +1311,6 @@ bool needs_gfx1151_cwsr_fix() {
     }
 
     return false;
-}
-
-// Check if FLM validation fails on Linux (indicating NPU stack issues)
-// Returns true if FLM is present but fails validation
-// error_message is populated with the actual error from FLM if validation fails
-// Note: Only checks if FLM is installed. The "FLM not installed" case is handled
-// by the model manager when a user tries to download/load an FLM model.
-bool check_flm_validation_fails(std::string& error_message) {
-#ifdef __linux__
-    std::string flm_path = utils::find_flm_executable();
-    if (flm_path.empty()) {
-        // No FLM installed - not a system check issue
-        // (FLM not being installed is only a problem if user tries to use FLM models)
-        error_message.clear();
-        return false;
-    }
-
-    // Run flm validate
-    bool success = utils::run_flm_validate(flm_path, error_message);
-
-    // Return true if validation failed (indicating NPU stack issues)
-    return !success;
-#else
-    error_message.clear();
-    return false;
-#endif
 }
 
 // Identify NPU architecture by checking for known hardware
@@ -2900,85 +2934,129 @@ void SystemInfoCache::perform_upgrade_cleanup() {
     }
 }
 
-json SystemInfoCache::get_system_info_with_cache() {
-    // In-memory static cache to avoid repeated disk reads and message printing
-    // within the same process lifetime
-    static json cached_result;
-    static bool result_computed = false;
+// Static state for system-info cache (split into hardware + recipes)
+static std::mutex s_system_info_mutex;
+static json s_cached_system_info;
+static bool s_hardware_computed = false;
+static bool s_recipes_computed = false;
 
-    // Return cached result if available
-    if (result_computed) {
-        return cached_result;
+json SystemInfoCache::get_system_info_with_cache() {
+    std::lock_guard<std::mutex> lock(s_system_info_mutex);
+
+    // Return fully cached result if both hardware and recipes are computed
+    if (s_hardware_computed && s_recipes_computed) {
+        return s_cached_system_info;
     }
 
-    json system_info;
+    // Compute hardware if not cached
+    if (!s_hardware_computed) {
+        json system_info;
 
-    // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
-    try {
-        // Create cache instance and load cached data
-        SystemInfoCache cache;
-        bool cache_exists = fs::exists(cache.get_cache_file_path());
-        json cached_data = cache.load_hardware_info();
+        // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
+        try {
+            // Create cache instance and load cached data
+            SystemInfoCache cache;
+            bool cache_exists = fs::exists(cache.get_cache_file_path());
+            json cached_data = cache.load_hardware_info();
 
-        // Create platform-specific system info instance
-        auto sys_info = create_system_info();
+            // Create platform-specific system info instance
+            auto sys_info = create_system_info();
 
-        if (!cached_data.empty()) {
-            system_info = cached_data;
-        } else {
-            // Provide friendly message about why we're detecting hardware
-            if (cache_exists) {
-                LOG(INFO, "Server") << "Collecting system info (Lemonade was updated)" << std::endl;
-
-                // Perform version-specific cleanup (e.g., removing stale backend binaries)
-                cache.perform_upgrade_cleanup();
+            if (!cached_data.empty()) {
+                system_info = cached_data;
             } else {
-                LOG(INFO, "Server") << "Collecting system info" << std::endl;
+                // Provide friendly message about why we're detecting hardware
+                if (cache_exists) {
+                    LOG(INFO, "Server") << "Collecting system info (Lemonade was updated)" << std::endl;
+
+                    // Perform version-specific cleanup (e.g., removing stale backend binaries)
+                    cache.perform_upgrade_cleanup();
+                } else {
+                    LOG(INFO, "Server") << "Collecting system info" << std::endl;
+                }
+
+                // Get system info (OS, Processor, Memory, OEM System, BIOS, etc.)
+                try {
+                    system_info = sys_info->get_system_info_dict();
+                } catch (...) {
+                    system_info["OS Version"] = "Unknown";
+                }
+
+                // Get device information - handles its own exceptions internally
+                system_info["devices"] = sys_info->get_device_dict();
+
+                // Save to cache (without recipes which are always fresh)
+                try {
+                    cache.save_hardware_info(system_info);
+                } catch (...) {
+                    // Cache save failed - not critical, continue
+                }
             }
 
-            // Get system info (OS, Processor, Memory, OEM System, BIOS, etc.)
-            try {
-                system_info = sys_info->get_system_info_dict();
-            } catch (...) {
-                system_info["OS Version"] = "Unknown";
-            }
+            s_cached_system_info = system_info;
 
-            // Get device information - handles its own exceptions internally
-            system_info["devices"] = sys_info->get_device_dict();
-
-            // Save to cache (without recipes which are always fresh)
-            try {
-                cache.save_hardware_info(system_info);
-            } catch (...) {
-                // Cache save failed - not critical, continue
-            }
+        } catch (const std::exception& e) {
+            // Catastrophic failure - return minimal info but don't crash
+            LOG(ERROR, "Server") << "System info failed: " << e.what() << std::endl;
+            s_cached_system_info = {
+                {"OS Version", "Unknown"},
+                {"error", e.what()},
+                {"devices", json::object()}
+            };
+        } catch (...) {
+            LOG(ERROR, "Server") << "System info failed with unknown error" << std::endl;
+            s_cached_system_info = {
+                {"OS Version", "Unknown"},
+                {"error", "Unknown error"},
+                {"devices", json::object()}
+            };
         }
 
-        // Add recipes section (always fresh, never cached)
-        system_info["recipes"] = sys_info->build_recipes_info(system_info["devices"]);
+        s_hardware_computed = true;
+    }
 
-    } catch (const std::exception& e) {
-        // Catastrophic failure - return minimal info but don't crash
-        LOG(ERROR, "Server") << "System info failed: " << e.what() << std::endl;
-        system_info = {
-            {"OS Version", "Unknown"},
-            {"error", e.what()},
-            {"devices", json::object()}
-        };
-    } catch (...) {
-        LOG(ERROR, "Server") << "System info failed with unknown error" << std::endl;
-        system_info = {
-            {"OS Version", "Unknown"},
-            {"error", "Unknown error"},
-            {"devices", json::object()}
+    // Compute recipes if not cached (or invalidated)
+    if (!s_recipes_computed) {
+        try {
+            auto sys_info = create_system_info();
+            json devices = s_cached_system_info.contains("devices")
+                ? s_cached_system_info["devices"] : json::object();
+            s_cached_system_info["recipes"] = sys_info->build_recipes_info(devices);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Recipe detection failed: " << e.what() << std::endl;
+        } catch (...) {
+            LOG(ERROR, "Server") << "Recipe detection failed with unknown error" << std::endl;
+        }
+        s_recipes_computed = true;
+    }
+
+    return s_cached_system_info;
+}
+
+void SystemInfoCache::invalidate_recipes() {
+    std::lock_guard<std::mutex> lock(s_system_info_mutex);
+    s_recipes_computed = false;
+}
+
+FlmStatus SystemInfoCache::get_flm_status() {
+    json info = get_system_info_with_cache();
+
+    // Navigate to recipes.flm.backends.npu
+    if (info.contains("recipes") &&
+        info["recipes"].contains("flm") &&
+        info["recipes"]["flm"].contains("backends") &&
+        info["recipes"]["flm"]["backends"].contains("npu")) {
+        const auto& npu = info["recipes"]["flm"]["backends"]["npu"];
+        return {
+            npu.value("state", "unsupported") == "installed",
+            npu.value("state", "unsupported"),
+            npu.value("version", ""),
+            npu.value("message", ""),
+            npu.value("action", "")
         };
     }
 
-    // Store in static cache for future calls
-    cached_result = system_info;
-    result_computed = true;
-
-    return system_info;
+    return {false, "unsupported", "", "FLM recipe not found in system info", ""};
 }
 
 

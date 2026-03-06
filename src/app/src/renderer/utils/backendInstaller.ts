@@ -615,22 +615,6 @@ async function ensureModelReadyInternal(
         const errorData = await loadResponse.json().catch(() => ({}));
         const errorMsg = errorData.error || `Failed to load model: ${loadResponse.statusText}`;
 
-        // If model was invalidated (e.g., corrupted or removed), re-pull and retry once
-        if (errorMsg.includes('model_invalidated') || errorMsg.includes('not found')) {
-          console.warn('Model invalidated, re-pulling and retrying load...');
-          await pullModel(modelName);
-          const retryResponse = await serverFetch('/load', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(loadPayload),
-          });
-          if (!retryResponse.ok) {
-            const retryError = await retryResponse.json().catch(() => ({}));
-            throw new Error(retryError.error || `Failed to load model after re-pull: ${retryResponse.statusText}`);
-          }
-          return;
-        }
-
         throw new Error(errorMsg);
       }
     };

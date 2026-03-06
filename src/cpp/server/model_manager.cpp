@@ -4,7 +4,6 @@
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/system_info.h>
-#include <lemon/backends/fastflowlm_server.h>
 #include <filesystem>
 #include <iostream>
 #include <fstream>
@@ -833,11 +832,15 @@ void ModelManager::build_cache() {
     }
 
     // Step 1.6: Discover FLM models from 'flm list --json'
+    // Only discover FLM models if FLM is fully installed
     // Precedence: server_models.json > user_models.json > extra_models > flm_list
-    auto flm_available = get_flm_available_models();
-    for (const auto& info : flm_available) {
-        // Use emplace to only add if key doesn't exist (respect precedence)
-        all_models.emplace(info.model_name, info);
+    auto flm_status = SystemInfoCache::get_flm_status();
+    if (flm_status.is_ready) {
+        auto flm_available = get_flm_available_models();
+        for (const auto& info : flm_available) {
+            // Use emplace to only add if key doesn't exist (respect precedence)
+            all_models.emplace(info.model_name, info);
+        }
     }
 
     // Populate recipe options
@@ -1105,34 +1108,6 @@ void ModelManager::remove_model_from_cache(const std::string& model_name) {
     }
 }
 
-void ModelManager::refresh_flm_download_status() {
-    // Get fresh list of installed FLM models
-    // This is called on every get_supported_models() to ensure FLM status is up-to-date
-    // since users can install/uninstall FLM models outside of lemonade
-    auto flm_models = get_flm_installed_models();
-    std::unordered_set<std::string> flm_set(flm_models.begin(), flm_models.end());
-
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-
-    if (!cache_valid_) {
-        return;  // Cache will be built fresh on next access
-    }
-
-    // Update download status for all FLM models in cache
-    for (auto& [name, info] : models_cache_) {
-        if (info.recipe == "flm") {
-            bool was_downloaded = info.downloaded;
-            info.downloaded = flm_set.count(info.checkpoint()) > 0;
-
-            // Log changes for debugging
-            if (was_downloaded != info.downloaded) {
-                LOG(INFO, "ModelManager") << "FLM status changed: " << name
-                          << " (checkpoint: " << info.checkpoint() << ") -> "
-                          << (info.downloaded ? "downloaded" : "not downloaded") << std::endl;
-            }
-        }
-    }
-}
 
 std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     // Build cache if needed
@@ -1147,26 +1122,6 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
         }
     }
     return downloaded;
-}
-
-// Helper function to check if NPU is available
-// Matches Python behavior: on Windows, assume available (FLM will fail at runtime if not compatible)
-// This allows showing FLM models on Windows systems - the actual compatibility check happens when loading
-static bool is_npu_available(const json& hardware) {
-    // Check if user explicitly disabled NPU check
-    const char* skip_check = std::getenv("RYZENAI_SKIP_PROCESSOR_CHECK");
-    if (skip_check && (std::string(skip_check) == "1" ||
-                       std::string(skip_check) == "true" ||
-                       std::string(skip_check) == "yes")) {
-        return true;
-    }
-
-    // Use provided hardware info
-    if (hardware.contains("amd_npu") && hardware["amd_npu"].is_object()) {
-        return hardware["amd_npu"].value("available", false);
-    }
-
-    return false;
 }
 
 // Helper function to parse physical memory string (e.g., "32.00 GB") to GB as double
@@ -1274,7 +1229,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     json system_info = SystemInfoCache::get_system_info_with_cache();
     json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
 
-    bool npu_available = is_npu_available(hardware);
+    bool npu_available = hardware.contains("amd_npu") &&
+                         hardware["amd_npu"].is_object() &&
+                         hardware["amd_npu"].value("available", false);
 
     double largest_mem_pool_gb = 0.0;
     double curr_mem_pool_gb = 0.0;
@@ -2203,22 +2160,11 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
                                      DownloadProgressCallback progress_callback) {
     LOG(INFO, "ModelManager") << "Pulling FLM model: " << checkpoint << std::endl;
 
-    // Ensure FLM is installed
-    LOG(INFO, "ModelManager") << "Checking FLM installation..." << std::endl;
-    try {
-        backends::FastFlowLMServer flm_installer("info", this, nullptr);
-        try {
-            flm_installer.check();
-        } catch (const backends::FLMCheckException& e) {
-            if (e.type() == backends::FLMCheckException::ErrorType::NOT_INSTALLED) {
-                flm_installer.install();
-            } else {
-                throw;
-            }
-        }
-    } catch (const std::exception& e) {
-        LOG(ERROR, "ModelManager") << "FLM check/install failed: " << e.what() << std::endl;
-        throw;
+    // Ensure FLM is ready (single source of truth)
+    auto status = SystemInfoCache::get_flm_status();
+    if (!status.is_ready) {
+        throw std::runtime_error("FLM is not ready: " + status.message +
+            (status.action.empty() ? "" : ". " + status.action));
     }
 
     // Find flm executable

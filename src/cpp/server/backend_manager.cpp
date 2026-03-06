@@ -80,15 +80,22 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     // FLM special case - uses installer exe with its own install logic
     if (recipe == "flm") {
-        backends::FastFlowLMServer flm_installer("info", nullptr, this);
-        try {
-            flm_installer.check();
-        } catch (const backends::FLMCheckException& e) {
-            if (e.type() == backends::FLMCheckException::ErrorType::NOT_INSTALLED) {
-                flm_installer.install(backend);
-            } else {
-                throw;
-            }
+        auto status = SystemInfoCache::get_flm_status();
+        if (status.state == "installed") {
+            // Already installed — nothing to do
+        } else if (status.state == "unsupported") {
+            throw std::runtime_error("FLM is not supported on this system: " + status.message);
+        } else {
+            // installable, update_required, or action_required
+            backends::FastFlowLMServer flm_installer("info", nullptr, this);
+            flm_installer.install(backend);
+            // install() calls SystemInfoCache::invalidate_recipes()
+        }
+        // Re-read status after install
+        status = SystemInfoCache::get_flm_status();
+        if (!status.is_ready) {
+            throw std::runtime_error("FLM installation incomplete: " + status.message +
+                (status.action.empty() ? "" : ". " + status.action));
         }
         update_recipes_cache_entry(recipe, backend, true);
         return;
