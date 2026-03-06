@@ -4,7 +4,7 @@ import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch } from './utils/serverConfig';
-import { pullModel, DownloadAbortError, ensureModelReady, deleteModel, ensureBackendForRecipe } from './utils/backendInstaller';
+import { pullModel, DownloadAbortError, ensureModelReady, deleteModel, ensureBackendForRecipe, installBackend } from './utils/backendInstaller';
 import { fetchSystemInfoData, BackendInfo } from './utils/systemData';
 import type { ModelRegistrationData } from './utils/backendInstaller';
 import { downloadTracker } from './utils/downloadTracker';
