@@ -2,7 +2,7 @@
 Tests for FLM status detection with mock hardware and mock FLM executable.
 
 Validates the 5 FLM states: unsupported, installable, update_required,
-action_required, installed — using mock hardware_info.json and LEMONADE_MOCK_FLM_PATH.
+action_required, installed — using mock hardware_info.json and PATH manipulation.
 
 Tests each state against all relevant API actions:
   A. GET /api/v1/system-info      — state/message/action fields
@@ -164,7 +164,7 @@ def create_mock_flm_script(
                         (returns error text instead of JSON for all commands).
     """
     if IS_WINDOWS:
-        script_path = os.path.join(directory, "mock_flm.cmd")
+        script_path = os.path.join(directory, "flm.cmd")
         if broken_version:
             content = """@echo off
 echo Error parsing arguments: unrecognised option '--json'
@@ -196,7 +196,7 @@ if "%1"=="list" (
 exit /b 0
 """
     else:
-        script_path = os.path.join(directory, "mock_flm.sh")
+        script_path = os.path.join(directory, "flm")
         if broken_version:
             content = """#!/bin/bash
 echo "Error parsing arguments: unrecognised option '--json'"
@@ -262,11 +262,15 @@ class FlmStatusTests(unittest.TestCase):
     # ------------------------------------------------------------------ #
 
     @contextmanager
-    def _server(self, hardware, mock_flm_path=None):
-        """Start server with mock hardware + optional mock FLM.
+    def _server(self, hardware, flm_dir=None):
+        """Start server with mock hardware + optional PATH-based FLM mocking.
 
-        Yields nothing; test code makes API calls directly while inside the
-        context.  Server is stopped and temp dirs cleaned up on exit.
+        Args:
+            hardware: Hardware info dict to write as hardware_info.json.
+            flm_dir: Controls how the server finds (or doesn't find) FLM:
+                - None: don't touch PATH (use system default)
+                - "": set PATH to minimal system dirs (FLM not found)
+                - "<path>": prepend directory to PATH (mock FLM found)
         """
         temp_cache_dir = tempfile.mkdtemp(prefix="lemonade_flm_test_")
         process = None
@@ -285,10 +289,16 @@ class FlmStatusTests(unittest.TestCase):
             env["LEMONADE_CACHE_DIR"] = temp_cache_dir
             env.pop("LEMONADE_CI_MODE", None)
 
-            if mock_flm_path is not None:
-                env["LEMONADE_MOCK_FLM_PATH"] = mock_flm_path
-            else:
-                env.pop("LEMONADE_MOCK_FLM_PATH", None)
+            if flm_dir is not None:
+                if flm_dir == "":
+                    # Minimal PATH: system essentials only, no FLM
+                    if IS_WINDOWS:
+                        env["PATH"] = r"C:\Windows\system32;C:\Windows"
+                    else:
+                        env["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+                else:
+                    # Prepend mock FLM directory to PATH
+                    env["PATH"] = flm_dir + os.pathsep + env.get("PATH", "")
 
             cmd = [self.server_binary, "serve", "--no-tray", "--log-level", "debug"]
             process = subprocess.Popen(
@@ -331,10 +341,11 @@ class FlmStatusTests(unittest.TestCase):
 
     @contextmanager
     def _mock_flm(self, **kwargs):
-        """Create a temp dir with a mock FLM script, yield the script path, clean up."""
+        """Create a temp dir with a mock FLM script, yield the directory, clean up."""
         temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
         try:
-            yield create_mock_flm_script(temp_dir, **kwargs)
+            create_mock_flm_script(temp_dir, **kwargs)
+            yield temp_dir
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -459,7 +470,7 @@ class FlmStatusTests(unittest.TestCase):
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_installable_system_info(self):
         """NPU present, no FLM binary -> state=installable."""
-        with self._server(NPU_HARDWARE, mock_flm_path="none"):
+        with self._server(NPU_HARDWARE, flm_dir=""):
             data = self._get_system_info()
             npu = self._get_flm_npu(data)
 
@@ -475,7 +486,7 @@ class FlmStatusTests(unittest.TestCase):
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_installable_models(self):
         """NPU present, no FLM binary -> no FLM models visible."""
-        with self._server(NPU_HARDWARE, mock_flm_path="none"):
+        with self._server(NPU_HARDWARE, flm_dir=""):
             flm_models = self._get_flm_model_names()
             self.assertEqual(
                 flm_models, [], f"Expected no FLM models, got {flm_models}"
@@ -485,7 +496,7 @@ class FlmStatusTests(unittest.TestCase):
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_installable_load(self):
         """NPU present, no FLM -> loading -FLM model gives not-found with FLM hint."""
-        with self._server(NPU_HARDWARE, mock_flm_path="none"):
+        with self._server(NPU_HARDWARE, flm_dir=""):
             r = self._post_load(FAKE_FLM_MODEL)
             self.assertIn(r.status_code, (400, 404, 500))
             body = r.json()
@@ -499,7 +510,7 @@ class FlmStatusTests(unittest.TestCase):
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_installable_pull(self):
         """NPU present, no FLM -> pulling -FLM model fails."""
-        with self._server(NPU_HARDWARE, mock_flm_path="none"):
+        with self._server(NPU_HARDWARE, flm_dir=""):
             r = self._post_pull(FAKE_FLM_MODEL)
             self.assertIn(r.status_code, (400, 404, 500))
             print(f"  [OK] installable pull: status={r.status_code}")
@@ -507,7 +518,7 @@ class FlmStatusTests(unittest.TestCase):
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_installable_install(self):
         """NPU present, no FLM -> install flm:npu attempts installation (fails in CI)."""
-        with self._server(NPU_HARDWARE, mock_flm_path="none"):
+        with self._server(NPU_HARDWARE, flm_dir=""):
             r = self._post_install("flm", "npu")
             # On Windows, tries to download real installer (will fail in CI).
             # On Linux, throws "only supported on Windows".
@@ -528,10 +539,11 @@ class FlmStatusTests(unittest.TestCase):
     # ------------------------------------------------------------------ #
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_update_required_old_version_system_info(self):
         """NPU present, FLM v0.9.20 (old) -> state=update_required."""
-        with self._mock_flm(version="0.9.20", validate_ready=True) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(version="0.9.20", validate_ready=True) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 data = self._get_system_info()
                 npu = self._get_flm_npu(data)
 
@@ -545,10 +557,11 @@ class FlmStatusTests(unittest.TestCase):
                 print(f"  [OK] update_required (old ver) system-info: {npu['message']}")
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_update_required_old_version_models(self):
         """NPU present, FLM v0.9.20 -> no FLM models visible."""
-        with self._mock_flm(version="0.9.20", validate_ready=True) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(version="0.9.20", validate_ready=True) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 flm_models = self._get_flm_model_names()
                 self.assertEqual(
                     flm_models, [], f"Expected no FLM models, got {flm_models}"
@@ -556,10 +569,11 @@ class FlmStatusTests(unittest.TestCase):
                 print("  [OK] update_required (old ver) models: no FLM models listed")
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_update_required_old_version_load(self):
         """NPU present, FLM v0.9.20 -> load -FLM model gives not-found with requires hint."""
-        with self._mock_flm(version="0.9.20", validate_ready=True) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(version="0.9.20", validate_ready=True) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 r = self._post_load(FAKE_FLM_MODEL)
                 self.assertIn(r.status_code, (400, 404, 500))
                 body = r.json()
@@ -571,10 +585,11 @@ class FlmStatusTests(unittest.TestCase):
                 print(f"  [OK] update_required (old ver) load: got version hint")
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_update_required_old_version_install(self):
         """NPU present, FLM v0.9.20 -> install flm:npu attempts upgrade."""
-        with self._mock_flm(version="0.9.20", validate_ready=True) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(version="0.9.20", validate_ready=True) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 r = self._post_install("flm", "npu")
                 # Attempts real install/upgrade, will fail in CI
                 self.assertEqual(r.status_code, 500)
@@ -590,10 +605,11 @@ class FlmStatusTests(unittest.TestCase):
     # ------------------------------------------------------------------ #
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_update_required_unknown_version_system_info(self):
         """NPU present, FLM exists but version unparseable -> state=update_required."""
-        with self._mock_flm(broken_version=True) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(broken_version=True) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 data = self._get_system_info()
                 npu = self._get_flm_npu(data)
 
@@ -613,10 +629,11 @@ class FlmStatusTests(unittest.TestCase):
                 )
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_update_required_unknown_version_models(self):
         """NPU present, FLM version unparseable -> no FLM models visible."""
-        with self._mock_flm(broken_version=True) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(broken_version=True) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 flm_models = self._get_flm_model_names()
                 self.assertEqual(
                     flm_models, [], f"Expected no FLM models, got {flm_models}"
@@ -626,10 +643,11 @@ class FlmStatusTests(unittest.TestCase):
                 )
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_update_required_unknown_version_load(self):
         """NPU present, FLM version unparseable -> load -FLM model gives hint."""
-        with self._mock_flm(broken_version=True) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(broken_version=True) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 r = self._post_load(FAKE_FLM_MODEL)
                 self.assertIn(r.status_code, (400, 404, 500))
                 body = r.json()
@@ -646,11 +664,12 @@ class FlmStatusTests(unittest.TestCase):
     # ------------------------------------------------------------------ #
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_action_required_system_info(self):
         """NPU present, correct version, validate fails -> state=action_required."""
         version = REQUIRED_FLM_VERSION.lstrip("v")
-        with self._mock_flm(version=version, validate_ready=False) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(version=version, validate_ready=False) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 data = self._get_system_info()
                 npu = self._get_flm_npu(data)
 
@@ -663,11 +682,12 @@ class FlmStatusTests(unittest.TestCase):
                 print(f"  [OK] action_required system-info: {npu['message']}")
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_action_required_models(self):
         """NPU present, validate fails -> no FLM models visible."""
         version = REQUIRED_FLM_VERSION.lstrip("v")
-        with self._mock_flm(version=version, validate_ready=False) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(version=version, validate_ready=False) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 flm_models = self._get_flm_model_names()
                 self.assertEqual(
                     flm_models, [], f"Expected no FLM models, got {flm_models}"
@@ -675,11 +695,12 @@ class FlmStatusTests(unittest.TestCase):
                 print("  [OK] action_required models: no FLM models listed")
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_action_required_load(self):
         """NPU present, validate fails -> load -FLM model gives not-found with hint."""
         version = REQUIRED_FLM_VERSION.lstrip("v")
-        with self._mock_flm(version=version, validate_ready=False) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(version=version, validate_ready=False) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 r = self._post_load(FAKE_FLM_MODEL)
                 self.assertIn(r.status_code, (400, 404, 500))
                 body = r.json()
@@ -689,11 +710,12 @@ class FlmStatusTests(unittest.TestCase):
                 print(f"  [OK] action_required load: got FLM hint")
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_action_required_install(self):
         """NPU present, validate fails -> install flm:npu attempts install."""
         version = REQUIRED_FLM_VERSION.lstrip("v")
-        with self._mock_flm(version=version, validate_ready=False) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(version=version, validate_ready=False) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 r = self._post_install("flm", "npu")
                 # Attempts install (will fail in CI), but should not say "not supported"
                 self.assertEqual(r.status_code, 500)
@@ -715,10 +737,11 @@ class FlmStatusTests(unittest.TestCase):
         )
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_installed_system_info(self):
         """All checks pass -> state=installed, empty action, version present."""
-        with self._mock_flm(**self._installed_flm_kwargs()) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(**self._installed_flm_kwargs()) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 data = self._get_system_info()
                 npu = self._get_flm_npu(data)
 
@@ -733,10 +756,11 @@ class FlmStatusTests(unittest.TestCase):
                 print(f"  [OK] installed system-info: version={npu['version']}")
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_installed_models(self):
         """All checks pass -> FLM models visible in listing."""
-        with self._mock_flm(**self._installed_flm_kwargs()) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(**self._installed_flm_kwargs()) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 flm_models = self._get_flm_model_names()
                 self.assertIn(
                     MOCK_FLM_MODEL_NAME,
@@ -746,14 +770,15 @@ class FlmStatusTests(unittest.TestCase):
                 print(f"  [OK] installed models: {flm_models}")
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_installed_load(self):
         """All checks pass -> loading FLM model gets past not-found check.
 
         The mock FLM can't actually serve, so load will fail — but the error
         should be a load failure, NOT a model-not-found or FLM-not-ready error.
         """
-        with self._mock_flm(**self._installed_flm_kwargs()) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(**self._installed_flm_kwargs()) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 r = self._post_load(MOCK_FLM_MODEL_NAME)
                 body = r.json()
                 error_msg = json.dumps(body).lower()
@@ -768,14 +793,15 @@ class FlmStatusTests(unittest.TestCase):
                 print(f"  [OK] installed load: model found, status={r.status_code}")
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_installed_pull(self):
         """All checks pass -> pulling FLM model attempts flm pull (not readiness error).
 
         Mock FLM doesn't support 'pull', so it will fail — but the error
         should NOT be 'FLM is not ready'.
         """
-        with self._mock_flm(**self._installed_flm_kwargs()) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(**self._installed_flm_kwargs()) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 r = self._post_pull(MOCK_FLM_MODEL_NAME)
                 body = r.json()
                 error_msg = json.dumps(body).lower()
@@ -788,10 +814,11 @@ class FlmStatusTests(unittest.TestCase):
                 )
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_installed_install(self):
         """All checks pass -> install flm:npu succeeds (already installed)."""
-        with self._mock_flm(**self._installed_flm_kwargs()) as mock_path:
-            with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
+        with self._mock_flm(**self._installed_flm_kwargs()) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 r = self._post_install("flm", "npu")
                 self.assertEqual(
                     r.status_code,
