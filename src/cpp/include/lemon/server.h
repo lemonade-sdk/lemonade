@@ -111,6 +111,18 @@ private:
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
 
+    // Experience mode agentic chat handler
+    void handle_experience_chat(const nlohmann::json& request_json,
+                                const std::string& experience_name,
+                                httplib::Response& res);
+
+    // Stream the final experience response (artifacts + text)
+    void stream_experience_response(const nlohmann::json& assistant_message,
+                                    const nlohmann::json& artifacts,
+                                    const nlohmann::json& original_request,
+                                    const std::string& llm_model,
+                                    httplib::Response& res);
+
     // Helper function to convert ModelInfo to JSON (used by models endpoints)
     nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info);
 

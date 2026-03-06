@@ -3239,6 +3239,57 @@ footer {
     object-fit: contain;
 }
 
+/* Message Audio */
+.message-audio {
+    margin: 8px 0;
+    max-width: 320px;
+}
+
+.message-audio audio {
+    width: 100%;
+    border-radius: 8px;
+}
+
+/* Audio File Preview */
+.audio-preview-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 8px 0;
+}
+
+.audio-preview-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: #ccc;
+}
+
+.audio-preview-name {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.audio-preview-remove {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 2px;
+    line-height: 1;
+}
+
+.audio-preview-remove:hover {
+    color: #fff;
+}
+
 .message-content-array {
     display: flex;
     flex-direction: column;

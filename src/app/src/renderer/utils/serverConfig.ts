@@ -297,9 +297,11 @@ class ServerConfig {
     }
 
     try {
+      console.log('[serverFetch]', options?.method || 'GET', fullUrl);
       const response = await fetch(fullUrl, options);
       return response;
     } catch (error) {
+      console.error('[serverFetch] FAILED:', fullUrl, error);
       // If using explicit URL, don't attempt discovery - just throw
       if (this.explicitBaseUrl) {
         throw error;

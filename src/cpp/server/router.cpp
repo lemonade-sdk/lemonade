@@ -1,4 +1,6 @@
 #include "lemon/router.h"
+#include "lemon/utils/http_client.h"
+#include "lemon/utils/json_utils.h"
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/backends/ryzenaiserver.h"
@@ -663,6 +665,58 @@ void Router::audio_speech(const json& request, httplib::DataSink& sink) {
         }
         tts_server->audio_speech(request, sink);
     });
+}
+
+std::string Router::audio_speech_to_base64(const json& request) {
+    WrappedServer* server = nullptr;
+
+    {
+        std::lock_guard<std::mutex> lock(load_mutex_);
+
+        std::string requested_model;
+        if (request.contains("model") && request["model"].is_string()) {
+            requested_model = request["model"].get<std::string>();
+        }
+
+        if (requested_model.empty()) {
+            throw std::runtime_error("No model specified in TTS request");
+        }
+
+        server = find_server_by_model_name(requested_model);
+        if (!server) {
+            throw std::runtime_error("TTS model not loaded: " + requested_model);
+        }
+
+        server->set_busy(true);
+        server->update_access_time();
+    }
+
+    try {
+        std::string audio_bytes;
+        std::string url = server->get_address() + "/audio/speech";
+
+        auto response = utils::HttpClient::post_stream(
+            url,
+            request.dump(),
+            [&audio_bytes](const char* data, size_t length) -> bool {
+                audio_bytes.append(data, length);
+                return true;
+            },
+            {{"Content-Type", "application/json"}},
+            300  // 5 minute timeout for TTS
+        );
+
+        server->set_busy(false);
+
+        if (response.status_code != 200) {
+            throw std::runtime_error("TTS backend returned status " + std::to_string(response.status_code));
+        }
+
+        return utils::JsonUtils::base64_encode(audio_bytes);
+    } catch (...) {
+        server->set_busy(false);
+        throw;
+    }
 }
 
 json Router::image_generations(const json& request) {

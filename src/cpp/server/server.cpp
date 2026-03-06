@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/experience_tools.h"
 #include "lemon/ollama_api.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -1291,6 +1292,19 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        // Experience mode detection: if "experience" field is present and valid,
+        // delegate to the agentic experience handler and return
+        if (request_json.contains("experience") && request_json["experience"].is_string()) {
+            std::string experience_name = request_json["experience"].get<std::string>();
+            if (is_experience_model(experience_name, model_manager_.get())) {
+                LOG(INFO, "Server") << "Experience mode detected: " << experience_name << std::endl;
+                handle_experience_chat(request_json, experience_name, res);
+                return;
+            } else {
+                LOG(WARNING, "Server") << "Invalid experience model: " << experience_name << ", falling through to normal path" << std::endl;
+            }
+        }
+
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
             LOG(DEBUG, "Server") << "Tools present in request: " << request_json["tools"].size() << " tool(s)" << std::endl;
@@ -1511,6 +1525,578 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_experience_chat(const json& request_json,
+                                    const std::string& experience_name,
+                                    httplib::Response& res) {
+    static constexpr int MAX_TOOL_ITERATIONS = 5;
+
+    try {
+        // 1. Resolve the primary LLM component
+        std::string llm_model = get_experience_llm_model(experience_name, model_manager_.get());
+        LOG(INFO, "Server") << "Experience LLM model: " << llm_model << std::endl;
+
+        // 2. Build tool definitions from the experience's components
+        json tools = build_experience_tools(experience_name, model_manager_.get());
+        LOG(INFO, "Server") << "Experience tools: " << tools.size() << " tool(s)" << std::endl;
+
+        // 3. Load the LLM model
+        try {
+            auto_load_model_if_needed(llm_model);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Failed to load experience LLM: " << e.what() << std::endl;
+            res.status = 500;
+            json error = {{"error", {{"message", std::string("Failed to load LLM model: ") + e.what()}, {"type", "server_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // 4. Build conversation messages with system prompt
+        json messages = request_json.contains("messages") ? request_json["messages"] : json::array();
+
+        if (!tools.empty()) {
+            std::string system_prompt = build_experience_system_prompt(tools);
+
+            // Prepend or merge with existing system message
+            if (!messages.empty() && messages[0].contains("role") &&
+                messages[0]["role"].get<std::string>() == "system") {
+                // Merge with existing system message
+                std::string existing = messages[0]["content"].get<std::string>();
+                messages[0]["content"] = system_prompt + "\n\n" + existing;
+            } else {
+                // Prepend new system message
+                json system_msg = {{"role", "system"}, {"content", system_prompt}};
+                messages.insert(messages.begin(), system_msg);
+            }
+        }
+
+        // 5. Pre-process: extract audio data from user messages
+        //    Audio data is too large for the LLM context, so we extract it
+        //    and replace with a placeholder. The transcribe_audio tool will use the extracted data.
+        struct ExtractedAudio {
+            std::string b64_data;
+            std::string mime;
+        };
+        std::vector<ExtractedAudio> extracted_audio_data;
+        {
+            for (auto& msg : messages) {
+                if (!msg.contains("role") || msg["role"] != "user" || !msg.contains("content")) continue;
+
+                if (msg["content"].is_array()) {
+                    // Handle structured content array: [{type:"text",...}, {type:"audio",...}, ...]
+                    json new_content = json::array();
+                    for (const auto& item : msg["content"]) {
+                        if (item.contains("type") && item["type"] == "audio" &&
+                            item.contains("audio") && item["audio"].contains("data")) {
+                            std::string b64_data = item["audio"]["data"].get<std::string>();
+                            std::string mime = item["audio"].value("mime", "audio/wav");
+                            extracted_audio_data.push_back({b64_data, mime});
+                            std::string placeholder = "[User provided audio file #" +
+                                std::to_string(extracted_audio_data.size()) + "]";
+                            new_content.push_back({{"type", "text"}, {"text", placeholder}});
+                            LOG(INFO, "Server") << "Extracted audio from content array ("
+                                                << b64_data.size() << " base64 chars)" << std::endl;
+                        } else {
+                            new_content.push_back(item);
+                        }
+                    }
+                    msg["content"] = new_content;
+                } else if (msg["content"].is_string()) {
+                    // Handle inline data URIs in string content
+                    const std::string audio_prefix = "data:audio/";
+                    const std::string base64_marker = ";base64,";
+                    std::string content = msg["content"].get<std::string>();
+                    auto pos = content.find(audio_prefix);
+                    if (pos != std::string::npos) {
+                        auto b64_start = content.find(base64_marker, pos);
+                        if (b64_start != std::string::npos) {
+                            // Extract mime type between "data:" and ";base64,"
+                            std::string mime = content.substr(pos + 5, b64_start - pos - 5);
+                            b64_start += base64_marker.size();
+                            auto b64_end = content.find_first_of(" \t\n\"'", b64_start);
+                            if (b64_end == std::string::npos) b64_end = content.size();
+
+                            std::string b64_data = content.substr(b64_start, b64_end - b64_start);
+                            extracted_audio_data.push_back({b64_data, mime});
+
+                            std::string placeholder = "[User provided audio file #" +
+                                std::to_string(extracted_audio_data.size()) + "]";
+                            content.replace(pos, b64_end - pos, placeholder);
+                            msg["content"] = content;
+
+                            LOG(INFO, "Server") << "Extracted audio data URI from user message ("
+                                                << b64_data.size() << " base64 chars)" << std::endl;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6. Agentic loop: call LLM, check for tool_calls, execute, repeat
+        json artifacts = json::array();
+        json final_assistant_message;
+
+        for (int iteration = 0; iteration < MAX_TOOL_ITERATIONS; ++iteration) {
+            LOG(INFO, "Server") << "Experience loop iteration " << (iteration + 1) << std::endl;
+
+            // Build the LLM request (non-streaming internal call)
+            json llm_request = {
+                {"model", llm_model},
+                {"messages", messages},
+                {"stream", false}
+            };
+
+            // Only inject tools if we have them
+            if (!tools.empty()) {
+                llm_request["tools"] = tools;
+            }
+
+            // Forward user params (temperature, max_tokens, etc.) from original request
+            for (const auto& [key, value] : request_json.items()) {
+                if (key != "model" && key != "messages" && key != "stream" &&
+                    key != "experience" && key != "tools") {
+                    llm_request[key] = value;
+                }
+            }
+
+            // Call the LLM
+            json llm_response;
+            try {
+                llm_response = router_->chat_completion(llm_request);
+            } catch (const std::exception& e) {
+                LOG(ERROR, "Server") << "Experience LLM call failed: " << e.what() << std::endl;
+                res.status = 500;
+                json error = {{"error", {{"message", std::string("LLM inference failed: ") + e.what()}, {"type", "server_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+
+            // Check for errors in the response
+            if (llm_response.contains("error")) {
+                LOG(ERROR, "Server") << "Experience LLM returned error: " << llm_response["error"].dump() << std::endl;
+                res.status = 500;
+                res.set_content(llm_response.dump(), "application/json");
+                return;
+            }
+
+            // Extract assistant message
+            if (!llm_response.contains("choices") || llm_response["choices"].empty()) {
+                LOG(ERROR, "Server") << "Experience LLM returned no choices" << std::endl;
+                res.status = 500;
+                json error = {{"error", {{"message", "LLM returned empty response"}, {"type", "server_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+
+            json assistant_msg = llm_response["choices"][0]["message"];
+
+            // Check for tool_calls
+            if (!assistant_msg.contains("tool_calls") || assistant_msg["tool_calls"].empty()) {
+                // No tool calls — this is the final response
+                final_assistant_message = assistant_msg;
+                LOG(INFO, "Server") << "Experience loop complete (no tool_calls) after "
+                                    << (iteration + 1) << " iteration(s)" << std::endl;
+                break;
+            }
+
+            // Process tool calls
+            LOG(INFO, "Server") << "Processing " << assistant_msg["tool_calls"].size()
+                                << " tool call(s)" << std::endl;
+
+            // Add assistant message (with tool_calls) to conversation
+            messages.push_back(assistant_msg);
+
+            for (const auto& tool_call : assistant_msg["tool_calls"]) {
+                std::string call_id = tool_call["id"].get<std::string>();
+                std::string func_name = tool_call["function"]["name"].get<std::string>();
+                json func_args;
+                try {
+                    func_args = json::parse(tool_call["function"]["arguments"].get<std::string>());
+                } catch (...) {
+                    func_args = json::object();
+                }
+
+                LOG(INFO, "Server") << "Executing tool: " << func_name << std::endl;
+
+                auto tool_info = resolve_tool_call(func_name, experience_name, model_manager_.get());
+                if (!tool_info) {
+                    // Unknown tool — return error to LLM
+                    json tool_result = {
+                        {"role", "tool"},
+                        {"tool_call_id", call_id},
+                        {"content", "Error: Unknown tool '" + func_name + "'"}
+                    };
+                    messages.push_back(tool_result);
+                    continue;
+                }
+
+                // Load the target model
+                try {
+                    auto_load_model_if_needed(tool_info->target_model);
+                } catch (const std::exception& e) {
+                    LOG(ERROR, "Server") << "Failed to load tool model "
+                                         << tool_info->target_model << ": " << e.what() << std::endl;
+                    json tool_result = {
+                        {"role", "tool"},
+                        {"tool_call_id", call_id},
+                        {"content", "Error loading model: " + std::string(e.what())}
+                    };
+                    messages.push_back(tool_result);
+                    continue;
+                }
+
+                // Execute the tool
+                std::string tool_result_content;
+
+                if (func_name == "generate_image" || func_name == "edit_image") {
+                    try {
+                        // Check if there's already an image in artifacts
+                        std::string source_image_b64;
+                        for (int i = static_cast<int>(artifacts.size()) - 1; i >= 0; --i) {
+                            if (artifacts[i]["type"] == "image") {
+                                source_image_b64 = artifacts[i]["data"].get<std::string>();
+                                break;
+                            }
+                        }
+
+                        // If an image exists, always use image_edits (even if LLM called generate_image)
+                        bool use_edit = !source_image_b64.empty();
+                        if (use_edit && func_name == "generate_image") {
+                            LOG(INFO, "Server") << "Auto-routing generate_image to image_edits (existing image in artifacts)" << std::endl;
+                        }
+
+                        json img_request = {
+                            {"model", tool_info->target_model},
+                            {"prompt", func_args.value("prompt", "")},
+                            {"response_format", "b64_json"},
+                            {"n", 1}
+                        };
+
+                        if (func_args.contains("size")) {
+                            std::string size_str = func_args["size"].get<std::string>();
+                            auto x_pos = size_str.find('x');
+                            if (x_pos != std::string::npos) {
+                                img_request["width"] = std::stoi(size_str.substr(0, x_pos));
+                                img_request["height"] = std::stoi(size_str.substr(x_pos + 1));
+                            }
+                        }
+
+                        json img_response;
+                        if (use_edit) {
+                            img_request["image_data"] = source_image_b64;
+                            img_response = router_->image_edits(img_request);
+                        } else {
+                            img_response = router_->image_generations(img_request);
+                        }
+
+                        if (img_response.contains("data") && !img_response["data"].empty() &&
+                            img_response["data"][0].contains("b64_json")) {
+                            std::string b64_data = img_response["data"][0]["b64_json"].get<std::string>();
+                            artifacts.push_back({
+                                {"type", "image"},
+                                {"data", b64_data},
+                                {"mime", "image/png"}
+                            });
+                            tool_result_content = use_edit
+                                ? "Image edited successfully."
+                                : "Image generated successfully.";
+                        } else if (img_response.contains("error")) {
+                            tool_result_content = "Image operation failed: " +
+                                img_response["error"].value("message", "unknown error");
+                        } else {
+                            tool_result_content = "Image operation returned unexpected response format.";
+                        }
+                    } catch (const std::exception& e) {
+                        tool_result_content = "Image operation failed: " + std::string(e.what());
+                        LOG(ERROR, "Server") << "Image tool failed: " << e.what() << std::endl;
+                    }
+                } else if (func_name == "text_to_speech") {
+                    try {
+                        json tts_request = {
+                            {"model", tool_info->target_model},
+                            {"input", func_args.value("input", "")},
+                            {"voice", func_args.value("voice", "af_heart")}
+                        };
+
+                        std::string b64_audio = router_->audio_speech_to_base64(tts_request);
+                        artifacts.push_back({
+                            {"type", "audio"},
+                            {"data", b64_audio},
+                            {"mime", "audio/wav"}
+                        });
+                        tool_result_content = "Audio speech generated successfully.";
+                    } catch (const std::exception& e) {
+                        tool_result_content = "Text-to-speech failed: " + std::string(e.what());
+                        LOG(ERROR, "Server") << "TTS tool failed: " << e.what() << std::endl;
+                    }
+                } else if (func_name == "analyze_image") {
+                    try {
+                        // Route back to the LLM itself with the image as a vision message
+                        std::string image_url = func_args.value("image_url", "");
+                        std::string question = func_args.value("question", "Describe this image.");
+
+                        json vision_content = json::array({
+                            {{"type", "image_url"}, {"image_url", {{"url", image_url}}}},
+                            {{"type", "text"}, {"text", question}}
+                        });
+
+                        json vision_request = {
+                            {"model", tool_info->target_model},
+                            {"messages", json::array({
+                                {{"role", "user"}, {"content", vision_content}}
+                            })},
+                            {"stream", false}
+                        };
+
+                        json vision_response = router_->chat_completion(vision_request);
+
+                        if (vision_response.contains("choices") && !vision_response["choices"].empty()) {
+                            tool_result_content = vision_response["choices"][0]["message"].value("content", "");
+                        } else if (vision_response.contains("error")) {
+                            tool_result_content = "Image analysis failed: " +
+                                vision_response["error"].value("message", "unknown error");
+                        } else {
+                            tool_result_content = "Image analysis returned no result.";
+                        }
+                    } catch (const std::exception& e) {
+                        tool_result_content = "Image analysis failed: " + std::string(e.what());
+                        LOG(ERROR, "Server") << "Analyze image tool failed: " << e.what() << std::endl;
+                    }
+                } else if (func_name == "transcribe_audio") {
+                    try {
+                        std::string audio_b64 = func_args.value("audio_data", "");
+                        std::string language = func_args.value("language", "en");
+
+                        // If the LLM didn't provide audio_data (it can't — too large for context),
+                        // use the pre-extracted audio from the user message
+                        std::string audio_mime = "audio/wav";
+                        if (audio_b64.empty() && !extracted_audio_data.empty()) {
+                            audio_b64 = extracted_audio_data[0].b64_data;
+                            audio_mime = extracted_audio_data[0].mime;
+                            LOG(INFO, "Server") << "Using pre-extracted audio data for transcription (mime: " << audio_mime << ")" << std::endl;
+                        }
+
+                        if (audio_b64.empty()) {
+                            tool_result_content = "No audio data provided for transcription.";
+                        } else {
+                            // Decode base64 audio to raw bytes
+                            std::string audio_bytes = utils::JsonUtils::base64_decode(audio_b64);
+
+                            // Determine filename from mime type
+                            std::string ext = ".wav";
+                            if (audio_mime == "audio/mpeg" || audio_mime == "audio/mp3") ext = ".mp3";
+                            else if (audio_mime == "audio/mp4" || audio_mime == "audio/m4a") ext = ".m4a";
+                            else if (audio_mime == "audio/ogg") ext = ".ogg";
+                            else if (audio_mime == "audio/flac") ext = ".flac";
+                            else if (audio_mime == "audio/webm") ext = ".webm";
+
+                            json transcribe_request = {
+                                {"model", tool_info->target_model},
+                                {"file_data", audio_bytes},
+                                {"filename", "audio" + ext},
+                                {"language", language}
+                            };
+
+                            json transcribe_response = router_->audio_transcriptions(transcribe_request);
+
+                            if (transcribe_response.contains("text")) {
+                                tool_result_content = "Transcription: " +
+                                    transcribe_response["text"].get<std::string>();
+                            } else if (transcribe_response.contains("error")) {
+                                tool_result_content = "Transcription failed: " +
+                                    transcribe_response["error"].value("message", "unknown error");
+                            } else {
+                                tool_result_content = "Transcription returned no result.";
+                            }
+                        }
+                    } catch (const std::exception& e) {
+                        tool_result_content = "Transcription failed: " + std::string(e.what());
+                        LOG(ERROR, "Server") << "Transcribe audio tool failed: " << e.what() << std::endl;
+                    }
+                }
+
+                // Add tool result to conversation
+                json tool_result = {
+                    {"role", "tool"},
+                    {"tool_call_id", call_id},
+                    {"content", tool_result_content}
+                };
+                messages.push_back(tool_result);
+            }
+
+            // If this was the last iteration, force a final LLM call without tools
+            if (iteration == MAX_TOOL_ITERATIONS - 1) {
+                LOG(WARNING, "Server") << "Experience loop reached max iterations" << std::endl;
+                json final_request = {
+                    {"model", llm_model},
+                    {"messages", messages},
+                    {"stream", false}
+                };
+                try {
+                    json final_response = router_->chat_completion(final_request);
+                    if (final_response.contains("choices") && !final_response["choices"].empty()) {
+                        final_assistant_message = final_response["choices"][0]["message"];
+                    }
+                } catch (const std::exception& e) {
+                    LOG(ERROR, "Server") << "Final experience LLM call failed: " << e.what() << std::endl;
+                }
+            }
+        }
+
+        // If we never set final_assistant_message, create a default
+        if (final_assistant_message.is_null()) {
+            final_assistant_message = {{"role", "assistant"}, {"content", ""}};
+        }
+
+        // 6. Stream the final response with artifacts
+        stream_experience_response(final_assistant_message, artifacts, request_json, llm_model, res);
+
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "Experience chat failed: " << e.what() << std::endl;
+        res.status = 500;
+        json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::stream_experience_response(const json& assistant_message,
+                                         const json& artifacts,
+                                         const json& original_request,
+                                         const std::string& llm_model,
+                                         httplib::Response& res) {
+    bool is_streaming = original_request.contains("stream") &&
+                        original_request["stream"].get<bool>();
+
+    LOG(INFO, "Server") << "stream_experience_response: streaming=" << is_streaming
+                        << ", artifacts=" << artifacts.size()
+                        << ", content_length=" << assistant_message.value("content", "").size() << std::endl;
+
+    if (!is_streaming) {
+        // Non-streaming: return JSON with content as array of image_url + text blocks
+        json content_array = json::array();
+
+        for (const auto& artifact : artifacts) {
+            if (artifact["type"] == "image") {
+                content_array.push_back({
+                    {"type", "image_url"},
+                    {"image_url", {{"url", "data:" + artifact["mime"].get<std::string>() +
+                                           ";base64," + artifact["data"].get<std::string>()}}}
+                });
+            } else if (artifact["type"] == "audio") {
+                content_array.push_back({
+                    {"type", "audio"},
+                    {"audio", {
+                        {"data", artifact["data"]},
+                        {"mime", artifact["mime"]}
+                    }}
+                });
+            }
+        }
+
+        // Add text content
+        std::string text_content = assistant_message.value("content", "");
+        if (!text_content.empty()) {
+            content_array.push_back({{"type", "text"}, {"text", text_content}});
+        }
+
+        // Build response in OpenAI format
+        json response = {
+            {"id", "exp-" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count())},
+            {"object", "chat.completion"},
+            {"model", llm_model},
+            {"choices", json::array({
+                {
+                    {"index", 0},
+                    {"message", {
+                        {"role", "assistant"},
+                        {"content", artifacts.empty() ? json(text_content) : json(content_array)}
+                    }},
+                    {"finish_reason", "stop"}
+                }
+            })}
+        };
+
+        res.set_content(response.dump(), "application/json");
+    } else {
+        // Streaming: emit artifact events first, then stream text as standard SSE chunks
+        res.set_header("Content-Type", "text/event-stream");
+        res.set_header("Cache-Control", "no-cache");
+        res.set_header("Connection", "keep-alive");
+        res.set_header("X-Accel-Buffering", "no");
+
+        res.set_chunked_content_provider(
+            "text/event-stream",
+            [this, assistant_message, artifacts, llm_model](size_t offset, httplib::DataSink& sink) {
+                if (offset > 0) return false;
+
+                try {
+                    std::string response_id = "exp-" + std::to_string(
+                        std::chrono::system_clock::now().time_since_epoch().count());
+
+                    LOG(DEBUG, "Server") << "Experience SSE lambda: writing response" << std::endl;
+
+                    // Emit artifact events first
+                    for (const auto& artifact : artifacts) {
+                        json artifact_data = {
+                            {"type", artifact["type"]},
+                            {"data", artifact["data"]},
+                            {"mime", artifact["mime"]}
+                        };
+                        std::string event = "event: artifact\ndata: " + artifact_data.dump() + "\n\n";
+                        sink.write(event.c_str(), event.size());
+                    }
+
+                    // Stream the text content as standard chat completion chunks
+                    std::string text = assistant_message.value("content", "");
+                    if (!text.empty()) {
+                        // Send content in a single chunk (it's already complete from the internal call)
+                        json chunk = {
+                            {"id", response_id},
+                            {"object", "chat.completion.chunk"},
+                            {"model", llm_model},
+                            {"choices", json::array({
+                                {
+                                    {"index", 0},
+                                    {"delta", {{"role", "assistant"}, {"content", text}}},
+                                    {"finish_reason", nullptr}
+                                }
+                            })}
+                        };
+                        std::string sse = "data: " + chunk.dump() + "\n\n";
+                        sink.write(sse.c_str(), sse.size());
+                    }
+
+                    // Send finish chunk
+                    json finish_chunk = {
+                        {"id", response_id},
+                        {"object", "chat.completion.chunk"},
+                        {"model", llm_model},
+                        {"choices", json::array({
+                            {
+                                {"index", 0},
+                                {"delta", json::object()},
+                                {"finish_reason", "stop"}
+                            }
+                        })}
+                    };
+                    std::string finish_sse = "data: " + finish_chunk.dump() + "\n\n";
+                    sink.write(finish_sse.c_str(), finish_sse.size());
+
+                    // Send [DONE]
+                    std::string done = "data: [DONE]\n\n";
+                    sink.write(done.c_str(), done.size());
+
+                    LOG(DEBUG, "Server") << "Experience SSE lambda: done" << std::endl;
+                } catch (const std::exception& e) {
+                    LOG(ERROR, "Server") << "Experience SSE lambda exception: " << e.what() << std::endl;
+                }
+
+                sink.done();
+                return false;
+            }
+        );
     }
 }
 

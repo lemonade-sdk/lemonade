@@ -10,7 +10,15 @@ export interface TextContent {
   text: string;
 }
 
-export type MessageContent = string | Array<TextContent | ImageContent>;
+export interface AudioContent {
+  type: 'audio';
+  audio: {
+    data: string;
+    mime: string;
+  };
+}
+
+export type MessageContent = string | Array<TextContent | ImageContent | AudioContent>;
 
 export interface Message {
   role: 'user' | 'assistant';

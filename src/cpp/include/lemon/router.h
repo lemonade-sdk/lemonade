@@ -68,6 +68,9 @@ public:
     json audio_transcriptions(const json& request);
     void audio_speech(const json& request, httplib::DataSink& sink);
 
+    // Internal TTS that captures audio as base64 (for experience mode tool execution)
+    std::string audio_speech_to_base64(const json& request);
+
     // Image endpoints (OpenAI /v1/images/* compatible)
     json image_generations(const json& request);
     json image_edits(const json& request);
