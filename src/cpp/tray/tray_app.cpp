@@ -2632,6 +2632,16 @@ void TrayApp::on_change_context_size(int new_ctx_size) {
 }
 
 void TrayApp::on_show_logs() {
+    // Prefer launching the Electron app with the logs tab open
+    if (electron_app_path_.empty()) {
+        find_electron_app();
+    }
+    if (!electron_app_path_.empty()) {
+        launch_electron_app("--show-logs");
+        return;
+    }
+
+    // Fallback: open logs in the web app
     std::string connect_host = server_config_.host;
     if (connect_host.empty() || connect_host == "0.0.0.0") {
         connect_host = "localhost";
@@ -2649,14 +2659,7 @@ int TrayApp::execute_logs_command() {
         return 1;
     }
 
-    std::string connect_host = server_config_.host;
-    if (connect_host.empty() || connect_host == "0.0.0.0") {
-        connect_host = "localhost";
-    }
-    std::string web_app_url = "http://" + connect_host + ":" + std::to_string(port) + "/?logs=true";
-    std::cout << "Opening web app logs at: " << web_app_url << std::endl;
-    open_url(web_app_url);
-
+    on_show_logs();
     return 0;
 }
 
@@ -2925,7 +2928,7 @@ void TrayApp::open_web_app() {
     open_url(web_app_url);
 }
 
-void TrayApp::launch_electron_app() {
+void TrayApp::launch_electron_app(const std::string& extra_args) {
     // Try to find the app if we haven't already
     if (electron_app_path_.empty()) {
         if (!find_electron_app()) {
@@ -2943,6 +2946,11 @@ void TrayApp::launch_electron_app() {
     std::string base_url = "http://" + connect_host + ":" + std::to_string(server_config_.port);
     std::cout << "Launching Electron app with server URL: " << base_url << std::endl;
 
+    bool launched_for_logs = extra_args.find("--show-logs") != std::string::npos;
+    std::string already_running_msg = launched_for_logs
+        ? "The Lemonade app is already open. Click View -> Logs to see logs"
+        : "The Lemonade app is already open";
+
 #ifdef _WIN32
     // Single-instance enforcement: Only allow one Electron app to be open at a time
     // Reuse child process tracking to determine if the app is already running
@@ -2951,7 +2959,7 @@ void TrayApp::launch_electron_app() {
         DWORD exit_code = 0;
         if (GetExitCodeProcess(electron_app_process_, &exit_code) && exit_code == STILL_ACTIVE) {
             std::cout << "Electron app is already running" << std::endl;
-            show_notification("App Already Running", "The Lemonade app is already open");
+            show_notification("App Already Running", already_running_msg);
             return;
         } else {
             // Process has exited, clean up the handle
@@ -2992,9 +3000,12 @@ void TrayApp::launch_electron_app() {
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
 
-    // Build command line: "path\to\Lemonade.exe"
+    // Build command line: "path\to\Lemonade.exe" [extra_args]
     // Note: CreateProcessA modifies the command line buffer, so we need a mutable copy
     std::string cmd_line = "\"" + electron_app_path_ + "\"";
+    if (!extra_args.empty()) {
+        cmd_line += " " + extra_args;
+    }
     std::vector<char> cmd_line_buf(cmd_line.begin(), cmd_line.end());
     cmd_line_buf.push_back('\0');
 
@@ -3037,7 +3048,7 @@ void TrayApp::launch_electron_app() {
         // Check if the process is still alive
         if (kill(electron_app_pid_, 0) == 0) {
             std::cout << "Electron app is already running (PID: " << electron_app_pid_ << ")" << std::endl;
-            show_notification("App Already Running", "The Lemonade app is already open");
+            show_notification("App Already Running", already_running_msg);
             return;
         } else {
             // Process has exited, reset the PID
@@ -3048,6 +3059,9 @@ void TrayApp::launch_electron_app() {
     // macOS: Use 'open' command to launch the .app with --args to pass arguments
     // Note: 'open' doesn't give us the PID directly, so we'll need to find it
     std::string cmd = "open \"" + electron_app_path_ + "\"";
+    if (!extra_args.empty()) {
+        cmd += " --args " + extra_args;
+    }
     int result = system(cmd.c_str());
     if (result == 0) {
         std::cout << "Launched Electron app" << std::endl;
@@ -3073,7 +3087,7 @@ void TrayApp::launch_electron_app() {
         // Check if the process is still alive (and not a zombie)
         if (is_process_alive_not_zombie(electron_app_pid_)) {
             std::cout << "Electron app is already running (PID: " << electron_app_pid_ << ")" << std::endl;
-            show_notification("App Already Running", "The Lemonade app is already open");
+            show_notification("App Already Running", already_running_msg);
             return;
         } else {
             // Process has exited, reset the PID
@@ -3085,7 +3099,11 @@ void TrayApp::launch_electron_app() {
     pid_t pid = fork();
     if (pid == 0) {
         // Child process: execute the Electron app
-        execl(electron_app_path_.c_str(), electron_app_path_.c_str(), nullptr);
+        if (!extra_args.empty()) {
+            execl(electron_app_path_.c_str(), electron_app_path_.c_str(), extra_args.c_str(), nullptr);
+        } else {
+            execl(electron_app_path_.c_str(), electron_app_path_.c_str(), nullptr);
+        }
         // If execl returns, it failed
         std::cerr << "Failed to execute Electron app: " << strerror(errno) << std::endl;
         _exit(1);
