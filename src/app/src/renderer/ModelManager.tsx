@@ -16,6 +16,7 @@ import SettingsPanel from './SettingsPanel';
 import BackendManager from './BackendManager';
 import BackendRow from './components/BackendRow';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
+import { writeClipboard } from './utils/clipboardUtils';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon } from './components/Icons';
 import { getExperienceComponents, isExperienceFullyDownloaded, isExperienceFullyLoaded, isExperienceModel, isModelEffectivelyDownloaded } from './utils/experienceModels';
@@ -1099,7 +1100,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
   const handleCopyRecipeBackendAction = async (_recipe: string, _backend: string, action?: string) => {
     if (!action) return;
     try {
-      await navigator.clipboard.writeText(action);
+      await writeClipboard(action);
       showSuccess('Backend command copied to clipboard.');
     } catch (error) {
       showError(`Failed to copy backend command: ${error instanceof Error ? error.message : 'Unknown error'}`);
