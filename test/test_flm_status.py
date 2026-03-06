@@ -20,6 +20,7 @@ import json
 import os
 import platform
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -36,6 +37,20 @@ except ImportError as e:
 
 from utils.test_models import PORT, TIMEOUT_DEFAULT, get_default_server_binary
 from utils.server_base import wait_for_server
+
+
+def wait_for_port_free(port=PORT, timeout=30):
+    """Wait until the port is no longer in use."""
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            conn = socket.create_connection(("localhost", port), timeout=1)
+            conn.close()
+            time.sleep(0.5)
+        except (socket.error, OSError):
+            return True
+    raise TimeoutError(f"Port {port} still in use after {timeout}s")
+
 
 IS_WINDOWS = sys.platform == "win32"
 IS_LINUX = sys.platform.startswith("linux")
@@ -312,27 +327,33 @@ class FlmStatusTests(unittest.TestCase):
             yield
 
         finally:
-            # Stop server
+            # Stop server — kill process first, then wait for port to be free
+            if process:
+                try:
+                    process.terminate()
+                    process.wait(timeout=10)
+                except Exception:
+                    try:
+                        process.kill()
+                        process.wait(timeout=5)
+                    except Exception:
+                        pass
+            # Also send stop command in case a detached router is still running
             try:
                 subprocess.run(
                     [self.server_binary, "stop"],
                     capture_output=True,
                     text=True,
-                    timeout=30,
+                    timeout=10,
                     env=os.environ.copy(),
                 )
-                time.sleep(2)
             except Exception:
                 pass
-            if process:
-                try:
-                    process.terminate()
-                    process.wait(timeout=5)
-                except Exception:
-                    try:
-                        process.kill()
-                    except Exception:
-                        pass
+            # Wait for port to be released before next test starts a new server
+            try:
+                wait_for_port_free()
+            except TimeoutError:
+                pass
             shutil.rmtree(temp_cache_dir, ignore_errors=True)
 
     # ------------------------------------------------------------------ #
@@ -455,8 +476,13 @@ class FlmStatusTests(unittest.TestCase):
         """No XDNA2 NPU -> install flm:npu fails with unsupported error."""
         with self._server(NO_NPU_HARDWARE):
             r = self._post_install("flm", "npu")
-            self.assertEqual(r.status_code, 500)
             body = r.json()
+            # Server should return 500 with "not supported" error
+            self.assertEqual(
+                r.status_code,
+                500,
+                f"Expected 500 for unsupported, got {r.status_code}: {body}",
+            )
             error_msg = body.get("error", "").lower()
             self.assertIn(
                 "not supported", error_msg, f"Expected 'not supported' in error: {body}"
@@ -517,22 +543,30 @@ class FlmStatusTests(unittest.TestCase):
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_installable_install(self):
-        """NPU present, no FLM -> install flm:npu attempts installation (fails in CI)."""
+        """NPU present, no FLM -> install flm:npu returns action URL (Linux) or fails (Windows)."""
         with self._server(NPU_HARDWARE, flm_dir=""):
             r = self._post_install("flm", "npu")
-            # On Windows, tries to download real installer (will fail in CI).
-            # On Linux, throws "only supported on Windows".
-            # Either way, we get 500.
-            self.assertEqual(r.status_code, 500)
             body = r.json()
-            error_msg = body.get("error", "").lower()
-            # Should NOT say "not supported" (that's the unsupported case)
-            self.assertNotIn(
-                "not supported on this system",
-                error_msg,
-                f"installable should not get 'not supported': {body}",
-            )
-            print(f"  [OK] installable install: status=500 (expected in CI)")
+            if IS_LINUX:
+                # On Linux, server returns 200 with action URL (manual setup required)
+                self.assertEqual(
+                    r.status_code,
+                    200,
+                    f"Expected 200 with action URL on Linux, got {r.status_code}: {body}",
+                )
+                self.assertIn(
+                    "action", body, f"Expected action URL in response: {body}"
+                )
+            else:
+                # On Windows, tries to download real installer (will fail in CI)
+                self.assertEqual(r.status_code, 500)
+                error_msg = body.get("error", "").lower()
+                self.assertNotIn(
+                    "not supported on this system",
+                    error_msg,
+                    f"installable should not get 'not supported': {body}",
+                )
+            print(f"  [OK] installable install: status={r.status_code}")
 
     # ------------------------------------------------------------------ #
     #  Scenario 3: update_required (parseable old version)
@@ -587,18 +621,21 @@ class FlmStatusTests(unittest.TestCase):
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_update_required_old_version_install(self):
-        """NPU present, FLM v0.9.20 -> install flm:npu attempts upgrade."""
+        """NPU present, FLM v0.9.20 -> install returns action URL on Linux."""
         with self._mock_flm(version="0.9.20", validate_ready=True) as mock_dir:
             with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 r = self._post_install("flm", "npu")
-                # Attempts real install/upgrade, will fail in CI
-                self.assertEqual(r.status_code, 500)
                 body = r.json()
-                error_msg = body.get("error", "").lower()
-                self.assertNotIn("not supported on this system", error_msg)
-                print(
-                    f"  [OK] update_required (old ver) install: status=500 (expected)"
+                # On Linux, server returns 200 with action URL (manual setup required)
+                self.assertEqual(
+                    r.status_code,
+                    200,
+                    f"Expected 200 with action URL, got {r.status_code}: {body}",
                 )
+                self.assertIn(
+                    "action", body, f"Expected action URL in response: {body}"
+                )
+                print(f"  [OK] update_required (old ver) install: action URL returned")
 
     # ------------------------------------------------------------------ #
     #  Scenario 4: update_required (unknown version — FLM too old for --json)
@@ -653,9 +690,12 @@ class FlmStatusTests(unittest.TestCase):
                 body = r.json()
                 error_msg = json.dumps(body).lower()
                 self.assertIn("not found", error_msg)
-                # Should mention FLM is not ready with version info
-                self.assertIn(
-                    "unknown", error_msg, f"Expected 'unknown' version hint: {body}"
+                # Should mention FLM is not ready — either "unknown" version
+                # or "requires" (version mismatch)
+                has_hint = "unknown" in error_msg or "requires" in error_msg
+                self.assertTrue(
+                    has_hint,
+                    f"Expected 'unknown' or 'requires' FLM hint: {body}",
                 )
                 print(f"  [OK] update_required (unknown ver) load: got version hint")
 
@@ -712,17 +752,22 @@ class FlmStatusTests(unittest.TestCase):
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
     def test_action_required_install(self):
-        """NPU present, validate fails -> install flm:npu attempts install."""
+        """NPU present, validate fails -> install returns action URL on Linux."""
         version = REQUIRED_FLM_VERSION.lstrip("v")
         with self._mock_flm(version=version, validate_ready=False) as mock_dir:
             with self._server(NPU_HARDWARE, flm_dir=mock_dir):
                 r = self._post_install("flm", "npu")
-                # Attempts install (will fail in CI), but should not say "not supported"
-                self.assertEqual(r.status_code, 500)
                 body = r.json()
-                error_msg = body.get("error", "").lower()
-                self.assertNotIn("not supported on this system", error_msg)
-                print(f"  [OK] action_required install: status=500 (expected)")
+                # On Linux, server returns 200 with action URL (manual setup required)
+                self.assertEqual(
+                    r.status_code,
+                    200,
+                    f"Expected 200 with action URL, got {r.status_code}: {body}",
+                )
+                self.assertIn(
+                    "action", body, f"Expected action URL in response: {body}"
+                )
+                print(f"  [OK] action_required install: action URL returned")
 
     # ------------------------------------------------------------------ #
     #  Scenario 6: installed (all checks pass)
