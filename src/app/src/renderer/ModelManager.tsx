@@ -1226,12 +1226,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
 
           {currentView === 'models' && (
             <div className="model-manager-footer">
+              <input ref={addModelFromJSONRef} type="file" accept=".json" onChange={handleUploadModel} style={{ display: 'none' }}/>
               {!showAddModelForm ? (
                 <div className="add-model-buttons-container">
-                  <input ref={addModelFromJSONRef} type="file" accept=".json" onChange={handleUploadModel} style={{ display: 'none' }}/>
-                  <button className="add-model-button" onClick={() => addModelFromJSONRef.current?.click()} title="Import JSON">
-                    Import a model
-                  </button>
                   <button
                     className="add-model-button"
                     onClick={() => {
@@ -1333,6 +1330,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
                         <span>Reranking</span>
                       </label>
                     </div>
+                  </div>
+
+                  <div className="form-import-hint">
+                    <span>Have a config file?</span>
+                    <button
+                      className="import-json-link"
+                      onClick={() => addModelFromJSONRef.current?.click()}
+                      title="Load model configuration from a JSON file on your machine"
+                    >
+                      Import from JSON
+                    </button>
                   </div>
 
                   <div className="form-actions">

@@ -2222,7 +2222,6 @@ footer {
     font-size: 0.65rem;
     color: #999;
     font-weight: 400;
-    margin-top: 8px;
     margin-bottom: 4px;
     display: flex;
     align-items: center;
@@ -2329,7 +2328,6 @@ footer {
 }
 
 .form-subsection {
-    margin-top: 8px;
     padding-left: 8px;
 }
 
@@ -2447,6 +2445,36 @@ footer {
     background: transparent;
     border-color: #2a2a2a;
     color: #777;
+}
+
+.form-import-hint {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.6rem;
+    color: #555;
+    padding-top: 6px;
+}
+
+.import-json-link {
+    padding: 0;
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 0.6rem;
+    cursor: pointer;
+    transition: color 0.2s ease;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.import-json-link:hover {
+    color: #ccc;
+}
+
+.import-json-link:focus {
+    outline: none;
+    color: #ccc;
 }
 
 /* Chat Window Styles */
