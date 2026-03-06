@@ -875,47 +875,41 @@ json SystemInfo::build_recipes_info(const json& devices) {
             // FLM uses 5-state model: installable, update_required, action_required
             // (version checking is inside is_recipe_installed() for FLM)
             if (def.recipe == "flm") {
-                if (install_error.find("not installed") != std::string::npos) {
+                // Determine FLM sub-state from the error message
+                bool is_not_installed = install_error.find("not installed") != std::string::npos;
+                bool is_version_mismatch = install_error.find("requires") != std::string::npos;
+
+                if (is_not_installed) {
                     backend["state"] = "installable";
-                    backend["message"] = install_error;
-#ifdef __linux__
-                    backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html";
-#elif defined(_WIN32)
-                    backend["action"] = get_install_command(def.recipe, def.backend);
-#else
-                    backend["action"] = get_install_command(def.recipe, def.backend);
-#endif
-                } else if (install_error.find("requires") != std::string::npos) {
+                } else if (is_version_mismatch) {
                     backend["state"] = "update_required";
-                    backend["message"] = install_error;
-                    // Include the installed version if available
-                    std::string installed_version = get_recipe_version(def.recipe, def.backend);
-                    if (!installed_version.empty() && installed_version != "unknown") {
-                        backend["version"] = installed_version;
-                    }
-#ifdef __linux__
-                    backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html";
-#elif defined(_WIN32)
-                    backend["action"] = get_install_command(def.recipe, def.backend);
-#else
-                    backend["action"] = get_install_command(def.recipe, def.backend);
-#endif
                 } else {
-                    // Validation failure (driver issues, etc.)
                     backend["state"] = "action_required";
-                    backend["message"] = install_error;
+                }
+                backend["message"] = install_error;
+
+                // Include version for update_required and action_required
+                if (!is_not_installed) {
                     std::string installed_version = get_recipe_version(def.recipe, def.backend);
                     if (!installed_version.empty() && installed_version != "unknown") {
                         backend["version"] = installed_version;
                     }
-#ifdef __linux__
-                    backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html";
-#elif defined(_WIN32)
-                    backend["action"] = "Visit https://lemonade-server.ai/driver_install.html";
-#else
-                    backend["action"] = "";
-#endif
                 }
+
+                // Platform-specific action: action_required uses driver help URL on Windows,
+                // all other states use the install command. Linux always uses the docs URL.
+#ifdef __linux__
+                backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html";
+#elif defined(_WIN32)
+                if (!is_not_installed && !is_version_mismatch) {
+                    backend["action"] = "Visit https://lemonade-server.ai/driver_install.html";
+                } else {
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+                }
+#else
+                backend["action"] = is_not_installed || is_version_mismatch
+                    ? get_install_command(def.recipe, def.backend) : "";
+#endif
             } else {
                 backend["state"] = "installable";
                 backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
@@ -3048,7 +3042,6 @@ FlmStatus SystemInfoCache::get_flm_status() {
         info["recipes"]["flm"]["backends"].contains("npu")) {
         const auto& npu = info["recipes"]["flm"]["backends"]["npu"];
         return {
-            npu.value("state", "unsupported") == "installed",
             npu.value("state", "unsupported"),
             npu.value("version", ""),
             npu.value("message", ""),
@@ -3056,7 +3049,7 @@ FlmStatus SystemInfoCache::get_flm_status() {
         };
     }
 
-    return {false, "unsupported", "", "FLM recipe not found in system info", ""};
+    return {"unsupported", "", "FLM recipe not found in system info", ""};
 }
 
 

@@ -152,9 +152,8 @@ void FastFlowLMServer::load(const std::string& model_name,
 
     // Check FLM is ready via system-info (single source of truth)
     auto status = SystemInfoCache::get_flm_status();
-    if (!status.is_ready) {
-        throw std::runtime_error("FLM is not ready: " + status.message +
-            (status.action.empty() ? "" : ". " + status.action));
+    if (!status.is_ready()) {
+        throw std::runtime_error(status.error_string());
     }
 
     // Download model if needed

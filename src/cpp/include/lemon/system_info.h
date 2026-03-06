@@ -207,11 +207,21 @@ bool needs_gfx1151_cwsr_fix();
 
 // FLM status (derived from system-info cache)
 struct FlmStatus {
-    bool is_ready;         // true only if state == "installed"
     std::string state;     // "unsupported","installable","update_required","action_required","installed"
     std::string version;
     std::string message;
     std::string action;
+
+    bool is_ready() const { return state == "installed"; }
+
+    // Format a user-facing error message (for throwing when FLM is not ready)
+    std::string error_string() const {
+        std::string msg = "FLM is not ready: " + message;
+        if (!action.empty()) {
+            msg += ". " + action;
+        }
+        return msg;
+    }
 };
 
 // Cache management

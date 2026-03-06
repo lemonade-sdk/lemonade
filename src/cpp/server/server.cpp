@@ -1065,7 +1065,7 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
         if (requested_model.size() > 4 &&
             requested_model.substr(requested_model.size() - 4) == "-FLM") {
             auto flm_status = SystemInfoCache::get_flm_status();
-            if (!flm_status.is_ready) {
+            if (!flm_status.is_ready()) {
                 message += " The FLM backend is not ready: " + flm_status.message + ".";
                 if (!flm_status.action.empty()) {
                     message += " " + flm_status.action + ".";
@@ -2805,16 +2805,7 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         }
     }
 
-    // First request: compute recipes from scratch (expensive — filesystem scans, etc.)
-    try {
-        auto sys_info = create_system_info();
-        if (system_info.contains("devices")) {
-            system_info["recipes"] = sys_info->build_recipes_info(system_info["devices"]);
-        }
-    } catch (...) {
-        // Keep whatever recipes were cached if recomputation fails
-    }
-
+    // Recipes are already computed by get_system_info_with_cache() above.
     // Enrich with release_url, download_filename, and version from BackendManager
     if (backend_manager_ && system_info.contains("recipes")) {
         for (auto& [recipe_name, recipe_info] : system_info["recipes"].items()) {

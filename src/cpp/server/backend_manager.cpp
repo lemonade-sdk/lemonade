@@ -93,7 +93,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         }
         // Re-read status after install
         status = SystemInfoCache::get_flm_status();
-        if (!status.is_ready) {
+        if (!status.is_ready()) {
             throw std::runtime_error("FLM installation incomplete: " + status.message +
                 (status.action.empty() ? "" : ". " + status.action));
         }

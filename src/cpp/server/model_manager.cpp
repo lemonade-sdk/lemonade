@@ -835,7 +835,7 @@ void ModelManager::build_cache() {
     // Only discover FLM models if FLM is fully installed
     // Precedence: server_models.json > user_models.json > extra_models > flm_list
     auto flm_status = SystemInfoCache::get_flm_status();
-    if (flm_status.is_ready) {
+    if (flm_status.is_ready()) {
         auto flm_available = get_flm_available_models();
         for (const auto& info : flm_available) {
             // Use emplace to only add if key doesn't exist (respect precedence)
@@ -2162,9 +2162,8 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
 
     // Ensure FLM is ready (single source of truth)
     auto status = SystemInfoCache::get_flm_status();
-    if (!status.is_ready) {
-        throw std::runtime_error("FLM is not ready: " + status.message +
-            (status.action.empty() ? "" : ". " + status.action));
+    if (!status.is_ready()) {
+        throw std::runtime_error(status.error_string());
     }
 
     // Find flm executable

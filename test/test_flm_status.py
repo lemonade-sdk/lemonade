@@ -332,6 +332,19 @@ class FlmStatusTests(unittest.TestCase):
             shutil.rmtree(temp_cache_dir, ignore_errors=True)
 
     # ------------------------------------------------------------------ #
+    #  Mock FLM context manager
+    # ------------------------------------------------------------------ #
+
+    @contextmanager
+    def _mock_flm(self, **kwargs):
+        """Create a temp dir with a mock FLM script, yield the script path, clean up."""
+        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
+        try:
+            yield create_mock_flm_script(temp_dir, **kwargs)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    # ------------------------------------------------------------------ #
     #  API helpers
     # ------------------------------------------------------------------ #
 
@@ -523,11 +536,7 @@ class FlmStatusTests(unittest.TestCase):
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_update_required_old_version_system_info(self):
         """NPU present, FLM v0.9.20 (old) -> state=update_required."""
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            mock_path = create_mock_flm_script(
-                temp_dir, version="0.9.20", validate_ready=True
-            )
+        with self._mock_flm(version="0.9.20", validate_ready=True) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 data = self._get_system_info()
                 npu = self._get_flm_npu(data)
@@ -540,34 +549,22 @@ class FlmStatusTests(unittest.TestCase):
                 self.assertIn("requires", npu["message"].lower())
                 self.assertNotEqual(npu["action"], "")
                 print(f"  [OK] update_required (old ver) system-info: {npu['message']}")
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_update_required_old_version_models(self):
         """NPU present, FLM v0.9.20 -> no FLM models visible."""
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            mock_path = create_mock_flm_script(
-                temp_dir, version="0.9.20", validate_ready=True
-            )
+        with self._mock_flm(version="0.9.20", validate_ready=True) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 flm_models = self._get_flm_model_names()
                 self.assertEqual(
                     flm_models, [], f"Expected no FLM models, got {flm_models}"
                 )
                 print("  [OK] update_required (old ver) models: no FLM models listed")
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_update_required_old_version_load(self):
         """NPU present, FLM v0.9.20 -> load -FLM model gives not-found with requires hint."""
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            mock_path = create_mock_flm_script(
-                temp_dir, version="0.9.20", validate_ready=True
-            )
+        with self._mock_flm(version="0.9.20", validate_ready=True) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 r = self._post_load(FAKE_FLM_MODEL)
                 self.assertIn(r.status_code, (400, 404, 500))
@@ -578,17 +575,11 @@ class FlmStatusTests(unittest.TestCase):
                     "requires", error_msg, f"Expected 'requires' FLM hint: {body}"
                 )
                 print(f"  [OK] update_required (old ver) load: got version hint")
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_update_required_old_version_install(self):
         """NPU present, FLM v0.9.20 -> install flm:npu attempts upgrade."""
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            mock_path = create_mock_flm_script(
-                temp_dir, version="0.9.20", validate_ready=True
-            )
+        with self._mock_flm(version="0.9.20", validate_ready=True) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 r = self._post_install("flm", "npu")
                 # Attempts real install/upgrade, will fail in CI
@@ -599,8 +590,6 @@ class FlmStatusTests(unittest.TestCase):
                 print(
                     f"  [OK] update_required (old ver) install: status=500 (expected)"
                 )
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
     # ------------------------------------------------------------------ #
     #  Scenario 4: update_required (unknown version — FLM too old for --json)
@@ -609,9 +598,7 @@ class FlmStatusTests(unittest.TestCase):
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_update_required_unknown_version_system_info(self):
         """NPU present, FLM exists but version unparseable -> state=update_required."""
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            mock_path = create_mock_flm_script(temp_dir, broken_version=True)
+        with self._mock_flm(broken_version=True) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 data = self._get_system_info()
                 npu = self._get_flm_npu(data)
@@ -630,15 +617,11 @@ class FlmStatusTests(unittest.TestCase):
                 print(
                     f"  [OK] update_required (unknown ver) system-info: {npu['message']}"
                 )
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_update_required_unknown_version_models(self):
         """NPU present, FLM version unparseable -> no FLM models visible."""
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            mock_path = create_mock_flm_script(temp_dir, broken_version=True)
+        with self._mock_flm(broken_version=True) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 flm_models = self._get_flm_model_names()
                 self.assertEqual(
@@ -647,15 +630,11 @@ class FlmStatusTests(unittest.TestCase):
                 print(
                     "  [OK] update_required (unknown ver) models: no FLM models listed"
                 )
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_update_required_unknown_version_load(self):
         """NPU present, FLM version unparseable -> load -FLM model gives hint."""
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            mock_path = create_mock_flm_script(temp_dir, broken_version=True)
+        with self._mock_flm(broken_version=True) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 r = self._post_load(FAKE_FLM_MODEL)
                 self.assertIn(r.status_code, (400, 404, 500))
@@ -667,8 +646,6 @@ class FlmStatusTests(unittest.TestCase):
                     "unknown", error_msg, f"Expected 'unknown' version hint: {body}"
                 )
                 print(f"  [OK] update_required (unknown ver) load: got version hint")
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
     # ------------------------------------------------------------------ #
     #  Scenario 5: action_required (correct version, validate fails)
@@ -677,12 +654,8 @@ class FlmStatusTests(unittest.TestCase):
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_action_required_system_info(self):
         """NPU present, correct version, validate fails -> state=action_required."""
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            version = REQUIRED_FLM_VERSION.lstrip("v")
-            mock_path = create_mock_flm_script(
-                temp_dir, version=version, validate_ready=False
-            )
+        version = REQUIRED_FLM_VERSION.lstrip("v")
+        with self._mock_flm(version=version, validate_ready=False) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 data = self._get_system_info()
                 npu = self._get_flm_npu(data)
@@ -694,36 +667,24 @@ class FlmStatusTests(unittest.TestCase):
                 )
                 self.assertNotEqual(npu["action"], "")
                 print(f"  [OK] action_required system-info: {npu['message']}")
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_action_required_models(self):
         """NPU present, validate fails -> no FLM models visible."""
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            version = REQUIRED_FLM_VERSION.lstrip("v")
-            mock_path = create_mock_flm_script(
-                temp_dir, version=version, validate_ready=False
-            )
+        version = REQUIRED_FLM_VERSION.lstrip("v")
+        with self._mock_flm(version=version, validate_ready=False) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 flm_models = self._get_flm_model_names()
                 self.assertEqual(
                     flm_models, [], f"Expected no FLM models, got {flm_models}"
                 )
                 print("  [OK] action_required models: no FLM models listed")
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_action_required_load(self):
         """NPU present, validate fails -> load -FLM model gives not-found with hint."""
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            version = REQUIRED_FLM_VERSION.lstrip("v")
-            mock_path = create_mock_flm_script(
-                temp_dir, version=version, validate_ready=False
-            )
+        version = REQUIRED_FLM_VERSION.lstrip("v")
+        with self._mock_flm(version=version, validate_ready=False) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 r = self._post_load(FAKE_FLM_MODEL)
                 self.assertIn(r.status_code, (400, 404, 500))
@@ -732,18 +693,12 @@ class FlmStatusTests(unittest.TestCase):
                 self.assertIn("not found", error_msg)
                 self.assertIn("flm", error_msg, f"Expected FLM hint in error: {body}")
                 print(f"  [OK] action_required load: got FLM hint")
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_action_required_install(self):
         """NPU present, validate fails -> install flm:npu attempts install."""
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            version = REQUIRED_FLM_VERSION.lstrip("v")
-            mock_path = create_mock_flm_script(
-                temp_dir, version=version, validate_ready=False
-            )
+        version = REQUIRED_FLM_VERSION.lstrip("v")
+        with self._mock_flm(version=version, validate_ready=False) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 r = self._post_install("flm", "npu")
                 # Attempts install (will fail in CI), but should not say "not supported"
@@ -752,19 +707,15 @@ class FlmStatusTests(unittest.TestCase):
                 error_msg = body.get("error", "").lower()
                 self.assertNotIn("not supported on this system", error_msg)
                 print(f"  [OK] action_required install: status=500 (expected)")
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
     # ------------------------------------------------------------------ #
     #  Scenario 6: installed (all checks pass)
     # ------------------------------------------------------------------ #
 
-    def _installed_mock_path(self, temp_dir):
-        """Create a mock FLM for the 'installed' scenario."""
-        version = REQUIRED_FLM_VERSION.lstrip("v")
-        return create_mock_flm_script(
-            temp_dir,
-            version=version,
+    # Shared kwargs for the "installed" scenario
+    def _installed_flm_kwargs(self):
+        return dict(
+            version=REQUIRED_FLM_VERSION.lstrip("v"),
             validate_ready=True,
             list_json='{"models":[{"name":"test-model:1b","footprint":1.0,"label":["llm"]}]}',
         )
@@ -772,9 +723,7 @@ class FlmStatusTests(unittest.TestCase):
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_installed_system_info(self):
         """All checks pass -> state=installed, empty action, version present."""
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            mock_path = self._installed_mock_path(temp_dir)
+        with self._mock_flm(**self._installed_flm_kwargs()) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 data = self._get_system_info()
                 npu = self._get_flm_npu(data)
@@ -788,15 +737,11 @@ class FlmStatusTests(unittest.TestCase):
                 self.assertIn("version", npu)
                 self.assertNotEqual(npu["version"], "")
                 print(f"  [OK] installed system-info: version={npu['version']}")
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_installed_models(self):
         """All checks pass -> FLM models visible in listing."""
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            mock_path = self._installed_mock_path(temp_dir)
+        with self._mock_flm(**self._installed_flm_kwargs()) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 flm_models = self._get_flm_model_names()
                 self.assertIn(
@@ -805,8 +750,6 @@ class FlmStatusTests(unittest.TestCase):
                     f"Expected {MOCK_FLM_MODEL_NAME} in {flm_models}",
                 )
                 print(f"  [OK] installed models: {flm_models}")
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_installed_load(self):
@@ -815,9 +758,7 @@ class FlmStatusTests(unittest.TestCase):
         The mock FLM can't actually serve, so load will fail — but the error
         should be a load failure, NOT a model-not-found or FLM-not-ready error.
         """
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            mock_path = self._installed_mock_path(temp_dir)
+        with self._mock_flm(**self._installed_flm_kwargs()) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 r = self._post_load(MOCK_FLM_MODEL_NAME)
                 body = r.json()
@@ -831,8 +772,6 @@ class FlmStatusTests(unittest.TestCase):
                     "flm is not ready", error_msg, f"FLM should be ready: {body}"
                 )
                 print(f"  [OK] installed load: model found, status={r.status_code}")
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_installed_pull(self):
@@ -841,9 +780,7 @@ class FlmStatusTests(unittest.TestCase):
         Mock FLM doesn't support 'pull', so it will fail — but the error
         should NOT be 'FLM is not ready'.
         """
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            mock_path = self._installed_mock_path(temp_dir)
+        with self._mock_flm(**self._installed_flm_kwargs()) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 r = self._post_pull(MOCK_FLM_MODEL_NAME)
                 body = r.json()
@@ -855,15 +792,11 @@ class FlmStatusTests(unittest.TestCase):
                 print(
                     f"  [OK] installed pull: no readiness error, status={r.status_code}"
                 )
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
     def test_installed_install(self):
         """All checks pass -> install flm:npu succeeds (already installed)."""
-        temp_dir = tempfile.mkdtemp(prefix="lemonade_mock_flm_")
-        try:
-            mock_path = self._installed_mock_path(temp_dir)
+        with self._mock_flm(**self._installed_flm_kwargs()) as mock_path:
             with self._server(NPU_HARDWARE, mock_flm_path=mock_path):
                 r = self._post_install("flm", "npu")
                 self.assertEqual(
@@ -874,8 +807,6 @@ class FlmStatusTests(unittest.TestCase):
                 body = r.json()
                 self.assertEqual(body.get("status"), "success")
                 print(f"  [OK] installed install: already installed, 200")
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
