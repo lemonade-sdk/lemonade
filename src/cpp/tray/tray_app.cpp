@@ -2632,6 +2632,16 @@ void TrayApp::on_change_context_size(int new_ctx_size) {
 }
 
 void TrayApp::on_show_logs() {
+    // Prefer launching the Electron app with the logs tab open
+    if (electron_app_path_.empty()) {
+        find_electron_app();
+    }
+    if (!electron_app_path_.empty()) {
+        launch_electron_app("--show-logs");
+        return;
+    }
+
+    // Fallback: open logs in the web app
     std::string connect_host = server_config_.host;
     if (connect_host.empty() || connect_host == "0.0.0.0") {
         connect_host = "localhost";
@@ -2649,6 +2659,16 @@ int TrayApp::execute_logs_command() {
         return 1;
     }
 
+    // Prefer launching the Electron app with the logs tab open
+    if (electron_app_path_.empty()) {
+        find_electron_app();
+    }
+    if (!electron_app_path_.empty()) {
+        launch_electron_app("--show-logs");
+        return 0;
+    }
+
+    // Fallback: open logs in the web app
     std::string connect_host = server_config_.host;
     if (connect_host.empty() || connect_host == "0.0.0.0") {
         connect_host = "localhost";
@@ -2925,7 +2945,7 @@ void TrayApp::open_web_app() {
     open_url(web_app_url);
 }
 
-void TrayApp::launch_electron_app() {
+void TrayApp::launch_electron_app(const std::string& extra_args) {
     // Try to find the app if we haven't already
     if (electron_app_path_.empty()) {
         if (!find_electron_app()) {
@@ -2992,9 +3012,12 @@ void TrayApp::launch_electron_app() {
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
 
-    // Build command line: "path\to\Lemonade.exe"
+    // Build command line: "path\to\Lemonade.exe" [extra_args]
     // Note: CreateProcessA modifies the command line buffer, so we need a mutable copy
     std::string cmd_line = "\"" + electron_app_path_ + "\"";
+    if (!extra_args.empty()) {
+        cmd_line += " " + extra_args;
+    }
     std::vector<char> cmd_line_buf(cmd_line.begin(), cmd_line.end());
     cmd_line_buf.push_back('\0');
 
@@ -3048,6 +3071,9 @@ void TrayApp::launch_electron_app() {
     // macOS: Use 'open' command to launch the .app with --args to pass arguments
     // Note: 'open' doesn't give us the PID directly, so we'll need to find it
     std::string cmd = "open \"" + electron_app_path_ + "\"";
+    if (!extra_args.empty()) {
+        cmd += " --args " + extra_args;
+    }
     int result = system(cmd.c_str());
     if (result == 0) {
         std::cout << "Launched Electron app" << std::endl;
@@ -3085,7 +3111,11 @@ void TrayApp::launch_electron_app() {
     pid_t pid = fork();
     if (pid == 0) {
         // Child process: execute the Electron app
-        execl(electron_app_path_.c_str(), electron_app_path_.c_str(), nullptr);
+        if (!extra_args.empty()) {
+            execl(electron_app_path_.c_str(), electron_app_path_.c_str(), extra_args.c_str(), nullptr);
+        } else {
+            execl(electron_app_path_.c_str(), electron_app_path_.c_str(), nullptr);
+        }
         // If execl returns, it failed
         std::cerr << "Failed to execute Electron app: " << strerror(errno) << std::endl;
         _exit(1);

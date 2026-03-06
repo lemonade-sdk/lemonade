@@ -895,7 +895,11 @@ function createWindow() {
     ? path.join(__dirname, 'dist', 'renderer', 'index.html')
     : path.join(__dirname, 'dist', 'renderer', 'index.html');
 
-  mainWindow.loadFile(htmlPath);
+  const loadOptions = {};
+  if (process.argv.includes('--show-logs')) {
+    loadOptions.search = 'logs=true';
+  }
+  mainWindow.loadFile(htmlPath, loadOptions);
 
   // Open all external links in the default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

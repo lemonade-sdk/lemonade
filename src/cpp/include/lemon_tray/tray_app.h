@@ -97,7 +97,7 @@ private:
 
     // Helpers
     void open_url(const std::string& url);
-    void launch_electron_app();
+    void launch_electron_app(const std::string& extra_args = "");
     bool find_electron_app();
     bool find_web_app();
     void open_web_app();
