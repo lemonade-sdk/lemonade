@@ -155,6 +155,24 @@ std::string get_resource_path(const std::string& relative_path) {
     return resource_path.string();
 }
 
+// Validate that a path is safe to embed in a shell command.
+// Rejects paths containing shell metacharacters that could enable command injection.
+static bool is_safe_executable_path(const std::string& path) {
+    for (char c : path) {
+        // Allow typical path characters: alphanumeric, path separators, dots,
+        // hyphens, underscores, spaces, colons (drive letters), parens (Program Files (x86))
+        if (std::isalnum(static_cast<unsigned char>(c))) continue;
+        switch (c) {
+            case '/': case '\\': case '.': case '-': case '_':
+            case ' ': case ':': case '(': case ')':
+                continue;
+            default:
+                return false;
+        }
+    }
+    return !path.empty();
+}
+
 std::string find_flm_executable() {
     // Allow mocking for tests
     // Set to a path to mock FLM, or "none" to simulate FLM not installed
@@ -163,7 +181,11 @@ std::string find_flm_executable() {
         if (std::string(mock_path) == "none") {
             return "";  // Simulate FLM not found
         }
-        return mock_path;
+        std::string mock(mock_path);
+        if (!is_safe_executable_path(mock)) {
+            return "";  // Reject paths with shell metacharacters
+        }
+        return mock;
     }
 
 #ifdef _WIN32
@@ -201,7 +223,8 @@ std::string find_flm_executable() {
     );
 
     if (result > 0 && result < MAX_PATH) {
-        return found_path;
+        std::string path(found_path);
+        return is_safe_executable_path(path) ? path : "";
     }
 
     return "";
@@ -215,6 +238,9 @@ std::string find_flm_executable() {
 }
 
 std::string find_executable_in_path(const std::string& executable_name) {
+    if (!is_safe_executable_path(executable_name)) {
+        return "";
+    }
 #ifdef _WIN32
     char found_path[MAX_PATH];
     DWORD result = SearchPathA(
@@ -227,7 +253,8 @@ std::string find_executable_in_path(const std::string& executable_name) {
     );
 
     if (result > 0 && result < MAX_PATH) {
-        return found_path;
+        std::string path(found_path);
+        return is_safe_executable_path(path) ? path : "";
     }
 
     return "";
@@ -382,6 +409,10 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
     std::string flm_exe = flm_path.empty() ? find_flm_executable() : flm_path;
     if (flm_exe.empty()) {
         error_message = "FLM executable not found";
+        return false;
+    }
+    if (!is_safe_executable_path(flm_exe)) {
+        error_message = "FLM path contains invalid characters";
         return false;
     }
 
