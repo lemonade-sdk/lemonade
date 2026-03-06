@@ -5,7 +5,6 @@ import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch } from './utils/serverConfig';
 import { pullModel, DownloadAbortError, ensureModelReady, deleteModel, ensureBackendForRecipe } from './utils/backendInstaller';
-import { useBackendInstall } from './hooks/useBackendInstall';
 import { fetchSystemInfoData, BackendInfo } from './utils/systemData';
 import type { ModelRegistrationData } from './utils/backendInstaller';
 import { downloadTracker } from './utils/downloadTracker';
@@ -15,7 +14,7 @@ import ModelOptionsModal from "./ModelOptionsModal";
 import { RecipeOptions, recipeOptionsToApi } from "./recipes/recipeOptions";
 import SettingsPanel from './SettingsPanel';
 import BackendManager from './BackendManager';
-import BackendRow from './components/BackendRow';
+import ConnectedBackendRow from './components/ConnectedBackendRow';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon } from './components/Icons';
@@ -1081,8 +1080,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
     };
   };
 
-  const { handleInstall: handleInstallRecipeBackend, isInstalling: isBackendInstalling } = useBackendInstall({ showError, showSuccess });
-
   const renderBackendSetupBanner = (recipe: string) => {
     const info = getRecipeBackendInfo(recipe);
     if (!info || info.state === 'installed') return null;
@@ -1094,18 +1091,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
       : 'Install the backend to browse and download models.';
 
     return (
-      <BackendRow
-        recipeName={recipe}
-        backendName={info.backend}
-        info={{
-          ...systemInfo!.recipes![recipe].backends[info.backend],
-          message: info.message || defaultMessage,
-        }}
-        isInstalling={isBackendInstalling(recipe, info.backend)}
+      <ConnectedBackendRow
+        recipe={recipe}
+        backend={info.backend}
+        showError={showError}
+        showSuccess={showSuccess}
+        variant="banner"
+        statusMessage={info.message || defaultMessage}
         sizeLabel={info.size ? `${Math.round(info.size)} MB` : null}
-        hoverActions={false}
-        onInstall={handleInstallRecipeBackend}
-        className="backend-setup-banner"
       />
     );
   };

@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { installBackend, uninstallBackend } from '../utils/backendInstaller';
+import { writeClipboard } from '../utils/clipboardUtils';
 import { RECIPE_DISPLAY_NAMES } from '../utils/recipeNames';
 
 interface UseBackendInstallOptions {
@@ -40,9 +41,27 @@ export function useBackendInstall({ showError, showSuccess }: UseBackendInstallO
     }
   }, [showError, showSuccess]);
 
+  const handleCopyAction = useCallback(async (recipe: string, backend: string, action?: string) => {
+    if (!action) return;
+    try {
+      // If the action contains a lemonade-server.ai documentation URL, open it in-app
+      if (action.match(/https:\/\/lemonade-server\.ai\/[^\s]+\.html/)) {
+        const urlMatch = action.match(/https:\/\/lemonade-server\.ai\/[^\s]+/);
+        if (urlMatch) {
+          window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: urlMatch[0] } }));
+          return;
+        }
+      }
+      await writeClipboard(action);
+      showSuccess(`Copied action for ${RECIPE_DISPLAY_NAMES[recipe] || recipe} ${backend}.`);
+    } catch {
+      showError('Failed to copy action to clipboard.');
+    }
+  }, [showError, showSuccess]);
+
   const isInstalling = useCallback((recipe: string, backend: string) => {
     return installingBackends.has(`${recipe}:${backend}`);
   }, [installingBackends]);
 
-  return { handleInstall, handleUninstall, isInstalling };
+  return { handleInstall, handleUninstall, handleCopyAction, isInstalling };
 }

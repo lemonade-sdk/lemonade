@@ -1,12 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
 
 import { useSystem } from './hooks/useSystem';
-import { useConfirmDialog } from './ConfirmDialog';
-import { useBackendInstall } from './hooks/useBackendInstall';
 import { Recipe, BackendInfo } from './utils/systemData';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
-import BackendRow from './components/BackendRow';
-import { writeClipboard } from './utils/clipboardUtils';
+import ConnectedBackendRow from './components/ConnectedBackendRow';
 
 const RECIPE_ORDER = new Map([
   'llamacpp',
@@ -38,9 +35,6 @@ interface BackendManagerProps {
 
 const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError, showSuccess }) => {
   const { systemInfo, isLoading, refresh } = useSystem();
-  const { confirm, ConfirmDialog } = useConfirmDialog();
-  const { handleInstall: handleInstallBackend, handleUninstall, isInstalling } = useBackendInstall({ showError, showSuccess });
-  const [hoveredBackend, setHoveredBackend] = useState<string | null>(null);
   const [backendAssetSizes, setBackendAssetSizes] = useState<Record<string, number>>({});
 
   // Refresh system info when the backend manager is opened
@@ -139,37 +133,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
     window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
 
-  const handleCopyAction = useCallback(async (recipe: string, backend: string, action?: string) => {
-    if (!action) return;
-    try {
-      // If the action contains a lemonade-server.ai documentation URL, open it in-app
-      if (action.match(/https:\/\/lemonade-server\.ai\/[^\s]+\.html/)) {
-        const urlMatch = action.match(/https:\/\/lemonade-server\.ai\/[^\s]+/);
-        if (urlMatch) {
-          window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: urlMatch[0] } }));
-          return;
-        }
-      }
-
-      await writeClipboard(action);
-      showSuccess(`Copied action for ${RECIPE_DISPLAY_NAMES[recipe] || recipe} ${backend}.`);
-    } catch {
-      showError('Failed to copy action to clipboard.');
-    }
-  }, [showError, showSuccess]);
-
-  const handleUninstallBackend = useCallback(async (recipe: string, backend: string) => {
-    const confirmed = await confirm({
-      title: 'Uninstall Backend',
-      message: `Are you sure you want to uninstall ${RECIPE_DISPLAY_NAMES[recipe] || recipe} ${backend}?`,
-      confirmText: 'Uninstall',
-      cancelText: 'Cancel',
-      danger: true
-    });
-    if (!confirmed) return;
-    await handleUninstall(recipe, backend);
-  }, [confirm, handleUninstall]);
-
   const groupedBackends: Array<[string, Array<[string, BackendInfo]>]> = recipes
     ? Object.entries(recipes)
       .map(([recipeName, recipe]: [string, Recipe]) => {
@@ -198,26 +161,15 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
     .filter(([, backends]) => backends.length > 0);
 
   if (isLoading || !recipes) {
-    return (
-      <>
-        <ConfirmDialog />
-        <div className="left-panel-empty-state">Loading backends...</div>
-      </>
-    );
+    return <div className="left-panel-empty-state">Loading backends...</div>;
   }
 
   if (visibleGroups.length === 0) {
-    return (
-      <>
-        <ConfirmDialog />
-        <div className="left-panel-empty-state">No backends match your current filter.</div>
-      </>
-    );
+    return <div className="left-panel-empty-state">No backends match your current filter.</div>;
   }
 
   return (
     <>
-      <ConfirmDialog />
       {visibleGroups.map(([recipeName, backends]) => (
         <div key={recipeName} className="model-category">
           <div className="model-category-header static">
@@ -225,27 +177,18 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
             <span className="category-count">({backends.length})</span>
           </div>
           <div className="model-list">
-            {backends.map(([backendName, info]) => {
-              const key = `${recipeName}:${backendName}`;
-              return (
-                <BackendRow
-                  key={key}
-                  recipeName={recipeName}
-                  backendName={backendName}
-                  info={info}
-                  isInstalling={isInstalling(recipeName, backendName)}
-                  sizeLabel={getBackendSizeLabel(info)}
-                  hoverActions={true}
-                  isHovered={hoveredBackend === key}
-                  onMouseEnter={() => setHoveredBackend(key)}
-                  onMouseLeave={() => setHoveredBackend(null)}
-                  onInstall={handleInstallBackend}
-                  onUninstall={handleUninstallBackend}
-                  onCopyAction={handleCopyAction}
-                  onOpenReleaseUrl={openExternalLink}
-                />
-              );
-            })}
+            {backends.map(([backendName, info]) => (
+              <ConnectedBackendRow
+                key={`${recipeName}:${backendName}`}
+                recipe={recipeName}
+                backend={backendName}
+                showError={showError}
+                showSuccess={showSuccess}
+                variant="full"
+                sizeLabel={getBackendSizeLabel(info)}
+                onOpenReleaseUrl={openExternalLink}
+              />
+            ))}
           </div>
         </div>
       ))}

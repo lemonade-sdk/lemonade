@@ -5,6 +5,7 @@ const STATUS_INDICATOR_CLASS: Record<BackendInfo['state'], string> = {
   installed: 'available',
   installable: 'not-downloaded',
   update_required: 'update-required',
+  action_required: 'update-required',
   unsupported: 'unsupported',
 };
 
@@ -56,6 +57,14 @@ const CopyIcon = () => (
   </svg>
 );
 
+const HelpIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </svg>
+);
+
 const BackendRow: React.FC<BackendRowProps> = ({
   recipeName,
   backendName,
@@ -76,6 +85,7 @@ const BackendRow: React.FC<BackendRowProps> = ({
   const showActions = hoverActions ? isHovered : true;
   const message = statusMessage ?? info.message;
   const canInstall = info.state === 'installable' || info.state === 'update_required';
+  const hasAction = canInstall || info.state === 'action_required';
   const canUninstall = info.state === 'installed' && info.can_uninstall !== false && backendName !== 'system';
   const isUpdate = info.state === 'update_required';
 
@@ -137,13 +147,13 @@ const BackendRow: React.FC<BackendRowProps> = ({
                 <UninstallIcon />
               </button>
             )}
-            {canInstall && info.action && onCopyAction && (
+            {hasAction && info.action && onCopyAction && (
               <button
                 className="model-action-btn"
                 title={info.action}
                 onClick={() => onCopyAction(recipeName, backendName, info.action)}
               >
-                <CopyIcon />
+                {info.state === 'action_required' ? <HelpIcon /> : <CopyIcon />}
               </button>
             )}
           </span>
