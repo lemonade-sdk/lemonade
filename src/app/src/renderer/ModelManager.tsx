@@ -5,7 +5,7 @@ import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch } from './utils/serverConfig';
 import { pullModel, DownloadAbortError, ensureModelReady, installBackend, deleteModel, ensureBackendForRecipe } from './utils/backendInstaller';
-import { fetchSystemInfoData } from './utils/systemData';
+import { fetchSystemInfoData, BackendInfo } from './utils/systemData';
 import type { ModelRegistrationData } from './utils/backendInstaller';
 import { downloadTracker } from './utils/downloadTracker';
 import { useModels } from './hooks/useModels';
@@ -14,6 +14,7 @@ import ModelOptionsModal from "./ModelOptionsModal";
 import { RecipeOptions, recipeOptionsToApi } from "./recipes/recipeOptions";
 import SettingsPanel from './SettingsPanel';
 import BackendManager from './BackendManager';
+import BackendRow from './components/BackendRow';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon } from './components/Icons';
@@ -174,7 +175,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
   // Get shared model data from context
   const { modelsData, suggestedModels, refresh: refreshModels } = useModels();
   // Get system context for lazy loading system info
-  const { ensureSystemInfoLoaded } = useSystem();
+  const { ensureSystemInfoLoaded, systemInfo } = useSystem();
 
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['all']));
   const [organizationMode, setOrganizationMode] = useState<'recipe' | 'category'>('recipe');
@@ -224,6 +225,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
       console.error('Failed to fetch current loaded model:', error);
     }
   }, []);
+
+  // Load system info on mount so recipe categories (e.g., FLM) can appear
+  // even when the backend isn't installed yet
+  useEffect(() => {
+    ensureSystemInfoLoaded();
+  }, [ensureSystemInfoLoaded]);
 
   useEffect(() => {
     fetchCurrentLoadedModel();
@@ -335,6 +342,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
       grouped[recipe].push(model);
     });
 
+    // Inject empty categories for supported recipes that have no models
+    // (e.g., FLM when backend needs install/upgrade)
+    const recipes = systemInfo?.recipes;
+    if (recipes && !showDownloadedOnly) {
+      for (const [recipeName, recipe] of Object.entries(recipes)) {
+        if (grouped[recipeName]) continue; // Already has models
+        const backends = recipe?.backends;
+        if (!backends) continue;
+        // Check if any backend is non-unsupported (installable, update_required, or installed)
+        const hasViableBackend = Object.values(backends).some(
+          b => b?.state && b.state !== 'unsupported'
+        );
+        if (hasViableBackend) {
+          grouped[recipeName] = [];
+        }
+      }
+    }
+
     return grouped;
   };
 
@@ -364,7 +389,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
 
   const groupedModels = useMemo(
     () => organizationMode === 'recipe' ? groupModelsByRecipe() : groupModelsByCategory(),
-    [suggestedModels, modelsData, organizationMode, showDownloadedOnly, searchQuery]
+    [suggestedModels, modelsData, organizationMode, showDownloadedOnly, searchQuery, systemInfo?.recipes]
   );
   const availableModelCount = useMemo(
     () => Object.values(groupedModels).reduce((sum, arr) => sum + arr.length, 0),
@@ -1030,10 +1055,90 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
     );
   };
 
+  // Get the default backend info for a recipe from system-info
+  const getRecipeBackendInfo = (recipe: string): {
+    state: BackendInfo['state'];
+    message: string;
+    backend: string;
+    size?: number;
+    version?: string;
+    action?: string;
+  } | null => {
+    const recipes = systemInfo?.recipes;
+    if (!recipes || !recipes[recipe]) return null;
+    const recipeInfo = recipes[recipe];
+    const defaultBackend = recipeInfo.default_backend;
+    if (!defaultBackend || !recipeInfo.backends[defaultBackend]) return null;
+    const info = recipeInfo.backends[defaultBackend];
+    return {
+      state: info.state,
+      message: info.message,
+      backend: defaultBackend,
+      size: info.download_size_mb,
+      version: info.version,
+      action: info.action,
+    };
+  };
+
+  const [installingBackend, setInstallingBackend] = useState<string | null>(null);
+
+  const handleInstallRecipeBackend = async (recipe: string, backend: string) => {
+    const key = `${recipe}:${backend}`;
+    setInstallingBackend(key);
+    try {
+      await installBackend(recipe, backend, true);
+      showSuccess(`Backend installed successfully. Refreshing models...`);
+      await refreshModels();
+    } catch (error) {
+      showError(`Failed to install backend: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setInstallingBackend(null);
+    }
+  };
+
+  const handleCopyRecipeBackendAction = async (_recipe: string, _backend: string, action?: string) => {
+    if (!action) return;
+    try {
+      await navigator.clipboard.writeText(action);
+      showSuccess('Backend command copied to clipboard.');
+    } catch (error) {
+      showError(`Failed to copy backend command: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const renderBackendSetupBanner = (recipe: string) => {
+    const info = getRecipeBackendInfo(recipe);
+    if (!info || info.state === 'installed') return null;
+    if (info.state === 'unsupported') return null;
+
+    const isUpdate = info.state === 'update_required';
+    const defaultMessage = isUpdate
+      ? 'A backend update is required to show models.'
+      : 'Install the backend to browse and download models.';
+
+    return (
+      <BackendRow
+        recipeName={recipe}
+        backendName={info.backend}
+        info={{
+          ...systemInfo!.recipes![recipe].backends[info.backend],
+          message: info.message || defaultMessage,
+        }}
+        isInstalling={installingBackend === `${recipe}:${info.backend}`}
+        sizeLabel={info.size ? `${Math.round(info.size)} MB` : null}
+        hoverActions={false}
+        onInstall={handleInstallRecipeBackend}
+        onCopyAction={handleCopyRecipeBackendAction}
+        className="backend-setup-banner"
+      />
+    );
+  };
+
   const renderModelsView = () => (
     <>
       {categories.map(category => {
         const listItems = builtModelLists[category] || [];
+        const hasModels = groupedModels[category]?.length > 0;
         return (
           <div key={category} className="model-category">
             <div
@@ -1044,11 +1149,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
                 <ChevronRight size={11} strokeWidth={2.1} />
               </span>
               <span className="category-label">{getDisplayLabel(category)}</span>
-              <span className="category-count">({groupedModels[category].length})</span>
+              {hasModels && <span className="category-count">({groupedModels[category].length})</span>}
             </div>
 
             {shouldShowCategory(category) && (
               <div className="model-list">
+                {organizationMode === 'recipe' && !hasModels && renderBackendSetupBanner(category)}
                 <ModelOptionsModal model={optionsModel} isOpen={showModelOptionsModal}
                                    onCancel={() => {
                                      setShowModelOptionsModal(false);
