@@ -2248,70 +2248,69 @@ NPUInfo LinuxSystemInfo::get_npu_device() {
             }
         }
 
-        // Try to query TOPs and Power Mode via IOCTL
-        std::string accel_dev = "/dev/accel/accel0";
-        if (fs::exists(accel_dev)) {
-            int fd = open(accel_dev.c_str(), O_RDWR);
-            if (fd >= 0) {
-                // Query Resource Info (TOPs)
-                amdxdna_drm_get_resource_info res_info = {};
-                amdxdna_drm_get_info get_info = {};
-                get_info.param = DRM_AMDXDNA_QUERY_RESOURCE_INFO;
-                get_info.buffer_size = sizeof(res_info);
-                get_info.buffer = (uintptr_t)&res_info;
+                // Try to query TOPs and Power Mode via IOCTL
+                std::string accel_dev = "/dev/accel/accel0";
+                if (fs::exists(accel_dev)) {
+                    int fd = open(accel_dev.c_str(), O_RDWR);
+                    if (fd >= 0) {
+                        // Query Resource Info (TOPs)
+                        amdxdna_drm_get_resource_info res_info = {};
+                        amdxdna_drm_get_info get_info = {};
+                        get_info.param = DRM_AMDXDNA_QUERY_RESOURCE_INFO;
+                        get_info.buffer_size = sizeof(res_info);
+                        get_info.buffer = (uintptr_t)&res_info;
 
-                if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) >= 0) {
-                    npu.tops_max = res_info.npu_tops_max;
-                    npu.tops_curr = res_info.npu_tops_curr;
-                }
-
-                // Query Sensors (Utilization)
-                amdxdna_drm_query_sensor sensors[16] = {};
-                get_info.param = DRM_AMDXDNA_QUERY_SENSORS;
-                get_info.buffer_size = sizeof(sensors);
-                get_info.buffer = (uintptr_t)sensors;
-
-                if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) >= 0) {
-                    int num_sensors = get_info.buffer_size / sizeof(amdxdna_drm_query_sensor);
-                    double usage_sum = 0.0;
-                    int usage_count = 0;
-                    for (int i = 0; i < num_sensors; ++i) {
-                        if (sensors[i].type == AMDXDNA_SENSOR_TYPE_COLUMN_UTILIZATION) {
-                            double val = (double)sensors[i].input * std::pow(10.0, sensors[i].unitm);
-                            usage_sum += val;
-                            usage_count++;
+                        if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) >= 0) {
+                            npu.tops_max = res_info.npu_tops_max;
+                            npu.tops_curr = res_info.npu_tops_curr;
                         }
-                    }
-                    if (usage_count > 0) {
-                        npu.utilization = (float)(usage_sum / usage_count);
+
+                        // Query Sensors (Utilization)
+                        amdxdna_drm_query_sensor sensors[16] = {};
+                        get_info.param = DRM_AMDXDNA_QUERY_SENSORS;
+                        get_info.buffer_size = sizeof(sensors);
+                        get_info.buffer = (uintptr_t)sensors;
+
+                        if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) >= 0) {
+                            int num_sensors = get_info.buffer_size / sizeof(amdxdna_drm_query_sensor);
+                            double usage_sum = 0.0;
+                            int usage_count = 0;
+                            for (int i = 0; i < num_sensors; ++i) {
+                                if (sensors[i].type == AMDXDNA_SENSOR_TYPE_COLUMN_UTILIZATION) {
+                                    double val = (double)sensors[i].input * std::pow(10.0, sensors[i].unitm);
+                                    usage_sum += val;
+                                    usage_count++;
+                                }
+                            }
+                            if (usage_count > 0) {
+                                npu.utilization = (float)(usage_sum / usage_count);
+                            }
+                        }
+
+                        // Query Power Mode
+                        amdxdna_drm_get_power_mode pwr_info = {};
+                        get_info.param = DRM_AMDXDNA_GET_POWER_MODE;
+                        get_info.buffer_size = sizeof(pwr_info);
+                        get_info.buffer = (uintptr_t)&pwr_info;
+
+                        if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) >= 0) {
+                            static const std::map<int, std::string> POWER_MODE_MAP = {
+                                {POWER_MODE_DEFAULT, "DEFAULT"},
+                                {POWER_MODE_LOW, "LOW"},
+                                {POWER_MODE_MEDIUM, "MEDIUM"},
+                                {POWER_MODE_HIGH, "HIGH"},
+                                {POWER_MODE_TURBO, "TURBO"}
+                            };
+                            auto it = POWER_MODE_MAP.find(pwr_info.power_mode);
+                            if (it != POWER_MODE_MAP.end()) {
+                                npu.power_mode = it->second;
+                            } else {
+                                npu.power_mode = "Unknown (" + std::to_string(pwr_info.power_mode) + ")";
+                            }
+                        }
+                        close(fd);
                     }
                 }
-
-                // Query Power Mode
-                amdxdna_drm_get_power_mode pwr_info = {};
-                get_info.param = DRM_AMDXDNA_GET_POWER_MODE;
-                get_info.buffer_size = sizeof(pwr_info);
-                get_info.buffer = (uintptr_t)&pwr_info;
-
-                if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) >= 0) {
-                    static const std::map<int, std::string> POWER_MODE_MAP = {
-                        {POWER_MODE_DEFAULT, "DEFAULT"},
-                        {POWER_MODE_LOW, "LOW"},
-                        {POWER_MODE_MEDIUM, "MEDIUM"},
-                        {POWER_MODE_HIGH, "HIGH"},
-                        {POWER_MODE_TURBO, "TURBO"}
-                    };
-                    auto it = POWER_MODE_MAP.find(pwr_info.power_mode);
-                    if (it != POWER_MODE_MAP.end()) {
-                        npu.power_mode = it->second;
-                    } else {
-                        npu.power_mode = "Unknown (" + std::to_string(pwr_info.power_mode) + ")";
-                    }
-                }
-                close(fd);
-            }
-        }
-
         break;
     }
 
