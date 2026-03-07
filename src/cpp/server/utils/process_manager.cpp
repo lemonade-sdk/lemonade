@@ -56,7 +56,7 @@ static bool is_error_line(const std::string& line) {
     return lowered.find("error") != std::string::npos;
 }
 
-static void log_process_line(const std::string& line, const std::string& source = "Process") {
+static void log_process_line(const std::string& line, const std::string& source) {
     if (should_filter_line(line)) {
         return;
     }
