@@ -1,0 +1,25 @@
+#!/bin/bash
+set -e
+
+if ! getent group lemonade > /dev/null 2>&1; then
+    groupadd -r lemonade > /dev/null 2>&1 || true
+fi
+
+if ! getent passwd lemonade > /dev/null 2>&1; then
+    useradd -m -r -g lemonade -d /opt/var/lib/lemonade -s /usr/sbin/nologin lemonade > /dev/null 2>&1 || true
+fi
+
+mkdir -p /opt/var/lib/lemonade
+chown lemonade:lemonade /opt/var/lib/lemonade > /dev/null 2>&1 || true
+
+usermod -a -G render lemonade > /dev/null 2>&1 || true
+
+if getent group systemd-journal > /dev/null 2>&1; then
+    usermod -a -G systemd-journal lemonade > /dev/null 2>&1 || true
+fi
+
+if command -v systemctl > /dev/null 2>&1 && [ -d /run/systemd/system ]; then
+    systemctl daemon-reload > /dev/null 2>&1 || true
+fi
+
+exit 0
