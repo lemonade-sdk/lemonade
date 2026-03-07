@@ -1185,6 +1185,9 @@ if(UNIX AND NOT APPLE)
         DESTINATION /etc/lemonade
         PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE
     )
+    install(CODE "
+        file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/etc/lemonade/conf.d\")
+    ")
 
     # Create symlinks for KaTeX fonts if they exist on the system
     # Check if fonts-katex package fonts are available
