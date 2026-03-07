@@ -90,7 +90,8 @@ bool build_agent_config(const std::string& agent,
             {"ANTHROPIC_DEFAULT_SONNET_MODEL", model},
             {"ANTHROPIC_DEFAULT_HAIKU_MODEL", model},
             {"CLAUDE_CODE_SUBAGENT_MODEL", model},
-            {"CLAUDE_CODE_ATTRIBUTION_HEADER", "0"}
+            {"CLAUDE_CODE_ATTRIBUTION_HEADER", "0"},
+            {"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"}
         };
         config.extra_args = {};
         config.install_instructions = "Install Claude Code CLI and ensure 'claude' is on PATH.";
