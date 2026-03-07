@@ -77,6 +77,7 @@ nav:
   - Understanding local LLM servers: server/concepts.md
   - Server Spec: server/server_spec.md
   - Integration Guide: server/server_integration.md
+  - Custom Model Configuration: server/custom-models.md
   - FAQ Guide: faq.md
   - Contribution Guide: contribute.md
 

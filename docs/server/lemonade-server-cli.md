@@ -175,7 +175,7 @@ lemonade-server pull user.nomic-embed \
   --embedding
 ```
 
-For more information about model formats and recipes, see the [API documentation](../lemonade_api.md) and the [server models guide](https://lemonade-server.ai/models.html).
+For more information about model formats and recipes, see the [API documentation](../lemonade_api.md) and the [server models guide](https://lemonade-server.ai/models.html). For details on the underlying JSON files (`user_models.json` and `recipe_options.json`), see the [Custom Model Configuration Guide](./custom-models.md).
 
 ## Lemonade Desktop App
 
