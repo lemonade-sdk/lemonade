@@ -1209,7 +1209,8 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
 
 // Linux: identify NPU architecture from sysfs accel subsystem
 // Checks /sys/class/accel/*/device/driver for amdxdna, then reads number of columns
-static std::string identify_npu_arch_from_sysfs() {
+// If amdxdna not loaded, fall back to PCI device IDs
+static std::string identify_npu_arch_linux() {
 #ifdef __linux__
     fs::path accel_path = "/sys/class/accel";
     if (!fs::exists(accel_path) || !fs::is_directory(accel_path)) {
@@ -1255,6 +1256,47 @@ static std::string identify_npu_arch_from_sysfs() {
         close(fd);
         if (query_aie_metadata.cols == 8) {
             return "XDNA2";
+        }
+
+        //Fallback path for missing amdxdna driver (just check PCI IDs)
+        fs::path pci_path = "/sys/bus/pci/devices";
+        if (fs::exists(pci_path) && fs::is_directory(pci_path)) {
+            for (const auto& pci_entry : fs::directory_iterator(pci_path)) {
+                if (!pci_entry.is_directory()) continue;
+
+                fs::path class_path = pci_entry.path() / "class";
+                fs::path vendor_path = pci_entry.path() / "vendor";
+                fs::path device_path = pci_entry.path() / "device";
+                fs::path revision_path = pci_entry.path() / "revision";
+
+                if (!fs::exists(class_path) || !fs::exists(vendor_path) || !fs::exists(device_path)) {
+                    continue;
+                }
+                if (!fs::exists(revision_path)) {
+                    continue;
+                }
+
+                auto read_sysfs = [](const fs::path& p) {
+                    std::ifstream is(p);
+                    std::string s;
+                    is >> s;
+                    return s;
+                };
+                std::string class_str = read_sysfs(class_path);
+                std::string vendor_str = read_sysfs(vendor_path);
+                std::string device_str = read_sysfs(device_path);
+                std::string revision_str = read_sysfs(revision_path);
+
+                if (class_str != "0x118000" || vendor_str != "0x1022") {
+                    continue;
+                }
+                if (device_str == "0x17f0") {
+                    if (revision_str == "0x10" ||
+                        revision_str == "0x11" ||
+                        revision_str == "0x12")
+                        return "XDNA2";
+                }
+            }
         }
     }
 #endif
@@ -1330,11 +1372,9 @@ std::string identify_npu_arch() {
         return "XDNA2";
     }
 #else
-
-    // Linux: check amdxdna driver + vbnv for NPU generation
-    std::string sysfs_arch = identify_npu_arch_from_sysfs();
-    if (!sysfs_arch.empty()) {
-        return sysfs_arch;
+    std::string linux_arch = identify_npu_arch_linux();
+    if (!linux_arch.empty()) {
+        return linux_arch;
     }
 #endif
 
