@@ -892,8 +892,8 @@ jobs:
           test -f /opt/bin/lemonade-server
           test -f /opt/bin/lemonade-router
 
-          lemonade-server --version
-          lemonade-router --version
+          /opt/bin/lemonade-server --version
+          /opt/bin/lemonade-router --version
 
   test-dmg-inference:
     name: Test .dmg - llamacpp (metal)
