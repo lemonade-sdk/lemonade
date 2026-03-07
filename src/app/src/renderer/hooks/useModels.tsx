@@ -120,17 +120,19 @@ export const ModelsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     refresh();
   }, [refresh]);
 
-  // Listen for modelsUpdated events
+  // Listen for modelsUpdated and backendsUpdated events
+  // (backend installs/uninstalls can change which models are available)
   useEffect(() => {
-    const handleModelsUpdated = () => {
-      console.log('Models updated, refreshing...');
+    const handleRefresh = () => {
       refresh();
     };
 
-    window.addEventListener('modelsUpdated', handleModelsUpdated);
+    window.addEventListener('modelsUpdated', handleRefresh);
+    window.addEventListener('backendsUpdated', handleRefresh);
 
     return () => {
-      window.removeEventListener('modelsUpdated', handleModelsUpdated);
+      window.removeEventListener('modelsUpdated', handleRefresh);
+      window.removeEventListener('backendsUpdated', handleRefresh);
     };
   }, [refresh]);
 
