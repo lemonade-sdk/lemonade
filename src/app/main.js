@@ -487,14 +487,14 @@ function gracefulKillBlocking(processPattern) {
 
 /**
  * Discovers the lemonade server using UDP broadcast beacons.
- * The server broadcasts its presence on UDP port 8000 with a JSON payload
+ * The server broadcasts its presence on UDP port 8080 with a JSON payload
  * containing the service name, hostname, and URL.
  *
  * This works for both local and remote servers on the same network.
  */
 const discoverServerPort = () => {
   const DEFAULT_PORT = 8000;
-  const BEACON_PORT = 8000;
+  const BEACON_PORT = 8080;
   const DISCOVERY_TIMEOUT_MS = 5000;
 
   return new Promise((resolve) => {
@@ -601,7 +601,7 @@ const discoverServerPort = () => {
 let beaconSocket = null;
 
 const startBeaconListener = async () => {
-  const BEACON_PORT = 8000;
+  const BEACON_PORT = 8080;
 
   // Don't listen if an explicit base URL is configured
   const baseURL = await getBaseURLFromConfig();

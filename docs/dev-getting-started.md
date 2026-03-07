@@ -528,7 +528,7 @@ src/cpp/
 │       ├── json_utils.h        # JSON utilities
 │       ├── process_manager.h   # Process management
 │       |── path_utils.h        # Path utilities
-|       |── network_beacon.h    # Helps broadcast a beacon on port 8000 to network multicast
+|       |── network_beacon.h    # Helps broadcast a beacon on port 8080 to network multicast
 │
 └── tray/                       # System tray application
     ├── CMakeLists.txt          # Tray-specific build config
@@ -625,7 +625,7 @@ The client automatically:
   - Automatically cleaned up on graceful shutdown
 
 **Network Beacon based broadcasting:**
-- Uses port 8000 to broadcast to the network that it exists
+- Uses port 8080 to broadcast to the network that it exists
 - Clients can read the json broadcast message to add server to server picker.
 - Uses machine hostname as broadcast name.
 - The custom flag --no-broadcast is available in the command line to disable.

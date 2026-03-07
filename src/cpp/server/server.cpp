@@ -941,7 +941,7 @@ void Server::run() {
         }
         std::cout << std::endl;
         udp_beacon_.startBroadcasting(
-            8000, //Broadcast port best to not make it adjustable, so clients dont have to scan.
+            8080, //Broadcast port best to not make it adjustable, so clients dont have to scan.
             port_,
             2
         );
