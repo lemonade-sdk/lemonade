@@ -47,6 +47,9 @@ LinuxTray::LinuxTray()
     , main_loop_(nullptr)
     , g_menu_(nullptr)
     , action_group_(nullptr)
+#ifdef HAVE_DBUSMENU_GLIB
+    , dbusmenu_server_(nullptr)
+#endif
 #else
     , gtk_menu_(nullptr)
 #endif
@@ -71,6 +74,11 @@ LinuxTray::~LinuxTray() {
     for (auto* cb : callbacks_) {
         delete cb;
     }
+#ifdef HAVE_DBUSMENU_GLIB
+    if (dbusmenu_server_) {
+        g_object_unref(dbusmenu_server_);
+    }
+#endif
 #endif
 }
 
@@ -107,6 +115,27 @@ bool LinuxTray::initialize(const std::string& app_name, const std::string& icon_
         std::cerr << "Failed to create AppIndicator" << std::endl;
         return false;
     }
+
+#ifdef HAVE_AYATANA_APPINDICATOR_GLIB
+    // Register an empty GMenuModel and DBusMenu before the indicator becomes visible.
+    // GNOME Shell queries com.canonical.dbusmenu immediately on discovery; both
+    // interfaces must be present before APP_INDICATOR_STATUS_ACTIVE is set.
+    g_menu_ = g_menu_new();
+    action_group_ = g_simple_action_group_new();
+    app_indicator_set_menu(indicator_, g_menu_);
+    app_indicator_set_actions(indicator_, action_group_);
+#ifdef HAVE_DBUSMENU_GLIB
+    {
+        std::string clean = app_name;
+        for (auto& c : clean)
+            if (!g_ascii_isalnum(c)) c = '_';
+        dbusmenu_server_ = dbusmenu_server_new(("/org/ayatana/appindicator/" + clean).c_str());
+        DbusmenuMenuitem* root = dbusmenu_menuitem_new();
+        dbusmenu_server_set_root(dbusmenu_server_, root);
+        g_object_unref(root);
+    }
+#endif
+#endif
 
     app_indicator_set_status(indicator_, APP_INDICATOR_STATUS_ACTIVE);
     set_icon(icon_path);
@@ -179,6 +208,15 @@ void LinuxTray::set_menu(const Menu& menu) {
         app_indicator_set_menu(self->indicator_, new_menu);
         app_indicator_set_actions(self->indicator_, new_group);
 
+#ifdef HAVE_DBUSMENU_GLIB
+        if (self->dbusmenu_server_) {
+            DbusmenuMenuitem* root = dbusmenu_menuitem_new();
+            self->build_dbusmenu(*menu, root, new_callbacks);
+            dbusmenu_server_set_root(self->dbusmenu_server_, root);
+            g_object_unref(root);
+        }
+#endif
+
         // Release old resources now that the indicator holds refs to the new ones.
         if (self->g_menu_)       g_object_unref(self->g_menu_);
         if (self->action_group_) g_object_unref(self->action_group_);
@@ -232,19 +270,15 @@ void LinuxTray::build_g_menu(const Menu& menu, GMenu* parent, GSimpleActionGroup
         }
 
         if (item.submenu) {
-            // A dummy action is required so that enabled/disabled state can be toggled.
-            std::string action_name = "action-" + std::to_string(action_id++);
-            GSimpleAction* action = g_simple_action_new(action_name.c_str(), nullptr);
-            g_simple_action_set_enabled(action, item.enabled ? TRUE : FALSE);
-            g_action_map_add_action(G_ACTION_MAP(actions), G_ACTION(action));
-            g_object_unref(action);
-
             GMenu* submenu = g_menu_new();
             build_g_menu(*item.submenu, submenu, actions, action_id, callbacks);
 
-            GMenuItem* menu_item = g_menu_item_new(item.text.c_str(),
-                                                   ("indicator." + action_name).c_str());
-            g_menu_item_set_submenu(menu_item, G_MENU_MODEL(submenu));
+            // g_menu_item_new_submenu() creates a pure submenu-parent item with no
+            // activatable action. Using g_menu_item_new() + g_menu_item_set_submenu()
+            // sets both "action" and "submenu" attributes, which causes the DBUSMENU
+            // serialiser in ayatana-appindicator-glib to discard the submenu link.
+            GMenuItem* menu_item = g_menu_item_new_submenu(item.text.c_str(),
+                                                           G_MENU_MODEL(submenu));
             g_menu_append_item(section, menu_item);
             g_object_unref(menu_item);
             g_object_unref(submenu);
@@ -278,11 +312,75 @@ void LinuxTray::build_g_menu(const Menu& menu, GMenu* parent, GSimpleActionGroup
         g_object_unref(menu_item);
     }
 
-    g_menu_append_section(parent, nullptr, G_MENU_MODEL(section));
+    if (g_menu_model_get_n_items(G_MENU_MODEL(section)) > 0) {
+        g_menu_append_section(parent, nullptr, G_MENU_MODEL(section));
+    }
     g_object_unref(section);
 }
 
 #endif // HAVE_AYATANA_APPINDICATOR_GLIB
+
+// ── build_dbusmenu (dbusmenu-glib bridge) ─────────────────────────────────────────
+//
+// ayatana-appindicator-glib exports menus via org.gtk.Menus (GMenuModel), but
+// GNOME Shell's AppIndicator extension only speaks com.canonical.dbusmenu.
+// DbusmenuServer registers that interface on D-Bus at the same object path as
+// the AppIndicator, so GNOME Shell finds it when it introspects the indicator.
+//
+// Ownership: each DbusmenuMenuitem is appended to its parent (which takes a ref),
+// then unreffed here — net ref-count stays at 1, held by the parent.  The root
+// item is held by DbusmenuServer; replacing the root via dbusmenu_server_set_root()
+// drops the old tree automatically.  Callbacks are heap-allocated and tracked in
+// `callbacks`; the caller deletes them when the menu is next replaced.
+
+#ifdef HAVE_DBUSMENU_GLIB
+
+void LinuxTray::build_dbusmenu(const Menu& menu, DbusmenuMenuitem* parent,
+                                std::vector<std::function<void()>*>& callbacks) {
+    for (const auto& item : menu.items) {
+        DbusmenuMenuitem* mi = dbusmenu_menuitem_new();
+
+        if (item.is_separator) {
+            // The DBusMenu spec uses type="separator" for horizontal dividers.
+            dbusmenu_menuitem_property_set(mi, DBUSMENU_MENUITEM_PROP_TYPE, "separator");
+        } else {
+            dbusmenu_menuitem_property_set(mi, DBUSMENU_MENUITEM_PROP_LABEL, item.text.c_str());
+            dbusmenu_menuitem_property_set_bool(mi, DBUSMENU_MENUITEM_PROP_ENABLED,
+                                               item.enabled ? TRUE : FALSE);
+            if (item.is_checkable) {
+                // Renders as a checkmark item; TOGGLE_STATE reflects the current checked value.
+                dbusmenu_menuitem_property_set(mi, DBUSMENU_MENUITEM_PROP_TOGGLE_TYPE,
+                                             DBUSMENU_MENUITEM_TOGGLE_CHECK);
+                dbusmenu_menuitem_property_set_int(mi, DBUSMENU_MENUITEM_PROP_TOGGLE_STATE,
+                    item.checked ? DBUSMENU_MENUITEM_TOGGLE_STATE_CHECKED
+                                 : DBUSMENU_MENUITEM_TOGGLE_STATE_UNCHECKED);
+            }
+            if (item.callback) {
+                // The lambda is stateless so +[] converts it to a plain function pointer
+                // suitable for GSignal.  The heap-allocated cb outlives the signal because
+                // it is deleted by the caller only after dbusmenu_server_set_root() drops
+                // the old item tree (and thereby disconnects all signals on it).
+                auto* cb = new std::function<void()>(item.callback);
+                callbacks.push_back(cb);
+                g_signal_connect(mi, DBUSMENU_MENUITEM_SIGNAL_ITEM_ACTIVATED,
+                    G_CALLBACK(+[](DbusmenuMenuitem*, guint, gpointer data) {
+                        (*static_cast<std::function<void()>*>(data))();
+                    }), cb);
+            }
+            if (item.submenu) {
+                // CHILD_DISPLAY_SUBMENU tells the shell to render an arrow/flyout.
+                dbusmenu_menuitem_property_set(mi, DBUSMENU_MENUITEM_PROP_CHILD_DISPLAY,
+                                             DBUSMENU_MENUITEM_CHILD_DISPLAY_SUBMENU);
+                build_dbusmenu(*item.submenu, mi, callbacks);
+            }
+        }
+
+        dbusmenu_menuitem_child_append(parent, mi);
+        g_object_unref(mi);
+    }
+}
+
+#endif // HAVE_DBUSMENU_GLIB
 
 // ── build_gtk_menu (GTK3 variant) ─────────────────────────────────────────────────
 

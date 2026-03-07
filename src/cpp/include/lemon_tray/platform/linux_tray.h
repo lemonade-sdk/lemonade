@@ -7,6 +7,10 @@
 #ifdef HAVE_APPINDICATOR
 #ifdef HAVE_AYATANA_APPINDICATOR_GLIB
 #include <libayatana-appindicator-glib/ayatana-appindicator.h>  // glib variant (GTK-free, GIO only)
+#ifdef HAVE_DBUSMENU_GLIB
+#include <libdbusmenu-glib/server.h>
+#include <libdbusmenu-glib/menuitem.h>
+#endif
 #else
 #include <gtk/gtk.h>
 #ifdef HAVE_AYATANA_APPINDICATOR
@@ -52,6 +56,11 @@ private:
     std::vector<std::function<void()>*> callbacks_;
     void build_g_menu(const Menu& menu, GMenu* parent, GSimpleActionGroup* actions,
                       int& action_id, std::vector<std::function<void()>*>& callbacks);
+#ifdef HAVE_DBUSMENU_GLIB
+    DbusmenuServer* dbusmenu_server_;
+    void build_dbusmenu(const Menu& menu, DbusmenuMenuitem* parent,
+                        std::vector<std::function<void()>*>& callbacks);
+#endif
 #else
     GtkWidget* gtk_menu_;
     void build_gtk_menu(const Menu& menu, GtkWidget* parent_menu);

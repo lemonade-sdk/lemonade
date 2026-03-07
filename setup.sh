@@ -197,6 +197,23 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
         fi
     fi
 
+    # dbusmenu-glib is required alongside the glib appindicator variant so that
+    # GNOME Shell can find com.canonical.dbusmenu (it does not speak org.gtk.Menus).
+    if [ "$appindicator_glib_found" = true ]; then
+        if pkg-config --exists dbusmenu-glib-0.4 2>/dev/null; then
+            print_success "dbusmenu-glib is installed (GNOME Shell tray menu support)"
+        else
+            print_warning "dbusmenu-glib not found (optional, needed for tray menus on GNOME Shell)"
+            if command_exists apt; then
+                missing_tray_packages+=("libdbusmenu-glib-dev")
+            elif command_exists pacman; then
+                missing_tray_packages+=("libdbusmenu-glib")
+            elif command_exists dnf; then
+                missing_tray_packages+=("dbusmenu-glib-devel")
+            fi
+        fi
+    fi
+
     # GTK3 is only required when NOT using the glib appindicator variant.
     if [ "$appindicator_glib_found" = false ]; then
         if pkg-config --exists gtk+-3.0 2>/dev/null; then

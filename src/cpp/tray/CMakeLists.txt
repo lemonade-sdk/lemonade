@@ -99,6 +99,22 @@ elseif(UNIX)  # Linux
             set(TRAY_LIBS ${APP_INDICATOR_GLIB_LIBRARIES})
             set(TRAY_INCLUDE_DIRS ${APP_INDICATOR_GLIB_INCLUDE_DIRS})
             set(TRAY_DEFINITIONS HAVE_APPINDICATOR HAVE_AYATANA_APPINDICATOR HAVE_AYATANA_APPINDICATOR_GLIB)
+            # ayatana-appindicator-glib exports menus via org.gtk.Menus (GMenuModel),
+            # but GNOME Shell's AppIndicator extension currently only speaks
+            # com.canonical.dbusmenu.  We bridge the gap by also registering a
+            # DbusmenuServer at the same D-Bus path.  Both interfaces coexist safely:
+            # once GNOME Shell adopts org.gtk.Menus it will use that natively and
+            # ignore the bridge.  dbusmenu-glib is optional — if absent, the bridge
+            # is omitted and tray menus will not work on GNOME Shell.
+            pkg_check_modules(DBUSMENU_GLIB dbusmenu-glib-0.4)
+            if(DBUSMENU_GLIB_FOUND)
+                list(APPEND TRAY_LIBS ${DBUSMENU_GLIB_LIBRARIES})
+                list(APPEND TRAY_INCLUDE_DIRS ${DBUSMENU_GLIB_INCLUDE_DIRS})
+                list(APPEND TRAY_DEFINITIONS HAVE_DBUSMENU_GLIB)
+            else()
+                message(WARNING "dbusmenu-glib-0.4 not found — tray menus will not "
+                    "work on GNOME Shell (install libdbusmenu-glib-dev or equivalent)")
+            endif()
         else()
             # GTK3 path.
             set(TRAY_LIBS
