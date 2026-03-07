@@ -1263,6 +1263,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
 | `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`, `--jinja`, `--mmproj`, `--embeddings`, `--reranking`. |
 | `whispercpp_backend` | No | whispercpp | WhisperCpp backend: `npu` or `cpu` on Windows; `cpu` or `vulkan` on Linux. Default is `npu` if supported. |
+| `whispercpp_args` | No | whispercpp | Custom arguments to pass to whisper-server. The following are NOT allowed: `-m`, `--model`, `--port`. Example: `--convert`. |
 | `steps` | No | sd-cpp | Number of inference steps for image generation. Default: 20. |
 | `cfg_scale` | No | sd-cpp | Classifier-free guidance scale for image generation. Default: 7.0. |
 | `width` | No | sd-cpp | Image width in pixels. Default: 512. |
@@ -1291,7 +1292,8 @@ You can configure recipe-specific options on a per-model basis. Lemonade manages
     "llamacpp_backend": "rocm"
   },
   "whisper-large-v3-turbo-q8_0.bin": {
-    "whispercpp_backend": "npu"
+    "whispercpp_backend": "npu",
+    "whispercpp_args": "--convert"
   }
 }
 ```
@@ -1337,14 +1339,15 @@ curl -X POST http://localhost:8000/api/v1/load \
   }'
 ```
 
-Load a Whisper model with NPU backend:
+Load a Whisper model with NPU backend and conversion enabled:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/load \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "whisper-large-v3-turbo-q8_0.bin",
-    "whispercpp_backend": "npu"
+    "whispercpp_backend": "npu",
+    "whispercpp_args": "--convert"
   }'
 ```
 
@@ -1495,7 +1498,7 @@ curl http://localhost:8000/api/v1/health
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
-  - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`)
+  - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
 - `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `--max-loaded-models`):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
