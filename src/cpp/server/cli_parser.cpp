@@ -86,7 +86,11 @@ CLIParser::CLIParser()
     app_.set_version_flag("-v,--version", (APP_NAME " version " LEMON_VERSION_STRING));
 
 #ifdef LEMONADE_TRAY
+#ifdef LEMONADE_TRAY_GUI
+    app_.require_subcommand(0, 1);
+#else
     app_.require_subcommand(1);
+#endif
     app_.set_help_all_flag("--help-all", "Print help for all commands");
 
     // Serve
@@ -191,7 +195,9 @@ CLIParser::CLIParser()
                         "Uninstall a backend (format: recipe:backend)");
 
     // Tray
+#ifndef LEMONADE_NO_TRAY_SUBCOMMAND
     CLI::App* tray = app_.add_subcommand("tray", "Launch tray interface for running server");
+#endif
 #else
     add_serve_options(&app_, config_);
 #endif
@@ -199,11 +205,12 @@ CLIParser::CLIParser()
 
 int CLIParser::parse(int argc, char** argv) {
     try {
-#ifdef LEMONADE_TRAY
-        // Show help if no arguments provided
-        if (argc == 1) {
-            throw CLI::CallForHelp();
-        }
+#ifdef LEMONADE_TRAY_GUI
+        // lemonade-tray is always a tray launcher — no subcommand selection needed
+        tray_config_.command = "tray";
+        should_continue_ = true;
+        exit_code_ = 0;
+        return 0;
 #endif
         app_.parse(argc, argv);
 

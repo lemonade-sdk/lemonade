@@ -94,6 +94,11 @@ private:
     void on_open_documentation();
     void on_upgrade();
     void on_quit();
+#ifndef _WIN32
+    void on_start_server();
+    void on_stop_server();
+    void on_stop_external_server();
+#endif
 
     // Helpers
     void open_url(const std::string& url);
@@ -122,6 +127,10 @@ private:
     std::vector<ModelInfo> downloaded_models_;
     bool should_exit_;
     bool process_owns_server_ = false;
+#ifndef _WIN32
+    int external_server_pid_ = 0;  // PID of external server we didn't spawn (for SIGTERM)
+#endif
+    bool last_menu_server_reachable_ = false;  // For refresh detection
 
     // Model loading state
     std::atomic<bool> is_loading_model_{false};
