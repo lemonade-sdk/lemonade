@@ -1,5 +1,32 @@
 # Lemonade Build Options
 
+## Linux Tray Configuration
+
+### Build Options
+
+#### `ENABLE_LINUX_TRAY` (Default: **OFF** / auto-detect)
+Enable system tray support on Linux via GTK3 + AppIndicator3.
+
+- When **OFF** (default): Tray support is auto-detected at configure time. If GTK3 and one of the AppIndicator3 libraries are found, `lemonade-tray` is built as a separate executable. `lemonade-server` on Linux is always headless regardless. If dependencies are missing, only `lemonade-server` is built (headless mode).
+- When **ON**: Tray support is required — the build will fail if the dependencies are not found.
+
+Optional runtime dependencies (for tray support):
+- `gtk3-devel` (or `libgtk-3-dev` on Debian/Ubuntu)
+- One of:
+  - `ayatana-appindicator-glib-devel` (recommended successor, GLib-only)
+  - `ayatana-appindicator3-devel` (Ayatana GTK3 variant)
+  - `libappindicator-gtk3-devel` (upstream libappindicator3)
+
+```bash
+# Auto-detect (default): tray enabled if deps are found
+cmake ../src/cpp
+
+# Explicitly require tray support (fail if deps missing)
+cmake -DENABLE_LINUX_TRAY=ON ../src/cpp
+```
+
+---
+
 ## React App Build Configuration
 
 The CMake build system allows you to control whether the React web app and/or Electron desktop app are built and included in the server.
