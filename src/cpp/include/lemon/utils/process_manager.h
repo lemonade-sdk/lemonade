@@ -20,13 +20,16 @@ using OutputLineCallback = std::function<bool(const std::string& line)>;
 class ProcessManager {
 public:
     // Start a process with arguments
+    // source_name: when non-empty, backend output is tagged with this name in logs
+    //              and pipe-based capture is forced (even when filter_health_logs is false)
     static ProcessHandle start_process(
         const std::string& executable,
         const std::vector<std::string>& args,
         const std::string& working_dir = "",
         bool inherit_output = false,
         bool filter_health_logs = false,
-        const std::vector<std::pair<std::string, std::string>>& env_vars = {});
+        const std::vector<std::pair<std::string, std::string>>& env_vars = {},
+        const std::string& source_name = "");
 
     // Run a process and capture its output line by line
     // Blocks until process exits or callback returns false (which kills the process)

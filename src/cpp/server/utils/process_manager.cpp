@@ -18,6 +18,7 @@
 #include <string>
 #include <algorithm>
 #include <cctype>
+#include <memory>
 #include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
@@ -55,15 +56,15 @@ static bool is_error_line(const std::string& line) {
     return lowered.find("error") != std::string::npos;
 }
 
-static void log_process_line(const std::string& line) {
+static void log_process_line(const std::string& line, const std::string& source) {
     if (should_filter_line(line)) {
         return;
     }
 
     if (is_error_line(line)) {
-        LOG(ERROR, "Process") << line << std::endl;
+        LOG(ERROR, source) << line << std::endl;
     } else {
-        LOG(INFO, "Process") << line << std::endl;
+        LOG(INFO, source) << line << std::endl;
     }
 }
 
@@ -96,9 +97,16 @@ static std::string escape_windows_arg(const std::string& arg) {
     return result;
 }
 
+struct FilterThreadParams {
+    HANDLE pipe;
+    std::string source_name;
+};
+
 // Thread function to read from pipe and filter output
 static DWORD WINAPI output_filter_thread(LPVOID param) {
-    HANDLE pipe = static_cast<HANDLE>(param);
+    std::unique_ptr<FilterThreadParams> params(static_cast<FilterThreadParams*>(param));
+    HANDLE pipe = params->pipe;
+    std::string source = params->source_name;
     char buffer[4096];
     DWORD bytes_read;
     std::string line_buffer;
@@ -113,13 +121,13 @@ static DWORD WINAPI output_filter_thread(LPVOID param) {
             std::string line = line_buffer.substr(0, pos);
             line_buffer = line_buffer.substr(pos + 1);
 
-            log_process_line(line);
+            log_process_line(line, source);
         }
     }
 
     // Print any remaining partial line
     if (!line_buffer.empty()) {
-        log_process_line(line_buffer);
+        log_process_line(line_buffer, source);
     }
 
     CloseHandle(pipe);
@@ -133,11 +141,15 @@ ProcessHandle ProcessManager::start_process(
     const std::string& working_dir,
     bool inherit_output,
     bool filter_health_logs,
-    const std::vector<std::pair<std::string, std::string>>& env_vars) {
+    const std::vector<std::pair<std::string, std::string>>& env_vars,
+    const std::string& source_name) {
 
     ProcessHandle handle;
     handle.handle = nullptr;
     handle.pid = 0;
+
+    // When source_name is provided, force pipe mode so we can tag output
+    bool use_pipes = inherit_output && (filter_health_logs || !source_name.empty());
 
 #ifdef _WIN32
     // Windows implementation
@@ -157,8 +169,8 @@ ProcessHandle ProcessManager::start_process(
     HANDLE stderr_read = nullptr;
     HANDLE stderr_write = nullptr;
 
-    // If inherit_output is true, either use pipes with filtering or direct inheritance
-    if (inherit_output && filter_health_logs) {
+    // If inherit_output is true, either use pipes with filtering/tagging or direct inheritance
+    if (inherit_output && use_pipes) {
         // Create pipes for stdout and stderr to filter output
         SECURITY_ATTRIBUTES sa;
         sa.nLength = sizeof(SECURITY_ATTRIBUTES);
@@ -183,7 +195,7 @@ ProcessHandle ProcessManager::start_process(
         si.hStdOutput = stdout_write;
         si.hStdError = stderr_write;
 
-        LOG(DEBUG, "ProcessManager") << "Starting process with filtered output: " << cmdline << std::endl;
+        LOG(DEBUG, "ProcessManager") << "Starting process with piped output: " << cmdline << std::endl;
     } else if (inherit_output) {
         // Direct inheritance without filtering
         si.dwFlags |= STARTF_USESTDHANDLES;
@@ -211,7 +223,7 @@ ProcessHandle ProcessManager::start_process(
         nullptr,
         nullptr,
         TRUE,  // Inherit handles
-        (inherit_output && !filter_health_logs) ? 0 : CREATE_NO_WINDOW,
+        (inherit_output && !use_pipes) ? 0 : CREATE_NO_WINDOW,
         nullptr,
         working_dir.empty() ? nullptr : working_dir.c_str(),
         &si,
@@ -252,9 +264,12 @@ ProcessHandle ProcessManager::start_process(
     if (stderr_write) CloseHandle(stderr_write);
 
     // Start filter threads if needed
-    if (inherit_output && filter_health_logs) {
-        CreateThread(nullptr, 0, output_filter_thread, stdout_read, 0, nullptr);
-        CreateThread(nullptr, 0, output_filter_thread, stderr_read, 0, nullptr);
+    if (inherit_output && use_pipes) {
+        std::string tag = source_name.empty() ? "Process" : source_name;
+        auto* stdout_params = new FilterThreadParams{stdout_read, tag};
+        auto* stderr_params = new FilterThreadParams{stderr_read, tag};
+        CreateThread(nullptr, 0, output_filter_thread, stdout_params, 0, nullptr);
+        CreateThread(nullptr, 0, output_filter_thread, stderr_params, 0, nullptr);
     }
 
     if (inherit_output) {
@@ -270,8 +285,8 @@ ProcessHandle ProcessManager::start_process(
     int stdout_pipe[2] = {-1, -1};
     int stderr_pipe[2] = {-1, -1};
 
-    // Create pipes for filtering if requested
-    if (inherit_output && filter_health_logs) {
+    // Create pipes for filtering/tagging if requested
+    if (inherit_output && use_pipes) {
         if (pipe(stdout_pipe) < 0 || pipe(stderr_pipe) < 0) {
             throw std::runtime_error("Failed to create pipes for output filtering");
         }
@@ -282,8 +297,8 @@ ProcessHandle ProcessManager::start_process(
         for (const auto& arg : args) {
             cmdline += " " + arg;
         }
-        if (filter_health_logs) {
-            LOG(DEBUG, "ProcessManager") << "Starting process with filtered output: " << cmdline << std::endl;
+        if (use_pipes) {
+            LOG(DEBUG, "ProcessManager") << "Starting process with piped output: " << cmdline << std::endl;
         } else {
             LOG(DEBUG, "ProcessManager") << "Starting process with inherited output: " << cmdline << std::endl;
         }
@@ -306,8 +321,8 @@ ProcessHandle ProcessManager::start_process(
             setenv(env_pair.first.c_str(), env_pair.second.c_str(), 1);
         }
 
-        // Redirect stdout/stderr to pipes if filtering
-        if (inherit_output && filter_health_logs) {
+        // Redirect stdout/stderr to pipes if filtering/tagging
+        if (inherit_output && use_pipes) {
             close(stdout_pipe[0]);  // Close read end
             close(stderr_pipe[0]);
             dup2(stdout_pipe[1], STDOUT_FILENO);
@@ -347,12 +362,14 @@ ProcessHandle ProcessManager::start_process(
     }
 
     // Start filter threads if needed
-    if (inherit_output && filter_health_logs) {
+    if (inherit_output && use_pipes) {
         close(stdout_pipe[1]);  // Close write ends in parent
         close(stderr_pipe[1]);
 
+        std::string tag = source_name.empty() ? "Process" : source_name;
+
         // Start threads to read and filter output
-        std::thread([fd = stdout_pipe[0]]() {
+        std::thread([fd = stdout_pipe[0], tag]() {
             char buffer[4096];
             std::string line_buffer;
             ssize_t bytes_read;
@@ -366,18 +383,18 @@ ProcessHandle ProcessManager::start_process(
                     std::string line = line_buffer.substr(0, pos);
                     line_buffer = line_buffer.substr(pos + 1);
 
-                    log_process_line(line);
+                    log_process_line(line, tag);
                 }
             }
 
             if (!line_buffer.empty()) {
-                log_process_line(line_buffer);
+                log_process_line(line_buffer, tag);
             }
 
             close(fd);
         }).detach();
 
-        std::thread([fd = stderr_pipe[0]]() {
+        std::thread([fd = stderr_pipe[0], tag]() {
             char buffer[4096];
             std::string line_buffer;
             ssize_t bytes_read;
@@ -391,12 +408,12 @@ ProcessHandle ProcessManager::start_process(
                     std::string line = line_buffer.substr(0, pos);
                     line_buffer = line_buffer.substr(pos + 1);
 
-                    log_process_line(line);
+                    log_process_line(line, tag);
                 }
             }
 
             if (!line_buffer.empty()) {
-                log_process_line(line_buffer);
+                log_process_line(line_buffer, tag);
             }
 
             close(fd);

@@ -173,7 +173,8 @@ void SDServer::load(const std::string& model_name,
         "",     // working_dir (empty = current)
         is_debug(),  // inherit_output
         false,  // filter_health_logs
-        env_vars
+        env_vars,
+        server_name_
     );
 
     if (process_handle_.pid == 0) {
