@@ -2957,12 +2957,12 @@ json SystemInfoCache::get_system_info_with_cache() {
         } else {
             // Provide friendly message about why we're detecting hardware
             if (cache_exists) {
-                LOG(INFO, "Server") << "Collecting system info (Lemonade was updated)" << std::endl;
+                std::cout << "Collecting system info (Lemonade was updated)" << std::endl;
 
                 // Perform version-specific cleanup (e.g., removing stale backend binaries)
                 cache.perform_upgrade_cleanup();
             } else {
-                LOG(INFO, "Server") << "Collecting system info" << std::endl;
+                std::cout << "Collecting system info" << std::endl;
             }
 
             // Get system info (OS, Processor, Memory, OEM System, BIOS, etc.)

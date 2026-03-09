@@ -53,7 +53,7 @@ Lemonade consists of these main executables:
 - Internet connection (first build downloads dependencies)
 
 **Windows:**
-- Visual Studio 2019 or later
+- Visual Studio 2022 or later (2022 and 2026 are supported via CMake presets)
 - WiX 5.x (only required for building the installer)
 
 **Linux:**
@@ -81,9 +81,14 @@ Build by running:
 cmake --build --preset default
 ```
 
-**Windows**
+**Windows (Visual Studio 2022)**
 ```powershell
 cmake --build --preset windows
+```
+
+**Windows (Visual Studio 2026)**
+```powershell
+cmake --build --preset vs18
 ```
 
 ### Build Outputs
@@ -109,9 +114,14 @@ Build the Electron app using CMake (requires Node.js 20+):
 cmake --build --preset default --target electron-app
 ```
 
-**Windows**
+**Windows (Visual Studio 2022)**
 ```powershell
 cmake --build --preset windows --target electron-app
+```
+
+**Windows (Visual Studio 2026)**
+```powershell
+cmake --build --preset vs18 --target electron-app
 ```
 
 This will:
