@@ -138,12 +138,18 @@ static std::vector<char> build_windows_environment_block(
     const std::vector<std::pair<std::string, std::string>>& env_vars) {
     std::vector<std::string> merged_entries;
 
-    LPCH environment = GetEnvironmentStringsA();
+    LPWCH environment = GetEnvironmentStringsW();
     if (environment) {
-        for (const char* entry = environment; *entry != '\0'; entry += std::strlen(entry) + 1) {
-            merged_entries.emplace_back(entry);
+        for (const wchar_t* entry = environment; *entry != L'\0';
+             entry += std::wcslen(entry) + 1) {
+            int size_needed = WideCharToMultiByte(CP_UTF8, 0, entry, -1, nullptr, 0, nullptr, nullptr);
+            if (size_needed > 0) {
+                std::string narrow(size_needed - 1, '\0');
+                WideCharToMultiByte(CP_UTF8, 0, entry, -1, &narrow[0], size_needed, nullptr, nullptr);
+                merged_entries.emplace_back(std::move(narrow));
+            }
         }
-        FreeEnvironmentStringsA(environment);
+        FreeEnvironmentStringsW(environment);
     }
 
     for (const auto& env : env_vars) {
