@@ -798,6 +798,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#options-for-launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options for launch
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#lemonade-desktop-app" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1133,6 +1144,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#options-for-launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options for launch
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#lemonade-desktop-app" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1210,6 +1232,7 @@
 <li><a href="#options-for-serve-and-run">Options for serve and run</a></li>
 <li><a href="#environment-variables">Environment Variables</a> | <a href="#custom-backend-binaries">Custom Backend Binaries</a> | <a href="#api-key-and-security">API Key and Security</a></li>
 <li><a href="#options-for-pull">Options for pull</a></li>
+<li><a href="#options-for-launch">Options for launch</a></li>
 <li><a href="#lemonade-desktop-app">Lemonade Desktop App</a> | <a href="#remote-server-connection">Remote Server Connection</a></li>
 </ul>
 <h2 id="commands">Commands</h2>
@@ -1245,6 +1268,10 @@
 <tr>
 <td><code>run MODEL_NAME</code></td>
 <td>Start the server (if not already running) and chat with the specified model. Supports the same options as <code>serve</code>.</td>
+</tr>
+<tr>
+<td><code>launch AGENT -m MODEL_NAME</code></td>
+<td>Launch a local coding agent (<code>claude</code> or <code>codex</code>) connected to a running Lemonade server.</td>
 </tr>
 <tr>
 <td><code>list</code></td>
@@ -1561,6 +1588,73 @@ lemonade-server<span class="w"> </span>pull<span class="w"> </span>user.nomic-em
 <span class="w">  </span>--embedding
 </code></pre></div>
 <p>For more information about model formats and recipes, see the <a href="../lemonade_api.md">API documentation</a> and the <a href="https://lemonade-server.ai/models.html">server models guide</a>. For details on the underlying JSON files (<code>user_models.json</code> and <code>recipe_options.json</code>), see the <a href="../custom-models/">Custom Model Configuration Guide</a>.</p>
+<h2 id="options-for-launch">Options for launch</h2>
+<p>Use the <code>launch</code> command to start a coding agent CLI connected to an already-running Lemonade server:</p>
+<div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>launch<span class="w"> </span>&lt;claude<span class="p">|</span>codex&gt;<span class="w"> </span>-m<span class="w"> </span>&lt;model_name&gt;<span class="w"> </span><span class="o">[</span>--llamacpp-args<span class="w"> </span>ARGS<span class="o">]</span><span class="w"> </span><span class="o">[</span>--use-recipe<span class="o">]</span><span class="w"> </span><span class="o">[</span>--host<span class="w"> </span>HOST<span class="o">]</span><span class="w"> </span><span class="o">[</span>--port<span class="w"> </span>PORT<span class="o">]</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>agent</code></td>
+<td>Agent CLI to launch (<code>claude</code> or <code>codex</code>)</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>-m, --model MODEL_NAME</code></td>
+<td>Model name to preload and use in the agent session</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>--llamacpp-args ARGS</code></td>
+<td>Custom llama.cpp load arguments for launch. When set, launch defaults are skipped.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>--use-recipe</code></td>
+<td>Use the model's saved <code>recipe_options.json</code> values instead of launch defaults.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>--host HOST</code></td>
+<td>Server host (also supports <code>LEMONADE_HOST</code>)</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>--port PORT</code></td>
+<td>Server port (also supports <code>LEMONADE_PORT</code>)</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<p>Notes:
+- <code>launch</code> does not start the Lemonade server. It first checks <code>/api/version</code> on the target host/port and exits with an error if unreachable.
+- If <code>--port</code> is not provided and the host is local (<code>localhost</code>, <code>127.0.0.1</code>, <code>0.0.0.0</code>, or empty), Lemonade auto-discovers a running server port.
+- Model loading is started in a background thread so agent startup is immediate.
+- The launched agent process takes over the terminal and Lemonade waits for that process to exit.
+- For llama.cpp-backed models, <code>launch</code> sends <code>-b 16384 -ub 16384 -fa on</code> in the <code>/api/v1/load</code> request by default. These are conservative coding-oriented defaults chosen to improve prompt prefill throughput and keep Flash Attention enabled on hardware that supports it.
+- If you pass <code>--llamacpp-args</code>, Lemonade skips those defaults entirely and sends only the arguments you provide. This is the simplest way to tune for smaller GPUs, CPU-only systems, or stricter memory budgets.
+- If you pass <code>--use-recipe</code>, Lemonade does not send launch defaults, so the saved per-model settings in <code>recipe_options.json</code> can apply. This follows the <code>/api/v1/load</code> priority order documented in the server spec: explicit load-request values win over saved recipe values, which win over CLI or environment defaults.
+- <code>--llamacpp-args</code> still uses the same <code>/api/v1/load</code> field as the HTTP API, so the usual managed-argument restrictions for <code>llamacpp_args</code> still apply.</p>
+<p>Examples:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Launch Codex against a local running server (auto-detect port)</span>
+lemonade-server<span class="w"> </span>launch<span class="w"> </span>codex<span class="w"> </span>-m<span class="w"> </span>Qwen3-Coder-Next-GGUF
+
+<span class="c1"># Launch Claude against an explicit endpoint</span>
+lemonade-server<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>-m<span class="w"> </span>Qwen3-Coder-Next-GGUF<span class="w"> </span>--host<span class="w"> </span><span class="m">127</span>.0.0.1<span class="w"> </span>--port<span class="w"> </span><span class="m">8000</span>
+
+<span class="c1"># Replace launch defaults with custom llama.cpp tuning</span>
+lemonade-server<span class="w"> </span>launch<span class="w"> </span>codex<span class="w"> </span>-m<span class="w"> </span>Qwen3-Coder-Next-GGUF<span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">&quot;-b 8192 -ub 4096 -fa off&quot;</span>
+
+<span class="c1"># Prefer the model&#39;s saved recipe_options.json settings</span>
+lemonade-server<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>-m<span class="w"> </span>Qwen3-Coder-Next-GGUF<span class="w"> </span>--use-recipe
+</code></pre></div>
 <h2 id="lemonade-desktop-app">Lemonade Desktop App</h2>
 <p>The Lemonade Desktop App provides a graphical interface for chatting with models and managing the server. When installed via the full installer, <code>lemonade-app</code> is added to your PATH for easy command-line access.</p>
 <h3 id="launching-the-app">Launching the App</h3>
