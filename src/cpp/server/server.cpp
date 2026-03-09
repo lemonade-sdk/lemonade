@@ -1,5 +1,6 @@
 #include "lemon/server.h"
 #include "lemon/ollama_api.h"
+#include <cstring>
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
@@ -40,6 +41,7 @@
     #include <sys/ioctl.h>
     #include <fcntl.h>
     #include <unistd.h>
+    #include <libdrm/drm.h>
     #include "lemon/amdxdna_accel.h"
 #endif
 
@@ -3079,6 +3081,33 @@ double Server::get_npu_utilization() {
         int fd = open(accel_path.c_str(), O_RDWR);
         if (fd < 0) {
             return -1.0;
+        }
+
+        // Check DRM API version (must be 0.7 or later for these IOCTLs)
+        struct drm_version drm_v;
+        memset(&drm_v, 0, sizeof(drm_v));
+        bool version_ok = false;
+        if (ioctl(fd, DRM_IOCTL_VERSION, &drm_v) == 0) {
+            if (drm_v.version_major > 0 || (drm_v.version_major == 0 && drm_v.version_minor >= 7)) {
+                version_ok = true;
+            }
+        }
+
+        if (!version_ok) {
+            close(fd);
+            return -1.0;
+        }
+
+        // Check power_state to avoid waking the NPU if it is asleep
+        fs::path power_state_path = "/sys/class/accel/accel0/device/power_state";
+        if (fs::exists(power_state_path)) {
+            std::ifstream power_file(power_state_path);
+            std::string state;
+            if (power_file >> state) {
+                if (state != "D0") {
+                    return 0.0;
+                }
+            }
         }
 
         amdxdna_drm_query_sensor sensors[16] = {};
