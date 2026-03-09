@@ -19,6 +19,7 @@ Usage:
 import json
 import os
 import platform
+import signal
 import shutil
 import socket
 import stat
@@ -258,18 +259,33 @@ class FlmStatusTests(unittest.TestCase):
         cls.server_version = get_server_version(cls.server_binary)
         print(f"[SETUP] Using server version: {cls.server_version}")
 
+        # Derive lemonade-router path from the server binary
+        server_dir = os.path.dirname(cls.server_binary)
+        if IS_WINDOWS:
+            cls.router_binary = os.path.join(server_dir, "lemonade-router.exe")
+        else:
+            cls.router_binary = os.path.join(server_dir, "lemonade-router")
+        if not os.path.exists(cls.router_binary):
+            cls.router_binary = shutil.which("lemonade-router") or cls.router_binary
+        print(f"[SETUP] Using router binary: {cls.router_binary}")
+
         # Read required FLM version from backend_versions.json
         global REQUIRED_FLM_VERSION
         try:
-            server_dir = os.path.dirname(cls.server_binary)
-            bv_path = os.path.join(server_dir, "resources", "backend_versions.json")
-            with open(bv_path) as f:
-                bv = json.load(f)
-            REQUIRED_FLM_VERSION = bv.get("flm", {}).get("npu", "v0.9.35")
+            for base in [server_dir, os.path.dirname(cls.router_binary)]:
+                bv_path = os.path.join(base, "resources", "backend_versions.json")
+                if os.path.exists(bv_path):
+                    with open(bv_path) as f:
+                        bv = json.load(f)
+                    REQUIRED_FLM_VERSION = bv.get("flm", {}).get("npu", "v0.9.35")
+                    break
+            else:
+                REQUIRED_FLM_VERSION = "v0.9.35"
         except Exception:
             REQUIRED_FLM_VERSION = "v0.9.35"
         print(f"[SETUP] Required FLM version: {REQUIRED_FLM_VERSION}")
 
+        # Ensure any existing server is stopped
         stop_server(cls.server_binary)
 
     # ------------------------------------------------------------------ #
@@ -278,7 +294,19 @@ class FlmStatusTests(unittest.TestCase):
 
     @contextmanager
     def _server(self, hardware, flm_dir=None):
-        """Start server with mock hardware + optional PATH-based FLM mocking.
+        """Start router directly with mock hardware + optional PATH-based FLM mocking.
+
+        Starts lemonade-router directly (not via lemonade-server serve) to avoid
+        the fork/exec indirection that can leave orphaned router processes between
+        test methods. With ~20 test methods each starting a fresh server, the
+        lemonade-server serve approach (fork + execv) risks the previous test's
+        router surviving long enough for the next test's wait_for_server() to
+        connect to it — giving stale hardware state. Starting the router directly
+        gives us a single process we fully control.
+
+        server_system_info.py can use lemonade-server serve because it has fewer
+        tests and the stop_server() + sleep(2) timing is sufficient. This test
+        needs tighter process control.
 
         Args:
             hardware: Hardware info dict to write as hardware_info.json.
@@ -315,40 +343,45 @@ class FlmStatusTests(unittest.TestCase):
                     # Prepend mock FLM directory to PATH
                     env["PATH"] = flm_dir + os.pathsep + env.get("PATH", "")
 
-            cmd = [self.server_binary, "serve", "--no-tray", "--log-level", "debug"]
+            cmd = [
+                self.router_binary,
+                "--port",
+                str(PORT),
+                "--log-level",
+                "debug",
+            ]
+            # Use a new process group so we can kill the entire group on cleanup
+            kwargs = {}
+            if not IS_WINDOWS:
+                kwargs["preexec_fn"] = os.setsid
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 env=env,
+                **kwargs,
             )
 
             wait_for_server()
             yield
 
         finally:
-            # Stop server — kill process first, then wait for port to be free
             if process:
                 try:
-                    process.terminate()
+                    if IS_WINDOWS:
+                        process.terminate()
+                    else:
+                        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
                     process.wait(timeout=10)
                 except Exception:
                     try:
-                        process.kill()
+                        if IS_WINDOWS:
+                            process.kill()
+                        else:
+                            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                         process.wait(timeout=5)
                     except Exception:
                         pass
-            # Also send stop command in case a detached router is still running
-            try:
-                subprocess.run(
-                    [self.server_binary, "stop"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    env=os.environ.copy(),
-                )
-            except Exception:
-                pass
             # Wait for port to be released before next test starts a new server
             try:
                 wait_for_port_free()
