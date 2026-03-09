@@ -142,10 +142,21 @@ Write-Success "Build directory created"
 
 Write-Host ""
 
-# Configure with CMake presets
-Write-Info "Configuring CMake with presets..."
+# Detect Visual Studio version and select CMake preset
+$vswhereExe = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+$cmakePreset = "windows"
 
-cmake --preset windows
+if (Test-Path $vswhereExe) {
+    $vsMajor = (& $vswhereExe -latest -property catalog_productLineVersion)
+    if ($vsMajor -eq "18") {
+        $cmakePreset = "vs18"
+    }
+    Write-Info "Detected Visual Studio v$vsMajor, using preset: $cmakePreset"
+} else {
+    Write-Warning "vswhere not found, defaulting to preset: windows"
+}
+
+cmake --preset $cmakePreset
 if ($LASTEXITCODE -ne 0) {
     Write-Error-Custom "CMake configuration failed"
     exit 1
