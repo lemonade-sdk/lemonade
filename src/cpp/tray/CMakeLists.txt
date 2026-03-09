@@ -71,11 +71,13 @@ endif()
 set(COMMON_SOURCES
     main.cpp
     tray_app.cpp
+    agent_launcher.cpp
     server_manager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/cli_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/recipe_options.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/system_info.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/json_utils.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/process_manager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/backends/backend_utils.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/path_utils.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/wmi_helper.cpp
