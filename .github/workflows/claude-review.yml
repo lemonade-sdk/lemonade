@@ -1,7 +1,7 @@
 name: Claude Code Review
 
 on:
-  pull_request:
+  pull_request_target:
     types: [review_requested]
   issue_comment:
     types: [created]
@@ -19,7 +19,7 @@ jobs:
     # Only run for maintainers (OWNER, MEMBER, COLLABORATOR)
     # Triggers on: @claude mention in comments, or assigning claude as reviewer
     if: |
-      (github.event_name == 'pull_request' &&
+      (github.event_name == 'pull_request_target' &&
        github.event.action == 'review_requested' &&
        github.event.requested_reviewer.login == 'claude[bot]') ||
       ((github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') &&
@@ -39,3 +39,4 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
