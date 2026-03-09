@@ -2060,7 +2060,10 @@ bool Server::parse_n_from_form(const httplib::Request& req, httplib::Response& r
     }
     int n;
     try {
-        n = std::stoi(req.form.get_field("n"));
+        size_t pos;
+        const std::string& val = req.form.get_field("n");
+        n = std::stoi(val, &pos);
+        if (pos != val.size()) throw std::invalid_argument("trailing characters");
     } catch (const std::exception&) {
         res.status = 400;
         nlohmann::json error = {{"error", {
@@ -2156,7 +2159,10 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         if (req.form.has_field("output_compression")) {
             int output_compression;
             try {
-                output_compression = std::stoi(req.form.get_field("output_compression"));
+                size_t pos;
+                const std::string& val = req.form.get_field("output_compression");
+                output_compression = std::stoi(val, &pos);
+                if (pos != val.size()) throw std::invalid_argument("trailing characters");
             } catch (const std::exception&) {
                 res.status = 400;
                 nlohmann::json error = {{"error", {
@@ -2168,6 +2174,50 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
             }
             request_json["output_compression"] = output_compression;
         }
+
+        // Extract optional numeric inference parameters
+        auto parse_int_field = [&](const std::string& field) -> bool {
+            if (!req.form.has_field(field)) return true;
+            const std::string& val = req.form.get_field(field);
+            try {
+                size_t pos;
+                int parsed = std::stoi(val, &pos);
+                if (pos != val.size()) throw std::invalid_argument("trailing characters");
+                request_json[field] = parsed;
+            } catch (const std::exception&) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Invalid value for '" + field + "': must be an integer"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return false;
+            }
+            return true;
+        };
+        auto parse_float_field = [&](const std::string& field) -> bool {
+            if (!req.form.has_field(field)) return true;
+            const std::string& val = req.form.get_field(field);
+            try {
+                size_t pos;
+                float parsed = std::stof(val, &pos);
+                if (pos != val.size()) throw std::invalid_argument("trailing characters");
+                if (std::isnan(parsed) || std::isinf(parsed)) throw std::invalid_argument("nan/inf not allowed");
+                request_json[field] = parsed;
+            } catch (const std::exception&) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Invalid value for '" + field + "': must be a number"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return false;
+            }
+            return true;
+        };
+        if (!parse_int_field("steps"))     return;
+        if (!parse_float_field("cfg_scale")) return;
+        if (!parse_int_field("seed"))      return;
 
         if (!parse_n_from_form(req, res, request_json))      return;
         if (!extract_image_from_form(req, res, request_json)) return;
@@ -2198,6 +2248,7 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
 
         auto response = router_->image_edits(request_json);
         if (response.contains("error")) {
+            LOG(ERROR, "Server") << "Image edits backend error: " << response.dump() << std::endl;
             res.status = 500;
         }
         res.set_content(response.dump(), "application/json");
@@ -2249,6 +2300,7 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
 
         auto response = router_->image_variations(request_json);
         if (response.contains("error")) {
+            LOG(ERROR, "Server") << "Image variations backend error: " << response.dump() << std::endl;
             res.status = 500;
         }
         res.set_content(response.dump(), "application/json");

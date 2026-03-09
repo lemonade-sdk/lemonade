@@ -1,0 +1,40 @@
+name: Test New Runner on Windows
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner to use'
+        required: true
+        type: choice
+        options:
+          - test
+        default: 'test'
+
+jobs:
+  test-runner:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Show runner information
+        run: |
+          echo "Hello from the runner!"
+          echo "Runner name: ${{ runner.name }}"
+          echo "Runner OS: ${{ runner.os }}"
+          echo "Runner arch: ${{ runner.arch }}"
+          hostname
+
+      - name: Install Lemonade
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi" -OutFile "lemonade.msi"
+          msiexec /i lemonade.msi /qn /L*V install.log
+          Start-Sleep -Seconds 5
+          
+      - name: Refresh Environment and Test
+        run: |
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          lemonade-server --help
