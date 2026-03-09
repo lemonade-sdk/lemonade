@@ -2038,7 +2038,7 @@
 - Git (for fetching dependencies)
 - Internet connection (first build downloads dependencies)</p>
 <p><strong>Windows:</strong>
-- Visual Studio 2019 or later
+- Visual Studio 2022 or later (2022 and 2026 are supported via CMake presets)
 - WiX 5.x (only required for building the installer)</p>
 <p><strong>Linux:</strong>
  - Ninja build system (optional, recommended)</p>
@@ -2056,8 +2056,11 @@ package managers and create the build directory.</p>
 <p><strong>Linux / macOS</strong>
 <div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>default
 </code></pre></div></p>
-<p><strong>Windows</strong>
+<p><strong>Windows (Visual Studio 2022)</strong>
 <div class="highlight"><pre><span></span><code><span class="n">cmake</span> <span class="p">-</span><span class="n">-build</span> <span class="p">-</span><span class="n">-preset</span> <span class="n">windows</span>
+</code></pre></div></p>
+<p><strong>Windows (Visual Studio 2026)</strong>
+<div class="highlight"><pre><span></span><code><span class="n">cmake</span> <span class="p">-</span><span class="n">-build</span> <span class="p">-</span><span class="n">-preset</span> <span class="n">vs18</span>
 </code></pre></div></p>
 <h3 id="build-outputs">Build Outputs</h3>
 <ul>
@@ -2077,8 +2080,11 @@ package managers and create the build directory.</p>
 <p><strong>Linux</strong>
 <div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>default<span class="w"> </span>--target<span class="w"> </span>electron-app
 </code></pre></div></p>
-<p><strong>Windows</strong>
+<p><strong>Windows (Visual Studio 2022)</strong>
 <div class="highlight"><pre><span></span><code><span class="n">cmake</span> <span class="p">-</span><span class="n">-build</span> <span class="p">-</span><span class="n">-preset</span> <span class="n">windows</span> <span class="p">-</span><span class="n">-target</span> <span class="n">electron-app</span>
+</code></pre></div></p>
+<p><strong>Windows (Visual Studio 2026)</strong>
+<div class="highlight"><pre><span></span><code><span class="n">cmake</span> <span class="p">-</span><span class="n">-build</span> <span class="p">-</span><span class="n">-preset</span> <span class="n">vs18</span> <span class="p">-</span><span class="n">-target</span> <span class="n">electron-app</span>
 </code></pre></div></p>
 <p>This will:
 1. Copy src/app to build/app-src (keeps source tree clean)
