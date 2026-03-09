@@ -47,7 +47,7 @@
           <strong>Requirements:</strong>
         </p>
         <ul>
-          <li><strong>NPU Firmware:</strong> Production XDNA2 firmware from your Linux distribution (older working examples commonly show <code>1.1.x.x</code>; avoid using development <code>255.x.x.x</code> firmware as the default setup)</li>
+          <li><strong>NPU Firmware:</strong> Firmware supplied by your Linux distribution</li>
           <li><strong>Kernel:</strong> Must have the <strong>amdxdna</strong> driver (from kernel 7.0 or later, or via DKMS package as provided in instructions below)</li>
           <li><strong>Runtime:</strong> FLM (FastFlowLM) installed</li>
           <li><strong>System limits:</strong> Sufficient memlock limits (handled by Lemonade's systemd service)</li>
@@ -80,31 +80,18 @@
               <span class="option-label">For Fedora 43</span>
             </div>
             <ol>
-              <li>Install the standard Lemonade build prerequisites from <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md" target="_blank">dev-getting-started.md</a>, then update Fedora's production firmware and reboot into the refreshed image:<br>
-                <div class="code-block"><code>sudo dnf upgrade linux-firmware<br>sudo reboot</code></div>
-                <span style="font-size:0.95em; color:#666;">Use the production firmware shipped by Fedora. Do not treat development <code>255.x.x.x</code> firmware as the default setup path.</span>
-              </li>
-              <li>If you need a manual XRT setup today, use the stable <a href="https://github.com/Xilinx/XRT/releases/tag/2.21.75" target="_blank">XRT 2.21.75 release</a> instead of the <code>amd/xdna-driver</code> git branch:<br>
-                <div class="code-block"><code>curl -L -o ~/Downloads/xrt-2.21.75.tar.gz https://github.com/Xilinx/XRT/releases/download/2.21.75/2.21.75.tar.gz<br>mkdir -p ~/src/xrt-2.21.75<br>tar -C ~/src/xrt-2.21.75 --strip-components=1 -xzf ~/Downloads/xrt-2.21.75.tar.gz<br>cd ~/src/xrt-2.21.75/xrt/XRT<br>sudo ./src/runtime_src/tools/scripts/xrtdeps.sh<br>cd build<br>./build.sh -npu -opt -noctest -j $(nproc)<br>cd Release<br>make package -j $(nproc)<br>sudo dnf install -y ./*.rpm</code></div>
-                <span style="font-size:0.95em; color:#666;">A Fedora COPR is the preferred long-term packaging path, but until that exists this keeps the instructions on the stable 2.21.75 release instead of a moving git checkout.</span>
+              <li>Install the standard Lemonade build prerequisites from <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md" target="_blank">dev-getting-started.md</a>.</li>
+              <li>Install XRT from the stable <a href="https://github.com/Xilinx/XRT/releases/tag/2.21.75" target="_blank">2.21.75 release</a>:<br>
+                <div class="code-block"><code>curl -L -o ~/Downloads/xrt-2.21.75.tar.gz https://github.com/Xilinx/XRT/releases/download/2.21.75/2.21.75.tar.gz<br>mkdir -p ~/src/xrt-2.21.75<br>tar -C ~/src/xrt-2.21.75 --strip-components=1 -xzf ~/Downloads/xrt-2.21.75.tar.gz<br>cd ~/src/xrt-2.21.75/xrt/XRT<br>sudo ./src/runtime_src/tools/scripts/xrtdeps.sh<br>cd build<br>./build.sh -npu -opt -noctest -j $(nproc)<br>cd Release<br>sudo dnf install -y ./*.rpm</code></div>
               </li>
               <li>Build and install FastFlowLM:<br>
                 <div class="code-block"><code>git clone https://github.com/FastFlowLM/FastFlowLM.git ~/src/FastFlowLM<br>git -C ~/src/FastFlowLM submodule update --init --recursive<br>cd ~/src/FastFlowLM<br>cmake -S src --preset linux-default<br>ninja -C src/build -j $(nproc)<br>sudo cmake --install src/build</code></div>
               </li>
-              <li>If you run <code>flm validate</code> manually and it reports a low memlock limit, raise the shell memlock limit and re-login:<br>
-                <div class="code-block"><code>printf '* soft memlock unlimited\n* hard memlock unlimited\n' | sudo tee /etc/security/limits.d/99-amdxdna.conf<br>sudo reboot</code></div>
-                <span style="font-size:0.95em; color:#666;">A fresh login or reboot is required before an existing shell will see the new limit. The packaged Lemonade service already sets <code>LimitMEMLOCK=infinity</code>.</span>
+              <li>Run validation:<br>
+                <div class="code-block"><code>export LD_LIBRARY_PATH=/opt/fastflowlm/lib:/opt/xilinx/xrt/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}<br>export FLM_CONFIG_PATH=/opt/fastflowlm/share/flm/model_list.json<br>/opt/fastflowlm/bin/flm validate</code></div>
               </li>
-              <li>If you are using the current manual <code>/opt</code> install layout, export the FLM runtime environment and validate the NPU stack:<br>
-                <div class="code-block"><code>export LD_LIBRARY_PATH=/opt/fastflowlm/lib:/opt/xilinx/xrt/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}<br>export FLM_CONFIG_PATH=/opt/fastflowlm/share/flm/model_list.json<br>/opt/fastflowlm/bin/flm validate</code></div>
-                <span style="font-size:0.95em; color:#666;">If future Fedora packages install these files into <code>/usr</code>, you can skip these manual exports.</span><br>
-                <div class="code-block" style="margin-top:0.5rem; background:#222; color:#fff;">
-❮ /opt/fastflowlm/bin/flm validate<br>[FLM]  Using custom model list path: /opt/fastflowlm/share/flm/model_list.json<br>[Linux]  Kernel: 6.19.3-cachyos3.fc43.x86_64<br>[Linux]  NPU: /dev/accel/accel0 with 8 columns<br>[Linux]  NPU FW Version: 1.1.2.64<br>[Linux]  amdxdna version: 1.0<br>[Linux]  Memlock Limit: infinity
-                </div>
-              </li>
-              <li>If you installed <code>lemonade-server</code> as a systemd service, add a drop-in with the beta flag. If you are using the current manual <code>/opt</code> installs, also add the FLM / XRT runtime paths:<br>
-                <div class="code-block"><code>sudo install -d /etc/systemd/system/lemonade-server.service.d<br>printf '[Service]\nEnvironment=LEMONADE_FLM_LINUX_BETA=1\n' | sudo tee /etc/systemd/system/lemonade-server.service.d/10-flm-beta.conf<br>sudo systemctl daemon-reload<br>sudo systemctl enable --now lemonade-server.service</code></div>
-                <span style="font-size:0.95em; color:#666;">For the current manual <code>/opt</code> layout, add <code>Environment=LD_LIBRARY_PATH=/opt/fastflowlm/lib:/opt/xilinx/xrt/lib</code> and <code>Environment=FLM_CONFIG_PATH=/opt/fastflowlm/share/flm/model_list.json</code> to the same drop-in.</span>
+              <li>If you run <code>lemonade-server</code> as a systemd service, add the Linux beta flag and FLM paths:<br>
+                <div class="code-block"><code>sudo install -d /etc/systemd/system/lemonade-server.service.d<br>printf '[Service]\nEnvironment=LEMONADE_FLM_LINUX_BETA=1\nEnvironment=LD_LIBRARY_PATH=/opt/fastflowlm/lib:/opt/xilinx/xrt/lib64\nEnvironment=FLM_CONFIG_PATH=/opt/fastflowlm/share/flm/model_list.json\n' | sudo tee /etc/systemd/system/lemonade-server.service.d/10-flm-beta.conf<br>sudo systemctl daemon-reload<br>sudo systemctl enable --now lemonade-server.service</code></div>
               </li>
               <li>Verify the service and local API:<br>
                 <div class="code-block"><code>systemctl status lemonade-server.service --no-pager<br>curl -i http://127.0.0.1:8000/api/v1/models</code></div>
@@ -320,13 +307,11 @@
         <h2>Common flm validate issues</h2>
 
         <h3>1. Outdated NPU Firmware</h3>
-        <p>If <code>flm validate</code> reports a firmware issue, ensure you are using the production firmware line recommended by your distribution.</p>
+        <p>If <code>flm validate</code> reports a firmware issue, update the firmware package from your Linux distribution and reboot.</p>
         <p>You can check your version manually with:</p>
         <div class="code-block">
           <code>cat /sys/bus/pci/drivers/amdxdna/*/fw_version</code>
         </div>
-        <p>Older working examples commonly show version numbers like <code>1.1.x.x</code>. If you instead see a development value such as <code>255.x.x.x</code>, switch back to the production firmware shipped by your distribution unless you are explicitly testing unstable bits. On Fedora, update the <code>linux-firmware</code> package and reboot.</p>
-
         <h3>2. Missing or Outdated amdxdna Driver</h3>
         <p>The NPU requires the <strong>amdxdna</strong> driver, which is included in Linux kernel 7.0 and later, or can be installed via the <code>amdxdna-dkms</code> package as described in the instructions above.</p>
         <p>To check if the driver is loaded, run:</p>
