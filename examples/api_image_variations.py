@@ -72,12 +72,17 @@ def create_variations_with_openai_client(image_path, num_variations=1, backend="
 
     # Read the image file
     with open(image_path, "rb") as image_file:
-        response = client.images.create_variation(
-            model="Flux-2-Klein-4B",  # or another model
-            image=image_file,
-            size="512x512",
-            n=num_variations,
-        )
+        try:
+            response = client.images.create_variation(
+                model="SD-Turbo",
+                image=image_file,
+                size="512x512",
+                n=num_variations,
+                response_format="b64_json",
+            )
+        except Exception as e:
+            print(f"Error: {e}")
+            return results
 
     # Save the variations
     if response.data:
@@ -117,6 +122,7 @@ def create_variations_with_requests(image_path, num_variations=1, backend="cpu")
             "model": "SD-Turbo",
             "size": "512x512",
             "n": str(num_variations),
+            "response_format": "b64_json",
         }
 
         response = requests.post(
