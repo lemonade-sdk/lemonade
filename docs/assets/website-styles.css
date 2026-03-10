@@ -3700,6 +3700,9 @@ body.install-options {
 }
 
 .cta-content {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
   text-align: center;
 }
 
@@ -3714,6 +3717,7 @@ body.install-options {
   margin: 0.6rem auto 0;
   max-width: 680px;
   color: #333;
+  text-align: center;
 }
 
 .cta-links {
@@ -3780,6 +3784,18 @@ body.install-options {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.56));
   border: 1px solid rgba(0, 0, 0, 0.06);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.05);
+}
+
+.cta-section-minimal .cta-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.cta-section-minimal .cta-subtitle {
+  width: min(680px, 100%);
+  margin: 0.6rem 0 0;
+  text-align: center;
 }
 
 .cta-section-minimal .download-btn {

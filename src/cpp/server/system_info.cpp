@@ -918,7 +918,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
             // For FLM on Linux, the action should be to visit setup documentation
             else if (def.recipe == "flm") {
 #ifdef __linux__
-                backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html";
+                backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html?mode=troubleshoot";
 #elif defined(_WIN32)
                 // Driver/kernel issue → docs URL (opens iframe)
                 // FLM not installed → install command (auto-installable)
