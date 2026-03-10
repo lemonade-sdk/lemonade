@@ -1,0 +1,8 @@
+#!/bin/bash
+set -e
+
+if [ "${1:-0}" -eq 0 ] && command -v systemctl > /dev/null 2>&1 && [ -d /run/systemd/system ]; then
+    systemctl stop lemonade-server.service > /dev/null 2>&1 || true
+fi
+
+exit 0
