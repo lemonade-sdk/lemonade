@@ -128,7 +128,7 @@ def test_model(base_url, model_name, max_tokens=50):
     try:
         load_resp = requests.post(
             f"{base_url}/v1/load",
-            json={"model": model_name},
+            json={"model_name": model_name},
             timeout=TIMEOUT_INFERENCE,
         )
         if load_resp.status_code != 200:
@@ -181,7 +181,7 @@ def test_model(base_url, model_name, max_tokens=50):
     try:
         requests.post(
             f"{base_url}/v1/unload",
-            json={"model": model_name},
+            json={"model_name": model_name},
             timeout=60,
         )
     except Exception:
