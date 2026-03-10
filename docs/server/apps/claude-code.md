@@ -73,13 +73,13 @@ This delay occurs because Claude Code sends a massive system prompt (20,000+ tok
 
 If you are using a **Strix Halo** system with **128GB of RAM**, you have a top-tier environment for local AI! You can run larger models with significantly expanded context windows.
 
-### Recommended Model Choices
+### Recommended Model Choices - MoE models with strong agentic capabilities
 *   **Qwen3.5-35B-A3B-GGUF**: A Mixture of Experts (MoE) model that excels at agentic tasks. It has 35B parameters, 3B of which are active at a time.
-*   **Qwen3-Coder-Next**:
-*   **GLM-4.7-Flash-GGUF**: An excellent alternative for rapid iterations and complex instruction following.
+*   **Qwen3-Coder-Next**: An MoE model designed specifically for coding agents and local development with 80B total parameters, 3B of which are activated
+*   **GLM-4.7-Flash-GGUF**: An excellent alternative for rapid iterations and complex instruction following, a 30B-A3B MoE model
 
 ### Custom Tuning with `llamacpp-args`
-By default, Lemonade uses conservative coding defaults (`-b 4096 -ub 1024 -fa on`). Using the `--llamacpp-args` flag, you can customize the parameters passed to llama-server when the model is being loaded.
+By default, Lemonade uses the coding defaults (`-b 4096 -ub 1024 -fa on`). Using the `--llamacpp-args` flag, you can customize the parameters passed to llama-server when the model is being loaded.
 ```bash
 lemonade-server launch claude -m Qwen3.5-35B-A3B-GGUF --llamacpp-args "-b 1024 -ub 1024 -fa on"
 ```
@@ -113,14 +113,20 @@ Instead of manually editing the JSON file, you can also easily add recipes using
 When loading a model for a launched agent, Lemonade Server resolves settings in this order (highest priority first):
 1. Explicit values passed in the load request (e.g., using `--llamacpp-args` via CLI).
 2. Per-model values defined in `recipe_options.json` (used when `--use-recipe` is active).
-3. Global environment variables (e.g., `LEMONADE_CTX_SIZE`).
+3. Global environment variables (e.g., `LEMONADE_MAX_LOADED_MODELS`).
 4. Hardcoded system defaults.
 
 For community-tested configurations optimized for specific hardware setups, check out the [Lemonade Recipes Wiki](https://github.com/lemonade-sdk/lemonade/wiki/Recipes) (Note: these are currently a work in progress).
 
-## Coding Tasks: What is Achievable?
+## What's realistic to achieve?
 
-Local agentic coding is powerful but has different limits than hosted Frontier models.
+Local agents are incredibly useful, but they have different strengths than the giant models running in the cloud.
+
+**Where they work well:**
+Local models work well for focused, well-defined tasks. If you need to refactor a specific module or generate some boilerplate they work great.
+
+**Where they fall short:**
+Local models aren't quite ready to handle massive, project-wide refactors that touch dozens of interdependent files. They can also sometimes lose their way if they hit an unexpected error halfway through a complex task.
 
 ## Troubleshooting
 
