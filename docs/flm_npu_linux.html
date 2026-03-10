@@ -45,6 +45,7 @@
                 <li>Lemonade, ties everything together with a streamlined user experience.</li>
               </ul>
             </p>
+          </div>
         </div>
 
         <div class="section-card">
@@ -54,6 +55,7 @@
             <p>
               <a href="https://fastflowlm.com/">FastFlowLM</a> is a lightweight LLM runtime optimized for AMD NPUs. Today, FastFlowLM is adding support for Ubuntu, Arch, and other distros to enable fast, low-power LLMs on Ryzen&trade; AI PCs that run Linux.
             </p>
+          </div>
 
           <p>This article will help you:</p>
           <ul>
@@ -388,6 +390,24 @@
     document.addEventListener('DOMContentLoaded', function() {
       initializeNavbar('./');
       initializeFooter('./');
+
+      // In troubleshoot mode, hide Announcement, Getting Started, and CTA sections
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('mode') === 'troubleshoot') {
+        document.querySelectorAll('.section-card').forEach(function(card) {
+          var kicker = card.querySelector('.section-kicker');
+          if (kicker) {
+            var text = kicker.textContent.trim();
+            if (text === 'Announcement' || text === 'Getting Started') {
+              card.style.display = 'none';
+            }
+          }
+        });
+        var ctaSep = document.querySelector('.cta-separator');
+        var ctaSection = document.querySelector('.cta-section');
+        if (ctaSep) ctaSep.style.display = 'none';
+        if (ctaSection) ctaSection.style.display = 'none';
+      }
 
       const select = document.getElementById('distro-select');
       const ids = ['ubuntu-24', 'ubuntu-25', 'ubuntu-26', 'arch', 'other'];
