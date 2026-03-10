@@ -563,7 +563,7 @@ bool FastFlowLMServer::validate() {
         throw FLMCheckException(
             FLMCheckException::ErrorType::VALIDATION_FAILED,
             error_message.empty() ? "FLM validation failed" : error_message,
-            "https://lemonade-server.ai/flm_npu_linux.html"
+            "https://lemonade-server.ai/flm_npu_linux.html?mode=troubleshoot"
         );
     }
 
