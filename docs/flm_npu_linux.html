@@ -65,12 +65,39 @@
           <label for="distro-select" class="distro-label"><strong>Select your Linux distribution:</strong></label>
           <select id="distro-select" class="distro-selector">
             <option value="" selected disabled>Select your distro…</option>
+            <option value="fedora-43">Fedora 43</option>
             <option value="ubuntu-24">Ubuntu 24.04</option>
             <option value="ubuntu-25">Ubuntu 25.10</option>
             <option value="ubuntu-26">Ubuntu 26.04</option>
             <option value="arch">Arch Linux</option>
             <option value="other">Other</option>
           </select>
+        </div>
+
+        <div class="distro-instructions" id="distro-fedora-43" style="display:none;">
+          <div class="option-box option-primary">
+            <div class="option-header">
+              <span class="option-label">For Fedora 43</span>
+            </div>
+            <ol>
+              <li>Install the standard Lemonade build prerequisites from <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md" target="_blank">dev-getting-started.md</a>.</li>
+              <li>Install XRT from the stable <a href="https://github.com/Xilinx/XRT/releases/tag/2.21.75" target="_blank">2.21.75 release</a>:<br>
+                <div class="code-block"><code>curl -L -o ~/Downloads/xrt-2.21.75.tar.gz https://github.com/Xilinx/XRT/releases/download/2.21.75/2.21.75.tar.gz<br>mkdir -p ~/src/xrt-2.21.75<br>tar -C ~/src/xrt-2.21.75 --strip-components=1 -xzf ~/Downloads/xrt-2.21.75.tar.gz<br>cd ~/src/xrt-2.21.75/xrt/XRT<br>sudo ./src/runtime_src/tools/scripts/xrtdeps.sh<br>cd build<br>./build.sh -npu -opt -noctest -j $(nproc)<br>cd Release<br>sudo dnf install -y ./*.rpm</code></div>
+              </li>
+              <li>Build and install FastFlowLM:<br>
+                <div class="code-block"><code>git clone https://github.com/FastFlowLM/FastFlowLM.git ~/src/FastFlowLM<br>git -C ~/src/FastFlowLM submodule update --init --recursive<br>cd ~/src/FastFlowLM<br>cmake -S src --preset linux-default<br>ninja -C src/build -j $(nproc)<br>sudo cmake --install src/build</code></div>
+              </li>
+              <li>Run validation:<br>
+                <div class="code-block"><code>LD_LIBRARY_PATH=/opt/fastflowlm/lib:/opt/xilinx/xrt/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}} FLM_CONFIG_PATH=/opt/fastflowlm/share/flm/model_list.json /opt/fastflowlm/bin/flm validate</code></div>
+              </li>
+              <li>If you run <code>lemonade-server</code> as a systemd service, add the Linux beta flag and FLM paths:<br>
+                <div class="code-block"><code>sudo install -d /etc/systemd/system/lemonade-server.service.d<br>printf '[Service]\nEnvironment=LEMONADE_FLM_LINUX_BETA=1\nEnvironment=LD_LIBRARY_PATH=/opt/fastflowlm/lib:/opt/xilinx/xrt/lib64\nEnvironment=FLM_CONFIG_PATH=/opt/fastflowlm/share/flm/model_list.json\n' | sudo tee /etc/systemd/system/lemonade-server.service.d/10-flm-beta.conf<br>sudo systemctl daemon-reload<br>sudo systemctl enable --now lemonade-server.service</code></div>
+              </li>
+              <li>Verify the service and local API:<br>
+                <div class="code-block"><code>systemctl status lemonade-server.service --no-pager<br>curl -i http://localhost:8000/api/v1/models</code></div>
+              </li>
+            </ol>
+          </div>
         </div>
 
         <!-- Ubuntu 24.04 and 25.10 Instructions -->
@@ -243,7 +270,7 @@
           // Distro selector logic
           document.addEventListener('DOMContentLoaded', function() {
             const select = document.getElementById('distro-select');
-            const ids = ['ubuntu-24', 'ubuntu-25', 'ubuntu-26', 'arch', 'other'];
+            const ids = ['fedora-43', 'ubuntu-24', 'ubuntu-25', 'ubuntu-26', 'arch', 'other'];
             const faq = document.getElementById('flm-faq-section');
             // Hide all by default
             ids.forEach(id => {
@@ -258,7 +285,9 @@
               });
               if (faq) faq.style.display = 'block';
               const val = select.value;
-              if (val === 'ubuntu-24') {
+              if (val === 'fedora-43') {
+                document.getElementById('distro-fedora-43').style.display = 'block';
+              } else if (val === 'ubuntu-24') {
                 document.getElementById('distro-ubuntu-24').style.display = 'block';
               } else if (val === 'ubuntu-25') {
                 document.getElementById('distro-ubuntu-25').style.display = 'block';
@@ -278,13 +307,12 @@
         <h2>Common flm validate issues</h2>
 
         <h3>1. Outdated NPU Firmware</h3>
-        <p>If <code>flm validate</code> reports a firmware issue, ensure you have version <strong>1.1.0.0 or later</strong>.</p>
+        <p>If <code>flm validate</code> reports a firmware issue, one possible fix is to follow your distribution's recommended update path for the firmware or related packages, then reboot.</p>
         <p>You can check your version manually with:</p>
         <div class="code-block">
           <code>cat /sys/bus/pci/drivers/amdxdna/*/fw_version</code>
         </div>
-        <p>If the firmware is older than 1.1.0.0, you'll need to update it through your Linux distribution (typically by updating the <code>linux-firmware</code> package).</p>
-
+        <p>If the firmware is older than 1.1.0.0, check your distribution's documentation for the recommended update path, since it varies by distro.</p>
         <h3>2. Missing or Outdated amdxdna Driver</h3>
         <p>The NPU requires the <strong>amdxdna</strong> driver, which is included in Linux kernel 7.0 and later, or can be installed via the <code>amdxdna-dkms</code> package as described in the instructions above.</p>
         <p>To check if the driver is loaded, run:</p>
@@ -311,7 +339,19 @@
           <pre><code>*    soft    memlock    unlimited
 *    hard    memlock    unlimited</code></pre>
         </div>
-        <p>Then <strong>log out and log back in</strong> for changes to take effect.</p>
+        <p>Then <strong>log out and log back in</strong> (or reboot) for changes to take effect. Existing shells can keep the old limit even after the file is correct.</p>
+
+        <h3>4. FLM is on PATH, but Lemonade or FLM cannot find XRT libraries or the model list</h3>
+        <p>This usually only applies to manual installs that place FLM under <code>/opt/fastflowlm</code> and XRT under <code>/opt/xilinx/xrt</code>. If you see errors about <code>libxrt_coreutil.so.2</code> or a missing <code>model_list.json</code>, set:</p>
+        <div class="code-block">
+          <pre><code>LD_LIBRARY_PATH=/opt/fastflowlm/lib:/opt/xilinx/xrt/lib
+FLM_CONFIG_PATH=/opt/fastflowlm/share/flm/model_list.json</code></pre>
+        </div>
+        <p>Export these in your shell before running <code>/opt/fastflowlm/bin/flm</code>, or add them to a Lemonade systemd drop-in if you are running the service.</p>
+
+        <h3>5. <code>lemonade-server recipes</code> still says FLM requires Windows</h3>
+        <p>During the current Linux beta, <code>lemonade-server recipes</code> can still show <code>flm  npu  unsupported  Requires Windows</code> even when the Linux FLM stack is working.</p>
+        <p>Treat <code>flm validate</code>, <code>systemctl status lemonade-server.service</code>, and a successful local API probe as the authoritative checks instead.</p>
       </div>
 
       <div class="install-section">
@@ -320,6 +360,7 @@
           For detailed NPU setup instructions and troubleshooting:
         </p>
         <ul>
+          <li><a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md" target="_blank">Lemonade development and packaging guide</a></li>
           <li><a href="https://github.com/FastFlowLM/FastFlowLM" target="_blank">FastFlowLM GitHub Repository</a></li>
         </ul>
       </div>

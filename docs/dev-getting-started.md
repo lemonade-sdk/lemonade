@@ -174,6 +174,8 @@ chmod +x build/app-appimage/Lemonade-*.AppImage
 - This avoids LGPL dependencies (GTK3, libappindicator3, libnotify)
 - Run server using: `lemonade-server serve` (headless mode is automatic)
 - Fully functional for server operations and model management
+- `./setup.sh` supports Fedora via `dnf` and installs the common build dependencies automatically
+- Local RPM packaging also requires `rpmbuild` (`sudo dnf install rpm-build`)
 - Uses permissively licensed dependencies only (MIT, Apache 2.0, BSD, curl license)
 - Clean .deb package with only runtime files (no development headers)
 - PID file system for reliable process management
@@ -285,6 +287,10 @@ lemonade-server serve
 
 Very similar to the Debian instructions above with minor changes
 
+**Prerequisites:**
+- Completed C++ build (see above)
+- `rpmbuild` available (Fedora: `sudo dnf install rpm-build`)
+
 **Building:**
 
 ```bash
@@ -313,6 +319,8 @@ sudo dnf remove lemonade-server
 **Post-Installation:**
 
 Same as .deb above
+
+For Fedora-specific FLM / XDNA setup notes, see the [Linux FLM / NPU guide](./flm_npu_linux.html).
 
 **macOS:**
 
