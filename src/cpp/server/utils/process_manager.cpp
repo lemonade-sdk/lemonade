@@ -7,6 +7,7 @@
 #define NOMINMAX
 #include <winsock2.h>
 #include <windows.h>
+#include <processenv.h>
 #pragma comment(lib, "ws2_32.lib")
 #endif
 
@@ -16,6 +17,7 @@
 #include <thread>
 #include <chrono>
 #include <string>
+#include <cstring>
 #include <algorithm>
 #include <cctype>
 #include <lemon/utils/aixlog.hpp>
@@ -68,6 +70,34 @@ static void log_process_line(const std::string& line) {
 }
 
 #ifdef _WIN32
+// Helper function to escape arguments for Windows command line
+// Windows command-line parsing rules:
+// - Arguments are separated by spaces (or tabs)
+// - Double quotes can be used to include spaces in arguments
+// - To include a double quote in an argument, escape it with a backslash
+// - Backslashes before a double quote are also escaped
+static std::string escape_windows_arg(const std::string& arg) {
+    std::string result = "\"";
+    for (size_t i = 0; i < arg.size(); ++i) {
+        if (arg[i] == '"') {
+            // Escape the quote with a backslash
+            result += "\\\"";
+        } else if (arg[i] == '\\') {
+            // Check if this backslash is followed by a quote
+            // If so, we need to escape the backslash too
+            if (i + 1 < arg.size() && arg[i + 1] == '"') {
+                result += "\\\\";
+            } else {
+                result += '\\';
+            }
+        } else {
+            result += arg[i];
+        }
+    }
+    result += "\"";
+    return result;
+}
+
 // Thread function to read from pipe and filter output
 static DWORD WINAPI output_filter_thread(LPVOID param) {
     HANDLE pipe = static_cast<HANDLE>(param);
@@ -97,6 +127,63 @@ static DWORD WINAPI output_filter_thread(LPVOID param) {
     CloseHandle(pipe);
     return 0;
 }
+
+static std::string lowercase_ascii(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+static std::vector<char> build_windows_environment_block(
+    const std::vector<std::pair<std::string, std::string>>& env_vars) {
+    std::vector<std::string> merged_entries;
+
+    LPWCH environment = GetEnvironmentStringsW();
+    if (environment) {
+        for (const wchar_t* entry = environment; *entry != L'\0';
+             entry += std::wcslen(entry) + 1) {
+            int size_needed = WideCharToMultiByte(CP_UTF8, 0, entry, -1, nullptr, 0, nullptr, nullptr);
+            if (size_needed > 0) {
+                std::string narrow(size_needed - 1, '\0');
+                WideCharToMultiByte(CP_UTF8, 0, entry, -1, &narrow[0], size_needed, nullptr, nullptr);
+                merged_entries.emplace_back(std::move(narrow));
+            }
+        }
+        FreeEnvironmentStringsW(environment);
+    }
+
+    for (const auto& env : env_vars) {
+        const std::string key_lower = lowercase_ascii(env.first);
+        const std::string new_entry = env.first + "=" + env.second;
+
+        bool replaced = false;
+        for (auto& existing : merged_entries) {
+            size_t equals = existing.find('=');
+            if (equals == std::string::npos) {
+                continue;
+            }
+
+            std::string existing_key = lowercase_ascii(existing.substr(0, equals));
+            if (existing_key == key_lower) {
+                existing = new_entry;
+                replaced = true;
+                break;
+            }
+        }
+
+        if (!replaced) {
+            merged_entries.push_back(new_entry);
+        }
+    }
+
+    std::vector<char> block;
+    for (const auto& entry : merged_entries) {
+        block.insert(block.end(), entry.begin(), entry.end());
+        block.push_back('\0');
+    }
+    block.push_back('\0');
+    return block;
+}
 #endif
 
 ProcessHandle ProcessManager::start_process(
@@ -113,9 +200,9 @@ ProcessHandle ProcessManager::start_process(
 
 #ifdef _WIN32
     // Windows implementation
-    std::string cmdline = "\"" + executable + "\"";
+    std::string cmdline = escape_windows_arg(executable);
     for (const auto& arg : args) {
-        cmdline += " \"" + arg + "\"";
+        cmdline += " " + escape_windows_arg(arg);
     }
 
     STARTUPINFOA si;
@@ -177,6 +264,11 @@ ProcessHandle ProcessManager::start_process(
         }
     }
 
+    std::vector<char> environment_block;
+    if (!env_vars.empty()) {
+        environment_block = build_windows_environment_block(env_vars);
+    }
+
     BOOL success = CreateProcessA(
         nullptr,
         const_cast<char*>(cmdline.c_str()),
@@ -184,7 +276,7 @@ ProcessHandle ProcessManager::start_process(
         nullptr,
         TRUE,  // Inherit handles
         (inherit_output && !filter_health_logs) ? 0 : CREATE_NO_WINDOW,
-        nullptr,
+        environment_block.empty() ? nullptr : environment_block.data(),
         working_dir.empty() ? nullptr : working_dir.c_str(),
         &si,
         &pi
@@ -533,9 +625,9 @@ int ProcessManager::run_process_with_output(
 
 #ifdef _WIN32
     // Windows implementation
-    std::string cmdline = "\"" + executable + "\"";
+    std::string cmdline = escape_windows_arg(executable);
     for (const auto& arg : args) {
-        cmdline += " \"" + arg + "\"";
+        cmdline += " " + escape_windows_arg(arg);
     }
 
     // Create pipes for stdout

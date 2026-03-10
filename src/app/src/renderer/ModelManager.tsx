@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Boxes, ChevronRight, Cpu, Settings as SettingsIcon, SlidersHorizontal, Store } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Boxes, ChevronRight, Cpu, Settings, SlidersHorizontal, Store } from './components/Icons';
 import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -16,9 +16,117 @@ import SettingsPanel from './SettingsPanel';
 import BackendManager from './BackendManager';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
+import { EjectIcon } from './components/Icons';
+import { getExperienceComponents, isExperienceFullyDownloaded, isExperienceFullyLoaded, isExperienceModel, isModelEffectivelyDownloaded } from './utils/experienceModels';
+
+interface ModelFamily {
+  displayName: string;
+  regex: RegExp;
+  defaultMember: string;
+}
+
+const SIZE_TOKEN = String.raw`(\d+\.?\d*B(?:-A\d+\.?\d*B)?)`;
+
+function buildFamilyRegex(prefix: string, suffix = '-GGUF$'): RegExp {
+  return new RegExp(`^${prefix}-${SIZE_TOKEN}${suffix}`);
+}
+
+const MODEL_FAMILIES: ModelFamily[] = [
+  // Standardized family matching: capture *B or *B-A*B.
+  {
+    displayName: 'Qwen3',
+    regex: buildFamilyRegex('Qwen3'),
+    defaultMember: '4B',
+  },
+  {
+    displayName: 'Qwen3-Instruct-2507',
+    regex: buildFamilyRegex('Qwen3', '-Instruct-2507-GGUF$'),
+    defaultMember: '4B',
+  },
+  {
+    displayName: 'Qwen3.5',
+    regex: buildFamilyRegex('Qwen3\\.5'),
+    defaultMember: '4B',
+  },
+  {
+    displayName: 'Qwen3-Embedding',
+    regex: buildFamilyRegex('Qwen3-Embedding'),
+    defaultMember: '0.6B',
+  },
+  {
+    displayName: 'Qwen2.5-VL-Instruct',
+    regex: buildFamilyRegex('Qwen2\\.5-VL', '-Instruct-GGUF$'),
+    defaultMember: '3B',
+  },
+  {
+    displayName: 'Qwen3-VL-Instruct',
+    regex: buildFamilyRegex('Qwen3-VL', '-Instruct-GGUF$'),
+    defaultMember: '4B',
+  },
+  {
+    displayName: 'Llama-3.2-Instruct',
+    regex: buildFamilyRegex('Llama-3\\.2', '-Instruct-GGUF$'),
+    defaultMember: '3B',
+  },
+  {
+    displayName: 'gpt-oss',
+    regex: /^gpt-oss-(\d+\.?\d*b)-mxfp4?-GGUF$/,
+    defaultMember: '20b',
+  },
+  {
+    displayName: 'LFM2',
+    regex: buildFamilyRegex('LFM2'),
+    defaultMember: '8B-A1B',
+  },
+];
+
+type ModelListItem =
+  | { type: 'model'; name: string; info: ModelInfo }
+  | { type: 'family'; family: ModelFamily; members: { label: string; name: string; info: ModelInfo }[] };
+
+function buildModelList(
+  models: Array<{ name: string; info: ModelInfo }>
+): ModelListItem[] {
+  // Build family groups
+  const consumed = new Set<string>();
+  const familyItems: ModelListItem[] = [];
+
+  for (const family of MODEL_FAMILIES) {
+    const members: { label: string; name: string; info: ModelInfo }[] = [];
+    for (const m of models) {
+      const match = family.regex.exec(m.name);
+      if (match) {
+        members.push({ label: match[1], name: m.name, info: m.info });
+        consumed.add(m.name);
+      }
+    }
+    if (members.length > 1) {
+      members.sort((a, b) => parseFloat(a.label) - parseFloat(b.label));
+      familyItems.push({ type: 'family', family, members });
+    } else {
+      members.forEach(m => consumed.delete(m.name));
+    }
+  }
+
+  // Build individual items for non-consumed models
+  const individualItems: ModelListItem[] = models
+    .filter(m => !consumed.has(m.name))
+    .map(m => ({ type: 'model' as const, name: m.name, info: m.info }));
+
+  // Merge and sort alphabetically by display name
+  const allItems = [...familyItems, ...individualItems];
+  allItems.sort((a, b) => {
+    const nameA = a.type === 'family' ? a.family.displayName : a.name;
+    const nameB = b.type === 'family' ? b.family.displayName : b.name;
+    return nameA.localeCompare(nameB);
+  });
+
+  return allItems;
+}
 
 interface ModelManagerProps {
-  isVisible: boolean;
+  isContentVisible: boolean;
+  onContentVisibilityChange: (visible: boolean) => void;
   width?: number;
   currentView: LeftPanelView;
   onViewChange: (view: LeftPanelView) => void;
@@ -50,7 +158,7 @@ const createEmptyModelForm = () => ({
   reranking: false,
 });
 
-const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, currentView, onViewChange }) => {
+const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContentVisibilityChange, width = 280, currentView, onViewChange }) => {
   // Get shared model data from context
   const { modelsData, suggestedModels, refresh: refreshModels } = useModels();
   // Get system context for lazy loading system info
@@ -70,6 +178,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
   const [newModel, setNewModel] = useState(createEmptyModelForm);
   const [selectedMarketplaceCategory, setSelectedMarketplaceCategory] = useState<string>('all');
   const [marketplaceCategories, setMarketplaceCategories] = useState<MarketplaceCategory[]>([]);
+  const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
   const filterAnchorRef = useRef<HTMLDivElement | null>(null);
   const addModelFromJSONRef = useRef<HTMLInputElement>(null);
 
@@ -183,17 +292,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     };
   }, [showFilterPanel]);
 
-  // Auto-expand the single category if only one is available
-  useEffect(() => {
-    const groupedModels = organizationMode === 'recipe' ? groupModelsByRecipe() : groupModelsByCategory();
-    const categories = Object.keys(groupedModels);
-
-    // If only one category exists and it's not already expanded, expand it
-    if (categories.length === 1 && !expandedCategories.has(categories[0])) {
-      setExpandedCategories(new Set([categories[0]]));
-    }
-  }, [suggestedModels, organizationMode, showDownloadedOnly, searchQuery]);
-
   const getFilteredModels = () => {
     let filtered = suggestedModels;
 
@@ -252,6 +350,29 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     return grouped;
   };
 
+  const groupedModels = useMemo(
+    () => organizationMode === 'recipe' ? groupModelsByRecipe() : groupModelsByCategory(),
+    [suggestedModels, modelsData, organizationMode, showDownloadedOnly, searchQuery]
+  );
+  const availableModelCount = useMemo(
+    () => Object.values(groupedModels).reduce((sum, arr) => sum + arr.length, 0),
+    [groupedModels]
+  );
+  const categories = useMemo(() => Object.keys(groupedModels).sort(), [groupedModels]);
+  const builtModelLists = useMemo(
+    () => Object.fromEntries(
+      Object.entries(groupedModels).map(([cat, models]) => [cat, buildModelList(models)])
+    ),
+    [groupedModels]
+  );
+
+  // Auto-expand the single category if only one is available
+  useEffect(() => {
+    if (categories.length === 1 && !expandedCategories.has(categories[0])) {
+      setExpandedCategories(new Set([categories[0]]));
+    }
+  }, [categories]);
+
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev => {
       const newSet = new Set(prev);
@@ -275,8 +396,42 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     return `${size.toFixed(2)} GB`;
   };
 
+  const getModelSize = (modelName: string, info: ModelInfo): number | undefined => {
+    if (!isExperienceModel(info)) {
+      return info.size;
+    }
+    const components = getExperienceComponents(info);
+    if (components.length === 0) return info.size;
+    const total = components.reduce((sum, component) => sum + (modelsData[component]?.size || 0), 0);
+    return total > 0 ? total : info.size;
+  };
+
+  const getDisplayLabelsForModel = (modelName: string, info: ModelInfo): string[] => {
+    if (isExperienceModel(info)) {
+      // Experiences intentionally show a single, consistent legend marker.
+      return ['experience'];
+    }
+    return (info.labels || []).filter((label): label is string => typeof label === 'string' && label.length > 0);
+  };
+
+  const getModelDownloadedState = (modelName: string, info: ModelInfo): boolean => {
+    return isModelEffectivelyDownloaded(modelName, info, modelsData);
+  };
+
+  const getModelLoadedState = (modelName: string, info: ModelInfo): boolean => {
+    if (isExperienceModel(info)) {
+      return isExperienceFullyLoaded(modelName, modelsData, loadedModels);
+    }
+    return loadedModels.has(modelName);
+  };
+
+  const getModelLoadingState = (modelName: string): boolean => {
+    return loadingModels.has(modelName);
+  };
+
   const getCategoryLabel = (category: string): string => {
     const labels: { [key: string]: string } = {
+      'experience': 'Experience',
       'reasoning': 'Reasoning',
       'coding': 'Coding',
       'vision': 'Vision',
@@ -289,12 +444,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
     };
     return labels[category] || category.charAt(0).toUpperCase() + category.slice(1);
   };
-
-  if (!isVisible) return null;
-
-  const groupedModels = organizationMode === 'recipe' ? groupModelsByRecipe() : groupModelsByCategory();
-  const availableModelCount = getFilteredModels().length;
-  const categories = Object.keys(groupedModels).sort();
 
   // Auto-expand all categories when searching
   const shouldShowCategory = (category: string): boolean => {
@@ -473,6 +622,37 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
         return;
       }
 
+      if (isExperienceModel(modelData)) {
+        const components = getExperienceComponents(modelData);
+        if (components.length === 0) {
+          showError(`Experience model "${modelName}" has no component models.`);
+          return;
+        }
+
+        setLoadingModels(prev => {
+          const next = new Set(prev);
+          next.add(modelName);
+          components.forEach((component) => next.add(component));
+          return next;
+        });
+        window.dispatchEvent(new CustomEvent('modelLoadStart', { detail: { modelId: modelName } }));
+
+        for (const component of components) {
+          if (!modelsData[component]) {
+            throw new Error(`Missing component model "${component}" for ${modelName}.`);
+          }
+          await ensureModelReady(component, modelsData, {
+            onModelLoading: () => {},
+            skipHealthCheck: false,
+          });
+        }
+
+        await fetchCurrentLoadedModel();
+        window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
+        window.dispatchEvent(new CustomEvent('modelsUpdated'));
+        return;
+      }
+
       setLoadingModels(prev => new Set(prev).add(modelName));
       window.dispatchEvent(new CustomEvent('modelLoadStart', { detail: { modelId: modelName } }));
 
@@ -499,13 +679,40 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
         showError(`Failed to load model: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
 
-      setLoadingModels(prev => { const s = new Set(prev); s.delete(modelName); return s; });
+      setLoadingModels(prev => {
+        const next = new Set(prev);
+        next.delete(modelName);
+        const info = modelsData[modelName];
+        if (isExperienceModel(info)) {
+          getExperienceComponents(info).forEach((component) => next.delete(component));
+        }
+        return next;
+      });
       window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
     }
   };
 
   const handleUnloadModel = async (modelName: string) => {
     try {
+      const modelData = modelsData[modelName];
+      if (modelData && isExperienceModel(modelData)) {
+        const components = getExperienceComponents(modelData);
+        for (const component of components) {
+          if (!loadedModels.has(component)) continue;
+          const response = await serverFetch('/unload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_name: component })
+          });
+          if (!response.ok) {
+            throw new Error(`Failed to unload model: ${response.statusText}`);
+          }
+        }
+        await fetchCurrentLoadedModel();
+        window.dispatchEvent(new CustomEvent('modelUnload'));
+        return;
+      }
+
       const response = await serverFetch('/unload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -611,196 +818,257 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
         : 'Filter settings...';
   const showInlineFilterButton = currentView === 'models' || currentView === 'marketplace';
 
-  const renderModelsView = () => (
-    <>
-      {categories.map(category => (
-        <div key={category} className="model-category">
-          <div
-            className="model-category-header"
-            onClick={() => toggleCategory(category)}
+  const getModelStatus = (modelName: string) => {
+    const isDownloaded = modelsData[modelName]?.downloaded ?? false;
+    const isLoaded = loadedModels.has(modelName);
+    const isLoading = loadingModels.has(modelName);
+
+    let statusClass = 'not-downloaded';
+    let statusTitle = 'Not downloaded';
+
+    if (isLoading) {
+      statusClass = 'loading';
+      statusTitle = 'Loading...';
+    } else if (isLoaded) {
+      statusClass = 'loaded';
+      statusTitle = 'Model is loaded';
+    } else if (isDownloaded) {
+      statusClass = 'available';
+      statusTitle = 'Available locally';
+    }
+
+    return { isDownloaded, isLoaded, isLoading, statusClass, statusTitle };
+  };
+
+  const renderLoadOptionsButton = (modelName: string) => (
+    <button
+      className="model-action-btn load-btn"
+      onClick={(e) => {
+        e.stopPropagation();
+        setOptionsModel(modelName);
+        setShowModelOptionsModal(true);
+      }}
+      title="Load model with options"
+    >
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+           xmlns="http://www.w3.org/2000/svg">
+        <path
+          d="M6.5 1.5H9.5L9.9 3.4C10.4 3.6 10.9 3.9 11.3 4.2L13.1 3.5L14.6 6L13.1 7.4C13.2 7.9 13.2 8.1 13.2 8.5C13.2 8.9 13.2 9.1 13.1 9.6L14.6 11L13.1 13.5L11.3 12.8C10.9 13.1 10.4 13.4 9.9 13.6L9.5 15.5H6.5L6.1 13.6C5.6 13.4 5.1 13.1 4.7 12.8L2.9 13.5L1.4 11L2.9 9.6C2.8 9.1 2.8 8.9 2.8 8.5C2.8 8.1 2.8 7.9 2.9 7.4L1.4 6L2.9 3.5L4.7 4.2C5.1 3.9 5.6 3.6 6.1 3.4L6.5 1.5Z"
+          stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"
+          strokeLinejoin="round"/>
+        <circle cx="8" cy="8.5" r="2.5" stroke="currentColor"
+                strokeWidth="1.2"/>
+      </svg>
+    </button>
+  );
+
+  const renderDeleteButton = (modelName: string) => (
+    <button
+      className="model-action-btn delete-btn"
+      onClick={(e) => { e.stopPropagation(); handleDeleteModel(modelName); }}
+      title="Delete model"
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="3 6 5 6 21 6" />
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      </svg>
+    </button>
+  );
+
+  const renderActionButtonsContent = (modelName: string) => {
+    const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
+    return (
+      <>
+        {!isDownloaded && (
+          <button
+            className="model-action-btn download-btn"
+            onClick={(e) => { e.stopPropagation(); handleDownloadModel(modelName); }}
+            title="Download model"
           >
-            <span className={`category-chevron ${shouldShowCategory(category) ? 'expanded' : ''}`}>
-              <ChevronRight size={11} strokeWidth={2.1} />
-            </span>
-            <span className="category-label">{getDisplayLabel(category)}</span>
-            <span className="category-count">({groupedModels[category].length})</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
+        )}
+        {isDownloaded && !isLoaded && !isLoading && (
+          <>
+            <button
+              className="model-action-btn load-btn"
+              onClick={(e) => { e.stopPropagation(); handleLoadModel(modelName); }}
+              title="Load model"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polygon points="5 3 19 12 5 21" fill="currentColor" />
+              </svg>
+            </button>
+            {renderDeleteButton(modelName)}
+            {renderLoadOptionsButton(modelName)}
+          </>
+        )}
+        {isLoaded && (
+          <>
+            <button
+              className="model-action-btn unload-btn"
+              onClick={(e) => { e.stopPropagation(); handleUnloadModel(modelName); }}
+              title="Eject model"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 11L12 8L15 11" />
+                <path d="M12 8V16" />
+                <path d="M5 20H19" />
+              </svg>
+            </button>
+            {renderDeleteButton(modelName)}
+            {renderLoadOptionsButton(modelName)}
+          </>
+        )}
+      </>
+    );
+  };
+
+  const renderActionButtons = (modelName: string, isHovered: boolean) => {
+    if (!isHovered) return null;
+    return (
+      <span className="model-actions">
+        {renderActionButtonsContent(modelName)}
+      </span>
+    );
+  };
+
+  const renderModelItem = (
+    modelName: string, modelInfo: ModelInfo, hoverKey: string,
+    displayName?: string, extraClass?: string
+  ) => {
+    const { isDownloaded, statusClass, statusTitle } = getModelStatus(modelName);
+    const isHovered = hoveredModel === hoverKey;
+    return (
+      <div
+        key={modelName}
+        className={`model-item model-catalog-item ${extraClass ?? ''} ${isDownloaded ? 'downloaded' : ''}`}
+        onMouseEnter={() => setHoveredModel(hoverKey)}
+        onMouseLeave={() => setHoveredModel(null)}
+      >
+        <div className="model-item-content">
+          <div className="model-info-left">
+            <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
+            <span className="model-name">{displayName ?? modelName}</span>
+            <span className="model-size">{formatSize(modelInfo.size)}</span>
+            {renderActionButtons(modelName, isHovered)}
           </div>
-
-          {shouldShowCategory(category) && (
-            <div className="model-list">
-              <ModelOptionsModal model={optionsModel} isOpen={showModelOptionsModal}
-                                 onCancel={() => {
-                                   setShowModelOptionsModal(false);
-                                   setOptionsModel(null);
-                                 }}
-                                 onSubmit={(modelName, options) => {
-                                   setShowModelOptionsModal(false);
-                                   setOptionsModel(null);
-                                   handleLoadModel(modelName, options);
-                                 }}/>
-              {groupedModels[category].map(model => {
-                const isDownloaded = modelsData[model.name]?.downloaded ?? false;
-                const isLoaded = loadedModels.has(model.name);
-                const isLoading = loadingModels.has(model.name);
-
-                let statusClass = 'not-downloaded';
-                let statusTitle = 'Not downloaded';
-
-                if (isLoading) {
-                  statusClass = 'loading';
-                  statusTitle = 'Loading...';
-                } else if (isLoaded) {
-                  statusClass = 'loaded';
-                  statusTitle = 'Model is loaded';
-                } else if (isDownloaded) {
-                  statusClass = 'available';
-                  statusTitle = 'Available locally';
-                }
-
-                const isHovered = hoveredModel === model.name;
-                const renderLoadOptionsButton = () => (
-                  <button
-                    className="model-action-btn load-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setOptionsModel(model.name);
-                      setShowModelOptionsModal(true);
-                    }}
-                    title="Load model with options"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
-                         xmlns="http://www.w3.org/2000/svg">
-                      <path
-                        d="M6.5 1.5H9.5L9.9 3.4C10.4 3.6 10.9 3.9 11.3 4.2L13.1 3.5L14.6 6L13.1 7.4C13.2 7.9 13.2 8.1 13.2 8.5C13.2 8.9 13.2 9.1 13.1 9.6L14.6 11L13.1 13.5L11.3 12.8C10.9 13.1 10.4 13.4 9.9 13.6L9.5 15.5H6.5L6.1 13.6C5.6 13.4 5.1 13.1 4.7 12.8L2.9 13.5L1.4 11L2.9 9.6C2.8 9.1 2.8 8.9 2.8 8.5C2.8 8.1 2.8 7.9 2.9 7.4L1.4 6L2.9 3.5L4.7 4.2C5.1 3.9 5.6 3.6 6.1 3.4L6.5 1.5Z"
-                        stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"
-                        strokeLinejoin="round"/>
-                      <circle cx="8" cy="8.5" r="2.5" stroke="currentColor"
-                              strokeWidth="1.2"/>
-                    </svg>
-                  </button>
-                );
-
-                return (
-                  <div
-                    key={model.name}
-                    className={`model-item model-catalog-item ${isDownloaded ? 'downloaded' : ''}`}
-                    onMouseEnter={() => setHoveredModel(model.name)}
-                    onMouseLeave={() => setHoveredModel(null)}
-                  >
-                    <div className="model-item-content">
-                      <div className="model-info-left">
-                        <span
-                          className={`model-status-indicator ${statusClass}`}
-                          title={statusTitle}
-                        >
-                          ●
-                        </span>
-                        <span className="model-name">{model.name}</span>
-                        <span className="model-size">{formatSize(model.info.size)}</span>
-                        {isHovered && (
-                          <span className="model-actions">
-                            {!isDownloaded && (
-                              <button
-                                className="model-action-btn download-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDownloadModel(model.name);
-                                }}
-                                title="Download model"
-                              >
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                  <polyline points="7 10 12 15 17 10" />
-                                  <line x1="12" y1="15" x2="12" y2="3" />
-                                </svg>
-                              </button>
-                            )}
-                            {isDownloaded && !isLoaded && !isLoading && (
-                              <>
-                                <button
-                                  className="model-action-btn load-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleLoadModel(model.name);
-                                  }}
-                                  title="Load model"
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <polygon points="5 3 19 12 5 21" fill="currentColor" />
-                                  </svg>
-                                </button>
-                                <button
-                                  className="model-action-btn delete-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteModel(model.name);
-                                  }}
-                                  title="Delete model"
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <polyline points="3 6 5 6 21 6" />
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                  </svg>
-                                </button>
-                                {renderLoadOptionsButton()}
-                              </>
-                            )}
-                            {isLoaded && (
-                              <>
-                                {renderLoadOptionsButton()}
-                                <button
-                                  className="model-action-btn unload-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleUnloadModel(model.name);
-                                  }}
-                                  title="Eject model"
-                                >
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M9 11L12 8L15 11" />
-                                    <path d="M12 8V16" />
-                                    <path d="M5 20H19" />
-                                  </svg>
-                                </button>
-                                <button
-                                  className="model-action-btn delete-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteModel(model.name);
-                                  }}
-                                  title="Delete model"
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <polyline points="3 6 5 6 21 6" />
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                  </svg>
-                                </button>
-                              </>
-                            )}
-                          </span>
-                        )}
-                      </div>
-                      {model.info.labels && model.info.labels.length > 0 && (
-                        <span className="model-labels">
-                          {model.info.labels.map(label => (
-                            <span
-                              key={label}
-                              className={`model-label label-${label}`}
-                              title={getCategoryLabel(label)}
-                            />
-                          ))}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          {modelInfo.labels && modelInfo.labels.length > 0 && (
+            <span className="model-labels">
+              {modelInfo.labels.map(label => (
+                <span key={label} className={`model-label label-${label}`} title={getCategoryLabel(label)} />
+              ))}
+            </span>
           )}
         </div>
-      ))}
+      </div>
+    );
+  };
+
+  const toggleFamily = (familyName: string) => {
+    setExpandedFamilies(prev => {
+      const next = new Set(prev);
+      if (next.has(familyName)) next.delete(familyName);
+      else next.add(familyName);
+      return next;
+    });
+  };
+
+  const renderFamilyItem = (item: Extract<ModelListItem, { type: 'family' }>) => {
+    const { family, members } = item;
+    const isExpanded = expandedFamilies.has(family.displayName);
+
+    // Collect shared labels from first member (labels are shared at family level)
+    const sharedLabels = members[0]?.info.labels;
+
+    return (
+      <div key={family.displayName} className="model-family-group">
+        <div
+          className="model-family-header"
+          onClick={() => toggleFamily(family.displayName)}
+        >
+          <span className={`family-chevron ${isExpanded ? 'expanded' : ''}`}>
+            <ChevronRight size={11} strokeWidth={2.1} />
+          </span>
+          <span className="model-name family-model-name">{family.displayName}</span>
+          {sharedLabels && sharedLabels.length > 0 && (
+            <span className="model-labels">
+              {sharedLabels.map(label => (
+                <span key={label} className={`model-label label-${label}`} title={getCategoryLabel(label)} />
+              ))}
+            </span>
+          )}
+        </div>
+        {isExpanded && (
+          <div className="model-family-members-list">
+            {members.map(m =>
+              renderModelItem(
+                m.name, m.info,
+                `family-${family.displayName}-${m.label}`,
+                m.label, 'model-family-member-row'
+              )
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderModelsView = () => (
+    <>
+      {categories.map(category => {
+        const listItems = builtModelLists[category] || [];
+        return (
+          <div key={category} className="model-category">
+            <div
+              className="model-category-header"
+              onClick={() => toggleCategory(category)}
+            >
+              <span className={`category-chevron ${shouldShowCategory(category) ? 'expanded' : ''}`}>
+                <ChevronRight size={11} strokeWidth={2.1} />
+              </span>
+              <span className="category-label">{getDisplayLabel(category)}</span>
+              <span className="category-count">({groupedModels[category].length})</span>
+            </div>
+
+            {shouldShowCategory(category) && (
+              <div className="model-list">
+                <ModelOptionsModal model={optionsModel} isOpen={showModelOptionsModal}
+                                   onCancel={() => {
+                                     setShowModelOptionsModal(false);
+                                     setOptionsModel(null);
+                                   }}
+                                   onSubmit={(modelName, options) => {
+                                     setShowModelOptionsModal(false);
+                                     setOptionsModel(null);
+                                     handleLoadModel(modelName, options);
+                                   }}/>
+                {listItems.map(item => {
+                  if (item.type === 'family') {
+                    return renderFamilyItem(item);
+                  }
+                  return renderModelItem(item.name, item.info, item.name);
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </>
   );
+
+  const handleRailClick = (view: LeftPanelView) => {
+    if (view === currentView && isContentVisible) {
+      onContentVisibilityChange(false);
+    } else {
+      onViewChange(view);
+      onContentVisibilityChange(true);
+    }
+  };
 
   return (
     <div className="model-manager" style={{ width: `${width}px` }}>
@@ -808,22 +1076,22 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
       <ConfirmDialog />
       <div className="left-panel-shell">
         <div className="left-panel-mode-rail">
-          <button className={`left-panel-mode-btn ${currentView === 'models' ? 'active' : ''}`} onClick={() => onViewChange('models')} title="Models" aria-label="Models">
+          <button className={`left-panel-mode-btn ${currentView === 'models' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('models')} title="Models" aria-label="Models">
             <Boxes size={14} strokeWidth={1.9} />
           </button>
-          <button className={`left-panel-mode-btn ${currentView === 'backends' ? 'active' : ''}`} onClick={() => onViewChange('backends')} title="Backends" aria-label="Backends">
+          <button className={`left-panel-mode-btn ${currentView === 'backends' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('backends')} title="Backends" aria-label="Backends">
             <Cpu size={14} strokeWidth={1.9} />
           </button>
-          <button className={`left-panel-mode-btn ${currentView === 'marketplace' ? 'active' : ''}`} onClick={() => onViewChange('marketplace')} title="Marketplace" aria-label="Marketplace">
+          <button className={`left-panel-mode-btn ${currentView === 'marketplace' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('marketplace')} title="Marketplace" aria-label="Marketplace">
             <Store size={14} strokeWidth={1.9} />
           </button>
           <div className="left-panel-mode-rail-spacer" />
-          <button className={`left-panel-mode-btn ${currentView === 'settings' ? 'active' : ''}`} onClick={() => onViewChange('settings')} title="Settings" aria-label="Settings">
-            <SettingsIcon size={14} strokeWidth={1.9} />
+          <button className={`left-panel-mode-btn ${currentView === 'settings' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('settings')} title="Settings" aria-label="Settings">
+            <Settings size={14} strokeWidth={1.9} />
           </button>
         </div>
 
-        <div className={`left-panel-main ${showFilterPanel ? 'filter-menu-open' : ''}`}>
+        {isContentVisible && <div className={`left-panel-main ${showFilterPanel ? 'filter-menu-open' : ''}`}>
           <div className="model-manager-header">
             <div className="left-panel-header-top">
               <h3>{viewTitle}</h3>
@@ -921,11 +1189,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
                       <span className="loaded-model-name">{modelName}</span>
                     </div>
                     <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M9 11L12 8L15 11" />
-                        <path d="M12 8V16" />
-                        <path d="M5 20H19" />
-                      </svg>
+                      <EjectIcon />
                     </button>
                   </div>
                 ))}
@@ -1083,7 +1347,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280, cur
               )}
             </div>
           )}
-        </div>
+        </div>}
       </div>
     </div>
   );

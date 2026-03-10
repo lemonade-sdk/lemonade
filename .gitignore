@@ -167,7 +167,8 @@ cython_debug/
 .aider*
 
 # Claude files
-CLAUDE.*
+CLAUDE.md
+CLAUDE.local.md
 .settings.local.json
 
 # Bruno/GitHub files
