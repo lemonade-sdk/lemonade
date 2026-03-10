@@ -65,22 +65,16 @@ jobs:
           RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
         run: |
           $ErrorActionPreference = "Stop"
-          Write-Host "Updating llamacpp vulkan/cpu/metal to $env:RELEASE" -ForegroundColor Cyan
-          python -c @"
-          import json, os
-          release = os.environ['RELEASE']
-          path = 'src/cpp/resources/backend_versions.json'
-          with open(path, 'r') as f:
-              data = json.load(f)
-          for key in ['vulkan', 'cpu', 'metal']:
-              old = data['llamacpp'][key]
-              data['llamacpp'][key] = release
-              print(f'  llamacpp.{key}: {old} -> {release}')
-          with open(path, 'w') as f:
-              json.dump(data, f, indent=2)
-              f.write('\n')
-          "@
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $release = $env:RELEASE
+          Write-Host "Updating llamacpp vulkan/cpu/metal to $release" -ForegroundColor Cyan
+          $path = "src/cpp/resources/backend_versions.json"
+          $data = Get-Content $path -Raw | ConvertFrom-Json
+          foreach ($key in @("vulkan", "cpu", "metal")) {
+              $old = $data.llamacpp.$key
+              $data.llamacpp.$key = $release
+              Write-Host "  llamacpp.${key}: $old -> $release"
+          }
+          $data | ConvertTo-Json -Depth 10 | Set-Content $path -Encoding UTF8
 
       - name: Build lemonade
         shell: PowerShell
@@ -160,21 +154,14 @@ jobs:
           RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
         run: |
           $ErrorActionPreference = "Stop"
-          Write-Host "Updating llamacpp rocm to $env:RELEASE" -ForegroundColor Cyan
-          python -c @"
-          import json, os
-          release = os.environ['RELEASE']
-          path = 'src/cpp/resources/backend_versions.json'
-          with open(path, 'r') as f:
-              data = json.load(f)
-          old = data['llamacpp']['rocm']
-          data['llamacpp']['rocm'] = release
-          print(f'  llamacpp.rocm: {old} -> {release}')
-          with open(path, 'w') as f:
-              json.dump(data, f, indent=2)
-              f.write('\n')
-          "@
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $release = $env:RELEASE
+          Write-Host "Updating llamacpp rocm to $release" -ForegroundColor Cyan
+          $path = "src/cpp/resources/backend_versions.json"
+          $data = Get-Content $path -Raw | ConvertFrom-Json
+          $old = $data.llamacpp.rocm
+          $data.llamacpp.rocm = $release
+          Write-Host "  llamacpp.rocm: $old -> $release"
+          $data | ConvertTo-Json -Depth 10 | Set-Content $path -Encoding UTF8
 
       - name: Build lemonade
         shell: PowerShell
