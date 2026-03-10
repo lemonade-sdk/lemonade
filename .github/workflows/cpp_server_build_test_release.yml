@@ -712,6 +712,10 @@ jobs:
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
             backends: "cpu vulkan"
+          - name: flm
+            script: server_llm.py
+            extra_args: "--wrapped-server flm"
+            backends: "npu"
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""
@@ -872,12 +876,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        test_type: [cli, endpoints, system-info, ollama, llamacpp-system, flm-status]
+        test_type: [cli, endpoints, system-info, ollama, llamacpp-system]
         exclude:
           - os: macos-latest
             test_type: system-info
-          - os: macos-latest
-            test_type: flm-status
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -1028,11 +1030,6 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "llamacpp-system" ]; then
               echo "Running LlamaCpp System Backend tests..."
               $VENV_PYTHON test/test_llamacpp_system_backend.py --server-binary "$SERVER_BINARY"
-          elif [ "${{ matrix.test_type }}" = "flm-status" ]; then
-              echo "Running FLM status mock tests..."
-              # Unset LEMONADE_CI_MODE so the server uses mock cache files
-              unset LEMONADE_CI_MODE
-              $VENV_PYTHON test/test_flm_status.py --server-binary "$SERVER_BINARY"
           fi
 
           echo "${{ matrix.test_type }} tests PASSED!"
