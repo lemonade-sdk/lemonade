@@ -12,7 +12,7 @@
   <meta property="og:title" content="LLMs on Linux with FastFlowLM">
   <meta property="og:description" content="LLMs on Linux are now supported with FastFlowLM. This guide helps you set up the FLM stack on supported AMD XDNA 2 NPUs and troubleshoot common validation issues.">
   <meta property="og:type" content="article">
-  <meta property="article:published_time" content="2026-03-05">
+  <meta property="article:published_time" content="2026-03-11">
 </head>
 <body>
   <div class="navbar-placeholder"></div>
@@ -25,13 +25,21 @@
           <h1 class="hero-title">LLMs on Linux with FastFlowLM</h1>
           <div class="hero-subtitle" id="article-subtitle">This article will teach you how to run LLMs on your AMD XNDA 2 NPU on Linux using FastFlowLM. Get set up and then show us what you build!</div>
           <div class="hero-meta">
-            <div class="meta-item"><span class="meta-icon">Date:</span>March 5, 2026</div>
+            <div class="meta-item"><span class="meta-icon">Date:</span>March 11, 2026</div>
             <div class="meta-item meta-authors"><span class="meta-icon">Authors:</span>Lemonade and FastFlowLM contributors</div>
           </div>
         </div>
       </div>
 
       <div class="article-content">
+        <div class="section-card" id="troubleshoot-intro" style="display:none;">
+          <div class="section-header">
+            <span class="section-kicker">Getting Started</span>
+            <h2 class="section-title">Troubleshooting</h2>
+          </div>
+          <p>Lemonade detected that some additional setup might be needed to get FastFlowLM fully operational on this system. Please review this guide and follow the steps provided.</p>
+        </div>
+
         <div class="section-card">
           <div class="section-header">
             <span class="section-kicker">Announcement</span>
@@ -407,6 +415,8 @@
         var ctaSection = document.querySelector('.cta-section');
         if (ctaSep) ctaSep.style.display = 'none';
         if (ctaSection) ctaSection.style.display = 'none';
+        var troubleshootIntro = document.getElementById('troubleshoot-intro');
+        if (troubleshootIntro) troubleshootIntro.style.display = '';
       }
 
       const select = document.getElementById('distro-select');
