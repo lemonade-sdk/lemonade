@@ -703,6 +703,26 @@ elseif(UNIX)
     endif()
 endif()
 
+# Add CLI application subdirectory
+add_subdirectory(src/cpp/cli)
+
+# ============================================================
+# lemonade CLI binary installation (Linux only, similar to lemonade-server)
+# ============================================================
+if(UNIX AND NOT APPLE)
+    # Create symlink in standard bin path only if not installing to /usr
+    if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+        install(CODE "
+            file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
+            execute_process(
+                COMMAND ${CMAKE_COMMAND} -E create_symlink
+                    ${CMAKE_INSTALL_PREFIX}/bin/lemonade
+                    \"\$ENV{DESTDIR}/usr/bin/lemonade\"
+            )
+        ")
+    endif()
+endif()
+
 # ============================================================
 # Resources
 # ============================================================
@@ -1034,6 +1054,24 @@ if(APPLE)
                 )
                 if(NOT SIGN_RESULT EQUAL 0)
                     message(FATAL_ERROR \"Failed to sign lemonade-server\")
+                endif()
+            " COMPONENT Runtime)
+        endif()
+    endif()
+
+    # CLI -> /usr/local/bin
+    if(TARGET lemonade)
+        install(TARGETS lemonade RUNTIME DESTINATION "bin" COMPONENT Runtime)
+
+        # Sign the CLI binary after installation (Release builds only)
+        if(CMAKE_BUILD_TYPE STREQUAL "Release")
+            install(CODE "
+                execute_process(
+                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/lemonade\"
+                    RESULT_VARIABLE SIGN_RESULT
+                )
+                if(NOT SIGN_RESULT EQUAL 0)
+                    message(FATAL_ERROR \"Failed to sign lemonade\")
                 endif()
             " COMPONENT Runtime)
         endif()
