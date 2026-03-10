@@ -73,7 +73,7 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({ settings, onValueChangeFunc, 
             Reset
           </button>
         </div>
-        <Combobox defaultValue={userVoice} onChangeFunc={updateUserVoice} optionsList={voiceOptions} />
+        <Combobox defaultValue={userVoice} onChangeFunc={updateUserVoice} optionsList={voiceOptions} placeholder='Select a voice...' />
       </div>
       <div className={`settings-section ${settings.tts.assistantVoice.useDefault ? "settings-section-default" : ""}`}>
         <div className="settings-label-row">
@@ -85,7 +85,7 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({ settings, onValueChangeFunc, 
             Reset
           </button>
         </div>
-        <Combobox defaultValue={assistantVoice} onChangeFunc={updateAssistantVoice} optionsList={voiceOptions} />
+        <Combobox defaultValue={assistantVoice} onChangeFunc={updateAssistantVoice} optionsList={voiceOptions} placeholder='Select a voice...' />
       </div>
       <div className={`settings-section ${settings.tts.enableTTS.useDefault ? 'settings-section-default' : ''}`}>
         <div className="settings-label-row">

@@ -2361,8 +2361,8 @@ input::-webkit-calendar-picker-indicator {
   width: 100%;
   height: fit-content;
   min-height: 30px;
-  max-height: 80px;
-  overflow-y: scroll;
+  max-height: 120px;
+  overflow-y: auto;
   position: absolute;
   z-index: 10200;
   left: 0;
