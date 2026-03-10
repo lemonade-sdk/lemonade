@@ -60,12 +60,13 @@ jobs:
         uses: ./.github/actions/cleanup-processes-windows
 
       - name: Update backend_versions.json
-        shell: bash
+        shell: PowerShell
         env:
           RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
         run: |
-          echo "Updating llamacpp vulkan/cpu/metal to $RELEASE"
-          python3 -c "
+          $ErrorActionPreference = "Stop"
+          Write-Host "Updating llamacpp vulkan/cpu/metal to $env:RELEASE" -ForegroundColor Cyan
+          python3 -c @"
           import json, os
           release = os.environ['RELEASE']
           path = 'src/cpp/resources/backend_versions.json'
@@ -78,7 +79,8 @@ jobs:
           with open(path, 'w') as f:
               json.dump(data, f, indent=2)
               f.write('\n')
-          "
+          "@
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build lemonade
         shell: PowerShell
@@ -153,12 +155,13 @@ jobs:
         uses: ./.github/actions/cleanup-processes-windows
 
       - name: Update backend_versions.json
-        shell: bash
+        shell: PowerShell
         env:
           RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
         run: |
-          echo "Updating llamacpp rocm to $RELEASE"
-          python3 -c "
+          $ErrorActionPreference = "Stop"
+          Write-Host "Updating llamacpp rocm to $env:RELEASE" -ForegroundColor Cyan
+          python3 -c @"
           import json, os
           release = os.environ['RELEASE']
           path = 'src/cpp/resources/backend_versions.json'
@@ -170,7 +173,8 @@ jobs:
           with open(path, 'w') as f:
               json.dump(data, f, indent=2)
               f.write('\n')
-          "
+          "@
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build lemonade
         shell: PowerShell
