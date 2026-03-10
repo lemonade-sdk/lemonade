@@ -569,6 +569,20 @@ jobs:
           .venv/bin/python test/test_ollama.py --server-binary /usr/local/bin/lemonade-server
           echo "Ollama API tests PASSED!"
 
+      - name: Run streaming error tests (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          HF_HOME: ${{ github.workspace }}/hf-cache
+        run: |
+          set -e
+          echo "Running streaming error termination tests..."
+          .venv/bin/python test/server_streaming_errors.py --server-binary /usr/local/bin/lemonade-server
+          echo "Streaming error tests PASSED!"
+
       - name: Cleanup keychain
         if: always() && steps.check_signing.outputs.has_signing == 'true'
         shell: bash
@@ -988,7 +1002,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        test_type: [cli, endpoints, system-info, ollama, llamacpp-system]
+        test_type: [cli, endpoints, system-info, ollama, llamacpp-system, streaming-errors]
         exclude:
           - os: macos-latest
             test_type: system-info
@@ -1143,6 +1157,9 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "llamacpp-system" ]; then
               echo "Running LlamaCpp System Backend tests..."
               $VENV_PYTHON test/test_llamacpp_system_backend.py --server-binary "$SERVER_BINARY"
+          elif [ "${{ matrix.test_type }}" = "streaming-errors" ]; then
+              echo "Running streaming error termination tests..."
+              $VENV_PYTHON test/server_streaming_errors.py --server-binary "$SERVER_BINARY"
           fi
 
           echo "${{ matrix.test_type }} tests PASSED!"
