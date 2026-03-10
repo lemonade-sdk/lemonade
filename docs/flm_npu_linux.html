@@ -47,7 +47,7 @@
           <strong>Requirements:</strong>
         </p>
         <ul>
-          <li><strong>NPU Firmware:</strong> Firmware supplied by your Linux distribution</li>
+          <li><strong>NPU Firmware:</strong> Version 1.1.0.0 or later</li>
           <li><strong>Kernel:</strong> Must have the <strong>amdxdna</strong> driver (from kernel 7.0 or later, or via DKMS package as provided in instructions below)</li>
           <li><strong>Runtime:</strong> FLM (FastFlowLM) installed</li>
           <li><strong>System limits:</strong> Sufficient memlock limits (handled by Lemonade's systemd service)</li>
@@ -88,13 +88,13 @@
                 <div class="code-block"><code>git clone https://github.com/FastFlowLM/FastFlowLM.git ~/src/FastFlowLM<br>git -C ~/src/FastFlowLM submodule update --init --recursive<br>cd ~/src/FastFlowLM<br>cmake -S src --preset linux-default<br>ninja -C src/build -j $(nproc)<br>sudo cmake --install src/build</code></div>
               </li>
               <li>Run validation:<br>
-                <div class="code-block"><code>export LD_LIBRARY_PATH=/opt/fastflowlm/lib:/opt/xilinx/xrt/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}<br>export FLM_CONFIG_PATH=/opt/fastflowlm/share/flm/model_list.json<br>/opt/fastflowlm/bin/flm validate</code></div>
+                <div class="code-block"><code>LD_LIBRARY_PATH=/opt/fastflowlm/lib:/opt/xilinx/xrt/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}} FLM_CONFIG_PATH=/opt/fastflowlm/share/flm/model_list.json /opt/fastflowlm/bin/flm validate</code></div>
               </li>
               <li>If you run <code>lemonade-server</code> as a systemd service, add the Linux beta flag and FLM paths:<br>
                 <div class="code-block"><code>sudo install -d /etc/systemd/system/lemonade-server.service.d<br>printf '[Service]\nEnvironment=LEMONADE_FLM_LINUX_BETA=1\nEnvironment=LD_LIBRARY_PATH=/opt/fastflowlm/lib:/opt/xilinx/xrt/lib64\nEnvironment=FLM_CONFIG_PATH=/opt/fastflowlm/share/flm/model_list.json\n' | sudo tee /etc/systemd/system/lemonade-server.service.d/10-flm-beta.conf<br>sudo systemctl daemon-reload<br>sudo systemctl enable --now lemonade-server.service</code></div>
               </li>
               <li>Verify the service and local API:<br>
-                <div class="code-block"><code>systemctl status lemonade-server.service --no-pager<br>curl -i http://127.0.0.1:8000/api/v1/models</code></div>
+                <div class="code-block"><code>systemctl status lemonade-server.service --no-pager<br>curl -i http://localhost:8000/api/v1/models</code></div>
               </li>
             </ol>
           </div>
@@ -307,11 +307,12 @@
         <h2>Common flm validate issues</h2>
 
         <h3>1. Outdated NPU Firmware</h3>
-        <p>If <code>flm validate</code> reports a firmware issue, update the firmware package from your Linux distribution and reboot.</p>
+        <p>If <code>flm validate</code> reports a firmware issue, one possible fix is to follow your distribution's recommended update path for the firmware or related packages, then reboot.</p>
         <p>You can check your version manually with:</p>
         <div class="code-block">
           <code>cat /sys/bus/pci/drivers/amdxdna/*/fw_version</code>
         </div>
+        <p>If the firmware is older than 1.1.0.0, check your distribution's documentation for the recommended update path, since it varies by distro.</p>
         <h3>2. Missing or Outdated amdxdna Driver</h3>
         <p>The NPU requires the <strong>amdxdna</strong> driver, which is included in Linux kernel 7.0 and later, or can be installed via the <code>amdxdna-dkms</code> package as described in the instructions above.</p>
         <p>To check if the driver is loaded, run:</p>
