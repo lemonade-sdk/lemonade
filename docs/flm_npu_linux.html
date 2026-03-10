@@ -35,11 +35,25 @@
         <div class="section-card">
           <div class="section-header">
             <span class="section-kicker">Announcement</span>
-            <h2 class="section-title">FastFlowLM Linux Support</h2>
+            <h2 class="section-title">Updates for Linux Support</h2>
+            <p>
+              Today, it is possible to run LLMs and Whisper on the AMD XDNA 2 NPU. This solution is made up of:
+              <ul>
+                <li>Upstream NPU driver in the Linux 7.0+ kernel (with backports for 6.xx kernels).</li>
+                <li>AMD IRON compiler for XDNA NPUs.</li>
+                <li>FastFlowLM, a lightweight LLM runtime for AMD NPUs, which today has added Linux support.</li>
+                <li>Lemonade, ties everything together with a streamlined user experience.</li>
+              </ul>
+            </p>
+        </div>
+
+        <div class="section-card">
+          <div class="section-header">
+            <span class="section-kicker">Getting Started</span>
+            <h2 class="section-title">FastFlowLM</h2>
             <p>
               <a href="https://fastflowlm.com/">FastFlowLM</a> is a lightweight LLM runtime optimized for AMD NPUs. Today, FastFlowLM is adding support for Ubuntu, Arch, and other distros to enable fast, low-power LLMs on Ryzen&trade; AI PCs that run Linux.
             </p>
-          </div>
 
           <p>This article will help you:</p>
           <ul>
@@ -99,7 +113,7 @@
             <h2 class="section-title">Runtime stack</h2>
           </div>
 
-          <p class="flm-req-intro">The NPU requires specific firmware, kernel version, driver, and runtime software to function. The quickstart guide below will help you install these requirements.</p>
+          <p class="flm-req-intro">This solution requires specific firmware, kernel version, driver, and runtime software to function. The quickstart guide below will help you install these requirements.</p>
           <div class="flm-req-table-wrap">
             <table class="flm-req-table">
               <thead>
@@ -323,7 +337,7 @@
           <p>If older, update through your distribution (typically by updating the <code>linux-firmware</code> package).</p>
 
           <h3>2. Missing or outdated amdxdna driver</h3>
-          <p>The NPU requires <code>amdxdna</code>, provided in Linux kernel 7.0+ or via <code>amdxdna-dkms</code>.</p>
+          <p>This solution requires <code>amdxdna</code>, provided in Linux kernel 7.0+ or via <code>amdxdna-dkms</code>.</p>
           <div class="flm-code-block"><code>lsmod | grep amdxdna</code></div>
           <p>If not listed, upgrade to a kernel with in-tree support or install the DKMS package.</p>
           <div class="flm-code-block"><code>uname -r</code></div>
