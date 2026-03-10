@@ -45,19 +45,17 @@ jobs:
           echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
 
   # ========================================================================
-  # Validate vulkan backend
+  # Build MSI installers with updated backend versions
   # ========================================================================
-  validate-vulkan:
-    name: Validate vulkan
+  build-vulkan:
+    name: Build (vulkan)
     needs: get-latest-releases
-    runs-on: [self-hosted, Windows, stx-halo, 128gb]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
           clean: true
-
-      - name: Cleanup processes
-        uses: ./.github/actions/cleanup-processes-windows
+          fetch-depth: 0
 
       - name: Update backend_versions.json
         shell: PowerShell
@@ -76,29 +74,125 @@ jobs:
           }
           $data | ConvertTo-Json -Depth 10 | Set-Content $path -Encoding UTF8
 
-      - name: Build lemonade
+      - name: Build C++ Server with CMake
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-
           Write-Host "Building lemonade-router and lemonade-server..." -ForegroundColor Cyan
-
-          if (Test-Path "build") {
-              Remove-Item -Recurse -Force "build"
-          }
-
+          if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
           cmake --preset windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
           cmake --build build --config Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
           if (-not (Test-Path "build\Release\lemonade-server.exe")) {
               Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
               exit 1
           }
-
           Write-Host "Build successful!" -ForegroundColor Green
+
+      - name: Build MSI installer
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\src\cpp\build_installer.ps1
+          if (-not (Test-Path "lemonade-server-minimal.msi")) {
+              Write-Host "ERROR: Minimal installer not created!" -ForegroundColor Red
+              exit 1
+          }
+          Write-Host "Installer created successfully!" -ForegroundColor Green
+
+      - name: Upload MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: llamacpp-validation-msi-vulkan
+          path: lemonade-server-minimal.msi
+          retention-days: 7
+
+  build-rocm:
+    name: Build (rocm)
+    needs: get-latest-releases
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Update backend_versions.json
+        shell: PowerShell
+        env:
+          RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $release = $env:RELEASE
+          Write-Host "Updating llamacpp rocm to $release" -ForegroundColor Cyan
+          $path = "src/cpp/resources/backend_versions.json"
+          $data = Get-Content $path -Raw | ConvertFrom-Json
+          $old = $data.llamacpp.rocm
+          $data.llamacpp.rocm = $release
+          Write-Host "  llamacpp.rocm: $old -> $release"
+          $data | ConvertTo-Json -Depth 10 | Set-Content $path -Encoding UTF8
+
+      - name: Build C++ Server with CMake
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "Building lemonade-router and lemonade-server..." -ForegroundColor Cyan
+          if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
+          cmake --preset windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build --config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "build\Release\lemonade-server.exe")) {
+              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
+              exit 1
+          }
+          Write-Host "Build successful!" -ForegroundColor Green
+
+      - name: Build MSI installer
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\src\cpp\build_installer.ps1
+          if (-not (Test-Path "lemonade-server-minimal.msi")) {
+              Write-Host "ERROR: Minimal installer not created!" -ForegroundColor Red
+              exit 1
+          }
+          Write-Host "Installer created successfully!" -ForegroundColor Green
+
+      - name: Upload MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: llamacpp-validation-msi-rocm
+          path: lemonade-server-minimal.msi
+          retention-days: 7
+
+  # ========================================================================
+  # Validate vulkan backend on self-hosted runner
+  # ========================================================================
+  validate-vulkan:
+    name: Validate vulkan
+    needs: [get-latest-releases, build-vulkan]
+    runs-on: [self-hosted, Windows, stx-halo, 128gb]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Set environment variables
+        shell: PowerShell
+        run: |
+          $cwd = (Get-Item .\).FullName
+          echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
+
+      - name: Install Lemonade Server
+        uses: ./.github/actions/install-lemonade-server-msi
+        with:
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+          artifact-name: llamacpp-validation-msi-vulkan
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -112,7 +206,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $venvPython = ".\.venv\Scripts\python.exe"
-          $serverExe = "build\Release\lemonade-server.exe"
+          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
 
           & $venvPython test/validate_llamacpp.py `
             --backend vulkan `
@@ -134,11 +228,11 @@ jobs:
         uses: ./.github/actions/cleanup-processes-windows
 
   # ========================================================================
-  # Validate rocm backend
+  # Validate rocm backend on self-hosted runner
   # ========================================================================
   validate-rocm:
     name: Validate rocm
-    needs: get-latest-releases
+    needs: [get-latest-releases, build-rocm]
     runs-on: [self-hosted, Windows, stx-halo, 128gb]
     steps:
       - uses: actions/checkout@v4
@@ -148,44 +242,17 @@ jobs:
       - name: Cleanup processes
         uses: ./.github/actions/cleanup-processes-windows
 
-      - name: Update backend_versions.json
-        shell: PowerShell
-        env:
-          RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
-        run: |
-          $ErrorActionPreference = "Stop"
-          $release = $env:RELEASE
-          Write-Host "Updating llamacpp rocm to $release" -ForegroundColor Cyan
-          $path = "src/cpp/resources/backend_versions.json"
-          $data = Get-Content $path -Raw | ConvertFrom-Json
-          $old = $data.llamacpp.rocm
-          $data.llamacpp.rocm = $release
-          Write-Host "  llamacpp.rocm: $old -> $release"
-          $data | ConvertTo-Json -Depth 10 | Set-Content $path -Encoding UTF8
-
-      - name: Build lemonade
+      - name: Set environment variables
         shell: PowerShell
         run: |
-          $ErrorActionPreference = "Stop"
+          $cwd = (Get-Item .\).FullName
+          echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
 
-          Write-Host "Building lemonade-router and lemonade-server..." -ForegroundColor Cyan
-
-          if (Test-Path "build") {
-              Remove-Item -Recurse -Force "build"
-          }
-
-          cmake --preset windows
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          cmake --build build --config Release
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          if (-not (Test-Path "build\Release\lemonade-server.exe")) {
-              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
-              exit 1
-          }
-
-          Write-Host "Build successful!" -ForegroundColor Green
+      - name: Install Lemonade Server
+        uses: ./.github/actions/install-lemonade-server-msi
+        with:
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+          artifact-name: llamacpp-validation-msi-rocm
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -199,7 +266,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $venvPython = ".\.venv\Scripts\python.exe"
-          $serverExe = "build\Release\lemonade-server.exe"
+          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
 
           & $venvPython test/validate_llamacpp.py `
             --backend rocm `
