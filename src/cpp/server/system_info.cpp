@@ -899,7 +899,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 // Platform-specific action: action_required uses driver help URL on Windows,
                 // all other states use the install command. Linux always uses the docs URL.
 #ifdef __linux__
-                backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html";
+                backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html?mode=troubleshoot";
 #elif defined(_WIN32)
                 if (!is_not_installed && !is_version_mismatch) {
                     backend["action"] = "Visit https://lemonade-server.ai/driver_install.html";

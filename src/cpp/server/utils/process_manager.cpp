@@ -7,6 +7,7 @@
 #define NOMINMAX
 #include <winsock2.h>
 #include <windows.h>
+#include <processenv.h>
 #pragma comment(lib, "ws2_32.lib")
 #endif
 
@@ -16,6 +17,7 @@
 #include <thread>
 #include <chrono>
 #include <string>
+#include <cstring>
 #include <algorithm>
 #include <cctype>
 #include <lemon/utils/aixlog.hpp>
@@ -125,6 +127,63 @@ static DWORD WINAPI output_filter_thread(LPVOID param) {
     CloseHandle(pipe);
     return 0;
 }
+
+static std::string lowercase_ascii(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+static std::vector<char> build_windows_environment_block(
+    const std::vector<std::pair<std::string, std::string>>& env_vars) {
+    std::vector<std::string> merged_entries;
+
+    LPWCH environment = GetEnvironmentStringsW();
+    if (environment) {
+        for (const wchar_t* entry = environment; *entry != L'\0';
+             entry += std::wcslen(entry) + 1) {
+            int size_needed = WideCharToMultiByte(CP_UTF8, 0, entry, -1, nullptr, 0, nullptr, nullptr);
+            if (size_needed > 0) {
+                std::string narrow(size_needed - 1, '\0');
+                WideCharToMultiByte(CP_UTF8, 0, entry, -1, &narrow[0], size_needed, nullptr, nullptr);
+                merged_entries.emplace_back(std::move(narrow));
+            }
+        }
+        FreeEnvironmentStringsW(environment);
+    }
+
+    for (const auto& env : env_vars) {
+        const std::string key_lower = lowercase_ascii(env.first);
+        const std::string new_entry = env.first + "=" + env.second;
+
+        bool replaced = false;
+        for (auto& existing : merged_entries) {
+            size_t equals = existing.find('=');
+            if (equals == std::string::npos) {
+                continue;
+            }
+
+            std::string existing_key = lowercase_ascii(existing.substr(0, equals));
+            if (existing_key == key_lower) {
+                existing = new_entry;
+                replaced = true;
+                break;
+            }
+        }
+
+        if (!replaced) {
+            merged_entries.push_back(new_entry);
+        }
+    }
+
+    std::vector<char> block;
+    for (const auto& entry : merged_entries) {
+        block.insert(block.end(), entry.begin(), entry.end());
+        block.push_back('\0');
+    }
+    block.push_back('\0');
+    return block;
+}
 #endif
 
 ProcessHandle ProcessManager::start_process(
@@ -205,6 +264,11 @@ ProcessHandle ProcessManager::start_process(
         }
     }
 
+    std::vector<char> environment_block;
+    if (!env_vars.empty()) {
+        environment_block = build_windows_environment_block(env_vars);
+    }
+
     BOOL success = CreateProcessA(
         nullptr,
         const_cast<char*>(cmdline.c_str()),
@@ -212,7 +276,7 @@ ProcessHandle ProcessManager::start_process(
         nullptr,
         TRUE,  // Inherit handles
         (inherit_output && !filter_health_logs) ? 0 : CREATE_NO_WINDOW,
-        nullptr,
+        environment_block.empty() ? nullptr : environment_block.data(),
         working_dir.empty() ? nullptr : working_dir.c_str(),
         &si,
         &pi

@@ -1,4 +1,5 @@
 #include "lemon_tray/tray_app.h"
+#include "lemon_tray/agent_launcher.h"
 #ifdef _WIN32
 #include "lemon_tray/platform/windows_tray.h"  // For set_menu_update_callback
 #endif
@@ -6,6 +7,7 @@
 #include <lemon/single_instance.h>
 #include <lemon/system_info.h>
 #include <lemon/version.h>
+#include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <httplib.h>
 #include <lemon/utils/aixlog.hpp>
@@ -70,6 +72,51 @@ static bool is_local_path(const std::string& path) {
     }
 
     return false;
+}
+
+// Normalize a host string into one that is valid for outgoing connections.
+// "0.0.0.0" is a bind-all address, not a connection target.
+// "localhost" can resolve to IPv6 (::1) on some systems, which fails if the
+// server only listens on IPv4.  Both are mapped to "127.0.0.1".
+static std::string normalize_connect_host(const std::string& host) {
+    if (host.empty() || host == "0.0.0.0" || host == "localhost") {
+        return "127.0.0.1";
+    }
+    return host;
+}
+
+static std::string trim_whitespace(const std::string& value) {
+    const auto begin = value.find_first_not_of(" \t\r\n");
+    if (begin == std::string::npos) {
+        return "";
+    }
+
+    const auto end = value.find_last_not_of(" \t\r\n");
+    return value.substr(begin, end - begin + 1);
+}
+
+static std::string build_launch_llamacpp_args(const lemon::TrayConfig& tray_config) {
+    static const std::string default_args = "-b 16384 -ub 16384 -fa on";
+    const std::string trimmed_user_args = trim_whitespace(tray_config.launch_llamacpp_args);
+
+    if (tray_config.launch_use_recipe) {
+        return trimmed_user_args;
+    }
+
+    if (!trimmed_user_args.empty()) {
+        return trimmed_user_args;
+    }
+
+    return default_args;
+}
+
+static nlohmann::json build_launch_recipe_options(const lemon::TrayConfig& tray_config) {
+    nlohmann::json recipe_options = nlohmann::json::object();
+    const std::string merged_args = build_launch_llamacpp_args(tray_config);
+    if (!merged_args.empty()) {
+        recipe_options["llamacpp_args"] = merged_args;
+    }
+    return recipe_options;
 }
 
 #if !defined(_WIN32)
@@ -522,8 +569,9 @@ int TrayApp::run() {
     bool server_already_running = false;
     bool run_command_already_executed = false;
 
-    // Find server binary automatically (needed for most commands)
-    if (server_binary_.empty()) {
+    // Find server binary automatically (not needed for launch/status/stop)
+    if (server_binary_.empty() && tray_config_.command != "launch" &&
+        tray_config_.command != "status" && tray_config_.command != "stop") {
     LOG(DEBUG, "TrayApp") << "Searching for server binary..." << std::endl;
         if (!find_server_binary()) {
             std::cerr << "Error: Could not find lemonade-router binary" << std::endl;
@@ -553,6 +601,8 @@ int TrayApp::run() {
         return execute_recipes_command();
     } else if (tray_config_.command == "logs") {
         return execute_logs_command();
+    } else if (tray_config_.command == "launch") {
+        return execute_launch_command();
     } else if (tray_config_.command == "serve" || tray_config_.command == "run") {
         auto connect_to_running_server = [this, &server_already_running, &run_command_already_executed](const char* context) -> int {
             std::cout << "Lemonade Server is " << context << " already running. Connecting to it..." << std::endl;
@@ -569,9 +619,7 @@ int TrayApp::run() {
 
             server_already_running = true;
 
-            if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
-                server_config_.host = "localhost";
-            }
+            server_config_.host = normalize_connect_host(server_config_.host);
 
             if (tray_config_.command == "run") {
                 int result = execute_run_command();
@@ -651,10 +699,7 @@ int TrayApp::run() {
             if (running_port != 0) {
                 std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
                 // Create server manager to communicate with running server
-                // Use localhost to connect (works regardless of what the server is bound to)
-                if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
-                    server_config_.host = "localhost";
-                }
+                server_config_.host = normalize_connect_host(server_config_.host);
                 server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
                 server_manager_->set_port(running_port);
                 server_config_.port = running_port;  // Update config to match running server
@@ -680,10 +725,7 @@ int TrayApp::run() {
                     server_manager_->set_port(running_port);
                     server_config_.port = running_port;  // Update config to match running server
 
-                    // Use localhost to connect (works regardless of what the server is bound to)
-                    if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
-                        server_config_.host = "localhost";
-                    }
+                    server_config_.host = normalize_connect_host(server_config_.host);
 
                     // Continue to tray initialization below
                     break;
@@ -710,10 +752,7 @@ int TrayApp::run() {
         server_manager_->set_port(running_port);
         server_config_.port = running_port;  // Update config to match running server
 
-        // Use localhost to connect (works regardless of what the server is bound to)
-        if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
-            server_config_.host = "localhost";
-        }
+        server_config_.host = normalize_connect_host(server_config_.host);
 
         std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
 
@@ -1644,6 +1683,87 @@ int TrayApp::execute_status_command() {
         std::cout << "Server is not running" << std::endl;
         return 1;
     }
+}
+
+int TrayApp::execute_launch_command() {
+    AgentConfig agent_config;
+    std::string config_error;
+    const nlohmann::json launch_recipe_options = build_launch_recipe_options(tray_config_);
+
+    const std::string requested_host = server_config_.host;
+
+    int port = server_config_.port;
+    const bool local_host_target = requested_host.empty() || requested_host == "localhost" ||
+                                   requested_host == "127.0.0.1" || requested_host == "0.0.0.0";
+    if (!tray_config_.launch_port_specified && local_host_target) {
+        auto [pid, discovered_port] = get_server_info();
+        (void)pid;
+        if (discovered_port > 0) {
+            port = discovered_port;
+        }
+    }
+
+    std::string host = normalize_connect_host(server_config_.host);
+
+    if (!build_agent_config(tray_config_.launch_agent, host, port, tray_config_.launch_model,
+                            agent_config, config_error)) {
+        LOG(ERROR, "TrayApp") << "Failed to build agent config: " << config_error << std::endl;
+        return 1;
+    }
+
+    const std::string agent_binary = find_agent_binary(agent_config);
+    if (agent_binary.empty()) {
+        LOG(ERROR, "TrayApp") << "Agent binary not found for " << tray_config_.launch_agent << std::endl;
+        if (!agent_config.install_instructions.empty()) {
+            LOG(ERROR, "TrayApp") << agent_config.install_instructions << std::endl;
+        }
+        return 1;
+    }
+
+    httplib::Client cli(host, port);
+    cli.set_connection_timeout(1);
+    cli.set_read_timeout(1);
+    auto health = cli.Get("/api/version");
+    if (!health) {
+        LOG(ERROR, "TrayApp") << "Error: Lemonade server is not reachable at http://" << host << ":" << port << "." << std::endl;
+        LOG(INFO, "TrayApp") << "Start the server first with: lemonade-server serve --no-tray" << std::endl;
+        return 1;
+    }
+
+    // Start model preload in the background so agent launch is not blocked.
+    const std::string load_host = host;
+    const int load_port = port;
+    const std::string load_model = tray_config_.launch_model;
+    std::thread([load_host, load_port, load_model, launch_recipe_options]() {
+        try {
+            auto load_manager = std::make_unique<ServerManager>(load_host, load_port);
+            load_manager->load_model(load_model, launch_recipe_options, false);
+        } catch (...) {
+            // Silently ignore — the agent TUI owns stdout/stderr now.
+        }
+    }).detach();
+
+    LOG(INFO, "TrayApp") << "Loading model in background: " << tray_config_.launch_model << std::endl;
+    LOG(INFO, "TrayApp") << "Launching " << tray_config_.launch_agent << "..." << std::endl;
+
+    // Disable all logging before the agent takes over the terminal.
+    AixLog::Log::init({});
+
+    lemon::utils::ProcessHandle handle;
+    try {
+        handle = lemon::utils::ProcessManager::start_process(
+            agent_binary,
+            agent_config.extra_args,
+            "",
+            true,
+            false,
+            agent_config.env_vars);
+    } catch (const std::exception& e) {
+        LOG(ERROR, "TrayApp") << "Error: Failed to launch agent process: " << e.what() << std::endl;
+        return 1;
+    }
+
+    return lemon::utils::ProcessManager::wait_for_exit(handle, -1);
 }
 
 int TrayApp::execute_recipes_command() {
@@ -2632,10 +2752,7 @@ void TrayApp::on_change_context_size(int new_ctx_size) {
 }
 
 void TrayApp::on_show_logs() {
-    std::string connect_host = server_config_.host;
-    if (connect_host.empty() || connect_host == "0.0.0.0") {
-        connect_host = "localhost";
-    }
+    std::string connect_host = normalize_connect_host(server_config_.host);
     std::string web_app_url = "http://" + connect_host + ":" + std::to_string(server_config_.port) + "/?logs=true";
     std::cout << "Opening web app logs at: " << web_app_url << std::endl;
     open_url(web_app_url);
@@ -2649,10 +2766,7 @@ int TrayApp::execute_logs_command() {
         return 1;
     }
 
-    std::string connect_host = server_config_.host;
-    if (connect_host.empty() || connect_host == "0.0.0.0") {
-        connect_host = "localhost";
-    }
+    std::string connect_host = normalize_connect_host(server_config_.host);
     std::string web_app_url = "http://" + connect_host + ":" + std::to_string(port) + "/?logs=true";
     std::cout << "Opening web app logs at: " << web_app_url << std::endl;
     open_url(web_app_url);
@@ -2915,11 +3029,7 @@ bool TrayApp::find_web_app() {
 
 void TrayApp::open_web_app() {
     // Compose the web app URL
-    // Translate 0.0.0.0 to localhost since 0.0.0.0 is not a valid connect address
-    std::string connect_host = server_config_.host;
-    if (connect_host.empty() || connect_host == "0.0.0.0") {
-        connect_host = "localhost";
-    }
+    std::string connect_host = normalize_connect_host(server_config_.host);
     std::string web_app_url = "http://" + connect_host + ":" + std::to_string(server_config_.port) + "/";
     std::cout << "Opening web app at: " << web_app_url << std::endl;
     open_url(web_app_url);
@@ -2935,11 +3045,7 @@ void TrayApp::launch_electron_app() {
     }
 
     // Compose the server base URL for the Electron app
-    // Translate 0.0.0.0 to localhost since 0.0.0.0 is not a valid connect address
-    std::string connect_host = server_config_.host;
-    if (connect_host.empty() || connect_host == "0.0.0.0") {
-        connect_host = "localhost";
-    }
+    std::string connect_host = normalize_connect_host(server_config_.host);
     std::string base_url = "http://" + connect_host + ":" + std::to_string(server_config_.port);
     std::cout << "Launching Electron app with server URL: " << base_url << std::endl;
 
