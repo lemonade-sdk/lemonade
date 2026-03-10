@@ -113,7 +113,7 @@ CAPABILITIES = {
                 "generation_parameters": False,
             },
             "test_models": {
-                "llm": "Llama-3.2-1B-FLM",
+                "llm": "llama3.2-1b-FLM",
                 "embedding": "embed-gemma-300m-FLM",
             },
         },
