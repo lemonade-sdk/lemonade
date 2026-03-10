@@ -5,7 +5,7 @@ interface ComboboxProps {
   onChangeFunc: (e: string) => void;
   defaultValue: string;
   placeholder?: string;
-  position?: string;
+  position?: 'top' | 'bottom';
 }
 
 const Combobox: React.FC<ComboboxProps> = React.memo(function Combobox({ optionsList, onChangeFunc, defaultValue, placeholder, position }) {

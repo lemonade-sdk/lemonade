@@ -9,7 +9,6 @@ interface TTSSettingsProps {
 }
 
 export const voiceOptions: string[] = [
-  '',
   'ash',
   'ballad',
   'coral',
