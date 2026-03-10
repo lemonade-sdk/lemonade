@@ -24,7 +24,7 @@
     "min_npu_driver": "32.0.203.304"
   },
   "kokoro": {
-    "cpu": "b14"
+    "cpu": "b16"
   },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

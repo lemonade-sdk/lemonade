@@ -4,11 +4,13 @@ interface ComboboxProps {
   optionsList: any[];
   onChangeFunc: (e: any) => void;
   defaultValue: string;
+  position?: string;
 }
 
-const Combobox: React.FC<ComboboxProps> = React.memo(function Combobox({ optionsList, onChangeFunc, defaultValue }) {
+const Combobox: React.FC<ComboboxProps> = React.memo(function Combobox({ optionsList, onChangeFunc, defaultValue, position }) {
   const [datalistOpen, setDatalistlistOpen] = React.useState<boolean>(false);
   const [filteredList, setFilteredList] = React.useState<string[]>(optionsList);
+  const comboboxRef = React.useRef<HTMLDivElement>(null);
 
   const updateInputFromList = (e: any) => {
     let opt = e.target.dataset.option;
@@ -23,23 +25,39 @@ const Combobox: React.FC<ComboboxProps> = React.memo(function Combobox({ options
     setFilteredList(newVoiceList);
   }
 
+  const handleClickOutside = (e: any) => {
+    if (comboboxRef.current && !comboboxRef.current.contains(e.target)) {
+      setDatalistlistOpen(false);
+    }
+  };
+
+  React.useEffect(() => {
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, []);
+
   return (
-    <div className="form-combobox-container">
+    <div className="form-combobox-container" ref={comboboxRef}>
       <input
         className="form-combobox"
         value={defaultValue}
         onChange={handleInputChange}
         onClick={() => setDatalistlistOpen(!datalistOpen)}
-        list='voiceOptionsList'
         placeholder='Select a voice...'
       />
       {
         datalistOpen && (filteredList.length > 0) && (
-          <ul id="voiceOptionsList" className="form-datalist">
+            <ul id="voiceOptionsList" className={position == 'top' ? `form-datalist form-datalist-top` : `form-datalist form-datalist-bottom`}>
             {filteredList.sort().map((voice: string, index: number) => {
               return <li key={index} data-option={voice} onClick={updateInputFromList} className="form-datalist-option">{voice}</li>;
             })}
-          </ul>)
+          </ul>
+          )
       }
     </div>
   )

@@ -2159,6 +2159,8 @@ input::-webkit-calendar-picker-indicator {
 
 .form-combobox-container {
   position: relative;
+  width: 100%;
+  height: max-content;
 }
 
 .form-combobox {
@@ -2196,29 +2198,33 @@ input::-webkit-calendar-picker-indicator {
 .form-datalist {
   list-style: none;
   font-size: 0.7rem;
-  background:#1f1f1f66;
-  backdrop-filter: blur(20px);
+  background:#1f1f1fbb;
   border: #4a4a4a solid 1px;
   border-radius: 4px;
+  backdrop-filter: blur(10px);
   width: 100%;
   height: fit-content;
   min-height: 30px;
-  max-height: 100px;
+  max-height: 80px;
   overflow-y: scroll;
   position: absolute;
-  bottom: 40px;
+  z-index: 10200;
   left: 0;
-  z-index: 22;
   padding: 6px;
   box-sizing: border-box;
   display: flex;
-  flex-direction: column-reverse;
   line-height: 18px;
   cursor: pointer;
 }
 
-.form-datalist-option-label {
-  color: #666;
+.form-datalist-top {
+  bottom: 32px;
+  flex-direction: column-reverse;
+}
+
+.form-datalist-bottom {
+  top: 32px;
+  flex-direction: column;
 }
 
 .form-select {

@@ -217,7 +217,7 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
 
       <div className="chat-input-container">
         <div className="chat-input-voice-selector">
-          <Combobox  defaultValue={tts.currentVoice} optionsList={voiceOptions} onChangeFunc={tts.setVoice}/>
+          <Combobox defaultValue={tts.currentVoice} optionsList={voiceOptions} onChangeFunc={tts.setVoice} position='top'/>
         </div>
         <div className="chat-input-wrapper">
           <textarea
