@@ -40,8 +40,10 @@ Lemonade provides a specialized `launch` command that streamlines the connection
 ### Step 1: Start Lemonade Server
 In one terminal window, ensure the server is running:
 ```bash
-lemonade-server serve
+lemonade-server serve --ctx-size 32768
 ```
+
+We recommend starting the server with a context window size starting at 32768 tokens to accomodate for Claude Code's system prompt (20k+ tokens). Note that you might need to change this value depending on your hardware and project size.
 
 ### Step 2: Launch the Agent
 Navigate to your project directory in another terminal and run:
