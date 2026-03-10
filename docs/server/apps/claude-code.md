@@ -23,7 +23,7 @@ npm install -g @anthropic-ai/claude-code
 Ensure you have Lemonade Server installed. If you haven't set it up yet, refer to the [Getting Started guide](https://lemonade-server.ai/install_options.html).
 
 ### 3. Download a Coding Model
-Claude Code requires a model with strong instruction-following and tool-use capabilities. We recommend **Qwen3.5-35B-A3B-GGUF** or **GLM-4.7-Flash-GGUF**.
+Claude Code requires a model with strong instruction-following and tool-use capabilities. We recommend **Qwen3.5-35B-A3B-GGUF** or **GLM-4.7-Flash-GGUF**. These models require systems with 64 GB of RAM or more.
 
 ```bash
 # Recommended for most coding tasks
