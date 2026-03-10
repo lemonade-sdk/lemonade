@@ -45,7 +45,7 @@ jobs:
           echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
 
   # ========================================================================
-  # Build MSI installers with updated backend versions
+  # Build binaries with updated backend versions
   # ========================================================================
   build-vulkan:
     name: Build (vulkan)
@@ -90,22 +90,13 @@ jobs:
           }
           Write-Host "Build successful!" -ForegroundColor Green
 
-      - name: Build MSI installer
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          .\src\cpp\build_installer.ps1
-          if (-not (Test-Path "lemonade-server-minimal.msi")) {
-              Write-Host "ERROR: Minimal installer not created!" -ForegroundColor Red
-              exit 1
-          }
-          Write-Host "Installer created successfully!" -ForegroundColor Green
-
-      - name: Upload MSI
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: llamacpp-validation-msi-vulkan
-          path: lemonade-server-minimal.msi
+          name: llamacpp-build-vulkan
+          path: |
+            build/Release/
+            build/resources/
           retention-days: 7
 
   build-rocm:
@@ -149,22 +140,13 @@ jobs:
           }
           Write-Host "Build successful!" -ForegroundColor Green
 
-      - name: Build MSI installer
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          .\src\cpp\build_installer.ps1
-          if (-not (Test-Path "lemonade-server-minimal.msi")) {
-              Write-Host "ERROR: Minimal installer not created!" -ForegroundColor Red
-              exit 1
-          }
-          Write-Host "Installer created successfully!" -ForegroundColor Green
-
-      - name: Upload MSI
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: llamacpp-validation-msi-rocm
-          path: lemonade-server-minimal.msi
+          name: llamacpp-build-rocm
+          path: |
+            build/Release/
+            build/resources/
           retention-days: 7
 
   # ========================================================================
@@ -182,17 +164,23 @@ jobs:
       - name: Cleanup processes
         uses: ./.github/actions/cleanup-processes-windows
 
-      - name: Set environment variables
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: llamacpp-build-vulkan
+          path: build
+
+      - name: Verify binaries
         shell: PowerShell
         run: |
-          $cwd = (Get-Item .\).FullName
-          echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
-
-      - name: Install Lemonade Server
-        uses: ./.github/actions/install-lemonade-server-msi
-        with:
-          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
-          artifact-name: llamacpp-validation-msi-vulkan
+          $serverExe = "build\Release\lemonade-server.exe"
+          if (-not (Test-Path $serverExe)) {
+              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
+              Get-ChildItem -Recurse build | Select-Object FullName
+              exit 1
+          }
+          & $serverExe --version
+          Write-Host "Binaries verified!" -ForegroundColor Green
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -206,7 +194,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $venvPython = ".\.venv\Scripts\python.exe"
-          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
+          $serverExe = (Resolve-Path "build\Release\lemonade-server.exe").Path
 
           & $venvPython test/validate_llamacpp.py `
             --backend vulkan `
@@ -242,17 +230,23 @@ jobs:
       - name: Cleanup processes
         uses: ./.github/actions/cleanup-processes-windows
 
-      - name: Set environment variables
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: llamacpp-build-rocm
+          path: build
+
+      - name: Verify binaries
         shell: PowerShell
         run: |
-          $cwd = (Get-Item .\).FullName
-          echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
-
-      - name: Install Lemonade Server
-        uses: ./.github/actions/install-lemonade-server-msi
-        with:
-          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
-          artifact-name: llamacpp-validation-msi-rocm
+          $serverExe = "build\Release\lemonade-server.exe"
+          if (-not (Test-Path $serverExe)) {
+              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
+              Get-ChildItem -Recurse build | Select-Object FullName
+              exit 1
+          }
+          & $serverExe --version
+          Write-Host "Binaries verified!" -ForegroundColor Green
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -266,7 +260,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $venvPython = ".\.venv\Scripts\python.exe"
-          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
+          $serverExe = (Resolve-Path "build\Release\lemonade-server.exe").Path
 
           & $venvPython test/validate_llamacpp.py `
             --backend rocm `
