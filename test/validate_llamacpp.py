@@ -14,10 +14,13 @@ This script:
 """
 
 import argparse
+import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 import requests
@@ -119,6 +122,32 @@ def stop_server(server_binary):
         )
     except Exception:
         pass
+
+
+def collect_server_logs(output_dir):
+    """Collect lemonade-server log files into the output directory.
+
+    Copies lemonade*.log files from the system temp directory so they can
+    be uploaded as CI artifacts for debugging.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    temp_dir = tempfile.gettempdir()
+    patterns = ["lemonade*.log", "lemonade-router*.log", "lemonade-server*.log"]
+    copied = []
+    for pattern in patterns:
+        for log_file in glob.glob(os.path.join(temp_dir, pattern)):
+            dest = os.path.join(output_dir, os.path.basename(log_file))
+            try:
+                shutil.copy2(log_file, dest)
+                size = os.path.getsize(dest)
+                copied.append(f"{os.path.basename(log_file)} ({size} bytes)")
+            except Exception as e:
+                print(f"  Warning: Failed to copy {log_file}: {e}", flush=True)
+    if copied:
+        print(f"Collected server logs: {', '.join(copied)}", flush=True)
+    else:
+        print("No server log files found to collect.", flush=True)
+    return copied
 
 
 def test_model(base_url, model_name, max_tokens=50):
@@ -230,6 +259,11 @@ def main():
         action="store_true",
         help="Skip starting the server (assume already running)",
     )
+    parser.add_argument(
+        "--logs-dir",
+        default=None,
+        help="Directory to collect server log files into (for CI artifact upload)",
+    )
     args = parser.parse_args()
 
     server_binary = args.server_binary or find_server_binary()
@@ -285,7 +319,9 @@ def main():
                 all_passed = False
                 print(f"  Error: {response_text}", flush=True)
     finally:
-        # Stop server
+        # Stop server and capture its output
+        server_stdout = ""
+        server_stderr = ""
         if server_proc:
             stop_server(server_binary)
             server_proc.terminate()
@@ -293,6 +329,31 @@ def main():
                 server_proc.wait(timeout=15)
             except subprocess.TimeoutExpired:
                 server_proc.kill()
+            # Read any buffered stdout/stderr from the server process
+            try:
+                out, err = server_proc.communicate(timeout=5)
+                if out:
+                    server_stdout = out.decode("utf-8", errors="replace")
+                if err:
+                    server_stderr = err.decode("utf-8", errors="replace")
+            except Exception:
+                pass
+
+        # Collect server log files for CI debugging
+        logs_dir = args.logs_dir
+        if logs_dir:
+            collect_server_logs(logs_dir)
+            # Also save the server process stdout/stderr
+            if server_stdout:
+                stdout_path = os.path.join(logs_dir, "server_stdout.log")
+                with open(stdout_path, "w", encoding="utf-8") as f:
+                    f.write(server_stdout)
+                print(f"Saved server stdout ({len(server_stdout)} chars)", flush=True)
+            if server_stderr:
+                stderr_path = os.path.join(logs_dir, "server_stderr.log")
+                with open(stderr_path, "w", encoding="utf-8") as f:
+                    f.write(server_stderr)
+                print(f"Saved server stderr ({len(server_stderr)} chars)", flush=True)
 
     # Write results
     with open(output_path, "w", encoding="utf-8") as f:

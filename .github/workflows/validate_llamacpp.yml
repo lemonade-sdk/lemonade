@@ -199,7 +199,8 @@ jobs:
           & $venvPython test/validate_llamacpp.py `
             --backend vulkan `
             --server-binary $serverExe `
-            --output llamacpp_validation_vulkan.json
+            --output llamacpp_validation_vulkan.json `
+            --logs-dir server-logs-vulkan
 
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -210,6 +211,15 @@ jobs:
           name: validation-results-vulkan
           path: llamacpp_validation_vulkan.json
           retention-days: 30
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-logs-vulkan
+          path: server-logs-vulkan/
+          retention-days: 30
+          if-no-files-found: ignore
 
       - name: Cleanup
         if: always()
@@ -265,7 +275,8 @@ jobs:
           & $venvPython test/validate_llamacpp.py `
             --backend rocm `
             --server-binary $serverExe `
-            --output llamacpp_validation_rocm.json
+            --output llamacpp_validation_rocm.json `
+            --logs-dir server-logs-rocm
 
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -276,6 +287,15 @@ jobs:
           name: validation-results-rocm
           path: llamacpp_validation_rocm.json
           retention-days: 30
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-logs-rocm
+          path: server-logs-rocm/
+          retention-days: 30
+          if-no-files-found: ignore
 
       - name: Cleanup
         if: always()
