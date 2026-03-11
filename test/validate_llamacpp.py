@@ -24,7 +24,7 @@ import requests
 
 DEFAULT_PORT = 8000
 TIMEOUT_HEALTH = 60
-TIMEOUT_INFERENCE = 600
+TIMEOUT_INFERENCE = 1800  # 30 minutes — large models may need 60+ GB download
 SERVER_STARTUP_TIMEOUT = 120
 CHAT_PROMPT = [
     {"role": "user", "content": "What is 2+2? Reply in one sentence."},
@@ -160,12 +160,16 @@ def test_model(base_url, model_name, max_tokens=50):
 
     try:
         chat_data = chat_resp.json()
-        content = chat_data["choices"][0]["message"]["content"]
+        message = chat_data["choices"][0]["message"]
+        content = message.get("content") or ""
+        reasoning = message.get("reasoning_content") or ""
+        # Accept either regular content or reasoning content (thinking models)
+        combined = content + reasoning
     except (KeyError, IndexError, json.JSONDecodeError) as e:
         return False, f"Bad response format: {e} - {chat_resp.text}", {}
 
-    if not content or len(content) == 0:
-        return False, "Empty response content", {}
+    if len(combined) == 0:
+        return False, "Empty response (no content or reasoning_content)", {}
 
     # Get stats
     stats = {}
@@ -187,7 +191,9 @@ def test_model(base_url, model_name, max_tokens=50):
     except Exception:
         pass
 
-    return True, content, stats
+    # Prefer content for the response text, fall back to reasoning
+    response_text = content if content else f"[reasoning] {reasoning}"
+    return True, response_text, stats
 
 
 def main():
