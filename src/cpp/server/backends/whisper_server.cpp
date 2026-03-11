@@ -2,6 +2,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
 #include "lemon/audio_types.h"
+#include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
@@ -12,6 +13,7 @@
 #include <random>
 #include <sstream>
 #include <iomanip>
+#include <set>
 #include <vector>
 #include <lemon/utils/aixlog.hpp>
 
@@ -174,6 +176,7 @@ void WhisperServer::load(const std::string& model_name,
     LOG(INFO, "WhisperServer") << "Per-model settings: " << options.to_log_string() << std::endl;
 
     std::string whispercpp_backend = options.get_option("whispercpp_backend");
+    std::string whispercpp_args = options.get_option("whispercpp_args");
 
     backend_manager_->install_backend(SPEC.recipe, whispercpp_backend);
 
@@ -201,13 +204,32 @@ void WhisperServer::load(const std::string& model_name,
 
     LOG(INFO, "WhisperServer") << "Starting server on port " << port_ << std::endl;
 
-    // Build command line arguments
-    // Note: whisper.cpp server handles audio conversion automatically since v1.8
+    // Build command line arguments. Lemonade manages the model path and port;
+    // optional whisper-server flags like --convert come from whispercpp_args.
     // Note: Don't include exe_path here - ProcessManager::start_process already handles it
     std::vector<std::string> args = {
         "-m", model_path,
         "--port", std::to_string(port_)
     };
+
+    std::set<std::string> reserved_flags = {
+        "-m",
+        "--model",
+        "--port"
+    };
+
+    if (!whispercpp_args.empty()) {
+        std::string validation_error = validate_custom_args(whispercpp_args, reserved_flags);
+        if (!validation_error.empty()) {
+            throw std::invalid_argument(
+                "Invalid custom whisper-server arguments:\n" + validation_error
+            );
+        }
+
+        LOG(DEBUG, "WhisperServer") << "Adding custom arguments: " << whispercpp_args << std::endl;
+        std::vector<std::string> custom_args_vec = parse_custom_args(whispercpp_args);
+        args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
+    }
 
     // Note: whisper-server doesn't support --debug flag
 

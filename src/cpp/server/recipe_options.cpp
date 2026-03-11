@@ -17,6 +17,7 @@ static const json DEFAULTS = {
     {"llamacpp_args", ""},
     {"sd-cpp_backend", "cpu"},  // sd.cpp backend selection (cpu or rocm)
     {"whispercpp_backend", "npu"},
+    {"whispercpp_args", ""},
     // Image generation defaults (for sd-cpp recipe)
     {"steps", 20},
     {"cfg_scale", 7.0},
@@ -61,6 +62,12 @@ static const json CLI_OPTIONS = {
         {"envname", "LEMONADE_WHISPERCPP"},
         {"help", "WhisperCpp backend to use"}
     }},
+    {"--whispercpp-args", {
+        {"option_name", "whispercpp_args"},
+        {"type_name", "ARGS"},
+        {"envname", "LEMONADE_WHISPERCPP_ARGS"},
+        {"help", "Custom arguments to pass to whisper-server (must not conflict with managed args)"}
+    }},
     // Image generation options (for sd-cpp recipe)
     {"--steps", {
         {"option_name", "steps"},
@@ -99,7 +106,7 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
         return {"ctx_size", "llamacpp_backend", "llamacpp_args"};
     } else if (recipe == "whispercpp") {
-        return {"whispercpp_backend"};
+        return {"whispercpp_backend", "whispercpp_args"};
     } else if (recipe == "flm") {
         return {"ctx_size", "flm_args"};
     } else if (recipe == "ryzenai-llm") {

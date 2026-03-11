@@ -498,6 +498,23 @@ class EphemeralCLITests(CLITestBase):
             "Version command should produce output",
         )
 
+    def test_001_help_lists_whispercpp_args_no_server(self):
+        """Test help output documents whisper.cpp custom args support."""
+        self.assertFalse(is_server_running(), "Server should not be running")
+        result = self.assertCommandSucceeds(["serve", "--help"])
+        output = result.stdout + result.stderr
+
+        self.assertIn(
+            "--whispercpp-args",
+            output,
+            f"Serve help should document --whispercpp-args: {output}",
+        )
+        self.assertIn(
+            "LEMONADE_WHISPERCPP_ARGS",
+            output,
+            f"Serve help should document LEMONADE_WHISPERCPP_ARGS: {output}",
+        )
+
     def test_002_list_ephemeral(self):
         """Test list command starts ephemeral server if needed."""
         self.assertFalse(is_server_running(), "Server should not be running initially")
