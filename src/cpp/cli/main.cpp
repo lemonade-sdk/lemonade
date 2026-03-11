@@ -219,6 +219,7 @@ int main(int argc, char* argv[]) {
     // Set up CLI11 options with callbacks that write directly to config
     app.set_help_flag("--help,-h", "Display help information");
     app.set_help_all_flag("--help-all", "Display help information for all subcommands");
+    app.fallthrough(true);
 
     // Global options (available to all subcommands)
     app.add_option("--host", config.host, "Server host")->default_val(config.host);
@@ -230,7 +231,7 @@ int main(int argc, char* argv[]) {
     CLI::App* list_cmd = app.add_subcommand("list", "List available models");
     CLI::App* pull_cmd = app.add_subcommand("pull", "Pull/download a model");
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model");
-    CLI::App* load_cmd = app.add_subcommand("load", "Load a model into memory");
+    CLI::App* load_cmd = app.add_subcommand("load", "Load a model");
     CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)");
     CLI::App* recipes_cmd = app.add_subcommand("recipes", "List available recipes and backends");
     CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON");
