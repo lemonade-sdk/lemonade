@@ -2177,7 +2177,8 @@ cpack
 - Installs to <code>/opt/bin/</code> (executables)
 - Installs resources to <code>/opt/share/lemonade-server/</code>
 - Creates desktop entry in <code>/opt/share/applications/</code>
-- Declares dependencies: libcurl4, libssl3, libz1
+- Declares dependencies: <code>libcurl4</code>, <code>libssl3</code>, <code>libz1</code>, <code>unzip</code>, <code>fonts-katex</code>
+- Recommends: <code>ffmpeg</code> for whisper.cpp audio resampling and/or transcoding, plus a Chromium-compatible browser for <code>lemonade-web-app</code>
 - Package size: ~2.2 MB (clean, runtime-only package)
 - Includes postinst script that creates writable <code>/opt/share/lemonade-server/llama/</code> directory</p>
 <p><strong>Installation:</strong></p>

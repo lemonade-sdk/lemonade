@@ -1431,6 +1431,7 @@ msiexec<span class="w"> </span>/i<span class="w"> </span>lemonade.msi<span class
 <h2 id="linux-installation">Linux Installation</h2>
 <h3 id="debianubuntu-package">Debian/Ubuntu Package</h3>
 <p>The Debian package installer handles all system configuration automatically, including setting up a systemd service for managing the Lemonade Server.</p>
+<p>On Linux, the package also recommends <code>ffmpeg</code> so whisper.cpp can resample and/or transcode audio inputs when needed.</p>
 <p>If you would prefer to manage the lifecycle of the server process manually, the service can be disabled and manually run as well.</p>
 <h3 id="systemd-service-management">Systemd Service Management</h3>
 <p>When Lemonade Server is installed via the Debian package, it registers a systemd service called <code>lemonade-server</code> that allows you to manage the server process using standard systemd commands.</p>
