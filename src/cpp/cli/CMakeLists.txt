@@ -7,6 +7,10 @@ set(COMMON_SOURCES
     main.cpp
     lemonade_client.cpp
     ../server/recipe_options.cpp
+    ../server/utils/process_manager.cpp
+    ../server/utils/path_utils.cpp
+    ../server/utils/json_utils.cpp
+    ../tray/agent_launcher.cpp
 )
 
 # ============================================================

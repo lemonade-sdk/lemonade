@@ -468,6 +468,15 @@ nlohmann::json LemonadeClient::get_model_info(const std::string& model_name) con
     }
 }
 
+bool LemonadeClient::check_server_health() const {
+    try {
+        make_request("/api/version", "GET", "", "", 1, 1);
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 int LemonadeClient::list_recipes() const {
     try {
         std::string response = make_request("/api/v1/system-info");

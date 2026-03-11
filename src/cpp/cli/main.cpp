@@ -1,11 +1,15 @@
 #include "lemon_cli/lemonade_client.h"
 #include <lemon/recipe_options.h>
 #include <lemon/version.h>
+#include <lemon_tray/agent_launcher.h>
+#include <lemon/utils/process_manager.h>
+#include <lemon/utils/path_utils.h>
 #include <CLI/CLI.hpp>
 #include <iostream>
 #include <string>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <thread>
 
 static const std::vector<std::string> VALID_LABELS = {
     "coding",
@@ -43,6 +47,8 @@ struct CliConfig {
     std::string uninstall_backend;  // Format: "recipe:backend"
     std::string output_file;
     bool downloaded = false;
+    std::string agent;  // Agent name for launch command (positional)
+    std::string llamacpp_args;  // llamacpp args for launch command
 };
 
 static bool validate_and_transform_model_json(nlohmann::json& model_data) {
@@ -210,6 +216,72 @@ static int handle_recipes_command(lemonade::LemonadeClient& client, const CliCon
     return client.list_recipes();
 }
 
+static int handle_launch_command(const CliConfig& config) {
+    lemon_tray::AgentConfig agent_config;
+    std::string config_error;
+
+    // Build agent config
+    if (!lemon_tray::build_agent_config(config.agent, config.host, config.port, config.model,
+                                         agent_config, config_error)) {
+        std::cerr << "Failed to build agent config: " << config_error << std::endl;
+        return 1;
+    }
+
+    // Find agent binary
+    const std::string agent_binary = lemon_tray::find_agent_binary(agent_config);
+    if (agent_binary.empty()) {
+        std::cerr << "Agent binary not found for " << config.agent << std::endl;
+        if (!agent_config.install_instructions.empty()) {
+            std::cerr << agent_config.install_instructions << std::endl;
+        }
+        return 1;
+    }
+
+    // Check if server is reachable using LemonadeClient
+    lemonade::LemonadeClient client(config.host, config.port, config.api_key);
+    if (!client.check_server_health()) {
+        std::cerr << "Error: Lemonade server is not reachable at " << config.host << ":" << config.port << "." << std::endl;
+        std::cerr << "Start the server first with: lemonade-server serve --no-tray" << std::endl;
+        return 1;
+    }
+
+    // Start model preload in background
+    std::thread([config]() {
+        try {
+            // Build recipe options from llamacpp_args if provided
+            nlohmann::json recipe_options = nlohmann::json::object();
+            if (!config.llamacpp_args.empty()) {
+                recipe_options["llamacpp_args"] = config.llamacpp_args;
+            }
+
+            lemonade::LemonadeClient client(config.host, config.port, config.api_key);
+            client.load_model(config.model, recipe_options);
+        } catch (...) {
+            // Silently ignore - agent TUI owns stdout/stderr
+        }
+    }).detach();
+
+    std::cout << "Loading model in background: " << config.model << std::endl;
+    std::cout << "Launching " << config.agent << "..." << std::endl;
+
+    // Launch agent process
+    lemon::utils::ProcessHandle handle;
+    try {
+        handle = lemon::utils::ProcessManager::start_process(
+            agent_binary,
+            agent_config.extra_args,
+            "",
+            true,
+            false,
+            agent_config.env_vars);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: Failed to launch agent process: " << e.what() << std::endl;
+        return 1;
+    }
+
+    return lemon::utils::ProcessManager::wait_for_exit(handle, -1);
+}
+
 int main(int argc, char* argv[]) {
     // CLI11 configuration
     CLI::App app{"Lemonade CLI - HTTP client for Lemonade Server"};
@@ -237,6 +309,7 @@ int main(int argc, char* argv[]) {
     CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)");
     CLI::App* recipes_cmd = app.add_subcommand("recipes", "List available recipes and backends");
     CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON");
+    CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model");
 
     // Positional model argument for pull, delete, load, unload, export
     pull_cmd->add_option("model", config.model, "Model name to pull or JSON file")->required();
@@ -267,6 +340,11 @@ int main(int argc, char* argv[]) {
     // Export-specific options
     export_cmd->add_option("--output", config.output_file, "Output file path (prints to stdout if not specified)");
 
+    // Launch command: agent is positional, model is --model flag
+    launch_cmd->add_option("agent", config.agent, "Agent name to launch (e.g., f1, f2)")->required();
+    launch_cmd->add_option("--model", config.model, "Model name to launch")->required();
+    launch_cmd->add_option("--llamacpp-args", config.llamacpp_args, "llamacpp arguments");
+
     // Parse arguments
     CLI11_PARSE(app, argc, argv);
 
@@ -290,6 +368,8 @@ int main(int argc, char* argv[]) {
         return handle_export_command(client, config);
     } else if (recipes_cmd->count() > 0) {
         return handle_recipes_command(client, config);
+    } else if (launch_cmd->count() > 0) {
+        return handle_launch_command(config);
     } else {
         std::cerr << "Error: No command specified" << std::endl;
         std::cerr << app.help() << std::endl;

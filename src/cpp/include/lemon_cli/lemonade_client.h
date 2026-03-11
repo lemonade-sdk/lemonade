@@ -59,6 +59,8 @@ public:
     int load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options = false) const;
     int unload_model(const std::string& model_name) const;
     nlohmann::json get_model_info(const std::string& model_name) const;
+    int launch_model(const std::string& model_name, const nlohmann::json& recipe_options, const std::string& agent);
+    bool check_server_health() const;
 
     // Status commands
     int status() const;
