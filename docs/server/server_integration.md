@@ -187,6 +187,8 @@ msiexec /i lemonade.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemona
 
 The Debian package installer handles all system configuration automatically, including setting up a systemd service for managing the Lemonade Server.
 
+On Linux, the package also recommends `ffmpeg` so whisper.cpp can resample and/or transcode audio inputs when needed.
+
 If you would prefer to manage the lifecycle of the server process manually, the service can be disabled and manually run as well.
 
 ### Systemd Service Management
