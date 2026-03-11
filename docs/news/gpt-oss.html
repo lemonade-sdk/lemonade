@@ -31,10 +31,6 @@
       gap: 0.5rem;
     }
   </style>
-  <script>
-    // Define the article description once to avoid repetition
-    const ARTICLE_DESCRIPTION = "Lemonade now supports OpenAI's gpt-oss models, bringing you the power to run these cutting-edge models locally on your own hardware!";
-  </script>
   <meta name="description" content="Lemonade now supports OpenAI's gpt-oss models, bringing you the power to run these cutting-edge models locally on your own hardware!">
   <meta property="og:title" content="Run OpenAI's gpt-oss locally with Lemonade">
   <meta property="og:description" content="Lemonade now supports OpenAI's gpt-oss models, bringing you the power to run these cutting-edge models locally on your own hardware!">
@@ -52,7 +48,7 @@
         <div class="hero-content">
           <div class="hero-badge">New Models</div>
           <h1 class="hero-title">Run OpenAI's gpt-oss locally with Lemonade</h1>
-          <div class="hero-subtitle" id="article-subtitle"></div>
+          <div class="hero-subtitle" id="article-subtitle">We're excited to announce that Lemonade now supports OpenAI's gpt-oss models, bringing you the power to run these cutting-edge models locally on your own hardware! 🎉</div>
           <div class="hero-meta">
             <div class="meta-item"><span class="meta-icon">Date:</span>August 12, 2025</div>
             <div class="meta-item meta-authors"><span class="meta-icon">Authors:</span>Daniel Holanda, Jeremy Fowers, Krishna Sivakumar, Victoria Godsoe</div>
@@ -257,11 +253,6 @@ lemonade-server pull gpt-oss-120b-GGUF</code></pre>
     document.addEventListener('DOMContentLoaded', () => {
       initializeNavbar('../');
       initializeFooter('../');
-
-      // Populate meta tags and subtitle with the description
-      document.querySelector('meta[name="description"]').setAttribute('content', ARTICLE_DESCRIPTION);
-      document.querySelector('meta[property="og:description"]').setAttribute('content', ARTICLE_DESCRIPTION);
-      document.getElementById('article-subtitle').textContent = `We're excited to announce that ${ARTICLE_DESCRIPTION} 🎉`;
 
       // Resolve versioned Linux/macOS installer links from latest GitHub tag.
       (async () => {
