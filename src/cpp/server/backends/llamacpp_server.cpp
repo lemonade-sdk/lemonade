@@ -1,6 +1,7 @@
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
+#include "lemon/utils/custom_args.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
@@ -85,73 +86,6 @@ static void push_overridable_arg(std::vector<std::string>& args,
         args.push_back(key);
         args.push_back(value);
     }
-}
-
-// Helper to tokenize custom args string into vector
-static std::vector<std::string> parse_custom_args(const std::string& custom_args_str) {
-    std::vector<std::string> result;
-    if (custom_args_str.empty()) {
-        return result;
-    }
-
-    std::string current_arg;
-    bool in_quotes = false;
-    char quote_char = '\0';
-
-    for (char c : custom_args_str) {
-        if (!in_quotes && (c == '"' || c == '\'')) {
-            in_quotes = true;
-            quote_char = c;
-        } else if (in_quotes && c == quote_char) {
-            in_quotes = false;
-            quote_char = '\0';
-        } else if (!in_quotes && c == ' ') {
-            if (!current_arg.empty()) {
-                result.push_back(current_arg);
-                current_arg.clear();
-            }
-        } else {
-            current_arg += c;
-        }
-    }
-
-    if (!current_arg.empty()) {
-        result.push_back(current_arg);
-    }
-
-    return result;
-}
-
-// Helper to validate custom arguments don't conflict with reserved flags
-static std::string validate_custom_args(const std::string& custom_args_str,
-                                       const std::set<std::string>& reserved_flags) {
-    std::vector<std::string> custom_args = parse_custom_args(custom_args_str);
-
-    for (const auto& arg : custom_args) {
-        // Extract flag name (handle --flag=value format)
-        std::string flag = arg;
-        size_t eq_pos = flag.find('=');
-        if (eq_pos != std::string::npos) {
-            flag = flag.substr(0, eq_pos);
-        }
-
-        // Check if it's a flag and if it's reserved
-        if (!flag.empty() && flag[0] == '-') {
-            if (reserved_flags.find(flag) != reserved_flags.end()) {
-                // Build error message with all reserved flags
-                std::string reserved_list;
-                for (const auto& rf : reserved_flags) {
-                    if (!reserved_list.empty()) reserved_list += ", ";
-                    reserved_list += rf;
-                }
-
-                return "Argument '" + flag + "' is managed by Lemonade and cannot be overridden.\n"
-                       "Reserved arguments: " + reserved_list;
-            }
-        }
-    }
-
-    return "";  // Valid
 }
 
 InstallParams LlamaCppServer::get_install_params(const std::string& backend, const std::string& version) {
