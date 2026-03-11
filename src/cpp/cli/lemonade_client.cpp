@@ -44,6 +44,16 @@ static std::string normalize_path(const std::string& path) {
     return (path[0] == '/' ? path : "/" + path);
 }
 
+static void assert_http_ok(const httplib::Result& res) {
+    if (!res) {
+        throw std::runtime_error("Connection failed: " + httplib::to_string(res.error()));
+    } else if (res->status == 401) {
+        throw std::runtime_error("Forbidden by the server. Did you set the API key?");
+    } else if (res->status != 200) {
+        throw std::runtime_error("Request failed: " + std::to_string(res->status));
+    }
+}
+
 // Overloaded make_request with configurable timeouts
 std::string LemonadeClient::make_request(const std::string& path, const std::string& method,
                                           const std::string& body, const std::string& content_type,
@@ -51,26 +61,64 @@ std::string LemonadeClient::make_request(const std::string& path, const std::str
     std::string normalized_host = normalize_host(host_);
     httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout, read_timeout);
 
+    httplib::Result res;
+
     if (method == "GET") {
-        auto res = cli.Get(normalize_path(path).c_str());
-        if (res && res->status == 200) {
-            return res->body;
-        }
-        throw std::runtime_error("Request failed: " + std::to_string(res ? res->status : 0));
+        res = cli.Get(normalize_path(path).c_str());
     } else if (method == "POST") {
-        auto res = cli.Post(normalize_path(path).c_str(), body, content_type);
-        if (res && res->status == 200) {
-            return res->body;
-        }
-        throw std::runtime_error("Request failed: " + std::to_string(res ? res->status : 0));
+        res = cli.Post(normalize_path(path).c_str(), body, content_type);
+    } else {
+        throw std::runtime_error("Unsupported HTTP method: " + method);
     }
 
-    throw std::runtime_error("Unsupported HTTP method: " + method);
+    assert_http_ok(res);
+    return res->body;
+
 }
 
-// Forward declaration for SSE streaming helper
-static bool handle_sse_stream(httplib::Client& cli, const std::string& path, const std::string& body, const std::string& content_type,
-                              std::function<void(const std::string& event_type, const std::string& event_data)> callback);
+// Helper function to handle SSE streaming response
+static httplib::Result handle_sse_stream(httplib::Client& cli, const std::string& path, const std::string& body, const std::string& content_type,
+                              std::function<void(const std::string& event_type, const std::string& event_data)> callback) {
+    std::string buffer;
+
+    auto res = cli.Post(path, httplib::Headers(), body, content_type,
+        [&](const char* data, size_t len) {
+            buffer.append(data, len);
+
+            size_t pos;
+            while ((pos = buffer.find("\n\n")) != std::string::npos) {
+                std::string message = buffer.substr(0, pos);
+                buffer.erase(0, pos + 2);
+
+                std::string event_type;
+                std::string event_data;
+
+                std::istringstream stream(message);
+                std::string line;
+                while (std::getline(stream, line)) {
+                    if (line.substr(0, 6) == "event:") {
+                        event_type = line.substr(7);
+                        while (!event_type.empty() && event_type[0] == ' ') {
+                            event_type.erase(0, 1);
+                        }
+                    } else if (line.substr(0, 5) == "data:") {
+                        event_data = line.substr(6);
+                        while (!event_data.empty() && event_data[0] == ' ') {
+                            event_data.erase(0, 1);
+                        }
+                    }
+                }
+
+                if (!event_data.empty()) {
+                    callback(event_type, event_data);
+                }
+            }
+
+            return true;
+        });
+
+    return res;
+}
 
 // Overloaded make_request for streaming SSE responses
 bool LemonadeClient::make_request(const std::string& path, const std::string& method,
@@ -82,7 +130,9 @@ bool LemonadeClient::make_request(const std::string& path, const std::string& me
 
     if (method == "POST") {
         auto res = handle_sse_stream(cli, normalize_path(path), body, content_type, callback);
-        return res;
+        assert_http_ok(res);
+
+        return true;
     }
 
     throw std::runtime_error("Streaming only supports POST method");
@@ -299,50 +349,6 @@ static bool parse_sse_progress(const std::string& event_data, std::string& last_
     }
 }
 
-// Helper function to handle SSE streaming response
-static bool handle_sse_stream(httplib::Client& cli, const std::string& path, const std::string& body, const std::string& content_type,
-                              std::function<void(const std::string& event_type, const std::string& event_data)> callback) {
-    std::string buffer;
-
-    auto res = cli.Post(path, httplib::Headers(), body, content_type,
-        [&](const char* data, size_t len) {
-            buffer.append(data, len);
-
-            size_t pos;
-            while ((pos = buffer.find("\n\n")) != std::string::npos) {
-                std::string message = buffer.substr(0, pos);
-                buffer.erase(0, pos + 2);
-
-                std::string event_type;
-                std::string event_data;
-
-                std::istringstream stream(message);
-                std::string line;
-                while (std::getline(stream, line)) {
-                    if (line.substr(0, 6) == "event:") {
-                        event_type = line.substr(7);
-                        while (!event_type.empty() && event_type[0] == ' ') {
-                            event_type.erase(0, 1);
-                        }
-                    } else if (line.substr(0, 5) == "data:") {
-                        event_data = line.substr(6);
-                        while (!event_data.empty() && event_data[0] == ' ') {
-                            event_data.erase(0, 1);
-                        }
-                    }
-                }
-
-                if (!event_data.empty()) {
-                    callback(event_type, event_data);
-                }
-            }
-
-            return true;
-        });
-
-    return res;
-}
-
 int LemonadeClient::pull_model(const json& model_data) {
     try {
         // Validate that model field exists in model_data
@@ -361,30 +367,26 @@ int LemonadeClient::pull_model(const json& model_data) {
 
         StreamingRequestState state;
 
-        bool success = make_request("/api/v1/pull", "POST", body, "application/json",
-            [&](const std::string& event_type, const std::string& event_data) {
-                if (event_type == "complete") {
-                    std::cout << std::endl;
-                    state.success = true;
-                } else {
-                    parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
-                }
-            }, 86400, 30);
+        make_request("/api/v1/pull", "POST", body, "application/json",
+        [&](const std::string& event_type, const std::string& event_data) {
+            if (event_type == "complete") {
+                std::cout << std::endl;
+                state.success = true;
+            } else {
+                parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
+            }
+        }, 86400, 30);
 
-        if (!success && !state.success) {
-            throw std::runtime_error("HTTP request failed");
+        if (!state.success) {
+            if (!state.error_message.empty()) {
+                throw std::runtime_error(state.error_message);
+            }
+
+            throw std::runtime_error("Model pull failed");
         }
 
-        if (!state.error_message.empty()) {
-            throw std::runtime_error(state.error_message);
-        }
-
-        if (state.success) {
-            std::cout << "Model pulled successfully: " << model_name << std::endl;
-            return 0;
-        } else if (!success) {
-            throw std::runtime_error("Connection closed unexpectedly");
-        }
+        std::cout << "Model pulled successfully: " << model_name << std::endl;
+        return 0;
     } catch (const std::exception& e) {
         std::cerr << "Error pulling model: " << e.what() << std::endl;
         return 1;
@@ -571,27 +573,24 @@ int LemonadeClient::install_backend(const std::string& recipe, const std::string
 
         StreamingRequestState state;
 
-        bool success = make_request("/api/v1/install", "POST", body, "application/json",
-            [&](const std::string& event_type, const std::string& event_data) {
-                if (event_type == "complete") {
-                    std::cout << std::endl;
-                    state.success = true;
-                } else {
-                    parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
-                }
-            }, 86400, 30);
-        if (!success && !state.success) {
-            throw std::runtime_error("HTTP request failed");
+        make_request("/api/v1/install", "POST", body, "application/json",
+        [&](const std::string& event_type, const std::string& event_data) {
+            if (event_type == "complete") {
+                std::cout << std::endl;
+                state.success = true;
+            } else {
+                parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
+            }
+        }, 86400, 30);
+        if (!state.success) {
+            if (!state.error_message.empty()) {
+                throw std::runtime_error(state.error_message);
+            }
+            throw std::runtime_error("Backend installation failed");
         }
 
-        if (!state.error_message.empty()) {
-            throw std::runtime_error(state.error_message);
-        }
-
-        if (state.success) {
-            std::cout << "Backend installed successfully: " << recipe << ":" << backend << std::endl;
-            return 0;
-        }
+        std::cout << "Backend installed successfully: " << recipe << ":" << backend << std::endl;
+        return 0;
     } catch (const std::exception& e) {
         std::cerr << "Error installing backend: " << e.what() << std::endl;
         return 1;
