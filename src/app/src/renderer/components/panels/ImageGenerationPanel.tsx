@@ -3,6 +3,7 @@ import { useModels } from '../../hooks/useModels';
 import { Modality } from '../../hooks/useInferenceState';
 import { ModelsData } from '../../utils/modelData';
 import { serverFetch } from '../../utils/serverConfig';
+import { pullModel } from '../../utils/backendInstaller';
 import { adjustTextareaHeight } from '../../utils/textareaUtils';
 import InferenceControls from '../InferenceControls';
 import ModelSelector from '../ModelSelector';
@@ -54,14 +55,29 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
   useEffect(() => {
     const modelInfo = modelsData[selectedModel];
     const defaults = modelInfo?.image_defaults;
-    setImageSettings({
+    setImageSettings(prev => ({
       steps: defaults?.steps ?? DEFAULT_IMAGE_SETTINGS.steps,
       cfgScale: defaults?.cfg_scale ?? DEFAULT_IMAGE_SETTINGS.cfgScale,
       width: defaults?.width ?? DEFAULT_IMAGE_SETTINGS.width,
       height: defaults?.height ?? DEFAULT_IMAGE_SETTINGS.height,
       seed: -1,
-    });
+      upscaleModel: prev.upscaleModel,
+    }));
   }, [selectedModel, modelsData]);
+
+  // Auto-download ESRGAN model when upscale toggle is turned on
+  const handleUpscaleChange = async (upscaleModel: string) => {
+    setImageSettings(prev => ({ ...prev, upscaleModel }));
+    if (upscaleModel) {
+      try {
+        await pullModel(upscaleModel, { showInDownloadManager: true });
+      } catch (error: any) {
+        console.error('Failed to download upscale model:', error);
+        showError(`Failed to download upscale model: ${error.message || 'Unknown error'}`);
+        setImageSettings(prev => ({ ...prev, upscaleModel: '' }));
+      }
+    }
+  };
 
   // Auto-scroll to bottom when new images are generated
   useEffect(() => {
@@ -228,7 +244,7 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
         <div className="image-setting">
           <label>Upscale 4x</label>
           <select value={imageSettings.upscaleModel}
-            onChange={(e) => setImageSettings(prev => ({ ...prev, upscaleModel: e.target.value }))}
+            onChange={(e) => handleUpscaleChange(e.target.value)}
             disabled={isBusy}>
             <option value="">Off</option>
             <option value="RealESRGAN-x4plus">RealESRGAN-x4plus</option>

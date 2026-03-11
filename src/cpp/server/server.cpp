@@ -1111,7 +1111,8 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 //   3. If model is downloaded: Use cached version (don't check HuggingFace for updates)
 //
 // Note: Only the /pull endpoint checks HuggingFace for updates (do_not_upgrade=false)
-void Server::auto_load_model_if_needed(const std::string& requested_model) {
+void Server::auto_load_model_if_needed(const std::string& requested_model,
+                                       const nlohmann::json& recipe_overrides) {
     // Check if this specific model is already loaded (multi-model aware)
     if (router_->is_model_loaded(requested_model)) {
         LOG(INFO, "Server") << "Model already loaded: " << requested_model << std::endl;
@@ -1148,7 +1149,7 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     // Load model with do_not_upgrade=true
     // For FLM models: FastFlowLMServer will handle download internally if needed
     // For non-FLM models: Model should already be cached at this point
-    router_->load_model(requested_model, info, RecipeOptions(info.recipe, json::object()), true);
+    router_->load_model(requested_model, info, RecipeOptions(info.recipe, recipe_overrides), true);
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
 }
 
@@ -1998,25 +1999,51 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         }
 
         // Handle model loading
-        if (request_json.contains("model")) {
-            std::string requested_model = request_json["model"];
-            try {
-                auto_load_model_if_needed(requested_model);
-            } catch (const std::exception& e) {
-                LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
-                auto error_response = create_model_error(requested_model, e.what());
-                std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
-                res.set_content(error_response.dump(), "application/json");
-                return;
-            }
-        } else {
+        if (!request_json.contains("model")) {
             res.status = 400;
             nlohmann::json error = {{"error", {
                 {"message", "Missing 'model' field in request"},
                 {"type", "invalid_request_error"}
             }}};
             res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        std::string requested_model = request_json["model"];
+        nlohmann::json recipe_overrides = nlohmann::json::object();
+
+        // Handle ESRGAN upscale model (auto-download and pass as recipe option)
+        if (request_json.contains("upscale_model") && request_json["upscale_model"].is_string()) {
+            std::string upscale_model_name = request_json["upscale_model"];
+            if (!upscale_model_name.empty()) {
+                if (model_manager_->model_exists(upscale_model_name) &&
+                    !model_manager_->is_model_downloaded(upscale_model_name)) {
+                    LOG(INFO, "Server") << "Auto-downloading upscale model: " << upscale_model_name << std::endl;
+                    auto upscale_info = model_manager_->get_model_info(upscale_model_name);
+                    model_manager_->download_registered_model(upscale_info, true);
+                }
+                recipe_overrides["sd-cpp_upscale_model"] = upscale_model_name;
+
+                // Force reload if the model is loaded but without (or with a different) upscale model
+                if (router_->is_model_loaded(requested_model)) {
+                    std::string current_upscale = router_->get_model_recipe_options(requested_model)
+                        .get_option("sd-cpp_upscale_model");
+                    if (current_upscale != upscale_model_name) {
+                        LOG(INFO, "Server") << "Upscale model changed, reloading " << requested_model << std::endl;
+                        router_->unload_model(requested_model);
+                    }
+                }
+            }
+        }
+
+        try {
+            auto_load_model_if_needed(requested_model, recipe_overrides);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
+            auto error_response = create_model_error(requested_model, e.what());
+            std::string error_code = error_response["error"]["code"].get<std::string>();
+            res.status = (error_code == "model_load_error") ? 500 : 404;
+            res.set_content(error_response.dump(), "application/json");
             return;
         }
 
