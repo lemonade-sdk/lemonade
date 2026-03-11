@@ -468,6 +468,13 @@ bool FastFlowLMServer::install_flm_if_needed() {
 #ifdef _WIN32
     std::string required_version = get_flm_required_version();
     std::string current_version = SystemInfo::get_flm_version();
+    const char* ci_mode = std::getenv("LEMONADE_CI_MODE");
+    bool is_ci_mode = ci_mode && (
+        std::string(ci_mode) == "1" ||
+        std::string(ci_mode) == "true" ||
+        std::string(ci_mode) == "TRUE" ||
+        std::string(ci_mode) == "yes" ||
+        std::string(ci_mode) == "True");
 
     // Parse versions using utility (handles 'v' prefix automatically)
     utils::Version required = utils::Version::parse(required_version);
@@ -519,8 +526,13 @@ bool FastFlowLMServer::install_flm_if_needed() {
         throw std::runtime_error("Failed to download FLM installer");
     }
 
-    // Run installer (silent for upgrades, GUI for fresh installs)
-    run_flm_installer(installer_path, is_upgrade);
+    // Run installer in silent mode for upgrades and CI.
+    // Fresh installs outside CI keep GUI behavior for local users.
+    bool force_silent = is_upgrade || is_ci_mode;
+    if (is_ci_mode && !is_upgrade) {
+        LOG(INFO, "FastFlowLM") << "CI mode detected, forcing silent FLM installation..." << std::endl;
+    }
+    run_flm_installer(installer_path, force_silent);
 
     // Verify installation by calling flm --version again
     if (!verify_flm_installation(required_version)) {
@@ -569,7 +581,9 @@ void FastFlowLMServer::run_flm_installer(const std::string& installer_path, bool
     std::vector<std::string> args;
     if (silent) {
         args.push_back("/VERYSILENT");
-        LOG(INFO, "FastFlowLM") << "Running silent upgrade..." << std::endl;
+        args.push_back("/SUPPRESSMSGBOXES");
+        args.push_back("/NORESTART");
+        LOG(INFO, "FastFlowLM") << "Running FLM installer in silent mode..." << std::endl;
     } else {
         LOG(INFO, "FastFlowLM") << "Launching installer GUI. "
                   << "Please complete the installation..." << std::endl;
