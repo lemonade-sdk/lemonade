@@ -122,7 +122,7 @@ if command_exists pkg-config; then
     print_success "pkg-config is installed"
 
     # Check for required libraries using pkg-config
-    libs_to_check=("libcurl" "openssl" "zlib" "libsystemd")
+    libs_to_check=("libcurl" "openssl" "zlib" "libsystemd" "libdrm")
     missing_libs=()
 
     for lib in "${libs_to_check[@]}"; do
@@ -137,11 +137,38 @@ if command_exists pkg-config; then
     if [ ${#missing_libs[@]} -gt 0 ]; then
         if [ "$OS" = "linux" ]; then
             if command_exists apt; then
-                missing_packages+=("libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev")
+                # Map pkg-config names to apt packages
+                for lib in "${missing_libs[@]}"; do
+                    case "$lib" in
+                        libcurl) missing_packages+=("libcurl4-openssl-dev") ;;
+                        openssl) missing_packages+=("libssl-dev") ;;
+                        zlib) missing_packages+=("zlib1g-dev") ;;
+                        libsystemd) missing_packages+=("libsystemd-dev") ;;
+                        libdrm) missing_packages+=("libdrm-dev") ;;
+                    esac
+                done
             elif command_exists pacman; then
-                missing_packages+=("curl" "openssl" "zlib" "systemd")
+                # Map pkg-config names to pacman packages
+                for lib in "${missing_libs[@]}"; do
+                    case "$lib" in
+                        libcurl) missing_packages+=("curl") ;;
+                        openssl) missing_packages+=("openssl") ;;
+                        zlib) missing_packages+=("zlib") ;;
+                        libsystemd) missing_packages+=("systemd") ;;
+                        libdrm) missing_packages+=("libdrm") ;;
+                    esac
+                done
             elif command_exists dnf; then
-                missing_packages+=("libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel")
+                # Map pkg-config names to dnf packages
+                for lib in "${missing_libs[@]}"; do
+                    case "$lib" in
+                        libcurl) missing_packages+=("libcurl-devel") ;;
+                        openssl) missing_packages+=("openssl-devel") ;;
+                        zlib) missing_packages+=("zlib-devel") ;;
+                        libsystemd) missing_packages+=("systemd-devel") ;;
+                        libdrm) missing_packages+=("libdrm-devel") ;;
+                    esac
+                done
             fi
         elif [ "$OS" = "macos" ]; then
             # macOS typically has these via Xcode Command Line Tools
@@ -159,14 +186,14 @@ else
     print_warning "pkg-config not found, assuming libraries need to be installed"
     if [ "$OS" = "linux" ]; then
         if command_exists apt; then
-            missing_packages+=("pkg-config" "libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev")
+            missing_packages+=("pkg-config" "libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev" "libdrm-dev")
         elif command_exists pacman; then
-            missing_packages+=("pkgconf" "curl" "openssl" "zlib" "systemd")
+            missing_packages+=("pkgconf" "curl" "openssl" "zlib" "systemd" "libdrm")
         elif command_exists dnf; then
-            missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel")
+            missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel")
         fi
     elif [ "$OS" = "macos" ]; then
-        missing_packages+=("pkg-config" "curl" "openssl" "zlib")
+        missing_packages+=("pkg-config" "curl" "openssl" "zlib" "libdrm")
     fi
 fi
 

@@ -2,7 +2,6 @@
 
 #include <string>
 #include <functional>
-#include <mutex>
 #include <nlohmann/json.hpp>
 #include "model_manager.h"  // For DownloadProgressCallback
 
@@ -41,17 +40,7 @@ public:
     // Get all enrichment data for a backend in one call (avoids repeated config lookups)
     BackendEnrichment get_backend_enrichment(const std::string& recipe, const std::string& backend);
 
-    // Recipes cache: populated by Server on first system-info request,
-    // then kept up-to-date by install_backend/uninstall_backend with targeted updates.
-    void set_recipes_cache(const json& recipes);
-    json get_recipes_cache();
-
 private:
-    // Update a single backend entry in the cached recipes JSON
-    void update_recipes_cache_entry(const std::string& recipe, const std::string& backend, bool installed);
-
-    json cached_recipes_;
-    std::mutex cache_mutex_;
     // Cached backend_versions.json (loaded once at construction)
     json backend_versions_;
 

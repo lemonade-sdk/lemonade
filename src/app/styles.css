@@ -2155,6 +2155,16 @@ footer {
     white-space: nowrap;
 }
 
+/* Backend setup banner in Model Manager (install/upgrade prompt) */
+.backend-setup-banner {
+    margin: 2px 0 4px;
+    border-left-color: rgba(255, 183, 77, 0.45);
+}
+
+.backend-setup-actions {
+    display: inline-flex;
+}
+
 .backend-meta-separator {
     color: #525252;
     font-size: 0.6rem;

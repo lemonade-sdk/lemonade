@@ -20,6 +20,14 @@ std::string get_executable_dir();
 std::string get_resource_path(const std::string& relative_path);
 
 /**
+ * Validate that a path is safe to embed in a shell command.
+ * Rejects paths containing shell metacharacters that could enable command injection.
+ * Only allows: alphanumeric, path separators, dots, hyphens, underscores,
+ * spaces, colons (drive letters), tildes (short names), and parentheses.
+ */
+bool is_safe_executable_path(const std::string& path);
+
+/**
  * Find the FLM executable (flm.exe on Windows, flm on Unix).
  * Uses SearchPathA on Windows (same API as CreateProcessA) to search PATH,
  * then falls back to the default installation directory.

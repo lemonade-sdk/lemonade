@@ -5,7 +5,6 @@
 #endif
 #include "LemonadeServiceManager.h"  // For macOS service management
 #include <lemon/single_instance.h>
-#include <lemon/system_info.h>
 #include <lemon/version.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
@@ -1916,54 +1915,73 @@ int TrayApp::execute_recipes_command() {
         });
     }
 
-    // Default: list recipes
-    auto statuses = lemon::SystemInfo::get_all_recipe_statuses();
+    // Default: list recipes by querying the server's /system-info endpoint
+    return server_call([](std::unique_ptr<ServerManager> const &server_manager) {
+        try {
+            std::string response = server_manager->make_http_request("/api/v1/system-info");
+            auto system_info = nlohmann::json::parse(response);
 
-    // Print table header
-    std::cout << std::left << std::setw(20) << "Recipe"
-              << std::setw(12) << "Backend"
-              << std::setw(16) << "Status"
-              << std::setw(46) << "Message/Version"
-              << "Action" << std::endl;
-    std::cout << std::string(148, '-') << std::endl;
-
-    for (const auto& status : statuses) {
-        bool first_backend = true;
-
-        if (status.backends.empty()) {
-            std::cout << std::left << std::setw(20) << status.name
-                      << std::setw(12) << "-"
-                      << std::setw(16) << "unsupported"
-                      << std::setw(46) << "No backend definitions"
-                      << "-" << std::endl;
-        } else {
-            for (const auto& backend : status.backends) {
-                std::string recipe_col = first_backend ? status.name : "";
-                std::string status_str = backend.state.empty() ? "unsupported" : backend.state;
-
-                std::string info_col;
-                if (status_str == "installed" && !backend.version.empty() && backend.version != "unknown") {
-                    info_col = backend.version;
-                } else if (!backend.message.empty()) {
-                    info_col = backend.message;
-                } else {
-                    info_col = "-";
-                }
-                std::string action_col = backend.action.empty() ? "-" : backend.action;
-
-                std::cout << std::left << std::setw(20) << recipe_col
-                          << std::setw(12) << backend.name
-                          << std::setw(16) << status_str
-                          << std::setw(46) << info_col
-                          << " " << action_col << std::endl;
-
-                first_backend = false;
+            if (!system_info.contains("recipes") || !system_info["recipes"].is_object()) {
+                std::cerr << "No recipe information available from server" << std::endl;
+                return 1;
             }
-        }
-    }
 
-    std::cout << std::string(148, '-') << std::endl;
-    return 0;
+            // Print table header
+            std::cout << std::left << std::setw(20) << "Recipe"
+                      << std::setw(12) << "Backend"
+                      << std::setw(16) << "Status"
+                      << std::setw(46) << "Message/Version"
+                      << "Action" << std::endl;
+            std::cout << std::string(148, '-') << std::endl;
+
+            const auto& recipes = system_info["recipes"];
+            for (auto& [recipe_name, recipe_info] : recipes.items()) {
+                bool first_backend = true;
+
+                if (!recipe_info.contains("backends") || !recipe_info["backends"].is_object() ||
+                    recipe_info["backends"].empty()) {
+                    std::cout << std::left << std::setw(20) << recipe_name
+                              << std::setw(12) << "-"
+                              << std::setw(16) << "unsupported"
+                              << std::setw(46) << "No backend definitions"
+                              << "-" << std::endl;
+                } else {
+                    for (auto& [backend_name, backend_info] : recipe_info["backends"].items()) {
+                        std::string recipe_col = first_backend ? recipe_name : "";
+                        std::string state = backend_info.value("state", "unsupported");
+                        std::string status_str = state.empty() ? "unsupported" : state;
+
+                        std::string info_col;
+                        std::string version = backend_info.value("version", "");
+                        std::string message = backend_info.value("message", "");
+                        if (status_str == "installed" && !version.empty() && version != "unknown") {
+                            info_col = version;
+                        } else if (!message.empty()) {
+                            info_col = message;
+                        } else {
+                            info_col = "-";
+                        }
+                        std::string action = backend_info.value("action", "");
+                        std::string action_col = action.empty() ? "-" : action;
+
+                        std::cout << std::left << std::setw(20) << recipe_col
+                                  << std::setw(12) << backend_name
+                                  << std::setw(16) << status_str
+                                  << std::setw(46) << info_col
+                                  << " " << action_col << std::endl;
+
+                        first_backend = false;
+                    }
+                }
+            }
+
+            std::cout << std::string(148, '-') << std::endl;
+            return 0;
+        } catch (const std::exception& e) {
+            std::cerr << "Error listing recipes: " << e.what() << std::endl;
+            return 1;
+        }
+    });
 }
 
 // Check if a process is alive (cross-platform)

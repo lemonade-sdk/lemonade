@@ -80,6 +80,7 @@ set(COMMON_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/process_manager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/backends/backend_utils.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/path_utils.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/version_utils.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/wmi_helper.cpp
     platform/tray_factory.cpp
 )

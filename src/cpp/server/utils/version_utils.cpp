@@ -44,6 +44,27 @@ Version Version::parse(const std::string& version_str) {
     return Version(parts);
 }
 
+bool Version::operator<(const Version& other) const {
+    if (parts_.empty() || other.parts_.empty()) {
+        return false;
+    }
+
+    size_t max_len = std::max(parts_.size(), other.parts_.size());
+    for (size_t i = 0; i < max_len; ++i) {
+        int this_part = (i < parts_.size()) ? parts_[i] : 0;
+        int other_part = (i < other.parts_.size()) ? other.parts_[i] : 0;
+
+        if (this_part < other_part) {
+            return true;
+        }
+        if (this_part > other_part) {
+            return false;
+        }
+    }
+
+    return false; // Equal versions
+}
+
 bool Version::operator>=(const Version& other) const {
     if (parts_.empty() || other.parts_.empty()) {
         return false;

@@ -3,31 +3,9 @@
 #include "../wrapped_server.h"
 #include "backend_utils.h"
 #include <string>
-#include <stdexcept>
 
 namespace lemon {
 namespace backends {
-
-// Structured exception for FLM check failures
-class FLMCheckException : public std::runtime_error {
-public:
-    enum class ErrorType {
-        NOT_INSTALLED,
-        DRIVER_TOO_OLD,
-        VALIDATION_FAILED,
-        NPU_NOT_AVAILABLE
-    };
-
-    FLMCheckException(ErrorType type, const std::string& message, const std::string& fix_url = "")
-        : std::runtime_error(message), type_(type), fix_url_(fix_url) {}
-
-    ErrorType type() const { return type_; }
-    const std::string& fix_url() const { return fix_url_; }
-
-private:
-    ErrorType type_;
-    std::string fix_url_;
-};
 
 class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer, public IAudioServer {
 public:
@@ -48,7 +26,6 @@ public:
     ~FastFlowLMServer() override;
 
     void install(const std::string& backend = "");
-    bool check();
 
     std::string download_model(const std::string& checkpoint,
                               bool do_not_upgrade = false);
@@ -87,18 +64,9 @@ public:
 private:
     // Static helpers for install logic (no instance state needed)
     static std::string get_flm_path();
-    static bool check_npu_available();
 
     // Version management
     static std::string get_flm_required_version();
-    static std::string get_flm_installed_version();
-    static bool compare_versions(const std::string& v1, const std::string& v2);
-
-    // NPU driver check (static - no instance state needed)
-    static std::string get_min_npu_driver_version();
-    static std::string get_npu_driver_version();
-    static bool check_npu_driver_version();
-    bool validate();
 
     // Installation - returns true if FLM was upgraded (may invalidate existing models)
     static bool install_flm_if_needed();
@@ -109,11 +77,7 @@ private:
     static void refresh_environment_path();
     static bool verify_flm_installation(const std::string& expected_version, int max_retries = 10);
 
-    // Cache management (function-local static in .cpp)
-    static void invalidate_version_cache();
-
     bool is_loaded_ = false;
-    bool flm_was_upgraded_ = false;
 };
 
 } // namespace backends

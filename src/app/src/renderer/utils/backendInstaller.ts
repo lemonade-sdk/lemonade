@@ -59,7 +59,7 @@ export async function installBackend(
   recipe: string,
   backend: string,
   showInDownloadManager: boolean = true
-): Promise<void> {
+): Promise<string | void> {
   const displayName = `${recipe}:${backend}`;
   const abortController = new AbortController();
 
@@ -103,6 +103,19 @@ export async function installBackend(
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`Failed: ${errorText || response.statusText}`);
+    }
+
+    // Server returns JSON with an action URL when manual setup is needed
+    const contentType = response.headers.get('Content-Type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await response.json();
+      if (data.action) {
+        if (downloadId) {
+          downloadTracker.completeDownload(downloadId);
+        }
+        window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: data.action } }));
+        return 'action';
+      }
     }
 
     const reader = response.body?.getReader();
@@ -614,22 +627,6 @@ async function ensureModelReadyInternal(
       if (!loadResponse.ok) {
         const errorData = await loadResponse.json().catch(() => ({}));
         const errorMsg = errorData.error || `Failed to load model: ${loadResponse.statusText}`;
-
-        // If model was invalidated (e.g., corrupted or removed), re-pull and retry once
-        if (errorMsg.includes('model_invalidated') || errorMsg.includes('not found')) {
-          console.warn('Model invalidated, re-pulling and retrying load...');
-          await pullModel(modelName);
-          const retryResponse = await serverFetch('/load', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(loadPayload),
-          });
-          if (!retryResponse.ok) {
-            const retryError = await retryResponse.json().catch(() => ({}));
-            throw new Error(retryError.error || `Failed to load model after re-pull: ${retryResponse.statusText}`);
-          }
-          return;
-        }
 
         throw new Error(errorMsg);
       }

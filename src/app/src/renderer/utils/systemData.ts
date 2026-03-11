@@ -48,7 +48,7 @@ export interface Recipe {
 
 export interface BackendInfo {
   devices: string[];
-  state: 'unsupported' | 'installable' | 'update_required' | 'installed';
+  state: 'unsupported' | 'installable' | 'update_required' | 'action_required' | 'installed';
   message: string;
   action: string;
   can_uninstall?: boolean;

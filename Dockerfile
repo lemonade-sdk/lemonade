@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     ninja-build \
     libssl-dev \
     pkg-config \
+    libdrm-dev \
     git \
     && rm -rf /var/lib/apt/lists/*
 
@@ -42,6 +43,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     libssl3 \
     zlib1g \
+    libdrm2 \
     vulkan-tools \
     libvulkan1 \
     unzip \
