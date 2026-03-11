@@ -190,6 +190,29 @@ CLIParser::CLIParser()
     recipes->add_option("--uninstall", tray_config_.uninstall_backend,
                         "Uninstall a backend (format: recipe:backend)");
 
+    // Launch
+    CLI::App* launch = app_.add_subcommand("launch", "Launch a coding agent connected to a running Lemonade server");
+    launch->add_option("agent", tray_config_.launch_agent, "Agent to launch (claude or codex)")
+        ->required()
+        ->check(CLI::IsMember({"claude", "codex"}));
+    launch->add_option("-m,--model", tray_config_.launch_model, "Model to load and use")
+        ->required()
+        ->type_name("MODEL");
+    launch->add_option("--llamacpp-args", tray_config_.launch_llamacpp_args,
+        "Custom llama-server arguments for launch; when set, launch defaults are skipped")
+        ->type_name("ARGS");
+    launch->add_flag("--use-recipe", tray_config_.launch_use_recipe,
+        "Use the model's saved recipe options instead of launch llama.cpp defaults")
+        ->default_val(tray_config_.launch_use_recipe);
+    launch->add_option("--host", config_.host, "Host the server is running on")
+        ->envname("LEMONADE_HOST")
+        ->type_name("HOST")
+        ->default_val(config_.host);
+    launch_port_option_ = launch->add_option("--port", config_.port, "Port number the server is running on")
+        ->envname("LEMONADE_PORT")
+        ->type_name("PORT")
+        ->default_val(config_.port);
+
     // Tray
     CLI::App* tray = app_.add_subcommand("tray", "Launch tray interface for running server");
 #else
@@ -209,6 +232,9 @@ int CLIParser::parse(int argc, char** argv) {
 
 #ifdef LEMONADE_TRAY
         tray_config_.command = app_.get_subcommands().at(0)->get_name();
+        if (launch_port_option_ != nullptr) {
+            tray_config_.launch_port_specified = launch_port_option_->count() > 0;
+        }
 #endif
         should_continue_ = true;
         exit_code_ = 0;
