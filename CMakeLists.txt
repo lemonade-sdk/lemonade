@@ -703,26 +703,6 @@ elseif(UNIX)
     endif()
 endif()
 
-# Add CLI application subdirectory
-add_subdirectory(src/cpp/cli)
-
-# ============================================================
-# lemonade CLI binary installation (Linux only, similar to lemonade-server)
-# ============================================================
-if(UNIX AND NOT APPLE)
-    # Create symlink in standard bin path only if not installing to /usr
-    if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
-        install(CODE "
-            file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
-            execute_process(
-                COMMAND ${CMAKE_COMMAND} -E create_symlink
-                    ${CMAKE_INSTALL_PREFIX}/bin/lemonade
-                    \"\$ENV{DESTDIR}/usr/bin/lemonade\"
-            )
-        ")
-    endif()
-endif()
-
 # ============================================================
 # Resources
 # ============================================================
@@ -991,6 +971,9 @@ endif()
 
 # Add tray application subdirectory
 add_subdirectory(src/cpp/tray)
+
+# Add CLI application subdirectory
+add_subdirectory(src/cpp/cli)
 
 if(APPLE)
     # SIGNING LOGIC (Release Only)
