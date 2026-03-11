@@ -1489,8 +1489,11 @@ std::string SystemInfo::get_flm_version() {
     #endif
 
     // Parse JSON output: { "version": "0.9.34" }
+    // FLM may emit log lines to stdout before the JSON (e.g. "[FLM]  Using custom model list path: ...")
+    // so find the first '{' and parse from there.
     try {
-        json j = JsonUtils::parse(output);
+        size_t json_start = output.find('{');
+        json j = JsonUtils::parse(json_start != std::string::npos ? output.substr(json_start) : output);
         if (j.contains("version") && j["version"].is_string()) {
             std::string version = j["version"].get<std::string>();
             // If the version doesn't start with 'v', prepend it

@@ -1456,8 +1456,10 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
 #endif
 
     // Parse output: { "models": [ { "name": "modelname:tag", ... }, ... ] }
+    // FLM may emit log lines to stdout before the JSON, so find the first '{'.
     try {
-        json j = JsonUtils::parse(output);
+        size_t json_start = output.find('{');
+        json j = JsonUtils::parse(json_start != std::string::npos ? output.substr(json_start) : output);
         if (j.contains("models") && j["models"].is_array()) {
             for (const auto& model : j["models"]) {
                 if (model.contains("name") && model["name"].is_string()) {
@@ -1537,8 +1539,10 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
 #endif
 
     // Parse output: { "models": [ { "name": "modelname:tag", "footprint": 1.23, ... }, ... ] }
+    // FLM may emit log lines to stdout before the JSON, so find the first '{'.
     try {
-        json j = JsonUtils::parse(output);
+        size_t json_start = output.find('{');
+        json j = JsonUtils::parse(json_start != std::string::npos ? output.substr(json_start) : output);
         if (j.contains("models") && j["models"].is_array()) {
             for (const auto& m : j["models"]) {
                 if (m.contains("name") && m["name"].is_string()) {
