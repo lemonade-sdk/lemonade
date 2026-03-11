@@ -1,5 +1,6 @@
 #include "lemon_cli/lemonade_client.h"
 #include <lemon/recipe_options.h>
+#include <lemon/version.h>
 #include <CLI/CLI.hpp>
 #include <iostream>
 #include <string>
@@ -219,6 +220,7 @@ int main(int argc, char* argv[]) {
     // Set up CLI11 options with callbacks that write directly to config
     app.set_help_flag("--help,-h", "Display help information");
     app.set_help_all_flag("--help-all", "Display help information for all subcommands");
+    app.set_version_flag("--version,-v", ("lemonade version " LEMON_VERSION_STRING));
     app.fallthrough(true);
 
     // Global options (available to all subcommands)
