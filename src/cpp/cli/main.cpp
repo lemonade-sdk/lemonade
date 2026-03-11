@@ -224,8 +224,8 @@ int main(int argc, char* argv[]) {
     app.fallthrough(true);
 
     // Global options (available to all subcommands)
-    app.add_option("--host", config.host, "Server host")->default_val(config.host);
-    app.add_option("--port", config.port, "Server port")->default_val(config.port);
+    app.add_option("--host", config.host, "Server host")->default_val(config.host)->envname("LEMONADE_HOST");
+    app.add_option("--port", config.port, "Server port")->default_val(config.port)->envname("LEMONADE_PORT");
     app.add_option("--api-key", config.api_key, "API key for authentication")->default_val(config.api_key)->envname("LEMONADE_API_KEY");
 
     // Subcommands
