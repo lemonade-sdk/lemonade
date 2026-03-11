@@ -9,7 +9,6 @@
 #include <string>
 #include <fstream>
 #include <nlohmann/json.hpp>
-#include <thread>
 
 static const std::vector<std::string> VALID_LABELS = {
     "coding",
@@ -32,6 +31,11 @@ static const std::vector<std::string> KNOWN_KEYS = {
     "size"
 };
 
+static const std::vector<std::string> SUPPORTED_AGENTS = {
+    "claude",
+    "codex"
+};
+
 // Configuration structure for CLI options
 struct CliConfig {
     std::string host = "127.0.0.1";
@@ -47,8 +51,7 @@ struct CliConfig {
     std::string uninstall_backend;  // Format: "recipe:backend"
     std::string output_file;
     bool downloaded = false;
-    std::string agent;  // Agent name for launch command (positional)
-    std::string llamacpp_args;  // llamacpp args for launch command
+    std::string agent;
 };
 
 static bool validate_and_transform_model_json(nlohmann::json& model_data) {
@@ -237,31 +240,12 @@ static int handle_launch_command(const CliConfig& config) {
         return 1;
     }
 
-    // Check if server is reachable using LemonadeClient
+    // Preload model (and check if server reachable)
     lemonade::LemonadeClient client(config.host, config.port, config.api_key);
-    if (!client.check_server_health()) {
-        std::cerr << "Error: Lemonade server is not reachable at " << config.host << ":" << config.port << "." << std::endl;
-        std::cerr << "Start the server first with: lemonade-server serve --no-tray" << std::endl;
+    if (client.load_model(config.model, config.recipe_options)) {
         return 1;
     }
 
-    // Start model preload in background
-    std::thread([config]() {
-        try {
-            // Build recipe options from llamacpp_args if provided
-            nlohmann::json recipe_options = nlohmann::json::object();
-            if (!config.llamacpp_args.empty()) {
-                recipe_options["llamacpp_args"] = config.llamacpp_args;
-            }
-
-            lemonade::LemonadeClient client(config.host, config.port, config.api_key);
-            client.load_model(config.model, recipe_options);
-        } catch (...) {
-            // Silently ignore - agent TUI owns stdout/stderr
-        }
-    }).detach();
-
-    std::cout << "Loading model in background: " << config.model << std::endl;
     std::cout << "Launching " << config.agent << "..." << std::endl;
 
     // Launch agent process
@@ -311,13 +295,6 @@ int main(int argc, char* argv[]) {
     CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON");
     CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model");
 
-    // Positional model argument for pull, delete, load, unload, export
-    pull_cmd->add_option("model", config.model, "Model name to pull or JSON file")->required();
-    delete_cmd->add_option("model", config.model, "Model name to delete")->required();
-    load_cmd->add_option("model", config.model, "Model name to load")->required();
-    unload_cmd->add_option("model", config.model, "Model name to unload");
-    export_cmd->add_option("model", config.model, "Model name to export")->required();
-
     // List options
     list_cmd->add_flag("--downloaded", config.downloaded, "Save model options for future loads")->default_val(config.downloaded);
 
@@ -325,7 +302,8 @@ int main(int argc, char* argv[]) {
     recipes_cmd->add_option("--install", config.install_backend, "Install a backend (recipe:backend)");
     recipes_cmd->add_option("--uninstall", config.uninstall_backend, "Uninstall a backend (recipe:backend)");
 
-    // Pull-specific options
+    // Pull options
+    pull_cmd->add_option("model", config.model, "Model name to pull or JSON file")->required();
     pull_cmd->add_option("--checkpoint", config.checkpoints, "Model checkpoint path")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     pull_cmd->add_option("--recipe", config.recipe, "Model recipe (e.g., llamacpp)")->default_val(config.recipe);
@@ -333,17 +311,27 @@ int main(int argc, char* argv[]) {
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll)
         ->check(CLI::IsMember(VALID_LABELS));
 
-    // Load-specific options
+    // Delete options
+    delete_cmd->add_option("model", config.model, "Model name to delete")->required();
+
+    // Load options
+    load_cmd->add_option("model", config.model, "Model name to load")->required();
     lemon::RecipeOptions::add_cli_options(*load_cmd, config.recipe_options);
     load_cmd->add_flag("--save-options", config.save_options, "Save model options for future loads")->default_val(config.save_options);
 
-    // Export-specific options
+    // Unload options
+    unload_cmd->add_option("model", config.model, "Model name to unload");
+
+    // Export options
+    export_cmd->add_option("model", config.model, "Model name to export")->required();
     export_cmd->add_option("--output", config.output_file, "Output file path (prints to stdout if not specified)");
 
     // Launch command: agent is positional, model is --model flag
-    launch_cmd->add_option("agent", config.agent, "Agent name to launch (e.g., f1, f2)")->required();
-    launch_cmd->add_option("--model", config.model, "Model name to launch")->required();
-    launch_cmd->add_option("--llamacpp-args", config.llamacpp_args, "llamacpp arguments");
+    launch_cmd->add_option("agent", config.agent, "Agent name to launch")
+        ->required()
+        ->check(CLI::IsMember(SUPPORTED_AGENTS));
+    launch_cmd->add_option("--model", config.model, "Model name to load")->required();
+    lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
 
     // Parse arguments
     CLI11_PARSE(app, argc, argv);

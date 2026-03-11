@@ -11,6 +11,7 @@ The `lemonade` command-line interface (CLI) provides an HTTP client for interact
 - [Options for load](#options-for-load)
 - [Options for export](#options-for-export)
 - [Options for recipes](#options-for-recipes)
+- [Options for launch](#options-for-launch)
 
 ## Commands
 
@@ -29,6 +30,7 @@ The `lemonade` command-line interface (CLI) provides an HTTP client for interact
 | `unload [MODEL_NAME]` | Unload a model. If no model name is provided, unload all loaded models. |
 | `recipes`           | List available recipes and backends. Use `--install` or `--uninstall` to manage backends. |
 | `export MODEL_NAME` | Export model information to JSON format. See command options [below](#options-for-export). |
+| `launch AGENT`      | Launch an agent with a model. See command options [below](#options-for-launch). |
 
 ## Global Options
 
@@ -288,6 +290,42 @@ lemonade recipes --uninstall llamacpp:cpu
 
 # Install FLM backend
 lemonade recipes --install flm:npu
+```
+
+## Options for launch
+
+The `launch` command launches an agent with a model loaded. It requires an agent name and a model name, and supports recipe-specific options:
+
+```bash
+lemonade launch AGENT --model MODEL_NAME [options]
+```
+
+| Option/Argument | Description | Required |
+|-----------------|-------------|----------|
+| `AGENT` | Agent name to launch. Supported agents: `claude`, `codex` | Yes |
+| `--model MODEL_NAME` | Model name to load before launching the agent | Yes |
+| `--ctx-size SIZE` | Context size for the model | `4096` |
+| `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
+| `--llamacpp-args ARGS` | Custom arguments to pass to llama-server (must not conflict with managed args) | `""` |
+
+**Notes:**
+- The model is loaded before launching the agent
+- Supported agents: `claude`, `codex`
+
+**Examples:**
+
+```bash
+# Launch an agent with default model settings
+lemonade launch claude --model Qwen3-0.6B-GGUF
+
+# Launch an agent with custom context size
+lemonade launch claude --model Qwen3-0.6B-GGUF --ctx-size 8192
+
+# Launch an agent with a specific llama.cpp backend
+lemonade launch codex --model Qwen3-0.6B-GGUF --llamacpp vulkan
+
+# Launch an agent with custom llama.cpp arguments
+lemonade launch claude --model Qwen3-0.6B-GGUF --ctx-size 4096 --llamacpp-args "--flash-attn on --no-mmap"
 ```
 
 ## Next Steps
