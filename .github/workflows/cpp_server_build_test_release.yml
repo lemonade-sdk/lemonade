@@ -721,6 +721,16 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
+      - name: Install FLM backend for FLM wrapped-server tests
+        if: ${{ runner.os == 'Windows' && contains(matrix.extra_args, '--wrapped-server flm') }}
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
+          Write-Host "Installing FLM backend for CI inference tests..." -ForegroundColor Cyan
+          & $serverExe recipes --install flm:npu
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Run tests
         shell: PowerShell
         env:
@@ -770,6 +780,10 @@ jobs:
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
             backends: "cpu vulkan"
+          - name: flm
+            script: server_llm.py
+            extra_args: "--wrapped-server flm"
+            backends: "npu"
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""

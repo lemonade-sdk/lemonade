@@ -757,7 +757,13 @@ class EndpointTests(ServerTestBase):
                 )
                 self.assertIn(
                     backend_data["state"],
-                    {"unsupported", "installable", "update_required", "installed"},
+                    {
+                        "unsupported",
+                        "installable",
+                        "update_required",
+                        "action_required",
+                        "installed",
+                    },
                     f"Backend {recipe_name}/{backend_name} has invalid state: {backend_data['state']}",
                 )
 
