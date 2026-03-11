@@ -1,5 +1,6 @@
 #include "lemon/server.h"
 #include "lemon/ollama_api.h"
+#include <cstring>
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
@@ -40,6 +41,7 @@
     #include <sys/ioctl.h>
     #include <fcntl.h>
     #include <unistd.h>
+    #include <libdrm/drm.h>
     #include "lemon/amdxdna_accel.h"
 #endif
 
@@ -1076,6 +1078,18 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 
         message += "Use 'lemonade-server list' or GET /api/v1/models?show_all=true to see all available models.";
 
+        // Add FLM hint for -FLM model names when FLM is not ready
+        if (requested_model.size() > 4 &&
+            requested_model.substr(requested_model.size() - 4) == "-FLM") {
+            auto flm_status = SystemInfoCache::get_flm_status();
+            if (!flm_status.is_ready()) {
+                message += " The FLM backend is not ready: " + flm_status.message + ".";
+                if (!flm_status.action.empty()) {
+                    message += " " + flm_status.action + ".";
+                }
+            }
+        }
+
         error_response["error"] = {
             {"message", message},
             {"type", "model_not_found"},
@@ -1087,25 +1101,7 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
         return error_response;
     }
 
-    // Case 3: Model was invalidated by a backend upgrade (e.g., FLM version change)
-    // This happens when FLM is upgraded and old model files are no longer compatible
-    if (exception_msg.find("was invalidated") != std::string::npos) {
-        std::string message = "Model '" + requested_model + "' needs to be re-downloaded. " +
-            "The FLM backend was upgraded and the previously downloaded model files are no longer compatible. " +
-            "Please use 'lemonade-server pull " + requested_model + "' or click Download in the UI to re-download this model.";
-
-        error_response["error"] = {
-            {"message", message},
-            {"type", "model_invalidated"},
-            {"param", "model"},
-            {"code", "model_invalidated"},
-            {"requested_model", requested_model}
-        };
-
-        return error_response;
-    }
-
-    // Case 4: Model exists and is available, but failed to load (engine error)
+    // Case 3: Model exists and is available, but failed to load (engine error)
     // Return the actual exception message so the user knows what went wrong
     std::string message = "Failed to load model '" + requested_model + "': " + exception_msg;
 
@@ -1324,7 +1320,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 auto error_response = create_model_error(requested_model, e.what());
                 // Set appropriate status code based on error type
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                if (error_code == "model_load_error" || error_code == "model_invalidated") {
+                if (error_code == "model_load_error") {
                     res.status = 500;  // Internal server error - model exists but failed to load
                 } else {
                     res.status = 404;  // Not found - model doesn't exist or is filtered out
@@ -1543,7 +1539,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 auto error_response = create_model_error(requested_model, e.what());
                 // Set appropriate status code based on error type
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                if (error_code == "model_load_error" || error_code == "model_invalidated") {
+                if (error_code == "model_load_error") {
                     res.status = 500;  // Internal server error - model exists but failed to load
                 } else {
                     res.status = 404;  // Not found - model doesn't exist or is filtered out
@@ -1726,7 +1722,7 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+                res.status = (error_code == "model_load_error") ? 500 : 404;
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -1762,7 +1758,7 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+                res.status = (error_code == "model_load_error") ? 500 : 404;
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -1854,7 +1850,7 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
                 LOG(ERROR, "Server") << "Failed to load audio model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+                res.status = (error_code == "model_load_error") ? 500 : 404;
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -1902,7 +1898,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
                 LOG(ERROR, "Server") << "Failed to load text-to-speech model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+                res.status = (error_code == "model_load_error") ? 500 : 404;
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2026,7 +2022,7 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
                 LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+                res.status = (error_code == "model_load_error") ? 500 : 404;
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2075,7 +2071,10 @@ bool Server::parse_n_from_form(const httplib::Request& req, httplib::Response& r
     }
     int n;
     try {
-        n = std::stoi(req.form.get_field("n"));
+        size_t pos;
+        const std::string& val = req.form.get_field("n");
+        n = std::stoi(val, &pos);
+        if (pos != val.size()) throw std::invalid_argument("trailing characters");
     } catch (const std::exception&) {
         res.status = 400;
         nlohmann::json error = {{"error", {
@@ -2135,7 +2134,7 @@ bool Server::load_image_model(const nlohmann::json& request_json, httplib::Respo
         LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
         auto error_response = create_model_error(requested_model, e.what());
         std::string error_code = error_response["error"]["code"].get<std::string>();
-        res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+        res.status = (error_code == "model_load_error") ? 500 : 404;
         res.set_content(error_response.dump(), "application/json");
         return false;
     }
@@ -2171,7 +2170,10 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         if (req.form.has_field("output_compression")) {
             int output_compression;
             try {
-                output_compression = std::stoi(req.form.get_field("output_compression"));
+                size_t pos;
+                const std::string& val = req.form.get_field("output_compression");
+                output_compression = std::stoi(val, &pos);
+                if (pos != val.size()) throw std::invalid_argument("trailing characters");
             } catch (const std::exception&) {
                 res.status = 400;
                 nlohmann::json error = {{"error", {
@@ -2183,6 +2185,50 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
             }
             request_json["output_compression"] = output_compression;
         }
+
+        // Extract optional numeric inference parameters
+        auto parse_int_field = [&](const std::string& field) -> bool {
+            if (!req.form.has_field(field)) return true;
+            const std::string& val = req.form.get_field(field);
+            try {
+                size_t pos;
+                int parsed = std::stoi(val, &pos);
+                if (pos != val.size()) throw std::invalid_argument("trailing characters");
+                request_json[field] = parsed;
+            } catch (const std::exception&) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Invalid value for '" + field + "': must be an integer"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return false;
+            }
+            return true;
+        };
+        auto parse_float_field = [&](const std::string& field) -> bool {
+            if (!req.form.has_field(field)) return true;
+            const std::string& val = req.form.get_field(field);
+            try {
+                size_t pos;
+                float parsed = std::stof(val, &pos);
+                if (pos != val.size()) throw std::invalid_argument("trailing characters");
+                if (std::isnan(parsed) || std::isinf(parsed)) throw std::invalid_argument("nan/inf not allowed");
+                request_json[field] = parsed;
+            } catch (const std::exception&) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Invalid value for '" + field + "': must be a number"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return false;
+            }
+            return true;
+        };
+        if (!parse_int_field("steps"))     return;
+        if (!parse_float_field("cfg_scale")) return;
+        if (!parse_int_field("seed"))      return;
 
         if (!parse_n_from_form(req, res, request_json))      return;
         if (!extract_image_from_form(req, res, request_json)) return;
@@ -2213,6 +2259,7 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
 
         auto response = router_->image_edits(request_json);
         if (response.contains("error")) {
+            LOG(ERROR, "Server") << "Image edits backend error: " << response.dump() << std::endl;
             res.status = 500;
         }
         res.set_content(response.dump(), "application/json");
@@ -2264,6 +2311,7 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
 
         auto response = router_->image_variations(request_json);
         if (response.contains("error")) {
+            LOG(ERROR, "Server") << "Image variations backend error: " << response.dump() << std::endl;
             res.status = 500;
         }
         res.set_content(response.dump(), "application/json");
@@ -2300,7 +2348,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+                res.status = (error_code == "model_load_error") ? 500 : 404;
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2505,7 +2553,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         if (!model_name.empty()) {
             auto error_response = create_model_error(model_name, e.what());
             std::string error_code = error_response["error"]["code"].get<std::string>();
-            res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+            res.status = (error_code == "model_load_error") ? 500 : 404;
             res.set_content(error_response.dump(), "application/json");
         } else {
             // JSON parsing failed before we got model_name - return generic error
@@ -2812,57 +2860,13 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         return;
     }
 
-    // Hardware info is cached statically (never changes within a process lifetime)
+    // SystemInfoCache is the single source of truth for hardware + recipes.
+    // Recipes are cached until invalidated by install/uninstall.
     nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache();
 
-    // Check if BackendManager already has a cached recipes section
-    // (populated on first request, then kept current by install/uninstall)
-    if (backend_manager_) {
-        json cached_recipes = backend_manager_->get_recipes_cache();
-        if (!cached_recipes.empty()) {
-            system_info["recipes"] = cached_recipes;
-            res.set_content(system_info.dump(), "application/json");
-            return;
-        }
-    }
-
-    // First request: compute recipes from scratch (expensive — filesystem scans, etc.)
-    try {
-        auto sys_info = create_system_info();
-        if (system_info.contains("devices")) {
-            system_info["recipes"] = sys_info->build_recipes_info(system_info["devices"]);
-        }
-    } catch (...) {
-        // Keep whatever recipes were cached if recomputation fails
-    }
-
-    // Enrich with release_url, download_filename, and version from BackendManager
-    if (backend_manager_ && system_info.contains("recipes")) {
-        for (auto& [recipe_name, recipe_info] : system_info["recipes"].items()) {
-            if (!recipe_info.contains("backends")) continue;
-            for (auto& [backend_name, backend_info] : recipe_info["backends"].items()) {
-                try {
-                    auto enrichment = backend_manager_->get_backend_enrichment(recipe_name, backend_name);
-                    if (!enrichment.release_url.empty()) {
-                        backend_info["release_url"] = enrichment.release_url;
-                    }
-                    if (!enrichment.download_filename.empty()) {
-                        backend_info["download_filename"] = enrichment.download_filename;
-                    }
-                    // Always provide the configured version so UI can show version+link
-                    // even for not-installed backends
-                    if (!backend_info.contains("version") || backend_info["version"].get<std::string>().empty()) {
-                        if (!enrichment.version.empty()) {
-                            backend_info["version"] = enrichment.version;
-                        }
-                    }
-                } catch (...) {}
-            }
-        }
-
-        // Store in BackendManager's cache — subsequent requests return instantly,
-        // install/uninstall do targeted updates to keep it current.
-        backend_manager_->set_recipes_cache(system_info["recipes"]);
+    // Enrich with release_url, download_filename, version from BackendManager config
+    if (system_info.contains("recipes")) {
+        enrich_recipes(system_info["recipes"]);
     }
 
     res.set_content(system_info.dump(), "application/json");
@@ -3092,6 +3096,33 @@ double Server::get_npu_utilization() {
         int fd = open(accel_path.c_str(), O_RDWR);
         if (fd < 0) {
             return -1.0;
+        }
+
+        // Check DRM API version (must be 0.7 or later for these IOCTLs)
+        struct drm_version drm_v;
+        memset(&drm_v, 0, sizeof(drm_v));
+        bool version_ok = false;
+        if (ioctl(fd, DRM_IOCTL_VERSION, &drm_v) == 0) {
+            if (drm_v.version_major > 0 || (drm_v.version_major == 0 && drm_v.version_minor >= 7)) {
+                version_ok = true;
+            }
+        }
+
+        if (!version_ok) {
+            close(fd);
+            return -1.0;
+        }
+
+        // Check power_state to avoid waking the NPU if it is asleep
+        fs::path power_state_path = "/sys/class/accel/accel0/device/power_state";
+        if (fs::exists(power_state_path)) {
+            std::ifstream power_file(power_state_path);
+            std::string state;
+            if (power_file >> state) {
+                if (state != "D0") {
+                    return 0.0;
+                }
+            }
         }
 
         amdxdna_drm_query_sensor sensors[16] = {};
@@ -3510,12 +3541,41 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
 
         LOG(INFO, "Server") << "Installing backend: " << recipe << ":" << backend << std::endl;
 
+        // Get fresh state before any checks
+        SystemInfoCache::invalidate_recipes();
+
+        // Check if this backend requires manual setup (e.g. FLM on Linux).
+        // If so, return the action URL instead of attempting installation.
+        json system_info = SystemInfoCache::get_system_info_with_cache();
+        if (system_info.contains("recipes") &&
+            system_info["recipes"].contains(recipe) &&
+            system_info["recipes"][recipe].contains("backends") &&
+            system_info["recipes"][recipe]["backends"].contains(backend)) {
+            std::string action = system_info["recipes"][recipe]["backends"][backend].value("action", "");
+            if (action.find(".html") != std::string::npos) {
+                auto url_pos = action.find("https://");
+                if (url_pos != std::string::npos) {
+                    nlohmann::json response = {
+                        {"action", action.substr(url_pos)},
+                        {"recipe", recipe},
+                        {"backend", backend}
+                    };
+                    res.set_content(response.dump(), "application/json");
+                    return;
+                }
+            }
+        }
+
         if (stream) {
             stream_download_operation(res, [this, recipe, backend](DownloadProgressCallback progress_cb) {
                 backend_manager_->install_backend(recipe, backend, progress_cb);
+                SystemInfoCache::invalidate_recipes();
+                model_manager_->invalidate_models_cache();
             });
         } else {
             backend_manager_->install_backend(recipe, backend);
+            SystemInfoCache::invalidate_recipes();
+            model_manager_->invalidate_models_cache();
             nlohmann::json response = {
                 {"status", "success"},
                 {"recipe", recipe},
@@ -3569,6 +3629,9 @@ void Server::handle_uninstall(const httplib::Request& req, httplib::Response& re
 
         backend_manager_->uninstall_backend(recipe, backend);
 
+        SystemInfoCache::invalidate_recipes();
+        model_manager_->invalidate_models_cache();
+
         nlohmann::json response = {
             {"status", "success"},
             {"recipe", recipe},
@@ -3581,6 +3644,30 @@ void Server::handle_uninstall(const httplib::Request& req, httplib::Response& re
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::enrich_recipes(json& recipes) {
+    if (!backend_manager_) return;
+
+    for (auto& [recipe_name, recipe_info] : recipes.items()) {
+        if (!recipe_info.contains("backends")) continue;
+        for (auto& [backend_name, backend_info] : recipe_info["backends"].items()) {
+            try {
+                auto enrichment = backend_manager_->get_backend_enrichment(recipe_name, backend_name);
+                if (!enrichment.release_url.empty()) {
+                    backend_info["release_url"] = enrichment.release_url;
+                }
+                if (!enrichment.download_filename.empty()) {
+                    backend_info["download_filename"] = enrichment.download_filename;
+                }
+                if (!backend_info.contains("version") || backend_info["version"].get<std::string>().empty()) {
+                    if (!enrichment.version.empty()) {
+                        backend_info["version"] = enrichment.version;
+                    }
+                }
+            } catch (...) {}
+        }
     }
 }
 

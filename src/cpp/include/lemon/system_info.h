@@ -205,10 +205,24 @@ std::string identify_rocm_arch_from_name(const std::string& device_name);
 // Check if kernel has CWSR fix for Strix Halo
 bool needs_gfx1151_cwsr_fix();
 
-// Check if FLM validation fails on Linux (indicating NPU stack issues)
-// Returns true if FLM is present but fails validation
-// error_message is populated with the actual error from FLM if validation fails
-bool check_flm_validation_fails(std::string& error_message);
+// FLM status (derived from system-info cache)
+struct FlmStatus {
+    std::string state;     // "unsupported","installable","update_required","action_required","installed"
+    std::string version;
+    std::string message;
+    std::string action;
+
+    bool is_ready() const { return state == "installed"; }
+
+    // Format a user-facing error message (for throwing when FLM is not ready)
+    std::string error_string() const {
+        std::string msg = "FLM is not ready: " + message;
+        if (!action.empty()) {
+            msg += ". " + action;
+        }
+        return msg;
+    }
+};
 
 // Cache management
 class SystemInfoCache {
@@ -236,6 +250,14 @@ public:
 
     // High-level function: Get complete system info (with cache handling and friendly messages)
     static json get_system_info_with_cache();
+
+    // Invalidate recipes portion of cache (hardware stays cached).
+    // Call after installing/upgrading FLM so the next get_system_info_with_cache()
+    // re-evaluates backend availability.
+    static void invalidate_recipes();
+
+    // Get FLM status from cached system-info (single source of truth)
+    static FlmStatus get_flm_status();
 
 private:
     std::string cache_file_path_;

@@ -4,7 +4,6 @@
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/system_info.h>
-#include <lemon/backends/fastflowlm_server.h>
 #include <filesystem>
 #include <iostream>
 #include <fstream>
@@ -249,6 +248,11 @@ std::string ModelManager::get_hf_cache_dir() const {
     }
     return "/tmp/.cache/huggingface/hub";
 #endif
+}
+
+void ModelManager::invalidate_models_cache() {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    cache_valid_ = false;
 }
 
 void ModelManager::set_extra_models_dir(const std::string& dir) {
@@ -832,6 +836,18 @@ void ModelManager::build_cache() {
         all_models[name] = info;
     }
 
+    // Step 1.6: Discover FLM models from 'flm list --json'
+    // Only discover FLM models if FLM is fully installed
+    // Precedence: server_models.json > user_models.json > extra_models > flm_list
+    auto flm_status = SystemInfoCache::get_flm_status();
+    if (flm_status.is_ready()) {
+        auto flm_available = get_flm_available_models();
+        for (const auto& info : flm_available) {
+            // Use emplace to only add if key doesn't exist (respect precedence)
+            all_models.emplace(info.model_name, info);
+        }
+    }
+
     // Populate recipe options
     for (auto& [name, info] : all_models) {
         // Start with image_defaults as base options for sd-cpp models
@@ -1097,34 +1113,6 @@ void ModelManager::remove_model_from_cache(const std::string& model_name) {
     }
 }
 
-void ModelManager::refresh_flm_download_status() {
-    // Get fresh list of installed FLM models
-    // This is called on every get_supported_models() to ensure FLM status is up-to-date
-    // since users can install/uninstall FLM models outside of lemonade
-    auto flm_models = get_flm_installed_models();
-    std::unordered_set<std::string> flm_set(flm_models.begin(), flm_models.end());
-
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-
-    if (!cache_valid_) {
-        return;  // Cache will be built fresh on next access
-    }
-
-    // Update download status for all FLM models in cache
-    for (auto& [name, info] : models_cache_) {
-        if (info.recipe == "flm") {
-            bool was_downloaded = info.downloaded;
-            info.downloaded = flm_set.count(info.checkpoint()) > 0;
-
-            // Log changes for debugging
-            if (was_downloaded != info.downloaded) {
-                LOG(INFO, "ModelManager") << "FLM status changed: " << name
-                          << " (checkpoint: " << info.checkpoint() << ") -> "
-                          << (info.downloaded ? "downloaded" : "not downloaded") << std::endl;
-            }
-        }
-    }
-}
 
 std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     // Build cache if needed
@@ -1139,26 +1127,6 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
         }
     }
     return downloaded;
-}
-
-// Helper function to check if NPU is available
-// Matches Python behavior: on Windows, assume available (FLM will fail at runtime if not compatible)
-// This allows showing FLM models on Windows systems - the actual compatibility check happens when loading
-static bool is_npu_available(const json& hardware) {
-    // Check if user explicitly disabled NPU check
-    const char* skip_check = std::getenv("RYZENAI_SKIP_PROCESSOR_CHECK");
-    if (skip_check && (std::string(skip_check) == "1" ||
-                       std::string(skip_check) == "true" ||
-                       std::string(skip_check) == "yes")) {
-        return true;
-    }
-
-    // Use provided hardware info
-    if (hardware.contains("amd_npu") && hardware["amd_npu"].is_object()) {
-        return hardware["amd_npu"].value("available", false);
-    }
-
-    return false;
 }
 
 // Helper function to parse physical memory string (e.g., "32.00 GB") to GB as double
@@ -1266,7 +1234,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     json system_info = SystemInfoCache::get_system_info_with_cache();
     json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
 
-    bool npu_available = is_npu_available(hardware);
+    bool npu_available = hardware.contains("amd_npu") &&
+                         hardware["amd_npu"].is_object() &&
+                         hardware["amd_npu"].value("available", false);
 
     double largest_mem_pool_gb = 0.0;
     double curr_mem_pool_gb = 0.0;
@@ -1455,13 +1425,13 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
 
     // Find the flm executable using shared utility
     std::string flm_path = utils::find_flm_executable();
-    if (flm_path.empty()) {
-        return installed_models; // FLM not installed
+    if (flm_path.empty() || !utils::is_safe_executable_path(flm_path)) {
+        return installed_models; // FLM not installed or path unsafe
     }
 
-    // Run 'flm list --filter installed --quiet' to get only installed models
+    // Run 'flm list --filter installed --quiet --json' to get only installed models
     // Use the full path to flm.exe to avoid PATH issues
-    std::string command = "\"" + flm_path + "\" list --filter installed --quiet";
+    std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json";
 
 #ifdef _WIN32
     FILE* pipe = _popen(command.c_str(), "r");
@@ -1485,7 +1455,22 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
     pclose(pipe);
 #endif
 
-    // Parse output - cleaner format without emojis
+    // Parse output: { "models": [ { "name": "modelname:tag", ... }, ... ] }
+    try {
+        json j = JsonUtils::parse(output);
+        if (j.contains("models") && j["models"].is_array()) {
+            for (const auto& model : j["models"]) {
+                if (model.contains("name") && model["name"].is_string()) {
+                    installed_models.push_back(model["name"].get<std::string>());
+                }
+            }
+            return installed_models;
+        }
+    } catch (...) {
+        // Fallback to legacy parsing if JSON parsing fails
+    }
+
+    // Legacy parsing - cleaner format without emojis
     // Expected format:
     //   Models:
     //     - modelname:tag
@@ -1515,6 +1500,91 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
     }
 
     return installed_models;
+}
+
+std::vector<ModelInfo> ModelManager::get_flm_available_models() {
+    std::vector<ModelInfo> flm_models;
+
+    // Find the flm executable using shared utility
+    std::string flm_path = utils::find_flm_executable();
+    if (flm_path.empty() || !utils::is_safe_executable_path(flm_path)) {
+        return flm_models; // FLM not installed or path unsafe
+    }
+
+    // Run 'flm list --json' to get all available models
+    std::string command = "\"" + flm_path + "\" list --json";
+
+#ifdef _WIN32
+    FILE* pipe = _popen(command.c_str(), "r");
+#else
+    FILE* pipe = popen(command.c_str(), "r");
+#endif
+
+    if (!pipe) {
+        return flm_models;
+    }
+
+    char buffer[256];
+    std::string output;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output += buffer;
+    }
+
+#ifdef _WIN32
+    _pclose(pipe);
+#else
+    pclose(pipe);
+#endif
+
+    // Parse output: { "models": [ { "name": "modelname:tag", "footprint": 1.23, ... }, ... ] }
+    try {
+        json j = JsonUtils::parse(output);
+        if (j.contains("models") && j["models"].is_array()) {
+            for (const auto& m : j["models"]) {
+                if (m.contains("name") && m["name"].is_string()) {
+                    std::string checkpoint = m["name"].get<std::string>();
+
+                    // Format display name: replace : with -, append -FLM
+                    // e.g., "llama3.2:1b" -> "llama3.2-1b-FLM"
+                    std::string display_name = checkpoint;
+                    // Replace : with -
+                    std::replace(display_name.begin(), display_name.end(), ':', '-');
+
+                    std::string model_name = display_name + "-FLM";
+
+                    ModelInfo info;
+                    info.model_name = model_name;
+                    info.checkpoints["main"] = checkpoint;
+                    info.recipe = "flm";
+                    info.suggested = true; // All official FLM models are suggested
+
+                    // Size in GB (footprint field contains disk size in GB)
+                    if (m.contains("footprint") && m["footprint"].is_number()) {
+                        info.size = m["footprint"].get<double>();
+                    }
+
+                    // Labels from FLM metadata
+                    if (m.contains("label") && m["label"].is_array()) {
+                        for (const auto& l : m["label"]) {
+                            if (l.is_string()) {
+                                info.labels.push_back(l.get<std::string>());
+                            }
+                        }
+                    }
+
+                    // Populate type and device fields (multi-model support)
+                    info.type = get_model_type_from_labels(info.labels);
+                    info.device = get_device_type_from_recipe(info.recipe);
+
+                    flm_models.push_back(info);
+                }
+            }
+        }
+    } catch (...) {
+        // Silently fail if JSON parsing fails, we'll just have no dynamic FLM models
+    }
+
+    return flm_models;
 }
 
 bool ModelManager::is_model_downloaded(const std::string& model_name) {
@@ -2095,22 +2165,10 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
                                      DownloadProgressCallback progress_callback) {
     LOG(INFO, "ModelManager") << "Pulling FLM model: " << checkpoint << std::endl;
 
-    // Ensure FLM is installed
-    LOG(INFO, "ModelManager") << "Checking FLM installation..." << std::endl;
-    try {
-        backends::FastFlowLMServer flm_installer("info", this, nullptr);
-        try {
-            flm_installer.check();
-        } catch (const backends::FLMCheckException& e) {
-            if (e.type() == backends::FLMCheckException::ErrorType::NOT_INSTALLED) {
-                flm_installer.install();
-            } else {
-                throw;
-            }
-        }
-    } catch (const std::exception& e) {
-        LOG(ERROR, "ModelManager") << "FLM check/install failed: " << e.what() << std::endl;
-        throw;
+    // Ensure FLM is ready (single source of truth)
+    auto status = SystemInfoCache::get_flm_status();
+    if (!status.is_ready()) {
+        throw std::runtime_error(status.error_string());
     }
 
     // Find flm executable
