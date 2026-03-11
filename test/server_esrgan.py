@@ -222,4 +222,5 @@ if __name__ == "__main__":
         ESRGANUpscaleTests,
         "ESRGAN UPSCALE TESTS",
         wrapped_server="sd-cpp",
+        modality="stable_diffusion",
     )

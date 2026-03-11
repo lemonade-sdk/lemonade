@@ -3,8 +3,8 @@ import { useModels } from '../../hooks/useModels';
 import { Modality } from '../../hooks/useInferenceState';
 import { ModelsData } from '../../utils/modelData';
 import { serverFetch } from '../../utils/serverConfig';
+import InferenceControls from '../InferenceControls';
 import ModelSelector from '../ModelSelector';
-import EmptyState from '../EmptyState';
 
 interface UpscaleQueueItem {
   originalData: string;
@@ -29,11 +29,12 @@ const UpscalePanel: React.FC<UpscalePanelProps> = ({
 }) => {
   const { selectedModel, modelsData } = useModels();
   const [upscaleQueue, setUpscaleQueue] = useState<UpscaleQueueItem[]>([]);
-  const [isUpscaling, setIsUpscaling] = useState(false);
   const [upscaleProgress, setUpscaleProgress] = useState({ current: 0, total: 0 });
   const upscaleFileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const isUpscaling = isBusy && activeModality === 'upscale';
 
   const readFileAsDataURL = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -91,51 +92,60 @@ const UpscalePanel: React.FC<UpscalePanelProps> = ({
 
     if (pendingIndices.length === 0) return;
 
-    setIsUpscaling(true);
+    const ready = await runPreFlight('upscale', {
+      modelName: selectedModel,
+      modelsData,
+      onError: showError,
+    });
+    if (!ready) return;
+
     setUpscaleProgress({ current: 0, total: pendingIndices.length });
 
-    for (let i = 0; i < pendingIndices.length; i++) {
-      const idx = pendingIndices[i];
-      setUpscaleProgress({ current: i + 1, total: pendingIndices.length });
-
-      setUpscaleQueue(prev => prev.map((item, j) =>
-        j === idx ? { ...item, status: 'processing' } : item
-      ));
-
-      try {
-        const dataUrl = upscaleQueue[idx].originalData;
-        const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
-
-        const response = await serverFetch('/images/upscale', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: selectedModel, image: base64 }),
-        });
-
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-          throw new Error(err.error?.message || err.error || 'Upscale failed');
-        }
-
-        const data = await response.json();
-        const upscaledB64 = data.data?.[0]?.b64_json;
-
-        if (!upscaledB64) {
-          throw new Error('No image data in response');
-        }
+    try {
+      for (let i = 0; i < pendingIndices.length; i++) {
+        const idx = pendingIndices[i];
+        setUpscaleProgress({ current: i + 1, total: pendingIndices.length });
 
         setUpscaleQueue(prev => prev.map((item, j) =>
-          j === idx ? { ...item, upscaledData: upscaledB64, status: 'done' } : item
+          j === idx ? { ...item, status: 'processing' } : item
         ));
-      } catch (error: any) {
-        console.error('Upscale failed for', upscaleQueue[idx].fileName, error);
-        setUpscaleQueue(prev => prev.map((item, j) =>
-          j === idx ? { ...item, status: 'error', error: error.message } : item
-        ));
+
+        try {
+          const dataUrl = upscaleQueue[idx].originalData;
+          const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+
+          const response = await serverFetch('/images/upscale', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: selectedModel, image: base64 }),
+          });
+
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(err.error?.message || err.error || 'Upscale failed');
+          }
+
+          const data = await response.json();
+          const upscaledB64 = data.data?.[0]?.b64_json;
+
+          if (!upscaledB64) {
+            throw new Error('No image data in response');
+          }
+
+          setUpscaleQueue(prev => prev.map((item, j) =>
+            j === idx ? { ...item, upscaledData: upscaledB64, status: 'done' } : item
+          ));
+        } catch (error: any) {
+          console.error('Upscale failed for', upscaleQueue[idx].fileName, error);
+          showError(`Failed to upscale ${upscaleQueue[idx].fileName}: ${error.message || 'Unknown error'}`);
+          setUpscaleQueue(prev => prev.map((item, j) =>
+            j === idx ? { ...item, status: 'error', error: error.message } : item
+          ));
+        }
       }
+    } finally {
+      reset();
     }
-
-    setIsUpscaling(false);
   };
 
   const saveUpscaledImage = (imageData: string, originalName: string) => {
@@ -151,6 +161,27 @@ const UpscalePanel: React.FC<UpscalePanelProps> = ({
   const removeFromUpscaleQueue = (index: number) => {
     setUpscaleQueue(prev => prev.filter((_, i) => i !== index));
   };
+
+  const addImageButton = (
+    <button
+      className="image-upload-button"
+      onClick={() => upscaleFileInputRef.current?.click()}
+      disabled={isBusy}
+      title="Add images"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+        <line x1="12" y1="8" x2="12" y2="16"/>
+        <line x1="8" y1="12" x2="16" y2="12"/>
+      </svg>
+    </button>
+  );
+
+  const upscaleIcon = (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+      <path d="M7 17L17 7M17 7H7M17 7V17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
 
   return (
     <>
@@ -232,6 +263,12 @@ const UpscalePanel: React.FC<UpscalePanelProps> = ({
           </div>
         ))}
 
+        {isUpscaling && (
+          <div className="upscale-status processing" style={{ padding: '8px 16px' }}>
+            Processing {upscaleProgress.current}/{upscaleProgress.total}
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -245,46 +282,17 @@ const UpscalePanel: React.FC<UpscalePanelProps> = ({
             style={{ display: 'none' }}
             onChange={handleUpscaleFileSelect}
           />
-          <div className="chat-controls">
-            <div className="chat-controls-left">
-              <ModelSelector disabled={isUpscaling} />
-              <button
-                className="image-upload-button"
-                onClick={() => upscaleFileInputRef.current?.click()}
-                disabled={isUpscaling}
-                title="Add images"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                  <line x1="12" y1="8" x2="12" y2="16"/>
-                  <line x1="8" y1="12" x2="16" y2="12"/>
-                </svg>
-              </button>
-            </div>
-            {isUpscaling && (
-              <span className="upscale-progress">
-                Processing {upscaleProgress.current}/{upscaleProgress.total}
-              </span>
-            )}
-            <button
-              className="chat-send-button"
-              onClick={handleUpscaleProcess}
-              disabled={isUpscaling || upscaleQueue.filter(i => i.status === 'pending').length === 0}
-              title="Upscale all pending images"
-            >
-              {isUpscaling ? (
-                <div className="typing-indicator small">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </div>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <path d="M7 17L17 7M17 7H7M17 7V17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              )}
-            </button>
-          </div>
+          <InferenceControls
+            isBusy={isBusy}
+            isInferring={isInferring}
+            stoppable={false}
+            onSend={handleUpscaleProcess}
+            sendDisabled={upscaleQueue.filter(i => i.status === 'pending').length === 0}
+            sendIcon={upscaleIcon}
+            sendTitle="Upscale all pending images"
+            leftControls={addImageButton}
+            modelSelector={<ModelSelector disabled={isBusy} />}
+          />
         </div>
       </div>
     </>

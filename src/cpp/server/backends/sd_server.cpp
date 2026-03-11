@@ -46,6 +46,14 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 #else
         throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
 #endif
+    } else if (backend == "vulkan") {
+#ifdef _WIN32
+        params.filename = "sd-" + short_version + "-bin-win-vulkan-x64.zip";
+#elif defined(__linux__)
+        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip";
+#else
+        throw std::runtime_error("Vulkan sd.cpp only supported on Windows and Linux");
+#endif
     } else {
         // CPU build (default)
 #ifdef _WIN32
@@ -104,7 +112,7 @@ void SDServer::install(const std::string& backend) {
 #else
         throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
 #endif
-        std::cout << "[SDServer] Using ROCm GPU backend" << std::endl;
+        LOG(INFO, "SDServer") << "Using ROCm GPU backend" << std::endl;
     } else if (backend == "vulkan") {
 #ifdef _WIN32
         filename = "sd-" + short_version + "-bin-win-vulkan-x64.zip";
@@ -113,7 +121,7 @@ void SDServer::install(const std::string& backend) {
 #else
         throw std::runtime_error("Vulkan sd.cpp only supported on Windows and Linux");
 #endif
-        std::cout << "[SDServer] Using Vulkan GPU backend" << std::endl;
+        LOG(INFO, "SDServer") << "Using Vulkan GPU backend" << std::endl;
     } else {
         // CPU build (default)
 #ifdef _WIN32
@@ -406,9 +414,7 @@ json SDServer::image_variations(const json& request) {
 json SDServer::image_upscale(const json& request) {
     json sd_request = request;
 
-    if (is_debug()) {
-        std::cout << "[SDServer] Forwarding upscale request to sd-server" << std::endl;
-    }
+    LOG(DEBUG, "SDServer") << "Forwarding upscale request to sd-server" << std::endl;
 
     return forward_request("/v1/images/upscale", sd_request, 600);
 }

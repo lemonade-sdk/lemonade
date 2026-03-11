@@ -277,7 +277,6 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("images/variations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_image_variations(req, res);
     });
-
     register_post("images/upscale", [this](const httplib::Request& req, httplib::Response& res) {
         handle_image_upscale(req, res);
     });
@@ -2340,21 +2339,12 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             return;
         }
 
-        if (!request_json.contains("model")) {
-            res.status = 400;
-            nlohmann::json error = {{"error", {
-                {"message", "Missing 'model' field in request"},
-                {"type", "invalid_request_error"}
-            }}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-
         if (!load_image_model(request_json, res)) return;
 
         auto response = router_->image_upscale(request_json);
 
         if (response.contains("error")) {
+            LOG(ERROR, "Server") << "Image upscale backend error: " << response.dump() << std::endl;
             res.status = 500;
         }
 
@@ -2373,7 +2363,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         res.status = 500;
         nlohmann::json error = {{"error", {
             {"message", e.what()},
-            {"type", "internal_error"}
+            {"type", "server_error"}
         }}};
         res.set_content(error.dump(), "application/json");
     }
