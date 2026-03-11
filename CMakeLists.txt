@@ -1258,6 +1258,10 @@ if(UNIX AND NOT APPLE)
         set(CPACK_PACKAGE_NAME "lemonade-server")
 
         set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libsecret-1-0, libasound2t64, fonts-katex")
+        # whisper.cpp can use ffmpeg for input audio resampling and/or
+        # transcoding, but it is not required for server startup or WAV-only
+        # transcription flows.
+        set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "ffmpeg")
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
 
         # Install Electron app
@@ -1338,7 +1342,7 @@ if(UNIX AND NOT APPLE)
     else()
         set(CPACK_PACKAGE_NAME "lemonade-server")
         set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, fonts-katex")
-        set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "chromium-browser | google-chrome-stable | chromium")
+        set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "ffmpeg, chromium-browser | google-chrome-stable | chromium")
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
     endif()
     # Control scripts for debian package
