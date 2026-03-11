@@ -150,13 +150,9 @@ CAPABILITIES = {
             "supports": {
                 "image_generation": True,
                 "image_generation_b64": True,
-                "image_upscale": True,
-                "image_upscale_b64": True,
             },
             "test_models": {
                 "image": "SD-Turbo",
-                "upscale": "RealESRGAN-x4plus",
-                "upscale_anime": "RealESRGAN-x4plus-anime",
             },
         },
     },

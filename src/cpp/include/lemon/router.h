@@ -72,7 +72,6 @@ public:
     json image_generations(const json& request);
     json image_edits(const json& request);
     json image_variations(const json& request);
-    json image_upscale(const json& request);
 
     // Forward streaming requests to the appropriate wrapped server
     void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);

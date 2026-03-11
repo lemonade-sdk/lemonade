@@ -11,7 +11,7 @@
 namespace lemon {
 namespace backends {
 
-class SDServer : public WrappedServer, public IImageServer, public IImageUpscaleServer {
+class SDServer : public WrappedServer, public IImageServer {
 public:
 #ifndef LEMONADE_TRAY
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
@@ -52,8 +52,6 @@ public:
     json image_edits(const json& request) override;
     json image_variations(const json& request) override;
 
-    // IImageUpscaleServer implementation
-    json image_upscale(const json& request) override;
 };
 
 } // namespace backends

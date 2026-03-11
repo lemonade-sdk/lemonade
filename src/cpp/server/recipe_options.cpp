@@ -16,6 +16,7 @@ static const json DEFAULTS = {
 #endif
     {"llamacpp_args", ""},
     {"sd-cpp_backend", "cpu"},  // sd.cpp backend selection (cpu or rocm)
+    {"sd-cpp_upscale_model", ""},  // Optional ESRGAN upscale model name
     {"whispercpp_backend", "npu"},
     {"whispercpp_args", ""},
     // Image generation defaults (for sd-cpp recipe)
@@ -55,6 +56,12 @@ static const json CLI_OPTIONS = {
         {"allowed_values", {"cpu", "rocm", "vulkan"}},
         {"envname", "LEMONADE_SDCPP"},
         {"help", "SD.cpp backend to use (cpu for CPU, rocm for AMD GPU, vulkan for Vulkan GPU)"}
+    }},
+    {"--sdcpp-upscale", {
+        {"option_name", "sd-cpp_upscale_model"},
+        {"type_name", "MODEL"},
+        {"envname", "LEMONADE_SDCPP_UPSCALE"},
+        {"help", "ESRGAN upscale model to apply as post-processing (e.g. RealESRGAN-x4plus)"}
     }},
     // ASR options
     {"--whispercpp", {
@@ -113,7 +120,7 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     } else if (recipe == "ryzenai-llm") {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
-        return {"sd-cpp_backend", "steps", "cfg_scale", "width", "height"};
+        return {"sd-cpp_backend", "sd-cpp_upscale_model", "steps", "cfg_scale", "width", "height"};
     } else {
         return {};
     }

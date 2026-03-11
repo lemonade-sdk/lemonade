@@ -68,15 +68,6 @@ public:
     virtual json image_variations(const json& request) = 0;
 };
 
-// Optional image upscaling capability (ESRGAN)
-class IImageUpscaleServer : public virtual ICapability {
-public:
-    virtual ~IImageUpscaleServer() = default;
-
-    // Image upscaling (POST /v1/images/upscale)
-    virtual json image_upscale(const json& request) = 0;
-};
-
 // Helper to check if a server supports a capability
 template<typename T>
 bool supports_capability(ICapability* server) {

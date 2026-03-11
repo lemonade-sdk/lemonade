@@ -3,7 +3,7 @@ import { ensureModelReady, DownloadAbortError } from '../utils/backendInstaller'
 import { ModelsData } from '../utils/modelData';
 
 export type InferencePhase = 'idle' | 'pre_flight' | 'inferring';
-export type Modality = 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'upscale' | 'speech';
+export type Modality = 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'speech';
 
 interface RunPreFlightOptions {
   modelName: string;

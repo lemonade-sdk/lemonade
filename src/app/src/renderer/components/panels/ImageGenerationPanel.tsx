@@ -14,6 +14,7 @@ interface ImageSettings {
   width: number;
   height: number;
   seed: number;
+  upscaleModel: string;
 }
 
 const DEFAULT_IMAGE_SETTINGS: ImageSettings = {
@@ -22,6 +23,7 @@ const DEFAULT_IMAGE_SETTINGS: ImageSettings = {
   width: 512,
   height: 512,
   seed: -1,
+  upscaleModel: '',
 };
 
 interface ImageGenerationPanelProps {
@@ -95,6 +97,10 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
 
       if (imageSettings.seed > 0) {
         requestBody.seed = imageSettings.seed;
+      }
+
+      if (imageSettings.upscaleModel) {
+        requestBody.upscale_model = imageSettings.upscaleModel;
       }
 
       const response = await serverFetch('/images/generations', {
@@ -218,6 +224,16 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
           <input type="number" min="-1" value={imageSettings.seed}
             onChange={(e) => setImageSettings(prev => ({ ...prev, seed: parseInt(e.target.value) || -1 }))}
             disabled={isBusy} placeholder="-1 = random" />
+        </div>
+        <div className="image-setting">
+          <label>Upscale 4x</label>
+          <select value={imageSettings.upscaleModel}
+            onChange={(e) => setImageSettings(prev => ({ ...prev, upscaleModel: e.target.value }))}
+            disabled={isBusy}>
+            <option value="">Off</option>
+            <option value="RealESRGAN-x4plus">RealESRGAN-x4plus</option>
+            <option value="RealESRGAN-x4plus-anime">RealESRGAN-x4plus-anime</option>
+          </select>
         </div>
       </div>
 

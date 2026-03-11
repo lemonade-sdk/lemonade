@@ -184,14 +184,7 @@ void SDServer::load(const std::string& model_name,
         "--listen-port", std::to_string(port_)
     };
 
-    // Check if this is an upscale model (ESRGAN)
-    bool is_upscale = std::find(model_info.labels.begin(), model_info.labels.end(), "upscale")
-                      != model_info.labels.end();
-
-    if (is_upscale) {
-        args.push_back("--upscale-model");
-        args.push_back(model_path);
-    } else if (llm_path.empty() || vae_path.empty()) {
+    if (llm_path.empty() || vae_path.empty()) {
         args.push_back("-m");
         args.push_back(model_path);
     } else {
@@ -201,6 +194,24 @@ void SDServer::load(const std::string& model_name,
         args.push_back(llm_path);
         args.push_back("--vae");
         args.push_back(vae_path);
+    }
+
+    // Optional ESRGAN upscale model (post-processing)
+    std::string upscale_model_name = options.get_option("sd-cpp_upscale_model");
+    if (!upscale_model_name.empty() && model_manager_) {
+        try {
+            ModelInfo upscale_info = model_manager_->get_model_info(upscale_model_name);
+            std::string upscale_path = upscale_info.resolved_path("main");
+            if (!upscale_path.empty() && fs::exists(upscale_path)) {
+                args.push_back("--upscale-model");
+                args.push_back(upscale_path);
+                LOG(INFO, "SDServer") << "ESRGAN upscale model: " << upscale_path << std::endl;
+            } else {
+                LOG(WARNING, "SDServer") << "Upscale model not found on disk: " << upscale_model_name << std::endl;
+            }
+        } catch (const std::exception& e) {
+            LOG(WARNING, "SDServer") << "Could not resolve upscale model '" << upscale_model_name << "': " << e.what() << std::endl;
+        }
     }
 
     if (is_debug()) {
@@ -409,14 +420,6 @@ json SDServer::image_variations(const json& request) {
                   << std::endl;
 
     return forward_multipart_request("/v1/images/edits", fields, 600);
-}
-
-json SDServer::image_upscale(const json& request) {
-    json sd_request = request;
-
-    LOG(DEBUG, "SDServer") << "Forwarding upscale request to sd-server" << std::endl;
-
-    return forward_request("/v1/images/upscale", sd_request, 600);
 }
 
 } // namespace backends
