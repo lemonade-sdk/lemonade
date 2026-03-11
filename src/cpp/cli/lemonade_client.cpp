@@ -442,6 +442,19 @@ int LemonadeClient::unload_model(const std::string& model_name) const {
     }
 }
 
+nlohmann::json LemonadeClient::get_model_info(const std::string& model_name) const {
+    try {
+        std::string response = make_request("/api/v1/models/" + model_name);
+        return json::parse(response);
+    } catch (const json::exception& e) {
+        std::cerr << "Error parsing model info JSON: " << e.what() << std::endl;
+        return json{};
+    } catch (const std::exception& e) {
+        std::cerr << "Error fetching model info: " << e.what() << std::endl;
+        return json{};
+    }
+}
+
 int LemonadeClient::list_recipes() const {
     try {
         std::string response = make_request("/api/v1/system-info");

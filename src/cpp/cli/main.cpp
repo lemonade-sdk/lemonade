@@ -6,7 +6,26 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 
-static const std::vector<std::string> VALID_LABELS = { "coding", "embeddings", "hot", "reasoning", "reranking", "tool-calling", "vision"};
+static const std::vector<std::string> VALID_LABELS = {
+    "coding",
+    "embeddings",
+    "hot",
+    "reasoning",
+    "reranking",
+    "tool-calling",
+    "vision"
+};
+
+static const std::vector<std::string> KNOWN_KEYS = {
+    "checkpoint",
+    "checkpoints",
+    "model_name",
+    "image_defaults",
+    "labels",
+    "recipe",
+    "recipe_options",
+    "size"
+};
 
 static bool validate_and_transform_model_json(nlohmann::json& model_data) {
     // Validate model_name (or id -> model_name)
@@ -20,6 +39,12 @@ static bool validate_and_transform_model_json(nlohmann::json& model_data) {
         }
     }
 
+    // Prepend "user." to model_name if it doesn't already start with "user."
+    std::string model_name = model_data["model_name"].get<std::string>();
+    if (model_name.substr(0, 5) != "user.") {
+        model_data["model_name"] = "user." + model_name;
+    }
+
     // Validate recipe
     if (!model_data.contains("recipe") || !model_data["recipe"].is_string()) {
         std::cerr << "Error: JSON file must contain a 'recipe' string field" << std::endl;
@@ -27,16 +52,35 @@ static bool validate_and_transform_model_json(nlohmann::json& model_data) {
     }
 
     // Validate checkpoints or checkpoint
-    bool has_checkpoints = model_data.contains("checkpoints") && model_data["checkpoints"].is_array();
+    bool has_checkpoints = model_data.contains("checkpoints") && model_data["checkpoints"].is_object();
     bool has_checkpoint = model_data.contains("checkpoint") && model_data["checkpoint"].is_string();
     if (!has_checkpoints && !has_checkpoint) {
-        std::cerr << "Error: JSON file must contain either 'checkpoints' (array) or 'checkpoint' (string)" << std::endl;
+        std::cerr << "Error: JSON file must contain either 'checkpoints' (object) or 'checkpoint' (string)" << std::endl;
         return false;
     }
 
     // If both checkpoints and checkpoint exist, remove checkpoint
     if (has_checkpoints && has_checkpoint) {
         model_data.erase("checkpoint");
+    }
+
+    // Remove unrecognized top-level keys after validation
+    std::vector<std::string> keys_to_remove;
+    for (auto& [key, _] : model_data.items()) {
+        bool is_known = false;
+        for (const auto& known_key : KNOWN_KEYS) {
+            if (key == known_key) {
+                is_known = true;
+                break;
+            }
+        }
+        if (!is_known) {
+            keys_to_remove.push_back(key);
+        }
+    }
+
+    for (const auto& key : keys_to_remove) {
+        model_data.erase(key);
     }
 
     return true;
@@ -102,6 +146,36 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const lemonade:
     return client.pull_model(model_data);
 }
 
+static int handle_export_command(lemonade::LemonadeClient& client, const lemonade::CliConfig& config) {
+    nlohmann::json model_json = client.get_model_info(config.model);
+
+    if (model_json.empty()) {
+        std::cerr << "Error: Failed to fetch model info for '" << config.model << "'" << std::endl;
+        return 1;
+    }
+
+    if (!validate_and_transform_model_json(model_json)) {
+        return 1;
+    }
+
+    std::string output = model_json.dump(4);
+
+    if (config.output_file.empty()) {
+        std::cout << output << std::endl;
+    } else {
+        std::ofstream file(config.output_file);
+        if (!file.is_open()) {
+            std::cerr << "Error: Failed to open output file '" << config.output_file << "'" << std::endl;
+            return 1;
+        }
+        file << output;
+        file.close();
+        std::cout << "Model info exported to '" << config.output_file << "'" << std::endl;
+    }
+
+    return 0;
+}
+
 static int handle_recipes_command(lemonade::LemonadeClient& client, const lemonade::CliConfig& config) {
     if (handle_backend_operation(config.install_backend, "Install",
         [&client](const std::string& recipe, const std::string& backend) {
@@ -142,12 +216,14 @@ int main(int argc, char* argv[]) {
     CLI::App* load_cmd = app.add_subcommand("load", "Load a model into memory");
     CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)");
     CLI::App* recipes_cmd = app.add_subcommand("recipes", "List available recipes and backends");
+    CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON");
 
-    // Positional model argument for pull, delete, load, unload
-    pull_cmd->add_option("model", config.model, "Model name to pull")->required();
+    // Positional model argument for pull, delete, load, unload, export
+    pull_cmd->add_option("model", config.model, "Model name to pull or JSON file")->required();
     delete_cmd->add_option("model", config.model, "Model name to delete")->required();
     load_cmd->add_option("model", config.model, "Model name to load")->required();
     unload_cmd->add_option("model", config.model, "Model name to unload");
+    export_cmd->add_option("model", config.model, "Model name to export")->required();
 
     // Install/uninstall options for recipes command
     recipes_cmd->add_option("--install", config.install_backend, "Install a backend (recipe:backend)");
@@ -164,6 +240,9 @@ int main(int argc, char* argv[]) {
     // Load-specific options
     lemon::RecipeOptions::add_cli_options(*load_cmd, config.recipe_options);
     load_cmd->add_flag("--save-options", config.save_options, "Save model options for future loads")->default_val(config.save_options);
+
+    // Export-specific options
+    export_cmd->add_option("--output", config.output_file, "Output file path (prints to stdout if not specified)");
 
     // Parse arguments
     CLI11_PARSE(app, argc, argv);
@@ -184,6 +263,8 @@ int main(int argc, char* argv[]) {
         return client.load_model(config.model, config.recipe_options, config.save_options);
     } else if (unload_cmd->count() > 0) {
         return client.unload_model(config.model);
+    } else if (export_cmd->count() > 0) {
+        return handle_export_command(client, config);
     } else if (recipes_cmd->count() > 0) {
         return handle_recipes_command(client, config);
     } else {

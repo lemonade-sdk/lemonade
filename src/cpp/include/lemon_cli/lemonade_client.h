@@ -35,6 +35,7 @@ struct CliConfig {
     bool save_options = false;
     std::string install_backend;  // Format: "recipe:backend"
     std::string uninstall_backend;  // Format: "recipe:backend"
+    std::string output_file;
 };
 
 // Model information structure
@@ -74,6 +75,7 @@ public:
     int delete_model(const std::string& model_name) const;
     int load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options = false) const;
     int unload_model(const std::string& model_name) const;
+    nlohmann::json get_model_info(const std::string& model_name) const;
 
     // Status commands
     int status() const;
