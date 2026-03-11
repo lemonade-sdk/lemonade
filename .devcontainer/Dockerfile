@@ -18,6 +18,7 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     python3-venv \
     python3-setuptools \
     build-essential \
+    libdrm-dev \
     git
 
 # Setup Venv
