@@ -27,6 +27,23 @@ static const std::vector<std::string> KNOWN_KEYS = {
     "size"
 };
 
+// Configuration structure for CLI options
+struct CliConfig {
+    std::string host = "127.0.0.1";
+    int port = 8000;
+    std::string api_key;
+    std::string model;
+    std::map<std::string, std::string> checkpoints;
+    std::string recipe;
+    std::vector<std::string> labels;
+    nlohmann::json recipe_options;
+    bool save_options = false;
+    std::string install_backend;  // Format: "recipe:backend"
+    std::string uninstall_backend;  // Format: "recipe:backend"
+    std::string output_file;
+    bool downloaded = false;
+};
+
 static bool validate_and_transform_model_json(nlohmann::json& model_data) {
     // Validate model_name (or id -> model_name)
     if (!model_data.contains("model_name") || !model_data["model_name"].is_string()) {
@@ -102,7 +119,7 @@ static bool handle_backend_operation(const std::string& spec, const std::string&
     return true;
 }
 
-static int handle_pull_command(lemonade::LemonadeClient& client, const lemonade::CliConfig& config) {
+static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     nlohmann::json model_data;
     bool use_json_file = false;
 
@@ -146,7 +163,7 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const lemonade:
     return client.pull_model(model_data);
 }
 
-static int handle_export_command(lemonade::LemonadeClient& client, const lemonade::CliConfig& config) {
+static int handle_export_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     nlohmann::json model_json = client.get_model_info(config.model);
 
     if (model_json.empty()) {
@@ -176,7 +193,7 @@ static int handle_export_command(lemonade::LemonadeClient& client, const lemonad
     return 0;
 }
 
-static int handle_recipes_command(lemonade::LemonadeClient& client, const lemonade::CliConfig& config) {
+static int handle_recipes_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     if (handle_backend_operation(config.install_backend, "Install",
         [&client](const std::string& recipe, const std::string& backend) {
             return client.install_backend(recipe, backend);
@@ -197,7 +214,7 @@ int main(int argc, char* argv[]) {
     CLI::App app{"Lemonade CLI - HTTP client for Lemonade Server"};
 
     // Create config object and bind CLI11 options directly to it
-    lemonade::CliConfig config;
+    CliConfig config;
 
     // Set up CLI11 options with callbacks that write directly to config
     app.set_help_flag("--help,-h", "Display help information");
@@ -224,6 +241,9 @@ int main(int argc, char* argv[]) {
     load_cmd->add_option("model", config.model, "Model name to load")->required();
     unload_cmd->add_option("model", config.model, "Model name to unload");
     export_cmd->add_option("model", config.model, "Model name to export")->required();
+
+    // List options
+    list_cmd->add_flag("--downloaded", config.downloaded, "Save model options for future loads")->default_val(config.downloaded);
 
     // Install/uninstall options for recipes command
     recipes_cmd->add_option("--install", config.install_backend, "Install a backend (recipe:backend)");
@@ -254,7 +274,7 @@ int main(int argc, char* argv[]) {
     if (status_cmd->count() > 0) {
         return client.status();
     } else if (list_cmd->count() > 0) {
-        return client.list_models(true);
+        return client.list_models(!config.downloaded);
     } else if (pull_cmd->count() > 0) {
         return handle_pull_command(client, config);
     } else if (delete_cmd->count() > 0) {

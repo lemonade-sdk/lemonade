@@ -250,29 +250,42 @@ int LemonadeClient::list_models(bool show_all) const {
 
 // Helper function to parse SSE progress events
 static bool parse_sse_progress(const std::string& event_data, std::string& last_file, int& last_percent,
-                                 std::string& error_message) {
+                                  std::string& error_message) {
     try {
         auto json_data = json::parse(event_data);
 
         if (json_data.contains("file") && json_data["file"].is_string()) {
             std::string file = json_data["file"].get<std::string>();
+            int file_index = json_data.value("file_index", 0);
+            int total_files = json_data.value("total_files", 0);
+            // Use uint64_t explicitly to avoid JSON type inference issues with large numbers
+            uint64_t bytes_downloaded = json_data.value("bytes_downloaded", (uint64_t)0);
+            uint64_t bytes_total = json_data.value("bytes_total", (uint64_t)0);
 
             if (file != last_file) {
                 if (!last_file.empty()) {
                     std::cout << std::endl;
                 }
-                std::cout << "[1/1] " << file;
+                std::cout << "[" << file_index << "/" << total_files << "] " << file;
+                if (bytes_total > 0) {
+                    std::cout << " (" << std::fixed << std::setprecision(1)
+                            << (bytes_total / (1024.0 * 1024.0)) << " MB)";
+                }
+                std::cout << std::endl;
                 last_file = file;
                 last_percent = -1;
             }
-        }
 
-        if (json_data.contains("percent") && json_data["percent"].is_number_integer()) {
-            int percent = json_data["percent"].get<int>();
+            if (bytes_total > 0 && json_data.contains("percent") && json_data["percent"].is_number_integer()) {
+                int percent = json_data["percent"].get<int>();
 
-            if (percent != last_percent) {
-                std::cout << "\r  Progress: " << percent << "%" << std::flush;
-                last_percent = percent;
+                if (percent != last_percent) {
+                    std::cout << "\r  Progress: " << percent << "% ("
+                            << std::fixed << std::setprecision(1)
+                            << (bytes_downloaded / (1024.0 * 1024.0)) << "/"
+                            << (bytes_total / (1024.0 * 1024.0)) << " MB)" << std::flush;
+                    last_percent = percent;
+                }
             }
         }
 
@@ -350,12 +363,10 @@ int LemonadeClient::pull_model(const json& model_data) {
 
         bool success = make_request("/api/v1/pull", "POST", body, "application/json",
             [&](const std::string& event_type, const std::string& event_data) {
-                if (event_type == "progress") {
-                    parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
-                } else if (event_type == "complete") {
+                if (event_type == "complete") {
                     std::cout << std::endl;
                     state.success = true;
-                } else if (event_type == "error") {
+                } else {
                     parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
                 }
             }, 86400, 30);
@@ -562,12 +573,10 @@ int LemonadeClient::install_backend(const std::string& recipe, const std::string
 
         bool success = make_request("/api/v1/install", "POST", body, "application/json",
             [&](const std::string& event_type, const std::string& event_data) {
-                if (event_type == "progress") {
-                    parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
-                } else if (event_type == "complete") {
+                if (event_type == "complete") {
                     std::cout << std::endl;
                     state.success = true;
-                } else if (event_type == "error") {
+                } else {
                     parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
                 }
             }, 86400, 30);

@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 #include <functional>
-#include <map>
 #include <nlohmann/json.hpp>
 
 // Forward declaration for httplib
@@ -20,22 +19,6 @@ struct StreamingRequestState {
     int last_percent = -1;
     bool success = false;
     std::string error_message;
-};
-
-// Configuration structure for CLI options
-struct CliConfig {
-    std::string host = "127.0.0.1";
-    int port = 8000;
-    std::string api_key;
-    std::string model;
-    std::map<std::string, std::string> checkpoints;
-    std::string recipe;
-    std::vector<std::string> labels;
-    nlohmann::json recipe_options;
-    bool save_options = false;
-    std::string install_backend;  // Format: "recipe:backend"
-    std::string uninstall_backend;  // Format: "recipe:backend"
-    std::string output_file;
 };
 
 // Model information structure
