@@ -53,9 +53,9 @@ static const json CLI_OPTIONS = {
     {"--sdcpp", {
         {"option_name", "sd-cpp_backend"},
         {"type_name", "BACKEND"},
-        {"allowed_values", {"cpu", "rocm", "vulkan"}},
+        {"allowed_values", {"cpu", "rocm"}},
         {"envname", "LEMONADE_SDCPP"},
-        {"help", "SD.cpp backend to use (cpu for CPU, rocm for AMD GPU, vulkan for Vulkan GPU)"}
+        {"help", "SD.cpp backend to use (cpu for CPU, rocm for AMD GPU)"}
     }},
     {"--sdcpp-upscale", {
         {"option_name", "sd-cpp_upscale_model"},

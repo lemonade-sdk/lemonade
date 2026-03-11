@@ -14,8 +14,7 @@
   },
   "sd-cpp": {
     "cpu": "master-506-1f30df9",
-    "rocm": "master-506-1f30df9",
-    "vulkan": "master-506-1f30df9"
+    "rocm": "master-506-1f30df9"
   },
   "ryzenai-llm": {
     "npu": "v1.7.0"
