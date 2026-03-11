@@ -292,7 +292,7 @@
                   <div class="flm-code-block"><code>sudo pacman -Sy linux-firmware</code></div>
                 </li>
                 <li>Clone FastFlowLM:
-                  <div class="flm-code-block"><code>git clone https://github.com/FastFlowLM/FastFlowLM.git</code></div>
+                  <div class="flm-code-block"><code>git clone --recurse-submodules https://github.com/FastFlowLM/FastFlowLM.git</code></div>
                 </li>
                 <li>Build and install FLM:
                   <div class="flm-code-block"><code>cmake -S src --preset linux-default<br>ninja -C src/build<br>sudo ninja -C src/build install</code></div>
