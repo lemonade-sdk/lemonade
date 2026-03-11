@@ -1,6 +1,8 @@
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/utils/version_utils.h"
+#include "lemon/utils/json_utils.h"
 #include "lemon/backends/backend_utils.h"
 #include <filesystem>
 #include <fstream>
@@ -13,6 +15,7 @@
 #include <cctype>
 #include <set>
 #include <map>
+#include <mutex>
 #include <vector>
 #include <cmath>
 
@@ -269,6 +272,7 @@ static std::string get_current_os() {
 std::string identify_rocm_arch_from_name(const std::string& device_name);
 std::string identify_npu_arch();
 static std::string read_version_file(const fs::path& version_file);
+static std::string get_expected_backend_version(const std::string& recipe, const std::string& backend);
 
 // Check if device matches constraints (empty constraint set = all families allowed)
 static bool device_matches_constraint(const std::string& device_family,
@@ -314,69 +318,30 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         }
     }
     if (recipe == "flm") {
-        if (!utils::run_flm_validate("", error_message)) {
+        // 1. Is flm binary present?
+        std::string flm_path = utils::find_flm_executable();
+        if (flm_path.empty()) {
+            error_message = "FLM is not installed";
             return false;
         }
-#ifdef _WIN32
-        // Check NPU driver version meets minimum from backend_versions.json
-        {
-            // Query NPU driver version via WMI
-            std::string npu_driver;
-            {
-                wmi::WMIConnection wmi_conn;
-                if (wmi_conn.is_valid()) {
-                    std::wstring query = L"SELECT DriverVersion FROM Win32_PnPSignedDriver WHERE DeviceName LIKE '%NPU Compute Accelerator Device%'";
-                    wmi_conn.query(query, [&npu_driver](IWbemClassObject* pObj) {
-                        if (npu_driver.empty()) {
-                            npu_driver = wmi::get_property_string(pObj, L"DriverVersion");
-                        }
-                    });
-                }
+        // 2. Is version >= required?
+        std::string version = SystemInfo::get_flm_version();
+        std::string required = get_expected_backend_version("flm", "npu");
+        if (!required.empty()) {
+            if (version == "unknown") {
+                // Can't determine version (FLM too old for --json flag) → treat as outdated
+                error_message = "FLM version unknown, requires " + required;
+                return false;
             }
-            if (!npu_driver.empty()) {
-                // Read min_npu_driver from backend_versions.json
-                std::string min_version;
-                try {
-                    std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-                    std::ifstream file(config_path);
-                    if (file.is_open()) {
-                        json data = json::parse(file);
-                        if (data.contains("flm") && data["flm"].contains("min_npu_driver")) {
-                            min_version = data["flm"]["min_npu_driver"].get<std::string>();
-                        }
-                    }
-                } catch (...) {}
-
-                if (!min_version.empty()) {
-                    // Simple dotted-version comparison (e.g., "32.0.203.311")
-                    auto parse_parts = [](const std::string& v) {
-                        std::vector<int> parts;
-                        std::istringstream ss(v);
-                        std::string token;
-                        while (std::getline(ss, token, '.')) {
-                            try { parts.push_back(std::stoi(token)); } catch (...) { parts.push_back(0); }
-                        }
-                        return parts;
-                    };
-                    auto cur = parse_parts(npu_driver);
-                    auto min_v = parse_parts(min_version);
-                    // Pad to same length
-                    while (cur.size() < min_v.size()) cur.push_back(0);
-                    while (min_v.size() < cur.size()) min_v.push_back(0);
-                    bool too_old = false;
-                    for (size_t i = 0; i < cur.size(); ++i) {
-                        if (cur[i] < min_v[i]) { too_old = true; break; }
-                        if (cur[i] > min_v[i]) break;
-                    }
-                    if (too_old) {
-                        error_message = "NPU driver version " + npu_driver +
-                            " is older than required " + min_version;
-                        return false;
-                    }
-                }
+            if (utils::Version::parse(version) < utils::Version::parse(required)) {
+                error_message = "FLM " + version + " installed, requires " + required;
+                return false;
             }
         }
-#endif
+        // 3. Does flm validate pass?
+        if (!utils::run_flm_validate(flm_path, error_message)) {
+            return false;
+        }
         return true;
     }
     return false;
@@ -907,61 +872,91 @@ json SystemInfo::build_recipes_info(const json& devices) {
             backend["message"] = message;
             backend["action"] = "";
         } else if (!available) {
-            backend["state"] = "installable";
-            backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
+            // FLM uses 5-state model: installable, update_required, action_required
+            // (version checking is inside is_recipe_installed() for FLM)
+            if (def.recipe == "flm") {
+                // Determine FLM sub-state from the error message
+                bool is_not_installed = install_error.find("not installed") != std::string::npos;
+                bool is_version_mismatch = install_error.find("requires") != std::string::npos;
 
-            // Special action for ROCm backend on llamacpp/sd-cpp if CWSR fix is missing
-            if ((def.recipe == "llamacpp" || def.recipe == "sd-cpp") && def.backend == "rocm"
-                && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
-                backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
-            }
-            // For FLM on Linux, the action should be to visit setup documentation
-            else if (def.recipe == "flm") {
+                if (is_not_installed) {
+                    backend["state"] = "installable";
+                } else if (is_version_mismatch) {
+                    backend["state"] = "update_required";
+                } else {
+                    backend["state"] = "action_required";
+                }
+                backend["message"] = install_error;
+
+                // Include version for update_required and action_required
+                if (!is_not_installed) {
+                    std::string installed_version = get_recipe_version(def.recipe, def.backend);
+                    if (!installed_version.empty() && installed_version != "unknown") {
+                        backend["version"] = installed_version;
+                    }
+                }
+
+                // Platform-specific action: action_required uses driver help URL on Windows,
+                // all other states use the install command. Linux always uses the docs URL.
 #ifdef __linux__
                 backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html?mode=troubleshoot";
 #elif defined(_WIN32)
-                // Driver/kernel issue → docs URL (opens iframe)
-                // FLM not installed → install command (auto-installable)
-                if (install_error.find("driver") != std::string::npos ||
-                    install_error.find("Driver") != std::string::npos) {
+                if (!is_not_installed && !is_version_mismatch) {
                     backend["action"] = "Visit https://lemonade-server.ai/driver_install.html";
                 } else {
                     backend["action"] = get_install_command(def.recipe, def.backend);
                 }
 #else
-                backend["action"] = get_install_command(def.recipe, def.backend);
+                backend["action"] = is_not_installed || is_version_mismatch
+                    ? get_install_command(def.recipe, def.backend) : "";
 #endif
             } else {
-                backend["action"] = get_install_command(def.recipe, def.backend);
+                backend["state"] = "installable";
+                backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
+
+                // Special action for ROCm backend on llamacpp/sd-cpp if CWSR fix is missing
+                if ((def.recipe == "llamacpp" || def.recipe == "sd-cpp") && def.backend == "rocm"
+                    && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
+                    backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
+                } else {
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+                }
             }
         } else {
-            std::string installed_version = get_recipe_version(def.recipe, def.backend);
-            std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
-
-            if (!installed_version.empty() && installed_version != "unknown") {
-                backend["version"] = installed_version;
-            }
-
-            bool version_known = !installed_version.empty() && installed_version != "unknown";
-            bool has_expected = !expected_version.empty();
-            bool needs_update = has_expected && (!version_known || installed_version != expected_version);
-
-            if (needs_update) {
-                backend["state"] = "update_required";
-                backend["message"] = "Backend update is required before use.";
-                backend["action"] = get_install_command(def.recipe, def.backend);
-            } else {
+            // FLM: version check already done in is_recipe_installed(), so skip generic version check
+            if (def.recipe == "flm") {
+                std::string installed_version = get_recipe_version(def.recipe, def.backend);
+                if (!installed_version.empty() && installed_version != "unknown") {
+                    backend["version"] = installed_version;
+                }
                 backend["state"] = "installed";
                 backend["message"] = "";
                 backend["action"] = "";
-            }
-
-            // FLM cannot be uninstalled on Linux (managed by system package manager)
 #ifdef __linux__
-            if (def.recipe == "flm") {
                 backend["can_uninstall"] = false;
-            }
 #endif
+            } else {
+                std::string installed_version = get_recipe_version(def.recipe, def.backend);
+                std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
+
+                if (!installed_version.empty() && installed_version != "unknown") {
+                    backend["version"] = installed_version;
+                }
+
+                bool version_known = !installed_version.empty() && installed_version != "unknown";
+                bool has_expected = !expected_version.empty();
+                bool needs_update = has_expected && (!version_known || installed_version != expected_version);
+
+                if (needs_update) {
+                    backend["state"] = "update_required";
+                    backend["message"] = "Backend update is required before use.";
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+                } else {
+                    backend["state"] = "installed";
+                    backend["message"] = "";
+                    backend["action"] = "";
+                }
+            }
         }
 
         // Note: release_url and download_size_mb are added by Server::handle_system_info()
@@ -1213,8 +1208,10 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
 }
 
 // Linux: identify NPU architecture from sysfs accel subsystem
-// Checks /sys/class/accel/*/device/driver for amdxdna, then reads vbnv for NPU generation
-static std::string identify_npu_arch_from_sysfs() {
+// Checks /sys/class/accel/*/device/driver for amdxdna, then reads number of columns
+// If amdxdna not loaded, fall back to PCI device IDs
+static std::string identify_npu_arch_linux() {
+#ifdef __linux__
     fs::path accel_path = "/sys/class/accel";
     if (!fs::exists(accel_path) || !fs::is_directory(accel_path)) {
         return "";
@@ -1237,26 +1234,72 @@ static std::string identify_npu_arch_from_sysfs() {
             continue;
         }
 
-        fs::path vbnv_file = entry.path() / "device" / "vbnv";
-        if (!fs::exists(vbnv_file)) {
+        std::string accel_basename = entry.path().filename().string();
+        std::string accel_dev = "/dev/accel/" + accel_basename;
+        if (!fs::exists(accel_dev))
+            continue;
+
+        if (accel_dev.empty() || !fs::exists(accel_dev)) {
             continue;
         }
 
-        std::ifstream vbnv_stream(vbnv_file);
-        if (!vbnv_stream.is_open()) {
+        int fd = open(accel_dev.c_str(), O_RDWR);
+        if (fd < 0)
             continue;
-        }
-
-        std::string vbnv_content;
-        std::getline(vbnv_stream, vbnv_content);
-        vbnv_stream.close();
-
-        if (vbnv_content.find("RyzenAI-npu4") != std::string::npos ||
-            vbnv_content.find("RyzenAI-npu5") != std::string::npos ||
-            vbnv_content.find("RyzenAI-npu6") != std::string::npos) {
+        amdxdna_drm_query_aie_metadata query_aie_metadata = {};
+        amdxdna_drm_get_info get_info = {
+            .param = DRM_AMDXDNA_QUERY_AIE_METADATA,
+            .buffer_size = sizeof(amdxdna_drm_query_aie_metadata),
+            .buffer = (unsigned long)&query_aie_metadata,
+        };
+        ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info);
+        close(fd);
+        if (query_aie_metadata.cols == 8) {
             return "XDNA2";
         }
+
+        //Fallback path for missing amdxdna driver (just check PCI IDs)
+        fs::path pci_path = "/sys/bus/pci/devices";
+        if (fs::exists(pci_path) && fs::is_directory(pci_path)) {
+            for (const auto& pci_entry : fs::directory_iterator(pci_path)) {
+                if (!pci_entry.is_directory()) continue;
+
+                fs::path class_path = pci_entry.path() / "class";
+                fs::path vendor_path = pci_entry.path() / "vendor";
+                fs::path device_path = pci_entry.path() / "device";
+                fs::path revision_path = pci_entry.path() / "revision";
+
+                if (!fs::exists(class_path) || !fs::exists(vendor_path) || !fs::exists(device_path)) {
+                    continue;
+                }
+                if (!fs::exists(revision_path)) {
+                    continue;
+                }
+
+                auto read_sysfs = [](const fs::path& p) {
+                    std::ifstream is(p);
+                    std::string s;
+                    is >> s;
+                    return s;
+                };
+                std::string class_str = read_sysfs(class_path);
+                std::string vendor_str = read_sysfs(vendor_path);
+                std::string device_str = read_sysfs(device_path);
+                std::string revision_str = read_sysfs(revision_path);
+
+                if (class_str != "0x118000" || vendor_str != "0x1022") {
+                    continue;
+                }
+                if (device_str == "0x17f0") {
+                    if (revision_str == "0x10" ||
+                        revision_str == "0x11" ||
+                        revision_str == "0x12")
+                        return "XDNA2";
+                }
+            }
+        }
     }
+#endif
     return "";
 }
 
@@ -1306,32 +1349,6 @@ bool needs_gfx1151_cwsr_fix() {
     return false;
 }
 
-// Check if FLM validation fails on Linux (indicating NPU stack issues)
-// Returns true if FLM is present but fails validation
-// error_message is populated with the actual error from FLM if validation fails
-// Note: Only checks if FLM is installed. The "FLM not installed" case is handled
-// by the model manager when a user tries to download/load an FLM model.
-bool check_flm_validation_fails(std::string& error_message) {
-#ifdef __linux__
-    std::string flm_path = utils::find_flm_executable();
-    if (flm_path.empty()) {
-        // No FLM installed - not a system check issue
-        // (FLM not being installed is only a problem if user tries to use FLM models)
-        error_message.clear();
-        return false;
-    }
-
-    // Run flm validate
-    bool success = utils::run_flm_validate(flm_path, error_message);
-
-    // Return true if validation failed (indicating NPU stack issues)
-    return !success;
-#else
-    error_message.clear();
-    return false;
-#endif
-}
-
 // Identify NPU architecture by checking for known hardware
 // Windows: PCI device ID via WMI; Linux: amdxdna driver in sysfs accel subsystem
 // Returns the NPU family (e.g., "XDNA2") or empty string if no NPU found
@@ -1355,11 +1372,9 @@ std::string identify_npu_arch() {
         return "XDNA2";
     }
 #else
-
-    // Linux: check amdxdna driver + vbnv for NPU generation
-    std::string sysfs_arch = identify_npu_arch_from_sysfs();
-    if (!sysfs_arch.empty()) {
-        return sysfs_arch;
+    std::string linux_arch = identify_npu_arch_linux();
+    if (!linux_arch.empty()) {
+        return linux_arch;
     }
 #endif
 
@@ -1443,10 +1458,18 @@ bool SystemInfo::get_has_igpu() {
 }
 
 std::string SystemInfo::get_flm_version() {
+    // Find the flm executable using shared utility
+    std::string flm_path = utils::find_flm_executable();
+    if (flm_path.empty() || !utils::is_safe_executable_path(flm_path)) {
+        return "unknown";
+    }
+
     #ifdef _WIN32
-    FILE* pipe = _popen("flm version 2>NUL", "r");
+    std::string command = "\"" + flm_path + "\" version --json 2>NUL";
+    FILE* pipe = _popen(command.c_str(), "r");
     #else
-    FILE* pipe = popen("flm version 2>/dev/null", "r");
+    std::string command = "\"" + flm_path + "\" version --json 2>/dev/null";
+    FILE* pipe = popen(command.c_str(), "r");
     #endif
 
     if (!pipe) {
@@ -1455,8 +1478,8 @@ std::string SystemInfo::get_flm_version() {
 
     char buffer[256];
     std::string output;
-    if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output = buffer;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output += buffer;
     }
 
     #ifdef _WIN32
@@ -1465,7 +1488,23 @@ std::string SystemInfo::get_flm_version() {
     pclose(pipe);
     #endif
 
-    // Parse version from output like "FLM v0.9.4"
+    // Parse JSON output: { "version": "0.9.34" }
+    try {
+        json j = JsonUtils::parse(output);
+        if (j.contains("version") && j["version"].is_string()) {
+            std::string version = j["version"].get<std::string>();
+            // If the version doesn't start with 'v', prepend it
+            // for backend_versions.json compatibility (e.g. "v0.9.34").
+            if (!version.empty() && version[0] != 'v') {
+                return "v" + version;
+            }
+            return version;
+        }
+    } catch (...) {
+        // Fallback to legacy parsing if JSON parsing fails
+    }
+
+    // Legacy parsing from output like "FLM v0.9.4"
     if (output.find("FLM v") != std::string::npos) {
         size_t pos = output.find("FLM v");
         // Keep the 'v' prefix so it matches backend_versions.json (e.g. "v0.9.34").
@@ -2249,70 +2288,69 @@ NPUInfo LinuxSystemInfo::get_npu_device() {
             }
         }
 
-        // Try to query TOPs and Power Mode via IOCTL
-        std::string accel_dev = "/dev/accel/accel0";
-        if (fs::exists(accel_dev)) {
-            int fd = open(accel_dev.c_str(), O_RDWR);
-            if (fd >= 0) {
-                // Query Resource Info (TOPs)
-                amdxdna_drm_get_resource_info res_info = {};
-                amdxdna_drm_get_info get_info = {};
-                get_info.param = DRM_AMDXDNA_QUERY_RESOURCE_INFO;
-                get_info.buffer_size = sizeof(res_info);
-                get_info.buffer = (uintptr_t)&res_info;
+                // Try to query TOPs and Power Mode via IOCTL
+                std::string accel_dev = "/dev/accel/accel0";
+                if (fs::exists(accel_dev)) {
+                    int fd = open(accel_dev.c_str(), O_RDWR);
+                    if (fd >= 0) {
+                        // Query Resource Info (TOPs)
+                        amdxdna_drm_get_resource_info res_info = {};
+                        amdxdna_drm_get_info get_info = {};
+                        get_info.param = DRM_AMDXDNA_QUERY_RESOURCE_INFO;
+                        get_info.buffer_size = sizeof(res_info);
+                        get_info.buffer = (uintptr_t)&res_info;
 
-                if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) >= 0) {
-                    npu.tops_max = res_info.npu_tops_max;
-                    npu.tops_curr = res_info.npu_tops_curr;
-                }
-
-                // Query Sensors (Utilization)
-                amdxdna_drm_query_sensor sensors[16] = {};
-                get_info.param = DRM_AMDXDNA_QUERY_SENSORS;
-                get_info.buffer_size = sizeof(sensors);
-                get_info.buffer = (uintptr_t)sensors;
-
-                if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) >= 0) {
-                    int num_sensors = get_info.buffer_size / sizeof(amdxdna_drm_query_sensor);
-                    double usage_sum = 0.0;
-                    int usage_count = 0;
-                    for (int i = 0; i < num_sensors; ++i) {
-                        if (sensors[i].type == AMDXDNA_SENSOR_TYPE_COLUMN_UTILIZATION) {
-                            double val = (double)sensors[i].input * std::pow(10.0, sensors[i].unitm);
-                            usage_sum += val;
-                            usage_count++;
+                        if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) >= 0) {
+                            npu.tops_max = res_info.npu_tops_max;
+                            npu.tops_curr = res_info.npu_tops_curr;
                         }
-                    }
-                    if (usage_count > 0) {
-                        npu.utilization = (float)(usage_sum / usage_count);
+
+                        // Query Sensors (Utilization)
+                        amdxdna_drm_query_sensor sensors[16] = {};
+                        get_info.param = DRM_AMDXDNA_QUERY_SENSORS;
+                        get_info.buffer_size = sizeof(sensors);
+                        get_info.buffer = (uintptr_t)sensors;
+
+                        if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) >= 0) {
+                            int num_sensors = get_info.buffer_size / sizeof(amdxdna_drm_query_sensor);
+                            double usage_sum = 0.0;
+                            int usage_count = 0;
+                            for (int i = 0; i < num_sensors; ++i) {
+                                if (sensors[i].type == AMDXDNA_SENSOR_TYPE_COLUMN_UTILIZATION) {
+                                    double val = (double)sensors[i].input * std::pow(10.0, sensors[i].unitm);
+                                    usage_sum += val;
+                                    usage_count++;
+                                }
+                            }
+                            if (usage_count > 0) {
+                                npu.utilization = (float)(usage_sum / usage_count);
+                            }
+                        }
+
+                        // Query Power Mode
+                        amdxdna_drm_get_power_mode pwr_info = {};
+                        get_info.param = DRM_AMDXDNA_GET_POWER_MODE;
+                        get_info.buffer_size = sizeof(pwr_info);
+                        get_info.buffer = (uintptr_t)&pwr_info;
+
+                        if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) >= 0) {
+                            static const std::map<int, std::string> POWER_MODE_MAP = {
+                                {POWER_MODE_DEFAULT, "DEFAULT"},
+                                {POWER_MODE_LOW, "LOW"},
+                                {POWER_MODE_MEDIUM, "MEDIUM"},
+                                {POWER_MODE_HIGH, "HIGH"},
+                                {POWER_MODE_TURBO, "TURBO"}
+                            };
+                            auto it = POWER_MODE_MAP.find(pwr_info.power_mode);
+                            if (it != POWER_MODE_MAP.end()) {
+                                npu.power_mode = it->second;
+                            } else {
+                                npu.power_mode = "Unknown (" + std::to_string(pwr_info.power_mode) + ")";
+                            }
+                        }
+                        close(fd);
                     }
                 }
-
-                // Query Power Mode
-                amdxdna_drm_get_power_mode pwr_info = {};
-                get_info.param = DRM_AMDXDNA_GET_POWER_MODE;
-                get_info.buffer_size = sizeof(pwr_info);
-                get_info.buffer = (uintptr_t)&pwr_info;
-
-                if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) >= 0) {
-                    static const std::map<int, std::string> POWER_MODE_MAP = {
-                        {POWER_MODE_DEFAULT, "DEFAULT"},
-                        {POWER_MODE_LOW, "LOW"},
-                        {POWER_MODE_MEDIUM, "MEDIUM"},
-                        {POWER_MODE_HIGH, "HIGH"},
-                        {POWER_MODE_TURBO, "TURBO"}
-                    };
-                    auto it = POWER_MODE_MAP.find(pwr_info.power_mode);
-                    if (it != POWER_MODE_MAP.end()) {
-                        npu.power_mode = it->second;
-                    } else {
-                        npu.power_mode = "Unknown (" + std::to_string(pwr_info.power_mode) + ")";
-                    }
-                }
-                close(fd);
-            }
-        }
-
         break;
     }
 
@@ -2929,85 +2967,128 @@ void SystemInfoCache::perform_upgrade_cleanup() {
     }
 }
 
-json SystemInfoCache::get_system_info_with_cache() {
-    // In-memory static cache to avoid repeated disk reads and message printing
-    // within the same process lifetime
-    static json cached_result;
-    static bool result_computed = false;
+// Static state for system-info cache (split into hardware + recipes)
+static std::mutex s_system_info_mutex;
+static json s_cached_system_info;
+static bool s_hardware_computed = false;
+static bool s_recipes_computed = false;
 
-    // Return cached result if available
-    if (result_computed) {
-        return cached_result;
+json SystemInfoCache::get_system_info_with_cache() {
+    std::lock_guard<std::mutex> lock(s_system_info_mutex);
+
+    // Return fully cached result if both hardware and recipes are computed
+    if (s_hardware_computed && s_recipes_computed) {
+        return s_cached_system_info;
     }
 
-    json system_info;
+    // Compute hardware if not cached
+    if (!s_hardware_computed) {
+        json system_info;
 
-    // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
-    try {
-        // Create cache instance and load cached data
-        SystemInfoCache cache;
-        bool cache_exists = fs::exists(cache.get_cache_file_path());
-        json cached_data = cache.load_hardware_info();
+        // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
+        try {
+            // Create cache instance and load cached data
+            SystemInfoCache cache;
+            bool cache_exists = fs::exists(cache.get_cache_file_path());
+            json cached_data = cache.load_hardware_info();
 
-        // Create platform-specific system info instance
-        auto sys_info = create_system_info();
+            // Create platform-specific system info instance
+            auto sys_info = create_system_info();
 
-        if (!cached_data.empty()) {
-            system_info = cached_data;
-        } else {
-            // Provide friendly message about why we're detecting hardware
-            if (cache_exists) {
-                std::cout << "Collecting system info (Lemonade was updated)" << std::endl;
-
-                // Perform version-specific cleanup (e.g., removing stale backend binaries)
-                cache.perform_upgrade_cleanup();
+            if (!cached_data.empty()) {
+                system_info = cached_data;
             } else {
-                std::cout << "Collecting system info" << std::endl;
+                // Provide friendly message about why we're detecting hardware
+                if (cache_exists) {
+                    std::cout << "Collecting system info (Lemonade was updated)" << std::endl;
+
+                    // Perform version-specific cleanup (e.g., removing stale backend binaries)
+                    cache.perform_upgrade_cleanup();
+                } else {
+                    std::cout << "Collecting system info" << std::endl;
+                }
+
+                // Get system info (OS, Processor, Memory, OEM System, BIOS, etc.)
+                try {
+                    system_info = sys_info->get_system_info_dict();
+                } catch (...) {
+                    system_info["OS Version"] = "Unknown";
+                }
+
+                // Get device information - handles its own exceptions internally
+                system_info["devices"] = sys_info->get_device_dict();
+
+                // Save to cache (without recipes which are always fresh)
+                try {
+                    cache.save_hardware_info(system_info);
+                } catch (...) {
+                    // Cache save failed - not critical, continue
+                }
             }
 
-            // Get system info (OS, Processor, Memory, OEM System, BIOS, etc.)
-            try {
-                system_info = sys_info->get_system_info_dict();
-            } catch (...) {
-                system_info["OS Version"] = "Unknown";
-            }
+            s_cached_system_info = system_info;
 
-            // Get device information - handles its own exceptions internally
-            system_info["devices"] = sys_info->get_device_dict();
-
-            // Save to cache (without recipes which are always fresh)
-            try {
-                cache.save_hardware_info(system_info);
-            } catch (...) {
-                // Cache save failed - not critical, continue
-            }
+        } catch (const std::exception& e) {
+            // Catastrophic failure - return minimal info but don't crash
+            LOG(ERROR, "Server") << "System info failed: " << e.what() << std::endl;
+            s_cached_system_info = {
+                {"OS Version", "Unknown"},
+                {"error", e.what()},
+                {"devices", json::object()}
+            };
+        } catch (...) {
+            LOG(ERROR, "Server") << "System info failed with unknown error" << std::endl;
+            s_cached_system_info = {
+                {"OS Version", "Unknown"},
+                {"error", "Unknown error"},
+                {"devices", json::object()}
+            };
         }
 
-        // Add recipes section (always fresh, never cached)
-        system_info["recipes"] = sys_info->build_recipes_info(system_info["devices"]);
+        s_hardware_computed = true;
+    }
 
-    } catch (const std::exception& e) {
-        // Catastrophic failure - return minimal info but don't crash
-        LOG(ERROR, "Server") << "System info failed: " << e.what() << std::endl;
-        system_info = {
-            {"OS Version", "Unknown"},
-            {"error", e.what()},
-            {"devices", json::object()}
-        };
-    } catch (...) {
-        LOG(ERROR, "Server") << "System info failed with unknown error" << std::endl;
-        system_info = {
-            {"OS Version", "Unknown"},
-            {"error", "Unknown error"},
-            {"devices", json::object()}
+    // Compute recipes if not cached (or invalidated)
+    if (!s_recipes_computed) {
+        try {
+            auto sys_info = create_system_info();
+            json devices = s_cached_system_info.contains("devices")
+                ? s_cached_system_info["devices"] : json::object();
+            s_cached_system_info["recipes"] = sys_info->build_recipes_info(devices);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Recipe detection failed: " << e.what() << std::endl;
+        } catch (...) {
+            LOG(ERROR, "Server") << "Recipe detection failed with unknown error" << std::endl;
+        }
+        s_recipes_computed = true;
+    }
+
+    return s_cached_system_info;
+}
+
+void SystemInfoCache::invalidate_recipes() {
+    std::lock_guard<std::mutex> lock(s_system_info_mutex);
+    s_recipes_computed = false;
+}
+
+FlmStatus SystemInfoCache::get_flm_status() {
+    json info = get_system_info_with_cache();
+
+    // Navigate to recipes.flm.backends.npu
+    if (info.contains("recipes") &&
+        info["recipes"].contains("flm") &&
+        info["recipes"]["flm"].contains("backends") &&
+        info["recipes"]["flm"]["backends"].contains("npu")) {
+        const auto& npu = info["recipes"]["flm"]["backends"]["npu"];
+        return {
+            npu.value("state", "unsupported"),
+            npu.value("version", ""),
+            npu.value("message", ""),
+            npu.value("action", "")
         };
     }
 
-    // Store in static cache for future calls
-    cached_result = system_info;
-    result_computed = true;
-
-    return system_info;
+    return {"unsupported", "", "FLM recipe not found in system info", ""};
 }
 
 

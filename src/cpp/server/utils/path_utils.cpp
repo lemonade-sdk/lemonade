@@ -155,6 +155,22 @@ std::string get_resource_path(const std::string& relative_path) {
     return resource_path.string();
 }
 
+bool is_safe_executable_path(const std::string& path) {
+    for (char c : path) {
+        // Allow typical path characters: alphanumeric, path separators, dots,
+        // hyphens, underscores, spaces, colons (drive letters), parens (Program Files (x86))
+        if (std::isalnum(static_cast<unsigned char>(c))) continue;
+        switch (c) {
+            case '/': case '\\': case '.': case '-': case '_':
+            case ' ': case ':': case '(': case ')': case '~':
+                continue;
+            default:
+                return false;
+        }
+    }
+    return !path.empty();
+}
+
 std::string find_flm_executable() {
 #ifdef _WIN32
     // Refresh PATH from Windows registry to pick up any changes since process started
@@ -191,7 +207,8 @@ std::string find_flm_executable() {
     );
 
     if (result > 0 && result < MAX_PATH) {
-        return found_path;
+        std::string path(found_path);
+        return is_safe_executable_path(path) ? path : "";
     }
 
     return "";
@@ -205,6 +222,9 @@ std::string find_flm_executable() {
 }
 
 std::string find_executable_in_path(const std::string& executable_name) {
+    if (!is_safe_executable_path(executable_name)) {
+        return "";
+    }
 #ifdef _WIN32
     char found_path[MAX_PATH];
     DWORD result = SearchPathA(
@@ -217,7 +237,8 @@ std::string find_executable_in_path(const std::string& executable_name) {
     );
 
     if (result > 0 && result < MAX_PATH) {
-        return found_path;
+        std::string path(found_path);
+        return is_safe_executable_path(path) ? path : "";
     }
 
     return "";
@@ -367,13 +388,6 @@ std::string get_downloaded_bin_dir() {
 }
 
 bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
-#ifdef __linux__
-    const char* beta_flm = std::getenv("LEMONADE_FLM_LINUX_BETA");
-    if (!beta_flm || (std::string(beta_flm) != "1" && std::string(beta_flm) != "true")) {
-        error_message = "FLM Linux is currently in beta";
-        return false;
-    }
-#endif
     FILE* pipe;
 
     std::string flm_exe = flm_path.empty() ? find_flm_executable() : flm_path;
@@ -381,12 +395,14 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
         error_message = "FLM executable not found";
         return false;
     }
+    if (!is_safe_executable_path(flm_exe)) {
+        error_message = "FLM path contains invalid characters";
+        return false;
+    }
 
     std::string command = "\"" + flm_exe + "\" validate --json";
 #ifdef _WIN32
-    //TODO: Update to 0.9.35 command if 0.9.35+ present
-    //pipe = _popen(command.c_str(), "r");
-    return true;
+    pipe = _popen(command.c_str(), "r");
 #else
     pipe = popen(command.c_str(), "r");
 #endif
@@ -414,9 +430,14 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
     try {
         if (!output.empty()) {
             json j = JsonUtils::parse(output);
-            if (j.is_object() && j.contains("ok")) {
-                bool ok = j["ok"].get<bool>();
-                if (ok) {
+            if (j.is_object()) {
+                // Check for overall status
+                bool validation_ok = false;
+                if (j.contains("ready")) {
+                    validation_ok = j["ready"].get<bool>();
+                }
+
+                if (validation_ok) {
                     error_message.clear();
                     return true;
                 }
@@ -436,6 +457,10 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
 
                 if (j.contains("memlock_ok") && !j["memlock_ok"].get<bool>()) {
                     errors.push_back("Memlock limits are too low.");
+                }
+
+                if (j.contains("npu_driver_ok") && !j["npu_driver_ok"].get<bool>()) {
+                    errors.push_back("NPU driver version is too old.");
                 }
 
                 if (errors.empty()) {

@@ -81,6 +81,9 @@ private:
     void handle_install(const httplib::Request& req, httplib::Response& res);
     void handle_uninstall(const httplib::Request& req, httplib::Response& res);
 
+    // Enrich recipes JSON with release_url, download_filename, version from BackendManager
+    void enrich_recipes(json& recipes);
+
     // Shared SSE streaming helper for download operations
     void stream_download_operation(
         httplib::Response& res,
