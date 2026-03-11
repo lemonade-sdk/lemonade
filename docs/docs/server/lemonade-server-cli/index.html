@@ -1340,6 +1340,11 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 <td>""</td>
 </tr>
 <tr>
+<td><code>--whispercpp-args [args]</code></td>
+<td>Default custom arguments to pass to whisper-server. Must not conflict with arguments managed by Lemonade (currently <code>-m</code>, <code>--model</code>, and <code>--port</code>). Can be overridden per-model via the <code>/api/v1/load</code> endpoint. Example: <code>--whispercpp-args "--convert"</code></td>
+<td>""</td>
+</tr>
+<tr>
 <td><code>--flm-args [args]</code></td>
 <td>Custom arguments to pass to FLM (FastFlowLM) server. Must not conflict with arguments managed by Lemonade (e.g., <code>--host</code>, <code>--port</code>, <code>--ctx-len</code>). Commonly used for NPU concurrency tuning. Can be overridden per-model via the <code>/api/v1/load</code> endpoint. Example: <code>--flm-args "-s 20 -q 15"</code> (socket connections and queue length).</td>
 <td>""</td>
@@ -1435,6 +1440,10 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 <tr>
 <td><code>LEMONADE_LLAMACPP_ARGS</code></td>
 <td>Custom arguments to pass to llama-server</td>
+</tr>
+<tr>
+<td><code>LEMONADE_WHISPERCPP_ARGS</code></td>
+<td>Custom arguments to pass to whisper-server (for example <code>--convert</code>)</td>
 </tr>
 <tr>
 <td><code>LEMONADE_FLM_ARGS</code></td>

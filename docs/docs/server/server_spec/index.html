@@ -5422,6 +5422,12 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <td>WhisperCpp backend: <code>npu</code> or <code>cpu</code> on Windows; <code>cpu</code> or <code>vulkan</code> on Linux. Default is <code>npu</code> if supported.</td>
 </tr>
 <tr>
+<td><code>whispercpp_args</code></td>
+<td>No</td>
+<td>whispercpp</td>
+<td>Custom arguments to pass to whisper-server. The following are NOT allowed: <code>-m</code>, <code>--model</code>, <code>--port</code>. Example: <code>--convert</code>.</td>
+</tr>
+<tr>
 <td><code>steps</code></td>
 <td>No</td>
 <td>sd-cpp</td>
@@ -5465,7 +5471,8 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <span class="w">    </span><span class="nt">&quot;llamacpp_backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rocm&quot;</span>
 <span class="w">  </span><span class="p">},</span>
 <span class="w">  </span><span class="nt">&quot;whisper-large-v3-turbo-q8_0.bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;whispercpp_backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npu&quot;</span>
+<span class="w">    </span><span class="nt">&quot;whispercpp_backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npu&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;whispercpp_args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;--convert&quot;</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -5499,12 +5506,13 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <span class="s1">    &quot;save_options&quot;: true</span>
 <span class="s1">  }&#39;</span>
 </code></pre></div>
-<p>Load a Whisper model with NPU backend:</p>
+<p>Load a Whisper model with NPU backend and conversion enabled:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/api/v1/load<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
 <span class="s1">    &quot;model_name&quot;: &quot;whisper-large-v3-turbo-q8_0.bin&quot;,</span>
-<span class="s1">    &quot;whispercpp_backend&quot;: &quot;npu&quot;</span>
+<span class="s1">    &quot;whispercpp_backend&quot;: &quot;npu&quot;,</span>
+<span class="s1">    &quot;whispercpp_args&quot;: &quot;--convert&quot;</span>
 <span class="s1">  }&#39;</span>
 </code></pre></div>
 <p>Load an image generation model with custom settings:</p>
@@ -5631,7 +5639,7 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <li><code>device</code> - Space-separated device list: <code>"cpu"</code>, <code>"gpu"</code>, <code>"npu"</code>, or combinations like <code>"gpu npu"</code></li>
 <li><code>backend_url</code> - URL of the backend server process handling this model (useful for debugging)</li>
 <li><code>recipe</code>: - Backend/device recipe used to load the model (e.g., <code>"ryzenai-llm"</code>, <code>"llamacpp"</code>, <code>"flm"</code>)</li>
-<li><code>recipe_options</code>: - Options used to load the model (e.g., <code>"ctx_size"</code>, <code>"llamacpp_backend"</code>, <code>"llamacpp_args"</code>)</li>
+<li><code>recipe_options</code>: - Options used to load the model (e.g., <code>"ctx_size"</code>, <code>"llamacpp_backend"</code>, <code>"llamacpp_args"</code>, <code>"whispercpp_args"</code>)</li>
 <li><code>max_models</code> - Maximum number of models that can be loaded simultaneously per type (set via <code>--max-loaded-models</code>):</li>
 <li><code>llm</code> - Maximum LLM/chat models</li>
 <li><code>embedding</code> - Maximum embedding models</li>
