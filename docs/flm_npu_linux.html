@@ -364,6 +364,18 @@
           <div class="flm-code-block"><pre><code>*    soft    memlock    unlimited
 *    hard    memlock    unlimited</code></pre></div>
           <p>Log out and log back in for the change to apply.</p>
+          
+          <h3>4. AMD IOMMU disabled</h3>
+          <p>If AMD IOMMU is disabled on your system, your NPU will not be detected:</p>
+          <div class="flm-code-block"><code>
+            $ flm validate
+            [Linux]  Kernel: 7.0.0-rc2
+            [ERROR]  No NPU device found.
+            [Linux]  Memlock Limit: set to infinity
+          </code></div>
+          <p>Make sure <code>amd_iommu=off</code> is not part of your kernel command line.
+            This is a common setting to change on Strix Halo machines as it slighlty increases
+            GPU performance in llama.cpp, but unfortunately disables the NPU.</p>
         </div>
 
         <div class="section-card">
