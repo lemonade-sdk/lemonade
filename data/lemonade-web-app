@@ -8,6 +8,10 @@ LEMONADE_PORT="8000"
 if [ -f /etc/lemonade/lemonade.conf ]; then
     source /etc/lemonade/lemonade.conf
 fi
+for conf in /etc/lemonade/conf.d/*.conf; do
+    [ -f "$conf" ] || continue
+    source "$conf"
+done
 if [ -f ~/.config/lemonade/lemonade.conf ]; then
     source ~/.config/lemonade/lemonade.conf
 fi

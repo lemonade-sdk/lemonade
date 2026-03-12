@@ -1168,10 +1168,48 @@ if(UNIX AND NOT APPLE)
         PATTERN "*.sh" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
     )
 
-    # Configure systemd service file with correct paths
+    function(lemon_extract_source_default filepath pattern out_var)
+        file(READ "${filepath}" lemon_source_default_content)
+        string(REGEX MATCH "${pattern}" lemon_source_default_match "${lemon_source_default_content}")
+        if(NOT lemon_source_default_match)
+            message(FATAL_ERROR "Failed to extract ${out_var} from ${filepath}")
+        endif()
+        set(${out_var} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+    endfunction()
+
+    set(LEMON_CLI_PARSER_HEADER "${CMAKE_SOURCE_DIR}/src/cpp/include/lemon/cli_parser.h")
+    set(LEMON_RECIPE_OPTIONS_CPP "${CMAKE_SOURCE_DIR}/src/cpp/server/recipe_options.cpp")
+
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "int port = ([0-9]+);" LEMONADE_DEFAULT_PORT)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "std::string host = \"([^\"]*)\";" LEMONADE_DEFAULT_HOST)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "std::string log_level = \"([^\"]*)\";" LEMONADE_DEFAULT_LOG_LEVEL)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "std::string extra_models_dir = \"([^\"]*)\";" LEMONADE_DEFAULT_EXTRA_MODELS_DIR)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "bool no_broadcast = (true|false);" LEMONADE_DEFAULT_NO_BROADCAST_BOOL)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "long global_timeout = ([0-9]+);" LEMONADE_DEFAULT_GLOBAL_TIMEOUT)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "int max_loaded_models = ([0-9-]+);" LEMONADE_DEFAULT_MAX_LOADED_MODELS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"ctx_size\", ([0-9]+)" LEMONADE_DEFAULT_CTX_SIZE)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"llamacpp_args\", \"([^\"]*)\"" LEMONADE_DEFAULT_LLAMACPP_ARGS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"flm_args\", \"([^\"]*)\"" LEMONADE_DEFAULT_FLM_ARGS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"steps\", ([0-9]+)" LEMONADE_DEFAULT_STEPS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"cfg_scale\", ([0-9.]+)" LEMONADE_DEFAULT_CFG_SCALE)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"width\", ([0-9]+)" LEMONADE_DEFAULT_WIDTH)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"height\", ([0-9]+)" LEMONADE_DEFAULT_HEIGHT)
+
+    if(LEMONADE_DEFAULT_NO_BROADCAST_BOOL STREQUAL "true")
+        set(LEMONADE_DEFAULT_NO_BROADCAST 1)
+    else()
+        set(LEMONADE_DEFAULT_NO_BROADCAST 0)
+    endif()
+
+    # Configure systemd service file and config files with current source defaults
     configure_file(
         ${CMAKE_SOURCE_DIR}/data/lemonade-server.service.in
         ${CMAKE_BINARY_DIR}/lemonade-server.service
+        @ONLY
+    )
+    configure_file(
+        ${CMAKE_SOURCE_DIR}/data/lemonade.conf.in
+        ${CMAKE_BINARY_DIR}/lemonade.conf
         @ONLY
     )
 
@@ -1191,13 +1229,14 @@ if(UNIX AND NOT APPLE)
             )
         ")
     endif()
-    install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.conf
+    install(FILES ${CMAKE_BINARY_DIR}/lemonade.conf
         DESTINATION /etc/lemonade
         PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE WORLD_READ
     )
 
     install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
-        DESTINATION /etc/lemonade
+        DESTINATION /etc/lemonade/conf.d
+        RENAME zz-secrets.conf
         PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE
     )
 

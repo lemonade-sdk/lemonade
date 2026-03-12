@@ -233,17 +233,32 @@ sudo journalctl -u lemonade-server -f
 
 **Configuration:**
 
-The Lemonade Server systemd service is configured to read settings from `/etc/lemonade/lemonade.conf`. Environment variables defined in this file are passed to the server process. Edit this file to customize server behavior:
+The Lemonade Server systemd service reads configuration in this order:
+
+- `/etc/lemonade/lemonade.conf`
+- `/etc/lemonade/conf.d/*.conf`
+
+Use `/etc/lemonade/lemonade.conf` for base settings, add local overrides as numbered drop-ins under `/etc/lemonade/conf.d/`, and keep secrets like `LEMONADE_API_KEY` in `/etc/lemonade/conf.d/zz-secrets.conf`.
+
+Edit the base configuration file:
 
 ```bash
 sudo nano /etc/lemonade/lemonade.conf
 ```
 
-Secrets, like the LEMONADE_API_KEY secret, are defined in `/etc/lemonade/secrets.conf`
+Create a drop-in override file:
 
 ```bash
-sudo nano /etc/lemonade/secrets.conf
+sudo nano /etc/lemonade/conf.d/50-local.conf
 ```
+
+Secrets, like `LEMONADE_API_KEY`, are defined in `/etc/lemonade/conf.d/zz-secrets.conf`:
+
+```bash
+sudo nano /etc/lemonade/conf.d/zz-secrets.conf
+```
+
+Using `/etc/lemonade/conf.d/` for local overrides keeps them separate from the package-provided base config and is the recommended path for persistent customization.
 
 After making changes to the configuration files, restart the service for changes to take effect:
 
@@ -253,7 +268,7 @@ sudo systemctl restart lemonade-server
 
 **Service File Location:**
 
-The systemd service file is located at `/etc/systemd/system/lemonade-server.service`. This file should not be edited directly as it may be overwritten during package updates. Instead, use the configuration file (`/etc/lemonade/lemonade.conf`) to customize server behavior.
+The systemd service file is located at `/etc/systemd/system/lemonade-server.service`. This file should not be edited directly as it may be overwritten during package updates. Instead, use `/etc/lemonade/lemonade.conf` and `/etc/lemonade/conf.d/*.conf` to customize server behavior.
 
 If you need to make persistent changes to the service file, use systemd's drop-in override mechanism:
 
