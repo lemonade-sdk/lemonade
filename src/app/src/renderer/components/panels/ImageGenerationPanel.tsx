@@ -247,7 +247,7 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
           <div className="image-generating-indicator">
             <div className="generating-spinner"></div>
             <span>
-              {generationStage === 'upscaling' ? 'Upscaling image (4x)...' : 'Generating image...'}
+              {generationStage === 'upscaling' ? 'Upscaling image...' : 'Generating image...'}
             </span>
           </div>
         )}
@@ -295,13 +295,13 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
             disabled={isBusy} placeholder="-1 = random" />
         </div>
         <div className="image-setting">
-          <label>Upscale 4x</label>
+          <label>Upscale</label>
           <select value={imageSettings.upscaleModel}
             onChange={(e) => handleUpscaleChange(e.target.value)}
             disabled={isBusy}>
             <option value="">Off</option>
-            <option value="RealESRGAN-x4plus">RealESRGAN-x4plus</option>
-            <option value="RealESRGAN-x4plus-anime">RealESRGAN-x4plus-anime</option>
+            <option value="RealESRGAN-x4plus">RealESRGAN x4</option>
+            <option value="RealESRGAN-x4plus-anime">RealESRGAN x4 Anime</option>
           </select>
         </div>
       </div>
