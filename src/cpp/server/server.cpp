@@ -1116,8 +1116,7 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 //   3. If model is downloaded: Use cached version (don't check HuggingFace for updates)
 //
 // Note: Only the /pull endpoint checks HuggingFace for updates (do_not_upgrade=false)
-void Server::auto_load_model_if_needed(const std::string& requested_model,
-                                       const nlohmann::json& recipe_overrides) {
+void Server::auto_load_model_if_needed(const std::string& requested_model) {
     // Check if this specific model is already loaded (multi-model aware)
     if (router_->is_model_loaded(requested_model)) {
         LOG(INFO, "Server") << "Model already loaded: " << requested_model << std::endl;
@@ -1154,7 +1153,7 @@ void Server::auto_load_model_if_needed(const std::string& requested_model,
     // Load model with do_not_upgrade=true
     // For FLM models: FastFlowLMServer will handle download internally if needed
     // For non-FLM models: Model should already be cached at this point
-    router_->load_model(requested_model, info, RecipeOptions(info.recipe, recipe_overrides), true);
+    router_->load_model(requested_model, info, RecipeOptions(info.recipe, json::object()), true);
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
 }
 
