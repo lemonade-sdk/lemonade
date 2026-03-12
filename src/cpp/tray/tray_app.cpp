@@ -1352,33 +1352,8 @@ int TrayApp::execute_pull_command() {
 
         std::cout << "Importing model from local path: " << tray_config_.checkpoint << std::endl;
 
-        // Get HF cache directory (same logic as ModelManager::get_hf_cache_dir)
-        std::string hf_cache;
-        std::string hf_hub_cache_env = lemon::utils::get_environment_variable_utf8("HF_HUB_CACHE");
-        if (!hf_hub_cache_env.empty()) {
-            hf_cache = hf_hub_cache_env;
-        } else {
-            std::string hf_home_env = lemon::utils::get_environment_variable_utf8("HF_HOME");
-            if (!hf_home_env.empty()) {
-                hf_cache = hf_home_env + "/hub";
-            } else {
-#ifdef _WIN32
-                std::string userprofile = lemon::utils::get_environment_variable_utf8("USERPROFILE");
-                if (!userprofile.empty()) {
-                    hf_cache = userprofile + "\\.cache\\huggingface\\hub";
-                } else {
-                    hf_cache = "C:\\.cache\\huggingface\\hub";
-                }
-#else
-                std::string home = lemon::utils::get_environment_variable_utf8("HOME");
-                if (!home.empty()) {
-                    hf_cache = home + "/.cache/huggingface/hub";
-                } else {
-                    hf_cache = "/tmp/.cache/huggingface/hub";
-                }
-#endif
-            }
-        }
+        // Get HF cache directory
+        std::string hf_cache = lemon::utils::get_hf_cache_dir();
 
         // Copy files to HF cache
         std::string model_name_clean = tray_config_.model.substr(5); // Remove "user." prefix
