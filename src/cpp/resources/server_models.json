@@ -648,6 +648,13 @@
         "labels": [],
         "size": 22.8
     },
+    "Nemotron-3-Super-120B-A12B-GGUF": {
+        "checkpoint": "unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF:NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [],
+        "size": 83.8
+    },
     "Gemma-3-4b-it-GGUF": {
         "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
         "mmproj": "mmproj-model-f16.gguf",
