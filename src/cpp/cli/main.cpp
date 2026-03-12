@@ -113,6 +113,24 @@ static bool validate_and_transform_model_json(nlohmann::json& model_data) {
     return true;
 }
 
+static void open_url(const std::string& host, int port) {
+    std::string url = "http://" + host + ":" + std::to_string(port) + "/";
+    std::cout << "Opening URL: " << url << std::endl;
+
+#ifdef _WIN32
+    int result = system(("start \"" + url + "\"").c_str());
+#elif defined(__APPLE__)
+    int result = system(("open \"" + url + "\"").c_str());
+#else
+    int result = system(("xdg-open \"" + url + "\" &").c_str());
+#endif
+
+    if (result != 0) {
+        std::cerr << "Couldn't launch browser. Open the URL above manually" << std::endl;
+        std::cout << url << std::endl;
+    }
+}
+
 static bool handle_backend_operation(const std::string& spec, const std::string& operation_name,
                                     std::function<int(const std::string&, const std::string&)> action) {
     if (spec.empty()) {
@@ -235,6 +253,16 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
     return client.load_model(config.model, config.recipe_options, config.save_options);
 }
 
+static int handle_run_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+    int load_result = handle_load_command(client, config);
+    if (load_result != 0) {
+        return load_result;
+    }
+
+    open_url(config.host, config.port);
+    return 0;
+}
+
 static int handle_recipes_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     if (handle_backend_operation(config.install_backend, "Install",
         [&client](const std::string& recipe, const std::string& backend) {
@@ -327,6 +355,7 @@ int main(int argc, char* argv[]) {
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model");
     CLI::App* load_cmd = app.add_subcommand("load", "Load a model");
     CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)");
+    CLI::App* run_cmd = app.add_subcommand("run", "Load a model and open the webapp in browser");
     CLI::App* recipes_cmd = app.add_subcommand("recipes", "List available recipes and backends");
     CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON");
     CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model");
@@ -362,6 +391,11 @@ int main(int argc, char* argv[]) {
     lemon::RecipeOptions::add_cli_options(*load_cmd, config.recipe_options);
     load_cmd->add_flag("--save-options", config.save_options, "Save model options for future loads");
 
+    // Run options (same as load)
+    run_cmd->add_option("model", config.model, "Model name to run")->required()->type_name("MODEL");
+    lemon::RecipeOptions::add_cli_options(*run_cmd, config.recipe_options);
+    run_cmd->add_flag("--save-options", config.save_options, "Save model options for future runs");
+
     // Unload options
     unload_cmd->add_option("model", config.model, "Model name to unload")->type_name("MODEL");
 
@@ -394,6 +428,8 @@ int main(int argc, char* argv[]) {
         return handle_import_command(client, config);
     } else if (delete_cmd->count() > 0) {
         return client.delete_model(config.model);
+    } else if (run_cmd->count() > 0) {
+        return handle_run_command(client, config);
     } else if (load_cmd->count() > 0) {
         return handle_load_command(client, config);
     } else if (unload_cmd->count() > 0) {

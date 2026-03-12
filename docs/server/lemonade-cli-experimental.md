@@ -10,6 +10,7 @@ The `lemonade` command-line interface (CLI) provides an HTTP client for interact
 - [Options for pull](#options-for-pull)
 - [Options for import](#options-for-import)
 - [Options for load](#options-for-load)
+- [Options for run](#options-for-run)
 - [Options for export](#options-for-export)
 - [Options for recipes](#options-for-recipes)
 - [Options for launch](#options-for-launch)
@@ -29,6 +30,7 @@ The `lemonade` command-line interface (CLI) provides an HTTP client for interact
 | `import JSON_FILE`  | Import a model from a JSON configuration file. See command options [below](#options-for-import). |
 | `delete MODEL_NAME` | Delete a model and its files from local storage. |
 | `load MODEL_NAME`   | Load a model for inference. See command options [below](#options-for-load). |
+| `run MODEL_NAME`    | Load a model for inference and open the web app in the browser. See command options [below](#options-for-run). |
 | `unload [MODEL_NAME]` | Unload a model. If no model name is provided, unload all loaded models. |
 | `recipes`           | List available recipes and backends. Use `--install` or `--uninstall` to manage backends. |
 | `export MODEL_NAME` | Export model information to JSON format. See command options [below](#options-for-export). |
@@ -312,6 +314,23 @@ lemonade load Qwen3-0.6B-GGUF --llamacpp-args "--flash-attn on --no-mmap"
 
 # Load an image generation model with custom settings
 lemonade load Z-Image-Turbo --sdcpp rocm --steps 8 --cfg-scale 1 --width 1024 --height 1024
+```
+
+## Options for run
+
+The `run` command is similar to [`load`](#options-for-load) but additionally opens the web app in the browser after loading the model. It takes the same arguments as `load` and opens the URL of the Lemonade Web App in the default browser.
+
+**Examples:**
+
+```bash
+# Load a model and open the web app in the browser
+lemonade run Qwen3-0.6B-GGUF
+
+# Load a model with custom context size and open the web app
+lemonade run Qwen3-0.6B-GGUF --ctx-size 8192
+
+# Load a model on a different host and open the web app
+lemonade run Qwen3-0.6B-GGUF --host 192.168.1.100 --port 8000
 ```
 
 ## Options for export
