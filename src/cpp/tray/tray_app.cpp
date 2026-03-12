@@ -3291,6 +3291,18 @@ std::vector<ModelInfo> TrayApp::get_downloaded_models() {
                 info.checkpoint = model.value("checkpoint", "");
                 info.recipe = model.value("recipe", "");
 
+                // Skip auxiliary models (e.g., ESRGAN) that can't be loaded standalone
+                if (model.contains("labels") && model["labels"].is_array()) {
+                    bool is_auxiliary = false;
+                    for (const auto& label : model["labels"]) {
+                        if (label.is_string() && label.get<std::string>() == "esrgan") {
+                            is_auxiliary = true;
+                            break;
+                        }
+                    }
+                    if (is_auxiliary) continue;
+                }
+
                 if (!info.id.empty()) {
                     models.push_back(info);
                 }
