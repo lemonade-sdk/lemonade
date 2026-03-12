@@ -270,9 +270,6 @@ int LemonadeClient::list_models(bool show_all) const {
         for (const auto& model : models) {
             std::string downloaded = model.downloaded ? "Yes" : "No";
             std::string details = model.recipe.empty() ? "-" : model.recipe;
-            if (!model.checkpoint.empty()) {
-                details += " (" + model.checkpoint + ")";
-            }
 
             std::cout << std::left << std::setw(40) << model.id
                       << std::setw(12) << downloaded
@@ -428,10 +425,16 @@ int LemonadeClient::load_model(const std::string& model_name, const nlohmann::js
 }
 
 int LemonadeClient::unload_model(const std::string& model_name) const {
-    std::cout << "Unloading model: " << model_name << std::endl;
-
     try {
-        json request_body = {{"model_name", model_name}};
+        json request_body = {};
+
+        if (model_name.empty()) {
+            std::cout << "Unloading all models" << std::endl;
+        } else {
+            std::cout << "Unloading model: " << model_name << std::endl;
+            request_body["model_name"] = model_name;
+        }
+
         make_request("/api/v1/unload", "POST", request_body.dump(), "application/json");
 
         std::cout << "Model unloaded successfully!" << std::endl;

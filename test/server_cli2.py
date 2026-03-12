@@ -6,7 +6,7 @@ Tests the lemonade CLI client commands (HTTP client for Lemonade Server):
 - list
 - export
 - recipes
-- pull with JSON file
+- import (from JSON file)
 - pull with labels and checkpoints
 - load
 - unload
@@ -380,151 +380,7 @@ class PersistentServerCLIClientTests(unittest.TestCase):
             f"Should show validation error for invalid label: {output}",
         )
 
-    def test_053_pull_json_file(self):
-        """Test pull command with JSON configuration file."""
-        json_data = {
-            "model_name": USER_MODEL_NAME,
-            "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
-            "recipe": "llamacpp",
-            "labels": ["reasoning"],
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json_file = f.name
-            json.dump(json_data, f)
-
-        try:
-            result = run_cli_command(
-                ["pull", json_file],
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            print(f"Pull from JSON exit code: {result.returncode}")
-        finally:
-            if os.path.exists(json_file):
-                os.unlink(json_file)
-
-    def test_054_pull_malformed_json(self):
-        """Test pull command with malformed JSON file should fail."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json_file = f.name
-            f.write('{"model_name": "test", "recipe": "llamacpp"')
-
-        try:
-            result = self.assertCommandFails(
-                ["pull", json_file],
-                timeout=TIMEOUT_DEFAULT,
-            )
-            output = result.stdout + result.stderr
-            self.assertIn(
-                "error",
-                output.lower(),
-                f"Should show JSON parse error: {output}",
-            )
-        finally:
-            if os.path.exists(json_file):
-                os.unlink(json_file)
-
-    def test_055_pull_json_missing_model_name(self):
-        """Test pull command with JSON missing model_name should fail."""
-        json_data = {
-            "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
-            "recipe": "llamacpp",
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json_file = f.name
-            json.dump(json_data, f)
-
-        try:
-            result = self.assertCommandFails(
-                ["pull", json_file],
-                timeout=TIMEOUT_DEFAULT,
-            )
-            output = result.stdout + result.stderr
-            self.assertIn(
-                "error",
-                output.lower(),
-                f"Should show error about missing model_name: {output}",
-            )
-        finally:
-            if os.path.exists(json_file):
-                os.unlink(json_file)
-
-    def test_056_pull_json_missing_recipe(self):
-        """Test pull command with JSON missing recipe should fail."""
-        json_data = {
-            "model_name": USER_MODEL_NAME,
-            "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json_file = f.name
-            json.dump(json_data, f)
-
-        try:
-            result = self.assertCommandFails(
-                ["pull", json_file],
-                timeout=TIMEOUT_DEFAULT,
-            )
-            output = result.stdout + result.stderr
-            self.assertIn(
-                "error",
-                output.lower(),
-                f"Should show error about missing recipe: {output}",
-            )
-        finally:
-            if os.path.exists(json_file):
-                os.unlink(json_file)
-
-    def test_057_pull_json_missing_checkpoint(self):
-        """Test pull command with JSON missing checkpoint should fail."""
-        json_data = {
-            "model_name": USER_MODEL_NAME,
-            "recipe": "llamacpp",
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json_file = f.name
-            json.dump(json_data, f)
-
-        try:
-            result = self.assertCommandFails(
-                ["pull", json_file],
-                timeout=TIMEOUT_DEFAULT,
-            )
-            output = result.stdout + result.stderr
-            self.assertIn(
-                "error",
-                output.lower(),
-                f"Should show error about missing checkpoint: {output}",
-            )
-        finally:
-            if os.path.exists(json_file):
-                os.unlink(json_file)
-
-    def test_058_pull_json_with_id_alias(self):
-        """Test pull command with JSON using 'id' as alias for model_name."""
-        json_data = {
-            "id": USER_MODEL_NAME,
-            "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
-            "recipe": "llamacpp",
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json_file = f.name
-            json.dump(json_data, f)
-
-        try:
-            result = run_cli_command(
-                ["pull", json_file],
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            print(f"Pull from JSON with id alias exit code: {result.returncode}")
-        finally:
-            if os.path.exists(json_file):
-                os.unlink(json_file)
-
-    def test_059_pull_with_multiple_checkpoints(self):
+    def test_053_pull_with_multiple_checkpoints(self):
         """Test pull command with multiple checkpoints (e.g., main + mmproj)."""
         result = run_cli_command(
             [
@@ -542,6 +398,167 @@ class PersistentServerCLIClientTests(unittest.TestCase):
             timeout=TIMEOUT_MODEL_OPERATION,
         )
         print(f"Pull with multiple checkpoints exit code: {result.returncode}")
+
+    # =============================================================================
+    # Import Tests
+    # =============================================================================
+
+    def test_060_import_json_file(self):
+        """Test import command with JSON configuration file."""
+        json_data = {
+            "model_name": USER_MODEL_NAME,
+            "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+            "recipe": "llamacpp",
+            "labels": ["reasoning"],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json_file = f.name
+            json.dump(json_data, f)
+
+        try:
+            result = run_cli_command(
+                ["import", json_file],
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            print(f"Import from JSON exit code: {result.returncode}")
+        finally:
+            if os.path.exists(json_file):
+                os.unlink(json_file)
+
+    def test_061_import_malformed_json(self):
+        """Test import command with malformed JSON file should fail."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json_file = f.name
+            f.write('{"model_name": "test", "recipe": "llamacpp"')
+
+        try:
+            result = self.assertCommandFails(
+                ["import", json_file],
+                timeout=TIMEOUT_DEFAULT,
+            )
+            output = result.stdout + result.stderr
+            self.assertIn(
+                "error",
+                output.lower(),
+                f"Should show JSON parse error: {output}",
+            )
+        finally:
+            if os.path.exists(json_file):
+                os.unlink(json_file)
+
+    def test_062_import_missing_model_name(self):
+        """Test import command with JSON missing model_name should fail."""
+        json_data = {
+            "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+            "recipe": "llamacpp",
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json_file = f.name
+            json.dump(json_data, f)
+
+        try:
+            result = self.assertCommandFails(
+                ["import", json_file],
+                timeout=TIMEOUT_DEFAULT,
+            )
+            output = result.stdout + result.stderr
+            self.assertIn(
+                "error",
+                output.lower(),
+                f"Should show error about missing model_name: {output}",
+            )
+        finally:
+            if os.path.exists(json_file):
+                os.unlink(json_file)
+
+    def test_063_import_missing_recipe(self):
+        """Test import command with JSON missing recipe should fail."""
+        json_data = {
+            "model_name": USER_MODEL_NAME,
+            "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json_file = f.name
+            json.dump(json_data, f)
+
+        try:
+            result = self.assertCommandFails(
+                ["import", json_file],
+                timeout=TIMEOUT_DEFAULT,
+            )
+            output = result.stdout + result.stderr
+            self.assertIn(
+                "error",
+                output.lower(),
+                f"Should show error about missing recipe: {output}",
+            )
+        finally:
+            if os.path.exists(json_file):
+                os.unlink(json_file)
+
+    def test_064_import_missing_checkpoint(self):
+        """Test import command with JSON missing checkpoint should fail."""
+        json_data = {
+            "model_name": USER_MODEL_NAME,
+            "recipe": "llamacpp",
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json_file = f.name
+            json.dump(json_data, f)
+
+        try:
+            result = self.assertCommandFails(
+                ["import", json_file],
+                timeout=TIMEOUT_DEFAULT,
+            )
+            output = result.stdout + result.stderr
+            self.assertIn(
+                "error",
+                output.lower(),
+                f"Should show error about missing checkpoint: {output}",
+            )
+        finally:
+            if os.path.exists(json_file):
+                os.unlink(json_file)
+
+    def test_065_import_with_id_alias(self):
+        """Test import command with JSON using 'id' as alias for model_name."""
+        json_data = {
+            "id": USER_MODEL_NAME,
+            "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+            "recipe": "llamacpp",
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json_file = f.name
+            json.dump(json_data, f)
+
+        try:
+            result = run_cli_command(
+                ["import", json_file],
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            print(f"Import from JSON with id alias exit code: {result.returncode}")
+        finally:
+            if os.path.exists(json_file):
+                os.unlink(json_file)
+
+    def test_066_import_nonexistent_file(self):
+        """Test import command with nonexistent file should fail."""
+        result = self.assertCommandFails(
+            ["import", "/nonexistent/path/to/file.json"],
+            timeout=TIMEOUT_DEFAULT,
+        )
+        output = result.stdout + result.stderr
+        self.assertIn(
+            "error",
+            output.lower(),
+            f"Should show error about nonexistent file: {output}",
+        )
 
     # =============================================================================
     # Load Tests

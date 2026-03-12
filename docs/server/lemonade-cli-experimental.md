@@ -8,6 +8,7 @@ The `lemonade` command-line interface (CLI) provides an HTTP client for interact
 - [Global Options](#global-options)
 - [Options for list](#options-for-list)
 - [Options for pull](#options-for-pull)
+- [Options for import](#options-for-import)
 - [Options for load](#options-for-load)
 - [Options for export](#options-for-export)
 - [Options for recipes](#options-for-recipes)
@@ -24,7 +25,8 @@ The `lemonade` command-line interface (CLI) provides an HTTP client for interact
 | `--version`         | Print the `lemonade` CLI version. |
 | `status`            | Check if server can be reached. If it is, prints server information. |
 | `list`              | List all available models. |
-| `pull MODEL_NAME`   | Download and install a model. See command options [below](#options-for-pull) for registering custom models. |
+| `pull MODEL_NAME`   | Download and install a model. See command options [below](#options-for-pull). |
+| `import JSON_FILE`  | Import a model from a JSON configuration file. See command options [below](#options-for-import). |
 | `delete MODEL_NAME` | Delete a model and its files from local storage. |
 | `load MODEL_NAME`   | Load a model for inference. See command options [below](#options-for-load). |
 | `unload [MODEL_NAME]` | Unload a model. If no model name is provided, unload all loaded models. |
@@ -107,23 +109,20 @@ lemonade list [options]
 The `pull` command downloads and installs models. For models already in the [Lemonade Server registry](https://lemonade-server.ai/models.html), only the model name is required. To register and install custom models from Hugging Face, use the registration options below:
 
 ```bash
-lemonade pull <model_name_or_json_file> [options]
+lemonade pull MODEL_NAME [options]
 ```
-
-**Important:** If the argument ends with `.json`, it is treated as a JSON configuration file path. In this case, all other options (`--checkpoint`, `--recipe`, `--label`) are ignored and the model configuration is loaded entirely from the JSON file.
 
 | Option | Description | Required |
 |--------|-------------|----------|
-| `model_name_or_json_file` | Model name to pull, or path to a JSON configuration file (must end with `.json`) | Yes |
-| `--checkpoint TYPE CHECKPOINT` | Hugging Face checkpoint in the format `org/model:variant`. The `TYPE` specifies the component type. Can be specified multiple times. Valid types: `main`, `mmproj`, `vae`, `text_encoder`. For GGUF models, the variant (after the colon) is required. Examples: `unsloth/Qwen3-8B-GGUF:Q4_0`, `amd/Qwen3-4B-awq-quant-onnx-hybrid` | For custom models (not when using JSON file) |
-| `--recipe RECIPE` | Inference recipe to use. Options: `llamacpp`, `flm`, `ryzenai-llm` | For custom models (not when using JSON file) |
-| `--label LABEL` | Add a label to the model. Can be specified multiple times. Valid labels: `coding`, `embeddings`, `hot`, `reasoning`, `reranking`, `tool-calling`, `vision` | No (not when using JSON file) |
+| `MODEL_NAME` | Model name to pull (e.g., `Qwen3-0.6B-GGUF` or `user.MyModel`) | Yes |
+| `--checkpoint TYPE CHECKPOINT` | Hugging Face checkpoint in the format `org/model:variant`. The `TYPE` specifies the component type. Can be specified multiple times. Valid types: `main`, `mmproj`, `vae`, `text_encoder`. For GGUF models, the variant (after the colon) is required. Examples: `unsloth/Qwen3-8B-GGUF:Q4_0`, `amd/Qwen3-4B-awq-quant-onnx-hybrid` | For custom models |
+| `--recipe RECIPE` | Inference recipe to use. Options: `llamacpp`, `flm`, `ryzenai-llm` | For custom models |
+| `--label LABEL` | Add a label to the model. Can be specified multiple times. Valid labels: `coding`, `embeddings`, `hot`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |
 
 **Notes:**
 - Custom model names must use the `user.` namespace prefix (e.g., `user.MyModel`)
 - GGUF models require a variant specified in the checkpoint after the colon
-- If the argument ends with `.json`, it is treated as a JSON configuration file path and all other options are ignored
-- When using a JSON file, the file must contain valid model configuration with `model_name`, `recipe`, and `checkpoint` or `checkpoints` fields
+- To import a model from a JSON configuration file, use the [`import`](#options-for-import) command instead
 
 **Examples:**
 
@@ -148,9 +147,95 @@ lemonade pull user.MyCodingModel \
   --recipe llamacpp \
   --label coding \
   --label tool-calling
+```
 
-# Pull using a JSON configuration file
-lemonade pull model-config.json
+## Options for import
+
+The `import` command imports a model from a JSON configuration file. This is useful for importing models with complex configurations that would be cumbersome to specify via command-line options:
+
+```bash
+lemonade import JSON_FILE
+```
+
+| Option | Description | Required |
+|--------|-------------|----------|
+| `JSON_FILE` | Path to a JSON configuration file | Yes |
+
+**JSON File Format:**
+
+The JSON file must contain the following fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `model_name` | string | The model name (will be prepended with `user.` if not already present) |
+| `recipe` | string | Inference recipe to use (e.g., `llamacpp`, `flm`, `sd-cpp`, `whispercpp`) |
+| `checkpoint` | string | Single checkpoint in the format `org/model:variant` | **OR** |
+| `checkpoints` | object | Multiple checkpoints as key-value pairs (e.g., `{"main": "org/model:Q4_0", "mmproj": "mmproj.gguf"}`) |
+
+**Optional fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `labels` | array | Array of label strings (e.g., `["reasoning", "coding"]`) |
+| `recipe_options` | object | Recipe-specific options (e.g., `{"ctx-size": 8192, "llamacpp": "vulkan"}`) |
+| `image_defaults` | object | Image generation defaults for image models |
+| `size` | string | Model size description |
+
+**Notes:**
+- The `model_name` field is required and must be a string
+- The `recipe` field is required and must be a string
+- Either `checkpoint` (string) or `checkpoints` (object) is required
+- If both `checkpoint` and `checkpoints` are present, only `checkpoints` will be used
+- The `id` field can be used as an alias for `model_name`
+- Unrecognized fields are removed during validation
+
+**Examples:**
+
+`model.json`:
+```json
+{
+  "model_name": "MyModel",
+  "checkpoint": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+  "recipe": "llamacpp",
+  "labels": ["reasoning"]
+}
+```
+
+```bash
+# Import a model from a JSON file
+lemonade import model.json
+```
+
+`model-with-multiple-checkpoints.json`:
+```json
+{
+  "model_name": "MyMultimodalModel",
+  "checkpoints": {
+    "main": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+    "mmproj": "mmproj-model-f16.gguf"
+  },
+  "recipe": "llamacpp",
+  "labels": ["vision", "reasoning"]
+}
+```
+
+```bash
+# Import a model with multiple checkpoints
+lemonade import model-with-multiple-checkpoints.json
+```
+
+`model-with-id-alias.json`:
+```json
+{
+  "id": "MyModel",
+  "checkpoint": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+  "recipe": "llamacpp"
+}
+```
+
+```bash
+# Import using 'id' as alias for model_name
+lemonade import model-with-id-alias.json
 ```
 
 ## Options for load

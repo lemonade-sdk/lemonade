@@ -129,45 +129,44 @@ static bool handle_backend_operation(const std::string& spec, const std::string&
     return true;
 }
 
-static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+static int handle_import_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     nlohmann::json model_data;
-    bool use_json_file = false;
 
-    // Check if model is a path to a JSON file
-    if (config.model.length() > 5 && config.model.substr(config.model.length() - 5) == ".json") {
-        // Try to load JSON from file
-        std::ifstream file(config.model);
-        if (file.good()) {
-            try {
-                model_data = nlohmann::json::parse(file);
-                file.close();
-                use_json_file = true;
-
-                if (!validate_and_transform_model_json(model_data)) {
-                    return 1;
-                }
-            } catch (const nlohmann::json::exception& e) {
-                std::cerr << "Error: Failed to parse JSON file '" << config.model << "': " << e.what() << std::endl;
-                return 1;
-            }
-        } else {
-            // File doesn't exist, fall back to treating as model name
-            file.close();
-        }
+    // Load JSON from file
+    std::ifstream file(config.model);
+    if (!file.good()) {
+        std::cerr << "Error: Failed to open JSON file '" << config.model << "'" << std::endl;
+        return 1;
     }
 
-    if (!use_json_file) {
-        // Build model_data JSON from command line options
-        model_data["model_name"] = config.model;
-        model_data["recipe"] = config.recipe;
+    try {
+        model_data = nlohmann::json::parse(file);
+        file.close();
 
-        if (!config.checkpoints.empty()) {
-            model_data["checkpoints"] = config.checkpoints;
+        if (!validate_and_transform_model_json(model_data)) {
+            return 1;
         }
+    } catch (const nlohmann::json::exception& e) {
+        std::cerr << "Error: Failed to parse JSON file '" << config.model << "': " << e.what() << std::endl;
+        return 1;
+    }
 
-        if (!config.labels.empty()) {
-            model_data["labels"] = config.labels;
-        }
+    return client.pull_model(model_data);
+}
+
+static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+    nlohmann::json model_data;
+
+    // Build model_data JSON from command line options
+    model_data["model_name"] = config.model;
+    model_data["recipe"] = config.recipe;
+
+    if (!config.checkpoints.empty()) {
+        model_data["checkpoints"] = config.checkpoints;
+    }
+
+    if (!config.labels.empty()) {
+        model_data["labels"] = config.labels;
     }
 
     return client.pull_model(model_data);
@@ -201,6 +200,39 @@ static int handle_export_command(lemonade::LemonadeClient& client, const CliConf
     }
 
     return 0;
+}
+
+static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+    // First, check if the model is downloaded
+    nlohmann::json model_info = client.get_model_info(config.model);
+
+    if (model_info.empty()) {
+        std::cerr << "Error: Failed to fetch model info for '" << config.model << "'" << std::endl;
+        return 1;
+    }
+
+    // Check if model is downloaded
+    if (!model_info.contains("downloaded") || !model_info["downloaded"].is_boolean()) {
+        std::cerr << "Error: Failed to determine download status for model '" << config.model << "'" << std::endl;
+        return 1;
+    }
+
+    bool is_downloaded = model_info["downloaded"].get<bool>();
+
+    if (!is_downloaded) {
+        std::cout << "Model '" << config.model << "' is not downloaded. Pulling..." << std::endl;
+        nlohmann::json pull_request;
+        pull_request["model_name"] = config.model;
+        int pull_result = client.pull_model(pull_request);
+        if (pull_result != 0) {
+            std::cerr << "Error: Failed to pull model '" << config.model << "'" << std::endl;
+            return pull_result;
+        }
+        std::cout << "Model pulled successfully." << std::endl;
+    }
+
+    // Proceed with loading the model
+    return client.load_model(config.model, config.recipe_options, config.save_options);
 }
 
 static int handle_recipes_command(lemonade::LemonadeClient& client, const CliConfig& config) {
@@ -291,6 +323,7 @@ int main(int argc, char* argv[]) {
     CLI::App* status_cmd = app.add_subcommand("status", "Check server status");
     CLI::App* list_cmd = app.add_subcommand("list", "List available models");
     CLI::App* pull_cmd = app.add_subcommand("pull", "Pull/download a model");
+    CLI::App* import_cmd = app.add_subcommand("import", "Import a model from JSON file");
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model");
     CLI::App* load_cmd = app.add_subcommand("load", "Load a model");
     CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)");
@@ -306,7 +339,7 @@ int main(int argc, char* argv[]) {
     recipes_cmd->add_option("--uninstall", config.uninstall_backend, "Uninstall a backend (recipe:backend)")->type_name("SPEC");
 
     // Pull options
-    pull_cmd->add_option("model", config.model, "Model name to pull or JSON file")->required()->type_name("MODEL_OR_JSON");
+    pull_cmd->add_option("model", config.model, "Model name to pull")->required()->type_name("MODEL");
     pull_cmd->add_option("--checkpoint", config.checkpoints, "Model checkpoint path")
         ->type_name("TYPE CHECKPOINT")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
@@ -317,6 +350,9 @@ int main(int argc, char* argv[]) {
         ->type_name("LABEL")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll)
         ->check(CLI::IsMember(VALID_LABELS));
+
+    // Import options
+    import_cmd->add_option("json_file", config.model, "Path to JSON file")->required()->type_name("JSON_FILE");
 
     // Delete options
     delete_cmd->add_option("model", config.model, "Model name to delete")->required()->type_name("MODEL");
@@ -354,10 +390,12 @@ int main(int argc, char* argv[]) {
         return client.list_models(!config.downloaded);
     } else if (pull_cmd->count() > 0) {
         return handle_pull_command(client, config);
+    } else if (import_cmd->count() > 0) {
+        return handle_import_command(client, config);
     } else if (delete_cmd->count() > 0) {
         return client.delete_model(config.model);
     } else if (load_cmd->count() > 0) {
-        return client.load_model(config.model, config.recipe_options, config.save_options);
+        return handle_load_command(client, config);
     } else if (unload_cmd->count() > 0) {
         return client.unload_model(config.model);
     } else if (export_cmd->count() > 0) {
