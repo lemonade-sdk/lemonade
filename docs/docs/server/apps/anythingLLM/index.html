@@ -517,17 +517,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#expectations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Expectations
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#anythingllm-docker-vs-desktop" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1077,17 +1066,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#expectations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Expectations
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#anythingllm-docker-vs-desktop" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1250,9 +1228,6 @@
 <h2 id="overview">Overview</h2>
 <p><a href="https://github.com/Mintplex-Labs/anything-llm">AnythingLLM</a> is a Docker and Desktop application that allows you to leverage agents, RAG, and more with your local LLMs. It comes pre-packaged with everything you need to get started with local LLMs for productivity. AnythingLLM supports the OpenAI-compatible API interface, allowing easy integration with local servers like Lemonade!</p>
 <p>This guide will help you configure AnythingLLM to use Lemonade's OpenAI-compatible server, and utilize the powerful <code>@agent</code> capability to interact with documents, webpages, custom tools, and more.</p>
-<h2 id="expectations">Expectations</h2>
-<p>Lemonade integrates best with AnythingLLM when using models such as <code>Qwen-1.5-7B-Chat-Hybrid</code> and <code>Llama-3.2-1B-Instruct-Hybrid</code>, both of which support a context length of up to 3,000 tokens. In general, the more tokens you can support the better experience you will have. We highly recommend using models that support tool calling capabilities - which is most of the LLMs available in Lemonade.</p>
-<p>Keep in mind that when using the <code>@agent</code> feature, multi-turn conversations can quickly consume available context. As a result, the number of back-and-forth turns in a single conversation may be limited due to the growing context size. You can leverage the <code>/reset</code> command in chat to reset the conversation and start fresh or simply start a new conversation in a new thread.</p>
 <h2 id="anythingllm-docker-vs-desktop">AnythingLLM - Docker vs Desktop</h2>
 <p>Docker and Desktop are two different ways to run AnythingLLM. Both are powerful in their own ways and both are absolutely local-first for any features.</p>
 <h3 id="you-want-to-run-anythingllm-in-docker">You want to run AnythingLLM in Docker</h3>
