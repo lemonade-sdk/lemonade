@@ -1285,7 +1285,7 @@
     "RealESRGAN-x4plus": {
         "checkpoint": "ac-pill/upscale_models:RealESRGAN_x4plus.pth",
         "recipe": "sd-cpp",
-        "suggested": false,
+        "suggested": true,
         "labels": [
             "esrgan",
             "image"
@@ -1295,7 +1295,7 @@
     "RealESRGAN-x4plus-anime": {
         "checkpoint": "ac-pill/upscale_models:RealESRGAN_x4plus_anime_6B.pth",
         "recipe": "sd-cpp",
-        "suggested": false,
+        "suggested": true,
         "labels": [
             "esrgan",
             "image"

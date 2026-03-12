@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useModels } from '../../hooks/useModels';
 import { Modality } from '../../hooks/useInferenceState';
 import { ModelsData } from '../../utils/modelData';
@@ -27,6 +27,14 @@ const DEFAULT_IMAGE_SETTINGS: ImageSettings = {
   upscaleModel: '',
 };
 
+interface ImageHistoryItem {
+  prompt: string;
+  imageData: string;
+  timestamp: number;
+  generateMs?: number;
+  upscaleMs?: number;
+}
+
 interface ImageGenerationPanelProps {
   isBusy: boolean;
   isInferring: boolean;
@@ -42,16 +50,12 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
 }) => {
   const { selectedModel, modelsData } = useModels();
   const [imagePrompt, setImagePrompt] = useState('');
-  const [imageHistory, setImageHistory] = useState<Array<{
-    prompt: string;
-    imageData: string;
-    timestamp: number;
-  }>>([]);
+  const [imageHistory, setImageHistory] = useState<ImageHistoryItem[]>([]);
   const [imageSettings, setImageSettings] = useState<ImageSettings>(DEFAULT_IMAGE_SETTINGS);
+  const [generationStage, setGenerationStage] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load model-specific image defaults when the selected model changes
   useEffect(() => {
     const modelInfo = modelsData[selectedModel];
     const defaults = modelInfo?.image_defaults;
@@ -65,21 +69,23 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
     }));
   }, [selectedModel, modelsData]);
 
-  // Auto-download ESRGAN model when upscale toggle is turned on
   const handleUpscaleChange = async (upscaleModel: string) => {
     setImageSettings(prev => ({ ...prev, upscaleModel }));
     if (upscaleModel) {
-      try {
-        await pullModel(upscaleModel, { showInDownloadManager: true });
-      } catch (error: any) {
-        console.error('Failed to download upscale model:', error);
-        showError(`Failed to download upscale model: ${error.message || 'Unknown error'}`);
-        setImageSettings(prev => ({ ...prev, upscaleModel: '' }));
+      const modelInfo = modelsData[upscaleModel];
+      const alreadyDownloaded = modelInfo?.downloaded;
+      if (!alreadyDownloaded) {
+        try {
+          await pullModel(upscaleModel, { showInDownloadManager: true });
+        } catch (error: any) {
+          console.error('Failed to download upscale model:', error);
+          showError(`Failed to download upscale model: ${error.message || 'Unknown error'}`);
+          setImageSettings(prev => ({ ...prev, upscaleModel: '' }));
+        }
       }
     }
   };
 
-  // Auto-scroll to bottom when new images are generated
   useEffect(() => {
     if (imageHistory.length > 0) {
       requestAnimationFrame(() => {
@@ -100,6 +106,7 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
 
     const currentPrompt = imagePrompt;
     setImagePrompt('');
+    setGenerationStage('generating');
 
     try {
       const requestBody: Record<string, unknown> = {
@@ -115,36 +122,68 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
         requestBody.seed = imageSettings.seed;
       }
 
-      if (imageSettings.upscaleModel) {
-        requestBody.upscale_model = imageSettings.upscaleModel;
-      }
-
-      const response = await serverFetch('/images/generations', {
+      // Step 1: Generate image
+      const genStart = Date.now();
+      const genResponse = await serverFetch('/images/generations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+      if (!genResponse.ok) {
+        const errorData = await genResponse.json();
+        throw new Error(errorData.error?.message || `HTTP error! status: ${genResponse.status}`);
       }
 
-      const data = await response.json();
+      const genData = await genResponse.json();
+      const generateMs = Date.now() - genStart;
 
-      if (data.data && data.data[0] && data.data[0].b64_json) {
-        setImageHistory(prev => [...prev, {
-          prompt: currentPrompt,
-          imageData: data.data[0].b64_json,
-          timestamp: Date.now(),
-        }]);
-      } else {
+      if (!genData.data?.[0]?.b64_json) {
         throw new Error('Unexpected response format');
       }
+
+      let finalImageData = genData.data[0].b64_json;
+      let upscaleMs: number | undefined;
+
+      // Step 2: Upscale if enabled
+      if (imageSettings.upscaleModel) {
+        setGenerationStage('upscaling');
+        const upscaleStart = Date.now();
+
+        const upscaleResponse = await serverFetch('/images/upscale', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: imageSettings.upscaleModel,
+            image: finalImageData,
+          }),
+        });
+
+        if (!upscaleResponse.ok) {
+          const errorData = await upscaleResponse.json();
+          throw new Error(errorData.error?.message || 'Upscale failed');
+        }
+
+        const upscaleData = await upscaleResponse.json();
+        upscaleMs = Date.now() - upscaleStart;
+
+        if (upscaleData.data?.[0]?.b64_json) {
+          finalImageData = upscaleData.data[0].b64_json;
+        }
+      }
+
+      setImageHistory(prev => [...prev, {
+        prompt: currentPrompt,
+        imageData: finalImageData,
+        timestamp: Date.now(),
+        generateMs,
+        upscaleMs,
+      }]);
     } catch (error: any) {
       console.error('Failed to generate image:', error);
       showError(`Failed to generate image: ${error.message || 'Unknown error'}`);
     } finally {
+      setGenerationStage(null);
       reset();
     }
   };
@@ -160,6 +199,11 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
     document.body.removeChild(link);
   };
 
+  const formatTime = (ms: number) => {
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  };
+
   return (
     <>
       <div className="chat-messages">
@@ -170,6 +214,13 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
             <div className="image-prompt-display">
               <span className="prompt-label">Prompt:</span>
               <span className="prompt-text">{item.prompt}</span>
+              {(item.generateMs || item.upscaleMs) && (
+                <span className="image-timing">
+                  {item.generateMs ? `Generated in ${formatTime(item.generateMs)}` : ''}
+                  {item.generateMs && item.upscaleMs ? ' | ' : ''}
+                  {item.upscaleMs ? `Upscaled in ${formatTime(item.upscaleMs)}` : ''}
+                </span>
+              )}
             </div>
             <div className="generated-image-container">
               <img
@@ -195,7 +246,9 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
         {isBusy && activeModality === 'image' && (
           <div className="image-generating-indicator">
             <div className="generating-spinner"></div>
-            <span>Generating image...</span>
+            <span>
+              {generationStage === 'upscaling' ? 'Upscaling image (4x)...' : 'Generating image...'}
+            </span>
           </div>
         )}
         <div ref={messagesEndRef} />

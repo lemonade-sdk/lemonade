@@ -914,6 +914,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
 
   const renderActionButtonsContent = (modelName: string) => {
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
+    const isEsrgan = modelsData[modelName]?.labels?.includes('esrgan');
     return (
       <>
         {!isDownloaded && (
@@ -929,7 +930,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
             </svg>
           </button>
         )}
-        {isDownloaded && !isLoaded && !isLoading && (
+        {isDownloaded && !isLoaded && !isLoading && isEsrgan && (
+          <>
+            {renderDeleteButton(modelName)}
+          </>
+        )}
+        {isDownloaded && !isLoaded && !isLoading && !isEsrgan && (
           <>
             <button
               className="model-action-btn load-btn"

@@ -6804,3 +6804,10 @@ footer {
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
+
+.image-timing {
+    display: block;
+    font-size: 11px;
+    color: #888;
+    margin-top: 4px;
+}
