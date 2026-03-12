@@ -42,6 +42,7 @@ export interface LlamaOptions {
 export interface WhisperOptions {
   recipe: 'whispercpp';
   whispercppBackend: StringOption;
+  whispercppArgs: StringOption;
   saveOptions: BooleanOption;
 }
 
@@ -160,6 +161,12 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     isBackendOption: true,
     backendRecipe: 'whispercpp',
   },
+  whispercppArgs: {
+    type: 'string',
+    default: '',
+    label: 'WhisperCpp Arguments',
+    description: 'Custom arguments to pass to whisper-server, for example --convert',
+  },
 
   // Stable Diffusion options
   sdcppBackend: {
@@ -228,7 +235,7 @@ export type RecipeName = 'llamacpp' | 'whispercpp' | 'flm' | 'ryzenai-llm' | 'sd
  */
 export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
   'llamacpp': ['ctxSize', 'llamacppBackend', 'llamacppArgs', 'saveOptions'],
-  'whispercpp': ['whispercppBackend', 'saveOptions'],
+  'whispercpp': ['whispercppBackend', 'whispercppArgs', 'saveOptions'],
   'flm': ['ctxSize', 'saveOptions'],
   'ryzenai-llm': ['ctxSize', 'saveOptions'],
   'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'saveOptions'],
@@ -260,6 +267,7 @@ const FRONTEND_TO_API_MAP: Record<string, string> = {
   llamacppBackend: 'llamacpp_backend',
   llamacppArgs: 'llamacpp_args',
   whispercppBackend: 'whispercpp_backend',
+  whispercppArgs: 'whispercpp_args',
   sdcppBackend: 'sd-cpp_backend',
   cfgScale: 'cfg_scale',
   saveOptions: 'save_options',

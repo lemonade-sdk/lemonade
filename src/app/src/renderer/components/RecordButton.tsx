@@ -19,6 +19,12 @@ const RecordButton: React.FC<RecordButtonProps> = (props) => {
   const { activeModel, isRecording, start, stop } =
     useVoiceTranscription(props);
 
+  // Hide microphone button when not in a secure context (HTTPS or localhost)
+  // getUserMedia() requires a secure context to function
+  if (typeof window !== 'undefined' && !window.isSecureContext) {
+    return null;
+  }
+
   const title = !activeModel
     ? 'No Whisper model available'
     : isRecording ? 'Stop recording'
