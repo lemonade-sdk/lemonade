@@ -1431,11 +1431,11 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
 
     // Run 'flm list --filter installed --quiet --json' to get only installed models
     // Use the full path to flm.exe to avoid PATH issues
-    std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json";
-
 #ifdef _WIN32
+    std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>NUL";
     FILE* pipe = _popen(command.c_str(), "r");
 #else
+    std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>/dev/null";
     FILE* pipe = popen(command.c_str(), "r");
 #endif
 
@@ -1512,11 +1512,11 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
     }
 
     // Run 'flm list --json' to get all available models
-    std::string command = "\"" + flm_path + "\" list --json";
-
 #ifdef _WIN32
+    std::string command = "\"" + flm_path + "\" list --json 2>NUL";
     FILE* pipe = _popen(command.c_str(), "r");
 #else
+    std::string command = "\"" + flm_path + "\" list --json 2>/dev/null";
     FILE* pipe = popen(command.c_str(), "r");
 #endif
 
