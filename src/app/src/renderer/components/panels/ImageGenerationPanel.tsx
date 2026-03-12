@@ -73,7 +73,11 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
     setImageSettings(prev => ({ ...prev, upscaleModel }));
     if (upscaleModel) {
       try {
-        await pullModel(upscaleModel, { showInDownloadManager: true });
+        const res = await serverFetch(`/models/${upscaleModel}`);
+        const info = await res.json();
+        if (!info.downloaded) {
+          await pullModel(upscaleModel, { showInDownloadManager: true });
+        }
       } catch (error: any) {
         console.error('Failed to download upscale model:', error);
         showError(`Failed to download upscale model: ${error.message || 'Unknown error'}`);
