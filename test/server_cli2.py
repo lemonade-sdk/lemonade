@@ -550,7 +550,7 @@ class PersistentServerCLIClientTests(unittest.TestCase):
     def test_066_import_nonexistent_file(self):
         """Test import command with nonexistent file should fail."""
         result = self.assertCommandFails(
-            ["import", "/nonexistent/path/to/file.json"],
+            ["import", "nonexistent/path/to/file.json"],
             timeout=TIMEOUT_DEFAULT,
         )
         output = result.stdout + result.stderr
