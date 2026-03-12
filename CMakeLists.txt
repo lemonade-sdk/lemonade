@@ -701,6 +701,21 @@ elseif(UNIX)
                 LEMONADE_SYSTEMD_UNIT_NAME="${LEMONADE_SYSTEMD_UNIT_NAME}")
         endif()
     endif()
+
+    # Link libcap for capability management on Linux
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        if(PkgConfig_FOUND)
+            pkg_check_modules(LIBCAP QUIET libcap)
+            if(LIBCAP_FOUND)
+                target_include_directories(${EXECUTABLE_NAME} PRIVATE ${LIBCAP_INCLUDE_DIRS})
+                target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${LIBCAP_LIBRARIES})
+                target_compile_definitions(${EXECUTABLE_NAME} PRIVATE HAVE_LIBCAP)
+                message(STATUS "libcap found - capability inheritance will be enabled")
+            else()
+                message(STATUS "libcap not found - capability inheritance will be disabled")
+            endif()
+        endif()
+    endif()
 endif()
 
 # ============================================================
