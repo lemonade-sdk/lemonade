@@ -1,4 +1,4 @@
-name: "✨ Feature Request"
+name: "Feature Request"
 description: Suggest a new feature or improvement for Lemonade
 labels: ["enhancement"]
 body:

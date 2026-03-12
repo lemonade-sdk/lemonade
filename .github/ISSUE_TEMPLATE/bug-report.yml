@@ -42,8 +42,8 @@ body:
   - type: dropdown
     id: backend
     attributes:
-      label: Backend
-      description: Which backend is involved in this issue?
+      label: Component
+      description: Which component is involved in this issue?
       options:
         - llama.cpp
         - stable-diffusion.cpp
@@ -51,6 +51,7 @@ body:
         - Kokoro TTS
         - FastFlowLM / NPU
         - RyzenAI
+        - Desktop App / UI
         - Other / Not sure
     validations:
       required: true
