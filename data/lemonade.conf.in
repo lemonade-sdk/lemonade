@@ -36,6 +36,7 @@
 # Whisper.cpp defaults
 # Backend selection defaults to the first supported backend detected on this system.
 #LEMONADE_WHISPERCPP=
+#LEMONADE_WHISPERCPP_ARGS=
 # Path overrides default to auto-detect when unset.
 #LEMONADE_WHISPERCPP_CPU_BIN=
 #LEMONADE_WHISPERCPP_NPU_BIN=
