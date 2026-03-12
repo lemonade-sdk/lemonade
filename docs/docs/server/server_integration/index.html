@@ -1469,17 +1469,27 @@ sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w">
 sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w"> </span>lemonade-server<span class="w"> </span>-f
 </code></pre></div>
 <p><strong>Configuration:</strong></p>
-<p>The Lemonade Server systemd service is configured to read settings from <code>/etc/lemonade/lemonade.conf</code>. Environment variables defined in this file are passed to the server process. Edit this file to customize server behavior:</p>
+<p>The Lemonade Server systemd service reads configuration in this order:</p>
+<ul>
+<li><code>/etc/lemonade/lemonade.conf</code></li>
+<li><code>/etc/lemonade/conf.d/*.conf</code></li>
+</ul>
+<p>Use <code>/etc/lemonade/lemonade.conf</code> for base settings, add local overrides as numbered drop-ins under <code>/etc/lemonade/conf.d/</code>, and keep secrets like <code>LEMONADE_API_KEY</code> in <code>/etc/lemonade/conf.d/zz-secrets.conf</code>.</p>
+<p>Edit the base configuration file:</p>
 <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>nano<span class="w"> </span>/etc/lemonade/lemonade.conf
 </code></pre></div>
-<p>Secrets, like the LEMONADE_API_KEY secret, are defined in <code>/etc/lemonade/secrets.conf</code></p>
-<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>nano<span class="w"> </span>/etc/lemonade/secrets.conf
+<p>Create a drop-in override file:</p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>nano<span class="w"> </span>/etc/lemonade/conf.d/50-local.conf
 </code></pre></div>
+<p>Secrets, like <code>LEMONADE_API_KEY</code>, are defined in <code>/etc/lemonade/conf.d/zz-secrets.conf</code>:</p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>nano<span class="w"> </span>/etc/lemonade/conf.d/zz-secrets.conf
+</code></pre></div>
+<p>Using <code>/etc/lemonade/conf.d/</code> for local overrides keeps them separate from the package-provided base config and is the recommended path for persistent customization.</p>
 <p>After making changes to the configuration files, restart the service for changes to take effect:</p>
 <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>lemonade-server
 </code></pre></div>
 <p><strong>Service File Location:</strong></p>
-<p>The systemd service file is located at <code>/etc/systemd/system/lemonade-server.service</code>. This file should not be edited directly as it may be overwritten during package updates. Instead, use the configuration file (<code>/etc/lemonade/lemonade.conf</code>) to customize server behavior.</p>
+<p>The systemd service file is located at <code>/etc/systemd/system/lemonade-server.service</code>. This file should not be edited directly as it may be overwritten during package updates. Instead, use <code>/etc/lemonade/lemonade.conf</code> and <code>/etc/lemonade/conf.d/*.conf</code> to customize server behavior.</p>
 <p>If you need to make persistent changes to the service file, use systemd's drop-in override mechanism:</p>
 <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>edit<span class="w"> </span>lemonade-server
 </code></pre></div>
