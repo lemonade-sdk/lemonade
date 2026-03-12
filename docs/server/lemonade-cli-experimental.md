@@ -14,6 +14,7 @@ The `lemonade` command-line interface (CLI) provides an HTTP client for interact
 - [Options for export](#options-for-export)
 - [Options for recipes](#options-for-recipes)
 - [Options for launch](#options-for-launch)
+- [Options for scan](#options-for-scan)
 
 ## Commands
 
@@ -35,6 +36,7 @@ The `lemonade` command-line interface (CLI) provides an HTTP client for interact
 | `recipes`           | List available recipes and backends. Use `--install` or `--uninstall` to manage backends. |
 | `export MODEL_NAME` | Export model information to JSON format. See command options [below](#options-for-export). |
 | `launch AGENT`      | Launch an agent with a model. See command options [below](#options-for-launch). |
+| `scan`              | Scan for network beacons on the local network. See command options [below](#options-for-scan). |
 
 ## Global Options
 
@@ -430,6 +432,34 @@ lemonade launch codex --model Qwen3-0.6B-GGUF --llamacpp vulkan
 
 # Launch an agent with custom llama.cpp arguments
 lemonade launch claude --model Qwen3-0.6B-GGUF --ctx-size 4096 --llamacpp-args "--flash-attn on --no-mmap"
+```
+
+## Options for scan
+
+The `scan` command scans for network beacons on the local network. Beacons are UDP broadcasts sent by Lemonade Server instances to announce their presence. This command listens for these beacons and displays any discovered servers:
+
+```bash
+lemonade scan [options]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--duration SECONDS` | Scan duration in seconds | `30` |
+
+**Notes:**
+- The scan listens on UDP port 8000 for beacon broadcasts
+- Each beacon must contain `service`, `hostname`, and `url` fields in JSON format
+- Duplicate beacons (same URL) are automatically filtered out
+- The scan runs for the specified duration, collecting all beacons during that time
+
+**Examples:**
+
+```bash
+# Scan for beacons for the default duration (30 seconds)
+lemonade scan
+
+# Scan for beacons for a custom duration
+lemonade scan --duration 5
 ```
 
 ## Next Steps

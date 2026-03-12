@@ -4,11 +4,25 @@
 #include <lemon_tray/agent_launcher.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
+#include <lemon/utils/network_beacon.h>
 #include <CLI/CLI.hpp>
 #include <iostream>
 #include <string>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <chrono>
+#include <unordered_set>
+
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    typedef int socklen_t;
+#else
+    #include <arpa/inet.h>
+    #include <netinet/in.h>
+    #include <sys/socket.h>
+    #include <unistd.h>
+#endif
 
 static const std::vector<std::string> VALID_LABELS = {
     "coding",
@@ -52,6 +66,7 @@ struct CliConfig {
     std::string output_file;
     bool downloaded = false;
     std::string agent;
+    int scan_duration = 30;
 };
 
 static bool validate_and_transform_model_json(nlohmann::json& model_data) {
@@ -326,6 +341,136 @@ static int handle_launch_command(const CliConfig& config) {
     return lemon::utils::ProcessManager::wait_for_exit(handle, -1);
 }
 
+static int handle_scan_command(const CliConfig& config) {
+    const int beacon_port = 8000;
+    const int scan_duration_seconds = config.scan_duration;
+
+    std::cout << "Scanning for network beacons on port " << beacon_port << " for "
+              << scan_duration_seconds << " seconds..." << std::endl;
+
+    // Create UDP socket for receiving beacons
+#ifdef _WIN32
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        std::cerr << "Error: WSAStartup failed" << std::endl;
+        return 1;
+    }
+    SOCKET socket_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (socket_fd == INVALID_SOCKET) {
+        std::cerr << "Error: Could not create socket" << std::endl;
+        WSACleanup();
+        return 1;
+    }
+#else
+    int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (socket_fd < 0) {
+        std::cerr << "Error: Could not create socket" << std::endl;
+        return 1;
+    }
+#endif
+
+    // Set socket options for broadcast reception
+    int enable_broadcast = 1;
+    setsockopt(socket_fd, SOL_SOCKET, SO_BROADCAST, (char*)&enable_broadcast, sizeof(enable_broadcast));
+
+    // Allow multiple sockets to bind to the same port
+    int reuse_addr = 1;
+    setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse_addr, sizeof(reuse_addr));
+
+    // Bind to all interfaces on the beacon port
+    sockaddr_in server_addr{};
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(beacon_port);
+
+    if (bind(socket_fd, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        std::cerr << "Error: Could not bind to port " << beacon_port << std::endl;
+#ifdef _WIN32
+        closesocket(socket_fd);
+        WSACleanup();
+#else
+        close(socket_fd);
+#endif
+        return 1;
+    }
+
+    // Set timeout for recvfrom
+    struct timeval timeout;
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
+
+    // Store discovered beacons (use URL as key to avoid duplicates)
+    std::unordered_set<std::string> discovered_urls;
+    std::vector<std::pair<std::string, std::string>> beacon_details; // hostname, url
+
+    std::cout << "Listening for beacons..." << std::endl;
+    auto start_time = std::chrono::steady_clock::now();
+
+    while (true) {
+        auto elapsed = std::chrono::steady_clock::now() - start_time;
+        auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+
+        if (elapsed_seconds >= scan_duration_seconds) {
+            break;
+        }
+
+        // Receive beacon data
+        char buffer[1024];
+        sockaddr_in client_addr{};
+        socklen_t addr_size = sizeof(client_addr);
+
+        int bytes_received = recvfrom(socket_fd, buffer, sizeof(buffer) - 1, 0,
+                                       (sockaddr*)&client_addr, &addr_size);
+
+        if (bytes_received > 0) {
+            buffer[bytes_received] = '\0';
+
+            // Parse JSON beacon
+            try {
+                nlohmann::json beacon_data = nlohmann::json::parse(buffer);
+
+                if (beacon_data.contains("service") && beacon_data.contains("hostname") &&
+                    beacon_data.contains("url")) {
+                    std::string hostname = beacon_data["hostname"].get<std::string>();
+                    std::string url = beacon_data["url"].get<std::string>();
+
+                    // Only add if not already discovered
+                    if (discovered_urls.find(url) == discovered_urls.end()) {
+                        discovered_urls.insert(url);
+                        beacon_details.push_back({hostname, url});
+                        std::cout << "  Discovered: " << hostname << " at " << url << std::endl;
+                    }
+                }
+            } catch (const nlohmann::json::exception& e) {
+                // Not a valid JSON beacon, ignore
+                (void)e;
+            }
+        }
+    }
+
+    // Cleanup
+#ifdef _WIN32
+    closesocket(socket_fd);
+    WSACleanup();
+#else
+    close(socket_fd);
+#endif
+
+    // Print summary
+    std::cout << "\nScan complete. Found " << beacon_details.size() << " beacon(s):" << std::endl;
+
+    if (beacon_details.empty()) {
+        std::cout << "  No beacons discovered." << std::endl;
+    } else {
+        for (const auto& [hostname, url] : beacon_details) {
+            std::cout << "  - " << hostname << " at " << url << std::endl;
+        }
+    }
+
+    return 0;
+}
+
 int main(int argc, char* argv[]) {
     // CLI11 configuration
     CLI::App app{"Lemonade CLI - HTTP client for Lemonade Server"};
@@ -359,6 +504,7 @@ int main(int argc, char* argv[]) {
     CLI::App* recipes_cmd = app.add_subcommand("recipes", "List available recipes and backends");
     CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON");
     CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model");
+    CLI::App* scan_cmd = app.add_subcommand("scan", "Scan for network beacons");
 
     // List options
     list_cmd->add_flag("--downloaded", config.downloaded, "Save model options for future loads");
@@ -403,13 +549,16 @@ int main(int argc, char* argv[]) {
     export_cmd->add_option("model", config.model, "Model name to export")->type_name("MODEL")->required();
     export_cmd->add_option("--output", config.output_file, "Output file path (prints to stdout if not specified)")->type_name("PATH");
 
-    // Launch command: agent is positional, model is --model flag
+    // Launch options
     launch_cmd->add_option("agent", config.agent, "Agent name to launch")
         ->required()
         ->type_name("AGENT")
         ->check(CLI::IsMember(SUPPORTED_AGENTS));
     launch_cmd->add_option("--model", config.model, "Model name to load")->required()->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
+
+    // Scan options
+    scan_cmd->add_option("--duration", config.scan_duration, "Scan duration in seconds")->default_val(config.scan_duration)->type_name("SECONDS");
 
     // Parse arguments
     CLI11_PARSE(app, argc, argv);
@@ -440,6 +589,8 @@ int main(int argc, char* argv[]) {
         return handle_recipes_command(client, config);
     } else if (launch_cmd->count() > 0) {
         return handle_launch_command(config);
+    } else if (scan_cmd->count() > 0) {
+        return handle_scan_command(config);
     } else {
         std::cerr << "Error: No command specified" << std::endl;
         std::cerr << app.help() << std::endl;
