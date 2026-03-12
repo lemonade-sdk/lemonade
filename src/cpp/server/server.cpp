@@ -2350,14 +2350,6 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             return;
         }
 
-        // Auto-download if needed
-        if (model_manager_->model_exists(upscale_model_name) &&
-            !model_manager_->is_model_downloaded(upscale_model_name)) {
-            LOG(INFO, "Server") << "Auto-downloading upscale model: " << upscale_model_name << std::endl;
-            auto upscale_info = model_manager_->get_model_info(upscale_model_name);
-            model_manager_->download_registered_model(upscale_info, true);
-        }
-
         std::string upscale_model_path;
         try {
             auto info = model_manager_->get_model_info(upscale_model_name);
