@@ -7,12 +7,6 @@
 
 This guide will help you configure AnythingLLM to use Lemonade's OpenAI-compatible server, and utilize the powerful `@agent` capability to interact with documents, webpages, custom tools, and more.
 
-## Expectations
-
-Lemonade integrates best with AnythingLLM when using models such as `Qwen-1.5-7B-Chat-Hybrid` and `Llama-3.2-1B-Instruct-Hybrid`, both of which support a context length of up to 3,000 tokens. In general, the more tokens you can support the better experience you will have. We highly recommend using models that support tool calling capabilities - which is most of the LLMs available in Lemonade.
-
-Keep in mind that when using the `@agent` feature, multi-turn conversations can quickly consume available context. As a result, the number of back-and-forth turns in a single conversation may be limited due to the growing context size. You can leverage the `/reset` command in chat to reset the conversation and start fresh or simply start a new conversation in a new thread.
-
 ## AnythingLLM - Docker vs Desktop
 
 Docker and Desktop are two different ways to run AnythingLLM. Both are powerful in their own ways and both are absolutely local-first for any features.
