@@ -12,6 +12,7 @@ docker run -d \
   -p 8000:8000 \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
+  -v lemonade-recipe:/root/.cache/lemonade \
   -e LEMONADE_LLAMACPP_BACKEND=cpu \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
@@ -24,12 +25,30 @@ docker run -d \
   -p 4000:5000 \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
+  -v lemonade-recipe:/root/.cache/lemonade \
   -e LEMONADE_LLAMACPP_BACKEND=cpu \
   ghcr.io/lemonade-sdk/lemonade-server:v9.1.3 \
   ./lemonade-server serve --no-tray --host 0.0.0.0 --port 5000
 ```
 
 > This will run the server on port 5000 inside the container, mapped to port 4000 on your host.
+
+### Docker Run with AMD GPU Passthrough using ROCm
+
+```bash
+docker run -d \
+  --name lemonade-server \
+  -p 8000:8000 \
+  -v lemonade-cache:/root/.cache/huggingface \
+  -v lemonade-llama:/opt/lemonade/llama \
+  -v lemonade-recipe:/root/.cache/lemonade \
+  -e LEMONADE_LLAMACPP_BACKEND=rocm \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  ghcr.io/lemonade-sdk/lemonade-server:latest
+```
+
+> This will run the server using the ROCm backend as the default for llama.cpp.
 
 ### Other Docker Methods
 
@@ -48,8 +67,10 @@ services:
     volumes:
       # Persist downloaded models
       - lemonade-cache:/root/.cache/huggingface
-      # # Persist llama binaries
+      # Persist llama binaries
       - lemonade-llama:/opt/lemonade/llama
+      # Persist model options and other backend binaries
+      - lemonade-recipe:/root/.cache/lemonade
     environment:
       - LEMONADE_LLAMACPP_BACKEND=cpu
     restart: unless-stopped
@@ -57,9 +78,10 @@ services:
 volumes:
   lemonade-cache:
   lemonade-llama:
+  lemonade-recipe:
 ```
 
-> You can add more services as needed.
+> You can add more services as needed, or add host devices for the ROCM backend.
 
 3. Run the following command in the directory containing your docker-compose.yml:
 
@@ -136,7 +158,7 @@ Place the Dockerfile in the parent directory of the repository root when buildin
 > If you place them inside the repository,
 > update the Dockerfile to use `COPY . /app` instead.
 
-This configuration has been tested with both the Vulkan and CPU backends and you can modify or extend it to suit your specific deployment needs.
+This configuration has been tested with Vulkan, ROCM, and CPU backends and you can modify or extend it to suit your specific deployment needs.
 
 ```dockerfile
 # ==============================================================
@@ -188,6 +210,7 @@ RUN apt-get update && apt-get install -y \
     libvulkan1 \
     unzip \
     libgomp1 \
+    libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create application directory
@@ -233,8 +256,10 @@ services:
     volumes:
       # Persist downloaded models
       - lemonade-cache:/root/.cache/huggingface
-      # # Persist llama binaries
+      # Persist llama binaries
       - lemonade-llama:/opt/lemonade/llama
+      # Persist model options and other backend binaries
+      - lemonade-recipe:/root/.cache/lemonade
     environment:
       - LEMONADE_LLAMACPP_BACKEND=cpu
     restart: unless-stopped
@@ -242,6 +267,7 @@ services:
 volumes:
   lemonade-cache:
   lemonade-llama:
+  lemonade-recipe:
 
 ```
 
