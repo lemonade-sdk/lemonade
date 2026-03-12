@@ -1,4 +1,4 @@
-# `lemonade` CLI
+# `lemonade` CLI (EXPERIMENTAL)
 
 The `lemonade` command-line interface (CLI) provides an HTTP client for interacting with Lemonade Server. It allows you to manage models, recipes, and backends through a simple command-line interface.
 

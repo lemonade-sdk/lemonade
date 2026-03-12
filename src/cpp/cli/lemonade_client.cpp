@@ -21,11 +21,6 @@ std::string LemonadeClient::normalize_host(const std::string& host) const {
     return host;
 }
 
-std::string LemonadeClient::get_base_url() const {
-    std::string normalized_host = normalize_host(host_);
-    return "http://" + normalized_host + ":" + std::to_string(port_);
-}
-
 // Helper lambda to create and configure httplib::Client
 static httplib::Client make_client(const std::string& host, int port, const std::string& api_key,
                                     int connection_timeout = 30, int read_timeout = 30) {
@@ -37,11 +32,6 @@ static httplib::Client make_client(const std::string& host, int port, const std:
         cli.set_bearer_token_auth(api_key);
     }
     return cli;
-}
-
-// Helper lambda to normalize path
-static std::string normalize_path(const std::string& path) {
-    return (path[0] == '/' ? path : "/" + path);
 }
 
 static void assert_http_ok(const httplib::Result& res) {
@@ -64,9 +54,9 @@ std::string LemonadeClient::make_request(const std::string& path, const std::str
     httplib::Result res;
 
     if (method == "GET") {
-        res = cli.Get(normalize_path(path).c_str());
+        res = cli.Get(path);
     } else if (method == "POST") {
-        res = cli.Post(normalize_path(path).c_str(), body, content_type);
+        res = cli.Post(path, body, content_type);
     } else {
         throw std::runtime_error("Unsupported HTTP method: " + method);
     }
@@ -129,7 +119,7 @@ bool LemonadeClient::make_request(const std::string& path, const std::string& me
     httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout, read_timeout);
 
     if (method == "POST") {
-        auto res = handle_sse_stream(cli, normalize_path(path), body, content_type, callback);
+        auto res = handle_sse_stream(cli, path, body, content_type, callback);
         assert_http_ok(res);
 
         return true;
@@ -391,8 +381,6 @@ int LemonadeClient::pull_model(const json& model_data) {
         std::cerr << "Error pulling model: " << e.what() << std::endl;
         return 1;
     }
-
-    return 0;
 }
 
 int LemonadeClient::delete_model(const std::string& model_name) const {
@@ -595,8 +583,6 @@ int LemonadeClient::install_backend(const std::string& recipe, const std::string
         std::cerr << "Error installing backend: " << e.what() << std::endl;
         return 1;
     }
-
-    return 0;
 }
 
 int LemonadeClient::uninstall_backend(const std::string& recipe, const std::string& backend) {

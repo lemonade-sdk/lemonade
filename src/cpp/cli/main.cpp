@@ -280,9 +280,12 @@ int main(int argc, char* argv[]) {
     app.fallthrough(true);
 
     // Global options (available to all subcommands)
-    app.add_option("--host", config.host, "Server host")->default_val(config.host)->envname("LEMONADE_HOST");
-    app.add_option("--port", config.port, "Server port")->default_val(config.port)->envname("LEMONADE_PORT");
-    app.add_option("--api-key", config.api_key, "API key for authentication")->default_val(config.api_key)->envname("LEMONADE_API_KEY");
+    app.add_option("--host", config.host, "Server host")->default_val(config.host)->type_name("HOST")->envname("LEMONADE_HOST");
+    app.add_option("--port", config.port, "Server port")->default_val(config.port)->type_name("PORT")->envname("LEMONADE_PORT");
+    app.add_option("--api-key", config.api_key, "API key for authentication")
+        ->default_val(config.api_key)
+        ->type_name("KEY")
+        ->envname("LEMONADE_API_KEY");
 
     // Subcommands
     CLI::App* status_cmd = app.add_subcommand("status", "Check server status");
@@ -296,41 +299,46 @@ int main(int argc, char* argv[]) {
     CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model");
 
     // List options
-    list_cmd->add_flag("--downloaded", config.downloaded, "Save model options for future loads")->default_val(config.downloaded);
+    list_cmd->add_flag("--downloaded", config.downloaded, "Save model options for future loads");
 
     // Install/uninstall options for recipes command
-    recipes_cmd->add_option("--install", config.install_backend, "Install a backend (recipe:backend)");
-    recipes_cmd->add_option("--uninstall", config.uninstall_backend, "Uninstall a backend (recipe:backend)");
+    recipes_cmd->add_option("--install", config.install_backend, "Install a backend (recipe:backend)")->type_name("SPEC");
+    recipes_cmd->add_option("--uninstall", config.uninstall_backend, "Uninstall a backend (recipe:backend)")->type_name("SPEC");
 
     // Pull options
-    pull_cmd->add_option("model", config.model, "Model name to pull or JSON file")->required();
+    pull_cmd->add_option("model", config.model, "Model name to pull or JSON file")->required()->type_name("MODEL_OR_JSON");
     pull_cmd->add_option("--checkpoint", config.checkpoints, "Model checkpoint path")
+        ->type_name("TYPE CHECKPOINT")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
-    pull_cmd->add_option("--recipe", config.recipe, "Model recipe (e.g., llamacpp)")->default_val(config.recipe);
-    pull_cmd->add_option("--label", config.labels, "Filter models by labels (e.g., reasoning, coding, vision)")
+    pull_cmd->add_option("--recipe", config.recipe, "Model recipe (e.g., llamacpp, flm, sd-cpp, whispercpp)")
+        ->type_name("RECIPE")
+        ->default_val(config.recipe);
+    pull_cmd->add_option("--label", config.labels, "Add label to model")
+        ->type_name("LABEL")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll)
         ->check(CLI::IsMember(VALID_LABELS));
 
     // Delete options
-    delete_cmd->add_option("model", config.model, "Model name to delete")->required();
+    delete_cmd->add_option("model", config.model, "Model name to delete")->required()->type_name("MODEL");
 
     // Load options
-    load_cmd->add_option("model", config.model, "Model name to load")->required();
+    load_cmd->add_option("model", config.model, "Model name to load")->required()->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*load_cmd, config.recipe_options);
-    load_cmd->add_flag("--save-options", config.save_options, "Save model options for future loads")->default_val(config.save_options);
+    load_cmd->add_flag("--save-options", config.save_options, "Save model options for future loads");
 
     // Unload options
-    unload_cmd->add_option("model", config.model, "Model name to unload");
+    unload_cmd->add_option("model", config.model, "Model name to unload")->type_name("MODEL");
 
     // Export options
-    export_cmd->add_option("model", config.model, "Model name to export")->required();
-    export_cmd->add_option("--output", config.output_file, "Output file path (prints to stdout if not specified)");
+    export_cmd->add_option("model", config.model, "Model name to export")->type_name("MODEL")->required();
+    export_cmd->add_option("--output", config.output_file, "Output file path (prints to stdout if not specified)")->type_name("PATH");
 
     // Launch command: agent is positional, model is --model flag
     launch_cmd->add_option("agent", config.agent, "Agent name to launch")
         ->required()
+        ->type_name("AGENT")
         ->check(CLI::IsMember(SUPPORTED_AGENTS));
-    launch_cmd->add_option("--model", config.model, "Model name to load")->required();
+    launch_cmd->add_option("--model", config.model, "Model name to load")->required()->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
 
     // Parse arguments
