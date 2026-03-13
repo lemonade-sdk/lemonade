@@ -125,20 +125,20 @@ Lemonade supports multiple recipes (LLM, speech, TTS, and image generation), and
   </thead>
   <tbody>
     <tr>
-      <td rowspan="6"><strong>Text generation</strong></td>
-      <td rowspan="4"><code>llamacpp</code></td>
+      <td rowspan="7"><strong>Text generation</strong></td>
+      <td rowspan="5"><code>llamacpp</code></td>
       <td><code>vulkan</code></td>
-      <td>GPU</td>
+      <td><code>x86_64</code> CPU, AMD iGPU, AMD dGPU</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
       <td><code>rocm</code></td>
-      <td>Select AMD GPUs*</td>
+      <td>Supported AMD ROCm iGPU/dGPU families*</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
       <td><code>cpu</code></td>
-      <td><code>x86_64</code></td>
+      <td><code>x86_64</code> CPU</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
@@ -147,10 +147,15 @@ Lemonade supports multiple recipes (LLM, speech, TTS, and image generation), and
       <td>macOS (beta)</td>
     </tr>
     <tr>
+      <td><code>system</code></td>
+      <td><code>x86_64</code> CPU, GPU</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
       <td><code>flm</code></td>
       <td><code>npu</code></td>
       <td>XDNA2 NPU</td>
-      <td>Windows</td>
+      <td>Windows, Linux</td>
     </tr>
     <tr>
       <td><code>ryzenai-llm</code></td>
@@ -159,29 +164,34 @@ Lemonade supports multiple recipes (LLM, speech, TTS, and image generation), and
       <td>Windows</td>
     </tr>
     <tr>
-      <td rowspan="2"><strong>Speech-to-text</strong></td>
-      <td rowspan="2"><code>whispercpp</code></td>
+      <td rowspan="3"><strong>Speech-to-text</strong></td>
+      <td rowspan="3"><code>whispercpp</code></td>
       <td><code>npu</code></td>
       <td>XDNA2 NPU</td>
       <td>Windows</td>
     </tr>
     <tr>
+      <td><code>vulkan</code></td>
+      <td><code>x86_64</code> CPU</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
       <td><code>cpu</code></td>
-      <td><code>x86_64</code></td>
-      <td>Windows</td>
+      <td><code>x86_64</code> CPU</td>
+      <td>Windows, Linux</td>
     </tr>
     <tr>
       <td><strong>Text-to-speech</strong></td>
       <td><code>kokoro</code></td>
       <td><code>cpu</code></td>
-      <td><code>x86_64</code></td>
+      <td><code>x86_64</code> CPU</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
       <td rowspan="2"><strong>Image generation</strong></td>
       <td rowspan="2"><code>sd-cpp</code></td>
       <td><code>rocm</code></td>
-      <td>Selected AMD GPUs</td>
+      <td>Supported AMD ROCm iGPU/dGPU families*</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
