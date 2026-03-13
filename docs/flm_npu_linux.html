@@ -277,25 +277,22 @@
               </div>
               <ol>
                 <li>Install XRT:
-                  <div class="flm-code-block"><code>sudo pacman -Sy xrt</code></div>
+                  <div class="flm-code-block"><code>sudo pacman -S xrt</code></div>
                 </li>
                 <li>Install <code>xrt-plugin-amdxdna</code>:
-                  <div class="flm-code-block"><code>sudo pacman -Sy xrt-plugin-amdxdna</code></div>
+                  <div class="flm-code-block"><code>sudo pacman -S xrt-plugin-amdxdna</code></div>
                 </li>
                 <li>Update to kernel 7.0-rc2 or later:
-                  <div class="flm-code-block"><code>sudo pacman -Sy linux</code></div>
+                  <div class="flm-code-block"><code>sudo pacman -S linux</code></div>
                 </li>
                 <li>For older kernels (6.18, 6.19), use AUR:
                   <div class="flm-code-block"><code>paru -S amdxdna-dkms</code></div>
                 </li>
                 <li>Update firmware package:
-                  <div class="flm-code-block"><code>sudo pacman -Sy linux-firmware</code></div>
+                  <div class="flm-code-block"><code>sudo pacman -S linux-firmware</code></div>
                 </li>
-                <li>Clone FastFlowLM:
-                  <div class="flm-code-block"><code>git clone --recurse-submodules https://github.com/FastFlowLM/FastFlowLM.git</code></div>
-                </li>
-                <li>Build and install FLM:
-                  <div class="flm-code-block"><code>cmake -S src --preset linux-default<br>ninja -C src/build<br>sudo ninja -C src/build install</code></div>
+                <li>Install FastFlowLM:
+                  <div class="flm-code-block"><code>sudo pacman -S fastflowlm</code></div>
                 </li>
                 <li>Validate:
                   <div class="flm-code-block"><code>flm validate</code></div>
