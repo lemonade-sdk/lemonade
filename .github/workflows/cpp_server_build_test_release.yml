@@ -475,8 +475,10 @@ jobs:
           # Copy binaries to /usr/local/bin
           sudo cp build/lemonade-router /usr/local/bin/
           sudo cp build/lemonade-server /usr/local/bin/
+          sudo cp build/lemonade /usr/local/bin/
           sudo chmod 755 /usr/local/bin/lemonade-router
           sudo chmod 755 /usr/local/bin/lemonade-server
+          sudo chmod 755 /usr/local/bin/lemonade
 
           # Copy resources
           sudo mkdir -p "/Library/Application Support/Lemonade/resources"
@@ -492,6 +494,7 @@ jobs:
           echo "Verifying installation..."
           /usr/local/bin/lemonade-server --version
           /usr/local/bin/lemonade-router --version
+          /usr/local/bin/lemonade --version
 
           echo "Local installation complete!"
 
