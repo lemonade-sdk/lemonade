@@ -9,14 +9,10 @@ using json = nlohmann::json;
 
 static const json DEFAULTS = {
     {"ctx_size", 4096},
-#ifdef __APPLE__
-    {"llamacpp_backend", "metal"},  // Will be overridden dynamically
-#else
-    {"llamacpp_backend", "vulkan"},  // Will be overridden dynamically
-#endif
+    {"llamacpp_backend", ""},  // Will be overridden dynamically
     {"llamacpp_args", ""},
-    {"sd-cpp_backend", "cpu"},  // sd.cpp backend selection (cpu or rocm)
-    {"whispercpp_backend", "npu"},
+    {"sd-cpp_backend", ""},  // sd.cpp backend selection (cpu or rocm)
+    {"whispercpp_backend", ""},
     {"whispercpp_args", ""},
     // Image generation defaults (for sd-cpp recipe)
     {"steps", 20},
@@ -146,6 +142,7 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
         CLI::Option* o;
         json defval = DEFAULTS[opt_name];
 
+#ifndef LEMONADE_CLI
         SystemInfo::SupportedBackendsResult backend_result;
         if (try_get_backend_options(opt_name, backend_result)) {
             std::string default_backend = backend_result.backends.empty() ? "" : backend_result.backends[0];
@@ -153,6 +150,9 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
             o->default_val(default_backend);
             o->check(CLI::IsMember(backend_result.backends));
         } else if (defval.is_number_float()) {
+#else
+        if (defval.is_number_float()) {
+#endif
             o = app.add_option_function<double>(key, [opt_name, &storage = storage](double val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val((double) defval);
         } else if (defval.is_number_integer()) {
@@ -248,7 +248,7 @@ json RecipeOptions::get_option(const std::string& opt) const {
     if (options_.contains(opt)) {
         return options_[opt];
     }
-
+#ifndef LEMONADE_CLI
     // Dynamic defaults for backends if not explicitly set
     SystemInfo::SupportedBackendsResult backend_result;
     if (try_get_backend_options(opt, backend_result)) {
@@ -256,7 +256,7 @@ json RecipeOptions::get_option(const std::string& opt) const {
             return backend_result.backends[0];
         }
     }
-
+#endif
     return DEFAULTS.contains(opt) ? DEFAULTS[opt] : json();
 }
 }
