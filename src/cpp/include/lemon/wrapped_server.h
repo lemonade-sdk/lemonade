@@ -60,7 +60,8 @@ public:
     virtual ~WrappedServer() = default;
 
 
-    // Set log level
+    const std::string& get_server_name() const { return server_name_; }
+
     void set_log_level(const std::string& log_level) { log_level_ = log_level; }
 
     // Check if debug logging is enabled
