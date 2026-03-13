@@ -867,7 +867,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             onStop={handleStopGeneration}
             sendDisabled={!inputValue.trim() && uploadedImages.length === 0}
             modelSelector={experienceMode ? null : <ModelSelector disabled={isBusy} />}
-            rightControls={experienceMode ?
+            rightControls={experienceMode && window.isSecureContext ?
               <button
                 className={`chat-mic-button${isMicRecording ? ' recording' : ''}`}
                 onClick={toggleMicDictation}

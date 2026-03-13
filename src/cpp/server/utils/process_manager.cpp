@@ -36,6 +36,10 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <errno.h>
+#ifdef HAVE_LIBCAP
+#include <sys/capability.h>
+#include <sys/prctl.h>
+#endif
 #endif
 
 namespace lemon {
@@ -68,6 +72,44 @@ static void log_process_line(const std::string& line) {
         LOG(INFO, "Process") << line << std::endl;
     }
 }
+
+#ifdef HAVE_LIBCAP
+// Helper function to preserve capabilities across exec()
+// This allows child processes to inherit CAP_SYS_RESOURCE and other capabilities
+// from the parent process when available
+static void preserve_capabilities_for_exec() {
+    // Get the current process capabilities
+    cap_t caps = cap_get_proc();
+    if (!caps) {
+        // If we can't get capabilities, just proceed without them
+        // This is not a fatal error - the process will run with default permissions
+        return;
+    }
+
+    // Check if we have any effective capabilities worth preserving
+    cap_flag_value_t has_sys_resource = CAP_CLEAR;
+    cap_get_flag(caps, CAP_SYS_RESOURCE, CAP_EFFECTIVE, &has_sys_resource);
+
+    // Only proceed if we actually have CAP_SYS_RESOURCE or other useful caps
+    if (has_sys_resource == CAP_SET) {
+        // Set the capability as inheritable so it survives exec()
+        cap_value_t cap_list[] = {CAP_SYS_RESOURCE};
+
+        // Mark CAP_SYS_RESOURCE as inheritable
+        if (cap_set_flag(caps, CAP_INHERITABLE, 1, cap_list, CAP_SET) == 0) {
+            // Apply the modified capability set
+            if (cap_set_proc(caps) == 0) {
+                // Enable ambient capabilities (requires Linux 4.3+)
+                // This ensures the capability is both inherited and effective in the child
+                // Ignore errors as ambient caps might not be supported on older kernels
+                prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_SYS_RESOURCE, 0, 0);
+            }
+        }
+    }
+
+    cap_free(caps);
+}
+#endif
 
 #ifdef _WIN32
 // Helper function to escape arguments for Windows command line
@@ -387,6 +429,12 @@ ProcessHandle ProcessManager::start_process(
                 close(dev_null);
             }
         }
+
+#ifdef HAVE_LIBCAP
+        // Preserve capabilities (e.g., CAP_SYS_RESOURCE) across exec
+        // This allows the child process to inherit capabilities from the parent
+        preserve_capabilities_for_exec();
+#endif
 
         // Prepare argv
         std::vector<char*> argv_ptrs;
@@ -823,6 +871,11 @@ int ProcessManager::run_process_with_output(
         if (!working_dir.empty()) {
             chdir(working_dir.c_str());
         }
+
+#ifdef HAVE_LIBCAP
+        // Preserve capabilities (e.g., CAP_SYS_RESOURCE) across exec
+        preserve_capabilities_for_exec();
+#endif
 
         // Prepare argv
         std::vector<char*> argv_ptrs;
