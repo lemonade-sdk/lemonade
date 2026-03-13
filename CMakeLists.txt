@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 9.4.2)
+project(lemon_cpp VERSION 10.0.0)
 
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -701,6 +701,21 @@ elseif(UNIX)
                 LEMONADE_SYSTEMD_UNIT_NAME="${LEMONADE_SYSTEMD_UNIT_NAME}")
         endif()
     endif()
+
+    # Link libcap for capability management on Linux
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        if(PkgConfig_FOUND)
+            pkg_check_modules(LIBCAP QUIET libcap)
+            if(LIBCAP_FOUND)
+                target_include_directories(${EXECUTABLE_NAME} PRIVATE ${LIBCAP_INCLUDE_DIRS})
+                target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${LIBCAP_LIBRARIES})
+                target_compile_definitions(${EXECUTABLE_NAME} PRIVATE HAVE_LIBCAP)
+                message(STATUS "libcap found - capability inheritance will be enabled")
+            else()
+                message(STATUS "libcap not found - capability inheritance will be disabled")
+            endif()
+        endif()
+    endif()
 endif()
 
 # ============================================================
@@ -972,6 +987,9 @@ endif()
 # Add tray application subdirectory
 add_subdirectory(src/cpp/tray)
 
+# Add CLI application subdirectory
+add_subdirectory(src/cpp/cli)
+
 if(APPLE)
     # SIGNING LOGIC (Release Only)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -1034,6 +1052,24 @@ if(APPLE)
                 )
                 if(NOT SIGN_RESULT EQUAL 0)
                     message(FATAL_ERROR \"Failed to sign lemonade-server\")
+                endif()
+            " COMPONENT Runtime)
+        endif()
+    endif()
+
+    # CLI -> /usr/local/bin
+    if(TARGET lemonade)
+        install(TARGETS lemonade RUNTIME DESTINATION "bin" COMPONENT Runtime)
+
+        # Sign the CLI binary after installation (Release builds only)
+        if(CMAKE_BUILD_TYPE STREQUAL "Release")
+            install(CODE "
+                execute_process(
+                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/lemonade\"
+                    RESULT_VARIABLE SIGN_RESULT
+                )
+                if(NOT SIGN_RESULT EQUAL 0)
+                    message(FATAL_ERROR \"Failed to sign lemonade\")
                 endif()
             " COMPONENT Runtime)
         endif()
@@ -1153,10 +1189,48 @@ if(UNIX AND NOT APPLE)
         PATTERN "*.sh" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
     )
 
-    # Configure systemd service file with correct paths
+    function(lemon_extract_source_default filepath pattern out_var)
+        file(READ "${filepath}" lemon_source_default_content)
+        string(REGEX MATCH "${pattern}" lemon_source_default_match "${lemon_source_default_content}")
+        if(NOT lemon_source_default_match)
+            message(FATAL_ERROR "Failed to extract ${out_var} from ${filepath}")
+        endif()
+        set(${out_var} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+    endfunction()
+
+    set(LEMON_CLI_PARSER_HEADER "${CMAKE_SOURCE_DIR}/src/cpp/include/lemon/cli_parser.h")
+    set(LEMON_RECIPE_OPTIONS_CPP "${CMAKE_SOURCE_DIR}/src/cpp/server/recipe_options.cpp")
+
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "int port = ([0-9]+);" LEMONADE_DEFAULT_PORT)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "std::string host = \"([^\"]*)\";" LEMONADE_DEFAULT_HOST)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "std::string log_level = \"([^\"]*)\";" LEMONADE_DEFAULT_LOG_LEVEL)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "std::string extra_models_dir = \"([^\"]*)\";" LEMONADE_DEFAULT_EXTRA_MODELS_DIR)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "bool no_broadcast = (true|false);" LEMONADE_DEFAULT_NO_BROADCAST_BOOL)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "long global_timeout = ([0-9]+);" LEMONADE_DEFAULT_GLOBAL_TIMEOUT)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "int max_loaded_models = ([0-9-]+);" LEMONADE_DEFAULT_MAX_LOADED_MODELS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"ctx_size\", ([0-9]+)" LEMONADE_DEFAULT_CTX_SIZE)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"llamacpp_args\", \"([^\"]*)\"" LEMONADE_DEFAULT_LLAMACPP_ARGS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"flm_args\", \"([^\"]*)\"" LEMONADE_DEFAULT_FLM_ARGS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"steps\", ([0-9]+)" LEMONADE_DEFAULT_STEPS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"cfg_scale\", ([0-9.]+)" LEMONADE_DEFAULT_CFG_SCALE)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"width\", ([0-9]+)" LEMONADE_DEFAULT_WIDTH)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"height\", ([0-9]+)" LEMONADE_DEFAULT_HEIGHT)
+
+    if(LEMONADE_DEFAULT_NO_BROADCAST_BOOL STREQUAL "true")
+        set(LEMONADE_DEFAULT_NO_BROADCAST 1)
+    else()
+        set(LEMONADE_DEFAULT_NO_BROADCAST 0)
+    endif()
+
+    # Configure systemd service file and config files with current source defaults
     configure_file(
         ${CMAKE_SOURCE_DIR}/data/lemonade-server.service.in
         ${CMAKE_BINARY_DIR}/lemonade-server.service
+        @ONLY
+    )
+    configure_file(
+        ${CMAKE_SOURCE_DIR}/data/lemonade.conf.in
+        ${CMAKE_BINARY_DIR}/lemonade.conf
         @ONLY
     )
 
@@ -1176,13 +1250,14 @@ if(UNIX AND NOT APPLE)
             )
         ")
     endif()
-    install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.conf
+    install(FILES ${CMAKE_BINARY_DIR}/lemonade.conf
         DESTINATION /etc/lemonade
         PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE WORLD_READ
     )
 
     install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
-        DESTINATION /etc/lemonade
+        DESTINATION /etc/lemonade/conf.d
+        RENAME zz-secrets.conf
         PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE
     )
 
@@ -1258,6 +1333,10 @@ if(UNIX AND NOT APPLE)
         set(CPACK_PACKAGE_NAME "lemonade-server")
 
         set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libsecret-1-0, libasound2t64, fonts-katex")
+        # whisper.cpp can use ffmpeg for input audio resampling and/or
+        # transcoding, but it is not required for server startup or WAV-only
+        # transcription flows.
+        set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "ffmpeg")
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
 
         # Install Electron app
@@ -1338,7 +1417,7 @@ if(UNIX AND NOT APPLE)
     else()
         set(CPACK_PACKAGE_NAME "lemonade-server")
         set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, fonts-katex")
-        set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "chromium-browser | google-chrome-stable | chromium")
+        set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "ffmpeg, chromium-browser | google-chrome-stable | chromium")
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
     endif()
     # Control scripts for debian package

@@ -351,6 +351,64 @@ jobs:
           path: build/lemonade-server_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
+  build-lemonade-rpm:
+    name: Build Lemonade .rpm Package
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Install RPM packaging tools
+        shell: bash
+        run: |
+          set -e
+          dnf install -y rpm-build
+
+      - name: Get version from CMakeLists.txt
+        id: get_version
+        uses: ./.github/actions/get-version
+
+      - name: Build Linux .rpm package
+        shell: bash
+        run: |
+          set -e
+
+          echo "Running setup.sh to configure build environment..."
+          bash setup.sh
+
+          echo "Building lemonade-router and lemonade-server for Fedora..."
+          cmake --build --preset default
+
+          RPM_FILE="lemonade-server-${LEMONADE_VERSION}.x86_64.rpm"
+
+          cd build
+
+          echo "Creating .rpm package with CPack..."
+          cpack -G RPM -V
+
+          if [ ! -f "$RPM_FILE" ]; then
+              echo "ERROR: .rpm package not created!"
+              echo "Contents of build directory:"
+              ls -lR .
+              exit 1
+          fi
+
+          echo "Package information:"
+          rpm -qip "$RPM_FILE"
+
+      - name: Upload .rpm package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-rpm
+          path: build/lemonade-server-${{ env.LEMONADE_VERSION }}.x86_64.rpm
+          retention-days: 7
+
   build-lemonade-macos-dmg:
     name: Build Lemonade macOS .dmg (with Electron App)
     runs-on: macos-latest
@@ -479,6 +537,7 @@ jobs:
           .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server --ephemeral
           .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server --listen-all
           .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server --api-key
+          .venv/bin/python test/server_cli2.py --server-binary /usr/local/bin/lemonade-server
           echo "CLI tests PASSED!"
 
       - name: Run endpoint tests (unsigned path)
@@ -663,6 +722,16 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
+      - name: Install FLM backend for FLM wrapped-server tests
+        if: ${{ runner.os == 'Windows' && contains(matrix.extra_args, '--wrapped-server flm') }}
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
+          Write-Host "Installing FLM backend for CI inference tests..." -ForegroundColor Cyan
+          & $serverExe recipes --install flm:npu
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Run tests
         shell: PowerShell
         env:
@@ -712,6 +781,10 @@ jobs:
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
             backends: "cpu vulkan"
+          - name: flm
+            script: server_llm.py
+            extra_args: "--wrapped-server flm"
+            backends: "npu"
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""
@@ -793,6 +866,49 @@ jobs:
       - name: Cleanup
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
+
+  test-rpm-package:
+    name: Test .rpm - Fedora
+    runs-on: ubuntu-latest
+    needs: build-lemonade-rpm
+    container:
+      image: fedora:latest
+    env:
+      LEMONADE_VERSION: ${{ needs.build-lemonade-rpm.outputs.version }}
+    steps:
+      - name: Download Lemonade .rpm Package
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-rpm
+          path: .
+
+      - name: Install and verify Lemonade (.rpm)
+        shell: bash
+        run: |
+          set -e
+
+          RPM_FILE="lemonade-server-${LEMONADE_VERSION}.x86_64.rpm"
+
+          if [ ! -f "$RPM_FILE" ]; then
+              echo "ERROR: .rpm file not found: $RPM_FILE"
+              ls -la *.rpm 2>/dev/null || echo "No .rpm files found in current directory"
+              exit 1
+          fi
+
+          dnf install -y shadow-utils "$RPM_FILE"
+
+          echo "Installed package information:"
+          rpm -qi lemonade-server
+
+          echo "Installed file list:"
+          rpm -ql lemonade-server | sort
+
+          test -f /etc/lemonade/lemonade.conf
+          test -f /opt/bin/lemonade-server
+          test -f /opt/bin/lemonade-router
+
+          /opt/bin/lemonade-server --version
+          /opt/bin/lemonade-router --version
 
   test-dmg-inference:
     name: Test .dmg - llamacpp (metal)
@@ -1011,6 +1127,7 @@ jobs:
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --ephemeral
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --listen-all
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --api-key
+              $VENV_PYTHON test/server_cli2.py --server-binary "$SERVER_BINARY"
           elif [ "${{ matrix.test_type }}" = "endpoints" ]; then
               echo "Running endpoint tests..."
               $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY"
@@ -1040,9 +1157,11 @@ jobs:
     needs:
       - sign-msi-installers
       - build-lemonade-deb
+      - build-lemonade-rpm
       - build-lemonade-macos-dmg
       - build-lemonade-appimage
       - test-cli-endpoints
+      - test-rpm-package
     if: startsWith(github.ref, 'refs/tags/v')
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
@@ -1064,6 +1183,12 @@ jobs:
           name: lemonade-deb
           path: .
 
+      - name: Download Lemonade .rpm Package
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-rpm
+          path: .
+
       - name: Download Lemonade macOS .pkg Package
         uses: actions/download-artifact@v4
         with:
@@ -1082,6 +1207,7 @@ jobs:
           ls -lh lemonade-server-minimal.msi
           ls -lh lemonade.msi
           ls -lh lemonade-server_${LEMONADE_VERSION}_amd64.deb
+          ls -lh lemonade-server-${LEMONADE_VERSION}.x86_64.rpm
           ls -lh *.pkg
           ls -lh Lemonade-${LEMONADE_VERSION}-x86_64.AppImage
 
@@ -1102,6 +1228,7 @@ jobs:
             lemonade-server-minimal.msi
             lemonade.msi
             lemonade-server_${{ env.LEMONADE_VERSION }}_amd64.deb
+            lemonade-server-${{ env.LEMONADE_VERSION }}.x86_64.rpm
             *.pkg
             Lemonade-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
           fail_on_unmatched_files: true

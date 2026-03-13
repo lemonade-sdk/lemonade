@@ -53,7 +53,7 @@ Lemonade consists of these main executables:
 - Internet connection (first build downloads dependencies)
 
 **Windows:**
-- Visual Studio 2019 or later
+- Visual Studio 2022 or later (2022 and 2026 are supported via CMake presets)
 - WiX 5.x (only required for building the installer)
 
 **Linux:**
@@ -81,9 +81,14 @@ Build by running:
 cmake --build --preset default
 ```
 
-**Windows**
+**Windows (Visual Studio 2022)**
 ```powershell
 cmake --build --preset windows
+```
+
+**Windows (Visual Studio 2026)**
+```powershell
+cmake --build --preset vs18
 ```
 
 ### Build Outputs
@@ -109,9 +114,14 @@ Build the Electron app using CMake (requires Node.js 20+):
 cmake --build --preset default --target electron-app
 ```
 
-**Windows**
+**Windows (Visual Studio 2022)**
 ```powershell
 cmake --build --preset windows --target electron-app
+```
+
+**Windows (Visual Studio 2026)**
+```powershell
+cmake --build --preset vs18 --target electron-app
 ```
 
 This will:
@@ -240,7 +250,8 @@ Creates `lemonade-server_<VERSION>_amd64.deb` (e.g., `lemonade-server_9.0.3_amd6
 - Installs to `/opt/bin/` (executables)
 - Installs resources to `/opt/share/lemonade-server/`
 - Creates desktop entry in `/opt/share/applications/`
-- Declares dependencies: libcurl4, libssl3, libz1
+- Declares dependencies: `libcurl4`, `libssl3`, `libz1`, `unzip`, `fonts-katex`
+- Recommends: `ffmpeg` for whisper.cpp audio resampling and/or transcoding, plus a Chromium-compatible browser for `lemonade-web-app`
 - Package size: ~2.2 MB (clean, runtime-only package)
 - Includes postinst script that creates writable `/opt/share/lemonade-server/llama/` directory
 
