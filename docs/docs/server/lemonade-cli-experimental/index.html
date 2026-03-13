@@ -1,0 +1,1883 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Lemonade Server is a lightweight, open-source local LLM server that allows you to run and manage multiple AI applications on your local machine. It provides a simple CLI for managing applications and supports various LLMs, making it easy to deploy and use AI models locally.">
+      
+      
+      
+        <link rel="canonical" href="https://lemonade-server.ai/server/lemonade-cli-experimental/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.5">
+    
+    
+      
+        <title>lemonade CLI (EXPERIMENTAL) - Lemonade Server Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="lightmode" data-md-color-primary="amber" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#lemonade-cli-experimental" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-header__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Lemonade Server Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              lemonade CLI (EXPERIMENTAL)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="lightmode" data-md-color-primary="amber" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="amber" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/lemonade-sdk/lemonade" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lemonade-sdk/lemonade
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-nav__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    Lemonade Server Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/lemonade-sdk/lemonade" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lemonade-sdk/lemonade
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Downloading and Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev-getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported Applications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Application Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Application Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../apps/ai-dev-gallery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Dev Gallery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../apps/ai-toolkit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Toolkit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../apps/anythingLLM/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AnythingLLM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../apps/codeGPT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CodeGPT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../apps/continue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../apps/mindcraft/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mindcraft
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../apps/open-hands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenHands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../apps/open-webui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open WebUI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../apps/wut/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wut
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lemonade-server-cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lemonade Server CLI Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding local LLM servers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server_spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server Spec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server_integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../custom-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Model Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contribute/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contribution Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Commands
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#global-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Global Options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#options-for-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options for list
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#options-for-pull" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options for pull
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#options-for-import" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options for import
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#options-for-load" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options for load
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Options for load">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recipe-specific-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe-Specific Options
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recipe-Specific Options">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#llamacpp-llamacpp-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Llama.cpp (llamacpp recipe)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flm-flm-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FLM (flm recipe)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ryzenai-llm-ryzenai-llm-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RyzenAI LLM (ryzenai-llm recipe)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sdcpp-sd-cpp-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SD.cpp (sd-cpp recipe)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#whispercpp-whispercpp-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Whisper.cpp (whispercpp recipe)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#options-for-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options for run
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#options-for-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options for export
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#options-for-recipes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options for recipes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#options-for-launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options for launch
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#options-for-scan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options for scan
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="lemonade-cli-experimental"><code>lemonade</code> CLI (EXPERIMENTAL)</h1>
+<p>The <code>lemonade</code> command-line interface (CLI) provides an HTTP client for interacting with Lemonade Server. It allows you to manage models, recipes, and backends through a simple command-line interface.</p>
+<p><strong>Contents:</strong></p>
+<ul>
+<li><a href="#commands">Commands</a></li>
+<li><a href="#global-options">Global Options</a></li>
+<li><a href="#options-for-list">Options for list</a></li>
+<li><a href="#options-for-pull">Options for pull</a></li>
+<li><a href="#options-for-import">Options for import</a></li>
+<li><a href="#options-for-load">Options for load</a></li>
+<li><a href="#options-for-run">Options for run</a></li>
+<li><a href="#options-for-export">Options for export</a></li>
+<li><a href="#options-for-recipes">Options for recipes</a></li>
+<li><a href="#options-for-launch">Options for launch</a></li>
+<li><a href="#options-for-scan">Options for scan</a></li>
+</ul>
+<h2 id="commands">Commands</h2>
+<p><code>lemonade</code> provides these utilities:</p>
+<table>
+<thead>
+<tr>
+<th>Option/Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--help</code></td>
+<td>Display help information.</td>
+</tr>
+<tr>
+<td><code>--help-all</code></td>
+<td>Display help information for all subcommands.</td>
+</tr>
+<tr>
+<td><code>--version</code></td>
+<td>Print the <code>lemonade</code> CLI version.</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>Check if server can be reached. If it is, prints server information.</td>
+</tr>
+<tr>
+<td><code>list</code></td>
+<td>List all available models.</td>
+</tr>
+<tr>
+<td><code>pull MODEL_NAME</code></td>
+<td>Download and install a model. See command options <a href="#options-for-pull">below</a>.</td>
+</tr>
+<tr>
+<td><code>import JSON_FILE</code></td>
+<td>Import a model from a JSON configuration file. See command options <a href="#options-for-import">below</a>.</td>
+</tr>
+<tr>
+<td><code>delete MODEL_NAME</code></td>
+<td>Delete a model and its files from local storage.</td>
+</tr>
+<tr>
+<td><code>load MODEL_NAME</code></td>
+<td>Load a model for inference. See command options <a href="#options-for-load">below</a>.</td>
+</tr>
+<tr>
+<td><code>run MODEL_NAME</code></td>
+<td>Load a model for inference and open the web app in the browser. See command options <a href="#options-for-run">below</a>.</td>
+</tr>
+<tr>
+<td><code>unload [MODEL_NAME]</code></td>
+<td>Unload a model. If no model name is provided, unload all loaded models.</td>
+</tr>
+<tr>
+<td><code>recipes</code></td>
+<td>List available recipes and backends. Use <code>--install</code> or <code>--uninstall</code> to manage backends.</td>
+</tr>
+<tr>
+<td><code>export MODEL_NAME</code></td>
+<td>Export model information to JSON format. See command options <a href="#options-for-export">below</a>.</td>
+</tr>
+<tr>
+<td><code>launch AGENT</code></td>
+<td>Launch an agent with a model. See command options <a href="#options-for-launch">below</a>.</td>
+</tr>
+<tr>
+<td><code>scan</code></td>
+<td>Scan for network beacons on the local network. See command options <a href="#options-for-scan">below</a>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="global-options">Global Options</h2>
+<p>The following options are available for all commands:</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--host HOST</code></td>
+<td>Server host address</td>
+<td><code>127.0.0.1</code></td>
+</tr>
+<tr>
+<td><code>--port PORT</code></td>
+<td>Server port number</td>
+<td><code>8000</code></td>
+</tr>
+<tr>
+<td><code>--api-key KEY</code></td>
+<td>API key for authentication</td>
+<td>None</td>
+</tr>
+</tbody>
+</table>
+<p>These options can also be set via environment variables:
+- <code>LEMONADE_HOST</code> for <code>--host</code>
+- <code>LEMONADE_PORT</code> for <code>--port</code>
+- <code>LEMONADE_API_KEY</code> for <code>--api-key</code></p>
+<p><strong>Examples:</strong></p>
+<p>On Linux/macOS:
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">LEMONADE_HOST</span><span class="o">=</span><span class="m">192</span>.168.1.100
+<span class="nb">export</span><span class="w"> </span><span class="nv">LEMONADE_PORT</span><span class="o">=</span><span class="m">8000</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">LEMONADE_API_KEY</span><span class="o">=</span>your-api-key-here
+lemonade<span class="w"> </span>list
+</code></pre></div></p>
+<p>On Windows (Command Prompt):
+<div class="highlight"><pre><span></span><code>set LEMONADE_HOST=192.168.1.100
+set LEMONADE_PORT=8000
+set LEMONADE_API_KEY=your-api-key-here
+lemonade list
+</code></pre></div></p>
+<p>On Windows (PowerShell):
+<div class="highlight"><pre><span></span><code><span class="nv">$env:LEMONADE_HOST</span><span class="p">=</span><span class="s2">&quot;192.168.1.100&quot;</span>
+<span class="nv">$env:LEMONADE_PORT</span><span class="p">=</span><span class="s2">&quot;8000&quot;</span>
+<span class="nv">$env:LEMONADE_API_KEY</span><span class="p">=</span><span class="s2">&quot;your-api-key-here&quot;</span>
+<span class="n">lemonade</span> <span class="n">list</span>
+</code></pre></div></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># List all available models</span>
+lemonade<span class="w"> </span>list
+
+<span class="c1"># Pull a custom model with specific checkpoint</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyModel<span class="w"> </span>--checkpoint<span class="w"> </span>main<span class="w"> </span>org/model:Q4_K_M<span class="w"> </span>--recipe<span class="w"> </span>llamacpp
+
+<span class="c1"># Load a model with custom recipe options</span>
+lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">8192</span>
+
+<span class="c1"># Install a backend for a recipe</span>
+lemonade<span class="w"> </span>recipes<span class="w"> </span>--install<span class="w"> </span>llamacpp:vulkan
+
+<span class="c1"># Export model info to JSON file</span>
+lemonade<span class="w"> </span><span class="nb">export</span><span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--output<span class="w"> </span>model-info.json
+</code></pre></div>
+<h2 id="options-for-list">Options for list</h2>
+<p>The <code>list</code> command displays available models. By default, it shows all models. Use the <code>--downloaded</code> flag to filter for downloaded models only:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>list<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--downloaded</code></td>
+<td>Show only downloaded models</td>
+<td>False</td>
+</tr>
+</tbody>
+</table>
+<h2 id="options-for-pull">Options for pull</h2>
+<p>The <code>pull</code> command downloads and installs models. For models already in the <a href="https://lemonade-server.ai/models.html">Lemonade Server registry</a>, only the model name is required. To register and install custom models from Hugging Face, use the registration options below:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>MODEL_NAME<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MODEL_NAME</code></td>
+<td>Model name to pull (e.g., <code>Qwen3-0.6B-GGUF</code> or <code>user.MyModel</code>)</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>--checkpoint TYPE CHECKPOINT</code></td>
+<td>Hugging Face checkpoint in the format <code>org/model:variant</code>. The <code>TYPE</code> specifies the component type. Can be specified multiple times. Valid types: <code>main</code>, <code>mmproj</code>, <code>vae</code>, <code>text_encoder</code>. For GGUF models, the variant (after the colon) is required. Examples: <code>unsloth/Qwen3-8B-GGUF:Q4_0</code>, <code>amd/Qwen3-4B-awq-quant-onnx-hybrid</code></td>
+<td>For custom models</td>
+</tr>
+<tr>
+<td><code>--recipe RECIPE</code></td>
+<td>Inference recipe to use. Options: <code>llamacpp</code>, <code>flm</code>, <code>ryzenai-llm</code></td>
+<td>For custom models</td>
+</tr>
+<tr>
+<td><code>--label LABEL</code></td>
+<td>Add a label to the model. Can be specified multiple times. Valid labels: <code>coding</code>, <code>embeddings</code>, <code>hot</code>, <code>reasoning</code>, <code>reranking</code>, <code>tool-calling</code>, <code>vision</code></td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Notes:</strong>
+- Custom model names must use the <code>user.</code> namespace prefix (e.g., <code>user.MyModel</code>)
+- GGUF models require a variant specified in the checkpoint after the colon
+- To import a model from a JSON configuration file, use the <a href="#options-for-import"><code>import</code></a> command instead</p>
+<p><strong>Examples:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Pull a registered model from the Lemonade Server registry</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>Qwen3-0.6B-GGUF
+
+<span class="c1"># Register and pull a custom GGUF model with main checkpoint</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>user.Phi-4-Mini-GGUF<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--checkpoint<span class="w"> </span>main<span class="w"> </span>unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--recipe<span class="w"> </span>llamacpp
+
+<span class="c1"># Register and pull a model with multiple checkpoints (e.g., main model + mmproj)</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>user.Gemma-3-4b<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--checkpoint<span class="w"> </span>main<span class="w"> </span>ggml-org/gemma-3-4b-it-GGUF:Q4_K_M<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--checkpoint<span class="w"> </span>mmproj<span class="w"> </span>mmproj-model-f16.gguf<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--recipe<span class="w"> </span>llamacpp
+
+<span class="c1"># Register and pull a model with multiple labels</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyCodingModel<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--checkpoint<span class="w"> </span>main<span class="w"> </span>org/model:Q4_0<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--recipe<span class="w"> </span>llamacpp<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--label<span class="w"> </span>coding<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--label<span class="w"> </span>tool-calling
+</code></pre></div>
+<h2 id="options-for-import">Options for import</h2>
+<p>The <code>import</code> command imports a model from a JSON configuration file. This is useful for importing models with complex configurations that would be cumbersome to specify via command-line options:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>import<span class="w"> </span>JSON_FILE
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>JSON_FILE</code></td>
+<td>Path to a JSON configuration file</td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table>
+<p><strong>JSON File Format:</strong></p>
+<p>The JSON file must contain the following fields:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model_name</code></td>
+<td>string</td>
+<td>The model name (will be prepended with <code>user.</code> if not already present)</td>
+</tr>
+<tr>
+<td><code>recipe</code></td>
+<td>string</td>
+<td>Inference recipe to use (e.g., <code>llamacpp</code>, <code>flm</code>, <code>sd-cpp</code>, <code>whispercpp</code>)</td>
+</tr>
+<tr>
+<td><code>checkpoint</code></td>
+<td>string</td>
+<td>Single checkpoint in the format <code>org/model:variant</code></td>
+</tr>
+<tr>
+<td><code>checkpoints</code></td>
+<td>object</td>
+<td>Multiple checkpoints as key-value pairs (e.g., <code>{"main": "org/model:Q4_0", "mmproj": "mmproj.gguf"}</code>)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Optional fields:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>labels</code></td>
+<td>array</td>
+<td>Array of label strings (e.g., <code>["reasoning", "coding"]</code>)</td>
+</tr>
+<tr>
+<td><code>recipe_options</code></td>
+<td>object</td>
+<td>Recipe-specific options (e.g., <code>{"ctx-size": 8192, "llamacpp": "vulkan"}</code>)</td>
+</tr>
+<tr>
+<td><code>image_defaults</code></td>
+<td>object</td>
+<td>Image generation defaults for image models</td>
+</tr>
+<tr>
+<td><code>size</code></td>
+<td>string</td>
+<td>Model size description</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Notes:</strong>
+- The <code>model_name</code> field is required and must be a string
+- The <code>recipe</code> field is required and must be a string
+- Either <code>checkpoint</code> (string) or <code>checkpoints</code> (object) is required
+- If both <code>checkpoint</code> and <code>checkpoints</code> are present, only <code>checkpoints</code> will be used
+- The <code>id</code> field can be used as an alias for <code>model_name</code>
+- Unrecognized fields are removed during validation</p>
+<p><strong>Examples:</strong></p>
+<p><code>model.json</code>:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;model_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MyModel&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;unsloth/Qwen3-8B-GGUF:Q4_K_M&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;reasoning&quot;</span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Import a model from a JSON file</span>
+lemonade<span class="w"> </span>import<span class="w"> </span>model.json
+</code></pre></div>
+<p><code>model-with-multiple-checkpoints.json</code>:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;model_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MyMultimodalModel&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;checkpoints&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;main&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ggml-org/gemma-3-4b-it-GGUF:Q4_K_M&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;mmproj&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mmproj-model-f16.gguf&quot;</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;vision&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;reasoning&quot;</span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Import a model with multiple checkpoints</span>
+lemonade<span class="w"> </span>import<span class="w"> </span>model-with-multiple-checkpoints.json
+</code></pre></div>
+<p><code>model-with-id-alias.json</code>:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MyModel&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;unsloth/Qwen3-8B-GGUF:Q4_K_M&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Import using &#39;id&#39; as alias for model_name</span>
+lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alias.json
+</code></pre></div>
+<h2 id="options-for-load">Options for load</h2>
+<p>The <code>load</code> command loads a model into memory for inference. It supports recipe-specific options that are passed to the backend server:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>load<span class="w"> </span>MODEL_NAME<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
+</code></pre></div>
+<h3 id="recipe-specific-options">Recipe-Specific Options</h3>
+<p>The following options are available depending on the recipe being used:</p>
+<h4 id="llamacpp-llamacpp-recipe">Llama.cpp (<code>llamacpp</code> recipe)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--ctx-size SIZE</code></td>
+<td>Context size for the model</td>
+<td><code>4096</code></td>
+</tr>
+<tr>
+<td><code>--llamacpp BACKEND</code></td>
+<td>LlamaCpp backend to use</td>
+<td>Auto-detected</td>
+</tr>
+<tr>
+<td><code>--llamacpp-args ARGS</code></td>
+<td>Custom arguments to pass to llama-server (must not conflict with managed args)</td>
+<td><code>""</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="flm-flm-recipe">FLM (<code>flm</code> recipe)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--ctx-size SIZE</code></td>
+<td>Context size for the model</td>
+<td><code>4096</code></td>
+</tr>
+<tr>
+<td><code>--flm-args ARGS</code></td>
+<td>Custom arguments to pass to flm serve (e.g., <code>"--socket 20 --q-len 15"</code>)</td>
+<td><code>""</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="ryzenai-llm-ryzenai-llm-recipe">RyzenAI LLM (<code>ryzenai-llm</code> recipe)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--ctx-size SIZE</code></td>
+<td>Context size for the model</td>
+<td><code>4096</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="sdcpp-sd-cpp-recipe">SD.cpp (<code>sd-cpp</code> recipe)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--sdcpp BACKEND</code></td>
+<td>SD.cpp backend to use (<code>cpu</code> for CPU, <code>rocm</code> for AMD GPU)</td>
+<td>Auto-detected</td>
+</tr>
+<tr>
+<td><code>--steps N</code></td>
+<td>Number of inference steps for image generation</td>
+<td><code>20</code></td>
+</tr>
+<tr>
+<td><code>--cfg-scale SCALE</code></td>
+<td>Classifier-free guidance scale for image generation</td>
+<td><code>7.0</code></td>
+</tr>
+<tr>
+<td><code>--width PX</code></td>
+<td>Image width in pixels</td>
+<td><code>512</code></td>
+</tr>
+<tr>
+<td><code>--height PX</code></td>
+<td>Image height in pixels</td>
+<td><code>512</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="whispercpp-whispercpp-recipe">Whisper.cpp (<code>whispercpp</code> recipe)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--whispercpp BACKEND</code></td>
+<td>WhisperCpp backend to use</td>
+<td>Auto-detected</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Notes:</strong>
+- Use <code>--save-options</code> to persist your configuration for the model
+- Unspecified options will use the backend's default values
+- Backend options (<code>--llamacpp</code>, <code>--sdcpp</code>, <code>--whispercpp</code>) are auto-detected based on system capabilities</p>
+<p><strong>Examples:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Load a model with default options</span>
+lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF
+
+<span class="c1"># Load a model with custom context size</span>
+lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">8192</span>
+
+<span class="c1"># Load a model and save options for future use</span>
+lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">4096</span><span class="w"> </span>--save-options
+
+<span class="c1"># Load a llama.cpp model with custom backend</span>
+lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--llamacpp<span class="w"> </span>vulkan
+
+<span class="c1"># Load a llama.cpp model with custom arguments</span>
+lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">&quot;--flash-attn on --no-mmap&quot;</span>
+
+<span class="c1"># Load an image generation model with custom settings</span>
+lemonade<span class="w"> </span>load<span class="w"> </span>Z-Image-Turbo<span class="w"> </span>--sdcpp<span class="w"> </span>rocm<span class="w"> </span>--steps<span class="w"> </span><span class="m">8</span><span class="w"> </span>--cfg-scale<span class="w"> </span><span class="m">1</span><span class="w"> </span>--width<span class="w"> </span><span class="m">1024</span><span class="w"> </span>--height<span class="w"> </span><span class="m">1024</span>
+</code></pre></div>
+<h2 id="options-for-run">Options for run</h2>
+<p>The <code>run</code> command is similar to <a href="#options-for-load"><code>load</code></a> but additionally opens the web app in the browser after loading the model. It takes the same arguments as <code>load</code> and opens the URL of the Lemonade Web App in the default browser.</p>
+<p><strong>Examples:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Load a model and open the web app in the browser</span>
+lemonade<span class="w"> </span>run<span class="w"> </span>Qwen3-0.6B-GGUF
+
+<span class="c1"># Load a model with custom context size and open the web app</span>
+lemonade<span class="w"> </span>run<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">8192</span>
+
+<span class="c1"># Load a model on a different host and open the web app</span>
+lemonade<span class="w"> </span>run<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--host<span class="w"> </span><span class="m">192</span>.168.1.100<span class="w"> </span>--port<span class="w"> </span><span class="m">8000</span>
+</code></pre></div>
+<h2 id="options-for-export">Options for export</h2>
+<p>The <code>export</code> command exports model information to JSON format. This is useful for backing up model configurations or sharing model metadata:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span><span class="nb">export</span><span class="w"> </span>MODEL_NAME<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--output FILE</code></td>
+<td>Output file path. If not specified, prints to stdout</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Notes:</strong>
+- The exported JSON includes model metadata such as <code>model_name</code>, <code>recipe</code>, <code>checkpoint</code>, and <code>labels</code>
+- The CLI automatically prepends <code>user.</code> to model names if not already present
+- Unrecognized fields in the model data are removed during export</p>
+<p><strong>Examples:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Export model info to stdout</span>
+lemonade<span class="w"> </span><span class="nb">export</span><span class="w"> </span>Qwen3-0.6B-GGUF
+
+<span class="c1"># Export model info to a file</span>
+lemonade<span class="w"> </span><span class="nb">export</span><span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--output<span class="w"> </span>my-model.json
+
+<span class="c1"># Export and view the JSON output</span>
+lemonade<span class="w"> </span><span class="nb">export</span><span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--output<span class="w"> </span>model.json<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cat<span class="w"> </span>model.json
+</code></pre></div>
+<h2 id="options-for-recipes">Options for recipes</h2>
+<p>The <code>recipes</code> command lists available recipes and their backends. It also supports installing and uninstalling backends:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>recipes<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--install SPEC</code></td>
+<td>Install a backend. Format: <code>recipe:backend</code> (e.g., <code>llamacpp:vulkan</code>)</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>--uninstall SPEC</code></td>
+<td>Uninstall a backend. Format: <code>recipe:backend</code> (e.g., <code>llamacpp:cpu</code>)</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Notes:</strong>
+- Available backends depend on your system and the recipe
+- Use <code>lemonade recipes</code> without options to list all available recipes and backends</p>
+<p><strong>Examples:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># List all available recipes and backends</span>
+lemonade<span class="w"> </span>recipes
+
+<span class="c1"># Install Vulkan backend for llamacpp</span>
+lemonade<span class="w"> </span>recipes<span class="w"> </span>--install<span class="w"> </span>llamacpp:vulkan
+
+<span class="c1"># Uninstall CPU backend for llamacpp</span>
+lemonade<span class="w"> </span>recipes<span class="w"> </span>--uninstall<span class="w"> </span>llamacpp:cpu
+
+<span class="c1"># Install FLM backend</span>
+lemonade<span class="w"> </span>recipes<span class="w"> </span>--install<span class="w"> </span>flm:npu
+</code></pre></div>
+<h2 id="options-for-launch">Options for launch</h2>
+<p>The <code>launch</code> command launches an agent with a model loaded. It requires an agent name and a model name, and supports recipe-specific options:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>AGENT<span class="w"> </span>--model<span class="w"> </span>MODEL_NAME<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option/Argument</th>
+<th>Description</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AGENT</code></td>
+<td>Agent name to launch. Supported agents: <code>claude</code>, <code>codex</code></td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>--model MODEL_NAME</code></td>
+<td>Model name to load before launching the agent</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>--ctx-size SIZE</code></td>
+<td>Context size for the model</td>
+<td><code>4096</code></td>
+</tr>
+<tr>
+<td><code>--llamacpp BACKEND</code></td>
+<td>LlamaCpp backend to use</td>
+<td>Auto-detected</td>
+</tr>
+<tr>
+<td><code>--llamacpp-args ARGS</code></td>
+<td>Custom arguments to pass to llama-server (must not conflict with managed args)</td>
+<td><code>""</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Notes:</strong>
+- The model is loaded before launching the agent
+- Supported agents: <code>claude</code>, <code>codex</code></p>
+<p><strong>Examples:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Launch an agent with default model settings</span>
+lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3-0.6B-GGUF
+
+<span class="c1"># Launch an agent with custom context size</span>
+lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">8192</span>
+
+<span class="c1"># Launch an agent with a specific llama.cpp backend</span>
+lemonade<span class="w"> </span>launch<span class="w"> </span>codex<span class="w"> </span>--model<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--llamacpp<span class="w"> </span>vulkan
+
+<span class="c1"># Launch an agent with custom llama.cpp arguments</span>
+lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">4096</span><span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">&quot;--flash-attn on --no-mmap&quot;</span>
+</code></pre></div>
+<h2 id="options-for-scan">Options for scan</h2>
+<p>The <code>scan</code> command scans for network beacons on the local network. Beacons are UDP broadcasts sent by Lemonade Server instances to announce their presence. This command listens for these beacons and displays any discovered servers:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>scan<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--duration SECONDS</code></td>
+<td>Scan duration in seconds</td>
+<td><code>30</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Notes:</strong>
+- The scan listens on UDP port 8000 for beacon broadcasts
+- Each beacon must contain <code>service</code>, <code>hostname</code>, and <code>url</code> fields in JSON format
+- Duplicate beacons (same URL) are automatically filtered out
+- The scan runs for the specified duration, collecting all beacons during that time</p>
+<p><strong>Examples:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Scan for beacons for the default duration (30 seconds)</span>
+lemonade<span class="w"> </span>scan
+
+<span class="c1"># Scan for beacons for a custom duration</span>
+lemonade<span class="w"> </span>scan<span class="w"> </span>--duration<span class="w"> </span><span class="m">5</span>
+</code></pre></div>
+<h2 id="next-steps">Next Steps</h2>
+<p>The <a href="../server_spec.md">Lemonade Server API documentation</a> provides more information about the endpoints that the CLI interacts with. For details on model formats and recipes, see the <a href="../custom-models/">custom model guide</a>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2025 AMD. All rights reserved.
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.youtube.com/@AMDDevCentral" target="_blank" rel="noopener" title="www.youtube.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M23.498 6.186a3.02 3.02 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.02 3.02 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.02 3.02 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.02 3.02 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814M9.545 15.568V8.432L15.818 12z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://discord.gg/5xXzkMu8Zk" target="_blank" rel="noopener" title="discord.gg" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.317 4.37a19.8 19.8 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.3 18.3 0 0 0-5.487 0 13 13 0 0 0-.617-1.25.08.08 0 0 0-.079-.037A19.7 19.7 0 0 0 3.677 4.37a.1.1 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.08.08 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.08.08 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13 13 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10 10 0 0 0 .372-.292.07.07 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.07.07 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.08.08 0 0 0 .084.028 19.8 19.8 0 0 0 6.002-3.03.08.08 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.06.06 0 0 0-.031-.03M8.02 15.33c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418m7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.footer", "navigation.tracking", "navigation.expand", "navigation.top", "content.code.annotate", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../assets/carousel.js"></script>
+      
+    
+  </body>
+</html>
