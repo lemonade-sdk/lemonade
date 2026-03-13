@@ -130,7 +130,11 @@ Each type has its own independent LRU cache, all sharing the same slot limit set
 
 ### Device Constraints
 
-- **NPU Exclusivity:** Only one model of each type supported by FastFlowLM (asr, llm, embedding) can be loaded at a time. Loading a new NPU model will evict any existing NPU model of the same type. For example, an LLM *and* an embedding model can be loaded simultaneously, but loading a second LLM will replace the currently loaded LLM. This limitation is **only** for multiple NPU models of the same type. NPU models can be loaded alongside CPU and GPU models.
+- **NPU Exclusivity:** `flm`, `ryzenai-llm`, and `whispercpp` are mutually exclusive on the NPU.
+    - Loading a model from one of these backends will automatically evict all NPU models from the other backends.
+    - `flm` supports loading 1 ASR model, 1 LLM, and 1 embedding model on the NPU at the same time.
+    - `ryzenai-llm` supports loading exactly 1 LLM, which uses the entire NPU. 
+    - `whispercpp` supports loading exactly 1 ASR model at a time, which uses the entire NPU.
 - **CPU/GPU:** No inherent limits beyond available RAM. Multiple models can coexist on CPU or GPU.
 
 ### Eviction Policy
