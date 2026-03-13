@@ -4,7 +4,7 @@
 # Lemonade System Post-Install Script
 # ==============================================================================
 
-# $2 is the target installation location (usually /). 
+# $2 is the target installation location (usually /).
 # The ${2%/} syntax ensures no trailing slash to prevent // paths.
 INSTALL_ROOT="${2%/}"
 
@@ -53,6 +53,7 @@ echo "Ensuring binaries are updated..."
 # Force update binaries (in case installer didn't overwrite running ones)
 LEMONADE_ROUTER="${INSTALL_ROOT}/usr/local/bin/lemonade-router"
 LEMONADE_SERVER="${INSTALL_ROOT}/usr/local/bin/lemonade-server"
+LEMONADE_CLI="${INSTALL_ROOT}/usr/local/bin/lemonade"
 
 # If binaries exist, touch them to ensure timestamps are updated
 # This helps with caching issues
@@ -64,6 +65,11 @@ fi
 if [ -f "$LEMONADE_SERVER" ]; then
     touch "$LEMONADE_SERVER"
     echo "Updated lemonade-server timestamp"
+fi
+
+if [ -f "$LEMONADE_CLI" ]; then
+    touch "$LEMONADE_CLI"
+    echo "Updated lemonade timestamp"
 fi
 
 # ------------------------------------------------------------------------------
@@ -122,10 +128,10 @@ fi
 # 5. SETUP BINARIES
 # ------------------------------------------------------------------------------
 APP_BINARY="${INSTALL_ROOT}/Applications/Lemonade.app/Contents/MacOS/Lemonade"
-TARGET_LINK="${INSTALL_ROOT}/usr/local/bin/lemonade"
+TARGET_LINK="${INSTALL_ROOT}/usr/local/bin/lemonade-app"
 
 if [ -f "$APP_BINARY" ]; then
-    echo "Linking 'lemonade' CLI..."
+    echo "Linking 'lemonade-app' CLI..."
     mkdir -p "$(dirname "$TARGET_LINK")"
     ln -sf "$APP_BINARY" "$TARGET_LINK"
 fi
@@ -173,10 +179,10 @@ launchctl kickstart -k system/"$DAEMON_LABEL" 2>/dev/null || true
 # B. Start Tray Agent (Current User)
 if [ -n "$CURRENT_UID" ] && [ "$CURRENT_UID" -ne 0 ]; then
     echo "Loading Tray Agent for user (UID: $CURRENT_UID)..."
-    
+
     # 1. Bootstrap: Registers the service in the user's GUI session
     launchctl bootstrap gui/"$CURRENT_UID" "$AGENT_PLIST" 2>/dev/null || true
-    
+
     # 2. Kickstart: Forces the app to launch visually RIGHT NOW
     launchctl kickstart -k gui/"$CURRENT_UID"/"$AGENT_LABEL" 2>/dev/null || true
 else

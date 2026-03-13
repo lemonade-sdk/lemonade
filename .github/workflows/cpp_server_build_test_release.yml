@@ -537,6 +537,7 @@ jobs:
           .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server --ephemeral
           .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server --listen-all
           .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server --api-key
+          .venv/bin/python test/server_cli2.py --server-binary /usr/local/bin/lemonade-server
           echo "CLI tests PASSED!"
 
       - name: Run endpoint tests (unsigned path)
@@ -1126,6 +1127,7 @@ jobs:
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --ephemeral
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --listen-all
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --api-key
+              $VENV_PYTHON test/server_cli2.py --server-binary "$SERVER_BINARY"
           elif [ "${{ matrix.test_type }}" = "endpoints" ]; then
               echo "Running endpoint tests..."
               $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY"

@@ -173,6 +173,10 @@
         <File Id="lemonade_router.exe" Source="$(var.BuildDir)\Release\lemonade-router.exe" KeyPath="yes" />
       </Component>
 
+      <Component Id="LemonadeCli" Guid="12ffa6b7-831b-4d56-889c-3e7f43c8d134">
+        <File Id="lemonade.exe" Source="$(var.BuildDir)\Release\lemonade.exe" KeyPath="yes" />
+      </Component>
+
       <Component Id="LemonadeLogViewer" Guid="f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c">
         <File Id="lemonade_log_viewer.exe" Source="$(var.BuildDir)\Release\lemonade-log-viewer.exe" KeyPath="yes" />
       </Component>
