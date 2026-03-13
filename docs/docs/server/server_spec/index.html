@@ -3757,7 +3757,13 @@ lemonade-server<span class="w"> </span>serve<span class="w"> </span>--max-loaded
 <p>Each type has its own independent LRU cache, all sharing the same slot limit set by <code>--max-loaded-models</code>.</p>
 <h3 id="device-constraints">Device Constraints</h3>
 <ul>
-<li><strong>NPU Exclusivity:</strong> Only one model of each type supported by FastFlowLM (asr, llm, embedding) can be loaded at a time. Loading a new NPU model will evict any existing NPU model of the same type. For example, an LLM <em>and</em> an embedding model can be loaded simultaneously, but loading a second LLM will replace the currently loaded LLM. This limitation is <strong>only</strong> for multiple NPU models of the same type. NPU models can be loaded alongside CPU and GPU models.</li>
+<li><strong>NPU Exclusivity:</strong> <code>flm</code>, <code>ryzenai-llm</code>, and <code>whispercpp</code> are mutually exclusive on the NPU.<ul>
+<li>Loading a model from one of these backends will automatically evict all NPU models from the other backends.</li>
+<li><code>flm</code> supports loading 1 ASR model, 1 LLM, and 1 embedding model on the NPU at the same time.</li>
+<li><code>ryzenai-llm</code> supports loading exactly 1 LLM, which uses the entire NPU. </li>
+<li><code>whispercpp</code> supports loading exactly 1 ASR model at a time, which uses the entire NPU.</li>
+</ul>
+</li>
 <li><strong>CPU/GPU:</strong> No inherent limits beyond available RAM. Multiple models can coexist on CPU or GPU.</li>
 </ul>
 <h3 id="eviction-policy">Eviction Policy</h3>
