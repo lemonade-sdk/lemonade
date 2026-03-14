@@ -49,6 +49,10 @@ endif()
 get_filename_component(WEB_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/web-app" ABSOLUTE)
 set(WEB_APP_BUILD_DIR "${CMAKE_BINARY_DIR}/resources/web-app")
 
+# When ON, use system-provided Node.js modules (for example, webpack and distro-packaged JS deps)
+# instead of installing project-local dependencies with npm for web-app builds.
+option(USE_SYSTEM_NODEJS_MODULES "Use system-installed Node.js modules for building the Web app" OFF)
+
 # C++ Standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

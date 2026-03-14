@@ -9,15 +9,22 @@ module.exports = (env, argv) => {
 
   // When using system packages, check if overlay exists before using it
   let katexAlias = {};
+  let useSystemKatexCss = false;
   if (useSystemPackages) {
     const overlayPath = path.resolve(__dirname, 'katex-overlay/katex/index.js');
     const overlayCssPath = path.resolve(__dirname, 'katex-overlay/katex/dist/katex.min.css');
+    const systemKatexFontsPath = '/usr/share/fonts/truetype/katex';
     // Only use overlay if both the shim AND the CSS file exist
     if (fs.existsSync(overlayPath) && fs.existsSync(overlayCssPath)) {
       katexAlias = {
         'katex$': overlayPath,
         'katex/dist/katex.min.css': overlayCssPath,
       };
+
+      // Only disable URL rewriting when system fonts are also present
+      if (fs.existsSync(systemKatexFontsPath)) {
+        useSystemKatexCss = true;
+      }
     }
   }
 
@@ -118,15 +125,12 @@ module.exports = (env, argv) => {
   };
 
   // Special handling for system packages (Debian)
-  if (useSystemPackages) {
-    // Handle KaTeX CSS without URL resolution (fonts are symlinked separately)
+  if (useSystemKatexCss) {
+    // Handle KaTeX CSS without URL resolution (fonts are provided by the system/overlay)
     config.module.rules.unshift({
       test: /katex\.min\.css$/,
       use: ['style-loader', { loader: 'css-loader', options: { url: false } }],
     });
-
-    // Handle favicon
-    config.module.rules.push({ test: /\.ico$/, type: 'asset/resource' });
   }
 
   return config;

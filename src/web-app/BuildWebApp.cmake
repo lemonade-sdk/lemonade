@@ -58,7 +58,13 @@ if(USE_SYSTEM_NODEJS_MODULES_ENABLED)
         file(WRITE "${OVERLAY_DIR}/katex/index.js" "module.exports = require('${SYSTEM_KATEX_JS}');\n")
 
         # Create a symlink to the system CSS file so webpack can find it at the expected path
-        execute_process(COMMAND ln -sf "${SYSTEM_KATEX_CSS}" "${OVERLAY_DIR}/katex/dist/katex.min.css")
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E create_symlink "${SYSTEM_KATEX_CSS}" "${OVERLAY_DIR}/katex/dist/katex.min.css"
+            RESULT_VARIABLE SYMLINK_RESULT
+        )
+        if(NOT SYMLINK_RESULT EQUAL 0)
+            message(FATAL_ERROR "Failed to create KaTeX CSS symlink (exit code ${SYMLINK_RESULT})")
+        endif()
     else()
         message(STATUS "System katex not found - building without katex overlay")
     endif()
@@ -66,7 +72,7 @@ if(USE_SYSTEM_NODEJS_MODULES_ENABLED)
     if(EXISTS "${SYSTEM_KATEX_FONTS}")
         message(STATUS "System KaTeX fonts available at ${SYSTEM_KATEX_FONTS}")
     else()
-        message(STATUS "System KaTeX fonts not found, will use bundled fonts from npm packages")
+        message(FATAL_ERROR "System KaTeX fonts not found at ${SYSTEM_KATEX_FONTS} while USE_SYSTEM_NODEJS_MODULES is enabled")
     endif()
 endif()
 
