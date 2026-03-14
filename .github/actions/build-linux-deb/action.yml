@@ -17,65 +17,44 @@ runs:
 
         echo "Build environment configured successfully!"
 
-    - name: Build C++ Server with CMake
+    - name: Refresh debian/changelog
       shell: bash
       run: |
         set -e
 
-        echo "Building lemonade-router and lemonade-server for Linux..."
+        echo "Refreshing debian/changelog with current version..."
+        bash debian/update-changelog.sh
+        echo "Changelog refreshed successfully!"
 
-        # Build (BUILD_ELECTRON_APP will trigger electron build automatically)
-        echo "Building binaries..."
-        cmake --build --preset default
-
-        # Verify binaries exist
-        if [ ! -f "build/lemonade-router" ]; then
-            echo "ERROR: lemonade-router not found!"
-            echo "Build directory contents:"
-            ls -lh build/
-            exit 1
-        fi
-
-        if [ ! -f "build/lemonade-server" ]; then
-            echo "ERROR: lemonade-server not found!"
-            echo "Build directory contents:"
-            ls -lh build/
-            exit 1
-        fi
-
-        echo "✓ Binaries found successfully"
-
-        echo "Verifying binary executability..."
-        ./build/lemonade-router --version
-        ./build/lemonade-server --version
-
-        echo "C++ build successful!"
-
-    - name: Build .deb package
+    - name: Build .deb package with dpkg-buildpackage
       id: build-deb
       shell: bash
       run: |
         set -e
 
+        echo "Building Lemonade .deb package with dpkg-buildpackage..."
+
+        # Build using dpkg-buildpackage (handles CMake build internally via debian/rules)
+        dpkg-buildpackage -us -uc -b
+
+        # Extract version and architecture for package name
         DEB_FILE="lemonade-server_${LEMONADE_VERSION}_amd64.deb"
-
-        cd build
-
-        echo "Creating .deb package with CPack..."
-        cpack -G DEB -V
 
         echo "Looking for: $DEB_FILE"
 
-        if [ ! -f "$DEB_FILE" ]; then
+        if [ ! -f "../$DEB_FILE" ]; then
             echo "ERROR: .deb package not created!"
-            echo "Contents of build directory:"
-            ls -lR .
+            echo "Contents of parent directory:"
+            ls -lR ../ | head -50
             exit 1
         fi
 
         # Show package info
         echo "Package information:"
-        dpkg-deb --info "$DEB_FILE"
+        dpkg-deb --info "../$DEB_FILE"
+
+        # Copy to build directory for consistency with artifact upload
+        cp "../$DEB_FILE" "."
 
         # Output the package name for subsequent steps
         echo "package_name=$DEB_FILE" >> $GITHUB_OUTPUT
