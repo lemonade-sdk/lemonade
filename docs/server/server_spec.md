@@ -784,7 +784,7 @@ Image Generation API. You provide a text prompt and receive a generated image. T
 
 > **Note:** Image generation uses Stable Diffusion models. Available models include `SD-Turbo` (fast, ~4 steps), `SDXL-Turbo`, `SD-1.5`, and `SDXL-Base-1.0`.
 >
-> **Performance:** CPU inference takes ~4-5 minutes per image. GPU (Vulkan) is faster but may have compatibility issues with some hardware.
+> **Performance:** CPU inference takes ~4-5 minutes per image. GPU (ROCm) is faster but may have compatibility issues with some hardware.
 
 #### Parameters
 
@@ -1790,7 +1790,7 @@ Where `[level]` can be one of:
 
 # GGUF Support
 
-The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows and Ubuntu Linux are supported. Details:
+The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows, Linux, and macOS (beta, via Metal backend) are supported. Details:
 - Lemonade Server wraps `llama-server` with support for the `lemonade-server` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
   - The `chat/completions`, `completions`, `embeddings`, and `reranking` endpoints are supported.
   - The `embeddings` endpoint requires embedding-specific models (e.g., nomic-embed-text models).
@@ -1811,6 +1811,7 @@ To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by nav
 | Windows  | ✅ Vulkan, ROCm        | ✅ x64           |
 | Ubuntu   | ✅ Vulkan, ROCm        | ✅ x64           |
 | Other Linux | ⚠️* Vulkan    | ⚠️* x64          |
+| macOS (beta) | ✅ Metal      | ✅ arm64 (Apple Silicon) |
 
 *Other Linux distributions may work but are not officially supported.
 
