@@ -331,24 +331,39 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
-        id: get_version
-        uses: ./.github/actions/get-version
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $(pwd)
 
-      - name: Build Linux .deb package
-        uses: ./.github/actions/build-linux-deb
+      - name: Prepare Debian build
+        id: get_version
+        uses: ./.github/actions/prepare-debian-build
+        with:
+          release: '24.04'
+          codename: 'noble'
+
+      - name: Build Debian package
+        id: build_deb
+        uses: ./.github/actions/build-debian-package
+        with:
+          package-type: binary
+          deb-version: ${{ steps.get_version.outputs.version }}
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-deb
-          path: build/lemonade-server_${{ env.LEMONADE_VERSION }}_amd64.deb
+          path: ${{ steps.build_deb.outputs.output-dir }}/*.deb
           retention-days: 7
 
   build-lemonade-rpm:
@@ -810,7 +825,7 @@ jobs:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-      LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}~24.04
     steps:
       - uses: actions/checkout@v4
 
