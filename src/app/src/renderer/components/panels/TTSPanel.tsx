@@ -13,6 +13,7 @@ import { SendIcon, StopIcon } from '../Icons';
 import ModelSelector from '../ModelSelector';
 import EmptyState from '../EmptyState';
 import TypingIndicator from '../TypingIndicator';
+import Combobox from '../Combobox';
 
 interface TTSPanelProps {
   isBusy: boolean;
@@ -216,16 +217,7 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
 
       <div className="chat-input-container">
         <div className="chat-input-voice-selector">
-          <select
-            className="form-input form-select"
-            value={tts.currentVoice}
-            onChange={(e) => tts.setVoice(e.target.value)}
-          >
-            {voiceOptions.map((voice: string, index: number) => {
-              const label = (voice === '') ? 'Select a voice...' : voice;
-              return <option key={index} value={voice} disabled={voice === ''}>{label}</option>;
-            })}
-          </select>
+          <Combobox defaultValue={tts.currentVoice} optionsList={voiceOptions} onChangeFunc={tts.setVoice} position='top' placeholder='Select a voice...'/>
         </div>
         <div className="chat-input-wrapper">
           <textarea
