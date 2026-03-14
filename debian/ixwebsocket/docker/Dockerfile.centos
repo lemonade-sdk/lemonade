@@ -1,0 +1,41 @@
+FROM centos:8 as build
+
+RUN yum install -y gcc-c++ make cmake zlib-devel openssl-devel redhat-rpm-config
+
+RUN yum install -y epel-release
+RUN yum install -y mbedtls-devel
+
+RUN groupadd app && useradd -g app app
+RUN chown -R app:app /opt
+RUN chown -R app:app /usr/local
+
+# There is a bug in CMake where we cannot build from the root top folder
+# So we build from /opt
+COPY --chown=app:app . /opt
+WORKDIR /opt
+
+USER app
+RUN [ "make", "ws_mbedtls_install" ]
+RUN [ "rm", "-rf", "build" ]
+
+FROM centos:8 as runtime
+
+RUN yum install -y gdb strace
+
+RUN yum install -y epel-release
+RUN yum install -y mbedtls
+
+RUN groupadd app && useradd -g app app
+COPY --chown=app:app --from=build /usr/local/bin/ws /usr/local/bin/ws
+RUN chmod +x /usr/local/bin/ws
+RUN ldd /usr/local/bin/ws
+
+# Copy source code for gcc
+COPY --chown=app:app --from=build /opt /opt
+
+# Now run in usermode
+USER app
+WORKDIR /home/app
+
+ENTRYPOINT ["ws"]
+EXPOSE 8008

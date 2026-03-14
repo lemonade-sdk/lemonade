@@ -1,0 +1,69 @@
+lemonade (10.0.0-1) experimental; urgency=medium
+
+  * New upstream version. (LP: #2142305)
+  * d/rules: If built on Ubuntu, prefer system llama.cpp
+  * d/postinst: Add lemonade user to correct group for systemd log access
+  * Add a vendor'ed copy of ixwebsocket
+  * d/control: Add recommends needed for system backend to work
+  * Drop upstream patch
+  * d/patches: Add a patch to use vendor'ed ixwebsocket
+  * d/control: b-d on libdrm-dev
+  * d/control: Correct the section to 'utils'
+  * d/copyright: refresh to 10.0.0 release
+  * Add README.debian
+
+ -- Mario Limonciello <superm1@debian.org>  Wed, 11 Mar 2026 13:26:19 -0500
+
+lemonade (9.3.4-1) experimental; urgency=medium
+
+  * New upstream version
+
+ -- Mario Limonciello <superm1@debian.org>  Wed, 18 Feb 2026 23:38:56 -0600
+
+lemonade (9.3.2-2) experimental; urgency=medium
+
+  * d/copyright: move favicon and correct copyright for Groq Inc.
+
+ -- Mario Limonciello <superm1@debian.org>  Fri, 13 Feb 2026 12:18:37 -0600
+
+lemonade (9.3.2-1) experimental; urgency=medium
+
+  [ Tim Flink ]
+  * d/control: add unzip, libatomic1 as runtime deps for lemonade-server
+
+  [ Mario Limonciello (AMD) ]
+  * refresh patches
+  * releasing package lemonade version 9.3.2-1
+
+ -- Mario Limonciello <superm1@debian.org>  Thu, 12 Feb 2026 23:10:39 -0600
+
+lemonade (9.3.1-1) experimental; urgency=medium
+
+  * New upstream version.
+  * refresh patches
+
+ -- Mario Limonciello <superm1@debian.org>  Fri, 06 Feb 2026 22:59:57 -0600
+
+lemonade (9.3.0-1) experimental; urgency=medium
+
+  * New upstream version.
+  * d/control: Add build dependencies for web-app
+  * d/control: bump standards version to 4.7.3
+  * d/control: Add new fonts-katex dependency for web app
+  * d/control: Add lemonade-desktop package
+  * d/lemonade-server.install: Add web-app
+  * d/postinst: Create user for lemonade server
+  * d/patches: refresh
+  * d/webpack: Add configuration to run webpack at build
+  * d/rules: Build web-app manually without pulling anything from the web
+  * d/patches: backport a patch to put web app application in correct path
+  * d/patches: backport some patches to fix about dialog
+
+ -- Mario Limonciello <superm1@debian.org>  Thu, 05 Feb 2026 19:22:57 -0600
+
+lemonade (9.2.0-1) experimental; urgency=medium
+
+  * Initial release. (Closes: #1120707)
+    - Upload to experimental pending libcpp-httplib-dev moving to unstable
+
+ -- Mario Limonciello <superm1@debian.org>  Fri, 30 Jan 2026 12:42:39 -0600

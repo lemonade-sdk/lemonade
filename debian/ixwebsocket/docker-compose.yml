@@ -1,0 +1,11 @@
+version: "3.3"
+services:
+  push:
+    entrypoint: ws push_server --host 0.0.0.0
+    image: ${DOCKER_REPO}/ws:build
+
+  autoroute:
+    entrypoint: ws autoroute ws://push:8008
+    image: ${DOCKER_REPO}/ws:build
+    depends_on:
+      - push

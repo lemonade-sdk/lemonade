@@ -1,0 +1,55 @@
+Description: Remove external Google Fonts references to fix privacy-breach warnings
+ Remove preconnect links and font imports from Google Fonts to avoid
+ external network requests when viewing documentation offline.
+ This fixes Lintian privacy-breach-generic warnings.
+Author: Mario Limonciello <superm1@debian.org>
+Origin: other
+Forwarded: not-needed
+Last-Update: 2026-01-20
+
+Index: lemonade/examples/demos/multi-model-tester.html
+===================================================================
+--- lemonade.orig/examples/multi-model-tester.html
++++ lemonade/examples/multi-model-tester.html
+@@ -4,9 +4,6 @@
+     <meta charset="UTF-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+     <title>Lemonade Multi-Model Tester</title>
+-    <link rel="preconnect" href="https://fonts.googleapis.com">
+-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+     <style>
+         :root {
+             --bg-primary: #0a0a0f;
+@@ -36,7 +33,7 @@
+         }
+
+         body {
+-            font-family: 'Space Grotesk', sans-serif;
++            font-family: sans-serif;
+             background: var(--bg-primary);
+             color: var(--text-primary);
+             min-height: 100vh;
+Index: lemonade/examples/demos/llm-debate.html
+===================================================================
+--- lemonade.orig/examples/llm-debate.html
++++ lemonade/examples/llm-debate.html
+@@ -4,9 +4,6 @@
+     <meta charset="UTF-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+     <title>🍋 Lemonade Debate Arena v2</title>
+-    <link rel="preconnect" href="https://fonts.googleapis.com">
+-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+-    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+     <style>
+         :root {
+             --bg-dark: #0a0a0c;
+@@ -36,7 +33,7 @@
+         }
+
+         body {
+-            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
++            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+             background: var(--bg-dark);
+             color: var(--text-primary);
+             min-height: 100vh;

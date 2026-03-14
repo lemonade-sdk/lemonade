@@ -1,0 +1,60 @@
+Description: Avoid reaching to the web for images or libraries while running
+Author: Mario Limonciello <superm1@debian.org>
+Origin: other
+Forwarded: not-needed
+Last-Update: 2026-01-28
+
+Index: lemonade/docs/index.html
+===================================================================
+--- lemonade.orig/docs/index.html
++++ lemonade/docs/index.html
+@@ -154,49 +154,6 @@
+       <span class="hp-section-label">Ecosystem</span>
+       <h2 class="hp-section-heading">Works with great apps.</h2>
+       <p class="hp-section-desc">Lemonade is integrated in many apps and works out-of-box with hundreds more thanks to the OpenAI API standard.</p>
+-
+-      <div class="hp-eco-apps">
+-        <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI" target="_blank" class="hp-eco-app">
+-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" />
+-          <span class="hp-eco-app-name">Open WebUI</span>
+-        </a>
+-        <a href="https://n8n.io/integrations/lemonade-model/" title="n8n" target="_blank" class="hp-eco-app">
+-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/n8n.png" alt="n8n" />
+-          <span class="hp-eco-app-name">n8n</span>
+-        </a>
+-        <a href="https://github.com/amd/gaia" title="Gaia" target="_blank" class="hp-eco-app">
+-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/gaia.png" alt="Gaia" />
+-          <span class="hp-eco-app-name">Gaia</span>
+-        </a>
+-        <a href="https://github.com/lemonade-sdk/infinity-arcade" title="Infinity Arcade" target="_blank" class="hp-eco-app">
+-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/infinity_arcade.png" alt="Infinity Arcade" />
+-          <span class="hp-eco-app-name">Infinity Arcade</span>
+-        </a>
+-        <a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue" target="_blank" class="hp-eco-app">
+-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/continue.png" alt="Continue" />
+-          <span class="hp-eco-app-name">Continue</span>
+-        </a>
+-        <a href="https://marketplace.visualstudio.com/items?itemName=lemonade-sdk.lemonade-sdk" title="GitHub Copilot" target="_blank" class="hp-eco-app">
+-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/github_copilot.png" alt="GitHub Copilot" />
+-          <span class="hp-eco-app-name">GitHub Copilot</span>
+-        </a>
+-        <a href="https://openhands.dev/" title="OpenHands" target="_blank" class="hp-eco-app">
+-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/openhands.png" alt="OpenHands" />
+-          <span class="hp-eco-app-name">OpenHands</span>
+-        </a>
+-        <a href="https://marketplace.dify.ai/plugins/langgenius/lemonade" title="Dify" target="_blank" class="hp-eco-app">
+-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/dify.png" alt="Dify" />
+-          <span class="hp-eco-app-name">Dify</span>
+-        </a>
+-        <a href="https://deeptutor.knowhiz.us/" title="Deep Tutor" target="_blank" class="hp-eco-app">
+-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/deep_tutor.png" alt="Deep Tutor" />
+-          <span class="hp-eco-app-name">Deep Tutor</span>
+-        </a>
+-        <a href="https://www.iterate.ai/" title="Iterate.ai" target="_blank" class="hp-eco-app">
+-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/iterate_ai.png" alt="Iterate.ai" />
+-          <span class="hp-eco-app-name">Iterate.ai</span>
+-        </a>
+-      </div>
+       <div class="hp-eco-cta">
+         <a href="marketplace.html" class="marketplace-cta-btn">Explore the Marketplace</a>
+       </div>

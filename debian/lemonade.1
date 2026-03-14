@@ -1,0 +1,97 @@
+.TH LEMONADE "1" "November 2025" "lemonade" "User Commands"
+.SH NAME
+lemonade \- Local LLM serving with GPU and NPU acceleration
+.IP
+.SH DESCRIPTION
+lemonade [\-h] [\-i INPUT] [\-d CACHE_DIR] [\-m [TRACK_INTERVAL]]
+.IP
+[\-\-power\-hwinfo [WARMUP_PERIOD]] [\-\-power\-agt [WARMUP_PERIOD]]
+[\-\-tools [tool \fB\-\-tool\-args\fR [tool \fB\-\-tool\-args\fR...]]]
+.PP
+Tools for evaluating and deploying LLMs.
+.PP
+Read this to learn the command syntax:
+https://github.com/lemonade\-sdk/lemonade/blob/main/docs/README.md
+.SS "positional arguments:"
+.TP
+\fB\-\-tools\fR [tool \fB\-\-tool\-args\fR [tool \fB\-\-tool\-args\fR...]]
+Run `lemonade TOOL \fB\-h\fR` to learn more about each tool.
+.TP
+Tools that can start a sequence:
+* huggingface\-load: Load an LLM in PyTorch using
+huggingface transformers
+* llamacpp\-load: Wrap llama.cpp models with an API
+* oga\-load: Load model in onnxruntime\-genai (OGA)
+.TP
+Tools that go into a sequence:
+* llamacpp\-bench: Benchmark an LLM in llama.cpp
+* accuracy\-mmlu: Measure accuracy with Massive
+Multitask Language Understanding (MMLU)
+* accuracy\-humaneval: Measure coding accuracy with
+HumanEval
+* accuracy\-perplexity: Measure perplexity score
+* lm\-eval\-harness: Evaluate model using lm\-evalharness
+* llm\-prompt: Prompt an LLM and print the result
+* huggingface\-bench: Benchmark a huggingface\-style
+PyTorch LLM
+* oga\-bench: Benchmark an LLM in onnxruntime\-genai
+(OGA)
+.TP
+Management tools:
+* report: Export statistics from each lemonade run to
+a CSV file
+* cache: Manage the build cache
+* version: Print the lemonade version number
+* system\-info: Print system and device information
+.SS "options:"
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+show this help message and exit
+.TP
+\fB\-i\fR, \fB\-\-input\fR INPUT
+The input that will be evaluated by the starting tool
+(e.g., huggingface checkpoint)
+.TP
+\fB\-d\fR, \fB\-\-cache\-dir\fR CACHE_DIR
+Cache directory where tool results are stored
+(default: /home/supermario/.cache/lemonade)
+.TP
+\fB\-m\fR, \fB\-\-memory\fR [TRACK_INTERVAL]
+Track memory usage and plot the results. Optionally,
+set the tracking interval in seconds (default: 0.25)
+.TP
+\fB\-\-power\-hwinfo\fR [WARMUP_PERIOD]
+Track power consumption using the HWiNFO application
+and plot the results. HWiNFO is a commercial product
+from a third party (https://www.hwinfo.com/) and
+should be acquired/licensed appropriately. Optionally,
+set the warmup period in seconds (default: 5). If the
+application is not installed at C:\eProgram
+Files\eHWiNFO64\eHWiNFO64.exe, set the HWINFO_PATH
+environment variable to point at it. This is a Windows
+only feature and Lemonade must be run from a CMD
+window with Administrator privileges.
+.TP
+\fB\-\-power\-agt\fR [WARMUP_PERIOD]
+Track power consumption using the AGT application and
+plot the results. AGT is an internal AMD tool.
+Optionally, set the warmup period in seconds (default:
+5). Set the AGT_PATH environment variable to point to
+the AGT executable. This is a Windows only feature and
+Lemonade must be run from a CMD window with
+Administrator privileges.
+.IP
+[\-\-power\-hwinfo [WARMUP_PERIOD]] [\-\-power\-agt [WARMUP_PERIOD]]
+[\-\-tools [tool \fB\-\-tool\-args\fR [tool \fB\-\-tool\-args\fR...]]]
+.SH "SEE ALSO"
+The full documentation for
+.B lemonade
+is maintained as a Texinfo manual.  If the
+.B info
+and
+.B lemonade
+programs are properly installed at your site, the command
+.IP
+.B info lemonade
+.PP
+should give you access to the complete manual.

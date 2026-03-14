@@ -1,0 +1,55 @@
+Description: Use vendored copy of ixwebsocket
+Author: Mario Limonciello <superm1@debian.org>
+Origin: other
+Forwarded: not-needed
+Last-Update: 2026-03-11
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4322def8..ef0ebf4a 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -284,19 +284,25 @@ endif()
+
+ # === IXWebSocket (for WebSocket support: Windows and Linux) ===
+ if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+-    set(MIN_IXWEBSOCKET_VERSION "11.4.4")
+-    FetchContent_Declare(ixwebsocket
+-        GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
+-        GIT_TAG v${MIN_IXWEBSOCKET_VERSION}
+-    )
+     # Disable TLS and ZLIB for simpler setup (localhost only, no compression needed)
+     set(USE_TLS OFF CACHE INTERNAL "")
+     set(USE_OPEN_SSL OFF CACHE INTERNAL "")
+     set(USE_MBED_TLS OFF CACHE INTERNAL "")
+     set(USE_ZLIB OFF CACHE INTERNAL "")
+     set(IXWEBSOCKET_INSTALL OFF CACHE INTERNAL "")
+-    FetchContent_MakeAvailable(ixwebsocket)
+-    message(STATUS "IXWebSocket will be fetched (v${MIN_IXWEBSOCKET_VERSION})")
++
++    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/debian/ixwebsocket/CMakeLists.txt")
++        message(STATUS "Using local ixwebsocket from debian/ixwebsocket")
++        add_subdirectory(debian/ixwebsocket)
++    else()
++        set(MIN_IXWEBSOCKET_VERSION "11.4.4")
++        FetchContent_Declare(ixwebsocket
++            GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
++            GIT_TAG v${MIN_IXWEBSOCKET_VERSION}
++        )
++        FetchContent_MakeAvailable(ixwebsocket)
++        message(STATUS "IXWebSocket will be fetched (v${MIN_IXWEBSOCKET_VERSION})")
++    endif()
+ endif()
+
+
+@@ -660,7 +666,11 @@ endif()
+
+ # IXWebSocket for WebSocket support (Windows and Linux)
+ if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ixwebsocket)
++    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/debian/ixwebsocket/CMakeLists.txt")
++        target_link_libraries(${EXECUTABLE_NAME} PRIVATE ixwebsocket::ixwebsocket)
++    else()
++        target_link_libraries(${EXECUTABLE_NAME} PRIVATE ixwebsocket)
++    endif()
+     target_compile_definitions(${EXECUTABLE_NAME} PRIVATE LEMON_HAS_WEBSOCKET)
+ endif()

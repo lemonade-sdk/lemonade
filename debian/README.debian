@@ -1,0 +1,11 @@
+ixwebsocket has been vendored from https://github.com/machinezone/IXWebSocket.
+The following have been stripped when vendoring:
+ * tests
+ * CL11
+
+The upstream maintainer has indicated that they don't want to work on this long
+term, but a new maintainer has not stepped up.  It doesn't make sense to package
+on it's own in Debian if it's not going to have a long term upstream maintainer.
+
+I am in discussion with the upstream Lemonade team to decide if this dependency
+should be used long term or not.

@@ -1,0 +1,46 @@
+#!/usr/bin/make -f
+
+DEB_BUILD_DIR := obj-$(DEB_HOST_GNU_TYPE)
+WEB_APP_BUILD_DIR := $(CURDIR)/$(DEB_BUILD_DIR)/resources/web-app
+WEB_APP_BUILD_SOURCE_DIR := $(CURDIR)/$(DEB_BUILD_DIR)/web-app-src
+
+%:
+	dh $@ --buildsystem=cmake+ninja
+
+override_dh_auto_configure:
+	dh_auto_configure -- -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_WEB_APP=OFF
+
+override_dh_auto_build:
+	dh_auto_build
+	# Build web app using system-installed Node.js deps
+	mkdir -p $(WEB_APP_BUILD_DIR)
+	rm -rf $(WEB_APP_BUILD_SOURCE_DIR)
+	cp -aL src/web-app $(WEB_APP_BUILD_SOURCE_DIR)
+	rm -rf $(WEB_APP_BUILD_SOURCE_DIR)/node_modules
+	ln -sfn /usr/share/nodejs $(WEB_APP_BUILD_SOURCE_DIR)/node_modules
+	rm -rf debian/web-app-overlay/katex/dist
+	mkdir -p debian/web-app-overlay/katex/dist
+	cp /usr/share/javascript/katex/katex.min.css debian/web-app-overlay/katex/dist/katex.min.css
+	cd $(WEB_APP_BUILD_SOURCE_DIR) && NODE_PATH=$(CURDIR)/debian/web-app-overlay:/usr/share/nodejs:/usr/lib/nodejs:/usr/share/javascript \
+		WEBPACK_OUTPUT_PATH=$(WEB_APP_BUILD_DIR) \
+		/usr/bin/webpack --mode production --config $(CURDIR)/debian/webpack.debian.js
+
+override_dh_auto_install:
+	dh_auto_install
+	# Ensure web app assets are staged for packaging
+	mkdir -p debian/lemonade-server/usr/share/lemonade-server/resources/web-app
+	cp -a $(WEB_APP_BUILD_DIR)/. debian/lemonade-server/usr/share/lemonade-server/resources/web-app/
+	# Use system KaTeX fonts to avoid duplicating font files
+	for f in /usr/share/fonts/truetype/katex/*.woff /usr/share/fonts/truetype/katex/*.woff2 /usr/share/fonts/truetype/katex/*.ttf; do \
+		ln -sfn "$$f" debian/lemonade-server/usr/share/lemonade-server/resources/web-app/$$(basename "$$f"); \
+	done
+
+override_dh_auto_test:
+	# No tests configured
+
+override_dh_install:
+	dh_install
+	# Use system llama.cpp
+ifeq (yes,$(shell dpkg-vendor --derives-from Ubuntu 2>/dev/null && echo yes))
+	sed -i 's/^#LEMONADE_LLAMACPP_PREFER_SYSTEM=/LEMONADE_LLAMACPP_PREFER_SYSTEM=1/' debian/lemonade-server/etc/lemonade/lemonade.conf
+endif
