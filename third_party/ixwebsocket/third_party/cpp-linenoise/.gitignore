@@ -1,0 +1,44 @@
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Others
+*.dSYM
+*.swp
+Debug
+Release
+*.suo
+*.sdf
+*.user
+xcuserdata
+*.xcworkspace
+Makefile
+CMakeFiles
+CMakeCache.txt
+*.cmake
+history.txt

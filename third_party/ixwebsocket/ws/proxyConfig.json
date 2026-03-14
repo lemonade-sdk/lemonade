@@ -1,0 +1,6 @@
+{
+	"remote_urls": {
+		"echo.localhost:8008": "ws://localhost:8009",
+		"cobra.localhost:8008": "ws://localhost:5678"
+	}
+}
