@@ -71,6 +71,8 @@ set(MIN_CLI11_VERSION "2.4.2")
 set(MIN_CURL_VERSION "8.5.0")
 set(MIN_ZSTD_VERSION "1.5.5")
 set(MIN_HTTPLIB_VERSION "0.26.0")
+# If system not found, this is the version that would be downloaded
+set(DOWNLOAD_ZSTD_VERSION "1.5.7")
 
 find_package(PkgConfig QUIET)
 
@@ -223,7 +225,7 @@ endif()
 if(NOT USE_SYSTEM_ZSTD)
     FetchContent_Declare(zstd
         GIT_REPOSITORY https://github.com/facebook/zstd.git
-        GIT_TAG v${MIN_ZSTD_VERSION}
+        GIT_TAG v${DOWNLOAD_ZSTD_VERSION}
         SOURCE_SUBDIR build/cmake
         EXCLUDE_FROM_ALL
     )
