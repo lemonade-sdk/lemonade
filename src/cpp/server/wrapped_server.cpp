@@ -157,6 +157,7 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
         std::string error_msg = "data: {\"error\":{\"message\":\"No model loaded: " + server_name_ +
                                "\",\"type\":\"model_not_loaded\"}}\n\n";
         sink.write(error_msg.c_str(), error_msg.size());
+        sink.done();
         return;
     }
 
@@ -189,6 +190,7 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
             std::string error_msg = "data: {\"error\":{\"message\":\"" + std::string(e.what()) +
                                    "\",\"type\":\"streaming_error\"}}\n\n";
             sink.write(error_msg.c_str(), error_msg.size());
+            sink.done();
         } catch (...) {
             // Sink might be closed, ignore
         }
