@@ -170,6 +170,17 @@ static GGUFFiles identify_gguf_models(
             }
         }
 
+        // If no exact suffix match, check if it's a sharded model variant
+        // e.g. shorthand variant "Q4_K_M" matching "model-Q4_K_M-00001-of-00003.gguf"
+        if (end_with_variant.empty()) {
+            std::string shard_match = to_lower(variant + "-00001-of-");
+            for (const auto& f : repo_files) {
+                if (to_lower(f).find(shard_match) != std::string::npos && !contains_ignore_case(f, "mmproj")) {
+                    end_with_variant.push_back(f);
+                }
+            }
+        }
+
         if (end_with_variant.size() == 1) {
             variant_name = end_with_variant[0];
         }
@@ -200,6 +211,50 @@ static GGUFFiles identify_gguf_models(
             variant_name = sharded_files[0];
         }
     }
+
+    // --- SHARDED MODEL SUPPORT ---
+    // If the identified variant is the first part of a split model (e.g., "-00001-of-00003.gguf"),
+    // automatically discover and add the remaining parts to the download queue.
+    std::string shard_marker = "-00001-of-";
+    size_t marker_pos = variant_name.find(shard_marker);
+    if (marker_pos != std::string::npos) {
+        std::string base_name = variant_name.substr(0, marker_pos);
+        size_t count_start = marker_pos + shard_marker.length();
+        size_t dot_pos = variant_name.find(".gguf", count_start);
+
+        if (dot_pos != std::string::npos) {
+            std::string total_str = variant_name.substr(count_start, dot_pos - count_start);
+            try {
+                int total_parts = std::stoi(total_str);
+                
+                // Add parts 2 through N to sharded_files
+                for (int i = 2; i <= total_parts; ++i) {
+                    char part_suffix[32];
+                    snprintf(part_suffix, sizeof(part_suffix), "-%05d-of-%05d.gguf", i, total_parts);
+                    std::string expected_file = base_name + part_suffix;
+                    
+                    // Verify the expected part actually exists in the Hugging Face repository
+                    bool found = false;
+                    for (const auto& f : repo_files) {
+                        if (f == expected_file) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    
+                    if (found) {
+                        // Prevent duplicates just in case
+                        if (std::find(sharded_files.begin(), sharded_files.end(), expected_file) == sharded_files.end()) {
+                            sharded_files.push_back(expected_file);
+                        }
+                    }
+                }
+            } catch (...) {
+                // Ignore parsing errors for the shard count, fallback to default behavior
+            }
+        }
+    }
+    // -----------------------------
 
     result.core_files["variant"] = variant_name;
     result.sharded_files = sharded_files;
