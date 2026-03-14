@@ -293,11 +293,6 @@ endif()
 
 # === IXWebSocket (for WebSocket support: Windows and Linux) ===
 if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(MIN_IXWEBSOCKET_VERSION "11.4.4")
-    FetchContent_Declare(ixwebsocket
-        GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
-        GIT_TAG v${MIN_IXWEBSOCKET_VERSION}
-    )
     # Disable TLS and ZLIB for simpler setup (localhost only, no compression needed)
     set(USE_TLS OFF CACHE INTERNAL "")
     set(USE_OPEN_SSL OFF CACHE INTERNAL "")
