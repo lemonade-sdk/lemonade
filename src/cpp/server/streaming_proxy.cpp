@@ -66,6 +66,9 @@ void StreamingProxy::forward_sse_stream(
         if (on_complete) {
             on_complete(telemetry);
         }
+    } else {
+        // Properly terminate the chunked response even on error
+        sink.done();
     }
 }
 
@@ -102,6 +105,9 @@ void StreamingProxy::forward_byte_stream(
         // Explicitly flush and signal completion
         sink.done();
         LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
+    } else {
+        // Properly terminate the chunked response even on error
+        sink.done();
     }
 }
 
