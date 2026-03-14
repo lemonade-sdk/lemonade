@@ -78,6 +78,12 @@ bool is_ggml_hip_plugin_available();
 std::string get_cache_dir();
 
 /**
+ * Get the Hugging Face cache directory.
+ * Checks HF_HUB_CACHE, then HF_HOME/hub, then platform defaults.
+ */
+std::string get_hf_cache_dir();
+
+/**
  * Returns a per-user runtime directory for lemonade's PID/lock/log files.
  * On Unix, uses $XDG_RUNTIME_DIR/lemonade when $XDG_RUNTIME_DIR is set,
  * exists, and is writable (creates the subdirectory if needed).
