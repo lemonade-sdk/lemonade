@@ -10,6 +10,7 @@
 #include <iostream>
 #include <filesystem>
 #include <fstream>
+#include <chrono>
 #include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
@@ -20,7 +21,7 @@ namespace backends {
 
 InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
-    params.repo = "lemonade-sdk/stable-diffusion.cpp";
+    params.repo = "superm1/stable-diffusion.cpp";
 
     // Transform version for URL (master-NNN-HASH -> master-HASH)
     std::string short_version = version;
@@ -346,10 +347,12 @@ std::string SDServer::upscale_via_cli(
 
     std::string raw = JsonUtils::base64_decode(b64_image);
 
+    auto unique_id = std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
     fs::path temp_dir = fs::temp_directory_path() / "lemonade_upscale";
     fs::create_directories(temp_dir);
-    fs::path input_path = temp_dir / "input.png";
-    fs::path output_path = temp_dir / "output.png";
+    fs::path input_path = temp_dir / ("input_" + unique_id + ".png");
+    fs::path output_path = temp_dir / ("output_" + unique_id + ".png");
 
     {
         std::ofstream out(input_path, std::ios::binary);

@@ -314,6 +314,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
   const getFilteredModels = () => {
     let filtered = suggestedModels;
 
+    // Hide ESRGAN upscaler models (managed via the Image Generation panel)
+    filtered = filtered.filter(model => !model.info?.labels?.includes('esrgan'));
+
     // Filter by downloaded status
     if (showDownloadedOnly) {
       filtered = filtered.filter(model => modelsData[model.name]?.downloaded);

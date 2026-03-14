@@ -52,7 +52,7 @@ public:
     json image_edits(const json& request) override;
     json image_variations(const json& request) override;
 
-    // ESRGAN upscaling via sd-cli subprocess
+    // ESRGAN upscaling via sd-cli subprocess (matches official sd-cli -M upscale)
     static std::string upscale_via_cli(
         const std::string& b64_image,
         const std::string& upscale_model_path,

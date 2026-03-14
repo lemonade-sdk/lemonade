@@ -2364,7 +2364,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             return;
         }
 
-        // Find sd-cli binary path based on currently loaded sd-cpp backend
+        // Use sd-cli subprocess for upscaling (matches official sd-cli -M upscale)
         std::string backend = "cpu";
         std::string loaded_model = router_->get_loaded_model();
         if (!loaded_model.empty()) {

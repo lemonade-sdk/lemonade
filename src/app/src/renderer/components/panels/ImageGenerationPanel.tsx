@@ -30,9 +30,11 @@ const DEFAULT_IMAGE_SETTINGS: ImageSettings = {
 interface ImageHistoryItem {
   prompt: string;
   imageData: string;
+  originalImageData?: string;
   timestamp: number;
   generateMs?: number;
   upscaleMs?: number;
+  isUpscaling?: boolean;
 }
 
 interface ImageGenerationPanelProps {
@@ -122,7 +124,6 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
         requestBody.seed = imageSettings.seed;
       }
 
-      // Step 1: Generate image
       const genStart = Date.now();
       const genResponse = await serverFetch('/images/generations', {
         method: 'POST',
@@ -142,10 +143,19 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
         throw new Error('Unexpected response format');
       }
 
-      let finalImageData = genData.data[0].b64_json;
-      let upscaleMs: number | undefined;
+      const generatedImage = genData.data[0].b64_json;
 
-      // Step 2: Upscale if enabled
+      // Show the generated image immediately
+      const historyItem: ImageHistoryItem = {
+        prompt: currentPrompt,
+        imageData: generatedImage,
+        timestamp: Date.now(),
+        generateMs,
+        isUpscaling: !!imageSettings.upscaleModel,
+      };
+      setImageHistory(prev => [...prev, historyItem]);
+
+      // Upscale as a second step if enabled
       if (imageSettings.upscaleModel) {
         setGenerationStage('upscaling');
         const upscaleStart = Date.now();
@@ -155,7 +165,7 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model: imageSettings.upscaleModel,
-            image: finalImageData,
+            image: generatedImage,
           }),
         });
 
@@ -165,24 +175,27 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
         }
 
         const upscaleData = await upscaleResponse.json();
-        upscaleMs = Date.now() - upscaleStart;
+        const upscaleMs = Date.now() - upscaleStart;
 
         if (upscaleData.data?.[0]?.b64_json) {
-          finalImageData = upscaleData.data[0].b64_json;
+          setImageHistory(prev => prev.map((item, i) =>
+            i === prev.length - 1
+              ? { ...item, originalImageData: generatedImage, imageData: upscaleData.data[0].b64_json, upscaleMs, isUpscaling: false }
+              : item
+          ));
+        } else {
+          setImageHistory(prev => prev.map((item, i) =>
+            i === prev.length - 1 ? { ...item, isUpscaling: false } : item
+          ));
         }
       }
-
-      setImageHistory(prev => [...prev, {
-        prompt: currentPrompt,
-        imageData: finalImageData,
-        timestamp: Date.now(),
-        generateMs,
-        upscaleMs,
-      }]);
     } catch (error: any) {
       console.error('Failed to generate image:', error);
       showError(`Failed to generate image: ${error.message || 'Unknown error'}`);
     } finally {
+      setImageHistory(prev => prev.map(item =>
+        item.isUpscaling ? { ...item, isUpscaling: false } : item
+      ));
       setGenerationStage(null);
       reset();
     }
@@ -222,33 +235,68 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
                 </span>
               )}
             </div>
-            <div className="generated-image-container">
-              <img
-                src={`data:image/png;base64,${item.imageData}`}
-                alt={item.prompt}
-                className="generated-image"
-              />
-              <button
-                className="save-image-button"
-                onClick={() => saveGeneratedImage(item.imageData, item.prompt)}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                  <polyline points="7 10 12 15 17 10"/>
-                  <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                Save Image
-              </button>
+            <div className={`generated-images-row${(item.originalImageData || item.isUpscaling) ? ' side-by-side' : ''}`}>
+              <div className="generated-image-column">
+                {(item.originalImageData || item.isUpscaling) && <div className="image-label">Original</div>}
+                <div className="image-wrapper">
+                  <img
+                    src={`data:image/png;base64,${item.originalImageData || item.imageData}`}
+                    alt={`${item.prompt}${item.originalImageData ? ' (original)' : ''}`}
+                    className="generated-image"
+                  />
+                  <button
+                    className="save-image-button"
+                    onClick={() => saveGeneratedImage(item.originalImageData || item.imageData, item.prompt + (item.originalImageData ? '_original' : ''))}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="7 10 12 15 17 10"/>
+                      <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    {item.originalImageData ? 'Save Original' : 'Save Image'}
+                  </button>
+                </div>
+              </div>
+              {item.isUpscaling && (
+                <div className="generated-image-column">
+                  <div className="image-label">Upscaled (4x)</div>
+                  <div className="upscale-placeholder">
+                    <div className="generating-spinner"></div>
+                    <span>Upscaling...</span>
+                  </div>
+                </div>
+              )}
+              {item.originalImageData && !item.isUpscaling && (
+                <div className="generated-image-column">
+                  <div className="image-label">Upscaled (4x)</div>
+                  <div className="image-wrapper">
+                    <img
+                      src={`data:image/png;base64,${item.imageData}`}
+                      alt={item.prompt}
+                      className="generated-image"
+                    />
+                    <button
+                      className="save-image-button"
+                      onClick={() => saveGeneratedImage(item.imageData, item.prompt)}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      Save Upscaled
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}
 
-        {isBusy && activeModality === 'image' && (
+        {isBusy && activeModality === 'image' && generationStage === 'generating' && (
           <div className="image-generating-indicator">
             <div className="generating-spinner"></div>
-            <span>
-              {generationStage === 'upscaling' ? 'Upscaling image...' : 'Generating image...'}
-            </span>
+            <span>Generating image...</span>
           </div>
         )}
         <div ref={messagesEndRef} />
