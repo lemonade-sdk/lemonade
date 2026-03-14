@@ -147,7 +147,7 @@ This file configures per-model runtime settings. Each key is a **full model name
 
 | Option | Default | Env Variable | Description |
 |--------|---------|-------------|-------------|
-| `whispercpp_backend` | npu | `LEMONADE_WHISPERCPP` | Backend: `npu`, `cpu`, `vulkan` |
+| `whispercpp_backend` | npu (Windows), cpu (Linux) | `LEMONADE_WHISPERCPP` | Backend: `npu` (Windows), `cpu` (Windows/Linux), `vulkan` (Linux) |
 
 #### sd-cpp
 

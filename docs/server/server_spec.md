@@ -1818,7 +1818,7 @@ To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by nav
 
 Similar to the [llama-server support](#gguf-support), Lemonade can also route OpenAI API requests to a FastFlowLM `flm serve` backend.
 
-The `flm serve` backend works with Lemonade's suggested `*-FLM` models, as well as any model mentioned in `flm list`. Windows is the only supported operating system. Details:
+The `flm serve` backend works with Lemonade's suggested `*-FLM` models, as well as any model mentioned in `flm list`. Windows and Linux are supported operating systems. Details:
 - Lemonade Server wraps `flm serve` with support for the `lemonade-server` CLI, client web app, and all Lemonade custom endpoints (e.g., `pull`, `load`, etc.).
   - OpenAI API endpoints supported: `models`, `chat/completions` (streaming), and `embeddings`.
   - The `embeddings` endpoint requires embedding-specific models supported by FLM.
