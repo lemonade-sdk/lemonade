@@ -1352,23 +1352,8 @@ int TrayApp::execute_pull_command() {
 
         std::cout << "Importing model from local path: " << tray_config_.checkpoint << std::endl;
 
-        // Get HF cache directory (same logic as ModelManager)
-        std::string hf_cache;
-        if (const char* env = std::getenv("HF_HUB_CACHE")) {
-            hf_cache = env;
-        } else if (const char* env = std::getenv("HF_HOME")) {
-            hf_cache = std::string(env) + "/hub";
-        } else {
-#ifdef _WIN32
-            if (const char* userprofile = std::getenv("USERPROFILE")) {
-                hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
-            }
-#else
-            if (const char* home = std::getenv("HOME")) {
-                hf_cache = std::string(home) + "/.cache/huggingface/hub";
-            }
-#endif
-        }
+        // Get HF cache directory
+        std::string hf_cache = lemon::utils::get_hf_cache_dir();
 
         // Copy files to HF cache
         std::string model_name_clean = tray_config_.model.substr(5); // Remove "user." prefix
