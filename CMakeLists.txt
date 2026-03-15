@@ -26,6 +26,13 @@ endif()
 
 # Include GNUInstallDirs for standard installation directories
 include(GNUInstallDirs)
+     # Install man pages
+     install(FILES
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-server.1
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-router.1
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade.1
+          DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
+     )
 # ============================================================
 # Electron source paths (used by both runtime and installers)
 # ============================================================
@@ -58,8 +65,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(MIN_NLOHMANN_JSON_VERSION "3.11.3")
 set(MIN_CLI11_VERSION "2.4.2")
 set(MIN_CURL_VERSION "8.5.0")
-set(MIN_ZSTD_VERSION "1.5.7")
+set(MIN_ZSTD_VERSION "1.5.5")
 set(MIN_HTTPLIB_VERSION "0.26.0")
+# If system not found, this is the version that would be downloaded
+set(DOWNLOAD_ZSTD_VERSION "1.5.7")
 
 find_package(PkgConfig QUIET)
 
@@ -212,7 +221,7 @@ endif()
 if(NOT USE_SYSTEM_ZSTD)
     FetchContent_Declare(zstd
         GIT_REPOSITORY https://github.com/facebook/zstd.git
-        GIT_TAG v${MIN_ZSTD_VERSION}
+        GIT_TAG v${DOWNLOAD_ZSTD_VERSION}
         SOURCE_SUBDIR build/cmake
         EXCLUDE_FROM_ALL
     )
@@ -284,19 +293,17 @@ endif()
 
 # === IXWebSocket (for WebSocket support: Windows and Linux) ===
 if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(MIN_IXWEBSOCKET_VERSION "11.4.4")
-    FetchContent_Declare(ixwebsocket
-        GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
-        GIT_TAG v${MIN_IXWEBSOCKET_VERSION}
-    )
     # Disable TLS and ZLIB for simpler setup (localhost only, no compression needed)
     set(USE_TLS OFF CACHE INTERNAL "")
     set(USE_OPEN_SSL OFF CACHE INTERNAL "")
     set(USE_MBED_TLS OFF CACHE INTERNAL "")
     set(USE_ZLIB OFF CACHE INTERNAL "")
     set(IXWEBSOCKET_INSTALL OFF CACHE INTERNAL "")
-    FetchContent_MakeAvailable(ixwebsocket)
-    message(STATUS "IXWebSocket will be fetched (v${MIN_IXWEBSOCKET_VERSION})")
+
+    set(LEMONADE_IXWEBSOCKET_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ixwebsocket")
+
+    message(STATUS "Using vendored ixwebsocket from third_party/ixwebsocket")
+    add_subdirectory("${LEMONADE_IXWEBSOCKET_VENDOR_DIR}" third_party/ixwebsocket)
 endif()
 
 
@@ -660,7 +667,13 @@ endif()
 
 # IXWebSocket for WebSocket support (Windows and Linux)
 if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ixwebsocket)
+    if(TARGET ixwebsocket::ixwebsocket)
+        target_link_libraries(${EXECUTABLE_NAME} PRIVATE ixwebsocket::ixwebsocket)
+    elseif(TARGET ixwebsocket)
+        target_link_libraries(${EXECUTABLE_NAME} PRIVATE ixwebsocket)
+    else()
+        message(FATAL_ERROR "IXWebSocket target not found after dependency setup")
+    endif()
     target_compile_definitions(${EXECUTABLE_NAME} PRIVATE LEMON_HAS_WEBSOCKET)
 endif()
 
