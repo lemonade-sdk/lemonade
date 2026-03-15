@@ -1,0 +1,6 @@
+etc/
+usr/bin/lemonade-server
+usr/bin/lemonade-router
+usr/bin/lemonade
+usr/share/lemonade-server/
+usr/lib/
