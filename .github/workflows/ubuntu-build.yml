@@ -59,7 +59,7 @@ jobs:
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
     container:
-      image: ghcr.io/superm1/lemonade/build-environment:${{ matrix.container_tag }}
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:${{ matrix.container_tag }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
