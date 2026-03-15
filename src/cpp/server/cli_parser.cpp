@@ -86,7 +86,11 @@ CLIParser::CLIParser()
     app_.set_version_flag("-v,--version", (APP_NAME " version " LEMON_VERSION_STRING));
 
 #ifdef LEMONADE_TRAY
+#ifdef LEMONADE_TRAY_GUI
+    app_.require_subcommand(0, 1);
+#else
     app_.require_subcommand(1);
+#endif
     app_.set_help_all_flag("--help-all", "Print help for all commands");
 
     // Serve
@@ -214,7 +218,9 @@ CLIParser::CLIParser()
         ->default_val(config_.port);
 
     // Tray
-    CLI::App* tray = app_.add_subcommand("tray", "Launch tray interface for running server");
+#ifndef LEMONADE_NO_TRAY_SUBCOMMAND
+    app_.add_subcommand("tray", "Launch tray interface for running server");
+#endif
 #else
     add_serve_options(&app_, config_);
 #endif
@@ -222,16 +228,18 @@ CLIParser::CLIParser()
 
 int CLIParser::parse(int argc, char** argv) {
     try {
-#ifdef LEMONADE_TRAY
-        // Show help if no arguments provided
-        if (argc == 1) {
-            throw CLI::CallForHelp();
-        }
-#endif
         app_.parse(argc, argv);
 
 #ifdef LEMONADE_TRAY
+#ifdef LEMONADE_TRAY_GUI
+        // Default to "tray" when no subcommand is given (GUI builds omit the subcommand)
+        {
+            auto subs = app_.get_subcommands();
+            tray_config_.command = subs.empty() ? "tray" : subs.at(0)->get_name();
+        }
+#else
         tray_config_.command = app_.get_subcommands().at(0)->get_name();
+#endif
         if (launch_port_option_ != nullptr) {
             tray_config_.launch_port_specified = launch_port_option_->count() > 0;
         }
