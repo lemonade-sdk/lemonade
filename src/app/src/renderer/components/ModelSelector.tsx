@@ -16,6 +16,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
   } = useModels();
 
   const visibleDownloadedModels = downloadedModels.filter((model) => {
+    if (model.info?.labels?.includes('esrgan')) return false;
     if (!isExperienceModel(model.info)) {
       return true;
     }

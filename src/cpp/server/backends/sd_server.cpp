@@ -9,6 +9,8 @@
 #include <httplib.h>
 #include <iostream>
 #include <filesystem>
+#include <fstream>
+#include <chrono>
 #include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
@@ -226,7 +228,6 @@ json SDServer::image_generations(const json& request) {
     // sd-server requires extra params (steps, sample_method, scheduler) to be
     // embedded in the prompt as <sd_cpp_extra_args>JSON</sd_cpp_extra_args>
     // See PR #1173: https://github.com/leejet/stable-diffusion.cpp/pull/1173
-    // Use request values if present (e.g. from webapp), fall back to recipe_options defaults.
     json extra_args;
     if (request.contains("steps")) {
         extra_args["steps"] = request["steps"].get<int>();
@@ -252,7 +253,6 @@ json SDServer::image_generations(const json& request) {
     LOG(DEBUG, "SDServer") << "Forwarding request to sd-server: "
                   << sd_request.dump(2) << std::endl;
 
-    // Use base class forward_request with 10 minute timeout for image generation
     return forward_request("/v1/images/generations", sd_request, 600);
 }
 
@@ -336,6 +336,58 @@ json SDServer::image_variations(const json& request) {
                   << std::endl;
 
     return forward_multipart_request("/v1/images/edits", fields, 600);
+}
+
+std::string SDServer::upscale_via_cli(
+    const std::string& b64_image,
+    const std::string& upscale_model_path,
+    const std::string& cli_exe_path,
+    const std::vector<std::pair<std::string, std::string>>& env_vars,
+    bool debug) {
+
+    std::string raw = JsonUtils::base64_decode(b64_image);
+
+    auto unique_id = std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    fs::path temp_dir = fs::temp_directory_path() / "lemonade_upscale";
+    fs::create_directories(temp_dir);
+    fs::path input_path = temp_dir / ("input_" + unique_id + ".png");
+    fs::path output_path = temp_dir / ("output_" + unique_id + ".png");
+
+    {
+        std::ofstream out(input_path, std::ios::binary);
+        out.write(raw.data(), raw.size());
+    }
+
+    std::vector<std::string> cli_args = {
+        "-M", "upscale",
+        "--upscale-model", upscale_model_path,
+        "-i", input_path.string(),
+        "-o", output_path.string()
+    };
+
+    auto proc = ProcessManager::start_process(
+        cli_exe_path, cli_args, "", debug, false, env_vars);
+
+    int exit_code = ProcessManager::wait_for_exit(proc, 300);
+
+    std::string result;
+    if (exit_code == 0 && fs::exists(output_path)) {
+        std::ifstream in(output_path, std::ios::binary);
+        std::string upscaled_data(
+            (std::istreambuf_iterator<char>(in)),
+            std::istreambuf_iterator<char>());
+        result = JsonUtils::base64_encode(upscaled_data);
+        LOG(INFO, "SDServer") << "ESRGAN upscale complete ("
+            << raw.size() << " -> " << upscaled_data.size() << " bytes)" << std::endl;
+    } else {
+        LOG(WARNING, "SDServer") << "ESRGAN upscale failed (exit code: "
+            << exit_code << ")" << std::endl;
+    }
+
+    fs::remove(input_path);
+    fs::remove(output_path);
+    return result;
 }
 
 } // namespace backends

@@ -1,5 +1,7 @@
 #include "lemon/server.h"
 #include "lemon/ollama_api.h"
+#include "lemon/backends/sd_server.h"
+#include "lemon/backends/backend_utils.h"
 #include <cstring>
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -277,7 +279,9 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("images/variations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_image_variations(req, res);
     });
-
+    register_post("images/upscale", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_image_upscale(req, res);
+    });
     // Responses endpoint
     register_post("responses", [this](const httplib::Request& req, httplib::Response& res) {
         handle_responses(req, res);
@@ -1998,20 +2002,7 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
             return;
         }
 
-        // Handle model loading
-        if (request_json.contains("model")) {
-            std::string requested_model = request_json["model"];
-            try {
-                auto_load_model_if_needed(requested_model);
-            } catch (const std::exception& e) {
-                LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
-                auto error_response = create_model_error(requested_model, e.what());
-                std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
-                res.set_content(error_response.dump(), "application/json");
-                return;
-            }
-        } else {
+        if (!request_json.contains("model")) {
             res.status = 400;
             nlohmann::json error = {{"error", {
                 {"message", "Missing 'model' field in request"},
@@ -2021,15 +2012,27 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
             return;
         }
 
-        // Forward to router
-        auto response = router_->image_generations(request_json);
+        std::string requested_model = request_json["model"];
 
-        // Check for error in response
-        if (response.contains("error")) {
-            res.status = 500;
+        try {
+            auto_load_model_if_needed(requested_model);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
+            auto error_response = create_model_error(requested_model, e.what());
+            std::string error_code = error_response["error"]["code"].get<std::string>();
+            res.status = (error_code == "model_load_error") ? 500 : 404;
+            res.set_content(error_response.dump(), "application/json");
+            return;
         }
 
-        res.set_content(response.dump(), "application/json");
+        {
+            auto response = router_->image_generations(request_json);
+            if (response.contains("error")) {
+                LOG(ERROR, "Server") << "Image generation backend error: " << response.dump() << std::endl;
+                res.status = 500;
+            }
+            res.set_content(response.dump(), "application/json");
+        }
 
     } catch (const nlohmann::json::exception& e) {
         LOG(ERROR, "Server") << "JSON parse error in handle_image_generations: " << e.what() << std::endl;
@@ -2311,6 +2314,112 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
         res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_image_variations: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "server_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_image_upscale(const httplib::Request& req, httplib::Response& res) {
+    try {
+        LOG(INFO, "Server") << "POST /api/v1/images/upscale" << std::endl;
+
+        auto request_json = nlohmann::json::parse(req.body);
+
+        if (!request_json.contains("image") || !request_json["image"].is_string()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'image' field (base64 encoded)"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        std::string upscale_model_name = request_json.value("model", "");
+        if (upscale_model_name.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'model' field"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        std::string upscale_model_path;
+        try {
+            auto info = model_manager_->get_model_info(upscale_model_name);
+            upscale_model_path = info.resolved_path("main");
+        } catch (const std::exception& e) {
+            res.status = 404;
+            nlohmann::json error = {{"error", {
+                {"message", "Upscale model not found: " + upscale_model_name},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Use sd-cli subprocess for upscaling (matches official sd-cli -M upscale)
+        std::string backend = "cpu";
+        std::string loaded_model = router_->get_loaded_model();
+        if (!loaded_model.empty()) {
+            auto opts = router_->get_model_recipe_options(loaded_model);
+            std::string b = opts.get_option("sd-cpp_backend");
+            if (!b.empty()) backend = b;
+        }
+        std::string exe_dir = lemon::backends::BackendUtils::get_backend_binary_path(
+            lemon::backends::SDServer::SPEC, backend);
+        std::filesystem::path cli_exe = std::filesystem::path(exe_dir).parent_path() /
+#ifdef _WIN32
+            "sd-cli.exe";
+#else
+            "sd-cli";
+#endif
+        std::vector<std::pair<std::string, std::string>> env_vars;
+#ifdef _WIN32
+        if (backend == "rocm") {
+            std::string new_path = std::filesystem::path(exe_dir).parent_path().string();
+            const char* existing_path = std::getenv("PATH");
+            if (existing_path) new_path += ";" + std::string(existing_path);
+            env_vars.push_back({"PATH", new_path});
+        }
+#endif
+
+        std::string b64_image = request_json["image"].get<std::string>();
+        std::string upscaled = lemon::backends::SDServer::upscale_via_cli(
+            b64_image, upscale_model_path, cli_exe.string(), env_vars);
+
+        if (upscaled.empty()) {
+            res.status = 500;
+            nlohmann::json error = {{"error", {
+                {"message", "ESRGAN upscale failed"},
+                {"type", "server_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        nlohmann::json response;
+        response["created"] = static_cast<long long>(std::time(nullptr));
+        response["data"] = nlohmann::json::array();
+        response["data"].push_back({{"b64_json", upscaled}});
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const nlohmann::json::exception& e) {
+        LOG(ERROR, "Server") << "JSON parse error in handle_image_upscale: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Invalid JSON: " + std::string(e.what())},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_image_upscale: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", {
             {"message", e.what()},
