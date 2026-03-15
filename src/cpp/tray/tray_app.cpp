@@ -95,7 +95,7 @@ static std::string trim_whitespace(const std::string& value) {
 }
 
 static std::string build_launch_llamacpp_args(const lemon::TrayConfig& tray_config) {
-    static const std::string default_args = "-b 16384 -ub 16384 -fa on";
+    static const std::string default_args = "-b 4096 -ub 1024 -fa on";
     const std::string trimmed_user_args = trim_whitespace(tray_config.launch_llamacpp_args);
 
     if (tray_config.launch_use_recipe) {
