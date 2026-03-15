@@ -1,0 +1,338 @@
+#claude-remote-body {
+  background:
+    radial-gradient(circle at top left, rgba(255, 223, 116, 0.22), transparent 36%),
+    radial-gradient(circle at bottom right, rgba(244, 160, 34, 0.12), transparent 30%),
+    linear-gradient(180deg, #fff8df 0%, #fffef4 48%, #fff7d2 100%);
+}
+
+#claude-remote-body .site-footer {
+  border-top: none;
+}
+
+.claude-remote-main {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 26px 0 64px;
+}
+
+.claude-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 64px 32px 54px;
+  border: 1px solid rgba(88, 65, 9, 0.1);
+  border-radius: 30px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.82), rgba(255, 245, 198, 0.9)),
+    linear-gradient(180deg, #fff8da, #fff3bf);
+  box-shadow: 0 22px 48px rgba(82, 61, 11, 0.1);
+}
+
+.claude-hero::before {
+  content: '';
+  position: absolute;
+  inset: 18px;
+  border: 1px dashed rgba(116, 86, 18, 0.16);
+  border-radius: 24px;
+  pointer-events: none;
+}
+
+.claude-kicker {
+  margin: 0 0 18px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7f5f13;
+}
+
+.claude-hero .docs-page-title {
+  max-width: 12ch;
+  margin-bottom: 18px;
+}
+
+.claude-hero .docs-page-subtitle {
+  max-width: 54rem;
+  font-size: 1.16rem;
+}
+
+.claude-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 30px;
+}
+
+.claude-hero-secondary {
+  min-height: 70px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.claude-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 22px 0 34px;
+}
+
+.claude-strip-card,
+.claude-card,
+.claude-note,
+.claude-flow-card,
+.claude-finish-panel {
+  border: 1px solid rgba(77, 60, 13, 0.11);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 14px 28px rgba(52, 41, 11, 0.06);
+}
+
+.claude-strip-card {
+  padding: 18px 18px 20px;
+  text-align: center;
+}
+
+.claude-strip-card strong,
+.claude-strip-card code {
+  display: block;
+  font-size: 1.02rem;
+  color: #241b08;
+}
+
+.claude-strip-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a6a21;
+}
+
+.claude-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 12px;
+  margin-bottom: 44px;
+}
+
+.claude-flow-card {
+  position: relative;
+  padding: 24px 22px 22px;
+}
+
+.claude-flow-card h2 {
+  margin: 0 0 10px;
+  font-size: 1.36rem;
+  font-weight: 700;
+  color: #1f1808;
+}
+
+.claude-flow-card p {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.62;
+  color: #554a31;
+}
+
+.claude-flow-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 16px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #2f2410, #60440a);
+  color: #fff8df;
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.claude-flow-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.7rem;
+  color: #8e6c1e;
+}
+
+.claude-section {
+  margin: 54px 0;
+}
+
+.claude-section-head {
+  margin-bottom: 24px;
+}
+
+.claude-section .hp-section-heading,
+.claude-section .hp-section-desc,
+.claude-finish-panel h2,
+.claude-finish-panel p {
+  max-width: 920px;
+}
+
+.claude-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.claude-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.claude-grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.claude-card,
+.claude-note {
+  padding: 24px 22px;
+}
+
+.claude-card h3,
+.claude-note h3 {
+  margin: 0 0 12px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #221a08;
+}
+
+.claude-card p,
+.claude-note p {
+  margin: 0;
+  color: #5b4d2d;
+  line-height: 1.65;
+}
+
+.claude-card p + p,
+.claude-note p + p {
+  margin-top: 10px;
+}
+
+.claude-note--good {
+  background: linear-gradient(180deg, rgba(245, 255, 238, 0.92), rgba(255, 255, 255, 0.78));
+  border-color: rgba(68, 129, 61, 0.18);
+}
+
+.claude-note--bad {
+  background: linear-gradient(180deg, rgba(255, 245, 239, 0.9), rgba(255, 255, 255, 0.78));
+  border-color: rgba(155, 75, 37, 0.18);
+}
+
+.claude-card--scenario {
+  background:
+    linear-gradient(180deg, rgba(255, 250, 226, 0.9), rgba(255, 255, 255, 0.76));
+}
+
+.claude-card pre {
+  margin: 0 0 14px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  overflow-x: auto;
+  background: #241d10;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.claude-card code,
+.claude-note code,
+.claude-strip-card code {
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
+}
+
+.claude-card pre code {
+  color: #fff2b5;
+  font-size: 0.87rem;
+  line-height: 1.62;
+}
+
+.claude-finish {
+  margin-top: 58px;
+}
+
+.claude-finish-panel {
+  padding: 34px 30px;
+  text-align: center;
+  background:
+    linear-gradient(135deg, rgba(47, 36, 16, 0.95), rgba(120, 81, 10, 0.9)),
+    #1e170b;
+}
+
+.claude-finish-panel .hp-section-label,
+.claude-finish-panel h2,
+.claude-finish-panel p {
+  color: #fff8e1;
+}
+
+.claude-finish-panel h2 {
+  margin: 12px auto 12px;
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.claude-finish-panel p {
+  margin: 0 auto;
+  font-size: 1.02rem;
+  line-height: 1.7;
+  opacity: 0.92;
+}
+
+@media (max-width: 1080px) {
+  .claude-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .claude-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .claude-flow-arrow {
+    transform: rotate(90deg);
+    min-height: 26px;
+  }
+
+  .claude-grid--three {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 780px) {
+  .claude-remote-main {
+    width: min(100% - 22px, 100%);
+    padding-top: 18px;
+  }
+
+  .claude-hero {
+    padding: 42px 20px 34px;
+  }
+
+  .claude-grid--two,
+  .claude-grid--three,
+  .claude-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .claude-card,
+  .claude-note,
+  .claude-flow-card,
+  .claude-finish-panel {
+    border-radius: 18px;
+  }
+
+  .claude-card,
+  .claude-note {
+    padding: 20px 18px;
+  }
+
+  .claude-card pre {
+    padding: 14px 14px;
+  }
+
+  .claude-card pre code {
+    font-size: 0.8rem;
+  }
+}

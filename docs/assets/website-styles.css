@@ -4842,6 +4842,8 @@ body.install-options {
   margin-top: 1.6rem;
   display: flex;
   justify-content: center;
+  flex-wrap: wrap;
+  gap: 14px;
 }
 
 .hp-api-cta .marketplace-cta-btn {

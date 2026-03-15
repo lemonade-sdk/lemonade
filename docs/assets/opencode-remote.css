@@ -1,0 +1,438 @@
+#opencode-remote-body {
+  background:
+    radial-gradient(circle at 10% 10%, rgba(154, 255, 200, 0.08), transparent 30%),
+    radial-gradient(circle at 88% 12%, rgba(94, 191, 255, 0.08), transparent 28%),
+    linear-gradient(180deg, #f5f9e8 0%, #f3f7df 30%, #eef1db 100%);
+}
+
+#opencode-remote-body .site-footer {
+  border-top: none;
+}
+
+.opencode-main {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 28px 0 64px;
+}
+
+.opencode-hero {
+  position: relative;
+  padding: 54px 30px 46px;
+  overflow: hidden;
+  border-radius: 30px;
+  border: 1px solid rgba(33, 55, 33, 0.12);
+  background:
+    linear-gradient(135deg, rgba(23, 29, 25, 0.96), rgba(32, 62, 47, 0.92) 55%, rgba(55, 84, 48, 0.9)),
+    #101612;
+  box-shadow: 0 26px 54px rgba(17, 26, 19, 0.18);
+}
+
+.opencode-hero::after {
+  content: '';
+  position: absolute;
+  inset: 14px;
+  border: 1px solid rgba(184, 255, 213, 0.12);
+  border-radius: 22px;
+  pointer-events: none;
+}
+
+.opencode-kicker,
+.opencode-hero .docs-page-title,
+.opencode-hero .docs-page-subtitle {
+  position: relative;
+  z-index: 1;
+}
+
+.opencode-kicker {
+  margin: 0 0 16px;
+  color: #baffd8;
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.opencode-hero .docs-page-title {
+  color: #f8ffed;
+  margin-bottom: 18px;
+  text-shadow: none;
+}
+
+.opencode-hero .docs-page-subtitle {
+  max-width: 54rem;
+  color: rgba(242, 255, 239, 0.82);
+  text-shadow: none;
+}
+
+.opencode-hero .docs-page-title,
+.opencode-finale-panel h2 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 400;
+}
+
+.opencode-hero-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 30px;
+}
+
+.opencode-secondary-btn {
+  min-height: 70px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.opencode-ribbon {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 22px 0 36px;
+}
+
+.opencode-ribbon-card,
+.opencode-terminal-card,
+.opencode-note,
+.opencode-card,
+.opencode-compare-card,
+.opencode-config-card,
+.opencode-finale-panel {
+  border-radius: 22px;
+  border: 1px solid rgba(43, 61, 38, 0.11);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 14px 28px rgba(23, 31, 19, 0.06);
+}
+
+.opencode-ribbon-card {
+  padding: 18px 18px 20px;
+  text-align: center;
+}
+
+.opencode-ribbon-label {
+  display: block;
+  margin-bottom: 7px;
+  color: #4e624c;
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.opencode-ribbon-card strong,
+.opencode-ribbon-card code {
+  color: #152014;
+}
+
+.opencode-terminal-section {
+  margin-bottom: 46px;
+}
+
+.opencode-terminal-shell {
+  overflow: hidden;
+  border-radius: 30px;
+  border: 1px solid rgba(30, 43, 28, 0.12);
+  background: linear-gradient(180deg, rgba(11, 16, 13, 0.98), rgba(20, 31, 23, 0.96));
+  box-shadow: 0 24px 48px rgba(18, 27, 19, 0.16);
+}
+
+.opencode-terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(163, 255, 201, 0.08);
+  color: rgba(214, 255, 228, 0.74);
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 0.82rem;
+}
+
+.opencode-terminal-bar span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #72866c;
+}
+
+.opencode-terminal-bar span:nth-child(1) { background: #ff7777; }
+.opencode-terminal-bar span:nth-child(2) { background: #f5bd4f; }
+.opencode-terminal-bar span:nth-child(3) { background: #4ad18e; }
+
+.opencode-terminal-bar p {
+  margin: 0 0 0 8px;
+}
+
+.opencode-terminal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding: 20px;
+}
+
+.opencode-terminal-card {
+  padding: 22px 20px;
+  background: rgba(243, 255, 245, 0.06);
+  border-color: rgba(188, 255, 216, 0.08);
+  backdrop-filter: blur(4px);
+}
+
+.opencode-terminal-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 16px;
+  border-radius: 10px;
+  background: rgba(170, 255, 206, 0.12);
+  color: #bbffd6;
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
+  font-weight: 700;
+}
+
+.opencode-terminal-card h2 {
+  margin: 0 0 10px;
+  color: #efffed;
+  font-size: 1.24rem;
+}
+
+.opencode-terminal-card p {
+  margin: 0;
+  color: rgba(229, 255, 234, 0.76);
+  line-height: 1.65;
+}
+
+.opencode-section {
+  margin: 54px 0;
+}
+
+.opencode-section-head {
+  margin-bottom: 24px;
+}
+
+.opencode-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.opencode-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.opencode-grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.opencode-note,
+.opencode-card {
+  padding: 24px 22px;
+}
+
+.opencode-config-card {
+  padding: 28px 24px;
+  margin-top: 18px;
+  background: linear-gradient(180deg, rgba(251, 255, 244, 0.94), rgba(255, 255, 255, 0.82));
+}
+
+.opencode-config-head {
+  margin-bottom: 16px;
+}
+
+.opencode-config-head h3,
+.opencode-note h3,
+.opencode-card h3,
+.opencode-compare-card h3 {
+  margin: 0 0 12px;
+  color: #162117;
+  font-size: 1.18rem;
+  font-weight: 700;
+}
+
+.opencode-config-head p,
+.opencode-note p,
+.opencode-card p,
+.opencode-compare-card p {
+  margin: 0;
+  color: #4b5a48;
+  line-height: 1.68;
+}
+
+.opencode-note--good {
+  background: linear-gradient(180deg, rgba(238, 255, 240, 0.9), rgba(255, 255, 255, 0.78));
+}
+
+.opencode-note--bad {
+  background: linear-gradient(180deg, rgba(255, 248, 240, 0.92), rgba(255, 255, 255, 0.78));
+}
+
+.opencode-note--warning {
+  background: linear-gradient(180deg, rgba(255, 247, 223, 0.94), rgba(255, 255, 255, 0.8));
+  border-color: rgba(166, 116, 27, 0.18);
+}
+
+.opencode-note pre,
+.opencode-card pre,
+.opencode-config-card pre {
+  margin: 0 0 14px;
+  padding: 16px 18px;
+  overflow-x: auto;
+  border-radius: 18px;
+  background: #121814;
+}
+
+.opencode-note code,
+.opencode-card code,
+.opencode-config-card code,
+.opencode-ribbon-card code,
+.opencode-terminal-card code,
+.opencode-compare-card code {
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
+}
+
+.opencode-note pre code,
+.opencode-card pre code,
+.opencode-config-card pre code {
+  color: #d5ffd2;
+  font-size: 0.86rem;
+  line-height: 1.64;
+}
+
+.opencode-comparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.opencode-compare-card {
+  padding: 24px 22px;
+}
+
+.opencode-compare-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  margin-bottom: 12px;
+  border-radius: 999px;
+  background: rgba(32, 75, 44, 0.08);
+  color: #1f5a31;
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 0.73rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.opencode-compare-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #597358;
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.opencode-finale {
+  margin-top: 58px;
+}
+
+.opencode-finale-panel {
+  padding: 36px 30px;
+  text-align: center;
+  background:
+    radial-gradient(circle at top, rgba(174, 255, 207, 0.1), transparent 40%),
+    linear-gradient(180deg, #122017, #1c2b1f);
+}
+
+.opencode-finale-panel .hp-section-label,
+.opencode-finale-panel h2,
+.opencode-finale-panel p {
+  color: #efffeb;
+}
+
+.opencode-finale-panel h2 {
+  margin: 12px auto 12px;
+  max-width: 18ch;
+  font-size: clamp(2rem, 4vw, 2.9rem);
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.opencode-finale-panel p {
+  max-width: 760px;
+  margin: 0 auto;
+  line-height: 1.72;
+}
+
+@media (max-width: 1080px) {
+  .opencode-ribbon,
+  .opencode-grid--three,
+  .opencode-terminal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .opencode-comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .opencode-compare-divider {
+    transform: rotate(90deg);
+    min-height: 32px;
+  }
+}
+
+@media (max-width: 780px) {
+  .opencode-main {
+    width: min(100% - 22px, 100%);
+    padding-top: 18px;
+  }
+
+  .opencode-hero {
+    padding: 42px 20px 34px;
+  }
+
+  .opencode-ribbon,
+  .opencode-grid--two,
+  .opencode-grid--three,
+  .opencode-terminal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .opencode-ribbon-card,
+  .opencode-terminal-card,
+  .opencode-note,
+  .opencode-card,
+  .opencode-compare-card,
+  .opencode-config-card,
+  .opencode-finale-panel {
+    border-radius: 18px;
+  }
+
+  .opencode-note,
+  .opencode-card,
+  .opencode-config-card,
+  .opencode-compare-card {
+    padding: 20px 18px;
+  }
+
+  .opencode-note pre,
+  .opencode-card pre,
+  .opencode-config-card pre {
+    padding: 14px 14px;
+  }
+
+  .opencode-note pre code,
+  .opencode-card pre code,
+  .opencode-config-card pre code {
+    font-size: 0.8rem;
+  }
+}
