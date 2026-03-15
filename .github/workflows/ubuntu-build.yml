@@ -16,7 +16,7 @@ on:
 
 jobs:
   prepare-matrix:
-    name: Prepare build matrix
+    name: Prepare matrix
     runs-on: ubuntu-latest
     outputs:
       package_matrix: ${{ steps.set-matrix.outputs.package_matrix }}
@@ -51,7 +51,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   package:
-    name: Build packages
+    name: Build
     needs: prepare-matrix
     runs-on: ubuntu-latest
     permissions:
@@ -132,7 +132,7 @@ jobs:
           retention-days: 30
 
   upload-stable:
-    name: Upload to PPA (Stable)
+    name: Upload (Stable)
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
     needs: [prepare-matrix, package]
@@ -146,7 +146,7 @@ jobs:
     secrets: inherit
 
   upload-bleeding-edge:
-    name: Upload to PPA (Bleeding Edge)
+    name: Upload (Bleeding Edge)
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
     needs: [prepare-matrix, package]
