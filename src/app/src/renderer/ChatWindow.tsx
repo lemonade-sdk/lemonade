@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AppSettings,
   mergeWithDefaultSettings,
@@ -15,6 +16,7 @@ import TTSPanel from './components/panels/TTSPanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
 import { RefreshIcon } from './components/Icons';
 import { isExperienceModel, getExperienceComponents } from './utils/experienceModels';
+import AddModelPanel, { AddModelInitialValues, ModelInstallData } from './AddModelPanel';
 
 interface ChatWindowProps {
   isVisible: boolean;
@@ -35,6 +37,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [currentLoadedModel, setCurrentLoadedModel] = useState<string | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [resetKey, setResetKey] = useState(0);
+  const [showAddModelForm, setShowAddModelForm] = useState(false);
+  const [addModelInitialValues, setAddModelInitialValues] = useState<AddModelInitialValues | undefined>(undefined);
+  const addModelFromJSONRef = useRef<HTMLInputElement>(null);
 
   type ModelType = 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'speech';
 
@@ -171,6 +176,42 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     };
   }, [fetchLoadedModel, setSelectedModel, setUserHasSelectedModel]);
 
+  useEffect(() => {
+    const handleOpenAddModel = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      setAddModelInitialValues(detail?.initialValues ?? undefined);
+      setShowAddModelForm(true);
+    };
+    const handleOpenAddModelFromJSON = () => {
+      addModelFromJSONRef.current?.click();
+    };
+    window.addEventListener('openAddModel', handleOpenAddModel);
+    window.addEventListener('openAddModelFromJSON', handleOpenAddModelFromJSON);
+    return () => {
+      window.removeEventListener('openAddModel', handleOpenAddModel);
+      window.removeEventListener('openAddModelFromJSON', handleOpenAddModelFromJSON);
+    };
+  }, []);
+
+  const handleAddModelInstall = (data: ModelInstallData) => {
+    setShowAddModelForm(false);
+    setAddModelInitialValues(undefined);
+    window.dispatchEvent(new CustomEvent('installModel', {
+      detail: {
+        name: `user.${data.name}`,
+        registrationData: {
+          checkpoint: data.checkpoint,
+          recipe: data.recipe,
+          mmproj: data.mmproj,
+          reasoning: data.reasoning,
+          vision: data.vision,
+          embedding: data.embedding,
+          reranking: data.reranking,
+        },
+      },
+    }));
+  };
+
   const handleNewChat = () => {
     inference.reset();
     setResetKey(k => k + 1);
@@ -261,6 +302,37 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
           onNewChat={handleNewChat}
           onUnloadExperience={handleUnloadExperienceModel}
         />
+      )}
+      <input
+        ref={addModelFromJSONRef}
+        type="file"
+        accept=".json"
+        style={{ display: 'none' }}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            try {
+              const json = JSON.parse(ev.target?.result as string);
+              window.dispatchEvent(new CustomEvent('installModelFromJSON', { detail: json }));
+            } catch { /* ignore */ }
+          };
+          reader.readAsText(file);
+          e.target.value = '';
+        }}
+      />
+      {showAddModelForm && createPortal(
+        <div className="settings-overlay" onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) { setShowAddModelForm(false); setAddModelInitialValues(undefined); } }}>
+          <div className="settings-modal" onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}>
+            <AddModelPanel
+              onClose={() => { setShowAddModelForm(false); setAddModelInitialValues(undefined); }}
+              initialValues={addModelInitialValues}
+              onInstall={handleAddModelInstall}
+            />
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
