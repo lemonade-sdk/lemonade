@@ -4,13 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Remote OpenCode Integration - Lemonade</title>
+  <meta name="description" content="Connect OpenCode to a remote Lemonade server. Configure your OpenAI-compatible provider, set the right base URL and model ID, and verify the endpoint before opening the app.">
   <link rel="icon" href="./favicon.ico">
   <link rel="stylesheet" href="assets/website-styles.css">
   <link rel="stylesheet" href="assets/common.css">
   <link rel="stylesheet" href="assets/opencode-remote.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 </head>
 <body id="opencode-remote-body">
   <div class="navbar-placeholder"></div>
@@ -20,7 +18,7 @@
       <p class="opencode-kicker">Remote OpenCode</p>
       <h1 class="docs-page-title">Point OpenCode at a remote Lemonade server.</h1>
       <p class="docs-page-subtitle">
-        OpenCode uses an OpenAI-compatible provider config, so the remote setup is mostly about the right <code>baseURL</code>, a valid API key, and the exact Lemonade model ID.
+        OpenCode uses an OpenAI-compatible provider config. For remote use, that means supplying the correct <code>baseURL</code> (including <code>/api/v1</code>), a valid API key, and model IDs that exactly match what the remote server reports.
       </p>
       <div class="opencode-hero-actions">
         <a class="marketplace-cta-btn" href="#config">See the Config</a>
@@ -56,18 +54,18 @@
         <div class="opencode-terminal-grid">
           <article class="opencode-terminal-card">
             <span class="opencode-terminal-step">A</span>
-            <h2>OpenCode reads your provider config</h2>
-            <p>That config decides the remote URL, auth method, and the model names available in the UI.</p>
+            <h2>Provider config drives everything</h2>
+            <p>The <code>provider</code> block in <code>opencode.json</code> sets the remote URL, auth token, and which model IDs appear in the session picker.</p>
           </article>
           <article class="opencode-terminal-card">
             <span class="opencode-terminal-step">B</span>
-            <h2>Lemonade speaks OpenAI-style APIs</h2>
-            <p>Use the OpenAI-compatible path, which means your remote <code>baseURL</code> includes <code>/api/v1</code>.</p>
+            <h2>Lemonade exposes an OpenAI-compatible API</h2>
+            <p>Use the <code>@ai-sdk/openai-compatible</code> npm provider. Your <code>baseURL</code> must include the <code>/api/v1</code> path segment — not just the server origin.</p>
           </article>
           <article class="opencode-terminal-card">
             <span class="opencode-terminal-step">C</span>
-            <h2>Model IDs come from Lemonade</h2>
-            <p>The values inside <code>models</code> should match the actual IDs returned by the remote server.</p>
+            <h2>Model keys must match the server exactly</h2>
+            <p>The top-level key inside <code>models</code> is what OpenCode sends as the <code>model</code> field. It must match the ID returned by <code>/api/v1/models</code> on the remote server.</p>
           </article>
         </div>
       </div>
@@ -76,8 +74,8 @@
     <section id="config" class="opencode-section">
       <div class="opencode-section-head">
         <span class="hp-section-label">Config</span>
-        <h2 class="hp-section-heading">Use a remote base URL, not localhost.</h2>
-        <p class="hp-section-desc">Your sample config is already structured correctly. For remote use, the important change is replacing the local OpenAI-compatible endpoint with the remote one.</p>
+        <h2 class="hp-section-heading">Replace localhost with the remote base URL.</h2>
+        <p class="hp-section-desc">The provider block structure stays the same between local and remote. The only required change is swapping <code>http://localhost:8000</code> for the public or private hostname where Lemonade is running.</p>
       </div>
 
       <div class="opencode-grid opencode-grid--two">
@@ -87,7 +85,7 @@
   "baseURL": "http://localhost:8000/api/v1",
   "apiKey": "&lt;your-api-key&gt;"
 }</code></pre>
-          <p>This is right when OpenCode and Lemonade run on the same machine.</p>
+          <p>Works only when OpenCode and Lemonade run on the same machine. Do not use this when Lemonade is on a different host.</p>
         </article>
         <article class="opencode-note opencode-note--good">
           <h3>Remote example</h3>
@@ -95,14 +93,14 @@
   "baseURL": "https://your-lemonade-host.example.com/api/v1",
   "apiKey": "&lt;your-api-key&gt;"
 }</code></pre>
-          <p>For OpenCode, unlike Claude, the OpenAI-compatible base path should include <code>/api/v1</code>.</p>
+          <p>OpenCode sends requests to <code>{baseURL}/chat/completions</code>, so <code>/api/v1</code> must be part of the base URL — unlike the Claude integration, which uses a bare origin.</p>
         </article>
       </div>
 
       <article class="opencode-config-card">
         <div class="opencode-config-head">
           <h3>Sample remote OpenCode config</h3>
-          <p>Based on your existing file, with the provider pointed at a remote Lemonade host.</p>
+          <p>Complete working config with the provider pointed at a remote Lemonade host. Replace the hostname, API key, and model IDs with values from your deployment.</p>
         </div>
         <pre><code>{
   "$schema": "https://opencode.ai/config.json",
@@ -133,8 +131,8 @@
     <section class="opencode-section">
       <div class="opencode-section-head">
         <span class="hp-section-label">Verify First</span>
-        <h2 class="hp-section-heading">Check the remote OpenAI-compatible routes before editing config.</h2>
-        <p class="hp-section-desc">OpenCode is easier to debug than Claude because its config is explicit. If these calls succeed, the client usually follows immediately.</p>
+        <h2 class="hp-section-heading">Verify the remote endpoints before editing your config.</h2>
+        <p class="hp-section-desc">Run these three <code>curl</code> commands from the machine running OpenCode. If all three return valid JSON, the provider config will work without further changes.</p>
       </div>
 
       <div class="opencode-grid opencode-grid--three">
@@ -142,13 +140,13 @@
           <h3>1. Health</h3>
           <pre><code>curl https://your-lemonade-host.example.com/api/v1/health \
   -H "Authorization: Bearer &lt;your-api-key&gt;"</code></pre>
-          <p>Confirm Lemonade is up and recent enough for the features you expect.</p>
+          <p>Should return <code>{"status":"ok"}</code>. A non-200 response or connection error means the server is unreachable from this network.</p>
         </article>
         <article class="opencode-card">
           <h3>2. Models</h3>
           <pre><code>curl https://your-lemonade-host.example.com/api/v1/models \
   -H "Authorization: Bearer &lt;your-api-key&gt;"</code></pre>
-          <p>Use the exact model IDs returned here inside the OpenCode provider block.</p>
+          <p>Returns a JSON list of available models. Copy the <code>id</code> field values exactly — these are the strings you must use as top-level keys in the OpenCode <code>models</code> block.</p>
         </article>
         <article class="opencode-card">
           <h3>3. Chat endpoint</h3>
@@ -156,7 +154,7 @@
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer &lt;your-api-key&gt;" \
   --data '{"model":"Qwen3-Coder-Next-GGUF","messages":[{"role":"user","content":"hi"}],"max_tokens":8}'</code></pre>
-          <p>If this returns a completion payload, OpenCode has what it needs.</p>
+          <p>Should return a streaming or non-streaming completion JSON. If this succeeds, OpenCode's inference requests will succeed too. An HTML response here means a proxy or firewall is intercepting the request.</p>
         </article>
       </div>
     </section>
@@ -164,20 +162,20 @@
     <section class="opencode-section">
       <div class="opencode-section-head">
         <span class="hp-section-label">Common Mistakes</span>
-        <h2 class="hp-section-heading">OpenCode and Claude differ in one important way.</h2>
+        <h2 class="hp-section-heading">OpenCode and Claude use different base URL conventions.</h2>
       </div>
 
       <div class="opencode-comparison">
         <article class="opencode-compare-card">
           <span class="opencode-compare-badge">Claude</span>
           <h3>Origin-only base URL</h3>
-          <p>Claude appends <code>/v1/messages</code>, so its <code>ANTHROPIC_BASE_URL</code> should be the server origin only.</p>
+          <p>The Claude SDK appends <code>/v1/messages</code> internally, so <code>ANTHROPIC_BASE_URL</code> must be the bare server origin (e.g. <code>https://host.example.com</code>) with no path suffix.</p>
         </article>
         <article class="opencode-compare-divider" aria-hidden="true">vs</article>
         <article class="opencode-compare-card">
           <span class="opencode-compare-badge">OpenCode</span>
-          <h3>OpenAI-compatible base path</h3>
-          <p>OpenCode uses the OpenAI provider config, so its <code>baseURL</code> should include <code>/api/v1</code>.</p>
+          <h3>Full base path including <code>/api/v1</code></h3>
+          <p>The <code>@ai-sdk/openai-compatible</code> provider appends only the endpoint name (e.g. <code>/chat/completions</code>), so <code>baseURL</code> must include <code>/api/v1</code> — for example, <code>https://host.example.com/api/v1</code>.</p>
         </article>
       </div>
     </section>
@@ -185,21 +183,21 @@
     <section class="opencode-section">
       <div class="opencode-section-head">
         <span class="hp-section-label">Troubleshooting</span>
-        <h2 class="hp-section-heading">Most failures reduce to path, auth, or model naming.</h2>
+        <h2 class="hp-section-heading">Most failures come down to path, auth, or model ID mismatch.</h2>
       </div>
 
       <div class="opencode-grid opencode-grid--three">
         <article class="opencode-card">
-          <h3>Wrong base path</h3>
-          <p>If you use the server origin without <code>/api/v1</code>, OpenCode will target the wrong route family.</p>
+          <h3>Missing <code>/api/v1</code> in base URL</h3>
+          <p>If <code>baseURL</code> is the bare origin, OpenCode sends requests to <code>/chat/completions</code> instead of <code>/api/v1/chat/completions</code>. Lemonade returns 404, and OpenCode shows a generic provider error.</p>
         </article>
         <article class="opencode-card">
-          <h3>Wrong auth header expectation</h3>
-          <p>If your Lemonade host is configured for bearer auth, keep using the token as the OpenAI-compatible API key value in OpenCode.</p>
+          <h3>Incorrect API key</h3>
+          <p>When <code>LEMONADE_API_KEY</code> is set on the server, every request must include a matching <code>Authorization: Bearer &lt;key&gt;</code> header. OpenCode sends the <code>apiKey</code> field as that bearer token automatically. A wrong or missing key produces a 401 response.</p>
         </article>
         <article class="opencode-card">
-          <h3>Friendly name vs model ID</h3>
-          <p>The <code>name</code> shown inside your OpenCode config can be friendly, but the top-level model key still needs to line up with the remote model ID.</p>
+          <h3>Display name vs model ID</h3>
+          <p>The <code>name</code> field inside each model entry is a display label for the OpenCode UI. The top-level key for that entry is what gets sent in the <code>model</code> field of every API request. If the key does not match an ID from <code>/api/v1/models</code>, Lemonade returns a model-not-found error.</p>
         </article>
       </div>
     </section>
@@ -207,32 +205,32 @@
     <section class="opencode-section">
       <div class="opencode-section-head">
         <span class="hp-section-label">Cloudflare Note</span>
-        <h2 class="hp-section-heading">For remote OpenCode, prefer VPN over a public Cloudflare-protected path.</h2>
+        <h2 class="hp-section-heading">Use VPN instead of routing API traffic through a public Cloudflare-protected path.</h2>
       </div>
 
       <div class="opencode-grid opencode-grid--two">
         <article class="opencode-note opencode-note--warning">
-          <h3>Why VPN is the safer default</h3>
-          <p>OpenCode is a machine client making direct API requests, not a browser session clicking through challenge pages. If you put Lemonade behind public Cloudflare protection, API traffic can be challenged or shaped differently from normal website traffic. A VPN avoids that entire class of problems and keeps the API private.</p>
+          <h3>Why Cloudflare can break API traffic</h3>
+          <p>OpenCode is an automated API client, not a browser. Cloudflare's bot-protection features — including JS challenges and Bot Fight Mode — can intercept API requests and return an HTML challenge page instead of JSON. The OpenAI SDK then fails to parse the response, and OpenCode displays a generic provider error. A VPN bypasses Cloudflare entirely and keeps the API on a private network path.</p>
         </article>
         <article class="opencode-note opencode-note--warning">
           <h3>Recommended setup</h3>
-          <p>If you want to connect remotely, use VPN and point OpenCode at the private Lemonade address over that tunnel. That keeps authentication simple, avoids HTML interstitials in front of <code>/api/v1/*</code>, and is usually more reliable for streaming and repeated coding-agent requests.</p>
+          <p>Connect via VPN and point OpenCode at the private Lemonade address over that tunnel. This avoids HTML interstitials in front of <code>/api/v1/*</code>, keeps authentication straightforward, and is more reliable for the long-lived streaming connections that coding agents generate.</p>
         </article>
       </div>
 
       <div class="opencode-grid opencode-grid--three">
         <article class="opencode-card">
           <h3>Typical symptom</h3>
-          <p>The website works in a browser, but OpenCode fails with unauthorized, timeout, HTML response, or generic provider errors because something at the edge returned browser-oriented traffic instead of JSON.</p>
+          <p>The Lemonade web UI loads fine in a browser, but OpenCode fails immediately with an "invalid response" or "unexpected token" error. This happens because the edge node returned an HTML challenge page rather than a JSON API response.</p>
         </article>
         <article class="opencode-card">
-          <h3>Good deployment pattern</h3>
-          <p>Keep the public website public, but access the Lemonade API over VPN or another private network path whenever possible. That is a better fit for OpenCode than exposing the coding endpoint directly to the internet.</p>
+          <h3>Recommended deployment pattern</h3>
+          <p>Keep any public-facing Lemonade web UI behind Cloudflare if you want, but expose the API port only over VPN or a private network. Avoid routing <code>/api/v1/*</code> through a Cloudflare proxy with bot protection enabled.</p>
         </article>
         <article class="opencode-card">
-          <h3>Fast sanity check</h3>
-          <p>If <code>curl</code> to <code>/api/v1/models</code> or <code>/api/v1/chat/completions</code> returns HTML instead of JSON, the problem is usually your network path or proxy edge, not OpenCode or Lemonade.</p>
+          <h3>Quick sanity check</h3>
+          <p>Run <code>curl https://your-lemonade-host.example.com/api/v1/models</code> from the same machine as OpenCode. If the response starts with <code>&lt;!DOCTYPE</code> or <code>&lt;html</code> instead of <code>{"object":"list"</code>, the problem is your network path or edge proxy — not OpenCode or Lemonade itself.</p>
         </article>
       </div>
     </section>
@@ -240,8 +238,8 @@
     <section class="opencode-finale">
       <div class="opencode-finale-panel">
         <span class="hp-section-label">Bottom Line</span>
-        <h2>For OpenCode, remote setup is just a clean OpenAI-compatible config.</h2>
-        <p>Use the remote <code>/api/v1</code> base URL, carry over the right token, match the model IDs, and verify with one chat completion request before opening the app.</p>
+        <h2>Remote OpenCode is a clean OpenAI-compatible config with the right base URL.</h2>
+        <p>Set <code>baseURL</code> to your remote host with the <code>/api/v1</code> path, set <code>apiKey</code> to your token, match model keys to the IDs from <code>/api/v1/models</code>, and confirm the chat completions endpoint responds before opening OpenCode.</p>
         <div class="opencode-hero-actions">
           <a class="marketplace-cta-btn" href="https://lemonade-server.ai/docs/server/server_spec/" target="_blank" rel="noopener">Open the API Spec</a>
           <a class="dev-btn opencode-secondary-btn" href="claude-remote.html">Compare with Claude</a>

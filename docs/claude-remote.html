@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Remote Claude Integration - Lemonade</title>
+  <meta name="description" content="Connect Claude Code to a remote Lemonade server. Set ANTHROPIC_BASE_URL to the server origin, pick the right model, and verify the endpoint in three quick checks.">
   <link rel="icon" href="./favicon.ico">
   <link rel="stylesheet" href="assets/website-styles.css">
   <link rel="stylesheet" href="assets/common.css">
@@ -67,20 +68,20 @@
     <section id="quickstart" class="claude-section">
       <div class="claude-section-head">
         <span class="hp-section-label">Quickstart</span>
-        <h2 class="hp-section-heading">The exact setup Claude expects.</h2>
-        <p class="hp-section-desc">The most common mistake is pointing Claude at the wrong base path. Keep the base URL at the origin only.</p>
+        <h2 class="hp-section-heading">Set four env vars, then run Claude.</h2>
+        <p class="hp-section-desc">The most common mistake is including a path in the base URL. Set <code>ANTHROPIC_BASE_URL</code> to the origin only — Claude appends <code>/v1/messages</code> on its own.</p>
       </div>
 
       <div class="claude-grid claude-grid--two">
         <article class="claude-note claude-note--good">
-          <h3>Correct</h3>
+          <h3>Correct — origin only</h3>
           <p><code>ANTHROPIC_BASE_URL=https://your-lemonade-host.example.com</code></p>
-          <p>Claude will request <code>https://your-lemonade-host.example.com/v1/messages</code>.</p>
+          <p>Claude appends <code>/v1/messages</code> automatically, so the final request hits <code>https://your-lemonade-host.example.com/v1/messages</code> — exactly what Lemonade expects.</p>
         </article>
         <article class="claude-note claude-note--bad">
-          <h3>Wrong</h3>
+          <h3>Wrong — path included in base URL</h3>
           <p><code>ANTHROPIC_BASE_URL=https://your-lemonade-host.example.com/api/v1</code></p>
-          <p>Claude would try <code>/api/v1/v1/messages</code>, which is the wrong route.</p>
+          <p>Claude still appends <code>/v1/messages</code>, producing <code>/api/v1/v1/messages</code>. That path does not exist and returns 404.</p>
         </article>
       </div>
 
@@ -124,33 +125,33 @@ claude</code></pre>
     <section class="claude-section">
       <div class="claude-section-head">
         <span class="hp-section-label">Verify First</span>
-        <h2 class="hp-section-heading">Check the remote endpoint before blaming Claude.</h2>
-        <p class="hp-section-desc">These three probes catch almost every integration problem: version mismatch, wrong model ID, or wrong auth.</p>
+        <h2 class="hp-section-heading">Run three checks before launching Claude.</h2>
+        <p class="hp-section-desc">These probes isolate the three most common failure points in order: server version, model ID, and the messages route itself.</p>
       </div>
 
       <div class="claude-grid claude-grid--three">
         <article class="claude-card">
-          <h3>1. Server health</h3>
+          <h3>1. Confirm server version</h3>
           <pre><code>curl https://your-lemonade-host.example.com/api/v1/health \
   -H "Authorization: Bearer &lt;your-remote-token&gt;"</code></pre>
-          <p>Look for <code>"version":"10.0.0"</code> or newer.</p>
+          <p>Expected: a JSON response containing <code>"version":"10.0.0"</code> or higher. A lower version means the <code>/v1/messages</code> route is not available — upgrade before continuing.</p>
         </article>
 
         <article class="claude-card">
-          <h3>2. Model list</h3>
+          <h3>2. Get the exact model ID</h3>
           <pre><code>curl https://your-lemonade-host.example.com/v1/models \
   -H "Authorization: Bearer &lt;your-remote-token&gt;"</code></pre>
-          <p>Use the exact <code>id</code> returned here as your Claude model value.</p>
+          <p>Expected: a JSON list of objects. Copy the <code>id</code> string exactly — including case — and use it as your Claude model env var. Do not guess or abbreviate.</p>
         </article>
 
         <article class="claude-card">
-          <h3>3. Messages route</h3>
+          <h3>3. Send a test message</h3>
           <pre><code>curl https://your-lemonade-host.example.com/v1/messages \
   -H "Content-Type: application/json" \
   -H "anthropic-version: 2023-06-01" \
   -H "Authorization: Bearer &lt;your-remote-token&gt;" \
   --data '{"model":"Qwen3-Coder-Next-GGUF","max_tokens":8,"messages":[{"role":"user","content":"hi"}]}'</code></pre>
-          <p>If this returns a message payload, Claude Code can use that host.</p>
+          <p>Expected: a JSON message payload with a <code>content</code> array. If this succeeds, Claude Code will work with the same host and token.</p>
         </article>
       </div>
     </section>
@@ -158,21 +159,21 @@ claude</code></pre>
     <section class="claude-section">
       <div class="claude-section-head">
         <span class="hp-section-label">When To Use It</span>
-        <h2 class="hp-section-heading">Remote Claude is useful when your editor and your accelerator live on different machines.</h2>
+        <h2 class="hp-section-heading">Use remote Claude when your editor and your GPU are on different machines.</h2>
       </div>
 
       <div class="claude-grid claude-grid--three">
         <article class="claude-card claude-card--scenario">
           <h3>Laptop + workstation</h3>
-          <p>Keep Claude Code on a thin client while Lemonade runs on a desktop with a larger GPU, more RAM, or an NPU.</p>
+          <p>Run Claude Code on a lightweight laptop while Lemonade hosts the model on a nearby desktop with a larger GPU, more VRAM, or a dedicated NPU. You get local editing with remote compute.</p>
         </article>
         <article class="claude-card claude-card--scenario">
-          <h3>Team demo host</h3>
-          <p>Expose one controlled Lemonade endpoint over HTTPS and let multiple developers point Claude at the same tuned model stack.</p>
+          <h3>Shared team endpoint</h3>
+          <p>Stand up one Lemonade instance behind HTTPS and give every developer on the team the same base URL. Everyone uses the same model version — no per-machine setup required.</p>
         </article>
         <article class="claude-card claude-card--scenario">
-          <h3>VPN-only infra</h3>
-          <p>Use a private address when you trust the network, or put Lemonade behind a reverse proxy for a cleaner public URL.</p>
+          <h3>Private network deployment</h3>
+          <p>Point Claude at a LAN or VPN address for air-gapped or compliance-sensitive environments. For a public URL, put Lemonade behind a reverse proxy such as nginx or Caddy.</p>
         </article>
       </div>
     </section>
@@ -180,21 +181,27 @@ claude</code></pre>
     <section class="claude-section">
       <div class="claude-section-head">
         <span class="hp-section-label">Troubleshooting</span>
-        <h2 class="hp-section-heading">Three failure modes show up again and again.</h2>
+        <h2 class="hp-section-heading">The three failure modes you will actually hit.</h2>
       </div>
 
       <div class="claude-grid claude-grid--three">
         <article class="claude-card">
           <h3>Auth conflict</h3>
-          <p>If both <code>ANTHROPIC_API_KEY</code> and <code>ANTHROPIC_AUTH_TOKEN</code> are set, Claude may choose the wrong one. Unset the API key when using bearer-style Lemonade auth.</p>
+          <p><strong>What you see:</strong> 401 Unauthorized or unexpected prompts to log in to Anthropic.</p>
+          <p><strong>Cause:</strong> <code>ANTHROPIC_API_KEY</code> is still set. When both it and <code>ANTHROPIC_AUTH_TOKEN</code> are present, Claude may send the wrong credential.</p>
+          <p><strong>Fix:</strong> Run <code>unset ANTHROPIC_API_KEY</code> (or <code>Remove-Item Env:ANTHROPIC_API_KEY</code> in PowerShell) before launching Claude.</p>
         </article>
         <article class="claude-card">
           <h3>Wrong model name</h3>
-          <p>Use the exact model <code>id</code> from <code>/v1/models</code>. A checkpoint name or local filename is not the same thing.</p>
+          <p><strong>What you see:</strong> Model not found error or an empty response immediately after sending a message.</p>
+          <p><strong>Cause:</strong> The model env var contains a checkpoint filename, a partial name, or the wrong case — none of which match what Lemonade has loaded.</p>
+          <p><strong>Fix:</strong> Run the model-list check above and copy the <code>id</code> value exactly as returned.</p>
         </article>
         <article class="claude-card">
-          <h3>Old Lemonade build</h3>
-          <p>Remote Claude relies on <code>/v1/messages</code>. Upgrade to Lemonade 10.0.0+ if that route returns <code>not_found</code>.</p>
+          <h3>Outdated Lemonade build</h3>
+          <p><strong>What you see:</strong> <code>/v1/messages</code> returns 404 or <code>"error":"not_found"</code>.</p>
+          <p><strong>Cause:</strong> The Anthropic-compatible messages endpoint was added in Lemonade 10.0.0. Older builds do not expose it.</p>
+          <p><strong>Fix:</strong> Upgrade the server to Lemonade 10.0.0 or later, then re-run the health check to confirm the version.</p>
         </article>
       </div>
     </section>
@@ -202,8 +209,8 @@ claude</code></pre>
     <section class="claude-finish">
       <div class="claude-finish-panel">
         <span class="hp-section-label">Next Step</span>
-        <h2>Once the probe works, Claude should work.</h2>
-        <p>That is the whole integration in one sentence. Start with the three curl checks, then export the Anthropic env vars and launch Claude.</p>
+        <h2>If the probe works, Claude will work.</h2>
+        <p>Start with the three curl checks to confirm version, model ID, and auth. Once all three succeed, export the env vars from the Quickstart section and launch Claude.</p>
         <div class="claude-hero-actions">
           <a class="marketplace-cta-btn" href="https://lemonade-server.ai/docs/server/lemonade-server-cli/" target="_blank" rel="noopener">Explore Server CLI</a>
           <a class="dev-btn claude-hero-secondary" href="https://lemonade-server.ai/docs/server/server_spec/" target="_blank" rel="noopener">Read API Details</a>

@@ -105,7 +105,7 @@
   display: block;
   margin-bottom: 8px;
   font-size: 0.76rem;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #8a6a21;
@@ -127,7 +127,7 @@
 .claude-flow-card h2 {
   margin: 0 0 10px;
   font-size: 1.36rem;
-  font-weight: 750;
+  font-weight: 700;
   color: #1f1808;
 }
 
@@ -197,7 +197,7 @@
 .claude-note h3 {
   margin: 0 0 12px;
   font-size: 1.2rem;
-  font-weight: 750;
+  font-weight: 700;
   color: #221a08;
 }
 
@@ -330,5 +330,9 @@
 
   .claude-card pre {
     padding: 14px 14px;
+  }
+
+  .claude-card pre code {
+    font-size: 0.8rem;
   }
 }

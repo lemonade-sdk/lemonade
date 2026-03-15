@@ -46,7 +46,7 @@
 .opencode-kicker {
   margin: 0 0 16px;
   color: #baffd8;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -67,7 +67,7 @@
 
 .opencode-hero .docs-page-title,
 .opencode-finale-panel h2 {
-  font-family: "Instrument Serif", serif;
+  font-family: Georgia, "Times New Roman", serif;
   font-weight: 400;
 }
 
@@ -118,7 +118,7 @@
   display: block;
   margin-bottom: 7px;
   color: #4e624c;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -149,7 +149,7 @@
   padding: 14px 18px;
   border-bottom: 1px solid rgba(163, 255, 201, 0.08);
   color: rgba(214, 255, 228, 0.74);
-  font-family: "IBM Plex Mono", monospace;
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
   font-size: 0.82rem;
 }
 
@@ -192,7 +192,7 @@
   border-radius: 10px;
   background: rgba(170, 255, 206, 0.12);
   color: #bbffd6;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
   font-weight: 700;
 }
 
@@ -251,7 +251,7 @@
   margin: 0 0 12px;
   color: #162117;
   font-size: 1.18rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .opencode-config-head p,
@@ -292,7 +292,7 @@
 .opencode-ribbon-card code,
 .opencode-terminal-card code,
 .opencode-compare-card code {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
 }
 
 .opencode-note pre code,
@@ -323,7 +323,7 @@
   border-radius: 999px;
   background: rgba(32, 75, 44, 0.08);
   color: #1f5a31;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
   font-size: 0.73rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -335,7 +335,7 @@
   align-items: center;
   justify-content: center;
   color: #597358;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
   font-size: 0.9rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -385,7 +385,8 @@
   }
 
   .opencode-compare-divider {
-    min-height: 24px;
+    transform: rotate(90deg);
+    min-height: 32px;
   }
 }
 
@@ -427,5 +428,11 @@
   .opencode-card pre,
   .opencode-config-card pre {
     padding: 14px 14px;
+  }
+
+  .opencode-note pre code,
+  .opencode-card pre code,
+  .opencode-config-card pre code {
+    font-size: 0.8rem;
   }
 }
