@@ -179,7 +179,7 @@ std::vector<std::string> RecipeOptions::to_cli_options(const json& raw_options) 
         const std::string opt_name = opt["option_name"];
         if (raw_options.contains(opt_name)) {
             auto val = raw_options[opt_name];
-            if (val != "") {
+            if (!val.is_null() && val != "") {
                 cli.push_back(key);
                 if (val.is_number_float()) {
                     cli.push_back(std::to_string((double) val));
@@ -207,9 +207,9 @@ RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
 }
 
 static std::string format_option_for_logging(const json& opt) {
+    if (opt.is_null() || opt == "") return "(none)";
     if (opt.is_number_float()) return std::to_string((double) opt);
     if (opt.is_number_integer()) return std::to_string((int) opt);
-    if (opt == "") return "(none)";
     return opt;
 }
 
