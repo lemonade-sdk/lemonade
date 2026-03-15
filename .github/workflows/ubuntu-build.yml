@@ -1,5 +1,8 @@
 name: Launchpad PPA
 
+permissions:
+  contents: read
+
 on:
   push:
     branches:
@@ -51,6 +54,8 @@ jobs:
     name: Build packages
     needs: prepare-matrix
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
     container:
