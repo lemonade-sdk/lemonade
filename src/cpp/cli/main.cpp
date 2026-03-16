@@ -628,13 +628,13 @@ int main(int argc, char* argv[]) {
     CLI::App* scan_cmd = app.add_subcommand("scan", "Scan for network beacons")->group("Server");
 
     // Model commands
-    CLI::App* list_cmd = app.add_subcommand("list", "List available models")->group("Models");
-    CLI::App* pull_cmd = app.add_subcommand("pull", "Pull/download a model")->group("Models");
-    CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Models");
-    CLI::App* load_cmd = app.add_subcommand("load", "Load a model")->group("Models");
-    CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)")->group("Models");
-    CLI::App* import_cmd = app.add_subcommand("import", "Import a model from JSON file")->group("Models");
-    CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON")->group("Models");
+    CLI::App* list_cmd = app.add_subcommand("list", "List available models")->group("Model management");
+    CLI::App* pull_cmd = app.add_subcommand("pull", "Pull/download a model")->group("Model management");
+    CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
+    CLI::App* load_cmd = app.add_subcommand("load", "Load a model")->group("Model management");
+    CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)")->group("Model management");
+    CLI::App* import_cmd = app.add_subcommand("import", "Import a model from JSON file")->group("Model management");
+    CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON")->group("Model management");
 
     // List options
     list_cmd->add_flag("--downloaded", config.downloaded, "Save model options for future loads");
