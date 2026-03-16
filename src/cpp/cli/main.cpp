@@ -701,8 +701,6 @@ int main(int argc, char* argv[]) {
         if (!try_live_check(config.host, config.port, config.api_key, live_timeout_ms)) {
             int discovered_port = discover_local_server_port();
             if (discovered_port > 0 && discovered_port != config.port) {
-                std::cout << "Server not found on port " << config.port
-                          << ", discovered local server on port " << discovered_port << std::endl;
                 config.port = discovered_port;
             }
         }
@@ -713,7 +711,7 @@ int main(int argc, char* argv[]) {
 
     // Execute command
     if (status_cmd->count() > 0) {
-        return client.status();
+        return client.status(config.port);
     } else if (list_cmd->count() > 0) {
         return client.list_models(!config.downloaded);
     } else if (pull_cmd->count() > 0) {

@@ -128,78 +128,59 @@ bool LemonadeClient::make_request(const std::string& path, const std::string& me
     throw std::runtime_error("Streaming only supports POST method");
 }
 
-int LemonadeClient::status() const {
+int LemonadeClient::status(int display_port) const {
     try {
         std::string response = make_request("/api/v1/health");
         auto json_response = json::parse(response);
 
-        std::cout << "Lemonade Server Status" << std::endl;
-        std::cout << std::string(50, '=') << std::endl;
+        int port = display_port > 0 ? display_port : port_;
+        std::cout << "Server is running on port " << port << std::endl;
+        std::cout << std::endl;
 
-        // Server status
-        if (json_response.contains("status")) {
-            std::cout << "Status: " << json_response["status"].get<std::string>() << std::endl;
-        }
+        // Server info table
+        std::cout << std::left << std::setw(20) << "Property" << "Value" << std::endl;
+        std::cout << std::string(50, '-') << std::endl;
 
-        // Version
         if (json_response.contains("version")) {
-            std::cout << "Version: " << json_response["version"].get<std::string>() << std::endl;
+            std::cout << std::left << std::setw(20) << "Version"
+                      << json_response["version"].get<std::string>() << std::endl;
         }
-
-        // WebSocket port
         if (json_response.contains("websocket_port")) {
-            std::cout << "WebSocket Port: " << json_response["websocket_port"].get<int>() << std::endl;
+            std::cout << std::left << std::setw(20) << "WebSocket Port"
+                      << json_response["websocket_port"].get<int>() << std::endl;
         }
-
-        // Max models
         if (json_response.contains("max_models") && json_response["max_models"].is_object()) {
-            const auto count = json_response["max_models"]["llm"].get<int>();
-            std::cout << "Max Models Per Type: " << count << std::endl;
+            std::cout << std::left << std::setw(20) << "Max Models/Type"
+                      << json_response["max_models"]["llm"].get<int>() << std::endl;
         }
 
-        // All loaded models
+        // Loaded models table
         if (json_response.contains("all_models_loaded") && json_response["all_models_loaded"].is_array() &&
             !json_response["all_models_loaded"].empty()) {
-            std::cout << "All Loaded Models:" << std::endl;
-            std::cout << std::string(50, '=') << std::endl;
+            std::cout << std::endl;
+            std::cout << std::left
+                      << std::setw(30) << "Model"
+                      << std::setw(10) << "Type"
+                      << std::setw(10) << "Device"
+                      << std::setw(14) << "Recipe"
+                      << "Checkpoint" << std::endl;
+            std::cout << std::string(100, '-') << std::endl;
 
             for (const auto& model : json_response["all_models_loaded"]) {
-                if (model.is_object()) {
-                    std::cout << std::endl;
+                if (!model.is_object()) continue;
 
-                    if (model.contains("model_name")) {
-                        std::cout << "  Model: " << model["model_name"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("checkpoint")) {
-                        std::cout << "  Checkpoint: " << model["checkpoint"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("type")) {
-                        std::cout << "  Type: " << model["type"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("device")) {
-                        std::cout << "  Device: " << model["device"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("recipe")) {
-                        std::cout << "  Recipe: " << model["recipe"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("backend_url")) {
-                        std::cout << "  Backend URL: " << model["backend_url"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("last_use")) {
-                        std::cout << "  Last Used: " << model["last_use"].get<int>() << std::endl;
-                    }
-                    if (model.contains("recipe_options") && model["recipe_options"].is_object()) {
-                        std::cout << "  Recipe Options:" << std::endl;
-                        for (const auto& [key, value] : model["recipe_options"].items()) {
-                            std::cout << "    " << key << ": " << value.dump() << std::endl;
-                        }
-                    }
-                }
+                std::cout << std::left
+                          << std::setw(30) << model.value("model_name", "-")
+                          << std::setw(10) << model.value("type", "-")
+                          << std::setw(10) << model.value("device", "-")
+                          << std::setw(14) << model.value("recipe", "-")
+                          << model.value("checkpoint", "-") << std::endl;
             }
+        } else {
             std::cout << std::endl;
+            std::cout << "No models loaded." << std::endl;
         }
 
-        std::cout << std::string(50, '=') << std::endl;
         return 0;
 
     } catch (const json::exception& e) {

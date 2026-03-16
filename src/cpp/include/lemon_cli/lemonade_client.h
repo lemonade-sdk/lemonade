@@ -62,7 +62,7 @@ public:
     int launch_model(const std::string& model_name, const nlohmann::json& recipe_options, const std::string& agent);
 
     // Status commands
-    int status() const;
+    int status(int display_port = 0) const;
     std::vector<ModelInfo> get_models(bool show_all) const;
 
     // Recipe/backend commands
