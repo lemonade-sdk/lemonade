@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Boxes, ChevronRight, Cpu, Settings, SlidersHorizontal, Store } from './components/Icons';
+import { Boxes, ChevronRight, Cpu, Settings, SlidersHorizontal, Store, XIcon } from './components/Icons';
 import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -97,6 +97,39 @@ type ModelListItem =
   | { type: 'model'; name: string; info: ModelInfo }
   | { type: 'family'; family: ModelFamily; members: { label: string; name: string; info: ModelInfo }[] };
 
+// Types for Hugging Face API responses
+interface HFModelInfo {
+  id: string;
+  author: string;
+  downloads: number;
+  likes: number;
+  tags: string[];
+  pipeline_tag?: string;
+}
+
+interface HFSibling {
+  rfilename: string;
+}
+
+interface HFModelDetails {
+  id: string;
+  siblings: HFSibling[];
+  tags: string[];
+}
+
+interface GGUFQuantization {
+  filename: string;
+  quantization: string;
+  size?: number;
+}
+
+interface DetectedBackend {
+  recipe: string;
+  label: string;
+  quantizations?: GGUFQuantization[];
+  mmprojFiles?: string[];
+}
+
 function buildModelList(
   models: Array<{ name: string; info: ModelInfo }>
 ): ModelListItem[] {
@@ -160,16 +193,6 @@ interface ModelJSON {
 
 export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'settings';
 
-const createEmptyModelForm = () => ({
-  name: '',
-  checkpoint: '',
-  recipe: 'llamacpp',
-  mmproj: '',
-  reasoning: false,
-  vision: false,
-  embedding: false,
-  reranking: false,
-});
 
 const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContentVisibilityChange, width = 280, currentView, onViewChange }) => {
   // Get shared model data from context
@@ -181,19 +204,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
   const [organizationMode, setOrganizationMode] = useState<'recipe' | 'category'>('recipe');
   const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
-  const [showAddModelForm, setShowAddModelForm] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+const [searchQuery, setSearchQuery] = useState('');
   const [loadedModels, setLoadedModels] = useState<Set<string>>(new Set());
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const [optionsModel, setOptionsModel] = useState<string | null>(null);
   const [showModelOptionsModal, setShowModelOptionsModal] = useState(false);
-  const [newModel, setNewModel] = useState(createEmptyModelForm);
   const [selectedMarketplaceCategory, setSelectedMarketplaceCategory] = useState<string>('all');
   const [marketplaceCategories, setMarketplaceCategories] = useState<MarketplaceCategory[]>([]);
   const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
   const filterAnchorRef = useRef<HTMLDivElement | null>(null);
-  const addModelFromJSONRef = useRef<HTMLInputElement>(null);
+  // HuggingFace search state
+  const [hfSearchResults, setHfSearchResults] = useState<HFModelInfo[]>([]);
+  const [isSearchingHF, setIsSearchingHF] = useState(false);
+  const [hfRateLimited, setHfRateLimited] = useState(false);
+  const [hfModelBackends, setHfModelBackends] = useState<Record<string, DetectedBackend | null>>({});
+  const [hfSelectedQuantizations, setHfSelectedQuantizations] = useState<Record<string, string>>({});
+  const [hfModelSizes, setHfModelSizes] = useState<Record<string, number | undefined>>({});
+  const [detectingBackendFor, setDetectingBackendFor] = useState<string | null>(null);
+  const hfSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
@@ -345,7 +374,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
     // Inject empty categories for supported recipes that have no models
     // (e.g., FLM when backend needs install/upgrade)
     const recipes = systemInfo?.recipes;
-    if (recipes && !showDownloadedOnly) {
+    if (recipes && !showDownloadedOnly && !searchQuery.trim()) {
       for (const [recipeName, recipe] of Object.entries(recipes)) {
         if (grouped[recipeName]) continue; // Already has models
         const backends = recipe?.backends;
@@ -409,6 +438,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
       setExpandedCategories(new Set([categories[0]]));
     }
   }, [categories]);
+
+  // Auto-expand all categories when a search query is entered
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      setExpandedCategories(new Set(categories));
+    }
+  }, [searchQuery]);
 
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev => {
@@ -482,11 +518,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
     return labels[category] || category.charAt(0).toUpperCase() + category.slice(1);
   };
 
-  // Auto-expand all categories when searching
   const shouldShowCategory = (category: string): boolean => {
-    if (searchQuery.trim()) {
-      return true; // Show all categories when searching
-    }
     return expandedCategories.has(category);
   };
 
@@ -502,60 +534,157 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
     .map(modelName => ({ modelName }))
     .sort((a, b) => a.modelName.localeCompare(b.modelName));
 
-  const resetNewModelForm = () => {
-    setNewModel(createEmptyModelForm());
-    setShowAddModelForm(false);
+
+
+  const formatDownloads = (downloads: number): string => {
+    if (downloads >= 1_000_000) return `${(downloads / 1_000_000).toFixed(1)}M`;
+    if (downloads >= 1_000) return `${(downloads / 1_000).toFixed(1)}K`;
+    return String(downloads);
   };
 
-  const handleInstallModel = () => {
-    const trimmedName = newModel.name.trim();
-    const trimmedCheckpoint = newModel.checkpoint.trim();
-    const trimmedRecipe = newModel.recipe.trim();
-    const trimmedMmproj = newModel.mmproj.trim();
-
-    if (!trimmedName) {
-      showWarning('Model name is required.');
+  const searchHuggingFace = useCallback(async (query: string) => {  //Searching the HF API for GGUF, ONNX, and FastFlowLM models
+    if (!query.trim() || query.length < 3) {
+      setHfSearchResults([]);
+      setHfRateLimited(false);
       return;
     }
-
-    if (!trimmedCheckpoint) {
-      showWarning('Checkpoint is required.');
-      return;
+    setIsSearchingHF(true);
+    setHfRateLimited(false);
+    try {
+      const encoded = encodeURIComponent(query);
+      const ggufRes = await fetch(`https://huggingface.co/api/models?search=${encoded}&filter=gguf&limit=12&sort=downloads&direction=-1`);
+      if (ggufRes.status === 429) {
+        setHfRateLimited(true);
+        setHfSearchResults([]);
+        return;
+      }
+      const ggufData: HFModelInfo[] = ggufRes.ok ? await ggufRes.json() : [];
+      setHfSearchResults(ggufData);
+    } catch {
+      setHfSearchResults([]);
+    } finally {
+      setIsSearchingHF(false);
     }
+  }, []);
 
-    if (!trimmedRecipe) {
-      showWarning('Recipe is required.');
-      return;
+  const detectBackend = useCallback(async (modelId: string) => {
+    if (hfModelBackends[modelId] !== undefined) return;
+    setDetectingBackendFor(modelId);
+    try {
+      const [modelRes, treeRes] = await Promise.all([
+        fetch(`https://huggingface.co/api/models/${modelId}`),
+        fetch(`https://huggingface.co/api/models/${modelId}/tree/main`).catch(() => null),
+      ]);
+      if (!modelRes.ok) throw new Error('Failed to fetch model');
+      const data: HFModelDetails = await modelRes.json();
+      const files = data.siblings.map(s => s.rfilename.toLowerCase());
+      const tags = data.tags || [];
+
+      // Build file-size map from tree
+      const fileSizes: Record<string, number> = {};
+      if (treeRes && treeRes.ok) {
+        try {
+          const tree: { path: string; size?: number; type: string }[] = await treeRes.json();
+          tree.forEach(f => { if (f.type === 'file' && f.size !== undefined) fileSizes[f.path] = f.size; });
+        } catch { /* ignore */ }
+      }
+
+      // GGUF detection
+      const allGgufFiles = data.siblings.filter(s => s.rfilename.toLowerCase().endsWith('.gguf'));
+      if (allGgufFiles.length > 0) {
+        // Separate mmproj files from regular model files
+        const mmprojGgufs = allGgufFiles.filter(s => s.rfilename.toLowerCase().includes('mmproj'));
+        const ggufFiles = allGgufFiles.filter(s => !s.rfilename.toLowerCase().includes('mmproj'));
+        const mmprojFiles = mmprojGgufs.map(s => {
+          const parts = s.rfilename.split('/');
+          return parts[parts.length - 1];
+        });
+
+        const folderGroups: Record<string, { files: string[]; totalSize: number }> = {};
+        const rootFiles: { filename: string; size?: number }[] = [];
+        ggufFiles.forEach(f => {
+          const slashIdx = f.rfilename.indexOf('/');
+          if (slashIdx > 0) {
+            const folder = f.rfilename.substring(0, slashIdx);
+            if (!folderGroups[folder]) folderGroups[folder] = { files: [], totalSize: 0 };
+            folderGroups[folder].files.push(f.rfilename);
+            if (fileSizes[f.rfilename]) folderGroups[folder].totalSize += fileSizes[f.rfilename];
+          } else {
+            rootFiles.push({ filename: f.rfilename, size: fileSizes[f.rfilename] });
+          }
+        });
+        const quantizations: GGUFQuantization[] = [];
+        Object.entries(folderGroups).forEach(([folder, g]) => {
+          const m = folder.match(/(Q\d+(?:_\d)?(?:_[KS])?(?:_[MSL])?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16)/i);
+          quantizations.push({ filename: folder, quantization: m ? m[1].toUpperCase() : folder, size: g.totalSize || undefined });
+        });
+        rootFiles.forEach(({ filename, size }) => {
+          const m = filename.match(/[-._](Q\d+(?:_\d)?(?:_[KS])?(?:_[MSL])?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16)(?:[-._]|\.gguf$)/i);
+          if (m) quantizations.push({ filename, quantization: m[1].toUpperCase(), size });
+        });
+        if (quantizations.length > 0) {
+          const priority: Record<string, number> = { Q4_K_M: 1, Q4_K_S: 2, Q5_K_M: 3, Q5_K_S: 4, Q6_K: 5, Q8_0: 6 };
+          quantizations.sort((a, b) => (priority[a.quantization] ?? 100) - (priority[b.quantization] ?? 100));
+          setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({
+            ...prev,
+            [modelId]: {
+              recipe: 'llamacpp',
+              label: 'GGUF',
+              quantizations,
+              mmprojFiles: mmprojFiles.length > 0 ? mmprojFiles : undefined,
+            },
+          }));
+          if (!hfSelectedQuantizations[modelId]) {
+            setHfSelectedQuantizations((prev: Record<string, string>) => ({ ...prev, [modelId]: quantizations[0].filename }));
+            if (quantizations[0].size !== undefined) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: quantizations[0].size }));
+          }
+          return;
+        }
+      }
+
+      const totalFileSize = Object.values(fileSizes).reduce((a, b) => a + b, 0) || undefined;
+
+      // FLM detection (FastFlowLM)
+      if (modelId.toLowerCase().startsWith('fastflowlm/') || tags.includes('flm') || files.some(f => f.endsWith('.flm'))) {
+        setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: { recipe: 'flm', label: 'FLM NPU' } }));
+        if (totalFileSize) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: totalFileSize }));
+        return;
+      }
+
+      // ONNX detection
+      if (files.some(f => f.endsWith('.onnx') || f.endsWith('.onnx_data'))) {
+        const id = modelId.toLowerCase();
+        let recipe = 'ryzenai-llm', label = 'ONNX CPU';
+        if (id.includes('-ryzenai-npu') || tags.includes('npu')) { recipe = 'ryzenai-llm'; label = 'ONNX NPU'; }
+        else if (id.includes('-ryzenai-hybrid') || tags.includes('hybrid')) { recipe = 'ryzenai-llm'; label = 'ONNX Hybrid'; }
+        else if (tags.includes('igpu')) { recipe = 'ryzenai-llm'; label = 'ONNX iGPU'; }
+        setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: { recipe, label } }));
+        if (totalFileSize) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: totalFileSize }));
+        return;
+      }
+
+      // Whisper
+      if ((tags.includes('whisper') || modelId.toLowerCase().includes('whisper')) && files.some(f => f.endsWith('.bin'))) {
+        setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: { recipe: 'whispercpp', label: 'Whisper' } }));
+        if (totalFileSize) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: totalFileSize }));
+        return;
+      }
+
+      // Stable Diffusion
+      if (tags.includes('stable-diffusion') || tags.includes('text-to-image') || modelId.toLowerCase().includes('stable-diffusion') || modelId.toLowerCase().includes('flux')) {
+        setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: { recipe: 'sd-cpp', label: 'SD.cpp' } }));
+        if (totalFileSize) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: totalFileSize }));
+        return;
+      }
+
+      setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: null }));
+    } catch {
+      setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: null }));
+    } finally {
+      setDetectingBackendFor(null);
     }
+  }, [hfModelBackends, hfSelectedQuantizations]);
 
-    // Validate GGUF checkpoint format
-    if (trimmedCheckpoint.toLowerCase().includes('gguf') && !trimmedCheckpoint.includes(':')) {
-      showWarning('GGUF checkpoints must include a variant using the CHECKPOINT:VARIANT syntax');
-      return;
-    }
-
-    // Close the form and start the download
-    const modelName = `user.${trimmedName}`;
-    resetNewModelForm();
-
-    // Use the same download flow as registered models, but include registration data
-    handleDownloadModel(modelName, {
-      checkpoint: trimmedCheckpoint,
-      recipe: trimmedRecipe,
-      mmproj: trimmedMmproj || undefined,
-      reasoning: newModel.reasoning,
-      vision: newModel.vision,
-      embedding: newModel.embedding,
-      reranking: newModel.reranking,
-    });
-  };
-
-  const handleInputChange = (field: string, value: string | boolean) => {
-    setNewModel(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
 
   const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData) => {
     let downloadId: string | null = null;
@@ -616,6 +745,44 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
       });
     }
   }, [modelsData, showError, showSuccess, showWarning, fetchCurrentLoadedModel, ensureSystemInfoLoaded]);
+
+  // Build a GGUF checkpoint using the extracted quant type (e.g. Q4_K_M), not the raw filename
+  const resolveGgufCheckpoint = useCallback((modelId: string, backend: DetectedBackend): string => {
+    const selectedFilename = hfSelectedQuantizations[modelId];
+    if (!selectedFilename) return modelId;
+    const quantObj = backend.quantizations?.find(q => q.filename === selectedFilename);
+    return `${modelId}:${quantObj?.quantization ?? selectedFilename}`;
+  }, [hfSelectedQuantizations]);
+
+  const handleInstallHFModel = useCallback((hfModel: HFModelInfo) => {
+    const backend = hfModelBackends[hfModel.id];
+    if (!backend) return;
+    const checkpoint = backend.recipe === 'llamacpp'
+      ? resolveGgufCheckpoint(hfModel.id, backend)
+      : hfModel.id;
+    const modelName = `user.${hfModel.id.split('/').pop() ?? hfModel.id}`;
+    handleDownloadModel(modelName, { checkpoint, recipe: backend.recipe });
+  }, [hfModelBackends, resolveGgufCheckpoint, handleDownloadModel]);
+
+  // Debounced HF search effect - to avoid HF API rate limit error
+  useEffect(() => {
+    if (currentView !== 'models') return;
+    if (hfSearchTimeoutRef.current) clearTimeout(hfSearchTimeoutRef.current);
+    if (searchQuery.trim().length >= 3) {
+      hfSearchTimeoutRef.current = setTimeout(() => searchHuggingFace(searchQuery), 1200);
+    } else {
+      setHfSearchResults([]);
+      setHfRateLimited(false);
+    }
+    return () => { if (hfSearchTimeoutRef.current) clearTimeout(hfSearchTimeoutRef.current); };
+  }, [searchQuery, currentView, searchHuggingFace]);
+
+  // Trigger backend detection for new HF results
+  useEffect(() => {
+    hfSearchResults.forEach((model: HFModelInfo) => {
+      if (hfModelBackends[model.id] === undefined) detectBackend(model.id);
+    });
+  }, [hfSearchResults, hfModelBackends, detectBackend]);
 
   // Separate useEffect for download resume/retry to avoid stale closure issues
   useEffect(() => {
@@ -795,27 +962,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
     }
   };
 
-  const handleUploadModel = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-
-    if (!files || files.length === 0) {
-      return;
-    }
-
-    const file = files[0];
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const result = JSON.parse(e.target?.result as string);
-        uploadModelJSON(result);
-      } catch(err: any) {
-        showError(`Failed to parse JSON file. ${err}`);
-      }
-    };
-    reader.readAsText(file);
-    event.target.value = '';
-  }
-
   const uploadModelJSON = (json: ModelJSON) => {
     let modelName: string;
 
@@ -838,6 +984,23 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
     handleDownloadModel(modelName as string, json as ModelRegistrationData);
   }
 
+  useEffect(() => {
+    const handleInstallModel = (e: Event) => {
+      const { name, registrationData } = (e as CustomEvent).detail;
+      if (name) handleDownloadModel(name, registrationData);
+    };
+    const handleInstallFromJSON = (e: Event) => {
+      const json = (e as CustomEvent).detail;
+      if (json) uploadModelJSON(json);
+    };
+    window.addEventListener('installModel', handleInstallModel);
+    window.addEventListener('installModelFromJSON', handleInstallFromJSON);
+    return () => {
+      window.removeEventListener('installModel', handleInstallModel);
+      window.removeEventListener('installModelFromJSON', handleInstallFromJSON);
+    };
+  }, [handleDownloadModel]);
+
   const viewTitle = currentView === 'models'
     ? 'Model Manager'
     : currentView === 'backends'
@@ -847,7 +1010,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
         : 'Settings';
 
   const searchPlaceholder = currentView === 'models'
-    ? 'Filter models...'
+    ? 'Search models...'
     : currentView === 'backends'
       ? 'Filter backends...'
       : currentView === 'marketplace'
@@ -1201,6 +1364,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
                   <SlidersHorizontal size={13} strokeWidth={2} />
                 </button>
               )}
+              {searchQuery.length > 0 && (
+                <button
+                  className="left-panel-inline-filter-btn"
+                  onClick={() => setSearchQuery('')}
+                  title="Clear search"
+                  aria-label="Clear search"
+                >
+                  <XIcon size={13} strokeWidth={2} />
+                </button>
+              )}
               {currentView === 'marketplace' && showFilterPanel && (
                 <div className="left-panel-filter-popover marketplace-filter-popover">
                   <div className="marketplace-filter-list">
@@ -1288,10 +1461,110 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
             {currentView === 'models' && (
               <div className="available-models-section widget">
                 <div className="available-models-header">
-                  <div className="loaded-model-label">AVAILABLE MODELS</div>
+                  <div className="loaded-model-label">SUGGESTED MODELS</div>
                   <div className="loaded-model-count-pill">{availableModelCount} shown</div>
                 </div>
                 {renderModelsView()}
+              </div>
+            )}
+            {currentView === 'models' && searchQuery.trim().length >= 3 && ( // Rendering the HF models by searching
+              <div className="hf-search-section widget">
+                <div className="available-models-header">
+                  <div className="loaded-model-label">FROM HUGGING FACE</div>
+                  {isSearchingHF && <span className="hf-search-spinner" />}
+                </div>
+                {hfRateLimited && (
+                  <div className="hf-search-message">Rate limited — try again shortly.</div>
+                )}
+                {!hfRateLimited && !isSearchingHF && (
+                  hfSearchResults.length === 0 ||
+                  (hfSearchResults.length > 0 &&
+                    detectingBackendFor === null &&
+                    hfSearchResults.every((m: HFModelInfo) => hfModelBackends[m.id] === null))
+                ) && (
+                  <div className="hf-search-message">No compatible models found.</div>
+                )}
+                {hfSearchResults.filter((hfModel: HFModelInfo) => hfModelBackends[hfModel.id] !== null).map((hfModel: HFModelInfo) => {
+                  const backend = hfModelBackends[hfModel.id];
+                  const isDetecting = detectingBackendFor === hfModel.id;
+                  const quants = backend?.quantizations ?? [];
+                  const selectedQuant = hfSelectedQuantizations[hfModel.id];
+                  const size = hfModelSizes[hfModel.id];
+                  return (
+                    <div key={hfModel.id} className="hf-model-item">
+                      <div className="hf-model-left">
+                        <span className="hf-model-name" title={hfModel.id}>{hfModel.id}</span>
+                        {size !== undefined && <span className="hf-model-size">{formatSize(size / (1024 ** 3))}</span>}
+                        <span className="hf-model-meta">↓ {formatDownloads(hfModel.downloads)}</span>
+                        {isDetecting && <span className="hf-search-spinner" />}
+                        <div className="hf-model-actions">
+                          {!isDetecting && backend && (
+                            <>
+                              <button
+                                className="model-action-btn edit-btn"
+                                title="Edit before adding"
+                                onClick={(e: React.MouseEvent) => {
+                                  e.stopPropagation();
+                                  const checkpoint = backend.recipe === 'llamacpp'
+                                    ? resolveGgufCheckpoint(hfModel.id, backend)
+                                    : hfModel.id;
+                                  const idLower = hfModel.id.toLowerCase();
+                                  window.dispatchEvent(new CustomEvent('openAddModel', {
+                                    detail: {
+                                      initialValues: {
+                                        name: hfModel.id.split('/').pop() || hfModel.id,
+                                        checkpoint,
+                                        recipe: backend.recipe,
+                                        mmprojOptions: backend.mmprojFiles,
+                                        vision: (backend.mmprojFiles?.length ?? 0) > 0,
+                                        reranking: idLower.includes('rerank'),
+                                        embedding: idLower.includes('embed'),
+                                      },
+                                    },
+                                  }));
+                                }}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                </svg>
+                              </button>
+                              <button
+                                className="model-action-btn download-btn"
+                                title="Download from Hugging Face"
+                                onClick={() => handleInstallHFModel(hfModel)}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                  <polyline points="7 10 12 15 17 10" />
+                                  <line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="hf-model-right">
+                        {!isDetecting && backend && quants.length > 1 && (
+                          <select
+                            className="hf-quant-select"
+                            value={selectedQuant ?? ''}
+                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                              const q = quants.find((x: GGUFQuantization) => x.filename === e.target.value);
+                              setHfSelectedQuantizations((prev: Record<string, string>) => ({ ...prev, [hfModel.id]: e.target.value }));
+                              if (q?.size !== undefined) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [hfModel.id]: q.size }));
+                            }}
+                          >
+                            {quants.map((q: GGUFQuantization) => (
+                              <option key={q.filename} value={q.filename}>{q.quantization}</option>
+                            ))}
+                          </select>
+                        )}
+                        {!isDetecting && backend && <span className="hf-backend-badge">{backend.label}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
             {currentView === 'marketplace' && (
@@ -1311,129 +1584,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
             {currentView === 'settings' && <SettingsPanel isVisible={true} searchQuery={searchQuery} />}
           </div>
 
-          {currentView === 'models' && (
-            <div className="model-manager-footer">
-              {!showAddModelForm ? (
-                <div className="add-model-buttons-container">
-                  <input ref={addModelFromJSONRef} type="file" accept=".json" onChange={handleUploadModel} style={{ display: 'none' }}/>
-                  <button className="add-model-button" onClick={() => addModelFromJSONRef.current?.click()} title="Import JSON">
-                    Import a model
-                  </button>
-                  <button
-                    className="add-model-button"
-                    onClick={() => {
-                      setNewModel(createEmptyModelForm());
-                      setShowAddModelForm(true);
-                    }}
-                  >
-                    Add a model
-                  </button>
-                </div>
-              ) : (
-                <div className="add-model-form">
-                  <div className="form-section">
-                    <label className="form-label" title="A unique name to identify your model in the catalog">Model Name</label>
-                    <div className="input-with-prefix">
-                      <span className="input-prefix">user.</span>
-                      <input
-                        type="text"
-                        className="form-input with-prefix"
-                        placeholder="Gemma-3-12b-it-GGUF"
-                        value={newModel.name}
-                        onChange={(e) => handleInputChange('name', e.target.value)}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="form-section">
-                    <label className="form-label" title="Hugging Face model path (repo/model:quantization)">Checkpoint</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="unsloth/gemma-3-12b-it-GGUF:Q4_0"
-                      value={newModel.checkpoint}
-                      onChange={(e) => handleInputChange('checkpoint', e.target.value)}
-                    />
-                  </div>
-
-                  <div className="form-section">
-                    <label className="form-label" title="Inference backend to use for this model">Recipe</label>
-                    <select
-                      className="form-input form-select"
-                      value={newModel.recipe}
-                      onChange={(e) => handleInputChange('recipe', e.target.value)}
-                    >
-                      <option value="">Select a recipe...</option>
-                      <option value="llamacpp">Llama.cpp GPU</option>
-                      <option value="flm">FastFlowLM NPU</option>
-                      <option value="ryzenai-llm">Ryzen AI LLM</option>
-                    </select>
-                  </div>
-
-                  <div className="form-section">
-                    <label className="form-label">More info</label>
-                    <div className="form-subsection">
-                      <label className="form-label-secondary" title="Multimodal projection file for vision models">mmproj file (Optional)</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="mmproj-F16.gguf"
-                        value={newModel.mmproj}
-                        onChange={(e) => handleInputChange('mmproj', e.target.value)}
-                      />
-                    </div>
-
-                    <div className="form-checkboxes">
-                      <label className="checkbox-label" title="Enable if model supports chain-of-thought reasoning">
-                        <input
-                          type="checkbox"
-                          checked={newModel.reasoning}
-                          onChange={(e) => handleInputChange('reasoning', e.target.checked)}
-                        />
-                        <span>Reasoning</span>
-                      </label>
-
-                      <label className="checkbox-label" title="Enable if model can process images">
-                        <input
-                          type="checkbox"
-                          checked={newModel.vision}
-                          onChange={(e) => handleInputChange('vision', e.target.checked)}
-                        />
-                        <span>Vision</span>
-                      </label>
-
-                      <label className="checkbox-label" title="Enable if model generates text embeddings">
-                        <input
-                          type="checkbox"
-                          checked={newModel.embedding}
-                          onChange={(e) => handleInputChange('embedding', e.target.checked)}
-                        />
-                        <span>Embedding</span>
-                      </label>
-
-                      <label className="checkbox-label" title="Enable if model performs reranking">
-                        <input
-                          type="checkbox"
-                          checked={newModel.reranking}
-                          onChange={(e) => handleInputChange('reranking', e.target.checked)}
-                        />
-                        <span>Reranking</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="form-actions">
-                    <button className="install-button" onClick={handleInstallModel}>
-                      Install
-                    </button>
-                    <button className="cancel-button" onClick={resetNewModelForm}>
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
         </div>}
       </div>
     </div>

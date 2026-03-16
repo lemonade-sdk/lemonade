@@ -1022,21 +1022,20 @@ footer {
     width: 100%;
     min-width: 0;
     flex: 1;
-}
-
-.model-search.with-inline-filter {
+    display: flex;
+    align-items: center;
+    gap: 4px;
     position: relative;
 }
 
-.model-search.with-inline-filter .model-search-input {
-    padding-right: 38px;
+.model-search .model-search-input {
+    flex: 1;
+    min-width: 0;
+    width: auto;
 }
 
 .left-panel-inline-filter-btn {
-    position: absolute;
-    right: 6px;
-    top: 50%;
-    transform: translateY(-50%);
+    flex-shrink: 0;
     width: 24px;
     height: 24px;
     border: none;
@@ -1189,6 +1188,136 @@ footer {
     border-radius: 0;
     border: none;
     background: #0a0a0a;
+}
+
+.hf-search-section.widget {
+    margin: var(--mm-stack-gap) 0 0;
+    padding: var(--mm-section-pad-y) var(--mm-section-pad-x) 6px;
+    border-radius: 0;
+    border: none;
+    background: #0a0a0a;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.hf-search-spinner {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid rgba(255, 255, 255, 0.12);
+    border-top-color: #888;
+    border-radius: 50%;
+    animation: hf-spin 0.7s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes hf-spin {
+    to { transform: rotate(360deg); }
+}
+
+.hf-search-message {
+    font-size: 0.68rem;
+    color: #555;
+    padding: 4px 0;
+}
+
+.hf-model-item {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 4px 8px 4px 12px;
+    border-left: 2px solid transparent;
+    transition: background-color 0.15s ease;
+}
+
+.hf-model-item:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-left-color: #444;
+}
+
+.hf-model-left {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 0 0 70%;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.hf-model-right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    flex: 0 0 30%;
+}
+
+.hf-model-name {
+    font-size: 0.65rem;
+    color: #d0d0d0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.hf-model-meta {
+    font-size: 0.6rem;
+    color: #555;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.hf-model-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+}
+
+.hf-model-item:hover .hf-model-actions {
+    opacity: 1;
+}
+
+.hf-backend-badge {
+    font-size: 0.58rem;
+    color: #888;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    padding: 1px 5px;
+    letter-spacing: 0.2px;
+    flex-shrink: 0;
+}
+
+.hf-quant-select {
+    font-size: 0.62rem;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    color: #aaa;
+    padding: 1px 4px;
+    cursor: pointer;
+    max-width: 90px;
+}
+
+.hf-quant-select:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+.hf-model-size {
+    font-size: 0.62rem;
+    color: #555;
+    flex-shrink: 0;
+}
+
+.hf-unsupported {
+    font-size: 0.62rem;
+    color: #444;
+    font-style: italic;
 }
 
 .available-models-header {
@@ -2207,8 +2336,6 @@ footer {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    max-height: 400px;
-    overflow-y: auto;
 }
 
 .form-section {
@@ -2346,9 +2473,15 @@ footer {
 .form-checkboxes {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px 16px;
+    gap: 10px 16px;
     margin-top: 12px;
     padding-left: 8px;
+}
+
+.checkbox-item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
 }
 
 .checkbox-label {
@@ -2363,6 +2496,7 @@ footer {
 .checkbox-label input[type="checkbox"] {
     width: 14px;
     height: 14px;
+    flex-shrink: 0;
     cursor: pointer;
     accent-color: #4a4a4a;
 }
@@ -2379,6 +2513,23 @@ footer {
 
 .checkbox-label span {
     user-select: none;
+}
+
+.checkbox-desc {
+    margin: 0;
+    padding-left: 22px;
+    font-size: 0.62rem;
+    color: #666;
+    line-height: 1.4;
+}
+
+.checkbox-desc code {
+    font-family: monospace;
+    font-size: 0.6rem;
+    color: #888;
+    background: #1e1e1e;
+    padding: 1px 3px;
+    border-radius: 3px;
 }
 
 .form-actions {
@@ -2585,6 +2736,33 @@ footer {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    position: relative;
+}
+
+.chat-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    position: relative;
+}
+
+.add-model-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.add-model-modal {
+    background: #111;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 16px;
+    width: 440px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
 
 .chat-window-experience .chat-header {
@@ -2641,48 +2819,143 @@ footer {
     cursor: not-allowed;
 }
 
-.model-selector {
+.model-selector-custom {
+    position: relative;
+    flex-shrink: 0;
+    max-width: 180px;
+}
+
+.model-selector-trigger {
+    display: flex;
+    align-items: center;
+    gap: 5px;
     background: transparent;
-    background-image: url('./assets/chevron-down-gray.svg');
-    background-repeat: no-repeat;
-    background-position: right center;
-    background-size: 10px 10px;
-    border: none;
+    border: 1px solid #333;
+    border-radius: 6px;
     color: #888;
     font-size: 0.75rem;
     cursor: pointer;
-    padding: 2px 14px 2px 0;
-    flex-shrink: 0;
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    line-height: 1;
-    max-width: 160px;
+    padding: 3px 8px;
+    max-width: 180px;
+    width: 100%;
+    text-align: left;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.model-selector-trigger:hover {
+    border-color: #555;
+    color: #aaa;
+}
+
+.model-selector-trigger:focus {
+    outline: none;
+    border-color: #666;
+    color: #fff;
+}
+
+.model-selector-trigger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.model-selector-label {
+    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.model-selector:hover {
-    color: #aaa;
-    background-image: url('./assets/chevron-down-light.svg');
+.model-selector-chevron {
+    flex-shrink: 0;
+    color: currentColor;
 }
 
-.model-selector:focus {
+.model-selector-dropdown {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 0;
+    min-width: 100%;
+    background: #1e1e1e;
+    border: 1px solid #444;
+    border-radius: 6px;
+    z-index: 100;
+    padding: 3px 3px 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.model-selector-list {
+    max-height: calc(8 * 30px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #444 transparent;
+}
+
+.model-selector-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.model-selector-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.model-selector-list::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 4px;
+}
+
+.model-selector-empty {
+    padding: 6px 8px;
+    font-size: 0.72rem;
+    color: #555;
+}
+
+.model-selector-search-bar {
+    padding: 4px 2px 4px;
+    border-top: 1px solid #2a2a2a;
+    margin-top: 2px;
+}
+
+.model-selector-search {
+    width: 100%;
+    background: transparent;
+    border: none;
     outline: none;
+    color: #ccc;
+    font-size: 0.72rem;
+    padding: 2px 6px;
+    box-sizing: border-box;
+}
+
+.model-selector-search::placeholder {
+    color: #444;
+}
+
+.model-selector-option {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    color: #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 22px;
+}
+
+.model-selector-option:hover {
+    background: #2a2a2a;
     color: #fff;
-    background-image: url('./assets/chevron-down-white.svg');
 }
 
-.model-selector:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+.model-selector-option.selected {
+    color: #fff;
+    background: #2e2e2e;
 }
 
-.model-selector option {
-    background: #1a1a1a;
-    color: #ffffff;
-    padding: 8px;
+.model-selector-option.highlighted {
+    background: #2a2a2a;
+    color: #fff;
 }
 
 .chat-messages {
@@ -6471,6 +6744,12 @@ footer {
         opacity: 1;
         transform: translateX(0);
     }
+}
+
+.menu-option.new-model-submenu-option {
+    font-size: 11.5px;
+    padding: 7px 14px;
+    white-space: nowrap;
 }
 
 .menu-option.disabled {
