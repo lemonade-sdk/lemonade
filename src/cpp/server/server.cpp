@@ -2351,9 +2351,14 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         }
 
         std::string upscale_model_path;
+        std::string backend = "cpu";
         try {
             auto info = model_manager_->get_model_info(upscale_model_name);
             upscale_model_path = info.resolved_path("main");
+            // Resolve backend from the ESRGAN model's own recipe options,
+            // not from whatever model happens to be loaded
+            std::string b = info.recipe_options.get_option("sd-cpp_backend");
+            if (!b.empty()) backend = b;
         } catch (const std::exception& e) {
             res.status = 404;
             nlohmann::json error = {{"error", {
@@ -2364,14 +2369,11 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             return;
         }
 
-        // Use sd-cli subprocess for upscaling (matches official sd-cli -M upscale)
-        std::string backend = "cpu";
-        std::string loaded_model = router_->get_loaded_model();
-        if (!loaded_model.empty()) {
-            auto opts = router_->get_model_recipe_options(loaded_model);
-            std::string b = opts.get_option("sd-cpp_backend");
-            if (!b.empty()) backend = b;
-        }
+        // sd-server's HTTP API does not expose an upscaling endpoint.
+        // Upscaling is only available via the sd-cli binary's -M upscale mode,
+        // so we shell out to sd-cli as a subprocess. This also keeps upscaling
+        // as a separate request from generation, which lets the frontend show
+        // the original and upscaled images side by side with independent timing.
         std::string exe_dir = lemon::backends::BackendUtils::get_backend_binary_path(
             lemon::backends::SDServer::SPEC, backend);
         std::filesystem::path cli_exe = std::filesystem::path(exe_dir).parent_path() /
@@ -2380,6 +2382,18 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 #else
             "sd-cli";
 #endif
+
+        if (!std::filesystem::exists(cli_exe)) {
+            res.status = 500;
+            nlohmann::json error = {{"error", {
+                {"message", "sd-cpp backend not installed (sd-cli not found at: "
+                            + cli_exe.string() + ")"},
+                {"type", "server_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
         std::vector<std::pair<std::string, std::string>> env_vars;
 #ifdef _WIN32
         if (backend == "rocm") {

@@ -348,8 +348,11 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
             onChange={(e) => handleUpscaleChange(e.target.value)}
             disabled={isBusy}>
             <option value="">Off</option>
-            <option value="RealESRGAN-x4plus">RealESRGAN x4</option>
-            <option value="RealESRGAN-x4plus-anime">RealESRGAN x4 Anime</option>
+            {Object.entries(modelsData)
+              .filter(([_, info]) => info.labels?.includes('esrgan'))
+              .map(([name]) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
           </select>
         </div>
       </div>

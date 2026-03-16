@@ -228,6 +228,7 @@ json SDServer::image_generations(const json& request) {
     // sd-server requires extra params (steps, sample_method, scheduler) to be
     // embedded in the prompt as <sd_cpp_extra_args>JSON</sd_cpp_extra_args>
     // See PR #1173: https://github.com/leejet/stable-diffusion.cpp/pull/1173
+    // Use request values if present (e.g. from webapp), fall back to recipe_options defaults.
     json extra_args;
     if (request.contains("steps")) {
         extra_args["steps"] = request["steps"].get<int>();
@@ -253,6 +254,7 @@ json SDServer::image_generations(const json& request) {
     LOG(DEBUG, "SDServer") << "Forwarding request to sd-server: "
                   << sd_request.dump(2) << std::endl;
 
+    // Use base class forward_request with 10 minute timeout for image generation
     return forward_request("/v1/images/generations", sd_request, 600);
 }
 
@@ -345,6 +347,12 @@ std::string SDServer::upscale_via_cli(
     const std::vector<std::pair<std::string, std::string>>& env_vars,
     bool debug) {
 
+    if (!fs::exists(cli_exe_path)) {
+        LOG(ERROR, "SDServer") << "sd-cli binary not found at: "
+            << cli_exe_path << std::endl;
+        return "";
+    }
+
     std::string raw = JsonUtils::base64_decode(b64_image);
 
     auto unique_id = std::to_string(
@@ -353,6 +361,13 @@ std::string SDServer::upscale_via_cli(
     fs::create_directories(temp_dir);
     fs::path input_path = temp_dir / ("input_" + unique_id + ".png");
     fs::path output_path = temp_dir / ("output_" + unique_id + ".png");
+
+    struct TempFileGuard {
+        fs::path path;
+        ~TempFileGuard() { std::error_code ec; fs::remove(path, ec); }
+    };
+    TempFileGuard input_guard{input_path};
+    TempFileGuard output_guard{output_path};
 
     {
         std::ofstream out(input_path, std::ios::binary);
@@ -366,8 +381,10 @@ std::string SDServer::upscale_via_cli(
         "-o", output_path.string()
     };
 
+    // inherit_output = true so subprocess stderr/stdout is visible in server
+    // logs for debugging failed upscale operations
     auto proc = ProcessManager::start_process(
-        cli_exe_path, cli_args, "", debug, false, env_vars);
+        cli_exe_path, cli_args, "", true, false, env_vars);
 
     int exit_code = ProcessManager::wait_for_exit(proc, 300);
 
@@ -382,11 +399,10 @@ std::string SDServer::upscale_via_cli(
             << raw.size() << " -> " << upscaled_data.size() << " bytes)" << std::endl;
     } else {
         LOG(WARNING, "SDServer") << "ESRGAN upscale failed (exit code: "
-            << exit_code << ")" << std::endl;
+            << exit_code << ", model: " << upscale_model_path
+            << ", cli: " << cli_exe_path << ")" << std::endl;
     }
 
-    fs::remove(input_path);
-    fs::remove(output_path);
     return result;
 }
 
