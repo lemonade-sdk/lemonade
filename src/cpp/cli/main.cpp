@@ -67,6 +67,7 @@ struct CliConfig {
     bool downloaded = false;
     std::string agent;
     int scan_duration = 30;
+    bool json_output = false;
 };
 
 static bool validate_and_transform_model_json(nlohmann::json& model_data) {
@@ -619,6 +620,7 @@ int main(int argc, char* argv[]) {
 
     // Subcommands
     CLI::App* status_cmd = app.add_subcommand("status", "Check server status");
+    status_cmd->add_flag("--json", config.json_output, "Output status as JSON");
     CLI::App* list_cmd = app.add_subcommand("list", "List available models");
     CLI::App* pull_cmd = app.add_subcommand("pull", "Pull/download a model");
     CLI::App* import_cmd = app.add_subcommand("import", "Import a model from JSON file");
@@ -711,6 +713,12 @@ int main(int argc, char* argv[]) {
 
     // Execute command
     if (status_cmd->count() > 0) {
+        if (config.json_output) {
+            nlohmann::json out;
+            out["port"] = config.port;
+            std::cout << out.dump() << std::endl;
+            return 0;
+        }
         return client.status(config.port);
     } else if (list_cmd->count() > 0) {
         return client.list_models(!config.downloaded);
