@@ -7,6 +7,7 @@ export interface DownloadProgressEvent {
   bytes_downloaded: number;
   bytes_total: number;
   percent: number;
+  total_download_size?: number;  // Total bytes across ALL files in this download
 }
 
 class DownloadTracker {
@@ -15,6 +16,8 @@ class DownloadTracker {
   private cumulativeData: Map<string, {
     completedFilesBytes: number;  // Total bytes from completed files
     fileSizes: Map<number, number>;  // Map of file_index -> file size
+    bytesAtSessionStart: number;    // Bytes already on disk when this session began
+    sessionStartRecorded: boolean;  // Whether we've captured the initial offset
   }>;
 
   constructor() {
@@ -56,6 +59,7 @@ class DownloadTracker {
       percent: 0,
       status: 'downloading',
       startTime: Date.now(),
+      bytesResumed: 0,
       abortController,
       downloadType,
     };
@@ -64,6 +68,8 @@ class DownloadTracker {
     this.cumulativeData.set(downloadId, {
       completedFilesBytes: 0,
       fileSizes: new Map(),
+      bytesAtSessionStart: 0,
+      sessionStartRecorded: false,
     });
     this.emitUpdate(downloadItem);
 
@@ -96,7 +102,17 @@ class DownloadTracker {
 
     // Calculate cumulative totals
     const cumulativeBytesDownloaded = cumulative.completedFilesBytes + progress.bytes_downloaded;
-    const cumulativeBytesTotal = Array.from(cumulative.fileSizes.values()).reduce((sum, size) => sum + size, 0);
+
+    // Prefer server-reported total (covers all files) over local partial sum
+    const cumulativeBytesTotal = (progress.total_download_size && progress.total_download_size > 0)
+      ? progress.total_download_size
+      : Array.from(cumulative.fileSizes.values()).reduce((sum, size) => sum + size, 0);
+
+    // Record the initial byte offset on first meaningful progress (for speed calculation)
+    if (!cumulative.sessionStartRecorded && cumulativeBytesDownloaded > 0) {
+      cumulative.bytesAtSessionStart = cumulativeBytesDownloaded;
+      cumulative.sessionStartRecorded = true;
+    }
 
     // Calculate overall percent
     let overallPercent: number;
@@ -129,6 +145,7 @@ class DownloadTracker {
       bytesDownloaded: displayBytesDownloaded,
       bytesTotal: cumulativeBytesTotal,
       percent: overallPercent,
+      bytesResumed: cumulative.bytesAtSessionStart,
     };
 
     this.activeDownloads.set(downloadId, updatedDownload);

@@ -1748,6 +1748,12 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
     std::string download_path = manifest["download_path"].get<std::string>();
     int total_files = manifest["files_count"].get<int>();
 
+    // Compute total download size across all files for accurate progress reporting
+    size_t total_download_size = 0;
+    for (const auto& file_desc : manifest["files"]) {
+        total_download_size += file_desc["size"].get<size_t>();
+    }
+
     for (const auto& file_desc : manifest["files"]) {
         file_index++;
         std::string filename = file_desc["name"].get<std::string>();
@@ -1768,6 +1774,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             progress.total_files = total_files;
             progress.bytes_downloaded = 0;
             progress.bytes_total = file_size;
+            progress.total_download_size = total_download_size;
             progress.percent = 0;
             if (!progress_callback(progress)) {
                 LOG(INFO, "ModelManager") << "Download cancelled by client" << std::endl;
@@ -1788,13 +1795,14 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         // Returns bool: true = continue, false = cancel
         utils::ProgressCallback http_progress_cb;
         if (progress_callback) {
-            http_progress_cb = [&](size_t downloaded, size_t total) -> bool {
+            http_progress_cb = [&, total_download_size](size_t downloaded, size_t total) -> bool {
                 DownloadProgress progress;
                 progress.file = filename;
                 progress.file_index = file_index;
                 progress.total_files = total_files;
                 progress.bytes_downloaded = downloaded;
                 progress.bytes_total = total;
+                progress.total_download_size = total_download_size;
                 progress.percent = (total > 0) ? static_cast<int>((downloaded * 100) / total) : 0;
                 return progress_callback(progress);  // Propagate cancellation
             };
@@ -1819,6 +1827,20 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 
         if (result.success) {
             LOG(INFO, "ModelManager") << "Downloaded: " << filename << std::endl;
+
+            // Emit completion event for already-complete files that were skipped
+            // (download_file returns bytes_downloaded=0 when file already exists)
+            if (result.bytes_downloaded == 0 && progress_callback) {
+                DownloadProgress progress;
+                progress.file = filename;
+                progress.file_index = file_index;
+                progress.total_files = total_files;
+                progress.bytes_downloaded = file_size;
+                progress.bytes_total = file_size;
+                progress.total_download_size = total_download_size;
+                progress.percent = 100;
+                (void)progress_callback(progress);
+            }
         } else {
             // Build a detailed error message
             std::ostringstream error_msg;

@@ -3404,6 +3404,7 @@ void Server::stream_download_operation(
                     event_data["total_files"] = p.total_files;
                     event_data["bytes_downloaded"] = static_cast<uint64_t>(p.bytes_downloaded);
                     event_data["bytes_total"] = static_cast<uint64_t>(p.bytes_total);
+                    event_data["total_download_size"] = static_cast<uint64_t>(p.total_download_size);
                     event_data["percent"] = p.percent;
 
                     std::string event;
