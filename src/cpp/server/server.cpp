@@ -151,12 +151,25 @@ void Server::log_request(const httplib::Request& req) {
 }
 
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
-    // Check if path requires authentication (API routes with /api/, /v0/, or /v1/ prefix)
+    // Check if path requires authentication (API routes and internal endpoints)
     bool is_api_route = (req.path.rfind("/api/", 0) == 0) ||
                         (req.path.rfind("/v0/", 0) == 0) ||
                         (req.path.rfind("/v1/", 0) == 0);
+    bool is_internal_route = (req.path.rfind("/internal/", 0) == 0);
 
-    if ((api_key_ != "") && (req.method != "OPTIONS") && is_api_route) {
+    // Internal endpoints are restricted to loopback regardless of API key
+    if (is_internal_route) {
+        bool is_loopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+        if (!is_loopback) {
+            LOG(WARNING, "Server") << "Rejected internal request from non-loopback address: "
+                        << req.remote_addr << " " << req.path << std::endl;
+            res.status = 403;
+            res.set_content("{\"error\": \"Internal endpoints are only accessible from localhost\"}", "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+    }
+
+    if ((api_key_ != "") && (req.method != "OPTIONS") && (is_api_route || is_internal_route)) {
         if (api_key_ != httplib::get_bearer_token_auth(req)) {
             res.status = 401;
             res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
