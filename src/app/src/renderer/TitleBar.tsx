@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import logo from '../../assets/logo.svg';
 import AboutModal from './AboutModal';
 
-type MenuType = 'view' | 'help' | null;
+type MenuType = 'file' | 'view' | 'help' | null;
 
 interface TitleBarProps {
   isChatVisible: boolean;
@@ -51,6 +51,15 @@ const TitleBar: React.FC<TitleBarProps> = ({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
+        switch (event.key.toLowerCase()) {
+          case 'm':
+            event.preventDefault();
+            window.dispatchEvent(new CustomEvent('openAddModel'));
+            setActiveMenu(null);
+            break;
+        }
+      }
       if ((event.ctrlKey || event.metaKey) && event.shiftKey) {
         switch (event.key.toLowerCase()) {
           case 'm':
@@ -102,6 +111,31 @@ const TitleBar: React.FC<TitleBarProps> = ({
         <div className="title-bar-left">
           <img src={logo} alt="Lemonade" className="title-bar-logo" />
           <div className="menu-items">
+            <div className="menu-item-wrapper">
+              <span
+                className={`menu-item ${activeMenu === 'file' ? 'active' : ''}`}
+                onClick={() => handleMenuClick('file')}
+              >
+                File
+              </span>
+              {activeMenu === 'file' && (
+                <div className="menu-dropdown">
+                  <div className="menu-option has-submenu">
+                    <span>New Model</span>
+                    <span className="submenu-arrow">›</span>
+                    <div className="menu-submenu">
+                      <div className="menu-option new-model-submenu-option" title="Manually add a model by filling out a form" onClick={() => { window.dispatchEvent(new CustomEvent('openAddModel')); setActiveMenu(null); }}>
+                        <span>Manually</span>
+                        <span className="menu-shortcut">{isMacPlatform ? '⌘M' : 'Ctrl+M'}</span>
+                      </div>
+                      <div className="menu-option new-model-submenu-option" title="Upload a local JSON file" onClick={() => { window.dispatchEvent(new CustomEvent('openAddModelFromJSON')); setActiveMenu(null); }}>
+                        <span>From JSON</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="menu-item-wrapper">
               <span
                 className={`menu-item ${activeMenu === 'view' ? 'active' : ''}`}
