@@ -63,6 +63,7 @@ public:
     void set_port(int port);
     void set_context_size(int ctx_size);
     bool set_log_level(LogLevel level);
+    bool set_params(const nlohmann::json& params);
 
     int get_port() const { return port_; }
     // Translate bind addresses to connection addresses.

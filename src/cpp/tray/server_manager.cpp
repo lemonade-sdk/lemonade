@@ -237,9 +237,54 @@ bool ServerManager::is_server_running() const {
 
 void ServerManager::set_port(int port) {
     if (port != port_) {
-        port_ = port;
         if (is_server_running()) {
+            int old_port = port_;
+            try {
+                // Ask the router to rebind to the new port
+                nlohmann::json body;
+                body["port"] = port;
+                make_http_request("/internal/port", "POST", body.dump());
+
+                // Update local port for future connections
+                port_ = port;
+
+                // Health-check the new port (retry up to 5 seconds)
+                bool new_port_healthy = false;
+                for (int i = 0; i < 10; ++i) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                    try {
+                        httplib::Client cli(get_connection_host(), port_);
+                        cli.set_connection_timeout(2, 0);
+                        cli.set_read_timeout(2, 0);
+                        if (api_key_ != "") {
+                            cli.set_bearer_token_auth(api_key_);
+                        }
+                        auto res = cli.Get("/api/v1/health");
+                        if (res && res->status == 200) {
+                            new_port_healthy = true;
+                            break;
+                        }
+                    } catch (...) {}
+                }
+
+                if (!new_port_healthy) {
+                    LOG(WARNING, "ServerManager") << "Health check on new port " << port
+                                << " failed, falling back to restart" << std::endl;
+                    port_ = old_port;
+                    // Fall through to restart
+                } else {
+                    LOG(INFO, "ServerManager") << "Port changed to " << port << std::endl;
+                    return;
+                }
+            } catch (const std::exception& e) {
+                LOG(WARNING, "ServerManager") << "HTTP port change failed: " << e.what()
+                            << ", falling back to restart" << std::endl;
+                port_ = port;
+            }
+            // Fallback: restart the server
             restart_server();
+        } else {
+            port_ = port;
         }
     }
 }
@@ -248,8 +293,23 @@ void ServerManager::set_context_size(int ctx_size) {
     if (ctx_size != recipe_options_["ctx_size"]) {
         recipe_options_["ctx_size"] = ctx_size;
         if (is_server_running()) {
-            restart_server();
+            // Unload all models (they retain the old ctx_size)
+            unload_model();
+            // Update the default for future loads
+            nlohmann::json params;
+            params["ctx_size"] = ctx_size;
+            set_params(params);
         }
+    }
+}
+
+bool ServerManager::set_params(const nlohmann::json& params) {
+    try {
+        make_http_request("/api/v1/params", "POST", params.dump());
+        return true;
+    } catch (const std::exception& e) {
+        LOG(ERROR, "ServerManager") << "Failed to set params: " << e.what() << std::endl;
+        return false;
     }
 }
 

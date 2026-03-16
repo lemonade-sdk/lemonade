@@ -52,6 +52,12 @@ private:
     void log_request(const httplib::Request& req);
     httplib::Server::HandlerResponse authenticate_request(const httplib::Request& req, httplib::Response& res);
 
+    // Setup HTTP servers (create httplib::Server instances, routes, CORS, thread pool)
+    void setup_http_servers();
+
+    // Port change endpoint handler
+    void handle_port_change(const httplib::Request& req, httplib::Response& res);
+
     // Endpoint handlers
     void handle_health(const httplib::Request& req, httplib::Response& res);
     void handle_live(const httplib::Request& req, httplib::Response& res);
@@ -147,6 +153,7 @@ private:
 #endif
 
     bool running_;
+    std::atomic<bool> rebind_requested_{false};
 
     std::string api_key_;
     NetworkBeacon udp_beacon_;

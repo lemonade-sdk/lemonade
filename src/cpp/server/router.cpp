@@ -692,6 +692,12 @@ json Router::image_variations(const json& request) {
     });
 }
 
+void Router::set_default_option(const std::string& key, const json& value) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    default_options_[key] = value;
+    LOG(INFO, "Router") << "Updated default option: " << key << " = " << value << std::endl;
+}
+
 json Router::get_stats() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = get_most_recent_server();

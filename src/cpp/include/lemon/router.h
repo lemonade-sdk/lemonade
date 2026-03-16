@@ -78,6 +78,9 @@ public:
     void completion_stream(const std::string& request_body, httplib::DataSink& sink);
     void responses_stream(const std::string& request_body, httplib::DataSink& sink);
 
+    // Update a default option (e.g. ctx_size) at runtime
+    void set_default_option(const std::string& key, const nlohmann::json& value);
+
     // Get telemetry data
     json get_stats() const;
 
