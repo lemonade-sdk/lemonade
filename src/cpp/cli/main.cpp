@@ -16,6 +16,7 @@
 #ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
+    #include <shellapi.h>
     typedef int socklen_t;
 #else
     #include <arpa/inet.h>
@@ -129,12 +130,13 @@ static bool validate_and_transform_model_json(nlohmann::json& model_data) {
     return true;
 }
 
-static void open_url(const std::string& host, int port) {
-    std::string url = "http://" + host + ":" + std::to_string(port) + "/";
+static void open_url(const std::string& host, int port, const std::string& path = "/") {
+    std::string url = "http://" + host + ":" + std::to_string(port) + path;
     std::cout << "Opening URL: " << url << std::endl;
 
 #ifdef _WIN32
-    int result = system(("start \"" + url + "\"").c_str());
+    ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    int result = 0;
 #elif defined(__APPLE__)
     int result = system(("open \"" + url + "\"").c_str());
 #else
@@ -619,12 +621,15 @@ int main(int argc, char* argv[]) {
         ->envname("LEMONADE_API_KEY");
 
     // Subcommands
+    // Quick start commands
+    CLI::App* run_cmd = app.add_subcommand("run", "Load a model and open the webapp in browser")->group("Quick start");
+    CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model")->group("Quick start");
+
     // Server commands
-    CLI::App* run_cmd = app.add_subcommand("run", "Load a model and open the webapp in browser")->group("Server");
-    CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model")->group("Server");
     CLI::App* recipes_cmd = app.add_subcommand("recipes", "List available recipes and backends")->group("Server");
     CLI::App* status_cmd = app.add_subcommand("status", "Check server status")->group("Server");
     status_cmd->add_flag("--json", config.json_output, "Output status as JSON");
+    CLI::App* logs_cmd = app.add_subcommand("logs", "Open server logs in the web UI")->group("Server");
     CLI::App* scan_cmd = app.add_subcommand("scan", "Scan for network beacons")->group("Server");
 
     // Model commands
@@ -743,6 +748,9 @@ int main(int argc, char* argv[]) {
         return handle_recipes_command(client, config);
     } else if (launch_cmd->count() > 0) {
         return handle_launch_command(config);
+    } else if (logs_cmd->count() > 0) {
+        open_url(config.host, config.port, "/?logs=true");
+        return 0;
     } else if (scan_cmd->count() > 0) {
         return handle_scan_command(config);
     } else {
