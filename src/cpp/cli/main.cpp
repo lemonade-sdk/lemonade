@@ -619,19 +619,22 @@ int main(int argc, char* argv[]) {
         ->envname("LEMONADE_API_KEY");
 
     // Subcommands
-    CLI::App* status_cmd = app.add_subcommand("status", "Check server status");
+    // Server commands
+    CLI::App* run_cmd = app.add_subcommand("run", "Load a model and open the webapp in browser")->group("Server");
+    CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model")->group("Server");
+    CLI::App* recipes_cmd = app.add_subcommand("recipes", "List available recipes and backends")->group("Server");
+    CLI::App* status_cmd = app.add_subcommand("status", "Check server status")->group("Server");
     status_cmd->add_flag("--json", config.json_output, "Output status as JSON");
-    CLI::App* list_cmd = app.add_subcommand("list", "List available models");
-    CLI::App* pull_cmd = app.add_subcommand("pull", "Pull/download a model");
-    CLI::App* import_cmd = app.add_subcommand("import", "Import a model from JSON file");
-    CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model");
-    CLI::App* load_cmd = app.add_subcommand("load", "Load a model");
-    CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)");
-    CLI::App* run_cmd = app.add_subcommand("run", "Load a model and open the webapp in browser");
-    CLI::App* recipes_cmd = app.add_subcommand("recipes", "List available recipes and backends");
-    CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON");
-    CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model");
-    CLI::App* scan_cmd = app.add_subcommand("scan", "Scan for network beacons");
+    CLI::App* scan_cmd = app.add_subcommand("scan", "Scan for network beacons")->group("Server");
+
+    // Model commands
+    CLI::App* list_cmd = app.add_subcommand("list", "List available models")->group("Models");
+    CLI::App* pull_cmd = app.add_subcommand("pull", "Pull/download a model")->group("Models");
+    CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Models");
+    CLI::App* load_cmd = app.add_subcommand("load", "Load a model")->group("Models");
+    CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)")->group("Models");
+    CLI::App* import_cmd = app.add_subcommand("import", "Import a model from JSON file")->group("Models");
+    CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON")->group("Models");
 
     // List options
     list_cmd->add_flag("--downloaded", config.downloaded, "Save model options for future loads");
