@@ -222,32 +222,7 @@ std::string ModelManager::get_recipe_options_file() {
 }
 
 std::string ModelManager::get_hf_cache_dir() const {
-    // Check HF_HUB_CACHE first (highest priority)
-    std::string hf_hub_cache_env = get_environment_variable_utf8("HF_HUB_CACHE");
-    if (!hf_hub_cache_env.empty()) {
-        return hf_hub_cache_env;
-    }
-
-    // Check HF_HOME second (append /hub)
-    std::string hf_home_env = get_environment_variable_utf8("HF_HOME");
-    if (!hf_home_env.empty()) {
-        return hf_home_env + "/hub";
-    }
-
-    // Default platform-specific paths
-#ifdef _WIN32
-    std::string userprofile = get_environment_variable_utf8("USERPROFILE");
-    if (!userprofile.empty()) {
-        return userprofile + "\\.cache\\huggingface\\hub";
-    }
-    return "C:\\.cache\\huggingface\\hub";
-#else
-    std::string home = get_environment_variable_utf8("HOME");
-    if (!home.empty()) {
-        return home + "/.cache/huggingface/hub";
-    }
-    return "/tmp/.cache/huggingface/hub";
-#endif
+    return lemon::utils::get_hf_cache_dir();
 }
 
 void ModelManager::invalidate_models_cache() {
