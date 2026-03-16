@@ -21,12 +21,12 @@ std::string LemonadeClient::normalize_host(const std::string& host) const {
     return host;
 }
 
-// Helper lambda to create and configure httplib::Client
+// Helper to create and configure httplib::Client (timeouts in milliseconds)
 static httplib::Client make_client(const std::string& host, int port, const std::string& api_key,
-                                    int connection_timeout = 30, int read_timeout = 30) {
+                                    int connection_timeout_ms = 30000, int read_timeout_ms = 30000) {
     httplib::Client cli(host, port);
-    cli.set_connection_timeout(connection_timeout);
-    cli.set_read_timeout(read_timeout);
+    cli.set_connection_timeout(connection_timeout_ms / 1000, (connection_timeout_ms % 1000) * 1000);
+    cli.set_read_timeout(read_timeout_ms / 1000, (read_timeout_ms % 1000) * 1000);
 
     if (api_key != "") {
         cli.set_bearer_token_auth(api_key);
@@ -44,12 +44,12 @@ static void assert_http_ok(const httplib::Result& res) {
     }
 }
 
-// Overloaded make_request with configurable timeouts
+// Overloaded make_request with configurable timeouts (in milliseconds)
 std::string LemonadeClient::make_request(const std::string& path, const std::string& method,
                                           const std::string& body, const std::string& content_type,
-                                          int connection_timeout, int read_timeout) const {
+                                          int connection_timeout_ms, int read_timeout_ms) const {
     std::string normalized_host = normalize_host(host_);
-    httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout, read_timeout);
+    httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout_ms, read_timeout_ms);
 
     httplib::Result res;
 
@@ -110,13 +110,13 @@ static httplib::Result handle_sse_stream(httplib::Client& cli, const std::string
     return res;
 }
 
-// Overloaded make_request for streaming SSE responses
+// Overloaded make_request for streaming SSE responses (timeouts in milliseconds)
 bool LemonadeClient::make_request(const std::string& path, const std::string& method,
                                    const std::string& body, const std::string& content_type,
                                    std::function<void(const std::string& event_type, const std::string& event_data)> callback,
-                                   int connection_timeout, int read_timeout) const {
+                                   int connection_timeout_ms, int read_timeout_ms) const {
     std::string normalized_host = normalize_host(host_);
-    httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout, read_timeout);
+    httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout_ms, read_timeout_ms);
 
     if (method == "POST") {
         auto res = handle_sse_stream(cli, path, body, content_type, callback);
@@ -128,78 +128,59 @@ bool LemonadeClient::make_request(const std::string& path, const std::string& me
     throw std::runtime_error("Streaming only supports POST method");
 }
 
-int LemonadeClient::status() const {
+int LemonadeClient::status(int display_port) const {
     try {
         std::string response = make_request("/api/v1/health");
         auto json_response = json::parse(response);
 
-        std::cout << "Lemonade Server Status" << std::endl;
-        std::cout << std::string(50, '=') << std::endl;
+        int port = display_port > 0 ? display_port : port_;
+        std::cout << "Server is running on port " << port << std::endl;
+        std::cout << std::endl;
 
-        // Server status
-        if (json_response.contains("status")) {
-            std::cout << "Status: " << json_response["status"].get<std::string>() << std::endl;
-        }
+        // Server info table
+        std::cout << std::left << std::setw(20) << "Property" << "Value" << std::endl;
+        std::cout << std::string(50, '-') << std::endl;
 
-        // Version
         if (json_response.contains("version")) {
-            std::cout << "Version: " << json_response["version"].get<std::string>() << std::endl;
+            std::cout << std::left << std::setw(20) << "Version"
+                      << json_response["version"].get<std::string>() << std::endl;
         }
-
-        // WebSocket port
         if (json_response.contains("websocket_port")) {
-            std::cout << "WebSocket Port: " << json_response["websocket_port"].get<int>() << std::endl;
+            std::cout << std::left << std::setw(20) << "WebSocket Port"
+                      << json_response["websocket_port"].get<int>() << std::endl;
         }
-
-        // Max models
         if (json_response.contains("max_models") && json_response["max_models"].is_object()) {
-            const auto count = json_response["max_models"]["llm"].get<int>();
-            std::cout << "Max Models Per Type: " << count << std::endl;
+            std::cout << std::left << std::setw(20) << "Max Models/Type"
+                      << json_response["max_models"]["llm"].get<int>() << std::endl;
         }
 
-        // All loaded models
+        // Loaded models table
         if (json_response.contains("all_models_loaded") && json_response["all_models_loaded"].is_array() &&
             !json_response["all_models_loaded"].empty()) {
-            std::cout << "All Loaded Models:" << std::endl;
-            std::cout << std::string(50, '=') << std::endl;
+            std::cout << std::endl;
+            std::cout << std::left
+                      << std::setw(30) << "Model"
+                      << std::setw(10) << "Type"
+                      << std::setw(10) << "Device"
+                      << std::setw(14) << "Recipe"
+                      << "Checkpoint" << std::endl;
+            std::cout << std::string(100, '-') << std::endl;
 
             for (const auto& model : json_response["all_models_loaded"]) {
-                if (model.is_object()) {
-                    std::cout << std::endl;
+                if (!model.is_object()) continue;
 
-                    if (model.contains("model_name")) {
-                        std::cout << "  Model: " << model["model_name"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("checkpoint")) {
-                        std::cout << "  Checkpoint: " << model["checkpoint"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("type")) {
-                        std::cout << "  Type: " << model["type"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("device")) {
-                        std::cout << "  Device: " << model["device"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("recipe")) {
-                        std::cout << "  Recipe: " << model["recipe"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("backend_url")) {
-                        std::cout << "  Backend URL: " << model["backend_url"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("last_use")) {
-                        std::cout << "  Last Used: " << model["last_use"].get<int>() << std::endl;
-                    }
-                    if (model.contains("recipe_options") && model["recipe_options"].is_object()) {
-                        std::cout << "  Recipe Options:" << std::endl;
-                        for (const auto& [key, value] : model["recipe_options"].items()) {
-                            std::cout << "    " << key << ": " << value.dump() << std::endl;
-                        }
-                    }
-                }
+                std::cout << std::left
+                          << std::setw(30) << model.value("model_name", "-")
+                          << std::setw(10) << model.value("type", "-")
+                          << std::setw(10) << model.value("device", "-")
+                          << std::setw(14) << model.value("recipe", "-")
+                          << model.value("checkpoint", "-") << std::endl;
             }
+        } else {
             std::cout << std::endl;
+            std::cout << "No models loaded." << std::endl;
         }
 
-        std::cout << std::string(50, '=') << std::endl;
         return 0;
 
     } catch (const json::exception& e) {
@@ -362,7 +343,7 @@ int LemonadeClient::pull_model(const json& model_data) {
             } else {
                 parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
             }
-        }, 86400, 30);
+        }, 86400000, 30000);
 
         if (!state.success) {
             if (!state.error_message.empty()) {
@@ -572,7 +553,7 @@ int LemonadeClient::install_backend(const std::string& recipe, const std::string
             } else {
                 parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
             }
-        }, 86400, 30);
+        }, 86400000, 30000);
         if (!state.success) {
             if (!state.error_message.empty()) {
                 throw std::runtime_error(state.error_message);
