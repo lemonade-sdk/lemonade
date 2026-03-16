@@ -82,6 +82,58 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const modeTransitionTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
+    const decodePrompt = (raw: string) => {
+      try {
+        return decodeURIComponent(raw.replace(/\+/g, ' '));
+      } catch {
+        return raw;
+      }
+    };
+
+    const getPromptFromLocation = () => {
+      const params = new URLSearchParams(window.location.search);
+      const qPrompt = params.get('q');
+      if (qPrompt && qPrompt.trim().length > 0) {
+        return decodePrompt(qPrompt);
+      }
+
+      const entries = Array.from(params.entries()).filter(([, value]) => value?.trim().length > 0);
+      if (entries.length === 1) {
+        return decodePrompt(entries[0][1]);
+      }
+
+      return '';
+    };
+
+    const applyPromptFromQuery = () => {
+      const fromHeader = (window as any).__LEMONADE_INITIAL_PROMPT__;
+      const queryPrompt = getPromptFromLocation();
+      const prompt = typeof fromHeader === 'string' && fromHeader.trim().length > 0
+        ? decodePrompt(fromHeader)
+        : queryPrompt;
+      if (!prompt || prompt.trim().length === 0) return;
+
+      setInputValue(prompt);
+      delete (window as any).__LEMONADE_INITIAL_PROMPT__;
+
+      window.requestAnimationFrame(() => {
+        if (!inputTextareaRef.current) return;
+        adjustTextareaHeight(inputTextareaRef.current);
+        inputTextareaRef.current.focus();
+        const len = inputTextareaRef.current.value.length;
+        inputTextareaRef.current.setSelectionRange(len, len);
+      });
+    };
+
+    applyPromptFromQuery();
+    window.addEventListener('popstate', applyPromptFromQuery);
+
+    return () => {
+      window.removeEventListener('popstate', applyPromptFromQuery);
+    };
+  }, []);
+
+  useEffect(() => {
     const TRANSITION_MS = 420;
     if (modeTransitionTimerRef.current !== null) {
       window.clearTimeout(modeTransitionTimerRef.current);
