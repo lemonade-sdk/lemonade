@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <cstdint>
 #include <nlohmann/json.hpp>
 
 // Forward declaration for httplib
@@ -19,6 +20,8 @@ struct StreamingRequestState {
     int last_percent = -1;
     bool success = false;
     std::string error_message;
+    bool total_size_printed = false;
+    uint64_t last_file_size = 0;
 };
 
 // Model information structure
