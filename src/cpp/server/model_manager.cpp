@@ -683,7 +683,12 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
     }
 
     // For GGUF-based backends, find the GGUF file with advanced sharded model support
-    if ((info.recipe == "llamacpp" || info.recipe == "sd-cpp") && type == "main") {
+    // Skip this resolver if the variant is explicitly a non-GGUF file (e.g. safetensors)
+    bool variant_is_non_gguf = !variant.empty() && (
+        variant.find(".safetensors") != std::string::npos ||
+        variant.find(".onnx") != std::string::npos ||
+        variant.find(".bin") != std::string::npos);
+    if ((info.recipe == "llamacpp" || info.recipe == "sd-cpp") && type == "main" && !variant_is_non_gguf) {
         if (!fs::exists(model_cache_path_fs)) {
             return model_cache_path;  // Return directory path even if not found
         }
