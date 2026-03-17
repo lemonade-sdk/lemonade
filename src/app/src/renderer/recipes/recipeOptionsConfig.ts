@@ -213,7 +213,6 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     label: 'Height',
     description: 'Image height in pixels',
   },
-
   // Common option - save settings
   saveOptions: {
     type: 'boolean',

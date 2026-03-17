@@ -120,8 +120,8 @@ HttpResponse HttpClient::post(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
-    // Use provided timeout, or fallback to global default (set via --http-timeout)
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_);
+    // Negative values use the global default; 0 disables the timeout.
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds >= 0 ? timeout_seconds : default_timeout_seconds_);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
@@ -182,8 +182,8 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
-    // Use provided timeout, or fallback to global default (set via --http-timeout)
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_);
+    // Negative values use the global default; 0 disables the timeout.
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds >= 0 ? timeout_seconds : default_timeout_seconds_);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     CURLcode res = curl_easy_perform(curl);
@@ -258,8 +258,8 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callback_data);
-    // Use provided timeout, or fallback to global default (set via --http-timeout)
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_);
+    // Negative values use the global default; 0 disables the timeout.
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds >= 0 ? timeout_seconds : default_timeout_seconds_);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers

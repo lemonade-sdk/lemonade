@@ -7,8 +7,11 @@
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
 #include <httplib.h>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <filesystem>
+#include <stdexcept>
 #include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
@@ -16,6 +19,32 @@ using namespace lemon::utils;
 
 namespace lemon {
 namespace backends {
+namespace {
+
+constexpr const char* kImageRequestTimeoutEnv = "LEMONADE_IMAGE_REQUEST_TIMEOUT";
+
+long get_image_request_timeout_seconds() {
+    const char* raw_value = std::getenv(kImageRequestTimeoutEnv);
+    if (raw_value == nullptr || raw_value[0] == '\0') {
+        return -1;
+    }
+
+    try {
+        size_t parsed_chars = 0;
+        long timeout_seconds = std::stol(raw_value, &parsed_chars);
+        if (parsed_chars != std::strlen(raw_value) || timeout_seconds < 0) {
+            throw std::invalid_argument("invalid timeout");
+        }
+        return timeout_seconds;
+    } catch (const std::exception&) {
+        LOG(WARNING, "SDServer") << "Ignoring invalid " << kImageRequestTimeoutEnv
+                                 << "=" << raw_value
+                                 << "; using global timeout instead" << std::endl;
+        return -1;
+    }
+}
+
+} // namespace
 
 InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
@@ -252,8 +281,7 @@ json SDServer::image_generations(const json& request) {
     LOG(DEBUG, "SDServer") << "Forwarding request to sd-server: "
                   << sd_request.dump(2) << std::endl;
 
-    // Use base class forward_request with 10 minute timeout for image generation
-    return forward_request("/v1/images/generations", sd_request, 600);
+    return forward_request("/v1/images/generations", sd_request, get_image_request_timeout_seconds());
 }
 
 json SDServer::image_edits(const json& request) {
@@ -307,7 +335,7 @@ json SDServer::image_edits(const json& request) {
                   << " size=" << request.value("size", "")
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, 600);
+    return forward_multipart_request("/v1/images/edits", fields, get_image_request_timeout_seconds());
 }
 
 json SDServer::image_variations(const json& request) {
@@ -335,7 +363,7 @@ json SDServer::image_variations(const json& request) {
                   << " size=" << request.value("size", "")
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, 600);
+    return forward_multipart_request("/v1/images/edits", fields, get_image_request_timeout_seconds());
 }
 
 } // namespace backends

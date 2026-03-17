@@ -515,6 +515,23 @@ class EphemeralCLITests(CLITestBase):
             f"Serve help should document LEMONADE_WHISPERCPP_ARGS: {output}",
         )
 
+    def test_001_help_uses_global_timeout_not_image_timeout_no_server(self):
+        """Test help output exposes the global timeout and not the removed image-specific CLI flag."""
+        self.assertFalse(is_server_running(), "Server should not be running")
+        result = self.assertCommandSucceeds(["serve", "--help"])
+        output = result.stdout + result.stderr
+
+        self.assertIn(
+            "--global-timeout",
+            output,
+            f"Serve help should document --global-timeout: {output}",
+        )
+        self.assertNotIn(
+            "--image-request-timeout",
+            output,
+            f"Serve help should not document --image-request-timeout: {output}",
+        )
+
     def test_002_list_ephemeral(self):
         """Test list command starts ephemeral server if needed."""
         self.assertFalse(is_server_running(), "Server should not be running initially")
