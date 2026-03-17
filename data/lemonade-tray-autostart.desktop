@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Lemonade Tray
-Comment=System tray interface for Lemonade Server
-Exec=lemonade-tray
-Icon=ai.lemonade_server.Lemonade
-Terminal=false
-X-GNOME-Autostart-enabled=true
-NoDisplay=true

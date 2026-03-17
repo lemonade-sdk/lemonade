@@ -252,11 +252,7 @@ if(UNIX AND NOT APPLE AND _LINUX_TRAY_BUILD)
 
     install(TARGETS lemonade-tray RUNTIME DESTINATION bin)
 
-    # Install autostart desktop entry
-    install(FILES "${CMAKE_SOURCE_DIR}/data/lemonade-tray-autostart.desktop"
-        DESTINATION "${CMAKE_INSTALL_FULL_SYSCONFDIR}/xdg/autostart"
-        RENAME "lemonade-tray.desktop"
-    )
+    # No autostart desktop entry — Linux users start lemonade-tray manually
 
     # Symlink in /usr/bin if not installing to /usr
     if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
