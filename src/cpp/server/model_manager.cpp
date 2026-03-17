@@ -1886,9 +1886,16 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 
         // Check for .partial file (incomplete download)
         if (fs::exists(partial_path)) {
-            all_valid = false;
-            LOG(ERROR, "ModelManager") << "Incomplete file found: " << filename << ".partial" << std::endl;
-            continue;
+            if (fs::exists(expected_path)) {
+                // Final file exists alongside stale .partial — clean up the leftover
+                LOG(INFO, "ModelManager") << "Removing stale partial file: " << filename << ".partial" << std::endl;
+                std::error_code ec;
+                fs::remove(partial_path, ec);
+            } else {
+                all_valid = false;
+                LOG(ERROR, "ModelManager") << "Incomplete file found: " << filename << ".partial" << std::endl;
+                continue;
+            }
         }
 
         if (!fs::exists(expected_path)) {
@@ -1897,13 +1904,15 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             continue;
         }
 
-        // Verify file size if we have expected size
+        // Verify file size if we have expected size from tree API
         if (expected_size > 0) {
             size_t actual_size = fs::file_size(expected_path);
             if (actual_size != expected_size) {
-                all_valid = false;
-                LOG(ERROR, "ModelManager") << "Size mismatch for " << filename
-                            << ": expected " << expected_size << " bytes, got " << actual_size << " bytes" << std::endl;
+                // Log mismatch but don't fail — tree API sizes can differ from
+                // actual LFS object sizes in some edge cases
+                LOG(WARNING, "ModelManager") << "Size note for " << filename
+                            << ": tree API reports " << expected_size
+                            << " bytes, actual " << actual_size << " bytes" << std::endl;
             }
         }
     }

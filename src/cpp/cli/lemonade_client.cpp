@@ -286,9 +286,30 @@ int LemonadeClient::list_models(bool show_all) const {
 }
 
 // Helper function to parse SSE progress events
-static bool parse_sse_progress(const std::string& event_data, std::string& last_file, int& last_percent,
-                                  std::string& error_message, bool& total_size_printed,
-                                  uint64_t& last_file_size) {
+static std::string format_speed(double bytes_per_sec) {
+    if (bytes_per_sec < 1024.0) {
+        return std::to_string(static_cast<int>(bytes_per_sec)) + " B/s";
+    } else if (bytes_per_sec < 1024.0 * 1024.0) {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(1) << (bytes_per_sec / 1024.0) << " KB/s";
+        return oss.str();
+    } else if (bytes_per_sec < 1024.0 * 1024.0 * 1024.0) {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(1) << (bytes_per_sec / (1024.0 * 1024.0)) << " MB/s";
+        return oss.str();
+    } else {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(1) << (bytes_per_sec / (1024.0 * 1024.0 * 1024.0)) << " GB/s";
+        return oss.str();
+    }
+}
+
+static bool parse_sse_progress(const std::string& event_data, StreamingRequestState& state) {
+    std::string& last_file = state.last_file;
+    int& last_percent = state.last_percent;
+    std::string& error_message = state.error_message;
+    bool& total_size_printed = state.total_size_printed;
+    uint64_t& last_file_size = state.last_file_size;
     try {
         auto json_data = json::parse(event_data);
 
@@ -331,6 +352,8 @@ static bool parse_sse_progress(const std::string& event_data, std::string& last_
                     last_percent = 100;
                 } else {
                     last_percent = -1;
+                    state.file_start_time = std::chrono::steady_clock::now();
+                    state.file_bytes_resumed = bytes_prev;
                 }
                 std::cout << std::endl;
                 last_file = file;
@@ -345,10 +368,20 @@ static bool parse_sse_progress(const std::string& event_data, std::string& last_
                 int display_percent = static_cast<int>((bytes_downloaded * 100) / last_file_size);
                 if (display_percent > 100) display_percent = 100;
                 if (display_percent != last_percent) {
+                    // Calculate speed from session bytes only (exclude resumed bytes)
+                    std::string speed_str;
+                    auto elapsed = std::chrono::steady_clock::now() - state.file_start_time;
+                    double elapsed_sec = std::chrono::duration<double>(elapsed).count();
+                    if (elapsed_sec > 0.5 && bytes_downloaded > state.file_bytes_resumed) {
+                        double speed = (bytes_downloaded - state.file_bytes_resumed) / elapsed_sec;
+                        speed_str = " " + format_speed(speed);
+                    }
+
                     std::cout << "\r  Progress: " << display_percent << "% ("
                             << std::fixed << std::setprecision(1)
                             << (bytes_downloaded / (1024.0 * 1024.0)) << "/"
-                            << (last_file_size / (1024.0 * 1024.0)) << " MB)" << std::flush;
+                            << (last_file_size / (1024.0 * 1024.0)) << " MB)"
+                            << speed_str << "    " << std::flush;
                     last_percent = display_percent;
                 }
             }
@@ -388,7 +421,7 @@ int LemonadeClient::pull_model(const json& model_data) {
                 std::cout << std::endl;
                 state.success = true;
             } else {
-                parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message, state.total_size_printed, state.last_file_size);
+                parse_sse_progress(event_data, state);
             }
         }, 86400, 30);
 
@@ -598,7 +631,7 @@ int LemonadeClient::install_backend(const std::string& recipe, const std::string
                 std::cout << std::endl;
                 state.success = true;
             } else {
-                parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message, state.total_size_printed, state.last_file_size);
+                parse_sse_progress(event_data, state);
             }
         }, 86400, 30);
         if (!state.success) {
