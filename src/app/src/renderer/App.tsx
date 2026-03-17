@@ -148,6 +148,17 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
+  // Handle lemonade:// protocol navigation from main process
+  useEffect(() => {
+    if (!window?.api?.onNavigate) return;
+    const unsubscribe = window.api.onNavigate((data: { view?: string; model?: string }) => {
+      if (data.view === 'logs') {
+        setIsLogsVisible(true);
+      }
+    });
+    return unsubscribe;
+  }, []);
+
   useEffect(() => {
     const hasMainColumn = isLogsVisible;
     let computedMinWidth = LAYOUT_CONSTANTS.experienceRailWidth; // Rail always visible
