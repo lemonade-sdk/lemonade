@@ -2106,9 +2106,9 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         subdirs_to_fetch.insert("");  // Root directory
 
         for (const auto& filename : files) {
-            auto slash_pos = filename.find('/');
-            if (slash_pos != std::string::npos) {
-                subdirs_to_fetch.insert(filename.substr(0, slash_pos));
+            auto last_slash_pos = filename.rfind('/');
+            if (last_slash_pos != std::string::npos) {
+                subdirs_to_fetch.insert(filename.substr(0, last_slash_pos));
             }
         }
 
