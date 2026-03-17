@@ -180,6 +180,17 @@
       <Component Id="LemonadeAppLauncher" Guid="a9b0c1d2-e3f4-5a6b-7c8d-9e0f1a2b3c4d">
         <File Id="lemonade_app.cmd" Source="$(var.CppSourceDir)\installer\lemonade-app.cmd" KeyPath="yes" />
       </Component>
+
+      <!-- Register lemonade:// URL protocol handler → Electron app -->
+      <Component Id="LemonadeProtocolHandler" Guid="e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b">
+        <RegistryKey Root="HKCU" Key="Software\Classes\lemonade">
+          <RegistryValue Type="string" Value="URL:Lemonade Protocol" />
+          <RegistryValue Type="string" Name="URL Protocol" Value="" />
+        </RegistryKey>
+        <RegistryKey Root="HKCU" Key="Software\Classes\lemonade\shell\open\command">
+          <RegistryValue Type="string" Value="&quot;[INSTALLDIR]app\lemonade-app.exe&quot; &quot;%1&quot;" KeyPath="yes" />
+        </RegistryKey>
+      </Component>
 <?endif?>
     </ComponentGroup>
 
