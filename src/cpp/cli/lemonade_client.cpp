@@ -130,7 +130,7 @@ bool LemonadeClient::make_request(const std::string& path, const std::string& me
 
 int LemonadeClient::status(int display_port) const {
     try {
-        std::string response = make_request("/api/v1/health");
+        std::string response = make_request("/api/v1/health", "GET", "", "", 500, 500);
         auto json_response = json::parse(response);
 
         int port = display_port > 0 ? display_port : port_;
@@ -187,7 +187,12 @@ int LemonadeClient::status(int display_port) const {
         std::cerr << "Error parsing health response JSON: " << e.what() << std::endl;
         return 1;
     } catch (const std::exception& e) {
-        std::cerr << "Error fetching health status: " << e.what() << std::endl;
+        const std::string error = e.what();
+        if (error.find("Connection failed:") == 0) {
+            std::cerr << "Server is not running" << std::endl;
+        } else {
+            std::cerr << "Error fetching health status: " << error << std::endl;
+        }
         return 1;
     }
 }

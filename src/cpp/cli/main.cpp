@@ -359,7 +359,7 @@ static bool try_live_check(const std::string& host, int port, const std::string&
 // Listen for a UDP beacon from localhost and return the server's HTTP port, or 0 if none found
 static int discover_local_server_port() {
     const int beacon_port = 8000;
-    const int max_wait_seconds = 5;
+    const int max_wait_seconds = 3;
 
 #ifdef _WIN32
     WSADATA wsaData;

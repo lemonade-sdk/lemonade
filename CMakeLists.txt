@@ -462,10 +462,6 @@ if(WIN32)
         endif()
 
         set(WIX_INSTALLER_TARGETS wix_installer_minimal)
-        # Add web-app dependency to minimal installer if target exists
-        if(TARGET web-app)
-            add_dependencies(wix_installer_minimal web-app)
-        endif()
 
         if(Python3_FOUND)
             add_custom_target(wix_installer_full
@@ -516,13 +512,6 @@ if(WIN32)
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                 COMMENT "Building WiX MSI installer (with Electron app)"
             )
-
-            if(TARGET electron-app)
-                add_dependencies(wix_installer_full electron-app)
-            endif()
-            if(TARGET web-app)
-                add_dependencies(wix_installer_full web-app)
-            endif()
 
             list(APPEND WIX_INSTALLER_TARGETS wix_installer_full)
         else()
@@ -795,10 +784,25 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
     endif()
 
     set(ELECTRON_BUILD_SOURCE_DIR "${CMAKE_BINARY_DIR}/app-src")
+    set(ELECTRON_APP_OUTPUT "${ELECTRON_APP_UNPACKED_DIR}/${ELECTRON_EXE_NAME}")
+
+    file(GLOB_RECURSE ELECTRON_APP_SOURCES
+        CONFIGURE_DEPENDS
+        "${ELECTRON_APP_SOURCE_DIR}/src/*"
+        "${ELECTRON_APP_SOURCE_DIR}/assets/*"
+        "${ELECTRON_APP_SOURCE_DIR}/*.json"
+        "${ELECTRON_APP_SOURCE_DIR}/*.js"
+        "${ELECTRON_APP_SOURCE_DIR}/*.ts"
+        "${ELECTRON_APP_SOURCE_DIR}/*.tsx"
+        "${ELECTRON_APP_SOURCE_DIR}/*.css"
+        "${ELECTRON_APP_SOURCE_DIR}/*.html"
+    )
+    list(FILTER ELECTRON_APP_SOURCES EXCLUDE REGEX "[/\\\\](node_modules|dist|dist-app)[/\\\\]")
 
     # Note: On Windows, NPM_COMMAND uses 'cmd /c' wrapper to handle npm.cmd batch file
     # Note: Avoid shell-special characters in echo messages (no parentheses, etc.)
-    add_custom_target(electron-app
+    add_custom_command(
+        OUTPUT "${ELECTRON_APP_OUTPUT}"
         COMMAND ${CMAKE_COMMAND} -E echo "Copying Electron app source to build directory..."
         COMMAND ${CMAKE_COMMAND} -E remove_directory "${ELECTRON_BUILD_SOURCE_DIR}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${ELECTRON_BUILD_SOURCE_DIR}"
@@ -807,8 +811,14 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
         COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci
         COMMAND ${CMAKE_COMMAND} -E echo "Building Electron app for current platform..."
         COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_BUILD_SOURCE_DIR}" ${NPM_COMMAND} run ${ELECTRON_BUILD_TARGET} -- --config.directories.output=${ELECTRON_APP_BUILD_DIR}
+        DEPENDS ${ELECTRON_APP_SOURCES}
         COMMENT "Building Electron app with npm"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        VERBATIM
+    )
+
+    add_custom_target(electron-app
+        DEPENDS "${ELECTRON_APP_OUTPUT}"
     )
 
     message(STATUS "Node.js found: ${NODE_EXECUTABLE}")
@@ -947,33 +957,27 @@ else()
     endif()
 endif()
 
-# Add manual web-app target for platforms where automatic build is disabled
+# Add manual web-app target for platforms where automatic build is disabled.
+# Reuse the shared build script so WiX/MSBuild gets output under ${WEB_APP_BUILD_DIR}.
 if(CAN_BUILD_WEB_APP AND NOT BUILD_WEB_APP)
-    if(USE_SYSTEM_NODEJS_MODULES)
-        set(WEB_APP_BUILD_SOURCE_DIR_MANUAL "${CMAKE_CURRENT_BINARY_DIR}/web-app-manual-src")
-        add_custom_target(web-app
-            COMMAND ${CMAKE_COMMAND}
-                -DWEB_APP_SOURCE_DIR=${WEB_APP_SOURCE_DIR}
-                -DWEB_APP_BUILD_SOURCE_DIR=${WEB_APP_BUILD_SOURCE_DIR_MANUAL}
-                -DWEB_APP_BUILD_DIR=${WEB_APP_BUILD_DIR}
-                -DWEBPACK_EXECUTABLE=${WEBPACK_EXECUTABLE}
-                -DUSE_SYSTEM_NODEJS_MODULES=${USE_SYSTEM_NODEJS_MODULES}
-                -DWEB_APP_STAMP=${CMAKE_CURRENT_BINARY_DIR}/web-app-manual.stamp
-                -P ${CMAKE_CURRENT_SOURCE_DIR}/src/web-app/BuildWebApp.cmake
-            COMMENT "Building Web app with system nodejs modules"
-            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-            VERBATIM
-        )
-    else()
-        add_custom_target(web-app
-            COMMAND ${CMAKE_COMMAND} -E echo "Building Web app..."
-            COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} install
-            COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} run build
-            COMMENT "Building Web app with npm"
-            WORKING_DIRECTORY "${WEB_APP_SOURCE_DIR}"
-            VERBATIM
-        )
-    endif()
+    set(WEB_APP_BUILD_SOURCE_DIR_MANUAL "${CMAKE_CURRENT_BINARY_DIR}/web-app-manual-src")
+    set(WEB_APP_MANUAL_STAMP "${CMAKE_CURRENT_BINARY_DIR}/web-app-manual.stamp")
+
+    add_custom_target(web-app
+        COMMAND ${CMAKE_COMMAND}
+            -DWEB_APP_SOURCE_DIR=${WEB_APP_SOURCE_DIR}
+            -DWEB_APP_BUILD_SOURCE_DIR=${WEB_APP_BUILD_SOURCE_DIR_MANUAL}
+            -DWEB_APP_BUILD_DIR=${WEB_APP_BUILD_DIR}
+            -DNPM_EXECUTABLE=${NPM_EXECUTABLE}
+            -DWEBPACK_EXECUTABLE=${WEBPACK_EXECUTABLE}
+            -DUSE_SYSTEM_NODEJS_MODULES=${USE_SYSTEM_NODEJS_MODULES}
+            -DWEB_APP_STAMP=${WEB_APP_MANUAL_STAMP}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/src/web-app/BuildWebApp.cmake
+        COMMENT "Building Web app"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+        VERBATIM
+    )
+
     message(STATUS "Web app can be built manually with: cmake --build . --target web-app")
 endif()
 
@@ -1035,6 +1039,46 @@ add_subdirectory(src/cpp/cli)
 
 # Add legacy shim (backwards-compatible lemonade-server)
 add_subdirectory(src/cpp/legacy-cli)
+
+# Wire WiX installer targets to the binaries and frontend artifacts they package.
+# Doing this after the subdirectories are added ensures MSBuild gets real project refs.
+if(WIN32 AND WIX_EXECUTABLE)
+    set(WIX_PACKAGED_TARGETS)
+
+    if(TARGET LemonadeServer)
+        list(APPEND WIX_PACKAGED_TARGETS LemonadeServer)
+    endif()
+    if(TARGET lemonade)
+        list(APPEND WIX_PACKAGED_TARGETS lemonade)
+    endif()
+    if(TARGET lemonade-server)
+        list(APPEND WIX_PACKAGED_TARGETS lemonade-server)
+    endif()
+    if(TARGET ${EXECUTABLE_NAME})
+        list(APPEND WIX_PACKAGED_TARGETS ${EXECUTABLE_NAME})
+    endif()
+
+    if(TARGET wix_installer_minimal)
+        if(TARGET web-app)
+            add_dependencies(wix_installer_minimal web-app)
+        endif()
+        if(WIX_PACKAGED_TARGETS)
+            add_dependencies(wix_installer_minimal ${WIX_PACKAGED_TARGETS})
+        endif()
+    endif()
+
+    if(TARGET wix_installer_full)
+        if(TARGET electron-app)
+            add_dependencies(wix_installer_full electron-app)
+        endif()
+        if(TARGET web-app)
+            add_dependencies(wix_installer_full web-app)
+        endif()
+        if(WIX_PACKAGED_TARGETS)
+            add_dependencies(wix_installer_full ${WIX_PACKAGED_TARGETS})
+        endif()
+    endif()
+endif()
 
 if(APPLE)
     # SIGNING LOGIC (Release Only)
