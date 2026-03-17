@@ -738,8 +738,9 @@ const [searchQuery, setSearchQuery] = useState('');
             },
           }));
           if (!hfSelectedQuantizations[modelId]) {
-            setHfSelectedQuantizations((prev: Record<string, string>) => ({ ...prev, [modelId]: quantizations[0].filename }));
-            if (quantizations[0].size !== undefined) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: quantizations[0].size }));
+            const preferred = quantizations.find(q => q.quantization === 'Q4_K_M') ?? quantizations[0];
+            setHfSelectedQuantizations((prev: Record<string, string>) => ({ ...prev, [modelId]: preferred.filename }));
+            if (preferred.size !== undefined) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: preferred.size }));
           }
           return;
         }
@@ -792,7 +793,8 @@ const [searchQuery, setSearchQuery] = useState('');
         rootFiles.forEach(({ filename, size }) => {
           const m = filename.match(quantRegex);
           if (m) {
-            const qLabel = m[1].toUpperCase();
+            const isUD = /[-._]UD[-._]/i.test(filename);
+            const qLabel = m[1].toUpperCase() + (isUD ? ' (UD)' : '');
             if (!rootQuantGroups[qLabel]) {
               rootQuantGroups[qLabel] = { filename, totalSize: 0 };
             }
@@ -803,8 +805,27 @@ const [searchQuery, setSearchQuery] = useState('');
           quantizations.push({ filename, quantization: qLabel, size: totalSize > 0 ? totalSize : undefined });
         });
         if (quantizations.length > 0) {
-          const priority: Record<string, number> = { Q4_K_M: 1, Q4_K_S: 2, Q5_K_M: 3, Q5_K_S: 4, Q6_K: 5, Q8_0: 6 };
-          quantizations.sort((a, b) => (priority[a.quantization] ?? 100) - (priority[b.quantization] ?? 100));
+          // Sort by bit-depth (ascending), matching HuggingFace ordering
+          const quantBitDepth = (q: string): number => {
+            const base = q.replace(' (UD)', '');
+            // Map quant names to approximate bit-depth for sorting
+            const bitMap: Record<string, number> = {
+              IQ1_S: 1.0, IQ1_M: 1.1,
+              IQ2_XXS: 2.0, IQ2_XS: 2.1, IQ2_S: 2.2, IQ2_M: 2.3,
+              Q2_K: 2.5, Q2_K_L: 2.6, Q2_K_XL: 2.7,
+              IQ3_XXS: 3.0, IQ3_XS: 3.1, IQ3_S: 3.2, IQ3_M: 3.3,
+              Q3_K_S: 3.4, Q3_K_M: 3.5, Q3_K_L: 3.6, Q3_K_XL: 3.7,
+              IQ4_XS: 4.0, IQ4_NL: 4.1,
+              Q4_0: 4.2, Q4_1: 4.3, Q4_K_S: 4.4, Q4_K_M: 4.5, Q4_K_L: 4.6, Q4_K_XL: 4.7,
+              Q5_0: 5.0, Q5_1: 5.1, Q5_K_S: 5.2, Q5_K_M: 5.3, Q5_K_L: 5.4, Q5_K_XL: 5.5,
+              Q6_K: 6.0, Q6_K_XL: 6.5,
+              Q8_0: 8.0, Q8_K_XL: 8.5,
+              BF16: 16.0, F16: 16.0, F32: 32.0,
+            };
+            const p = bitMap[base] ?? 50;
+            return q.includes('(UD)') ? p + 0.05 : p;
+          };
+          quantizations.sort((a, b) => quantBitDepth(a.quantization) - quantBitDepth(b.quantization));
           setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({
             ...prev,
             [modelId]: {
@@ -818,8 +839,9 @@ const [searchQuery, setSearchQuery] = useState('');
             },
           }));
           if (!hfSelectedQuantizations[modelId]) {
-            setHfSelectedQuantizations((prev: Record<string, string>) => ({ ...prev, [modelId]: quantizations[0].filename }));
-            if (quantizations[0].size !== undefined) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: quantizations[0].size }));
+            const preferred = quantizations.find(q => q.quantization === 'Q4_K_M') ?? quantizations[0];
+            setHfSelectedQuantizations((prev: Record<string, string>) => ({ ...prev, [modelId]: preferred.filename }));
+            if (preferred.size !== undefined) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: preferred.size }));
           }
           return;
         }
@@ -1591,14 +1613,28 @@ const [searchQuery, setSearchQuery] = useState('');
         const isGgufFile = gf.filename.toLowerCase().endsWith('.gguf');
         if (isGgufFile) {
           const m = gf.filename.match(ggufQuantRegex);
-          if (m) cacheQuants.push({ filename: gf.filename, quantization: m[1].toUpperCase(), size: gf.size });
+          if (m) {
+            const isUD = /[-._]UD[-._]/i.test(gf.filename);
+            cacheQuants.push({ filename: gf.filename, quantization: m[1].toUpperCase() + (isUD ? ' (UD)' : ''), size: gf.size });
+          }
         } else {
           const m = gf.filename.match(folderQuantRegex);
-          cacheQuants.push({ filename: gf.filename, quantization: m ? m[1].toUpperCase() : gf.filename, size: gf.size });
+          const isUD = /^UD-/i.test(gf.filename);
+          cacheQuants.push({ filename: gf.filename, quantization: (m ? m[1].toUpperCase() : gf.filename) + (isUD ? ' (UD)' : ''), size: gf.size });
         }
       });
     }
-    const priority: Record<string, number> = { Q4_K_M: 1, Q4_K_S: 2, Q5_K_M: 3, Q5_K_S: 4, Q6_K: 5, Q8_0: 6 };
+    const priority: Record<string, number> = {
+            Q4_K_M: 1, Q4_K_S: 2, Q4_K_XL: 3,
+            Q5_K_M: 4, Q5_K_S: 5, Q5_K_XL: 6,
+            Q6_K: 7, Q6_K_XL: 8,
+            Q8_0: 9, Q8_K_XL: 10,
+            Q3_K_M: 11, Q3_K_S: 12, Q3_K_XL: 13,
+            Q2_K: 14, Q2_K_L: 15, Q2_K_XL: 16,
+            BF16: 17, Q4_0: 18, Q4_1: 19,
+            IQ4_NL: 20, IQ4_XS: 21, IQ3_XXS: 22,
+            IQ2_M: 23, IQ2_XXS: 24, IQ1_M: 25, IQ1_S: 26,
+          };
     cacheQuants.sort((a, b) => (priority[a.quantization] ?? 100) - (priority[b.quantization] ?? 100));
     const selectedCacheQuant = cacheSelectedQuants[cacheModel.repo_id] ?? cacheQuants[0]?.filename;
     const selectedCacheFile = cacheQuants.find(q => q.filename === selectedCacheQuant);
@@ -1669,6 +1705,7 @@ const [searchQuery, setSearchQuery] = useState('');
             <select
               className="hf-quant-select"
               value={selectedCacheQuant ?? ''}
+              title={cacheQuants.length > 10 ? `${cacheQuants.length} quantizations — scroll for more` : undefined}
               onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
                 setCacheSelectedQuants(prev => ({ ...prev, [cacheModel.repo_id]: e.target.value }));
               }}
@@ -2163,6 +2200,7 @@ const [searchQuery, setSearchQuery] = useState('');
                           <select
                             className="hf-quant-select"
                             value={selectedQuant ?? ''}
+                            title={quants.length > 10 ? `${quants.length} quantizations — scroll for more` : undefined}
                             onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
                               const q = quants.find((x: GGUFQuantization) => x.filename === e.target.value);
                               setHfSelectedQuantizations((prev: Record<string, string>) => ({ ...prev, [hfModel.id]: e.target.value }));
