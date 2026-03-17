@@ -1228,7 +1228,7 @@ const [searchQuery, setSearchQuery] = useState('');
       confirmText: 'Delete',
       cancelText: 'Cancel',
       danger: true,
-      ...(isUserModel ? { checkbox: { label: 'Keep downloaded files in HF cache', defaultChecked: false } } : {}),
+      ...(isUserModel ? { keepFilesOption: { label: 'Keep downloaded files in HF cache', defaultChecked: false } } : {}),
     });
 
     if (!result.confirmed) {
@@ -1236,9 +1236,9 @@ const [searchQuery, setSearchQuery] = useState('');
     }
 
     try {
-      await deleteModel(modelName, result.checkboxChecked);
+      await deleteModel(modelName, result.keepFiles);
       await fetchCurrentLoadedModel();
-      if (result.checkboxChecked) {
+      if (result.keepFiles) {
         showSuccess(`Model "${modelName}" unregistered. Files kept in HF cache.`);
         fetchHfCacheModels(); // Refresh cache list since model should reappear there
       } else {

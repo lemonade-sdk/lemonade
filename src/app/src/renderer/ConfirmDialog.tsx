@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-interface ConfirmCheckbox {
+interface KeepFilesOption {
   label: string;
   defaultChecked?: boolean;
 }
@@ -12,9 +12,9 @@ interface ConfirmDialogProps {
   confirmText?: string;
   cancelText?: string;
   danger?: boolean;
-  checkbox?: ConfirmCheckbox;
-  checkboxChecked?: boolean;
-  onCheckboxChange?: (checked: boolean) => void;
+  keepFilesOption?: KeepFilesOption;
+  keepFiles?: boolean;
+  onKeepFilesChange?: (keepFiles: boolean) => void;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -26,9 +26,9 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   danger = false,
-  checkbox,
-  checkboxChecked,
-  onCheckboxChange,
+  keepFilesOption,
+  keepFiles,
+  onKeepFilesChange,
   onConfirm,
   onCancel
 }) => {
@@ -70,14 +70,14 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       <div className="confirm-dialog" ref={dialogRef}>
         <h3 className="confirm-dialog-title">{title}</h3>
         <p className="confirm-dialog-message">{message}</p>
-        {checkbox && (
+        {keepFilesOption && (
           <label className="confirm-dialog-checkbox">
             <input
               type="checkbox"
-              checked={checkboxChecked ?? false}
-              onChange={(e) => onCheckboxChange?.(e.target.checked)}
+              checked={keepFiles ?? false}
+              onChange={(e) => onKeepFilesChange?.(e.target.checked)}
             />
-            <span>{checkbox.label}</span>
+            <span>{keepFilesOption.label}</span>
           </label>
         )}
         <div className="confirm-dialog-actions">
@@ -107,12 +107,12 @@ interface ConfirmOptions {
   confirmText?: string;
   cancelText?: string;
   danger?: boolean;
-  checkbox?: ConfirmCheckbox;
+  keepFilesOption?: KeepFilesOption;
 }
 
 export interface ConfirmResult {
   confirmed: boolean;
-  checkboxChecked: boolean;
+  keepFiles: boolean;
 }
 
 export const useConfirmDialog = () => {
@@ -122,11 +122,11 @@ export const useConfirmDialog = () => {
     message: '',
   });
   const resolveRef = useRef<((value: ConfirmResult) => void) | null>(null);
-  const [checkboxChecked, setCheckboxChecked] = useState(false);
+  const [keepFiles, setKeepFiles] = useState(false);
 
   const confirm = (opts: ConfirmOptions): Promise<ConfirmResult> => {
     return new Promise((resolve) => {
-      setCheckboxChecked(opts.checkbox?.defaultChecked ?? false);
+      setKeepFiles(opts.keepFilesOption?.defaultChecked ?? false);
       setOptions(opts);
       setIsOpen(true);
       resolveRef.current = resolve;
@@ -135,12 +135,12 @@ export const useConfirmDialog = () => {
 
   const handleConfirm = () => {
     setIsOpen(false);
-    resolveRef.current?.({ confirmed: true, checkboxChecked });
+    resolveRef.current?.({ confirmed: true, keepFiles });
   };
 
   const handleCancel = () => {
     setIsOpen(false);
-    resolveRef.current?.({ confirmed: false, checkboxChecked: false });
+    resolveRef.current?.({ confirmed: false, keepFiles: false });
   };
 
   const ConfirmDialogComponent = () => (
@@ -151,9 +151,9 @@ export const useConfirmDialog = () => {
       confirmText={options.confirmText}
       cancelText={options.cancelText}
       danger={options.danger}
-      checkbox={options.checkbox}
-      checkboxChecked={checkboxChecked}
-      onCheckboxChange={(v) => setCheckboxChecked(v)}
+      keepFilesOption={options.keepFilesOption}
+      keepFiles={keepFiles}
+      onKeepFilesChange={(v) => setKeepFiles(v)}
       onConfirm={handleConfirm}
       onCancel={handleCancel}
     />
