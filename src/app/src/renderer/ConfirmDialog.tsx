@@ -1,5 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 
+interface ConfirmCheckbox {
+  label: string;
+  defaultChecked?: boolean;
+}
+
 interface ConfirmDialogProps {
   isOpen: boolean;
   title: string;
@@ -7,6 +12,9 @@ interface ConfirmDialogProps {
   confirmText?: string;
   cancelText?: string;
   danger?: boolean;
+  checkbox?: ConfirmCheckbox;
+  checkboxChecked?: boolean;
+  onCheckboxChange?: (checked: boolean) => void;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -18,6 +26,9 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   danger = false,
+  checkbox,
+  checkboxChecked,
+  onCheckboxChange,
   onConfirm,
   onCancel
 }) => {
@@ -59,6 +70,16 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       <div className="confirm-dialog" ref={dialogRef}>
         <h3 className="confirm-dialog-title">{title}</h3>
         <p className="confirm-dialog-message">{message}</p>
+        {checkbox && (
+          <label className="confirm-dialog-checkbox">
+            <input
+              type="checkbox"
+              checked={checkboxChecked ?? false}
+              onChange={(e) => onCheckboxChange?.(e.target.checked)}
+            />
+            <span>{checkbox.label}</span>
+          </label>
+        )}
         <div className="confirm-dialog-actions">
           <button
             className="confirm-dialog-btn confirm-dialog-btn-cancel"
@@ -86,6 +107,12 @@ interface ConfirmOptions {
   confirmText?: string;
   cancelText?: string;
   danger?: boolean;
+  checkbox?: ConfirmCheckbox;
+}
+
+export interface ConfirmResult {
+  confirmed: boolean;
+  checkboxChecked: boolean;
 }
 
 export const useConfirmDialog = () => {
@@ -94,10 +121,12 @@ export const useConfirmDialog = () => {
     title: '',
     message: '',
   });
-  const resolveRef = useRef<((value: boolean) => void) | null>(null);
+  const resolveRef = useRef<((value: ConfirmResult) => void) | null>(null);
+  const [checkboxChecked, setCheckboxChecked] = useState(false);
 
-  const confirm = (opts: ConfirmOptions): Promise<boolean> => {
+  const confirm = (opts: ConfirmOptions): Promise<ConfirmResult> => {
     return new Promise((resolve) => {
+      setCheckboxChecked(opts.checkbox?.defaultChecked ?? false);
       setOptions(opts);
       setIsOpen(true);
       resolveRef.current = resolve;
@@ -106,12 +135,12 @@ export const useConfirmDialog = () => {
 
   const handleConfirm = () => {
     setIsOpen(false);
-    resolveRef.current?.(true);
+    resolveRef.current?.({ confirmed: true, checkboxChecked });
   };
 
   const handleCancel = () => {
     setIsOpen(false);
-    resolveRef.current?.(false);
+    resolveRef.current?.({ confirmed: false, checkboxChecked: false });
   };
 
   const ConfirmDialogComponent = () => (
@@ -122,6 +151,9 @@ export const useConfirmDialog = () => {
       confirmText={options.confirmText}
       cancelText={options.cancelText}
       danger={options.danger}
+      checkbox={options.checkbox}
+      checkboxChecked={checkboxChecked}
+      onCheckboxChange={(v) => setCheckboxChecked(v)}
       onConfirm={handleConfirm}
       onCancel={handleCancel}
     />

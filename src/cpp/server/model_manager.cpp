@@ -13,6 +13,7 @@
 #include <thread>
 #include <chrono>
 #include <unordered_set>
+#include <regex>
 #include <iomanip>
 #include <lemon/utils/aixlog.hpp>
 
@@ -390,6 +391,172 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     return discovered;
 }
 
+json ModelManager::discover_hf_cache_models() {
+    json result = json::array();
+
+    std::string hf_cache = get_hf_cache_dir();
+    if (hf_cache.empty() || !fs::exists(hf_cache)) {
+        return result;
+    }
+
+    // Get the set of repo IDs already known (registered models)
+    std::set<std::string> known_repos;
+    auto all_models = get_supported_models();
+    for (const auto& [name, info] : all_models) {
+        // Extract repo_id from the main checkpoint
+        std::string ckpt = info.checkpoint("main");
+        if (!ckpt.empty()) {
+            // Remove variant suffix (everything after ':')
+            size_t colon = ckpt.find(':');
+            std::string repo = (colon != std::string::npos) ? ckpt.substr(0, colon) : ckpt;
+            known_repos.insert(repo);
+        }
+    }
+
+    // Scan HF cache for models--org--name directories
+    try {
+        for (const auto& entry : fs::directory_iterator(hf_cache)) {
+            if (!entry.is_directory()) continue;
+
+            std::string dirname = entry.path().filename().string();
+            if (dirname.substr(0, 8) != "models--") continue;
+
+            // Convert models--org--name back to org/name
+            std::string repo_id = dirname.substr(8);
+            size_t pos = 0;
+            while ((pos = repo_id.find("--", pos)) != std::string::npos) {
+                repo_id.replace(pos, 2, "/");
+                pos += 1;
+            }
+
+            // Skip if already registered
+            if (known_repos.count(repo_id)) continue;
+
+            // Find snapshot directory (use the latest one)
+            fs::path snapshots_dir = entry.path() / "snapshots";
+            if (!fs::exists(snapshots_dir)) continue;
+
+            fs::path latest_snapshot;
+            std::filesystem::file_time_type latest_time{};
+            for (const auto& snap : fs::directory_iterator(snapshots_dir)) {
+                if (!snap.is_directory()) continue;
+                auto ftime = snap.last_write_time();
+                if (latest_snapshot.empty() || ftime > latest_time) {
+                    latest_snapshot = snap.path();
+                    latest_time = ftime;
+                }
+            }
+            if (latest_snapshot.empty()) continue;
+
+            // Scan for model files and compute total size
+            bool has_gguf = false, has_onnx = false, has_bin = false;
+            double total_size_gb = 0.0;
+
+            // Group GGUF files: root files individually, subfolder files by folder
+            struct FileEntry { std::string name; uintmax_t size; };
+            std::vector<FileEntry> root_gguf_files;
+            std::map<std::string, std::vector<FileEntry>> folder_files; // folder name -> files
+            std::vector<FileEntry> bin_files;
+            std::vector<std::string> mmproj_files;
+
+            for (const auto& file : fs::recursive_directory_iterator(latest_snapshot)) {
+                if (!file.is_regular_file()) continue;
+                std::string fname = file.path().filename().string();
+                std::string fname_lower = fname;
+                std::transform(fname_lower.begin(), fname_lower.end(), fname_lower.begin(), ::tolower);
+
+                uintmax_t fsize = 0;
+                try { fsize = file.file_size(); } catch (...) {}
+                total_size_gb += static_cast<double>(fsize) / (1024.0 * 1024.0 * 1024.0);
+
+                if (fname_lower.find(".gguf") != std::string::npos) {
+                    has_gguf = true;
+                    if (fname_lower.find("mmproj") != std::string::npos) {
+                        mmproj_files.push_back(fname);
+                    } else {
+                        // Check if file is in a subfolder relative to the snapshot
+                        // Use canonical paths to resolve symlinks before computing relative path
+                        fs::path canonical_file = fs::canonical(file.path());
+                        fs::path canonical_snap = fs::canonical(latest_snapshot);
+                        fs::path rel = fs::relative(canonical_file, canonical_snap);
+                        std::string rel_parent = rel.parent_path().string();
+                        if (rel_parent.empty() || rel_parent == ".") {
+                            root_gguf_files.push_back({fname, fsize});
+                        } else {
+                            // File in subfolder — group by top-level folder name
+                            std::string folder = rel.begin()->string();
+                            folder_files[folder].push_back({fname, fsize});
+                        }
+                    }
+                }
+                if (fname_lower.find(".onnx") != std::string::npos) has_onnx = true;
+                if (fname_lower.find(".bin") != std::string::npos) {
+                    has_bin = true;
+                    bin_files.push_back({fname, fsize});
+                }
+            }
+
+            // Skip empty or unrecognized repos
+            if (!has_gguf && !has_onnx && !has_bin) continue;
+
+            // Build gguf_files array: one entry per variant
+            json gguf_files = json::array();
+            std::regex quant_regex(R"((Q\d+(?:_\d)?(?:_[KS])?(?:_[MSXL]+)?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16|MXFP\d+(?:_[A-Z]+)?))", std::regex::icase);
+            for (const auto& [folder, files] : folder_files) {
+                if (std::regex_search(folder, quant_regex)) {
+                    // Folder name is a quant variant (e.g. "Q4_0/", "UD-Q3_K_XL/") — single entry with combined size
+                    uintmax_t total = 0;
+                    for (const auto& f : files) total += f.size;
+                    json gf;
+                    gf["filename"] = folder;
+                    if (total > 0) gf["size"] = total;
+                    gguf_files.push_back(gf);
+                } else {
+                    // Folder name is not a quant (e.g. "whisper.cpp/") — list individual files
+                    for (const auto& f : files) {
+                        json gf;
+                        gf["filename"] = f.name;
+                        if (f.size > 0) gf["size"] = f.size;
+                        gguf_files.push_back(gf);
+                    }
+                }
+            }
+            for (const auto& rf : root_gguf_files) {
+                json gf;
+                gf["filename"] = rf.name;
+                if (rf.size > 0) gf["size"] = rf.size;
+                gguf_files.push_back(gf);
+            }
+
+            json model_entry;
+            model_entry["repo_id"] = repo_id;
+            model_entry["has_gguf"] = has_gguf;
+            model_entry["has_onnx"] = has_onnx;
+            model_entry["has_bin"] = has_bin;
+            if (total_size_gb > 0.0) model_entry["size_gb"] = total_size_gb;
+            if (!gguf_files.empty()) model_entry["gguf_files"] = gguf_files;
+            if (!mmproj_files.empty()) model_entry["mmproj_files"] = mmproj_files;
+            if (!bin_files.empty()) {
+                json bf_array = json::array();
+                for (const auto& bf : bin_files) {
+                    json bfj;
+                    bfj["filename"] = bf.name;
+                    if (bf.size > 0) bfj["size"] = bf.size;
+                    bf_array.push_back(bfj);
+                }
+                model_entry["bin_files"] = bf_array;
+            }
+
+            result.push_back(model_entry);
+        }
+    } catch (const std::exception& e) {
+        LOG(ERROR, "ModelManager") << "Error scanning HF cache: " << e.what() << std::endl;
+    }
+
+    LOG(INFO, "ModelManager") << "Found " << result.size() << " unregistered models in HF cache" << std::endl;
+    return result;
+}
+
 std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
     // Experience models are virtual bundles with no direct checkpoint to resolve
     if (info.recipe == "experience") {
@@ -489,8 +656,8 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
         return all_bin_files[0];
     }
 
-    // For llamacpp, find the GGUF file with advanced sharded model support
-    if (info.recipe == "llamacpp" && type == "main") {
+    // For GGUF-based backends, find the GGUF file with advanced sharded model support
+    if ((info.recipe == "llamacpp" || info.recipe == "sd-cpp") && type == "main") {
         if (!fs::exists(model_cache_path_fs)) {
             return model_cache_path;  // Return directory path even if not found
         }
@@ -1019,6 +1186,29 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
         }
     }
 
+    // Compute size from resolved path if not already set
+    if (info.size <= 0.0 && info.downloaded && !info.resolved_path().empty()) {
+        try {
+            fs::path resolved(info.resolved_path());
+            // For sharded models, sum all model files in the snapshot directory
+            // (resolved_path points to just the first shard)
+            fs::path snapshot_dir = fs::is_directory(resolved) ? resolved : resolved.parent_path();
+            double total = 0.0;
+            for (const auto& entry : fs::directory_iterator(snapshot_dir)) {
+                if (entry.is_regular_file()) {
+                    std::string ext = entry.path().extension().string();
+                    // Only count model files, not metadata
+                    if (ext == ".gguf" || ext == ".bin") {
+                        total += static_cast<double>(entry.file_size());
+                    }
+                }
+            }
+            if (total > 0.0) {
+                info.size = total / (1024.0 * 1024.0 * 1024.0);
+            }
+        } catch (...) {}
+    }
+
     models_cache_[model_name] = info;
     LOG(INFO, "ModelManager") << "Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
 }
@@ -1053,6 +1243,25 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
         // The path changes now that files exist on disk
         if (downloaded) {
             resolve_all_model_paths(it->second);
+            // Compute size if not already set
+            if (it->second.size <= 0.0 && !it->second.resolved_path().empty()) {
+                try {
+                    fs::path resolved(it->second.resolved_path());
+                    fs::path snapshot_dir = fs::is_directory(resolved) ? resolved : resolved.parent_path();
+                    double total = 0.0;
+                    for (const auto& entry : fs::directory_iterator(snapshot_dir)) {
+                        if (entry.is_regular_file()) {
+                            std::string ext = entry.path().extension().string();
+                            if (ext == ".gguf" || ext == ".bin") {
+                                total += static_cast<double>(entry.file_size());
+                            }
+                        }
+                    }
+                    if (total > 0.0) {
+                        it->second.size = total / (1024.0 * 1024.0 * 1024.0);
+                    }
+                } catch (...) {}
+            }
             LOG(INFO, "ModelManager") << "Updated '" << model_name
                       << "' downloaded=" << downloaded
                       << ", resolved_path=" << it->second.resolved_path() << std::endl;
@@ -1727,6 +1936,13 @@ void ModelManager::download_model(const std::string& model_name,
     // Register user models to user_models.json
     if (model_name.substr(0, 5) == "user." && !model_registered) {
         register_user_model(model_name, model_data);
+
+        // After registration, check if model files already exist in HF cache
+        // (e.g. user is registering a model they already downloaded outside Lemonade)
+        if (is_model_downloaded(model_name)) {
+            LOG(INFO, "ModelManager") << "Model already exists in cache, skipping download" << std::endl;
+            return;
+        }
     }
 
     auto model_info = get_model_info(model_name);
@@ -2352,7 +2568,7 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
     LOG(INFO, "ModelManager") << "FLM model pull completed successfully" << std::endl;
 }
 
-void ModelManager::delete_model(const std::string& model_name) {
+void ModelManager::delete_model(const std::string& model_name, bool keep_files) {
     auto info = get_model_info(model_name);
 
     LOG(INFO, "ModelManager") << "Deleting model: " << model_name << std::endl;
@@ -2458,13 +2674,17 @@ void ModelManager::delete_model(const std::string& model_name) {
 
     LOG(INFO, "ModelManager") << "Cache path: " << model_cache_path << std::endl;
 
-    fs::path model_cache_path_fs = path_from_utf8(model_cache_path);
-    if (fs::exists(model_cache_path_fs)) {
-        LOG(INFO, "ModelManager") << "Removing directory..." << std::endl;
-        fs::remove_all(model_cache_path_fs);
-        LOG(INFO, "ModelManager") << "✓ Deleted model files: " << model_name << std::endl;
+    if (keep_files) {
+        LOG(INFO, "ModelManager") << "Keeping files in HF cache (unregister only)" << std::endl;
     } else {
-        LOG(INFO, "ModelManager") << "Warning: Model cache directory not found (may already be deleted)" << std::endl;
+        fs::path model_cache_path_fs = path_from_utf8(model_cache_path);
+        if (fs::exists(model_cache_path_fs)) {
+            LOG(INFO, "ModelManager") << "Removing directory..." << std::endl;
+            fs::remove_all(model_cache_path_fs);
+            LOG(INFO, "ModelManager") << "✓ Deleted model files: " << model_name << std::endl;
+        } else {
+            LOG(INFO, "ModelManager") << "Warning: Model cache directory not found (may already be deleted)" << std::endl;
+        }
     }
 
     // Remove from user models if it's a user model

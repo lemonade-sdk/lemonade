@@ -32,6 +32,7 @@ export interface ModelRegistrationData {
   vision?: boolean;
   embedding?: boolean;
   reranking?: boolean;
+  labels?: string[];
 }
 
 /**
@@ -282,11 +283,11 @@ export async function uninstallBackend(recipe: string, backend: string): Promise
  * Delete a model's files. Single codepath for all model deletions.
  * Dispatches `modelsUpdated` on success so the models context refreshes.
  */
-export async function deleteModel(modelName: string): Promise<void> {
+export async function deleteModel(modelName: string, keepFiles = false): Promise<void> {
   const response = await serverFetch('/delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model_name: modelName }),
+    body: JSON.stringify({ model_name: modelName, keep_files: keepFiles }),
   });
 
   if (!response.ok) {
@@ -626,7 +627,7 @@ async function ensureModelReadyInternal(
 
       if (!loadResponse.ok) {
         const errorData = await loadResponse.json().catch(() => ({}));
-        const errorMsg = errorData.error || `Failed to load model: ${loadResponse.statusText}`;
+        const errorMsg = (typeof errorData.error === 'string' ? errorData.error : errorData.error?.message) || `Failed to load model: ${loadResponse.statusText}`;
 
         throw new Error(errorMsg);
       }

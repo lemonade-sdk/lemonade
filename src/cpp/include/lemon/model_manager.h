@@ -99,8 +99,8 @@ public:
                                 bool do_not_upgrade = false,
                                 DownloadProgressCallback progress_callback = nullptr);
 
-    // Delete a model
-    void delete_model(const std::string& model_name);
+    // Delete a model (keep_files=true removes from registry only, preserving HF cache files)
+    void delete_model(const std::string& model_name, bool keep_files = false);
 
     // Get model info by name
     ModelInfo get_model_info(const std::string& model_name);
@@ -134,6 +134,9 @@ public:
 
     // Set extra models directory for GGUF discovery
     void set_extra_models_dir(const std::string& dir);
+
+    // Discover models in HF cache that are not registered in the model registry
+    json discover_hf_cache_models();
 
     void save_model_options(const ModelInfo& info);
 

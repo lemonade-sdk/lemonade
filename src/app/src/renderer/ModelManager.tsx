@@ -19,6 +19,7 @@ import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon } from './components/Icons';
 import { getExperienceComponents, isExperienceFullyDownloaded, isExperienceFullyLoaded, isExperienceModel, isModelEffectivelyDownloaded } from './utils/experienceModels';
+import { classifyModel, type CompatibilityLevel } from './utils/recipeCompatibility';
 
 interface ModelFamily {
   displayName: string;
@@ -115,6 +116,7 @@ interface HFModelDetails {
   id: string;
   siblings: HFSibling[];
   tags: string[];
+  pipeline_tag?: string;
 }
 
 interface GGUFQuantization {
@@ -128,6 +130,9 @@ interface DetectedBackend {
   label: string;
   quantizations?: GGUFQuantization[];
   mmprojFiles?: string[];
+  compatibilityLevel?: import('./utils/recipeCompatibility').CompatibilityLevel;
+  compatibilityReason?: string;
+  modelType?: string;
 }
 
 function buildModelList(
@@ -221,8 +226,19 @@ const [searchQuery, setSearchQuery] = useState('');
   const [hfModelBackends, setHfModelBackends] = useState<Record<string, DetectedBackend | null>>({});
   const [hfSelectedQuantizations, setHfSelectedQuantizations] = useState<Record<string, string>>({});
   const [hfModelSizes, setHfModelSizes] = useState<Record<string, number | undefined>>({});
+  // HF cache discovery state
+  const [hfCacheModels, setHfCacheModels] = useState<{ repo_id: string; has_gguf: boolean; has_onnx: boolean; has_bin: boolean; size_gb?: number; gguf_files?: { filename: string; size?: number }[]; bin_files?: { filename: string; size?: number }[]; mmproj_files?: string[] }[]>([]);
+  const [cacheSelectedQuants, setCacheSelectedQuants] = useState<Record<string, string>>({});
   const [detectingBackendFor, setDetectingBackendFor] = useState<string | null>(null);
   const hfSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [hfSearchPage, setHfSearchPage] = useState(0);
+  const [hfHasMoreResults, setHfHasMoreResults] = useState(false);
+  const [hfNextCursor, setHfNextCursor] = useState<string | null>(null);
+  const hfPageCursorsRef = useRef<Record<number, string>>({}); // page -> cursor for that page
+  const [hfRateLimitRemaining, setHfRateLimitRemaining] = useState<number | undefined>(undefined);
+  const [hfRateLimitReset, setHfRateLimitReset] = useState<number | undefined>(undefined);
+  const [hfAuthenticated, setHfAuthenticated] = useState(false);
+  const [hfSearchCompleted, setHfSearchCompleted] = useState(false);
 
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
@@ -260,6 +276,21 @@ const [searchQuery, setSearchQuery] = useState('');
   useEffect(() => {
     ensureSystemInfoLoaded();
   }, [ensureSystemInfoLoaded]);
+
+  // Fetch unregistered models from HF cache
+  const fetchHfCacheModels = useCallback(async () => {
+    try {
+      const res = await serverFetch('/cache/models');
+      if (res.ok) {
+        const data = await res.json();
+        setHfCacheModels(Array.isArray(data) ? data : []);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    fetchHfCacheModels();
+  }, [fetchHfCacheModels]);
 
   useEffect(() => {
     fetchCurrentLoadedModel();
@@ -518,6 +549,18 @@ const [searchQuery, setSearchQuery] = useState('');
     return labels[category] || category.charAt(0).toUpperCase() + category.slice(1);
   };
 
+  // Pick the best mmproj file: prefer BF16 > F16 > F32 > first available
+  const pickBestMmproj = (mmprojFiles: string[]): string | undefined => {
+    if (!mmprojFiles || mmprojFiles.length === 0) return undefined;
+    if (mmprojFiles.length === 1) return mmprojFiles[0];
+    const priority = [/bf16/i, /f16/i, /f32/i];
+    for (const pattern of priority) {
+      const match = mmprojFiles.find(f => pattern.test(f));
+      if (match) return match;
+    }
+    return mmprojFiles[0];
+  };
+
   const shouldShowCategory = (category: string): boolean => {
     return expandedCategories.has(category);
   };
@@ -542,24 +585,45 @@ const [searchQuery, setSearchQuery] = useState('');
     return String(downloads);
   };
 
-  const searchHuggingFace = useCallback(async (query: string) => {  //Searching the HF API for GGUF, ONNX, and FastFlowLM models
+  const HF_PAGE_SIZE = 12;
+
+  const searchHuggingFace = useCallback(async (query: string, cursor?: string) => {
     if (!query.trim() || query.length < 3) {
       setHfSearchResults([]);
       setHfRateLimited(false);
+      setHfHasMoreResults(false);
       return;
     }
     setIsSearchingHF(true);
     setHfRateLimited(false);
     try {
-      const encoded = encodeURIComponent(query);
-      const ggufRes = await fetch(`https://huggingface.co/api/models?search=${encoded}&filter=gguf&limit=12&sort=downloads&direction=-1`);
-      if (ggufRes.status === 429) {
+      // Use server proxy for HF search (benefits from HF_TOKEN for higher rate limits)
+      let proxyUrl: string;
+      if (cursor) {
+        // For pagination, pass the full cursor URL to the proxy
+        proxyUrl = `/hf/search?next_url=${encodeURIComponent(cursor)}`;
+      } else {
+        proxyUrl = `/hf/search?search=${encodeURIComponent(query)}&filter=gguf&limit=${HF_PAGE_SIZE}&sort=downloads&direction=-1`;
+      }
+      const proxyRes = await serverFetch(proxyUrl);
+      const result = await proxyRes.json();
+
+      if (result.status === 429) {
         setHfRateLimited(true);
         setHfSearchResults([]);
         return;
       }
-      const ggufData: HFModelInfo[] = ggufRes.ok ? await ggufRes.json() : [];
+
+      const ggufData: HFModelInfo[] = Array.isArray(result.data) ? result.data : [];
       setHfSearchResults(ggufData);
+      setHfSearchCompleted(true);
+      setHfNextCursor(result.next_cursor ?? null);
+      setHfHasMoreResults(!!result.next_cursor);
+
+      // Track rate limit info
+      if (result.rate_limit_remaining !== undefined) setHfRateLimitRemaining(result.rate_limit_remaining);
+      if (result.rate_limit_reset !== undefined) setHfRateLimitReset(result.rate_limit_reset);
+      if (result.authenticated !== undefined) setHfAuthenticated(result.authenticated);
     } catch {
       setHfSearchResults([]);
     } finally {
@@ -589,10 +653,72 @@ const [searchQuery, setSearchQuery] = useState('');
         } catch { /* ignore */ }
       }
 
-      // GGUF detection
+      const totalFileSize = Object.values(fileSizes).reduce((a, b) => a + b, 0) || undefined;
+
+      // Detect file formats present
       const allGgufFiles = data.siblings.filter(s => s.rfilename.toLowerCase().endsWith('.gguf'));
-      if (allGgufFiles.length > 0) {
-        // Separate mmproj files from regular model files
+      const hasGgufFiles = allGgufFiles.length > 0;
+      const hasOnnxFiles = files.some(f => f.endsWith('.onnx') || f.endsWith('.onnx_data'));
+      const hasFlmFiles = files.some(f => f.endsWith('.flm'));
+      const hasBinFiles = files.some(f => f.endsWith('.bin'));
+
+      // Classify model: task first, then format, then recipe
+      const compatibility = classifyModel({
+        modelId,
+        pipelineTag: data.pipeline_tag,
+        tags,
+        hasGgufFiles,
+        hasOnnxFiles,
+        hasFlmFiles,
+        hasBinFiles,
+      });
+
+      // Incompatible models are hidden
+      if (compatibility.level === 'incompatible') {
+        setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: null }));
+        return;
+      }
+
+      // For whispercpp, extract quantizations from .bin files instead of .gguf
+      if (compatibility.recipe === 'whispercpp') {
+        const binFiles = data.siblings.filter(s => s.rfilename.toLowerCase().endsWith('.bin'));
+        if (binFiles.length > 0) {
+          const binQuantRegex = /[-._](Q\d+(?:[_]?\d)?(?:[_]?[KS])?(?:[_]?[MSXL]+)?|F(?:16|32)|IQ\d+(?:[_]?[A-Z]+)?|BF16|MXFP\d+(?:_[A-Z]+)?)(?:[-._]|\.bin$)/i;
+          const quantizations: GGUFQuantization[] = [];
+          binFiles.forEach(f => {
+            const m = f.rfilename.match(binQuantRegex);
+            if (m) quantizations.push({ filename: f.rfilename, quantization: m[1].toUpperCase(), size: fileSizes[f.rfilename] });
+          });
+          // If no quant pattern found, list by filename
+          if (quantizations.length === 0 && binFiles.length > 0) {
+            binFiles.forEach(f => {
+              quantizations.push({ filename: f.rfilename, quantization: f.rfilename.replace(/\.bin$/i, ''), size: fileSizes[f.rfilename] });
+            });
+          }
+          setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({
+            ...prev,
+            [modelId]: {
+              recipe: compatibility.recipe,
+              label: compatibility.label,
+              quantizations,
+              compatibilityLevel: compatibility.level,
+              compatibilityReason: compatibility.reason,
+              modelType: compatibility.modelType,
+            },
+          }));
+          if (!hfSelectedQuantizations[modelId]) {
+            setHfSelectedQuantizations((prev: Record<string, string>) => ({ ...prev, [modelId]: quantizations[0].filename }));
+            if (quantizations[0].size !== undefined) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: quantizations[0].size }));
+          }
+          return;
+        }
+        // Whisper model with no .bin files (GGUF-only) — not yet supported
+        setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: null }));
+        return;
+      }
+
+      // Extract GGUF quantizations if this recipe uses GGUF files
+      if (hasGgufFiles && (compatibility.recipe === 'llamacpp' || compatibility.recipe === 'sd-cpp')) {
         const mmprojGgufs = allGgufFiles.filter(s => s.rfilename.toLowerCase().includes('mmproj'));
         const ggufFiles = allGgufFiles.filter(s => !s.rfilename.toLowerCase().includes('mmproj'));
         const mmprojFiles = mmprojGgufs.map(s => {
@@ -614,13 +740,36 @@ const [searchQuery, setSearchQuery] = useState('');
           }
         });
         const quantizations: GGUFQuantization[] = [];
+        const quantRegex = /[-._](Q\d+(?:[_]?\d)?(?:[_]?[KS])?(?:[_]?[MSXL]+)?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16|MXFP\d+(?:_[A-Z]+)?)(?:[-._]|\.gguf$)/i;
         Object.entries(folderGroups).forEach(([folder, g]) => {
-          const m = folder.match(/(Q\d+(?:_\d)?(?:_[KS])?(?:_[MSL])?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16)/i);
-          quantizations.push({ filename: folder, quantization: m ? m[1].toUpperCase() : folder, size: g.totalSize || undefined });
+          const m = folder.match(/((?:UD-)?Q\d+(?:[_]?\d)?(?:[_]?[KS])?(?:[_]?[MSXL]+)?|F(?:16|32)|IQ\d+(?:[_]?[A-Z]+)?|BF16)/i);
+          if (m) {
+            // Folder name is a quant (e.g. "Q4_K_M/") — treat as single entry
+            quantizations.push({ filename: folder, quantization: m[1].toUpperCase(), size: g.totalSize > 0 ? g.totalSize : undefined });
+          } else {
+            // Folder name is not a quant (e.g. "whisper.cpp/") — extract quants from files inside
+            g.files.forEach(filepath => {
+              const fname = filepath.split('/').pop() ?? filepath;
+              const fm = fname.match(quantRegex);
+              if (fm) quantizations.push({ filename: filepath, quantization: fm[1].toUpperCase(), size: fileSizes[filepath] });
+            });
+          }
         });
+        // Group root files by quant label to deduplicate sharded models
+        // (e.g. model-Q4_K_M-00001-of-00004.gguf, model-Q4_K_M-00002-of-00004.gguf → single Q4_K_M entry)
+        const rootQuantGroups: Record<string, { filename: string; totalSize: number }> = {};
         rootFiles.forEach(({ filename, size }) => {
-          const m = filename.match(/[-._](Q\d+(?:_\d)?(?:_[KS])?(?:_[MSL])?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16)(?:[-._]|\.gguf$)/i);
-          if (m) quantizations.push({ filename, quantization: m[1].toUpperCase(), size });
+          const m = filename.match(quantRegex);
+          if (m) {
+            const qLabel = m[1].toUpperCase();
+            if (!rootQuantGroups[qLabel]) {
+              rootQuantGroups[qLabel] = { filename, totalSize: 0 };
+            }
+            rootQuantGroups[qLabel].totalSize += size ?? 0;
+          }
+        });
+        Object.entries(rootQuantGroups).forEach(([qLabel, { filename, totalSize }]) => {
+          quantizations.push({ filename, quantization: qLabel, size: totalSize > 0 ? totalSize : undefined });
         });
         if (quantizations.length > 0) {
           const priority: Record<string, number> = { Q4_K_M: 1, Q4_K_S: 2, Q5_K_M: 3, Q5_K_S: 4, Q6_K: 5, Q8_0: 6 };
@@ -628,10 +777,13 @@ const [searchQuery, setSearchQuery] = useState('');
           setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({
             ...prev,
             [modelId]: {
-              recipe: 'llamacpp',
-              label: 'GGUF',
+              recipe: compatibility.recipe,
+              label: compatibility.label,
               quantizations,
               mmprojFiles: mmprojFiles.length > 0 ? mmprojFiles : undefined,
+              compatibilityLevel: compatibility.level,
+              compatibilityReason: compatibility.reason,
+              modelType: compatibility.modelType,
             },
           }));
           if (!hfSelectedQuantizations[modelId]) {
@@ -642,42 +794,18 @@ const [searchQuery, setSearchQuery] = useState('');
         }
       }
 
-      const totalFileSize = Object.values(fileSizes).reduce((a, b) => a + b, 0) || undefined;
-
-      // FLM detection (FastFlowLM)
-      if (modelId.toLowerCase().startsWith('fastflowlm/') || tags.includes('flm') || files.some(f => f.endsWith('.flm'))) {
-        setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: { recipe: 'flm', label: 'FLM NPU' } }));
-        if (totalFileSize) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: totalFileSize }));
-        return;
-      }
-
-      // ONNX detection
-      if (files.some(f => f.endsWith('.onnx') || f.endsWith('.onnx_data'))) {
-        const id = modelId.toLowerCase();
-        let recipe = 'ryzenai-llm', label = 'ONNX CPU';
-        if (id.includes('-ryzenai-npu') || tags.includes('npu')) { recipe = 'ryzenai-llm'; label = 'ONNX NPU'; }
-        else if (id.includes('-ryzenai-hybrid') || tags.includes('hybrid')) { recipe = 'ryzenai-llm'; label = 'ONNX Hybrid'; }
-        else if (tags.includes('igpu')) { recipe = 'ryzenai-llm'; label = 'ONNX iGPU'; }
-        setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: { recipe, label } }));
-        if (totalFileSize) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: totalFileSize }));
-        return;
-      }
-
-      // Whisper
-      if ((tags.includes('whisper') || modelId.toLowerCase().includes('whisper')) && files.some(f => f.endsWith('.bin'))) {
-        setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: { recipe: 'whispercpp', label: 'Whisper' } }));
-        if (totalFileSize) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: totalFileSize }));
-        return;
-      }
-
-      // Stable Diffusion
-      if (tags.includes('stable-diffusion') || tags.includes('text-to-image') || modelId.toLowerCase().includes('stable-diffusion') || modelId.toLowerCase().includes('flux')) {
-        setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: { recipe: 'sd-cpp', label: 'SD.cpp' } }));
-        if (totalFileSize) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: totalFileSize }));
-        return;
-      }
-
-      setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: null }));
+      // Non-GGUF backends (FLM, ONNX, etc.)
+      setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({
+        ...prev,
+        [modelId]: {
+          recipe: compatibility.recipe,
+          label: compatibility.label,
+          compatibilityLevel: compatibility.level,
+          compatibilityReason: compatibility.reason,
+          modelType: compatibility.modelType,
+        },
+      }));
+      if (totalFileSize) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: totalFileSize }));
     } catch {
       setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: null }));
     } finally {
@@ -751,31 +879,185 @@ const [searchQuery, setSearchQuery] = useState('');
     const selectedFilename = hfSelectedQuantizations[modelId];
     if (!selectedFilename) return modelId;
     const quantObj = backend.quantizations?.find(q => q.filename === selectedFilename);
+    // For whisper .bin files, use the full filename as variant (not the quant label)
+    if (backend.recipe === 'whispercpp') {
+      return `${modelId}:${selectedFilename}`;
+    }
     return `${modelId}:${quantObj?.quantization ?? selectedFilename}`;
   }, [hfSelectedQuantizations]);
 
-  const handleInstallHFModel = useCallback((hfModel: HFModelInfo) => {
+  const handleInstallHFModel = useCallback(async (hfModel: HFModelInfo) => {
     const backend = hfModelBackends[hfModel.id];
     if (!backend) return;
-    const checkpoint = backend.recipe === 'llamacpp'
+
+    // Gate on compatibility level
+    if (backend.compatibilityLevel === 'experimental') {
+      const result = await confirm({
+        title: 'Experimental Compatibility',
+        message: `${backend.compatibilityReason ?? 'This model has not been verified for compatibility.'}\n\nDo you want to proceed anyway?`,
+        confirmText: 'Install Anyway',
+      });
+      if (!result.confirmed) return;
+    }
+
+    const checkpoint = (backend.quantizations && backend.quantizations.length > 0)
       ? resolveGgufCheckpoint(hfModel.id, backend)
       : hfModel.id;
     const modelName = `user.${hfModel.id.split('/').pop() ?? hfModel.id}`;
-    handleDownloadModel(modelName, { checkpoint, recipe: backend.recipe });
-  }, [hfModelBackends, resolveGgufCheckpoint, handleDownloadModel]);
+
+    // Vision models with multiple mmproj options — open edit dialog for user to choose
+    if (backend.mmprojFiles && backend.mmprojFiles.length > 1) {
+      window.dispatchEvent(new CustomEvent('openAddModel', {
+        detail: {
+          initialValues: {
+            name: hfModel.id.split('/').pop() || hfModel.id,
+            checkpoint,
+            recipe: backend.recipe,
+            mmprojOptions: backend.mmprojFiles,
+            vision: true,
+          },
+        },
+      }));
+      return;
+    }
+
+    // Pass model type labels so the server registers them correctly
+    const labels: string[] = [];
+    if (backend.modelType && backend.modelType !== 'llm') {
+      labels.push(backend.modelType);
+    }
+
+    const regData: import('./utils/backendInstaller').ModelRegistrationData = {
+      checkpoint,
+      recipe: backend.recipe,
+      labels,
+    };
+    // Single mmproj — use it directly
+    if (backend.mmprojFiles && backend.mmprojFiles.length === 1) {
+      regData.mmproj = backend.mmprojFiles[0];
+      regData.vision = true;
+    }
+
+    handleDownloadModel(modelName, regData);
+  }, [hfModelBackends, resolveGgufCheckpoint, handleDownloadModel, confirm]);
+
+  // Handle adding a model from the HF cache
+  const handleAddCacheModel = useCallback((cacheModel: { repo_id: string; has_gguf: boolean; has_onnx: boolean; has_bin: boolean; gguf_files?: { filename: string; size?: number }[]; bin_files?: { filename: string; size?: number }[]; mmproj_files?: string[] }) => {
+    const compatibility = classifyModel({
+      modelId: cacheModel.repo_id,
+      tags: [],
+      hasGgufFiles: cacheModel.has_gguf,
+      hasOnnxFiles: cacheModel.has_onnx,
+      hasFlmFiles: false,
+      hasBinFiles: cacheModel.has_bin,
+    });
+
+    if (compatibility.level === 'incompatible' || !compatibility.recipe) {
+      showError(`Cannot determine a compatible recipe for "${cacheModel.repo_id}".`);
+      return;
+    }
+
+    // Use selected quant; for whisper use .bin files, for others use GGUF files
+    const defaultFile = compatibility.recipe === 'whispercpp'
+      ? cacheModel.bin_files?.[0]?.filename
+      : cacheModel.gguf_files?.[0]?.filename;
+    const selectedQuant = cacheSelectedQuants[cacheModel.repo_id] ?? defaultFile;
+    const checkpoint = (cacheModel.has_gguf || cacheModel.has_bin) && selectedQuant
+      ? `${cacheModel.repo_id}:${selectedQuant}`
+      : cacheModel.repo_id;
+    const modelName = `user.${cacheModel.repo_id.split('/').pop() ?? cacheModel.repo_id}`;
+    const labels: string[] = [];
+    if (compatibility.modelType && compatibility.modelType !== 'llm') {
+      labels.push(compatibility.modelType);
+    }
+
+    // Vision models with multiple mmproj options — open edit dialog for user to choose
+    if (cacheModel.mmproj_files && cacheModel.mmproj_files.length > 1) {
+      window.dispatchEvent(new CustomEvent('openAddModel', {
+        detail: {
+          initialValues: {
+            name: cacheModel.repo_id.split('/').pop() || cacheModel.repo_id,
+            checkpoint,
+            recipe: compatibility.recipe,
+            mmprojOptions: cacheModel.mmproj_files,
+            vision: true,
+          },
+        },
+      }));
+      return;
+    }
+
+    const regData: import('./utils/backendInstaller').ModelRegistrationData = {
+      checkpoint,
+      recipe: compatibility.recipe,
+      labels,
+    };
+    // Include mmproj if vision model (single mmproj — use it directly)
+    if (cacheModel.mmproj_files && cacheModel.mmproj_files.length === 1) {
+      regData.mmproj = cacheModel.mmproj_files[0];
+      regData.vision = true;
+    }
+
+    handleDownloadModel(modelName, regData);
+    // Remove from cache list since it's now being registered
+    setHfCacheModels(prev => prev.filter(m => m.repo_id !== cacheModel.repo_id));
+  }, [handleDownloadModel, showError, cacheSelectedQuants]);
 
   // Debounced HF search effect - to avoid HF API rate limit error
   useEffect(() => {
     if (currentView !== 'models') return;
     if (hfSearchTimeoutRef.current) clearTimeout(hfSearchTimeoutRef.current);
+    setHfSearchPage(0);
+    setHfSearchCompleted(false);
+    hfPageCursorsRef.current = {};
     if (searchQuery.trim().length >= 3) {
       hfSearchTimeoutRef.current = setTimeout(() => searchHuggingFace(searchQuery), 1200);
     } else {
       setHfSearchResults([]);
       setHfRateLimited(false);
+      setHfHasMoreResults(false);
+      setHfNextCursor(null);
     }
     return () => { if (hfSearchTimeoutRef.current) clearTimeout(hfSearchTimeoutRef.current); };
   }, [searchQuery, currentView, searchHuggingFace]);
+
+  const [hfPageCooldown, setHfPageCooldown] = useState(false);
+  const hfCooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const startPageCooldown = useCallback(() => {
+    // Adaptive cooldown: shorter when plenty of quota, longer when low
+    let cooldownMs = 1500;
+    if (hfRateLimitRemaining !== undefined) {
+      if (hfRateLimitRemaining < 20) cooldownMs = 5000;
+      else if (hfRateLimitRemaining < 50) cooldownMs = 3000;
+      else if (hfRateLimitRemaining < 100) cooldownMs = 2000;
+    }
+    setHfPageCooldown(true);
+    if (hfCooldownTimerRef.current) clearTimeout(hfCooldownTimerRef.current);
+    hfCooldownTimerRef.current = setTimeout(() => setHfPageCooldown(false), cooldownMs);
+  }, [hfRateLimitRemaining]);
+
+  const hfNextPage = useCallback(() => {
+    if (!hfNextCursor || hfPageCooldown) return;
+    const nextPage = hfSearchPage + 1;
+    hfPageCursorsRef.current[nextPage] = hfNextCursor;
+    setHfSearchPage(nextPage);
+    searchHuggingFace(searchQuery, hfNextCursor);
+    startPageCooldown();
+  }, [hfSearchPage, hfNextCursor, searchQuery, searchHuggingFace, hfPageCooldown, startPageCooldown]);
+
+  const hfPrevPage = useCallback(() => {
+    if (hfSearchPage <= 0 || hfPageCooldown) return;
+    const prevPage = hfSearchPage - 1;
+    setHfSearchPage(prevPage);
+    if (prevPage === 0) {
+      searchHuggingFace(searchQuery);
+    } else {
+      const cursor = hfPageCursorsRef.current[prevPage];
+      searchHuggingFace(searchQuery, cursor);
+    }
+    startPageCooldown();
+  }, [hfSearchPage, searchQuery, searchHuggingFace, hfPageCooldown, startPageCooldown]);
 
   // Trigger backend detection for new HF results
   useEffect(() => {
@@ -939,23 +1221,29 @@ const [searchQuery, setSearchQuery] = useState('');
   };
 
   const handleDeleteModel = async (modelName: string) => {
-    const confirmed = await confirm({
+    const isUserModel = modelName.startsWith('user.');
+    const result = await confirm({
       title: 'Delete Model',
       message: `Are you sure you want to delete the model "${modelName}"? This action cannot be undone.`,
       confirmText: 'Delete',
       cancelText: 'Cancel',
-      danger: true
+      danger: true,
+      ...(isUserModel ? { checkbox: { label: 'Keep downloaded files in HF cache', defaultChecked: false } } : {}),
     });
 
-    if (!confirmed) {
+    if (!result.confirmed) {
       return;
     }
 
     try {
-      await deleteModel(modelName);
-      // No manual modelsUpdated dispatch needed — deleteModel() handles it
+      await deleteModel(modelName, result.checkboxChecked);
       await fetchCurrentLoadedModel();
-      showSuccess(`Model "${modelName}" deleted successfully.`);
+      if (result.checkboxChecked) {
+        showSuccess(`Model "${modelName}" unregistered. Files kept in HF cache.`);
+        fetchHfCacheModels(); // Refresh cache list since model should reappear there
+      } else {
+        showSuccess(`Model "${modelName}" deleted successfully.`);
+      }
     } catch (error) {
       console.error('Error deleting model:', error);
       showError(`Failed to delete model: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -1467,22 +1755,174 @@ const [searchQuery, setSearchQuery] = useState('');
                 {renderModelsView()}
               </div>
             )}
+            {currentView === 'models' && hfCacheModels.length > 0 && (
+              <div className="hf-search-section widget">
+                <div className="available-models-header">
+                  <div className="loaded-model-label">FROM HF CACHE</div>
+                </div>
+                {hfCacheModels
+                  .filter(m => {
+                    if (!searchQuery.trim()) return true;
+                    return m.repo_id.toLowerCase().includes(searchQuery.toLowerCase());
+                  })
+                  .map(cacheModel => {
+                    const compatibility = classifyModel({
+                      modelId: cacheModel.repo_id,
+                      tags: [],
+                      hasGgufFiles: cacheModel.has_gguf,
+                      hasOnnxFiles: cacheModel.has_onnx,
+                      hasFlmFiles: false,
+                      hasBinFiles: cacheModel.has_bin,
+                    });
+                    if (compatibility.level === 'incompatible') return null;
+                    // Hide whisper models with no .bin files (GGUF-only not yet supported)
+                    if (compatibility.recipe === 'whispercpp' && (!cacheModel.bin_files || cacheModel.bin_files.length === 0)) return null;
+
+                    // For whispercpp, use .bin files; for others, use GGUF files
+                    const ggufQuantRegex = /[-._](Q\d+(?:[_]?\d)?(?:[_]?[KS])?(?:[_]?[MSXL]+)?|F(?:16|32)|IQ\d+(?:[_]?[A-Z]+)?|BF16|MXFP\d+(?:_[A-Z]+)?)(?:[-._]|\.gguf$)/i;
+                    const binQuantRegex = /[-._](Q\d+(?:[_]?\d)?(?:[_]?[KS])?(?:[_]?[MSXL]+)?|F(?:16|32)|IQ\d+(?:[_]?[A-Z]+)?|BF16|MXFP\d+(?:_[A-Z]+)?)(?:[-._]|\.bin$)/i;
+                    const folderQuantRegex = /((?:UD-)?Q\d+(?:[_]?\d)?(?:[_]?K)?(?:[_]?[A-Z]+)?|F(?:16|32)|IQ\d+(?:[_]?[A-Z]+)?|BF16|MXFP\d+(?:_[A-Z]+)?)/i;
+                    const cacheQuants: GGUFQuantization[] = [];
+
+                    if (compatibility.recipe === 'whispercpp') {
+                      // Whisper uses .bin files
+                      (cacheModel.bin_files ?? []).forEach((bf: { filename: string; size?: number }) => {
+                        const m = bf.filename.match(binQuantRegex);
+                        cacheQuants.push({ filename: bf.filename, quantization: m ? m[1].toUpperCase() : bf.filename.replace(/\.bin$/i, ''), size: bf.size });
+                      });
+                    } else {
+                      // LLM/SD use GGUF files
+                      (cacheModel.gguf_files ?? []).forEach((gf: { filename: string; size?: number }) => {
+                        const isGgufFile = gf.filename.toLowerCase().endsWith('.gguf');
+                        if (isGgufFile) {
+                          const m = gf.filename.match(ggufQuantRegex);
+                          if (m) cacheQuants.push({ filename: gf.filename, quantization: m[1].toUpperCase(), size: gf.size });
+                        } else {
+                          // Folder-based variant (sharded model)
+                          const m = gf.filename.match(folderQuantRegex);
+                          cacheQuants.push({ filename: gf.filename, quantization: m ? m[1].toUpperCase() : gf.filename, size: gf.size });
+                        }
+                      });
+                    }
+                    const priority: Record<string, number> = { Q4_K_M: 1, Q4_K_S: 2, Q5_K_M: 3, Q5_K_S: 4, Q6_K: 5, Q8_0: 6 };
+                    cacheQuants.sort((a, b) => (priority[a.quantization] ?? 100) - (priority[b.quantization] ?? 100));
+                    const selectedCacheQuant = cacheSelectedQuants[cacheModel.repo_id] ?? cacheQuants[0]?.filename;
+                    const selectedCacheFile = cacheQuants.find(q => q.filename === selectedCacheQuant);
+                    const displaySize = selectedCacheFile?.size !== undefined
+                      ? formatSize(selectedCacheFile.size / (1024 ** 3))
+                      : cacheModel.size_gb !== undefined ? formatSize(cacheModel.size_gb) : undefined;
+
+                    return (
+                      <div key={cacheModel.repo_id} className="hf-model-item">
+                        <div className="hf-model-left">
+                          <a
+                            className="hf-model-name"
+                            title={cacheModel.repo_id}
+                            href={`https://huggingface.co/${cacheModel.repo_id}`}
+                            onClick={(e: React.MouseEvent) => {
+                              e.preventDefault();
+                              const url = `https://huggingface.co/${cacheModel.repo_id}`;
+                              if (window.api?.openExternal) { window.api.openExternal(url); }
+                              else { window.open(url, '_blank', 'noopener,noreferrer'); }
+                            }}
+                          >{cacheModel.repo_id}</a>
+                          {displaySize && <span className="hf-model-size">{displaySize}</span>}
+                          <div className="hf-model-actions">
+                            <button
+                              className="model-action-btn edit-btn"
+                              title="Edit before adding"
+                              onClick={(e: React.MouseEvent) => {
+                                e.stopPropagation();
+                                const ckpt = selectedCacheQuant
+                                  ? `${cacheModel.repo_id}:${selectedCacheQuant}`
+                                  : cacheModel.repo_id;
+                                window.dispatchEvent(new CustomEvent('openAddModel', {
+                                  detail: {
+                                    initialValues: {
+                                      name: cacheModel.repo_id.split('/').pop() || cacheModel.repo_id,
+                                      checkpoint: ckpt,
+                                      recipe: compatibility.recipe,
+                                      mmprojOptions: cacheModel.mmproj_files,
+                                      vision: (cacheModel.mmproj_files?.length ?? 0) > 0,
+                                    },
+                                  },
+                                }));
+                              }}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                              </svg>
+                            </button>
+                            <button
+                              className="model-action-btn download-btn"
+                              title="Add to model registry"
+                              onClick={() => handleAddCacheModel(cacheModel)}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <line x1="12" y1="5" x2="12" y2="19" />
+                                <line x1="5" y1="12" x2="19" y2="12" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                        <div className="hf-model-right">
+                          {cacheQuants.length >= 1 && (
+                            <select
+                              className="hf-quant-select"
+                              value={selectedCacheQuant ?? ''}
+                              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                                setCacheSelectedQuants(prev => ({ ...prev, [cacheModel.repo_id]: e.target.value }));
+                              }}
+                            >
+                              {cacheQuants.map(q => (
+                                <option key={q.filename} value={q.filename}>{q.quantization}</option>
+                              ))}
+                            </select>
+                          )}
+                          <span
+                            className={`hf-backend-badge${compatibility.level === 'experimental' ? ' hf-badge-experimental' : ''}`}
+                            title={compatibility.reason}
+                          >
+                            {compatibility.label}
+                            {compatibility.level === 'experimental' && ' ?'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
             {currentView === 'models' && searchQuery.trim().length >= 3 && ( // Rendering the HF models by searching
               <div className="hf-search-section widget">
                 <div className="available-models-header">
                   <div className="loaded-model-label">FROM HUGGING FACE</div>
-                  {isSearchingHF && <span className="hf-search-spinner" />}
+                  <div className="hf-pagination">
+                    {isSearchingHF && <span className="hf-search-spinner" />}
+                    {hfSearchPage > 0 && (
+                      <button className={`hf-page-btn${hfPageCooldown ? ' hf-page-cooldown' : ''}`} onClick={hfPrevPage} title="Previous page" disabled={isSearchingHF || hfPageCooldown}>‹</button>
+                    )}
+                    {(hfSearchPage > 0 || hfHasMoreResults) && (
+                      <span className="hf-page-label">{hfSearchPage + 1}</span>
+                    )}
+                    {hfHasMoreResults && (
+                      <button className={`hf-page-btn${hfPageCooldown ? ' hf-page-cooldown' : ''}`} onClick={hfNextPage} title="Next page" disabled={isSearchingHF || hfPageCooldown}>›</button>
+                    )}
+                  </div>
                 </div>
                 {hfRateLimited && (
-                  <div className="hf-search-message">Rate limited — try again shortly.</div>
+                  <div className="hf-search-message">
+                    Rate limited — {hfRateLimitReset ? `retry in ${hfRateLimitReset}s` : 'try again shortly'}.
+                    {!hfAuthenticated && ' Set HF_TOKEN for higher limits.'}
+                  </div>
                 )}
-                {!hfRateLimited && !isSearchingHF && (
+                {!hfRateLimited && !isSearchingHF && hfSearchCompleted && (
                   hfSearchResults.length === 0 ||
                   (hfSearchResults.length > 0 &&
                     detectingBackendFor === null &&
                     hfSearchResults.every((m: HFModelInfo) => hfModelBackends[m.id] === null))
                 ) && (
-                  <div className="hf-search-message">No compatible models found.</div>
+                  <div className="hf-search-message">{hfSearchPage > 0 ? 'No more results.' : 'No compatible models found.'}</div>
                 )}
                 {hfSearchResults.filter((hfModel: HFModelInfo) => hfModelBackends[hfModel.id] !== null).map((hfModel: HFModelInfo) => {
                   const backend = hfModelBackends[hfModel.id];
@@ -1493,7 +1933,17 @@ const [searchQuery, setSearchQuery] = useState('');
                   return (
                     <div key={hfModel.id} className="hf-model-item">
                       <div className="hf-model-left">
-                        <span className="hf-model-name" title={hfModel.id}>{hfModel.id}</span>
+                        <a
+                          className="hf-model-name"
+                          title={hfModel.id}
+                          href={`https://huggingface.co/${hfModel.id}`}
+                          onClick={(e: React.MouseEvent) => {
+                            e.preventDefault();
+                            const url = `https://huggingface.co/${hfModel.id}`;
+                            if (window.api?.openExternal) { window.api.openExternal(url); }
+                            else { window.open(url, '_blank', 'noopener,noreferrer'); }
+                          }}
+                        >{hfModel.id}</a>
                         {size !== undefined && <span className="hf-model-size">{formatSize(size / (1024 ** 3))}</span>}
                         <span className="hf-model-meta">↓ {formatDownloads(hfModel.downloads)}</span>
                         {isDetecting && <span className="hf-search-spinner" />}
@@ -1545,7 +1995,7 @@ const [searchQuery, setSearchQuery] = useState('');
                         </div>
                       </div>
                       <div className="hf-model-right">
-                        {!isDetecting && backend && quants.length > 1 && (
+                        {!isDetecting && backend && quants.length >= 1 && (
                           <select
                             className="hf-quant-select"
                             value={selectedQuant ?? ''}
@@ -1560,7 +2010,15 @@ const [searchQuery, setSearchQuery] = useState('');
                             ))}
                           </select>
                         )}
-                        {!isDetecting && backend && <span className="hf-backend-badge">{backend.label}</span>}
+                        {!isDetecting && backend && (
+                          <span
+                            className={`hf-backend-badge${backend.compatibilityLevel === 'experimental' ? ' hf-badge-experimental' : ''}`}
+                            title={backend.compatibilityReason}
+                          >
+                            {backend.label}
+                            {backend.compatibilityLevel === 'experimental' && ' ?'}
+                          </span>
+                        )}
                       </div>
                     </div>
                   );
