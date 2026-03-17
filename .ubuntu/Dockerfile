@@ -9,10 +9,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 ARG UBUNTU_PPA=""
 
 # Install all build dependencies
-RUN apt update && apt install -y \
+RUN apt-get update && apt-get install -y \
     software-properties-common \
     && if [ -n "$UBUNTU_PPA" ]; then add-apt-repository -y "$UBUNTU_PPA"; fi \
-    && apt update && apt install -y \
+    && apt-get update && apt-get install -y \
     build-essential \
     cmake \
     debhelper-compat \
