@@ -49,6 +49,10 @@ endif()
 get_filename_component(WEB_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/web-app" ABSOLUTE)
 set(WEB_APP_BUILD_DIR "${CMAKE_BINARY_DIR}/resources/web-app")
 
+# When ON, use system-provided Node.js modules (for example, webpack and distro-packaged JS deps)
+# instead of installing project-local dependencies with npm for web-app builds.
+option(USE_SYSTEM_NODEJS_MODULES "Use system-installed Node.js modules for building the Web app" OFF)
+
 # C++ Standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -829,8 +833,22 @@ else()
     option(BUILD_WEB_APP "Build the Web app automatically" ON)
 endif()
 
+# Check if webpack is available for system-package mode
+if(USE_SYSTEM_NODEJS_MODULES)
+    find_program(WEBPACK_EXECUTABLE webpack)
+    if(WEBPACK_EXECUTABLE)
+        message(STATUS "Using system webpack: ${WEBPACK_EXECUTABLE}")
+        set(CAN_BUILD_WEB_APP TRUE)
+    endif()
+else()
+    # Non-system mode requires npm for dependency install + build
+    if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
+        set(CAN_BUILD_WEB_APP TRUE)
+    endif()
+endif()
+
 # Custom target to build the Web app with proper dependency tracking
-if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
+if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
     # Create a stamp file to track build state
     set(WEB_APP_STAMP "${CMAKE_CURRENT_BINARY_DIR}/web-app.stamp")
     set(WEB_APP_BUILD_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/web-app-src")
@@ -854,10 +872,12 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
             -DWEB_APP_BUILD_SOURCE_DIR=${WEB_APP_BUILD_SOURCE_DIR}
             -DWEB_APP_BUILD_DIR=${WEB_APP_BUILD_DIR}
             -DNPM_EXECUTABLE=${NPM_EXECUTABLE}
+            -DWEBPACK_EXECUTABLE=${WEBPACK_EXECUTABLE}
+            -DUSE_SYSTEM_NODEJS_MODULES=${USE_SYSTEM_NODEJS_MODULES}
             -DWEB_APP_STAMP=${WEB_APP_STAMP}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/src/web-app/BuildWebApp.cmake
         DEPENDS ${WEB_APP_SOURCES}
-        COMMENT "Building Web app with npm"
+        COMMENT "Building Web app"
     )
 
     # Add custom target that depends on the stamp file
@@ -914,23 +934,44 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
         endif()
     endif()
 else()
-    if(NOT NODE_EXECUTABLE OR NOT NPM_EXECUTABLE)
-        message(STATUS "Node.js or npm not found - Web app build target disabled")
+    if(NOT CAN_BUILD_WEB_APP)
+        if(USE_SYSTEM_NODEJS_MODULES)
+            message(STATUS "Web app build disabled - webpack not found (install webpack package)")
+        else()
+            message(STATUS "Web app build disabled - Node.js or npm not found")
+        endif()
     else()
         message(STATUS "Web app automatic build disabled (enable with -DBUILD_WEB_APP=ON)")
     endif()
 endif()
 
 # Add manual web-app target for platforms where automatic build is disabled
-if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND NOT BUILD_WEB_APP)
-    add_custom_target(web-app
-        COMMAND ${CMAKE_COMMAND} -E echo "Building Web app..."
-        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} install
-        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} run build
-        COMMENT "Building Web app with npm"
-        WORKING_DIRECTORY "${WEB_APP_SOURCE_DIR}"
-        VERBATIM
-    )
+if(CAN_BUILD_WEB_APP AND NOT BUILD_WEB_APP)
+    if(USE_SYSTEM_NODEJS_MODULES)
+        set(WEB_APP_BUILD_SOURCE_DIR_MANUAL "${CMAKE_CURRENT_BINARY_DIR}/web-app-manual-src")
+        add_custom_target(web-app
+            COMMAND ${CMAKE_COMMAND}
+                -DWEB_APP_SOURCE_DIR=${WEB_APP_SOURCE_DIR}
+                -DWEB_APP_BUILD_SOURCE_DIR=${WEB_APP_BUILD_SOURCE_DIR_MANUAL}
+                -DWEB_APP_BUILD_DIR=${WEB_APP_BUILD_DIR}
+                -DWEBPACK_EXECUTABLE=${WEBPACK_EXECUTABLE}
+                -DUSE_SYSTEM_NODEJS_MODULES=${USE_SYSTEM_NODEJS_MODULES}
+                -DWEB_APP_STAMP=${CMAKE_CURRENT_BINARY_DIR}/web-app-manual.stamp
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/src/web-app/BuildWebApp.cmake
+            COMMENT "Building Web app with system nodejs modules"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+            VERBATIM
+        )
+    else()
+        add_custom_target(web-app
+            COMMAND ${CMAKE_COMMAND} -E echo "Building Web app..."
+            COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} install
+            COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} run build
+            COMMENT "Building Web app with npm"
+            WORKING_DIRECTORY "${WEB_APP_SOURCE_DIR}"
+            VERBATIM
+        )
+    endif()
     message(STATUS "Web app can be built manually with: cmake --build . --target web-app")
 endif()
 
