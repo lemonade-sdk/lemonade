@@ -226,9 +226,6 @@ const [searchQuery, setSearchQuery] = useState('');
   const [hfModelBackends, setHfModelBackends] = useState<Record<string, DetectedBackend | null>>({});
   const [hfSelectedQuantizations, setHfSelectedQuantizations] = useState<Record<string, string>>({});
   const [hfModelSizes, setHfModelSizes] = useState<Record<string, number | undefined>>({});
-  // HF cache discovery state
-  const [hfCacheModels, setHfCacheModels] = useState<{ repo_id: string; has_gguf: boolean; has_onnx: boolean; has_bin: boolean; size_gb?: number; gguf_files?: { filename: string; size?: number }[]; bin_files?: { filename: string; size?: number }[]; mmproj_files?: string[] }[]>([]);
-  const [cacheSelectedQuants, setCacheSelectedQuants] = useState<Record<string, string>>({});
   const [detectingBackendFor, setDetectingBackendFor] = useState<string | null>(null);
   const hfSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hfSearchPage, setHfSearchPage] = useState(0);
@@ -239,6 +236,9 @@ const [searchQuery, setSearchQuery] = useState('');
   const [hfRateLimitReset, setHfRateLimitReset] = useState<number | undefined>(undefined);
   const [hfAuthenticated, setHfAuthenticated] = useState(false);
   const [hfSearchCompleted, setHfSearchCompleted] = useState(false);
+  // HF cache discovery state
+  const [hfCacheModels, setHfCacheModels] = useState<{ repo_id: string; has_gguf: boolean; has_onnx: boolean; has_bin: boolean; size_gb?: number; gguf_files?: { filename: string; size?: number }[]; bin_files?: { filename: string; size?: number }[]; mmproj_files?: string[] }[]>([]);
+  const [cacheSelectedQuants, setCacheSelectedQuants] = useState<Record<string, string>>({});
 
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
