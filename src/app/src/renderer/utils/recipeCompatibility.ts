@@ -25,7 +25,7 @@ export interface TaskRecipeMapping {
 export const TASK_RECIPE_MAP: TaskRecipeMapping[] = [
   {
     pipelineTags: ['text-to-image', 'image-to-image'],
-    hfTags: ['stable-diffusion', 'text-to-image', 'diffusers'],
+    hfTags: ['stable-diffusion', 'text-to-image', 'diffusers', 'image-generation', 'image-editing'],
     namePatterns: [/stable-diffusion/i, /\bflux\b/i, /\bsdxl\b/i],
     recipe: 'sd-cpp',
     modelType: 'image',
@@ -46,6 +46,22 @@ export const TASK_RECIPE_MAP: TaskRecipeMapping[] = [
     recipe: 'kokoro',
     modelType: 'tts',
     label: 'Kokoro',
+  },
+  {
+    pipelineTags: ['sentence-similarity', 'feature-extraction'],
+    hfTags: ['sentence-transformers', 'nomic-embed', 'embedding', 'embeddings'],
+    namePatterns: [/embed/i, /nomic/i],
+    recipe: 'llamacpp',
+    modelType: 'embedding',
+    label: 'llama.cpp',
+  },
+  {
+    pipelineTags: ['text-ranking'],
+    hfTags: ['reranker', 'cross-encoder', 'reranking'],
+    namePatterns: [/rerank/i],
+    recipe: 'llamacpp',
+    modelType: 'reranking',
+    label: 'llama.cpp',
   },
 ];
 
