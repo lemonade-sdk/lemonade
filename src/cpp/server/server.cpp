@@ -57,6 +57,7 @@ namespace lemon {
 namespace {
 
 bool should_disable_thinking(const json& request_json) {
+    // enable_thinking takes precedence over thinking when both are present.
     if (request_json.contains("enable_thinking") && request_json["enable_thinking"].is_boolean()) {
         return request_json["enable_thinking"].get<bool>() == false;
     }
@@ -80,8 +81,16 @@ bool should_disable_thinking(const json& request_json) {
     return false;
 }
 
+bool strip_handled_thinking_fields(json& request_json) {
+    bool modified = false;
+    modified = request_json.erase("enable_thinking") > 0 || modified;
+    modified = request_json.erase("thinking") > 0 || modified;
+    return modified;
+}
+
 bool prepend_no_think_to_last_user_message(json& request_json) {
     if (!request_json.contains("messages") || !request_json["messages"].is_array()) {
+        LOG(DEBUG, "Server") << "No messages array found for /no_think injection" << std::endl;
         return false;
     }
 
@@ -101,6 +110,7 @@ bool prepend_no_think_to_last_user_message(json& request_json) {
         }
     }
 
+    LOG(DEBUG, "Server") << "No string-content user message found for /no_think injection" << std::endl;
     return false;
 }
 
@@ -1394,6 +1404,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         if (should_disable_thinking(request_json)) {
             request_modified = prepend_no_think_to_last_user_message(request_json);
         }
+        request_modified = strip_handled_thinking_fields(request_json) || request_modified;
 
         // If we modified the request, serialize it back to string
         if (request_modified) {
