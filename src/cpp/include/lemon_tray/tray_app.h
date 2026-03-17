@@ -82,7 +82,7 @@ private:
     // Menu building
     void build_menu();
     void refresh_menu();
-    Menu create_menu();
+    Menu create_menu(bool server_reachable, bool owns_server);
     bool menu_needs_refresh();
 
     // Menu actions
@@ -95,6 +95,11 @@ private:
     void on_open_documentation();
     void on_upgrade();
     void on_quit();
+#ifndef _WIN32
+    void on_start_server();
+    void on_stop_server();
+    void on_stop_external_server();
+#endif
 
     // Helpers
     void open_url(const std::string& url);
@@ -105,6 +110,7 @@ private:
     void show_notification(const std::string& title, const std::string& message);
     void send_unload_command();
     std::string get_loaded_model();
+    std::pair<bool, std::vector<LoadedModelInfo>> fetch_server_state();
     std::vector<LoadedModelInfo> get_all_loaded_models();
     std::vector<ModelInfo> get_downloaded_models();
 
@@ -123,11 +129,19 @@ private:
     std::vector<ModelInfo> downloaded_models_;
     bool should_exit_;
     bool process_owns_server_ = false;
+#ifndef _WIN32
+    int external_server_pid_ = 0;  // PID of external server we didn't spawn (for SIGTERM)
+#endif
+    bool last_menu_server_reachable_ = false;  // For refresh detection
 
     // Model loading state
     std::atomic<bool> is_loading_model_{false};
     std::string loading_model_name_;
     std::mutex loading_mutex_;
+
+    // Server state mutex — guards server_manager_, process_owns_server_, external_server_pid_
+    // across background threads (on_start_server, on_stop_server, on_stop_external_server)
+    std::mutex state_mutex_;
 
     // Version info
     std::string current_version_;
