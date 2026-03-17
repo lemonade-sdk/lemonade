@@ -11,6 +11,7 @@
 #include "lemon_tray/tray_ui.h"
 #include <lemon/single_instance.h>
 #include <lemon/version.h>
+#include <lemon/utils/aixlog.hpp>
 
 #include <iostream>
 #include <string>
@@ -93,6 +94,19 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         return parser.get_exit_code();
     }
     auto config = parser.get_config();
+
+    // Initialize logging to file (SUBSYSTEM:WINDOWS has no console).
+    // The server's /api/v1/logs/stream endpoint tails this same file.
+    {
+        char temp_path[MAX_PATH];
+        GetTempPathA(MAX_PATH, temp_path);
+        std::string log_file = std::string(temp_path) + "lemonade-server.log";
+        auto file_sink = std::make_shared<AixLog::SinkFile>(
+            AixLog::Filter(AixLog::to_severity(config.log_level)),
+            log_file,
+            "%Y-%m-%d %H:%M:%S.#ms [#severity] (#tag_func) #message");
+        AixLog::Log::init({file_sink});
+    }
 
     // Initialize Winsock (required by httplib)
     WSADATA wsa;
