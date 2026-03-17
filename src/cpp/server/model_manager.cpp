@@ -2037,12 +2037,16 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             // GGUF model: Use identify_gguf_models to determine which files to download
             GGUFFiles gguf_files = identify_gguf_models(main_repo_id, main_variant, repo_files);
 
-            // Combine core files and sharded files into one list
+            // Combine core files and sharded files into one list (avoiding duplicates)
+            std::unordered_set<std::string> added_files;
             for (const auto& [key, filename] : gguf_files.core_files) {
                 files_to_download[main_repo_id].push_back(filename);
+                added_files.insert(filename);
             }
             for (const auto& filename : gguf_files.sharded_files) {
-                files_to_download[main_repo_id].push_back(filename);
+                if (added_files.find(filename) == added_files.end()) {
+                    files_to_download[main_repo_id].push_back(filename);
+                }
             }
         }
 
