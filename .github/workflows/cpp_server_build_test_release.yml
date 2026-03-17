@@ -603,7 +603,7 @@ jobs:
   build-lemonade-appimage:
     name: Build Lemonade AppImage
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.build_appimage == true
+    if: startsWith(github.event_name != 'pull_request') || inputs.build_appimage == true
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
