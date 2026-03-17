@@ -7,8 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/lemonade-server</string>
-        <string>tray</string>
+        <string>/usr/local/bin/lemonade-tray</string>
     </array>
 
     <key>RunAtLoad</key>

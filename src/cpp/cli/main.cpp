@@ -1,7 +1,7 @@
 #include "lemon_cli/lemonade_client.h"
 #include <lemon/recipe_options.h>
 #include <lemon/version.h>
-#include <lemon_tray/agent_launcher.h>
+#include <lemon_cli/agent_launcher.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/network_beacon.h>

@@ -1,39 +1,212 @@
-#include "lemon_tray/tray_app.h"
-#include "lemon/cli_parser.h"
+// Tray application entry point
+//
+// Windows (SUBSYSTEM:WINDOWS):
+//   Embeds lemon::Server on a background thread, then runs TrayUI.
+//   Output binary: LemonadeServer.exe
+//
+// macOS / Linux:
+//   Connects to an already-running lemonade-router, then runs TrayUI.
+//   Output binary: lemonade-tray
+
+#include "lemon_tray/tray_ui.h"
+#include <lemon/single_instance.h>
+#include <lemon/version.h>
+
 #include <iostream>
-#include <exception>
-#include <lemon/utils/aixlog.hpp>
+#include <string>
+#include <thread>
+#include <chrono>
+#include <atomic>
+
+#include <CLI/CLI.hpp>
+#include <httplib.h>
 
 #ifdef _WIN32
+// Windows embeds the server
+#include <lemon/server.h>
+#include <lemon/cli_parser.h>
+#include <winsock2.h>
 #include <windows.h>
+#else
+#include <csignal>
+#include <unistd.h>
 #endif
 
-// Console entry point
-// This is the CLI client - perfect for terminal use
-int main(int argc, char* argv[]) {
-    // Note: Single-instance check moved to serve command specifically
-    // This allows status, list, pull, delete, stop to run while server is active
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-    try {
-        lemon::CLIParser parser;
-        parser.parse(argc, argv);
+static bool wait_for_server(const std::string& host, int port, int timeout_seconds) {
+    std::string connect_host = (host.empty() || host == "0.0.0.0" || host == "localhost")
+        ? "127.0.0.1" : host;
 
-        if (!parser.should_continue()) {
-            return parser.get_exit_code();
+    for (int i = 0; i < timeout_seconds * 2; ++i) {
+        try {
+            httplib::Client cli(connect_host, port);
+            cli.set_connection_timeout(1);
+            cli.set_read_timeout(1);
+            auto res = cli.Get("/live");
+            if (res && res->status == 200) {
+                return true;
+            }
+        } catch (...) {}
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// Windows entry point (SUBSYSTEM:WINDOWS — embedded server)
+// ---------------------------------------------------------------------------
+
+#ifdef _WIN32
+
+int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
+    // Single instance check — prevents running alongside lemonade-router
+    if (lemon::SingleInstance::IsAnotherInstanceRunning("Router")) {
+        MessageBoxA(NULL,
+            "Lemonade Server is already running.\n\n"
+            "Check your system tray for the lemon icon.",
+            "Lemonade Server", MB_OK | MB_ICONINFORMATION);
+        return 0;
+    }
+
+    // Convert wide command line to argc/argv for CLI11
+    int argc;
+    LPWSTR* argvW = CommandLineToArgvW(GetCommandLineW(), &argc);
+    std::vector<std::string> arg_strings(argc);
+    std::vector<char*> argv_ptrs(argc);
+    for (int i = 0; i < argc; ++i) {
+        int len = WideCharToMultiByte(CP_UTF8, 0, argvW[i], -1, nullptr, 0, NULL, NULL);
+        arg_strings[i].resize(len);
+        WideCharToMultiByte(CP_UTF8, 0, argvW[i], -1, &arg_strings[i][0], len, NULL, NULL);
+        if (!arg_strings[i].empty() && arg_strings[i].back() == '\0')
+            arg_strings[i].pop_back();
+        argv_ptrs[i] = &arg_strings[i][0];
+    }
+    LocalFree(argvW);
+
+    // Use the same CLIParser as lemonade-router for full arg compatibility
+    lemon::CLIParser parser;
+    parser.parse(argc, argv_ptrs.data());
+    if (!parser.should_continue()) {
+        return parser.get_exit_code();
+    }
+    auto config = parser.get_config();
+
+    // Initialize Winsock (required by httplib)
+    WSADATA wsa;
+    WSAStartup(MAKEWORD(2, 2), &wsa);
+
+    // Start server on background thread (capture config by value — thread outlives the stack frame)
+    std::thread server_thread([config]() {
+        try {
+            lemon::Server server(config.port, config.host, config.log_level,
+                                config.recipe_options, config.max_loaded_models,
+                                config.extra_models_dir, config.no_broadcast,
+                                config.global_timeout);
+            server.run();
+        } catch (const std::exception& e) {
+            MessageBoxA(NULL, e.what(), "Lemonade Server Error", MB_OK | MB_ICONERROR);
         }
+    });
+    server_thread.detach();
 
-        // Initialize logging
-        auto config = parser.get_config();
-        auto sink = std::make_shared<AixLog::SinkCout>(AixLog::Filter(AixLog::to_severity(config.log_level)), "%Y-%m-%d %H:%M:%S.#ms [#severity] (#tag_func) #message");
-        AixLog::Log::init({sink});
-
-        lemon_tray::TrayApp app(config, parser.get_tray_config());
-        return app.run();
-    } catch (const std::exception& e) {
-        LOG(ERROR) << "Fatal error: " << e.what() << std::endl;
-        return 1;
-    } catch (...) {
-        LOG(ERROR) << "Unknown fatal error" << std::endl;
+    // Wait for server to be ready
+    if (!wait_for_server(config.host, config.port, 15)) {
+        MessageBoxA(NULL,
+            "Lemonade Server failed to start within 15 seconds.",
+            "Lemonade Server Error", MB_OK | MB_ICONERROR);
+        WSACleanup();
         return 1;
     }
+
+    // Create and run tray UI
+    lemon_tray::TrayUI tray(config.port, config.host);
+    if (!tray.initialize()) {
+        WSACleanup();
+        return 1;
+    }
+
+    tray.run();  // Blocks until quit
+
+    // Shutdown: send shutdown to our own embedded server
+    {
+        std::string connect_host = (config.host.empty() || config.host == "0.0.0.0" || config.host == "localhost")
+            ? "127.0.0.1" : config.host;
+        httplib::Client cli(connect_host, config.port);
+        cli.set_connection_timeout(2);
+        cli.set_read_timeout(5);
+        cli.Post("/internal/shutdown", "", "application/json");
+    }
+
+    // Give server a moment to shut down
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    WSACleanup();
+    return 0;
 }
+
+// ---------------------------------------------------------------------------
+// macOS / Linux entry point (connects to running router)
+// ---------------------------------------------------------------------------
+
+#else
+
+// Signal handler writes to self-pipe for clean shutdown
+static void tray_signal_handler(int sig) {
+    if (sig == SIGINT || sig == SIGTERM) {
+        char c = (char)sig;
+        ssize_t written = write(lemon_tray::TrayUI::signal_pipe_[1], &c, 1);
+        (void)written;
+    }
+}
+
+int main(int argc, char* argv[]) {
+    // Single instance check
+    if (lemon::SingleInstance::IsAnotherInstanceRunning("Tray")) {
+        std::cerr << "lemonade-tray is already running." << std::endl;
+        return 0;
+    }
+
+    // Parse args
+    CLI::App app{"Lemonade Tray - system tray interface for Lemonade Server"};
+    int port = 8000;
+    std::string host = "localhost";
+
+    app.add_option("--port,-p", port, "Server port to connect to");
+    app.add_option("--host", host, "Server host to connect to");
+
+    try {
+        app.parse(argc, argv);
+    } catch (const CLI::ParseError& e) {
+        return app.exit(e);
+    }
+
+    // Install signal handlers
+    signal(SIGINT, tray_signal_handler);
+    signal(SIGTERM, tray_signal_handler);
+
+    // Wait for router to be reachable (retry with backoff up to 30s)
+    std::cout << "Connecting to lemonade-router at " << host << ":" << port << "..." << std::endl;
+    if (!wait_for_server(host, port, 30)) {
+        std::cerr << "Error: Could not connect to lemonade-router at " << host << ":" << port << std::endl;
+        std::cerr << "Make sure lemonade-router is running." << std::endl;
+        return 1;
+    }
+
+    std::cout << "Connected to lemonade-router v" << LEMON_VERSION_STRING << std::endl;
+
+    // Create and run tray UI
+    lemon_tray::TrayUI tray(port, host);
+    if (!tray.initialize()) {
+        return 1;
+    }
+
+    tray.run();  // Blocks until quit
+
+    // On macOS/Linux, just exit — the router keeps running
+    return 0;
+}
+
+#endif

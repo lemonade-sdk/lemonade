@@ -37,11 +37,11 @@ This guide covers everything you need to build, test, and contribute to Lemonade
 ## Components
 
 Lemonade consists of these main executables:
-- **lemonade-router.exe** - Core HTTP server executable that handles requests and LLM backend orchestration
-- **lemonade-server.exe** - Console CLI client for terminal users that manages server lifecycle, executes commands via HTTP API
-- **lemonade-tray.exe** (Windows only) - GUI tray launcher for desktop users, automatically starts `lemonade-server.exe serve`
-- **lemonade-tray** (Linux, when compiled with GTK3+AppIndicator3) - System tray launcher using AppIndicator3
-- **lemonade-log-viewer.exe** (Windows only) - Log file viewer with live tail support and installer-friendly file sharing
+- **lemonade-router** - Core HTTP server that handles requests and LLM backend orchestration
+- **lemonade** - CLI client for terminal users (list, pull, delete, run, status, stop, logs, launch)
+- **LemonadeServer.exe** (Windows only) - SUBSYSTEM:WINDOWS GUI app that embeds the server and shows a system tray icon
+- **lemonade-tray** (macOS/Linux) - Lightweight tray client that connects to a running `lemonade-router`
+- **lemonade-server** - Deprecated backwards-compatibility shim that delegates to `lemonade-router` or `lemonade`
 
 ## Building from Source
 
@@ -96,13 +96,14 @@ cmake --build --preset vs18
 
 - **Windows:**
   - `build/Release/lemonade-router.exe` - HTTP server
-  - `build/Release/lemonade-server.exe` - Console CLI client
-  - `build/Release/lemonade-tray.exe` - GUI tray launcher
-  - `build/Release/lemonade-log-viewer.exe` - Log file viewer
+  - `build/Release/LemonadeServer.exe` - GUI app (embedded server + system tray)
+  - `build/Release/lemonade.exe` - CLI client
+  - `build/Release/lemonade-server.exe` - Legacy shim (deprecated)
 - **Linux/macOS:**
   - `build/lemonade-router` - HTTP server
-  - `build/lemonade-server` - Console CLI client (always headless on Linux)
-  - `build/lemonade-tray` - GUI tray application (Linux only, built when AppIndicator3 libraries are found)
+  - `build/lemonade` - CLI client
+  - `build/lemonade-tray` - System tray client (macOS always; Linux when AppIndicator3 found)
+  - `build/lemonade-server` - Legacy shim (deprecated)
 - **Resources:** Automatically copied to `build/Release/resources/` on Windows, `build/resources/` on Linux/macOS (web UI files, model registry, backend version configuration)
 
 ### Building the Electron Desktop App (Optional)
@@ -132,10 +133,10 @@ This will:
 3. Build to build/app/linux-unpacked/ (Linux) or build/app/win-unpacked/ (Windows)
 
 The tray app searches for the Electron app in these locations:
-- **Windows installed**: `../app/Lemonade.exe` (relative to bin/ directory)
-- **Windows development**: `../app/win-unpacked/Lemonade.exe` (from build/Release/)
-- **Linux installed**: `/usr/local/share/lemonade-server/app/lemonade`
-- **Linux development**: `../app/linux-unpacked/lemonade` (from build/)
+- **Windows installed**: `../app/lemonade-app.exe` (relative to bin/ directory)
+- **Windows development**: `../app/win-unpacked/lemonade-app.exe` (from build/Release/)
+- **Linux installed**: `/opt/share/lemonade-server/app/lemonade-app`
+- **Linux development**: `../app/linux-unpacked/lemonade-app` (from build/)
 
 If not found, the "Open app" menu option is hidden but everything else works.
 
@@ -546,12 +547,10 @@ src/cpp/
 │
 └── tray/                       # System tray application
     ├── CMakeLists.txt          # Tray-specific build config
-    ├── main.cpp                # Tray entry point (lemonade-server)
-    ├── tray_launcher.cpp       # GUI launcher (lemonade-tray)
-    ├── log-viewer.cpp          # Log file viewer (lemonade-log-viewer)
-    ├── server_manager.cpp      # Manages lemonade-router process
-    ├── tray_app.cpp            # Main tray application logic
-    ├── lemonade-server.manifest.in  # Windows manifest template
+    ├── main.cpp                # Entry point (WinMain on Windows, main on macOS/Linux)
+    ├── tray_ui.h               # TrayUI class header
+    ├── tray_ui.cpp             # TrayUI class — menu, HTTP, icon, app launch (~500 lines)
+    ├── agent_launcher.cpp      # Agent (claude/codex) launcher (shared with CLI)
     ├── version.rc              # Windows version resource
     └── platform/               # Platform-specific implementations
         ├── windows_tray.cpp    # Win32 system tray API

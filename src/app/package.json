@@ -55,7 +55,7 @@
   },
   "build": {
     "appId": "com.lemonade.app",
-    "productName": "Lemonade",
+    "productName": "lemonade-app",
     "publish": null,
     "toolsets": {
       "appimage": "1.0.2"

@@ -67,8 +67,8 @@
     <!-- GUI only supports per-user install (no UAC needed) -->
     <Property Id="MSIINSTALLPERUSER" Value="1" Secure="yes" />
 
-    <!-- Enable optional 'Run now' checkbox on ExitDialog (unchecked by default) -->
-    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Run Lemonade Server now" />
+    <!-- Enable optional 'Open Lemonade App' checkbox on ExitDialog -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Open Lemonade App" />
 
     <!-- Existing MSI-based C++ install location (for in-place upgrades) -->
     <!-- Check both HKCU (per-user) and HKLM (all-users) -->
@@ -161,24 +161,18 @@
 
     <!-- Executable files -->
     <ComponentGroup Id="ExecutableComponents" Directory="BinDir">
-      <Component Id="LemonadeTray" Guid="c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f">
-        <File Id="lemonade_tray.exe" Source="$(var.BuildDir)\Release\lemonade-tray.exe" KeyPath="yes" />
+      <Component Id="LemonadeApp" Guid="c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f">
+        <File Id="LemonadeServer.exe" Source="$(var.BuildDir)\Release\LemonadeServer.exe" KeyPath="yes" />
       </Component>
 
       <Component Id="LemonadeServer" Guid="d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a">
         <File Id="lemonade_server.exe" Source="$(var.BuildDir)\Release\lemonade-server.exe" KeyPath="yes" />
       </Component>
 
-      <Component Id="LemonadeRouter" Guid="e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b">
-        <File Id="lemonade_router.exe" Source="$(var.BuildDir)\Release\lemonade-router.exe" KeyPath="yes" />
-      </Component>
+      <!-- lemonade-router.exe is not installed on Windows; LemonadeServer.exe embeds the server -->
 
       <Component Id="LemonadeCli" Guid="12ffa6b7-831b-4d56-889c-3e7f43c8d134">
         <File Id="lemonade.exe" Source="$(var.BuildDir)\Release\lemonade.exe" KeyPath="yes" />
-      </Component>
-
-      <Component Id="LemonadeLogViewer" Guid="f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c">
-        <File Id="lemonade_log_viewer.exe" Source="$(var.BuildDir)\Release\lemonade-log-viewer.exe" KeyPath="yes" />
       </Component>
 
 <?if $(var.IncludeElectron) = 1 ?>
@@ -242,7 +236,7 @@
     <Component Id="ProgramMenuShortcuts" Directory="ProgramMenuDir" Guid="a7b8c9d0-e1f2-4a3b-4c5d-6e7f8a9b0c1d">
       <Shortcut Id="ApplicationStartMenuShortcut"
                 Name="Lemonade Server"
-                Target="[BinDir]lemonade-tray.exe"
+                Target="[BinDir]LemonadeServer.exe"
                 WorkingDirectory="BinDir"
                 Icon="LemonadeIcon" />
       <Shortcut Id="UninstallShortcut"
@@ -257,10 +251,20 @@
     <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="c9d0e1f2-a3b4-4c5d-6e7f-8a9b0c1d2e3f" Condition="ADDDESKTOPSHORTCUT = 1">
       <Shortcut Id="DesktopShortcutId"
                 Name="Lemonade Server"
-                Target="[BinDir]lemonade-tray.exe"
+                Target="[BinDir]LemonadeServer.exe"
                 WorkingDirectory="BinDir"
                 Icon="LemonadeIcon" />
       <RegistryValue Root="HKCU" Key="Software\AMD\Lemonade Server" Name="Desktop" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <!-- Auto-start on login: Lemonade.exe in Startup folder -->
+    <Component Id="StartupShortcut" Directory="StartupFolder" Guid="d0e1f2a3-b4c5-4d6e-7f8a-9b0c1d2e3f4a">
+      <Shortcut Id="StartupShortcutId"
+                Name="Lemonade Server"
+                Target="[BinDir]LemonadeServer.exe"
+                WorkingDirectory="BinDir"
+                Icon="LemonadeIcon" />
+      <RegistryValue Root="HKCU" Key="Software\AMD\Lemonade Server" Name="Startup" Type="integer" Value="1" KeyPath="yes" />
     </Component>
 
     <!-- ============================================ -->
@@ -282,6 +286,7 @@
       <ComponentRef Id="RegistryEntriesMachine" />
       <ComponentRef Id="ProgramMenuShortcuts" />
       <ComponentRef Id="DesktopShortcut" />
+      <ComponentRef Id="StartupShortcut" />
     </Feature>
 
     <!-- ============================================ -->
@@ -368,12 +373,19 @@
                   Impersonate="yes"
                   Return="ignore" />
 
-    <!-- Launch lemonade-tray.exe (triggered from ExitDialog Finish button) by shell-executing
-         the Start Menu shortcut through explorer.exe. This ensures the process runs in the
-         normal user context with the shortcut-defined working directory. -->
+    <!-- Launch Lemonade.exe after install by shell-executing the Start Menu shortcut
+         through explorer.exe. This ensures the process runs in the normal user context. -->
     <CustomAction Id="LaunchApplication"
                   Directory="SystemFolder"
                   ExeCommand='"[SystemFolder]explorer.exe" "[ProgramMenuDir]Lemonade Server.lnk"'
+                  Impersonate="yes"
+                  Return="asyncNoWait" />
+
+    <!-- Auto-launch Lemonade.exe after install completes (always runs) -->
+    <CustomAction Id="AutoLaunchLemonade"
+                  Directory="BinDir"
+                  ExeCommand='cmd.exe /c start "" "[BinDir]LemonadeServer.exe"'
+                  Execute="immediate"
                   Impersonate="yes"
                   Return="asyncNoWait" />
 
@@ -440,6 +452,11 @@
       <Custom Action="CleanupRuntimeDirs"
               Before="RemoveFiles"
               Condition="Installed AND REMOVE=&quot;ALL&quot;" />
+
+      <!-- Auto-launch Lemonade.exe after fresh install or upgrade -->
+      <Custom Action="AutoLaunchLemonade"
+              After="InstallFinalize"
+              Condition="NOT Installed OR UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
 
   </Package>

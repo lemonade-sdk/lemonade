@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10...3.28)
+cmake_minimum_required(VERSION 3.12...3.28)
 
 # Use static runtime library on Windows to avoid DLL dependencies
 if(MSVC)
@@ -33,14 +33,13 @@ get_filename_component(ELECTRON_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/app" ABS
 set(ELECTRON_APP_BUILD_DIR "${CMAKE_BINARY_DIR}/app")
 if(WIN32)
     set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/win-unpacked")
-    set(ELECTRON_EXE_NAME "Lemonade.exe")
+    set(ELECTRON_EXE_NAME "lemonade-app.exe")
 elseif(APPLE)
     set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/mac-arm64")
-    set(ELECTRON_EXE_NAME "Lemonade.app")
+    set(ELECTRON_EXE_NAME "lemonade-app.app")
 else()
     set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/linux-unpacked")
-    # Electron builder uses lowercase product name on Linux
-    set(ELECTRON_EXE_NAME "lemonade")
+    set(ELECTRON_EXE_NAME "lemonade-app")
 endif()
 
 # ============================================================
@@ -550,9 +549,10 @@ include_directories(
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-# Source files
-set(SOURCES
-    src/cpp/server/main.cpp
+# ============================================================
+# Server core sources (everything except entry points)
+# ============================================================
+set(SOURCES_CORE
     src/cpp/server/server.cpp
     src/cpp/server/router.cpp
     src/cpp/server/cli_parser.cpp
@@ -584,19 +584,24 @@ set(SOURCES
     $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/websocket_server.cpp>
 )
 
-# Add platform-specific source files
+# Add platform-specific source files to core
 if(APPLE)
-    list(APPEND SOURCES src/cpp/server/macos_system_info.mm)
+    list(APPEND SOURCES_CORE src/cpp/server/macos_system_info.mm)
     set_source_files_properties(src/cpp/server/macos_system_info.mm PROPERTIES LANGUAGE OBJCXX)
 endif()
 
-# Add version resource file on Windows
-if(WIN32)
-    list(APPEND SOURCES src/cpp/server/version.rc)
-endif()
+# ============================================================
+# Server core OBJECT library (shared by lemonade-router and Lemonade.exe)
+# ============================================================
+add_library(lemonade-server-core OBJECT ${SOURCES_CORE})
 
-# Create executable
-add_executable(${EXECUTABLE_NAME} ${SOURCES})
+# ============================================================
+# lemonade-router executable
+# ============================================================
+add_executable(${EXECUTABLE_NAME} src/cpp/server/main.cpp)
+if(WIN32)
+    target_sources(${EXECUTABLE_NAME} PRIVATE src/cpp/server/version.rc)
+endif()
 
 
 # ============================================================
@@ -621,61 +626,56 @@ endif()
 
 
 # ============================================================
-# Linking
+# Server core dependencies (PUBLIC — inherited by consumers)
 # ============================================================
 
-# Common linking
-if(USE_SYSTEM_JSON)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE nlohmann_json::nlohmann_json)
-else()
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE nlohmann_json::nlohmann_json)
-endif()
+target_link_libraries(lemonade-server-core PUBLIC nlohmann_json::nlohmann_json)
 
 if(USE_SYSTEM_HTTPLIB)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE cpp-httplib)
+    target_link_libraries(lemonade-server-core PUBLIC cpp-httplib)
 else()
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE httplib::httplib)
+    target_link_libraries(lemonade-server-core PUBLIC httplib::httplib)
 endif()
 
 if(USE_SYSTEM_CLI11)
-    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${CLI11_INCLUDE_DIRS})
+    target_include_directories(lemonade-server-core PUBLIC ${CLI11_INCLUDE_DIRS})
 else()
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE CLI11::CLI11)
+    target_link_libraries(lemonade-server-core PUBLIC CLI11::CLI11)
 endif()
 
 if(USE_SYSTEM_CURL)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${CURL_LIBRARIES})
-    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${CURL_INCLUDE_DIRS})
-    target_compile_options(${EXECUTABLE_NAME} PRIVATE ${CURL_CFLAGS_OTHER})
+    target_link_libraries(lemonade-server-core PUBLIC ${CURL_LIBRARIES})
+    target_include_directories(lemonade-server-core PUBLIC ${CURL_INCLUDE_DIRS})
+    target_compile_options(lemonade-server-core PUBLIC ${CURL_CFLAGS_OTHER})
 else()
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE libcurl)
+    target_link_libraries(lemonade-server-core PUBLIC libcurl)
 endif()
 
 if(USE_SYSTEM_ZSTD)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${ZSTD_LIBRARIES})
-    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${ZSTD_INCLUDE_DIRS})
-    target_link_directories(${EXECUTABLE_NAME} PRIVATE ${ZSTD_LIBRARY_DIRS})
-    target_compile_options(${EXECUTABLE_NAME} PRIVATE ${ZSTD_CFLAGS_OTHER})
+    target_link_libraries(lemonade-server-core PUBLIC ${ZSTD_LIBRARIES})
+    target_include_directories(lemonade-server-core PUBLIC ${ZSTD_INCLUDE_DIRS})
+    target_link_directories(lemonade-server-core PUBLIC ${ZSTD_LIBRARY_DIRS})
+    target_compile_options(lemonade-server-core PUBLIC ${ZSTD_CFLAGS_OTHER})
 endif()
 
 if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
-    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${HTTPLIB_INCLUDE_DIRS})
+    target_include_directories(lemonade-server-core PUBLIC ${HTTPLIB_INCLUDE_DIRS})
 endif()
 
 # IXWebSocket for WebSocket support (Windows and Linux)
 if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ixwebsocket)
-    target_compile_definitions(${EXECUTABLE_NAME} PRIVATE LEMON_HAS_WEBSOCKET)
+    target_link_libraries(lemonade-server-core PUBLIC ixwebsocket)
+    target_compile_definitions(lemonade-server-core PUBLIC LEMON_HAS_WEBSOCKET)
 endif()
 
 # Enable ARC (Automatic Reference Counting) for macOS Objective-C++ files
 if(APPLE)
-    target_compile_options(${EXECUTABLE_NAME} PRIVATE -fobjc-arc)
+    target_compile_options(lemonade-server-core PUBLIC -fobjc-arc)
 endif()
 
 # Platform-specific linking
 if(WIN32)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE
+    target_link_libraries(lemonade-server-core PUBLIC
         ws2_32
         wsock32
         wbemuuid
@@ -683,14 +683,13 @@ if(WIN32)
         oleaut32
     )
 elseif(APPLE)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE
+    target_link_libraries(lemonade-server-core PUBLIC
         "-framework Metal"
         "-framework Foundation"
         "-framework CoreServices"
         "-lobjc"
     )
-    # Prevent linking to Homebrew OpenSSL on macOS, use Apple's built-in SSL
-    target_link_options(${EXECUTABLE_NAME} PRIVATE -Wl,-no_weak_imports)
+    target_link_options(lemonade-server-core PUBLIC -Wl,-no_weak_imports)
 elseif(UNIX)
     # Link systemd for journal support
     if(PkgConfig_FOUND)
@@ -698,9 +697,9 @@ elseif(UNIX)
         if(SYSTEMD_FOUND)
             set(LEMONADE_SYSTEMD_UNIT_NAME "lemonade-server.service" CACHE STRING
                 "Systemd unit name to match for journald log mode (overridable at runtime via LEMONADE_SYSTEMD_UNIT env var)")
-            target_include_directories(${EXECUTABLE_NAME} PRIVATE ${SYSTEMD_INCLUDE_DIRS})
-            target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${SYSTEMD_LIBRARIES})
-            target_compile_definitions(${EXECUTABLE_NAME} PRIVATE
+            target_include_directories(lemonade-server-core PUBLIC ${SYSTEMD_INCLUDE_DIRS})
+            target_link_libraries(lemonade-server-core PUBLIC ${SYSTEMD_LIBRARIES})
+            target_compile_definitions(lemonade-server-core PUBLIC
                 HAVE_SYSTEMD
                 LEMONADE_SYSTEMD_UNIT_NAME="${LEMONADE_SYSTEMD_UNIT_NAME}")
         endif()
@@ -711,9 +710,9 @@ elseif(UNIX)
         if(PkgConfig_FOUND)
             pkg_check_modules(LIBCAP QUIET libcap)
             if(LIBCAP_FOUND)
-                target_include_directories(${EXECUTABLE_NAME} PRIVATE ${LIBCAP_INCLUDE_DIRS})
-                target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${LIBCAP_LIBRARIES})
-                target_compile_definitions(${EXECUTABLE_NAME} PRIVATE HAVE_LIBCAP)
+                target_include_directories(lemonade-server-core PUBLIC ${LIBCAP_INCLUDE_DIRS})
+                target_link_libraries(lemonade-server-core PUBLIC ${LIBCAP_LIBRARIES})
+                target_compile_definitions(lemonade-server-core PUBLIC HAVE_LIBCAP)
                 message(STATUS "libcap found - capability inheritance will be enabled")
             else()
                 message(STATUS "libcap not found - capability inheritance will be disabled")
@@ -721,6 +720,9 @@ elseif(UNIX)
         endif()
     endif()
 endif()
+
+# lemonade-router inherits all deps from lemonade-server-core
+target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 
 # ============================================================
 # Resources
@@ -1031,6 +1033,9 @@ add_subdirectory(src/cpp/tray)
 # Add CLI application subdirectory
 add_subdirectory(src/cpp/cli)
 
+# Add legacy shim (backwards-compatible lemonade-server)
+add_subdirectory(src/cpp/legacy-cli)
+
 if(APPLE)
     # SIGNING LOGIC (Release Only)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -1047,10 +1052,10 @@ if(APPLE)
     endif()
 
     # Prepare Electron App
-    set(ELECTRON_BUILD_COPY "${CMAKE_BINARY_DIR}/Lemonade.app")
+    set(ELECTRON_BUILD_COPY "${CMAKE_BINARY_DIR}/lemonade-app.app")
     add_custom_target(prepare_electron_app
         COMMAND ${CMAKE_COMMAND} -E remove_directory "${ELECTRON_BUILD_COPY}"
-        COMMAND cp -R "${ELECTRON_APP_BUILD_DIR}/mac-arm64/Lemonade.app" "${CMAKE_BINARY_DIR}/" || cp -R "${ELECTRON_APP_BUILD_DIR}/mac/Lemonade.app" "${CMAKE_BINARY_DIR}/" || cp -R "${ELECTRON_APP_BUILD_DIR}/Lemonade.app" "${CMAKE_BINARY_DIR}/" || echo "Warning: Could not find Lemonade.app in ${ELECTRON_APP_BUILD_DIR}"
+        COMMAND cp -R "${ELECTRON_APP_BUILD_DIR}/mac-arm64/lemonade-app.app" "${CMAKE_BINARY_DIR}/" || cp -R "${ELECTRON_APP_BUILD_DIR}/mac/lemonade-app.app" "${CMAKE_BINARY_DIR}/" || cp -R "${ELECTRON_APP_BUILD_DIR}/lemonade-app.app" "${CMAKE_BINARY_DIR}/" || echo "Warning: Could not find lemonade-app.app in ${ELECTRON_APP_BUILD_DIR}"
         COMMENT "Copying Electron App..."
         DEPENDS electron-app
     )
@@ -1079,23 +1084,27 @@ if(APPLE)
         " COMPONENT Runtime)
     endif()
 
-    # Tray/Server -> /usr/local/bin
-    # (Since tray/CMakeLists.txt skips install on Apple, we must do it here)
-    if(TARGET lemonade-server)
-        install(TARGETS lemonade-server RUNTIME DESTINATION "bin" COMPONENT Runtime)
+    # Tray client -> /usr/local/bin
+    if(TARGET lemonade-tray)
+        install(TARGETS lemonade-tray RUNTIME DESTINATION "bin" COMPONENT Runtime)
 
-        # Sign the server binary after installation (Release builds only)
+        # Sign the tray binary after installation (Release builds only)
         if(CMAKE_BUILD_TYPE STREQUAL "Release")
             install(CODE "
                 execute_process(
-                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/lemonade-server\"
+                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/lemonade-tray\"
                     RESULT_VARIABLE SIGN_RESULT
                 )
                 if(NOT SIGN_RESULT EQUAL 0)
-                    message(FATAL_ERROR \"Failed to sign lemonade-server\")
+                    message(FATAL_ERROR \"Failed to sign lemonade-tray\")
                 endif()
             " COMPONENT Runtime)
         endif()
+    endif()
+
+    # Legacy shim -> /usr/local/bin
+    if(TARGET lemonade-server)
+        install(TARGETS lemonade-server RUNTIME DESTINATION "bin" COMPONENT Runtime)
     endif()
 
     # CLI -> /usr/local/bin
