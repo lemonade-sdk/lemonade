@@ -344,7 +344,7 @@ void Server::setup_routes(httplib::Server &web_server) {
             for (const auto& param : {"search", "filter", "limit", "sort", "direction", "pipeline_tag"}) {
                 if (req.has_param(param)) {
                     if (!first) url += "&";
-                    url += std::string(param) + "=" + req.get_param_value(param);
+                    url += std::string(param) + "=" + httplib::encode_query_component(req.get_param_value(param));
                     first = false;
                 }
             }

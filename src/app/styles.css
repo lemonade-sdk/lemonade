@@ -1060,6 +1060,14 @@ footer {
     background: rgba(255, 255, 255, 0.16);
 }
 
+.left-panel-inline-filter-btn.filter-active {
+    color: #4ade80;
+}
+
+.left-panel-inline-filter-btn.filter-active:hover {
+    color: #86efac;
+}
+
 .left-panel-filter-popover {
     position: absolute;
     top: calc(100% + 6px);
@@ -1118,6 +1126,42 @@ footer {
     border-color: rgba(255, 255, 255, 0.11);
     background: rgba(255, 255, 255, 0.075);
     color: #ffffff;
+}
+
+.filter-section-label {
+    font-size: 0.55rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: -4px;
+}
+
+.recipe-filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.recipe-chip {
+    font-size: 0.58rem;
+    padding: 3px 8px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: transparent;
+    color: #777;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.recipe-chip:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #aaa;
+}
+
+.recipe-chip.active {
+    border-color: rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.08);
+    color: #ddd;
 }
 
 .model-filter-popover .organization-toggle {

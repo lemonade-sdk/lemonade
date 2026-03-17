@@ -225,6 +225,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
   const [organizationMode, setOrganizationMode] = useState<'recipe' | 'category'>('recipe');
   const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [enabledRecipes, setEnabledRecipes] = useState<Set<string>>(new Set([
+    'llamacpp', 'sd-cpp', 'whispercpp', 'kokoro', 'flm', 'ryzenai-llm'
+  ]));
+  const [showSuggestedSection, setShowSuggestedSection] = useState(true);
+  const [showCacheSection, setShowCacheSection] = useState(true);
+  const [showSearchSection, setShowSearchSection] = useState(true);
 const [searchQuery, setSearchQuery] = useState('');
   const [loadedModels, setLoadedModels] = useState<Set<string>>(new Set());
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
@@ -391,17 +397,25 @@ const [searchQuery, setSearchQuery] = useState('');
   const getFilteredModels = () => {
     let filtered = suggestedModels;
 
+    // Filter by enabled recipes
+    filtered = filtered.filter(model => {
+      const recipe = modelsData[model.name]?.recipe;
+      if (!recipe) return true; // Show models with no recipe info
+      return enabledRecipes.has(recipe);
+    });
+
     // Filter by downloaded status
     if (showDownloadedOnly) {
       filtered = filtered.filter(model => modelsData[model.name]?.downloaded);
     }
 
-    // Filter by search query
+    // Filter by search query (all words must match independently)
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(model =>
-        model.name.toLowerCase().includes(query)
-      );
+      const words = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
+      filtered = filtered.filter(model => {
+        const name = model.name.toLowerCase();
+        return words.every(w => name.includes(w));
+      });
     }
 
     return filtered;
@@ -466,7 +480,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const groupedModels = useMemo(
     () => organizationMode === 'recipe' ? groupModelsByRecipe() : groupModelsByCategory(),
-    [suggestedModels, modelsData, organizationMode, showDownloadedOnly, searchQuery, systemInfo?.recipes]
+    [suggestedModels, modelsData, organizationMode, showDownloadedOnly, searchQuery, systemInfo?.recipes, enabledRecipes]
   );
   const availableModelCount = useMemo(
     () => Object.values(groupedModels).reduce((sum, arr) => sum + arr.length, 0),
@@ -1495,7 +1509,11 @@ const [searchQuery, setSearchQuery] = useState('');
   // Group HF cache models by provider
   const cacheGroupedItems = useMemo((): CacheListItem[] => {
     const filtered = hfCacheModels.filter(m => {
-      if (searchQuery.trim() && !m.repo_id.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      if (searchQuery.trim()) {
+        const words = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
+        const id = m.repo_id.toLowerCase();
+        if (!words.every(w => id.includes(w))) return false;
+      }
       const compat = classifyModel({
         modelId: m.repo_id,
         pipelineTag: m.pipeline_tag,
@@ -1507,6 +1525,7 @@ const [searchQuery, setSearchQuery] = useState('');
       });
       if (compat.level === 'incompatible') return false;
       if (compat.recipe === 'whispercpp' && (!m.bin_files || m.bin_files.length === 0)) return false;
+      if (!enabledRecipes.has(compat.recipe)) return false;
       return true;
     });
 
@@ -1544,7 +1563,7 @@ const [searchQuery, setSearchQuery] = useState('');
     });
 
     return items;
-  }, [hfCacheModels, searchQuery]);
+  }, [hfCacheModels, searchQuery, enabledRecipes]);
 
   const renderCacheModelItem = (cacheModel: CacheModelInfo, showShortName = false) => {
     const compatibility = classifyModel({
@@ -1869,7 +1888,7 @@ const [searchQuery, setSearchQuery] = useState('');
               />
               {showInlineFilterButton && (
                 <button
-                  className={`left-panel-inline-filter-btn ${showFilterPanel ? 'active' : ''}`}
+                  className={`left-panel-inline-filter-btn ${showFilterPanel ? 'active' : ''}${(enabledRecipes.size < 6 || !showSuggestedSection || !showCacheSection || !showSearchSection || showDownloadedOnly) ? ' filter-active' : ''}`}
                   onClick={() => setShowFilterPanel(prev => !prev)}
                   title="Filters"
                   aria-label="Filters"
@@ -1918,27 +1937,69 @@ const [searchQuery, setSearchQuery] = useState('');
               )}
               {currentView === 'models' && showFilterPanel && (
                 <div className="left-panel-filter-popover model-filter-popover">
+                  <div className="filter-section-label">Backends</div>
+                  <div className="recipe-filter-chips">
+                    {[
+                      { key: 'llamacpp', label: 'llama.cpp' },
+                      { key: 'sd-cpp', label: 'sd.cpp' },
+                      { key: 'whispercpp', label: 'whisper.cpp' },
+                      { key: 'kokoro', label: 'Kokoro' },
+                      { key: 'flm', label: 'FLM' },
+                      { key: 'ryzenai-llm', label: 'RyzenAI' },
+                    ].map(r => (
+                      <button
+                        key={r.key}
+                        className={`recipe-chip${enabledRecipes.has(r.key) ? ' active' : ''}`}
+                        onClick={() => {
+                          setEnabledRecipes(prev => {
+                            const next = new Set(prev);
+                            if (next.has(r.key)) next.delete(r.key);
+                            else next.add(r.key);
+                            return next;
+                          });
+                        }}
+                      >{r.label}</button>
+                    ))}
+                  </div>
+                  <div className="filter-section-label">Group suggested models</div>
                   <div className="organization-toggle">
                     <button className={`toggle-button ${organizationMode === 'recipe' ? 'active' : ''}`} onClick={() => {
                       setOrganizationMode('recipe');
-                      setShowFilterPanel(false);
                     }}>
                       By Recipe
                     </button>
                     <button className={`toggle-button ${organizationMode === 'category' ? 'active' : ''}`} onClick={() => {
                       setOrganizationMode('category');
-                      setShowFilterPanel(false);
                     }}>
                       By Category
                     </button>
                   </div>
+                  <div className="filter-section-label">Sections</div>
+                  <label className="toggle-switch-label">
+                    <span className="toggle-label-text">Suggested</span>
+                    <div className="toggle-switch">
+                      <input type="checkbox" checked={showSuggestedSection} onChange={(e) => setShowSuggestedSection(e.target.checked)} />
+                      <span className="toggle-slider"></span>
+                    </div>
+                  </label>
+                  <label className="toggle-switch-label">
+                    <span className="toggle-label-text">HF Cache</span>
+                    <div className="toggle-switch">
+                      <input type="checkbox" checked={showCacheSection} onChange={(e) => setShowCacheSection(e.target.checked)} />
+                      <span className="toggle-slider"></span>
+                    </div>
+                  </label>
+                  <label className="toggle-switch-label">
+                    <span className="toggle-label-text">HF Search</span>
+                    <div className="toggle-switch">
+                      <input type="checkbox" checked={showSearchSection} onChange={(e) => setShowSearchSection(e.target.checked)} />
+                      <span className="toggle-slider"></span>
+                    </div>
+                  </label>
                   <label className="toggle-switch-label">
                     <span className="toggle-label-text">Downloaded only</span>
                     <div className="toggle-switch">
-                      <input type="checkbox" checked={showDownloadedOnly} onChange={(e) => {
-                        setShowDownloadedOnly(e.target.checked);
-                        setShowFilterPanel(false);
-                      }} />
+                      <input type="checkbox" checked={showDownloadedOnly} onChange={(e) => setShowDownloadedOnly(e.target.checked)} />
                       <span className="toggle-slider"></span>
                     </div>
                   </label>
@@ -1971,7 +2032,7 @@ const [searchQuery, setSearchQuery] = useState('');
           )}
 
           <div className="model-manager-content">
-            {currentView === 'models' && (
+            {currentView === 'models' && showSuggestedSection && (
               <div className="available-models-section widget">
                 <div className="available-models-header">
                   <div className="loaded-model-label">SUGGESTED MODELS</div>
@@ -1980,7 +2041,7 @@ const [searchQuery, setSearchQuery] = useState('');
                 {renderModelsView()}
               </div>
             )}
-            {currentView === 'models' && cacheGroupedItems.length > 0 && (
+            {currentView === 'models' && showCacheSection && cacheGroupedItems.length > 0 && (
               <div className="hf-search-section widget">
                 <div className="available-models-header">
                   <div className="loaded-model-label">FROM HF CACHE</div>
@@ -1992,7 +2053,7 @@ const [searchQuery, setSearchQuery] = useState('');
                 )}
               </div>
             )}
-            {currentView === 'models' && searchQuery.trim().length >= 3 && ( // Rendering the HF models by searching
+            {currentView === 'models' && showSearchSection && searchQuery.trim().length >= 3 && ( // Rendering the HF models by searching
               <div className="hf-search-section widget">
                 <div className="available-models-header">
                   <div className="loaded-model-label">FROM HUGGING FACE</div>
@@ -2023,7 +2084,11 @@ const [searchQuery, setSearchQuery] = useState('');
                 ) && (
                   <div className="hf-search-message">{hfSearchPage > 0 ? 'No more results.' : 'No compatible models found.'}</div>
                 )}
-                {hfSearchResults.filter((hfModel: HFModelInfo) => hfModelBackends[hfModel.id] !== null).map((hfModel: HFModelInfo) => {
+                {hfSearchResults.filter((hfModel: HFModelInfo) => {
+                  const b = hfModelBackends[hfModel.id];
+                  if (!b) return false;
+                  return enabledRecipes.has(b.recipe);
+                }).map((hfModel: HFModelInfo) => {
                   const backend = hfModelBackends[hfModel.id];
                   const isDetecting = detectingBackendFor === hfModel.id;
                   const quants = backend?.quantizations ?? [];
