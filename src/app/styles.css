@@ -1354,6 +1354,42 @@ footer {
     background: rgba(201, 162, 39, 0.08);
 }
 
+/* HF cache provider grouping */
+.hf-provider-group {
+    margin: 0;
+}
+
+.hf-provider-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px 4px 13px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.hf-provider-header:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.hf-provider-name {
+    font-size: 0.65rem;
+    color: #d0d0d0;
+}
+
+.hf-provider-count {
+    font-size: 0.58rem;
+    color: #666;
+}
+
+.hf-provider-members {
+    padding-left: 6px;
+}
+
+.hf-provider-member {
+    padding-left: 16px;
+}
+
 .hf-quant-select {
     font-size: 0.62rem;
     background: rgba(255, 255, 255, 0.04);

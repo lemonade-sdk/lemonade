@@ -553,6 +553,32 @@ json ModelManager::discover_hf_cache_models() {
         LOG(ERROR, "ModelManager") << "Error scanning HF cache: " << e.what() << std::endl;
     }
 
+    // Fetch pipeline_tag metadata from HF API for each discovered model
+    if (!result.empty()) {
+        std::map<std::string, std::string> headers;
+        const char* hf_token = std::getenv("HF_TOKEN");
+        if (hf_token) {
+            headers["Authorization"] = "Bearer " + std::string(hf_token);
+        }
+
+        for (auto& model_entry : result) {
+            std::string repo_id = model_entry["repo_id"].get<std::string>();
+            try {
+                std::string api_url = "https://huggingface.co/api/models/" + repo_id;
+                auto response = HttpClient::get(api_url, headers);
+                if (response.status_code == 200) {
+                    auto info = JsonUtils::parse(response.body);
+                    if (info.contains("pipeline_tag") && info["pipeline_tag"].is_string()) {
+                        model_entry["pipeline_tag"] = info["pipeline_tag"].get<std::string>();
+                    }
+                }
+            } catch (const std::exception& e) {
+                // Non-fatal: model will fall back to format-based heuristics
+                LOG(WARNING, "ModelManager") << "Failed to fetch metadata for " << repo_id << ": " << e.what() << std::endl;
+            }
+        }
+    }
+
     LOG(INFO, "ModelManager") << "Found " << result.size() << " unregistered models in HF cache" << std::endl;
     return result;
 }

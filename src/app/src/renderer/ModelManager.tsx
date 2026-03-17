@@ -135,6 +135,22 @@ interface DetectedBackend {
   modelType?: string;
 }
 
+interface CacheModelInfo {
+  repo_id: string;
+  has_gguf: boolean;
+  has_onnx: boolean;
+  has_bin: boolean;
+  size_gb?: number;
+  pipeline_tag?: string;
+  gguf_files?: { filename: string; size?: number }[];
+  bin_files?: { filename: string; size?: number }[];
+  mmproj_files?: string[];
+}
+
+type CacheListItem =
+  | { type: 'model'; cacheModel: CacheModelInfo }
+  | { type: 'provider-group'; provider: string; members: CacheModelInfo[] };
+
 function buildModelList(
   models: Array<{ name: string; info: ModelInfo }>
 ): ModelListItem[] {
@@ -237,7 +253,8 @@ const [searchQuery, setSearchQuery] = useState('');
   const [hfAuthenticated, setHfAuthenticated] = useState(false);
   const [hfSearchCompleted, setHfSearchCompleted] = useState(false);
   // HF cache discovery state
-  const [hfCacheModels, setHfCacheModels] = useState<{ repo_id: string; has_gguf: boolean; has_onnx: boolean; has_bin: boolean; size_gb?: number; gguf_files?: { filename: string; size?: number }[]; bin_files?: { filename: string; size?: number }[]; mmproj_files?: string[] }[]>([]);
+  const [hfCacheModels, setHfCacheModels] = useState<CacheModelInfo[]>([]);
+  const [expandedCacheProviders, setExpandedCacheProviders] = useState<Set<string>>(new Set());
   const [cacheSelectedQuants, setCacheSelectedQuants] = useState<Record<string, string>>({});
 
 
@@ -942,7 +959,7 @@ const [searchQuery, setSearchQuery] = useState('');
   }, [hfModelBackends, resolveGgufCheckpoint, handleDownloadModel, confirm]);
 
   // Handle adding a model from the HF cache
-  const handleAddCacheModel = useCallback((cacheModel: { repo_id: string; has_gguf: boolean; has_onnx: boolean; has_bin: boolean; gguf_files?: { filename: string; size?: number }[]; bin_files?: { filename: string; size?: number }[]; mmproj_files?: string[] }) => {
+  const handleAddCacheModel = useCallback((cacheModel: CacheModelInfo) => {
     const compatibility = classifyModel({
       modelId: cacheModel.repo_id,
       tags: [],
@@ -1466,6 +1483,214 @@ const [searchQuery, setSearchQuery] = useState('');
     });
   };
 
+  const toggleCacheProvider = (provider: string) => {
+    setExpandedCacheProviders(prev => {
+      const next = new Set(prev);
+      if (next.has(provider)) next.delete(provider);
+      else next.add(provider);
+      return next;
+    });
+  };
+
+  // Group HF cache models by provider
+  const cacheGroupedItems = useMemo((): CacheListItem[] => {
+    const filtered = hfCacheModels.filter(m => {
+      if (searchQuery.trim() && !m.repo_id.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      const compat = classifyModel({
+        modelId: m.repo_id,
+        pipelineTag: m.pipeline_tag,
+        tags: [],
+        hasGgufFiles: m.has_gguf,
+        hasOnnxFiles: m.has_onnx,
+        hasFlmFiles: false,
+        hasBinFiles: m.has_bin,
+      });
+      if (compat.level === 'incompatible') return false;
+      if (compat.recipe === 'whispercpp' && (!m.bin_files || m.bin_files.length === 0)) return false;
+      return true;
+    });
+
+    const byProvider: Record<string, CacheModelInfo[]> = {};
+    for (const m of filtered) {
+      const provider = m.repo_id.split('/')[0] || 'unknown';
+      if (!byProvider[provider]) byProvider[provider] = [];
+      byProvider[provider].push(m);
+    }
+
+    const items: CacheListItem[] = [];
+    const consumed = new Set<string>();
+
+    for (const [provider, members] of Object.entries(byProvider)) {
+      if (members.length > 1) {
+        items.push({ type: 'provider-group', provider, members });
+        members.forEach(m => consumed.add(m.repo_id));
+      }
+    }
+
+    for (const m of filtered) {
+      if (!consumed.has(m.repo_id)) {
+        items.push({ type: 'model', cacheModel: m });
+      }
+    }
+
+    // Groups first (alphabetical), then ungrouped (original order)
+    items.sort((a, b) => {
+      if (a.type === 'provider-group' && b.type === 'provider-group') {
+        return a.provider.localeCompare(b.provider);
+      }
+      if (a.type === 'provider-group') return -1;
+      if (b.type === 'provider-group') return 1;
+      return 0;
+    });
+
+    return items;
+  }, [hfCacheModels, searchQuery]);
+
+  const renderCacheModelItem = (cacheModel: CacheModelInfo, showShortName = false) => {
+    const compatibility = classifyModel({
+      modelId: cacheModel.repo_id,
+      pipelineTag: cacheModel.pipeline_tag,
+      tags: [],
+      hasGgufFiles: cacheModel.has_gguf,
+      hasOnnxFiles: cacheModel.has_onnx,
+      hasFlmFiles: false,
+      hasBinFiles: cacheModel.has_bin,
+    });
+
+    const ggufQuantRegex = /[-._](Q\d+(?:[_]?\d)?(?:[_]?[KS])?(?:[_]?[MSXL]+)?|F(?:16|32)|IQ\d+(?:[_]?[A-Z]+)?|BF16|MXFP\d+(?:_[A-Z]+)?)(?:[-._]|\.gguf$)/i;
+    const binQuantRegex = /[-._](Q\d+(?:[_]?\d)?(?:[_]?[KS])?(?:[_]?[MSXL]+)?|F(?:16|32)|IQ\d+(?:[_]?[A-Z]+)?|BF16|MXFP\d+(?:_[A-Z]+)?)(?:[-._]|\.bin$)/i;
+    const folderQuantRegex = /((?:UD-)?Q\d+(?:[_]?\d)?(?:[_]?K)?(?:[_]?[A-Z]+)?|F(?:16|32)|IQ\d+(?:[_]?[A-Z]+)?|BF16|MXFP\d+(?:_[A-Z]+)?)/i;
+    const cacheQuants: GGUFQuantization[] = [];
+
+    if (compatibility.recipe === 'whispercpp') {
+      (cacheModel.bin_files ?? []).forEach((bf: { filename: string; size?: number }) => {
+        const m = bf.filename.match(binQuantRegex);
+        cacheQuants.push({ filename: bf.filename, quantization: m ? m[1].toUpperCase() : bf.filename.replace(/\.bin$/i, ''), size: bf.size });
+      });
+    } else {
+      (cacheModel.gguf_files ?? []).forEach((gf: { filename: string; size?: number }) => {
+        const isGgufFile = gf.filename.toLowerCase().endsWith('.gguf');
+        if (isGgufFile) {
+          const m = gf.filename.match(ggufQuantRegex);
+          if (m) cacheQuants.push({ filename: gf.filename, quantization: m[1].toUpperCase(), size: gf.size });
+        } else {
+          const m = gf.filename.match(folderQuantRegex);
+          cacheQuants.push({ filename: gf.filename, quantization: m ? m[1].toUpperCase() : gf.filename, size: gf.size });
+        }
+      });
+    }
+    const priority: Record<string, number> = { Q4_K_M: 1, Q4_K_S: 2, Q5_K_M: 3, Q5_K_S: 4, Q6_K: 5, Q8_0: 6 };
+    cacheQuants.sort((a, b) => (priority[a.quantization] ?? 100) - (priority[b.quantization] ?? 100));
+    const selectedCacheQuant = cacheSelectedQuants[cacheModel.repo_id] ?? cacheQuants[0]?.filename;
+    const selectedCacheFile = cacheQuants.find(q => q.filename === selectedCacheQuant);
+    const displaySize = selectedCacheFile?.size !== undefined
+      ? formatSize(selectedCacheFile.size / (1024 ** 3))
+      : cacheModel.size_gb !== undefined ? formatSize(cacheModel.size_gb) : undefined;
+
+    const displayName = showShortName
+      ? (cacheModel.repo_id.split('/').slice(1).join('/') || cacheModel.repo_id)
+      : cacheModel.repo_id;
+
+    return (
+      <div key={cacheModel.repo_id} className={`hf-model-item${showShortName ? ' hf-provider-member' : ''}`}>
+        <div className="hf-model-left">
+          <a
+            className="hf-model-name"
+            title={cacheModel.repo_id}
+            href={`https://huggingface.co/${cacheModel.repo_id}`}
+            onClick={(e: React.MouseEvent) => {
+              e.preventDefault();
+              const url = `https://huggingface.co/${cacheModel.repo_id}`;
+              if (window.api?.openExternal) { window.api.openExternal(url); }
+              else { window.open(url, '_blank', 'noopener,noreferrer'); }
+            }}
+          >{displayName}</a>
+          {displaySize && <span className="hf-model-size">{displaySize}</span>}
+          <div className="hf-model-actions">
+            <button
+              className="model-action-btn edit-btn"
+              title="Edit before adding"
+              onClick={(e: React.MouseEvent) => {
+                e.stopPropagation();
+                const ckpt = selectedCacheQuant
+                  ? `${cacheModel.repo_id}:${selectedCacheQuant}`
+                  : cacheModel.repo_id;
+                window.dispatchEvent(new CustomEvent('openAddModel', {
+                  detail: {
+                    initialValues: {
+                      name: cacheModel.repo_id.split('/').pop() || cacheModel.repo_id,
+                      checkpoint: ckpt,
+                      recipe: compatibility.recipe,
+                      mmprojOptions: cacheModel.mmproj_files,
+                      vision: (cacheModel.mmproj_files?.length ?? 0) > 0,
+                    },
+                  },
+                }));
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </button>
+            <button
+              className="model-action-btn download-btn"
+              title="Add to model registry"
+              onClick={() => handleAddCacheModel(cacheModel)}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div className="hf-model-right">
+          {cacheQuants.length >= 1 && (
+            <select
+              className="hf-quant-select"
+              value={selectedCacheQuant ?? ''}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                setCacheSelectedQuants(prev => ({ ...prev, [cacheModel.repo_id]: e.target.value }));
+              }}
+            >
+              {cacheQuants.map(q => (
+                <option key={q.filename} value={q.filename}>{q.quantization}</option>
+              ))}
+            </select>
+          )}
+          <span
+            className={`hf-backend-badge${compatibility.level === 'experimental' ? ' hf-badge-experimental' : ''}`}
+            title={compatibility.reason}
+          >
+            {compatibility.label}
+            {compatibility.level === 'experimental' && ' ?'}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  const renderCacheProviderGroup = (provider: string, members: CacheModelInfo[]) => {
+    const isExpanded = expandedCacheProviders.has(provider);
+    return (
+      <div key={`cache-provider-${provider}`} className="hf-provider-group">
+        <div className="hf-provider-header" onClick={() => toggleCacheProvider(provider)}>
+          <span className={`family-chevron${isExpanded ? ' expanded' : ''}`}>
+            <ChevronRight size={11} strokeWidth={2.1} />
+          </span>
+          <span className="hf-provider-name">{provider}</span>
+          <span className="hf-provider-count">({members.length})</span>
+        </div>
+        {isExpanded && (
+          <div className="hf-provider-members">
+            {members.map(m => renderCacheModelItem(m, true))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderFamilyItem = (item: Extract<ModelListItem, { type: 'family' }>) => {
     const { family, members } = item;
     const isExpanded = expandedFamilies.has(family.displayName);
@@ -1755,142 +1980,16 @@ const [searchQuery, setSearchQuery] = useState('');
                 {renderModelsView()}
               </div>
             )}
-            {currentView === 'models' && hfCacheModels.length > 0 && (
+            {currentView === 'models' && cacheGroupedItems.length > 0 && (
               <div className="hf-search-section widget">
                 <div className="available-models-header">
                   <div className="loaded-model-label">FROM HF CACHE</div>
                 </div>
-                {hfCacheModels
-                  .filter(m => {
-                    if (!searchQuery.trim()) return true;
-                    return m.repo_id.toLowerCase().includes(searchQuery.toLowerCase());
-                  })
-                  .map(cacheModel => {
-                    const compatibility = classifyModel({
-                      modelId: cacheModel.repo_id,
-                      tags: [],
-                      hasGgufFiles: cacheModel.has_gguf,
-                      hasOnnxFiles: cacheModel.has_onnx,
-                      hasFlmFiles: false,
-                      hasBinFiles: cacheModel.has_bin,
-                    });
-                    if (compatibility.level === 'incompatible') return null;
-                    // Hide whisper models with no .bin files (GGUF-only not yet supported)
-                    if (compatibility.recipe === 'whispercpp' && (!cacheModel.bin_files || cacheModel.bin_files.length === 0)) return null;
-
-                    // For whispercpp, use .bin files; for others, use GGUF files
-                    const ggufQuantRegex = /[-._](Q\d+(?:[_]?\d)?(?:[_]?[KS])?(?:[_]?[MSXL]+)?|F(?:16|32)|IQ\d+(?:[_]?[A-Z]+)?|BF16|MXFP\d+(?:_[A-Z]+)?)(?:[-._]|\.gguf$)/i;
-                    const binQuantRegex = /[-._](Q\d+(?:[_]?\d)?(?:[_]?[KS])?(?:[_]?[MSXL]+)?|F(?:16|32)|IQ\d+(?:[_]?[A-Z]+)?|BF16|MXFP\d+(?:_[A-Z]+)?)(?:[-._]|\.bin$)/i;
-                    const folderQuantRegex = /((?:UD-)?Q\d+(?:[_]?\d)?(?:[_]?K)?(?:[_]?[A-Z]+)?|F(?:16|32)|IQ\d+(?:[_]?[A-Z]+)?|BF16|MXFP\d+(?:_[A-Z]+)?)/i;
-                    const cacheQuants: GGUFQuantization[] = [];
-
-                    if (compatibility.recipe === 'whispercpp') {
-                      // Whisper uses .bin files
-                      (cacheModel.bin_files ?? []).forEach((bf: { filename: string; size?: number }) => {
-                        const m = bf.filename.match(binQuantRegex);
-                        cacheQuants.push({ filename: bf.filename, quantization: m ? m[1].toUpperCase() : bf.filename.replace(/\.bin$/i, ''), size: bf.size });
-                      });
-                    } else {
-                      // LLM/SD use GGUF files
-                      (cacheModel.gguf_files ?? []).forEach((gf: { filename: string; size?: number }) => {
-                        const isGgufFile = gf.filename.toLowerCase().endsWith('.gguf');
-                        if (isGgufFile) {
-                          const m = gf.filename.match(ggufQuantRegex);
-                          if (m) cacheQuants.push({ filename: gf.filename, quantization: m[1].toUpperCase(), size: gf.size });
-                        } else {
-                          // Folder-based variant (sharded model)
-                          const m = gf.filename.match(folderQuantRegex);
-                          cacheQuants.push({ filename: gf.filename, quantization: m ? m[1].toUpperCase() : gf.filename, size: gf.size });
-                        }
-                      });
-                    }
-                    const priority: Record<string, number> = { Q4_K_M: 1, Q4_K_S: 2, Q5_K_M: 3, Q5_K_S: 4, Q6_K: 5, Q8_0: 6 };
-                    cacheQuants.sort((a, b) => (priority[a.quantization] ?? 100) - (priority[b.quantization] ?? 100));
-                    const selectedCacheQuant = cacheSelectedQuants[cacheModel.repo_id] ?? cacheQuants[0]?.filename;
-                    const selectedCacheFile = cacheQuants.find(q => q.filename === selectedCacheQuant);
-                    const displaySize = selectedCacheFile?.size !== undefined
-                      ? formatSize(selectedCacheFile.size / (1024 ** 3))
-                      : cacheModel.size_gb !== undefined ? formatSize(cacheModel.size_gb) : undefined;
-
-                    return (
-                      <div key={cacheModel.repo_id} className="hf-model-item">
-                        <div className="hf-model-left">
-                          <a
-                            className="hf-model-name"
-                            title={cacheModel.repo_id}
-                            href={`https://huggingface.co/${cacheModel.repo_id}`}
-                            onClick={(e: React.MouseEvent) => {
-                              e.preventDefault();
-                              const url = `https://huggingface.co/${cacheModel.repo_id}`;
-                              if (window.api?.openExternal) { window.api.openExternal(url); }
-                              else { window.open(url, '_blank', 'noopener,noreferrer'); }
-                            }}
-                          >{cacheModel.repo_id}</a>
-                          {displaySize && <span className="hf-model-size">{displaySize}</span>}
-                          <div className="hf-model-actions">
-                            <button
-                              className="model-action-btn edit-btn"
-                              title="Edit before adding"
-                              onClick={(e: React.MouseEvent) => {
-                                e.stopPropagation();
-                                const ckpt = selectedCacheQuant
-                                  ? `${cacheModel.repo_id}:${selectedCacheQuant}`
-                                  : cacheModel.repo_id;
-                                window.dispatchEvent(new CustomEvent('openAddModel', {
-                                  detail: {
-                                    initialValues: {
-                                      name: cacheModel.repo_id.split('/').pop() || cacheModel.repo_id,
-                                      checkpoint: ckpt,
-                                      recipe: compatibility.recipe,
-                                      mmprojOptions: cacheModel.mmproj_files,
-                                      vision: (cacheModel.mmproj_files?.length ?? 0) > 0,
-                                    },
-                                  },
-                                }));
-                              }}
-                            >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                              </svg>
-                            </button>
-                            <button
-                              className="model-action-btn download-btn"
-                              title="Add to model registry"
-                              onClick={() => handleAddCacheModel(cacheModel)}
-                            >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <line x1="12" y1="5" x2="12" y2="19" />
-                                <line x1="5" y1="12" x2="19" y2="12" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-                        <div className="hf-model-right">
-                          {cacheQuants.length >= 1 && (
-                            <select
-                              className="hf-quant-select"
-                              value={selectedCacheQuant ?? ''}
-                              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-                                setCacheSelectedQuants(prev => ({ ...prev, [cacheModel.repo_id]: e.target.value }));
-                              }}
-                            >
-                              {cacheQuants.map(q => (
-                                <option key={q.filename} value={q.filename}>{q.quantization}</option>
-                              ))}
-                            </select>
-                          )}
-                          <span
-                            className={`hf-backend-badge${compatibility.level === 'experimental' ? ' hf-badge-experimental' : ''}`}
-                            title={compatibility.reason}
-                          >
-                            {compatibility.label}
-                            {compatibility.level === 'experimental' && ' ?'}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                {cacheGroupedItems.map(item =>
+                  item.type === 'provider-group'
+                    ? renderCacheProviderGroup(item.provider, item.members)
+                    : renderCacheModelItem(item.cacheModel)
+                )}
               </div>
             )}
             {currentView === 'models' && searchQuery.trim().length >= 3 && ( // Rendering the HF models by searching
