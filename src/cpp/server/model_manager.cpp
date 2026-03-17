@@ -1406,27 +1406,22 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
 
     // Run 'flm list --filter installed --quiet --json' to get only installed models
     // Use the full path to flm.exe to avoid PATH issues
+    std::string output;
 #ifdef _WIN32
     std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>NUL";
-    FILE* pipe = _popen(command.c_str(), "r");
+    int rc = lemon::utils::ProcessManager::run_command(command, output);
 #else
     std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>/dev/null";
     FILE* pipe = popen(command.c_str(), "r");
-#endif
-
     if (!pipe) {
         return installed_models;
     }
 
     char buffer[256];
-    std::string output;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output += buffer;
     }
 
-#ifdef _WIN32
-    _pclose(pipe);
-#else
     pclose(pipe);
 #endif
 
@@ -1487,27 +1482,22 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
     }
 
     // Run 'flm list --json' to get all available models
+    std::string output;
 #ifdef _WIN32
     std::string command = "\"" + flm_path + "\" list --json 2>NUL";
-    FILE* pipe = _popen(command.c_str(), "r");
+    int rc = lemon::utils::ProcessManager::run_command(command, output);
 #else
     std::string command = "\"" + flm_path + "\" list --json 2>/dev/null";
     FILE* pipe = popen(command.c_str(), "r");
-#endif
-
     if (!pipe) {
         return flm_models;
     }
 
     char buffer[256];
-    std::string output;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output += buffer;
     }
 
-#ifdef _WIN32
-    _pclose(pipe);
-#else
     pclose(pipe);
 #endif
 

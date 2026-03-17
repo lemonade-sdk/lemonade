@@ -905,6 +905,15 @@ function createWindow() {
 
   mainWindow.loadFile(htmlPath);
 
+  // Deliver any pending lemonade:// navigation once the renderer is ready
+  mainWindow.webContents.on('did-finish-load', () => {
+    rendererReady = true;
+    if (pendingProtocolNav && Object.keys(pendingProtocolNav).length > 0) {
+      mainWindow.webContents.send('navigate', pendingProtocolNav);
+      pendingProtocolNav = null;
+    }
+  });
+
   // Open all external links in the default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     // Open in external browser instead of new Electron window
@@ -972,9 +981,14 @@ function createWindow() {
 
   mainWindow.on('closed', function () {
     mainWindow = null;
+    rendererReady = false;
   });
 }
 
+
+// Pending protocol navigation — stored when URL arrives before renderer is ready
+let pendingProtocolNav = null;
+let rendererReady = false;
 
 function handleProtocolUrl(url) {
   if (!url || !url.startsWith('lemonade://')) return;
@@ -985,6 +999,10 @@ function handleProtocolUrl(url) {
     const view = parsed.searchParams.get('view');
     const model = parsed.searchParams.get('model');
 
+    const navData = {};
+    if (view) navData.view = view;
+    if (model) navData.model = model;
+
     // Focus the window
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
@@ -992,19 +1010,15 @@ function handleProtocolUrl(url) {
       mainWindow.focus();
     }
 
-    // Route to the appropriate view
-    if (view === 'logs') {
-      // Send IPC message to renderer to navigate to logs
-      if (mainWindow && mainWindow.webContents) {
-        mainWindow.webContents.send('navigate', { view: 'logs' });
-      }
-    } else if (model) {
-      // Send IPC message to renderer to select a model
-      if (mainWindow && mainWindow.webContents) {
-        mainWindow.webContents.send('navigate', { view: 'chat', model: model });
-      }
+    // If renderer isn't ready yet, queue it for delivery after load
+    if (!rendererReady || !mainWindow || !mainWindow.webContents) {
+      pendingProtocolNav = navData;
+      return;
     }
-    // Unknown routes -> just show the app (default/home view) -- no action needed
+
+    if (Object.keys(navData).length > 0) {
+      mainWindow.webContents.send('navigate', navData);
+    }
   } catch (e) {
     console.error('Failed to parse protocol URL:', url, e);
   }

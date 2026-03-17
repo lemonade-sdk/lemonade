@@ -130,7 +130,31 @@ static bool validate_and_transform_model_json(nlohmann::json& model_data) {
     return true;
 }
 
+// Try to open a lemonade:// URL via the OS. Returns true if the OS reports success.
+static bool try_lemonade_protocol(const std::string& lemonade_url) {
+#ifdef _WIN32
+    HINSTANCE result = ShellExecuteA(nullptr, "open", lemonade_url.c_str(),
+                                     nullptr, nullptr, SW_SHOWNORMAL);
+    return reinterpret_cast<intptr_t>(result) > 32;
+#elif defined(__APPLE__)
+    return system(("open \"" + lemonade_url + "\" 2>/dev/null").c_str()) == 0;
+#else
+    return system(("xdg-open \"" + lemonade_url + "\" >/dev/null 2>&1").c_str()) == 0;
+#endif
+}
+
 static void open_url(const std::string& host, int port, const std::string& path = "/") {
+    // Map web path to lemonade:// route and try the desktop app first
+    std::string lemonade_url = "lemonade://open";
+    if (path == "/?logs=true") {
+        lemonade_url = "lemonade://open?view=logs";
+    }
+
+    if (try_lemonade_protocol(lemonade_url)) {
+        return;  // Desktop app handled it
+    }
+
+    // Fall back to web app in browser
     std::string url = "http://" + host + ":" + std::to_string(port) + path;
     std::cout << "Opening URL: " << url << std::endl;
 

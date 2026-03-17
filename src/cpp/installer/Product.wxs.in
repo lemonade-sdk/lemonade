@@ -384,19 +384,20 @@
                   Impersonate="yes"
                   Return="ignore" />
 
-    <!-- Launch Lemonade.exe after install by shell-executing the Start Menu shortcut
-         through explorer.exe. This ensures the process runs in the normal user context. -->
+    <!-- Open the Electron desktop app via lemonade:// protocol (triggered by ExitDialog checkbox).
+         Falls back gracefully if no protocol handler is registered (minimal installer). -->
     <CustomAction Id="LaunchApplication"
                   Directory="SystemFolder"
-                  ExeCommand='"[SystemFolder]explorer.exe" "[ProgramMenuDir]Lemonade Server.lnk"'
+                  ExeCommand='"[SystemFolder]explorer.exe" "lemonade://open"'
                   Impersonate="yes"
                   Return="asyncNoWait" />
 
-    <!-- Auto-launch Lemonade.exe after install completes (always runs) -->
+    <!-- Auto-launch LemonadeServer.exe after install completes (always runs).
+         Use explorer.exe to launch via the Start Menu shortcut — this avoids a
+         console window flash and ensures the correct working directory. -->
     <CustomAction Id="AutoLaunchLemonade"
-                  Directory="BinDir"
-                  ExeCommand='cmd.exe /c start "" "[BinDir]LemonadeServer.exe"'
-                  Execute="immediate"
+                  Directory="SystemFolder"
+                  ExeCommand='"[SystemFolder]explorer.exe" "[ProgramMenuDir]Lemonade Server.lnk"'
                   Impersonate="yes"
                   Return="asyncNoWait" />
 
