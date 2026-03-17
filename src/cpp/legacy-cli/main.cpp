@@ -126,22 +126,48 @@ static void exec_program(const fs::path &exe_path, const std::vector<std::string
 // Stop command — POST /internal/shutdown to the running server
 // ---------------------------------------------------------------------------
 
-/// Parse --port from the argument list; returns default_port if not found.
-static int find_port(const std::vector<std::string> &args, int default_port) {
-    for (size_t i = 0; i < args.size(); ++i) {
-        if (args[i] == "--port" && i + 1 < args.size()) {
-            try {
-                return std::stoi(args[i + 1]);
-            } catch (...) {
-                // ignore parse error, fall back to default
-            }
-        }
+/// Discover the active server port by running `lemonade status --json`.
+/// Returns 0 on failure (caller should fall back to default).
+static int discover_port(const fs::path &dir) {
+    fs::path cli = sibling_exe(dir, "lemonade");
+    std::string cmd = cli.string() + " status --json";
+
+#ifdef _WIN32
+    FILE* pipe = _popen(cmd.c_str(), "r");
+#else
+    FILE* pipe = popen(cmd.c_str(), "r");
+#endif
+    if (!pipe) return 0;
+
+    char buf[256];
+    std::string output;
+    while (fgets(buf, sizeof(buf), pipe)) {
+        output += buf;
     }
-    return default_port;
+
+#ifdef _WIN32
+    int status = _pclose(pipe);
+#else
+    int status = pclose(pipe);
+#endif
+    if (status != 0) return 0;
+
+    // Parse {"port": N}
+    try {
+        auto pos = output.find("\"port\"");
+        if (pos == std::string::npos) return 0;
+        pos = output.find(':', pos);
+        if (pos == std::string::npos) return 0;
+        return std::stoi(output.substr(pos + 1));
+    } catch (...) {
+        return 0;
+    }
 }
 
-static int do_stop(const std::vector<std::string> &args) {
-    int port = find_port(args, 8000);
+static int do_stop(const fs::path &dir) {
+    // Discover port: try lemonade status --json, fall back to 8000
+    int port = discover_port(dir);
+    if (port == 0) port = 8000;
 
     httplib::Client client("127.0.0.1", port);
     client.set_connection_timeout(5);
@@ -211,10 +237,9 @@ int main(int argc, char *argv[]) {
         // exec_program is [[noreturn]]
     }
 
-    // stop → HTTP POST to /internal/shutdown
+    // stop → discover port via lemonade status --json, then POST /internal/shutdown
     if (cmd == "stop") {
-        std::vector<std::string> stop_args(args.begin() + 1, args.end());
-        return do_stop(stop_args);
+        return do_stop(dir);
     }
 
     // Everything else → delegate to lemonade CLI

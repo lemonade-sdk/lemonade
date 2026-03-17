@@ -76,12 +76,11 @@ private:
     void on_open_documentation();
     void on_quit();
 
-    // App launch
+    // App launch — uses lemonade:// protocol, falls back to web app
     void open_url(const std::string& url);
-    bool find_electron_app();
-    bool find_web_app();
-    void launch_electron_app();
-    void open_web_app();
+    bool try_open_lemonade_url(const std::string& lemonade_url);
+    void open_desktop_app(const std::string& route = "");
+    void open_web_app(const std::string& route = "");
 
     // Icon
     std::string find_icon_path();
@@ -96,8 +95,6 @@ private:
     int port_;
     std::string host_;
     std::unique_ptr<TrayInterface> tray_;
-    std::string electron_app_path_;
-    bool web_app_available_ = false;
 
     // Model loading state
     std::atomic<bool> is_loading_model_{false};
@@ -112,14 +109,6 @@ private:
 
     // Recipe options (for context size tracking)
     nlohmann::json recipe_options_;
-
-    // Electron process tracking
-#ifdef _WIN32
-    void* electron_app_process_ = nullptr;   // HANDLE
-    void* electron_job_object_ = nullptr;     // HANDLE
-#else
-    int electron_app_pid_ = 0;               // pid_t
-#endif
 
     // Signal handling (non-Windows)
 #ifndef _WIN32

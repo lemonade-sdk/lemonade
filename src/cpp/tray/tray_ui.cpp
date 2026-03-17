@@ -77,16 +77,6 @@ TrayUI::~TrayUI() {
     }
 #endif
 
-#ifdef _WIN32
-    if (electron_job_object_) {
-        CloseHandle(electron_job_object_);
-        electron_job_object_ = nullptr;
-    }
-    if (electron_app_process_) {
-        CloseHandle(electron_app_process_);
-        electron_app_process_ = nullptr;
-    }
-#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -307,18 +297,9 @@ Menu TrayUI::create_menu(const std::vector<LoadedModelInfo>& loaded_models,
                          const std::vector<ModelInfo>& available_models) {
     Menu menu;
 
-    // Open app
-    if (electron_app_path_.empty()) find_electron_app();
-    if (!electron_app_path_.empty()) {
-        menu.add_item(MenuItem::Action("Open Lemonade App", [this]() { launch_electron_app(); }));
-        menu.add_separator();
-    } else {
-        find_web_app();
-        if (web_app_available_) {
-            menu.add_item(MenuItem::Action("Open Lemonade App", [this]() { open_web_app(); }));
-            menu.add_separator();
-        }
-    }
+    // Open app — uses lemonade:// protocol, falls back to web app
+    menu.add_item(MenuItem::Action("Open Lemonade App", [this]() { open_desktop_app(); }));
+    menu.add_separator();
 
     // Use pre-fetched data (passed from build_menu to avoid redundant HTTP calls)
     std::set<std::string> loaded_model_names;
@@ -489,7 +470,7 @@ void TrayUI::on_unload_specific_model(const std::string& model_name) {
 void TrayUI::on_change_port(int new_port) {
     nlohmann::json body;
     body["port"] = new_port;
-    std::string result = http_post("/api/v1/params", body.dump());
+    std::string result = http_post("/internal/port", body.dump());
     if (!result.empty()) {
         port_ = new_port;
         build_menu();
@@ -511,8 +492,7 @@ void TrayUI::on_change_context_size(int new_ctx_size) {
 }
 
 void TrayUI::on_show_logs() {
-    std::string url = "http://" + get_connect_host() + ":" + std::to_string(port_) + "/?logs=true";
-    open_url(url);
+    open_desktop_app("view=logs");
 }
 
 void TrayUI::on_open_documentation() {
@@ -540,156 +520,41 @@ void TrayUI::open_url(const std::string& url) {
 #endif
 }
 
-void TrayUI::open_web_app() {
+bool TrayUI::try_open_lemonade_url(const std::string& lemonade_url) {
+    // Ask the OS to open the lemonade:// URL.
+    // Returns true if the OS reports success (handler registered).
+#ifdef _WIN32
+    HINSTANCE result = ShellExecuteA(nullptr, "open", lemonade_url.c_str(),
+                                     nullptr, nullptr, SW_SHOWNORMAL);
+    return reinterpret_cast<intptr_t>(result) > 32;
+#elif defined(__APPLE__)
+    int result = system(("open \"" + lemonade_url + "\" 2>/dev/null").c_str());
+    return result == 0;
+#else
+    int result = system(("xdg-open \"" + lemonade_url + "\" >/dev/null 2>&1").c_str());
+    return result == 0;
+#endif
+}
+
+void TrayUI::open_desktop_app(const std::string& route) {
+    // Construct lemonade:// URL
+    std::string url = "lemonade://open";
+    if (!route.empty()) {
+        url += "?" + route;
+    }
+
+    // Try lemonade:// protocol first; fall back to web app
+    if (!try_open_lemonade_url(url)) {
+        open_web_app(route);
+    }
+}
+
+void TrayUI::open_web_app(const std::string& route) {
     std::string url = "http://" + get_connect_host() + ":" + std::to_string(port_) + "/";
+    if (!route.empty()) {
+        url += "?" + route;
+    }
     open_url(url);
-}
-
-bool TrayUI::find_electron_app() {
-    fs::path exe_dir = lemon::utils::get_executable_dir();
-    if (exe_dir.empty()) return false;
-
-#ifdef _WIN32
-    constexpr const char* exe_name = "lemonade-app.exe";
-    constexpr const char* unpacked_dir = "win-unpacked";
-    // Also check legacy name
-    constexpr const char* legacy_exe_name = "Lemonade.exe";
-#elif defined(__APPLE__)
-    constexpr const char* exe_name = "lemonade-app.app";
-    constexpr const char* unpacked_dir = "mac";
-    constexpr const char* legacy_exe_name = "Lemonade.app";
-#else
-    constexpr const char* exe_name = "lemonade-app";
-    constexpr const char* unpacked_dir = "linux-unpacked";
-    constexpr const char* legacy_exe_name = "lemonade";
-#endif
-
-#if defined(__linux__)
-    if (exe_dir == "/opt/bin") {
-        fs::path p = fs::path("/opt/share/lemonade-server/app") / exe_name;
-        if (fs::exists(p)) { electron_app_path_ = fs::canonical(p).string(); return true; }
-    }
-#endif
-
-    // Production path (installer: ../app/)
-    for (const char* name : {exe_name, legacy_exe_name}) {
-        fs::path p = exe_dir / ".." / "app" / name;
-        if (fs::exists(p)) { electron_app_path_ = fs::canonical(p).string(); return true; }
-    }
-
-#ifdef __APPLE__
-    for (const char* name : {exe_name, legacy_exe_name}) {
-        fs::path p = fs::path("/Applications") / name;
-        if (fs::exists(p)) { electron_app_path_ = fs::canonical(p).string(); return true; }
-    }
-#endif
-
-    // Development path
-    for (const char* name : {exe_name, legacy_exe_name}) {
-        fs::path p = exe_dir / ".." / "app" / unpacked_dir / name;
-        if (fs::exists(p)) { electron_app_path_ = fs::canonical(p).string(); return true; }
-    }
-
-    // Same directory (legacy dev)
-    for (const char* name : {exe_name, legacy_exe_name}) {
-        fs::path p = exe_dir / name;
-        if (fs::exists(p)) { electron_app_path_ = fs::canonical(p).string(); return true; }
-    }
-
-    return false;
-}
-
-bool TrayUI::find_web_app() {
-    std::string web_app_dir = lemon::utils::get_resource_path("resources/web-app");
-    if (fs::exists(web_app_dir) && fs::is_directory(web_app_dir)) {
-        fs::path index_path = fs::path(web_app_dir) / "index.html";
-        if (fs::exists(index_path)) {
-            web_app_available_ = true;
-            return true;
-        }
-    }
-    web_app_available_ = false;
-    return false;
-}
-
-void TrayUI::launch_electron_app() {
-    if (electron_app_path_.empty()) {
-        if (!find_electron_app()) {
-            open_web_app();
-            return;
-        }
-    }
-
-#ifdef _WIN32
-    // Single-instance check
-    if (electron_app_process_ != nullptr) {
-        DWORD exit_code = 0;
-        if (GetExitCodeProcess(electron_app_process_, &exit_code) && exit_code == STILL_ACTIVE) {
-            show_notification("App Already Running", "The Lemonade app is already open");
-            return;
-        }
-        CloseHandle(electron_app_process_);
-        electron_app_process_ = nullptr;
-    }
-
-    if (!electron_job_object_) {
-        electron_job_object_ = CreateJobObjectA(NULL, NULL);
-        if (electron_job_object_) {
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION job_info = {};
-            job_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-            if (!SetInformationJobObject(electron_job_object_, JobObjectExtendedLimitInformation, &job_info, sizeof(job_info))) {
-                CloseHandle(electron_job_object_);
-                electron_job_object_ = nullptr;
-            }
-        }
-    }
-
-    STARTUPINFOA si = {};
-    si.cb = sizeof(si);
-    PROCESS_INFORMATION pi = {};
-    std::string cmd_line = "\"" + electron_app_path_ + "\"";
-    std::vector<char> cmd_buf(cmd_line.begin(), cmd_line.end());
-    cmd_buf.push_back('\0');
-
-    if (CreateProcessA(NULL, cmd_buf.data(), NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
-        if (electron_job_object_) {
-            AssignProcessToJobObject(electron_job_object_, pi.hProcess);
-        }
-        ResumeThread(pi.hThread);
-        electron_app_process_ = pi.hProcess;
-        CloseHandle(pi.hThread);
-    }
-#elif defined(__APPLE__)
-    if (electron_app_pid_ > 0 && kill(electron_app_pid_, 0) == 0) {
-        show_notification("App Already Running", "The Lemonade app is already open");
-        return;
-    }
-    std::string cmd = "open \"" + electron_app_path_ + "\"";
-    int result = system(cmd.c_str());
-    (void)result;
-    // Try to track PID
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    FILE* pipe = popen("pgrep -n lemonade-app || pgrep -n Lemonade", "r");
-    if (pipe) {
-        char buffer[128];
-        if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            electron_app_pid_ = atoi(buffer);
-        }
-        pclose(pipe);
-    }
-#else
-    if (electron_app_pid_ > 0 && kill(electron_app_pid_, 0) == 0) {
-        show_notification("App Already Running", "The Lemonade app is already open");
-        return;
-    }
-    pid_t pid = fork();
-    if (pid == 0) {
-        execl(electron_app_path_.c_str(), electron_app_path_.c_str(), nullptr);
-        _exit(1);
-    } else if (pid > 0) {
-        electron_app_pid_ = pid;
-    }
-#endif
 }
 
 // ---------------------------------------------------------------------------

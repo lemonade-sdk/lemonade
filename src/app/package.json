@@ -55,6 +55,12 @@
   },
   "build": {
     "appId": "com.lemonade.app",
+    "protocols": [
+      {
+        "name": "Lemonade",
+        "schemes": ["lemonade"]
+      }
+    ],
     "productName": "lemonade-app",
     "publish": null,
     "toolsets": {

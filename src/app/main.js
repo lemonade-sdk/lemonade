@@ -6,6 +6,14 @@ const { spawn, spawnSync } = require('child_process');
 const strict = require('assert/strict');
 const dgram = require('dgram');
 
+// Register lemonade:// protocol handler for deep linking from tray/CLI
+if (process.defaultApp) {
+  // Dev mode: need to pass the script path
+  app.setAsDefaultProtocolClient('lemonade', process.execPath, [path.resolve(process.argv[1])]);
+} else {
+  app.setAsDefaultProtocolClient('lemonade');
+}
+
 const DEFAULT_MIN_WIDTH = 400;
 const DEFAULT_MIN_HEIGHT = 600;
 const ABSOLUTE_MIN_WIDTH = 400;
@@ -968,10 +976,74 @@ function createWindow() {
 }
 
 
+function handleProtocolUrl(url) {
+  if (!url || !url.startsWith('lemonade://')) return;
+
+  try {
+    // Parse: lemonade://open?view=logs&model=foo
+    const parsed = new URL(url);
+    const view = parsed.searchParams.get('view');
+    const model = parsed.searchParams.get('model');
+
+    // Focus the window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+
+    // Route to the appropriate view
+    if (view === 'logs') {
+      // Send IPC message to renderer to navigate to logs
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('navigate', { view: 'logs' });
+      }
+    } else if (model) {
+      // Send IPC message to renderer to select a model
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('navigate', { view: 'chat', model: model });
+      }
+    }
+    // Unknown routes -> just show the app (default/home view) -- no action needed
+  } catch (e) {
+    console.error('Failed to parse protocol URL:', url, e);
+  }
+}
+
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    // Someone tried to run a second instance -- focus existing window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+    // On Windows, the protocol URL is in commandLine
+    const url = commandLine.find(arg => arg.startsWith('lemonade://'));
+    if (url) {
+      handleProtocolUrl(url);
+    }
+  });
+}
+
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleProtocolUrl(url);
+});
+
 app.on('ready', () => {
   ensureTrayRunning();
   startBeaconListener();
   createWindow();
+
+  // Handle protocol URL from initial launch (Windows/Linux)
+  const protocolUrl = process.argv.find(arg => arg.startsWith('lemonade://'));
+  if (protocolUrl) {
+    handleProtocolUrl(protocolUrl);
+  }
 
   // Allow microphone access for streaming audio transcription.
   // Only 'media' is auto-approved; all other permissions use Electron's default (deny).
