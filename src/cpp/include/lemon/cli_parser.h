@@ -24,8 +24,8 @@ struct ServerConfig {
 
 struct TrayConfig {
     std::string command;  // No default - must be explicitly specified
-    // Default to headless mode on Linux (no tray support), tray mode on other platforms
-#if defined(__linux__) && !defined(__ANDROID__)
+    // Default to headless mode on Linux when not built as the tray GUI application
+#if defined(__linux__) && !defined(__ANDROID__) && !defined(LEMONADE_TRAY_GUI)
     bool no_tray = true;
 #else
     bool no_tray = false;

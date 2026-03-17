@@ -101,7 +101,7 @@ By default, the server runs on port 8000. Optionally, you can specify a custom p
 lemonade-server serve --port 8123
 ```
 
-You can also prevent the server from showing a system tray icon by using the `--no-tray` flag (Windows and macOS):
+You can also prevent the server from showing a system tray icon by using the `--no-tray` flag:
 
 ```bash
 lemonade-server serve --no-tray

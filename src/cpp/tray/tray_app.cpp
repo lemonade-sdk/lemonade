@@ -22,6 +22,7 @@
 #include <cctype>
 #include <vector>
 #include <set>
+#include <optional>
 
 #ifdef _WIN32
 #include <winsock2.h>  // Must come before windows.h
@@ -40,11 +41,10 @@
 #include <fcntl.h>     // for open
 #include <cerrno>      // for errno
 #ifdef HAVE_SYSTEMD
-#include <systemd/sd-bus.h>
-#include <systemd/sd-daemon.h>
 #include <systemd/sd-login.h>
-#endif
-#endif
+#endif // HAVE_SYSTEMD
+#endif // !_WIN32
+#include "lemon_tray/platform/linux_systemd.h"
 
 #ifdef __APPLE__
 #include <mach-o/dyld.h>  // for _NSGetExecutablePath
@@ -118,231 +118,6 @@ static nlohmann::json build_launch_recipe_options(const lemon::TrayConfig& tray_
     return recipe_options;
 }
 
-#if !defined(_WIN32)
-// Check if systemd is running and a unit is active
-static bool is_systemd_service_active(const char* unit_name) {
-#ifdef HAVE_SYSTEMD
-    if (!unit_name || unit_name[0] == '\0') {
-        return false;
-    }
-
-    if (sd_booted() <= 0) {
-        return false;
-    }
-
-    sd_bus* bus = nullptr;
-    sd_bus_message* reply = nullptr;
-    sd_bus_error error = SD_BUS_ERROR_NULL;
-
-    int r = sd_bus_open_system(&bus);
-    if (r < 0 || !bus) {
-        sd_bus_error_free(&error);
-        return false;
-    }
-
-    r = sd_bus_call_method(
-        bus,
-        "org.freedesktop.systemd1",
-        "/org/freedesktop/systemd1",
-        "org.freedesktop.systemd1.Manager",
-        "GetUnit",
-        &error,
-        &reply,
-        "s",
-        unit_name
-    );
-
-    if (r < 0 || !reply) {
-        sd_bus_error_free(&error);
-        sd_bus_unref(bus);
-        return false;
-    }
-
-    const char* unit_path = nullptr;
-    r = sd_bus_message_read(reply, "o", &unit_path);
-    sd_bus_message_unref(reply);
-    reply = nullptr;
-
-    if (r < 0 || !unit_path) {
-        sd_bus_error_free(&error);
-        sd_bus_unref(bus);
-        return false;
-    }
-
-    char* active_state = nullptr;
-    r = sd_bus_get_property_string(
-        bus,
-        "org.freedesktop.systemd1",
-        unit_path,
-        "org.freedesktop.systemd1.Unit",
-        "ActiveState",
-        &error,
-        &active_state
-    );
-
-    if (r < 0 || !active_state) {
-        sd_bus_error_free(&error);
-        sd_bus_unref(bus);
-        return false;
-    }
-
-    bool is_active =
-        (strcmp(active_state, "active") == 0) ||
-        (strcmp(active_state, "activating") == 0) ||
-        (strcmp(active_state, "reloading") == 0);
-
-    free(active_state);
-    sd_bus_error_free(&error);
-    sd_bus_unref(bus);
-
-    return is_active;
-#else
-    (void)unit_name;
-    return false;
-#endif
-}
-
-// Get systemd service MainPID (returns 0 if unavailable)
-static int get_systemd_service_main_pid(const char* unit_name) {
-#ifdef HAVE_SYSTEMD
-    if (!unit_name || unit_name[0] == '\0') {
-        return 0;
-    }
-
-    if (sd_booted() <= 0) {
-        return 0;
-    }
-
-    sd_bus* bus = nullptr;
-    sd_bus_message* reply = nullptr;
-    sd_bus_error error = SD_BUS_ERROR_NULL;
-
-    int r = sd_bus_open_system(&bus);
-    if (r < 0 || !bus) {
-        sd_bus_error_free(&error);
-        return 0;
-    }
-
-    r = sd_bus_call_method(
-        bus,
-        "org.freedesktop.systemd1",
-        "/org/freedesktop/systemd1",
-        "org.freedesktop.systemd1.Manager",
-        "GetUnit",
-        &error,
-        &reply,
-        "s",
-        unit_name
-    );
-
-    if (r < 0 || !reply) {
-        sd_bus_error_free(&error);
-        sd_bus_unref(bus);
-        return 0;
-    }
-
-    const char* unit_path = nullptr;
-    r = sd_bus_message_read(reply, "o", &unit_path);
-    sd_bus_message_unref(reply);
-    reply = nullptr;
-
-    if (r < 0 || !unit_path) {
-        sd_bus_error_free(&error);
-        sd_bus_unref(bus);
-        return 0;
-    }
-
-    unsigned int main_pid = 0;
-    r = sd_bus_get_property_trivial(
-        bus,
-        "org.freedesktop.systemd1",
-        unit_path,
-        "org.freedesktop.systemd1.Service",
-        "MainPID",
-        &error,
-        'u',
-        &main_pid
-    );
-
-    if (r < 0) {
-        sd_bus_error_free(&error);
-        sd_bus_unref(bus);
-        return 0;
-    }
-
-    sd_bus_error_free(&error);
-    sd_bus_unref(bus);
-
-    return static_cast<int>(main_pid);
-#else
-    (void)unit_name;
-    return 0;
-#endif
-}
-
-// Check if systemd service is active in another process (not this one)
-static bool is_systemd_service_active_other_process(const char* unit_name) {
-#ifdef HAVE_SYSTEMD
-    if (!is_systemd_service_active(unit_name)) {
-        return false;
-    }
-
-    int main_pid = get_systemd_service_main_pid(unit_name);
-    if (main_pid <= 0) {
-        return false;
-    }
-
-    return (main_pid != getpid());
-#else
-    (void)unit_name;
-    return false;
-#endif
-}
-
-// Known systemd unit names for lemonade server (native or snap)
-static const char* kSystemdUnitNames[] = {
-    "lemonade-server.service",
-    "snap.lemonade-server.daemon.service"
-};
-
-static const char* get_active_systemd_unit_name() {
-    for (const auto* unit_name : kSystemdUnitNames) {
-        if (is_systemd_service_active(unit_name)) {
-            return unit_name;
-        }
-    }
-    return nullptr;
-}
-
-static bool is_any_systemd_service_active() {
-    return get_active_systemd_unit_name() != nullptr;
-}
-
-static int get_systemd_any_service_main_pid() {
-    const char* unit_name = get_active_systemd_unit_name();
-    if (!unit_name) {
-        return 0;
-    }
-    return get_systemd_service_main_pid(unit_name);
-}
-
-static bool is_systemd_any_service_active_other_process() {
-    for (const auto* unit_name : kSystemdUnitNames) {
-        if (is_systemd_service_active_other_process(unit_name)) {
-            return true;
-        }
-    }
-    return false;
-}
-#endif
-
-static bool is_service_active() {
-#ifdef HAVE_SYSTEMD
-    return is_any_systemd_service_active();
-#else
-    return false;
-#endif
-}
 
 #ifndef _WIN32
 
@@ -613,12 +388,11 @@ int TrayApp::run() {
                 return 1;
             }
 
+            server_config_.host = normalize_connect_host(server_config_.host);
             server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
             server_config_.port = running_port;
 
             server_already_running = true;
-
-            server_config_.host = normalize_connect_host(server_config_.host);
 
             if (tray_config_.command == "run") {
                 int result = execute_run_command();
@@ -720,11 +494,10 @@ int TrayApp::run() {
                     std::cout << "Server service started on port " << running_port << std::endl;
 
                     // Create server manager to communicate with running server
+                    server_config_.host = normalize_connect_host(server_config_.host);
                     server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
                     server_manager_->set_port(running_port);
                     server_config_.port = running_port;  // Update config to match running server
-
-                    server_config_.host = normalize_connect_host(server_config_.host);
 
                     // Continue to tray initialization below
                     break;
@@ -735,28 +508,60 @@ int TrayApp::run() {
                 }
             }
         }
-#else
-        // Other platforms: Tray-only mode - just show tray connected to existing server
-        // Check if server is already running
-        auto [pid, running_port] = get_server_info();
-        if (running_port == 0) {
-            std::cerr << "Error: No Lemonade Server is currently running.\n"
-                      << "Start the server first with: lemonade-server serve\n"
-                      << "Or run: lemonade-server serve --no-tray" << std::endl;
-            return 1;
-        }
+#elif !defined(_WIN32)
+        // Linux/Unix: Try to connect to running server, or start one
+        {
+            auto [pid, running_port] = get_server_info();
+            if (running_port != 0) {
+                // Server is already running — connect to it
+                // Track PID only for non-systemd processes (systemd ones are tracked by unit name)
+                if (!is_any_systemd_service_active()) {
+                    external_server_pid_ = pid;
+                }
+                server_config_.host = normalize_connect_host(server_config_.host);
+                server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
+                server_manager_->set_port(running_port);
+                server_config_.port = running_port;
+                std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
+            } else {
+                // No server running — try to start one
+                bool started = false;
 
-        // Create server manager to communicate with running server
-        server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
-        server_manager_->set_port(running_port);
-        server_config_.port = running_port;  // Update config to match running server
-
-        server_config_.host = normalize_connect_host(server_config_.host);
-
-        std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
-
-        // Continue to tray initialization below (skip server startup)
+#ifdef HAVE_SYSTEMD
+                auto unit = get_first_known_systemd_unit();
+                if (unit) {
+                    std::cout << "Starting server via systemd: " << unit.name << std::endl;
+                    if (systemd_control_service(unit, /*start=*/true)) {
+                        // Wait up to 10 seconds for server to appear
+                        for (int i = 0; i < 10 && !started; ++i) {
+                            std::this_thread::sleep_for(std::chrono::seconds(1));
+                            auto [spid, sport] = get_server_info();
+                            if (sport != 0) {
+                                server_config_.host = normalize_connect_host(server_config_.host);
+                                server_manager_ = std::make_unique<ServerManager>(server_config_.host, sport);
+                                server_manager_->set_port(sport);
+                                server_config_.port = sport;
+                                started = true;
+                            }
+                        }
+                    }
+                }
 #endif
+
+                if (!started) {
+                    // No systemd unit available — spawn lemonade-router directly
+                    std::cout << "Starting Lemonade Server..." << std::endl;
+                    server_config_.host = normalize_connect_host(server_config_.host);
+                    server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
+                    if (!start_server()) {
+                        std::cerr << "Error: Failed to start Lemonade Server" << std::endl;
+                        return 1;
+                    }
+                    process_owns_server_ = true;
+                }
+            }
+        }
+#endif  // !__APPLE__ && !_WIN32
     } else {
         std::cerr << "Internal Error: Unhandled command '" << tray_config_.command << "'\n" << std::endl;
         return 1;
@@ -883,11 +688,74 @@ int TrayApp::run() {
     } else {
     LOG(DEBUG, "TrayApp") << "Icon found at: " << icon_path << std::endl;
     }
+#elif defined(__linux__)
+    // On Linux, search XDG data directories for the installed icon first.
+    // The SVG in the hicolor icon theme is the preferred format for AppIndicator3.
+    {
+        std::vector<std::string> data_dirs;
+        // XDG_DATA_HOME takes priority (defaults to ~/.local/share)
+        const char* xdg_data_home = getenv("XDG_DATA_HOME");
+        if (xdg_data_home && xdg_data_home[0]) {
+            data_dirs.push_back(xdg_data_home);
+        } else {
+            const char* home = getenv("HOME");
+            if (home && home[0]) data_dirs.push_back(std::string(home) + "/.local/share");
+        }
+        // Then XDG_DATA_DIRS (system-wide locations)
+        const char* xdg_data_dirs = getenv("XDG_DATA_DIRS");
+        if (xdg_data_dirs && xdg_data_dirs[0]) {
+            std::istringstream ss(xdg_data_dirs);
+            std::string d;
+            while (std::getline(ss, d, ':')) {
+                if (!d.empty()) data_dirs.push_back(d);
+            }
+        } else {
+            data_dirs.push_back("/usr/local/share");
+            data_dirs.push_back("/usr/share");
+            data_dirs.push_back("/opt/lemonade/share");
+        }
+        for (const auto& d : data_dirs) {
+            // Preferred: SVG in the hicolor icon theme (installed by RPM/DEB)
+            auto svg = fs::path(d) / "icons/hicolor/scalable/apps/ai.lemonade_server.Lemonade.svg";
+            if (fs::exists(svg)) {
+                icon_path = svg.string();
+                LOG(DEBUG, "TrayApp") << "Icon found in hicolor theme: " << icon_path << std::endl;
+                break;
+            }
+            // Fallback: favicon.ico in the lemonade-server share directory
+            auto ico = fs::path(d) / "lemonade-server/resources/static/favicon.ico";
+            if (fs::exists(ico)) {
+                icon_path = ico.string();
+                LOG(DEBUG, "TrayApp") << "Icon found in share dir: " << icon_path << std::endl;
+                break;
+            }
+        }
+    }
+
+    if (icon_path.empty()) {
+        // Development build: try relative to CWD and executable directory
+        fs::path exe_path = fs::path(server_binary_).parent_path();
+        std::vector<fs::path> dev_paths = {
+            "resources/static/favicon.ico",
+            exe_path / "resources" / "static" / "favicon.ico",
+            exe_path / "resources" / "favicon.ico",
+        };
+        for (const auto& p : dev_paths) {
+            if (fs::exists(p)) {
+                icon_path = p.string();
+                LOG(DEBUG, "TrayApp") << "Icon found (dev path): " << icon_path << std::endl;
+                break;
+            }
+        }
+    }
+
+    if (icon_path.empty()) {
+        LOG(WARNING, "TrayApp") << "Icon not found at any known location; will use default icon" << std::endl;
+    }
 #else
-    // On other platforms, find icon file path
+    // On Windows and other platforms, find icon file path
     icon_path = "resources/static/favicon.ico";
     LOG(DEBUG, "TrayApp") << "Checking icon at: " << fs::absolute(icon_path).string() << std::endl;
-
 
     if (!fs::exists(icon_path)) {
         // Try relative to executable directory
@@ -895,14 +763,12 @@ int TrayApp::run() {
         icon_path = (exe_path / "resources" / "static" / "favicon.ico").string();
     LOG(DEBUG, "TrayApp") << "Icon not found, trying: " << icon_path << std::endl;
 
-
         // If still not found, try without static subdir (fallback)
         if (!fs::exists(icon_path)) {
             icon_path = (exe_path / "resources" / "favicon.ico").string();
         LOG(DEBUG, "TrayApp") << "Icon not found, trying fallback: " << icon_path << std::endl;
         }
     }
-
 
     if (fs::exists(icon_path)) {
     LOG(DEBUG, "TrayApp") << "Icon found at: " << icon_path << std::endl;
@@ -930,9 +796,7 @@ int TrayApp::run() {
     // This allows us to handle Ctrl+C cleanly even when tray is running
     LOG(DEBUG, "TrayApp") << "Starting signal monitor thread..." << std::endl;
     signal_monitor_thread_ = std::thread([this]() {
-        #ifdef __APPLE__
         auto last_tick = std::chrono::steady_clock::now();
-        #endif
         while (!stop_signal_monitor_ && !should_exit_) {
             fd_set readfds;
             FD_ZERO(&readfds);
@@ -940,18 +804,13 @@ int TrayApp::run() {
 
             struct timeval tv = {0, 100000};  // 100ms timeout
             int result = select(signal_pipe_[0] + 1, &readfds, nullptr, nullptr, &tv);
-            #ifdef __APPLE__
-            // Check if 5 seconds have passed, refresh menu
+            // Check if 5 seconds have passed, refresh menu (both macOS and Linux)
             auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_tick).count() >= 5) {
-
             LOG(DEBUG, "TrayApp") << "Checking if menu needs refresh" << std::endl;
                 refresh_menu();
-
-                // Reset the tracker
                 last_tick = now;
             }
-            #endif
             if (result > 0 && FD_ISSET(signal_pipe_[0], &readfds)) {
                 // Signal received (SIGINT from Ctrl+C)
                 char sig;
@@ -1979,6 +1838,27 @@ static bool is_process_alive(int pid) {
 #endif
 }
 
+#ifndef _WIN32
+// Best-effort poll: probes whether the SingleInstance lock for lemonade-router is acquirable.
+// Returns true when the lock appears free, false if timeout_ms elapses.
+// There is an inherent TOCTOU window between this returning true and lemonade-router's own
+// lock acquisition — callers must treat the result as advisory, not a guarantee.
+static bool poll_router_lock_free(int timeout_ms) {
+    std::string lock_file = lemon::utils::get_runtime_dir() + "/lemonade_Router.lock";
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    while (std::chrono::steady_clock::now() < deadline) {
+        int fd = open(lock_file.c_str(), O_RDONLY | O_CLOEXEC);
+        if (fd == -1) return true;  // File doesn't exist — lock is free
+        bool free = (flock(fd, LOCK_EX | LOCK_NB) == 0);
+        if (free) flock(fd, LOCK_UN);
+        close(fd);
+        if (free) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    return false;
+}
+#endif
+
 int TrayApp::execute_stop_command() {
     auto [pid, port] = get_server_info();
 
@@ -1988,12 +1868,13 @@ int TrayApp::execute_stop_command() {
     }
 
     // On Linux, check if server is managed by systemd and warn user
-#ifndef _WIN32
-    const char* active_systemd_unit = get_active_systemd_unit_name();
+#if !defined(_WIN32) && defined(HAVE_SYSTEMD)
+    auto active_systemd_unit = get_active_systemd_unit_info();
     if (active_systemd_unit) {
         std::cerr << "Error: Lemonade Server is managed by systemd." << std::endl;
-        std::string unit_name(active_systemd_unit);
-        std::cerr << "Please use: sudo systemctl stop " << unit_name << std::endl;
+        std::cerr << "Please use: systemctl"
+                  << (active_systemd_unit.scope == SystemdBusScope::User ? " --user" : "")
+                  << " stop " << active_systemd_unit.name << std::endl;
         std::cerr << "Instead of: lemonade-server stop" << std::endl;
         return 1;
     }
@@ -2418,13 +2299,27 @@ void TrayApp::stop_server() {
 void TrayApp::build_menu() {
     if (!tray_) return;
 
+    // Fetch server state once before building the menu so the cached snapshot
+    // matches the state that was used to construct it.
+    auto [reachable, loaded_models] = fetch_server_state();
+    auto available_models = get_downloaded_models();
 
-    Menu menu = create_menu();
+    bool owns_server = false;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        owns_server = process_owns_server_;
+    }
+
+    Menu menu = create_menu(reachable, owns_server);
     tray_->set_menu(menu);
 
-    // Cache current state for refresh comparisons
-    last_menu_loaded_models_ = get_all_loaded_models();
-    last_menu_available_models_ = get_downloaded_models();
+    // Cache state for refresh comparisons — written under state_mutex_ to prevent data race.
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        last_menu_server_reachable_ = reachable;
+        last_menu_loaded_models_ = std::move(loaded_models);
+        last_menu_available_models_ = std::move(available_models);
+    }
 }
 
 void TrayApp::refresh_menu() {
@@ -2438,24 +2333,30 @@ void TrayApp::refresh_menu() {
 }
 
 bool TrayApp::menu_needs_refresh() {
-    // Check if loaded models have changed
-    auto current_loaded = get_all_loaded_models();
-    if (current_loaded != last_menu_loaded_models_) {
-        return true;
+    // Fetch and compare under state_mutex_ to avoid data races with build_menu().
+    // Snapshot last_menu_available_models_ here too so the comparison below is race-free.
+    decltype(last_menu_available_models_) last_available;
+    bool state_changed = false;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        auto [reachable, loaded] = fetch_server_state();
+        if (reachable != last_menu_server_reachable_) state_changed = true;
+        if (!state_changed && loaded != last_menu_loaded_models_) state_changed = true;
+        last_available = last_menu_available_models_;
     }
+    if (state_changed) return true;
 
-    // Check if available models have changed
+    // get_downloaded_models() is an I/O call — done outside the lock to avoid holding
+    // state_mutex_ during network/filesystem access.
     auto current_available = get_downloaded_models();
-    if (current_available != last_menu_available_models_) {
+    if (current_available != last_available) {
         return true;
     }
-
-    // Could add more checks here for other dynamic content
 
     return false;
 }
 
-Menu TrayApp::create_menu() {
+Menu TrayApp::create_menu(bool server_reachable, bool owns_server) {
     Menu menu;
 
     // Open app - at the very top (Electron app takes priority, web app as fallback)
@@ -2590,7 +2491,83 @@ Menu TrayApp::create_menu() {
             build_menu();
         }));
     }
-#endif
+#elif defined(__linux__)
+    // Linux server management (server_reachable and owns_server passed in from build_menu())
+    {
+#ifdef HAVE_SYSTEMD
+        auto active_unit = get_active_systemd_unit_info();
+        if (active_unit) {
+            // Server is actively managed by systemd — delegate stop to systemd
+            std::string stop_label = (active_unit.scope == SystemdBusScope::System)
+                ? "Stop Service (requires admin)" : "Stop Service";
+            menu.add_item(MenuItem::Action(stop_label, [this, active_unit]() {
+                std::thread([this, active_unit]() {
+                    if (!systemd_control_service(active_unit, /*start=*/false)) {
+                        show_notification("Stop Failed",
+                            std::string("Could not stop service. Try: systemctl") +
+                            (active_unit.scope == SystemdBusScope::User ? " --user" : "") +
+                            " stop " + active_unit.name);
+                    }
+                    build_menu();
+                }).detach();
+            }));
+        } else {
+            // systemd unit not active — check if it exists for Start option
+            auto known_unit = get_first_known_systemd_unit();
+            if (known_unit && !server_reachable) {
+                std::string start_label = (known_unit.scope == SystemdBusScope::System)
+                    ? "Start Service (requires admin)" : "Start Service";
+                menu.add_item(MenuItem::Action(start_label, [this, known_unit]() {
+                    std::thread([this, known_unit]() {
+                        if (systemd_control_service(known_unit, /*start=*/true)) {
+                            bool server_appeared = false;
+                            for (int i = 0; i < 10; ++i) {
+                                std::this_thread::sleep_for(std::chrono::seconds(1));
+                                auto [pid, port] = get_server_info();
+                                if (port != 0) {
+                                    {
+                                        std::lock_guard<std::mutex> lock(state_mutex_);
+                                        server_manager_ = std::make_unique<ServerManager>(server_config_.host, port);
+                                        server_manager_->set_port(port);
+                                        server_config_.port = port;
+                                    }
+                                    server_appeared = true;
+                                    break;
+                                }
+                            }
+                            if (!server_appeared) {
+                                LOG(WARNING, "TrayApp") << "Server did not become reachable after systemd start" << std::endl;
+                                show_notification("Start Warning",
+                                    "Service started but server did not respond within 10s.");
+                            }
+                        } else {
+                            show_notification("Start Failed",
+                                std::string("Could not start service. Try: systemctl") +
+                                (known_unit.scope == SystemdBusScope::User ? " --user" : "") +
+                                " start " + known_unit.name);
+                        }
+                        build_menu();
+                    }).detach();
+                }));
+            } else if (server_reachable && owns_server) {
+                menu.add_item(MenuItem::Action("Stop Server", [this]() { on_stop_server(); }));
+            } else if (server_reachable && !owns_server) {
+                menu.add_item(MenuItem::Action("Stop Server", [this]() { on_stop_external_server(); }));
+            } else if (!server_reachable) {
+                menu.add_item(MenuItem::Action("Start Server", [this]() { on_start_server(); }));
+            }
+        }
+#else  // !HAVE_SYSTEMD
+        if (!server_reachable) {
+            menu.add_item(MenuItem::Action("Start Server", [this]() { on_start_server(); }));
+        } else if (owns_server) {
+            menu.add_item(MenuItem::Action("Stop Server", [this]() { on_stop_server(); }));
+        } else {
+            menu.add_item(MenuItem::Action("Stop Server", [this]() { on_stop_external_server(); }));
+        }
+#endif  // HAVE_SYSTEMD
+    }
+#endif  // __APPLE__ / __linux__
 
     // Port submenu
     auto port_submenu = std::make_shared<Menu>();
@@ -2621,7 +2598,8 @@ Menu TrayApp::create_menu() {
         {"256K", 262144}
     };
     for (const auto& [label, size] : ctx_sizes) {
-        bool is_current = (size == server_config_.recipe_options["ctx_size"]);
+        bool is_current = server_config_.recipe_options.contains("ctx_size") &&
+                         (size == server_config_.recipe_options["ctx_size"]);
         ctx_submenu->add_item(MenuItem::Checkable(
             "Context size " + label,
             [this, size = size]() { on_change_context_size(size); },
@@ -2643,6 +2621,79 @@ Menu TrayApp::create_menu() {
 }
 
 // Menu action implementations
+
+#ifndef _WIN32
+void TrayApp::on_start_server() {
+    if (!server_manager_) {
+        server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
+    }
+    std::thread([this]() {
+        // Wait for the previous router process to fully release its lock before starting a new one.
+        // The flock may still appear held briefly after the process disappears from /proc.
+        if (!poll_router_lock_free(3000)) {
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                server_manager_.reset();
+            }
+            show_notification("Start Failed", "Failed to start Lemonade Server (previous instance still running)");
+            build_menu();
+            return;
+        }
+        if (start_server()) {
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                process_owns_server_ = true;
+                server_config_.host = normalize_connect_host(server_config_.host);
+            }
+            show_notification("Server Started", "Lemonade Server is now running");
+        } else {
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                server_manager_.reset();
+            }
+            show_notification("Start Failed", "Failed to start Lemonade Server");
+        }
+        build_menu();
+    }).detach();
+}
+
+void TrayApp::on_stop_server() {
+    std::thread([this]() {
+        stop_server();
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            process_owns_server_ = false;
+            server_manager_.reset();
+        }
+        show_notification("Server Stopped", "Lemonade Server has been stopped");
+        build_menu();
+    }).detach();
+}
+
+void TrayApp::on_stop_external_server() {
+    int pid;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        pid = external_server_pid_;
+    }
+    if (pid <= 0) return;
+    std::thread([this, pid]() {
+        kill(pid, SIGTERM);
+        for (int i = 0; i < 50; ++i) {
+            if (!is_process_alive(pid)) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        if (is_process_alive(pid)) kill(pid, SIGKILL);
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            external_server_pid_ = 0;
+            server_manager_.reset();
+        }
+        show_notification("Server Stopped", "Lemonade Server has been stopped");
+        build_menu();
+    }).detach();
+}
+#endif
 
 void TrayApp::on_load_model(const std::string& model_name) {
     // CRITICAL: Make a copy IMMEDIATELY since model_name is a reference that gets invalidated
@@ -3216,6 +3267,7 @@ void TrayApp::show_notification(const std::string& title, const std::string& mes
 }
 
 std::string TrayApp::get_loaded_model() {
+    if (!server_manager_) return "";
     try {
         auto health = server_manager_->get_health();
 
@@ -3233,13 +3285,13 @@ std::string TrayApp::get_loaded_model() {
     return "";  // No model loaded
 }
 
-std::vector<LoadedModelInfo> TrayApp::get_all_loaded_models() {
+std::pair<bool, std::vector<LoadedModelInfo>> TrayApp::fetch_server_state() {
     std::vector<LoadedModelInfo> loaded_models;
+    if (!server_manager_) return {false, loaded_models};
 
     try {
         auto health = server_manager_->get_health();
 
-        // Check for all_models_loaded array
         if (health.contains("all_models_loaded") && health["all_models_loaded"].is_array()) {
             for (const auto& model : health["all_models_loaded"]) {
                 LoadedModelInfo info;
@@ -3255,14 +3307,19 @@ std::vector<LoadedModelInfo> TrayApp::get_all_loaded_models() {
                 }
             }
         }
+        return {true, loaded_models};
     } catch (const std::exception& e) {
-        std::cerr << "Failed to get loaded models: " << e.what() << std::endl;
+        std::cerr << "Failed to get server state: " << e.what() << std::endl;
+        return {false, loaded_models};
     }
+}
 
-    return loaded_models;
+std::vector<LoadedModelInfo> TrayApp::get_all_loaded_models() {
+    return fetch_server_state().second;
 }
 
 std::vector<ModelInfo> TrayApp::get_downloaded_models() {
+    if (!server_manager_) return {};
     try {
         auto models_json = server_manager_->get_models();
         std::vector<ModelInfo> models;

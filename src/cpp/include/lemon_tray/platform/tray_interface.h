@@ -28,6 +28,7 @@ struct MenuItem {
     MenuCallback callback;
     bool enabled = true;
     bool checked = false;
+    bool is_checkable = false;
     bool is_separator = false;
     std::shared_ptr<Menu> submenu = nullptr;
     int id = -1; // Platform-specific menu item ID
@@ -53,6 +54,7 @@ struct MenuItem {
         item.text = text;
         item.callback = callback;
         item.checked = checked;
+        item.is_checkable = true;
         item.enabled = enabled;
         return item;
     }

@@ -24,7 +24,7 @@ This guide covers everything you need to build, test, and contribute to Lemonade
 - [Usage](#usage)
   - [lemonade-router (Server Only)](#lemonade-router-server-only)
   - [lemonade-server.exe (Console CLI Client)](#lemonade-serverexe-console-cli-client)
-  - [lemonade-tray.exe (GUI Tray Launcher)](#lemonade-trayexe-gui-tray-launcher---windows-only)
+  - [lemonade-tray (GUI Tray Application)](#lemonade-tray-gui-tray-application---windows-and-linux)
   - [Logging and Console Output](#logging-and-console-output)
 - [Testing](#testing)
   - [Basic Functionality Tests](#basic-functionality-tests)
@@ -40,6 +40,7 @@ Lemonade consists of these main executables:
 - **lemonade-router.exe** - Core HTTP server executable that handles requests and LLM backend orchestration
 - **lemonade-server.exe** - Console CLI client for terminal users that manages server lifecycle, executes commands via HTTP API
 - **lemonade-tray.exe** (Windows only) - GUI tray launcher for desktop users, automatically starts `lemonade-server.exe serve`
+- **lemonade-tray** (Linux, when compiled with GTK3+AppIndicator3) - System tray launcher using AppIndicator3
 - **lemonade-log-viewer.exe** (Windows only) - Log file viewer with live tail support and installer-friendly file sharing
 
 ## Building from Source
@@ -100,7 +101,8 @@ cmake --build --preset vs18
   - `build/Release/lemonade-log-viewer.exe` - Log file viewer
 - **Linux/macOS:**
   - `build/lemonade-router` - HTTP server
-  - `build/lemonade-server` - Console CLI client
+  - `build/lemonade-server` - Console CLI client (always headless on Linux)
+  - `build/lemonade-tray` - GUI tray application (Linux only, built when AppIndicator3 libraries are found)
 - **Resources:** Automatically copied to `build/Release/resources/` on Windows, `build/resources/` on Linux/macOS (web UI files, model registry, backend version configuration)
 
 ### Building the Electron Desktop App (Optional)
@@ -170,9 +172,10 @@ chmod +x build/app-appimage/Lemonade-*.AppImage
 - Security features enabled: Control Flow Guard, ASLR, DEP
 
 **Linux:**
-- Linux builds are headless-only (no tray application) by default
-- This avoids LGPL dependencies (GTK3, libappindicator3, libnotify)
-- Run server using: `lemonade-server serve` (headless mode is automatic)
+- `lemonade-server` is always headless on Linux (GTK-free, daemon-friendly); use `lemonade-server serve` to start the server
+- `lemonade-tray` is a separate binary for the system tray, auto-detected at build time: built if AppIndicator3 libraries are found (GTK3 only needed for non-glib variants)
+- To require tray support (fail if deps missing): `-DREQUIRE_LINUX_TRAY=ON`
+- Optional tray dependencies: one of `ayatana-appindicator-glib-devel` (preferred, no GTK3 needed), `ayatana-appindicator3-devel`, or `libappindicator-gtk3-devel` (the latter two also require `gtk3-devel`)
 - Fully functional for server operations and model management
 - Uses permissively licensed dependencies only (MIT, Apache 2.0, BSD, curl license)
 - Clean .deb package with only runtime files (no development headers)
@@ -595,19 +598,20 @@ A console application for terminal users:
 - Manages server lifecycle (start/stop persistent or ephemeral servers)
 - Communicates with `lemonade-router` via HTTP endpoints
 - Starts `lemonade-router` with appropriate options
-- Provides optional system tray interface via `serve` command
+- Provides optional system tray interface via `serve` command (Windows/macOS; on Linux the tray is provided by the separate `lemonade-tray` binary)
 
 **Command Types:**
 - **serve:** Starts a persistent server (with optional tray interface)
 - **run:** Starts persistent server, loads model, opens browser
 - **Other commands:** Use existing server or start ephemeral server, execute command via API, auto-cleanup
 
-#### lemonade-tray (GUI Launcher - Windows Only)
+#### lemonade-tray (GUI Tray Application - Windows and Linux)
 
-A minimal WIN32 GUI application for desktop users:
-- Simple launcher that starts `lemonade-server.exe serve`
+A GUI application for desktop users that exposes the server via a system tray icon:
+- **Windows:** Minimal launcher — finds `lemonade-server.exe`, launches it with the `serve` command, then exits. The server process owns the tray icon.
+- **Linux:** Tray application (requires GTK3 + AppIndicator3). Connects to an already-running server if one is found; otherwise starts one (via systemd if a unit is installed, or by spawning `lemonade-router` directly).
 - Zero console output or CLI interface
-- Used by Start Menu, Desktop shortcuts, and autostart
+- Used by application launchers, desktop shortcuts, and autostart entries
 - Provides seamless GUI experience for non-technical users
 
 ### Client-Server Communication
@@ -705,7 +709,7 @@ The `lemonade-server` executable is the command-line interface for terminal user
 # Run a model (starts persistent server with tray and opens browser)
 ./lemonade-server run Llama-3.2-1B-Instruct-CPU
 
-# Start persistent server (with tray on Windows/macOS, headless on Linux)
+# Start persistent server (with tray on Windows/macOS; always headless on Linux — use lemonade-tray for tray)
 ./lemonade-server serve
 
 # Start persistent server without tray (headless mode, explicit on all platforms)
@@ -727,24 +731,27 @@ The `lemonade-server` executable is the command-line interface for terminal user
 
 **Note:** `lemonade-router` is always launched with `--log-level debug` for optimal troubleshooting. Use `--log-level debug` on `lemonade-server` commands to see client-side debug output.
 
-### lemonade-tray.exe (GUI Tray Launcher - Windows Only)
+### lemonade-tray (GUI Tray Application - Windows and Linux)
 
-The `lemonade-tray` executable is a simple GUI launcher for desktop users:
-- Double-click from Start Menu or Desktop to start server
-- Automatically runs `lemonade-server.exe serve` in tray mode
-- Zero console windows or CLI interface
+The `lemonade-tray` executable provides a system tray icon for desktop users:
+- Double-click from Start Menu, application launcher, or Desktop to start server
+- Zero console windows or CLI interface — always starts the tray directly
 - Perfect for non-technical users
 - Single-instance protection: shows friendly message if already running
 
-**What it does:**
-1. Finds `lemonade-server.exe` in the same directory
-2. Launches it with the `serve` command
-3. Exits immediately (server continues running with tray icon)
+**Platform support:**
+- **Windows:** Always available; uses Win32 notification area APIs. Acts as a minimal launcher: finds `lemonade-server.exe` in the same directory, launches it with the `serve` command, then exits (the server process owns the tray icon).
+- **Linux:** Available when compiled with GTK3 + AppIndicator3 support (auto-detected at build time). Connects to an already-running server if one is found; otherwise starts one (via systemd if a unit is installed, or by spawning `lemonade-router` directly).
+
+**What it does (Linux):**
+1. Starts immediately in tray mode (no subcommand needed)
+2. Connects to an already-running server via the PID file, or starts one (via systemd if a unit is installed, otherwise spawns `lemonade-router` directly)
+3. Shows a system tray icon connected to the server
 
 **When to use:**
-- Launching from Start Menu
+- Launching from Start Menu (Windows) or application launcher (Linux)
 - Desktop shortcuts
-- Windows startup
+- Windows startup / Linux autostart
 - Any GUI/point-and-click scenario
 
 **System Tray Features (when running):**

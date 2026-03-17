@@ -200,6 +200,127 @@ else
     fi
 fi
 
+# Check optional Linux tray dependencies (AppIndicator3 + libnotify [+ GTK3 if not using glib variant])
+# These are optional - lemonade-tray is only built when they are present.
+# lemonade-server always builds without them (headless, daemon-friendly).
+if [ "$OS" = "linux" ] && command_exists pkg-config; then
+    print_info "Checking optional Linux tray dependencies (AppIndicator3)..."
+    missing_tray_packages=()
+    appindicator_glib_found=false
+
+    # Check AppIndicator first — the glib variant is GTK-free and preferred.
+    if pkg-config --exists ayatana-appindicator-glib-0.1 2>/dev/null || \
+       pkg-config --exists ayatana-appindicator-glib 2>/dev/null; then
+        print_success "AppIndicator3 glib variant is installed (tray support, GTK-free)"
+        appindicator_glib_found=true
+    elif pkg-config --exists ayatana-appindicator3-0.1 2>/dev/null || \
+         pkg-config --exists appindicator3-0.1 2>/dev/null; then
+        print_success "AppIndicator3 is installed (tray support)"
+    else
+        print_warning "AppIndicator3 not found (optional, needed for lemonade-tray)"
+        if command_exists apt; then
+            missing_tray_packages+=("libayatana-appindicator3-dev")
+        elif command_exists pacman; then
+            missing_tray_packages+=("libayatana-appindicator")
+        elif command_exists dnf; then
+            missing_tray_packages+=("libayatana-appindicator-gtk3-devel")
+        fi
+    fi
+
+    # dbusmenu-glib is required alongside the glib appindicator variant so that
+    # GNOME Shell can find com.canonical.dbusmenu (it does not speak org.gtk.Menus).
+    if [ "$appindicator_glib_found" = true ]; then
+        if pkg-config --exists dbusmenu-glib-0.4 2>/dev/null; then
+            print_success "dbusmenu-glib is installed (GNOME Shell tray menu support)"
+        else
+            print_warning "dbusmenu-glib not found (optional, needed for tray menus on GNOME Shell)"
+            if command_exists apt; then
+                missing_tray_packages+=("libdbusmenu-glib-dev")
+            elif command_exists pacman; then
+                missing_tray_packages+=("libdbusmenu-glib")
+            elif command_exists dnf; then
+                missing_tray_packages+=("dbusmenu-glib-devel")
+            fi
+        fi
+    fi
+
+    # GTK3 is only required when NOT using the glib appindicator variant.
+    if [ "$appindicator_glib_found" = false ]; then
+        if pkg-config --exists gtk+-3.0 2>/dev/null; then
+            print_success "gtk3 is installed (tray support)"
+        else
+            print_warning "gtk3 not found (optional, needed for lemonade-tray)"
+            if command_exists apt; then
+                missing_tray_packages+=("libgtk-3-dev")
+            elif command_exists pacman; then
+                missing_tray_packages+=("gtk3")
+            elif command_exists dnf; then
+                missing_tray_packages+=("gtk3-devel")
+            fi
+        fi
+    fi
+
+    if pkg-config --exists libnotify 2>/dev/null; then
+        print_success "libnotify is installed (tray notifications)"
+    else
+        print_warning "libnotify not found (optional, enables tray notifications)"
+        if command_exists apt; then
+            missing_tray_packages+=("libnotify-dev")
+        elif command_exists pacman; then
+            missing_tray_packages+=("libnotify")
+        elif command_exists dnf; then
+            missing_tray_packages+=("libnotify-devel")
+        fi
+    fi
+
+    if [ ${#missing_tray_packages[@]} -gt 0 ]; then
+        echo ""
+        print_warning "Optional tray packages missing (lemonade-tray will not be built):"
+        for pkg in "${missing_tray_packages[@]}"; do
+            echo "  - $pkg"
+        done
+        echo ""
+
+        # Build install command for display
+        if command_exists apt; then
+            tray_install_cmd="sudo apt install -y ${missing_tray_packages[*]}"
+        elif command_exists pacman; then
+            tray_install_cmd="sudo pacman -S --needed --noconfirm ${missing_tray_packages[*]}"
+        elif command_exists dnf; then
+            tray_install_cmd="sudo dnf install -y ${missing_tray_packages[*]}"
+        fi
+
+        if [ -n "$tray_install_cmd" ]; then
+            print_info "To enable tray support, run: $tray_install_cmd"
+        else
+            print_info "Install the packages above using your distro's package manager to enable tray support."
+        fi
+
+        if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
+            print_info "CI environment detected, skipping optional tray dependencies."
+        else
+            read -p "Install optional tray dependencies now? (y/N): " -n 1 -r
+            echo ""
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                print_info "Installing optional tray dependencies..."
+                if command_exists apt; then
+                    maybe_sudo apt install -y "${missing_tray_packages[@]}"
+                elif command_exists pacman; then
+                    maybe_sudo pacman -S --needed --noconfirm "${missing_tray_packages[@]}"
+                elif command_exists dnf; then
+                    maybe_sudo dnf install -y "${missing_tray_packages[@]}"
+                fi
+                print_success "Optional tray dependencies installed"
+            else
+                print_info "Skipping optional tray dependencies (lemonade-tray will not be built)"
+            fi
+        fi
+    else
+        print_success "All optional tray dependencies are installed (lemonade-tray will be built)"
+    fi
+    echo ""
+fi
+
 # Check Node.js and npm
 print_info "Checking Node.js and npm installation..."
 
