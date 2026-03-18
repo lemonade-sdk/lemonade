@@ -126,12 +126,14 @@ static bool try_get_backend_options(const std::string& opt_name, SystemInfo::Sup
     bool is_backend_option = opt_name.size() > backend_suffix.size() &&
         opt_name.compare(opt_name.size() - backend_suffix.size(), backend_suffix.size(), backend_suffix) == 0;
 
+#ifndef LEMONADE_CLI
     if (is_backend_option) {
         // Extract recipe name (everything before "_backend")
         std::string recipe = opt_name.substr(0, opt_name.size() - backend_suffix.size());
         auto tmp = SystemInfo::get_supported_backends(recipe);
         result.backends = tmp.backends;
     }
+#endif
 
     return is_backend_option;
 }
