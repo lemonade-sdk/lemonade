@@ -8,11 +8,13 @@ Lemonade is a local LLM server (v10.0.0) providing GPU and NPU acceleration for 
 
 ## Architecture
 
-### Four Executables
+### Executables
 
 - **lemonade-router** — Pure HTTP server. Handles REST API, routes requests to backends, manages model loading/unloading. No CLI.
-- **lemonade-server** — CLI client. Commands: `list`, `pull`, `delete`, `run`, `serve`, `status`, `stop`, `logs`. Communicates with router via HTTP.
-- **lemonade-tray** — GUI launcher (Windows/macOS/Linux). Starts `lemonade-server serve` without a console. Platform code in `src/cpp/tray/platform/`.
+- **lemonade** — CLI client (`src/cpp/cli/`). Commands: `list`, `pull`, `delete`, `run`, `status`, `logs`, `launch`, `recipes`, `scan`. Communicates with router via HTTP. Discovers running server via UDP beacon.
+- **LemonadeServer.exe** (Windows) — SUBSYSTEM:WINDOWS GUI app that embeds `lemonade-router` and shows a system tray icon. Auto-starts via Windows startup folder.
+- **lemonade-tray** (macOS/Linux) — Lightweight tray client that connects to a running `lemonade-router`. Platform code in `src/cpp/tray/platform/`.
+- **lemonade-server** — Deprecated backwards-compatibility shim. Delegates to `lemonade-router` or `lemonade`.
 - **lemonade-log-viewer** — Windows-only log file viewer.
 
 ### Backend Abstraction
@@ -161,7 +163,9 @@ Test utilities in `test/utils/` with `server_base.py` as the base class. Test de
 | `src/cpp/include/lemon/websocket_server.h` | WebSocket Realtime API server |
 | `src/cpp/include/lemon/model_types.h` | Model type and device type enums |
 | `src/cpp/include/lemon/recipe_options.h` | Per-recipe JSON configuration |
-| `src/cpp/tray/tray_app.cpp` | Tray application UI and logic |
+| `src/cpp/tray/main.cpp` | Tray/server entry point (Windows embedded server, Linux/macOS tray client) |
+| `src/cpp/tray/tray_ui.cpp` | Tray UI implementation |
+| `src/cpp/cli/main.cpp` | `lemonade` CLI entry point |
 | `src/app/src/renderer/ModelManager.tsx` | Model management UI |
 | `src/app/src/renderer/ChatWindow.tsx` | Chat interface |
 
