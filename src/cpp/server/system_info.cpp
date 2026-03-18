@@ -2865,6 +2865,15 @@ bool SystemInfoCache::is_valid() const {
         return false;
     }
 
+#ifdef __linux__
+    // On Linux, cache is disabled by default (always re-detect hardware) unless
+    // LEMONADE_CACHE_DIR is explicitly set (for testing purposes)
+    const char* cache_dir_env = std::getenv("LEMONADE_CACHE_DIR");
+    if (!cache_dir_env || cache_dir_env[0] == '\0') {
+        return false;
+    }
+#endif
+
     // Check if cache file exists
     if (!fs::exists(cache_file_path_)) {
         return false;
@@ -2998,15 +3007,8 @@ json SystemInfoCache::get_system_info_with_cache() {
             if (!cached_data.empty()) {
                 system_info = cached_data;
             } else {
-                // Provide friendly message about why we're detecting hardware
-                if (cache_exists) {
-                    std::cout << "Collecting system info (Lemonade was updated)" << std::endl;
-
-                    // Perform version-specific cleanup (e.g., removing stale backend binaries)
+                if (cache_exists)
                     cache.perform_upgrade_cleanup();
-                } else {
-                    std::cout << "Collecting system info" << std::endl;
-                }
 
                 // Get system info (OS, Processor, Memory, OEM System, BIOS, etc.)
                 try {
