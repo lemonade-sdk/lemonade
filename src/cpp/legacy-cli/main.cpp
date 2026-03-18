@@ -63,7 +63,7 @@ static void print_help() {
 }
 
 static void print_version() {
-    std::cout << "lemonade-server " << LEMON_VERSION_STRING << " (deprecated shim)" << std::endl;
+    std::cout << "lemonade-server version " << LEMON_VERSION_STRING << std::endl;
 }
 
 /// Return the directory that contains this executable.

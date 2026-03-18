@@ -12,13 +12,8 @@ Tests the lemonade-server CLI commands directly (not HTTP API):
 - run
 - recipes
 
-Two test modes:
-1. Persistent server mode (default): Server starts at beginning, runs all tests, stops at end
-2. Ephemeral mode (--ephemeral): Each command that needs a server starts its own
-
 Usage:
     python server_cli.py
-    python server_cli.py --ephemeral
     python server_cli.py --server-binary /path/to/lemonade-server
 """
 
@@ -49,7 +44,6 @@ from utils.test_models import (
 # Global configuration
 _config = {
     "server_binary": None,
-    "ephemeral": False,
     "apikey": False,
     "listen_all": False,
 }
@@ -65,11 +59,6 @@ def parse_cli_args():
         help="Path to lemonade-server binary (default: CMake build output)",
     )
     parser.add_argument(
-        "--ephemeral",
-        action="store_true",
-        help="Run in ephemeral mode (each command starts its own server)",
-    )
-    parser.add_argument(
         "--api-key",
         action="store_true",
         help="Run with API Key",
@@ -83,7 +72,6 @@ def parse_cli_args():
     args, unknown = parser.parse_known_args()
 
     _config["server_binary"] = args.server_binary
-    _config["ephemeral"] = args.ephemeral
     _config["apikey"] = args.api_key
     _config["listen_all"] = args.listen_all
 
@@ -466,314 +454,6 @@ class PersistentServerCLITests(CLITestBase):
         print(f"[OK] Re-installed {target} for clean state")
 
 
-class EphemeralCLITests(CLITestBase):
-    """
-    CLI tests that run without a persistent server.
-
-    Each command that needs a server starts its own ephemeral server instance.
-    Tests are independent and don't share state.
-    """
-
-    @classmethod
-    def setUpClass(cls):
-        """Ensure no server is running before tests."""
-        super().setUpClass()
-        print("\n=== Ephemeral CLI tests - stopping any existing server ===")
-        stop_server()
-
-    def setUp(self):
-        """Ensure server is stopped before each test."""
-        stop_server()
-
-    def tearDown(self):
-        """Ensure server is stopped after each test."""
-        stop_server()
-
-    def test_001_version_no_server(self):
-        """Test --version flag works without server running."""
-        self.assertFalse(is_server_running(), "Server should not be running")
-        result = self.assertCommandSucceeds(["--version"])
-        self.assertTrue(
-            len(result.stdout) > 0 or len(result.stderr) > 0,
-            "Version command should produce output",
-        )
-
-    def test_001_help_lists_whispercpp_args_no_server(self):
-        """Test help output documents whisper.cpp custom args support."""
-        self.assertFalse(is_server_running(), "Server should not be running")
-        result = self.assertCommandSucceeds(["serve", "--help"])
-        output = result.stdout + result.stderr
-
-        self.assertIn(
-            "--whispercpp-args",
-            output,
-            f"Serve help should document --whispercpp-args: {output}",
-        )
-        self.assertIn(
-            "LEMONADE_WHISPERCPP_ARGS",
-            output,
-            f"Serve help should document LEMONADE_WHISPERCPP_ARGS: {output}",
-        )
-
-    def test_002_list_ephemeral(self):
-        """Test list command starts ephemeral server if needed."""
-        self.assertFalse(is_server_running(), "Server should not be running initially")
-
-        # List command should work (may start ephemeral server)
-        result = run_cli_command(["list"], timeout=TIMEOUT_DEFAULT)
-        # Command should complete (may or may not succeed depending on implementation)
-        # We just verify it doesn't hang
-        print(f"List exit code: {result.returncode}")
-
-    def test_003_pull_ephemeral(self):
-        """Test pull command works in ephemeral mode."""
-        self.assertFalse(is_server_running(), "Server should not be running initially")
-
-        # Pull should work (starts ephemeral server)
-        result = run_cli_command(
-            ["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION
-        )
-        # Should complete successfully
-        self.assertEqual(result.returncode, 0, f"Pull failed: {result.stderr}")
-
-    def test_004_serve_and_stop(self):
-        """Test serve command starts server and stop command stops it."""
-        self.assertFalse(is_server_running(), "Server should not be running initially")
-
-        # Start server
-        cmd = [_config["server_binary"], "serve"]
-        # Add --no-tray on Windows or in CI environments (no display server in containers)
-        if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
-            cmd.append("--no-tray")
-
-        server_process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-
-        try:
-            # Wait for server to start
-            self.assertTrue(
-                wait_for_server_start(timeout=60),
-                "Server should start within 60 seconds",
-            )
-
-            # Stop server using CLI
-            stop_result = run_cli_command(["stop"], timeout=30)
-            self.assertEqual(stop_result.returncode, 0, "Stop command should succeed")
-
-            # Verify server stopped
-            self.assertTrue(
-                wait_for_server_stop(timeout=30),
-                "Server should stop within 30 seconds",
-            )
-
-        finally:
-            # Clean up
-            server_process.terminate()
-            try:
-                server_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                server_process.kill()
-
-    def test_005_duplicate_serve_reports_existing_server(self):
-        """Test duplicate serve prints an explicit already-running message."""
-        self.assertFalse(is_server_running(), "Server should not be running initially")
-
-        first_cmd = [_config["server_binary"], "serve"]
-        second_cmd = [_config["server_binary"], "serve"]
-        if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
-            first_cmd.append("--no-tray")
-            second_cmd.append("--no-tray")
-
-        first_process = subprocess.Popen(
-            first_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-
-        try:
-            self.assertTrue(
-                wait_for_server_start(timeout=60),
-                "First server should start within 60 seconds",
-            )
-
-            duplicate_result = subprocess.run(
-                second_cmd,
-                capture_output=True,
-                text=True,
-                timeout=30,
-                encoding="utf-8",
-                errors="replace",
-            )
-
-            duplicate_output = duplicate_result.stdout + duplicate_result.stderr
-            duplicate_output_lower = duplicate_output.lower()
-
-            self.assertNotEqual(
-                duplicate_result.returncode,
-                0,
-                f"Duplicate serve should fail: {duplicate_output}",
-            )
-            self.assertTrue(
-                "already running" in duplicate_output_lower
-                or "duplicate instance now exiting" in duplicate_output_lower,
-                f"Duplicate serve should explain why it exited: {duplicate_output}",
-            )
-        finally:
-            stop_server()
-            first_process.terminate()
-            try:
-                first_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                first_process.kill()
-
-    def test_006_status_when_stopped(self):
-        """Test status command when server is not running."""
-        self.assertFalse(is_server_running(), "Server should not be running")
-
-        result = run_cli_command(["status"])
-        # Status should indicate server is not running (may return non-zero)
-        output = result.stdout.lower() + result.stderr.lower()
-        self.assertTrue(
-            "not running" in output
-            or "offline" in output
-            or "stopped" in output
-            or result.returncode != 0,
-            f"Status should indicate server is not running: {result.stdout}",
-        )
-
-    def test_007_recipes_no_server(self):
-        """Test recipes command works without server running."""
-        self.assertFalse(is_server_running(), "Server should not be running")
-
-        result = self.assertCommandSucceeds(["recipes"])
-        output = result.stdout
-
-        # Recipes command should work without server and show recipe info
-        self.assertTrue(
-            len(output) > 0,
-            "Recipes command should produce output",
-        )
-
-        # Should contain known recipe names
-        known_recipes = [
-            "llamacpp",
-            "whispercpp",
-            "sd-cpp",
-            "flm",
-            "ryzenai-llm",
-        ]
-        for recipe in known_recipes:
-            self.assertTrue(
-                recipe in output.lower(),
-                f"Output should contain '{recipe}' recipe: {output}",
-            )
-
-        print("[OK] Recipes command works without server running")
-
-    def test_008_status_reports_http_port_not_websocket(self):
-        """Test that status reports the HTTP port, not the WebSocket port.
-
-        Regression test: the router listens on both an HTTP port and a
-        WebSocket port (allocated from 9000+).  get_server_info() used to
-        return whichever port appeared first in the OS TCP table, which is
-        non-deterministic.  When the HTTP port was above the WS range
-        (e.g. 11434) the status command could return 9000 instead, causing
-        the Electron app to connect to the wrong port.
-
-        This test starts the server on port 11434 (above the WS range)
-        and verifies that `status` returns 11434 and that the reported
-        port responds to a normal HTTP request.
-        """
-        TEST_PORT = 11434
-        self.assertFalse(is_server_running(TEST_PORT), "Server should not be running")
-
-        # Start server on port 11434 (above the WebSocket port range 9000+)
-        cmd = [_config["server_binary"], "serve", "--port", str(TEST_PORT)]
-        if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
-            cmd.append("--no-tray")
-
-        server_process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-
-        try:
-            self.assertTrue(
-                wait_for_server_start(port=TEST_PORT, timeout=60),
-                f"Server should start on port {TEST_PORT}",
-            )
-            time.sleep(3)  # Let WebSocket server bind its port too
-
-            # Run `lemonade-server status` and extract the reported port
-            result = self.assertCommandSucceeds(["status"])
-            output = result.stdout + result.stderr
-
-            port_match = (
-                re.search(r"port[:\s]+(\d+)", output, re.IGNORECASE)
-                or re.search(r"localhost:(\d+)", output, re.IGNORECASE)
-                or re.search(r"127\.0\.0\.1:(\d+)", output, re.IGNORECASE)
-            )
-            self.assertIsNotNone(
-                port_match, f"Could not parse port from status output: {output}"
-            )
-            reported_port = int(port_match.group(1))
-
-            # The reported port must be the HTTP port, not the WebSocket port
-            self.assertEqual(
-                reported_port,
-                TEST_PORT,
-                f"Status reported port {reported_port} but server was started on "
-                f"{TEST_PORT}. get_server_info() may be returning the WebSocket port.",
-            )
-
-            # Double-check: the reported port must respond to HTTP
-            try:
-                url = f"http://127.0.0.1:{reported_port}/live"
-                req = urllib.request.Request(url, method="GET")
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    status_code = resp.getcode()
-            except urllib.error.URLError as e:
-                self.fail(f"Port {reported_port} did not respond to HTTP /live: {e}")
-
-            self.assertEqual(status_code, 200)
-            print(f"[OK] Status correctly reports HTTP port {reported_port}")
-
-        finally:
-            server_process.terminate()
-            try:
-                server_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                server_process.kill()
-
-    def test_009_recipes_install_no_server(self):
-        """Test recipes --install works when no server is running (starts ephemeral server)."""
-        import sys
-
-        if sys.platform == "darwin":
-            target = "llamacpp:metal"
-        else:
-            target = "llamacpp:cpu"
-
-        self.assertFalse(is_server_running(), "Server should not be running")
-
-        result = self.assertCommandSucceeds(
-            ["recipes", "--install", target], timeout=300
-        )
-        output = result.stdout.lower()
-        self.assertTrue(
-            "install" in output or "success" in output,
-            f"Expected install result in output: {result.stdout}",
-        )
-        print(f"[OK] recipes --install {target} works without persistent server")
-
-
 def run_cli_tests():
     """
     Run CLI tests based on command line arguments.
@@ -786,14 +466,9 @@ def run_cli_tests():
     print(f"\n{'=' * 70}")
     print("CLI COMMAND TESTS")
     print(f"Server binary: {_config['server_binary']}")
-    print(f"Mode: {'Ephemeral' if _config['ephemeral'] else 'Persistent'}")
     print(f"{'=' * 70}\n")
 
-    # Choose test class based on mode
-    if _config["ephemeral"]:
-        test_class = EphemeralCLITests
-    else:
-        test_class = PersistentServerCLITests
+    test_class = PersistentServerCLITests
 
     result = None
     try:

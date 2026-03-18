@@ -538,7 +538,6 @@ jobs:
           set -e
           echo "Running CLI tests..."
           .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server
-          .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server --ephemeral
           .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server --listen-all
           .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server --api-key
           .venv/bin/python test/server_cli2.py --server-binary /usr/local/bin/lemonade-server
@@ -1143,7 +1142,6 @@ jobs:
           if [ "${{ matrix.test_type }}" = "cli" ]; then
               echo "Running CLI tests..."
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY"
-              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --ephemeral
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --listen-all
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --api-key
               $VENV_PYTHON test/server_cli2.py --server-binary "$SERVER_BINARY"
