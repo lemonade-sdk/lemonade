@@ -8,9 +8,10 @@ const ALLOWLIST = [
   { os: 'win', fw: 'llama', dev: 'cpu' },
   { os: 'win', fw: 'llama', dev: 'gpu' },
   { os: 'win', fw: 'flm', dev: 'npu' },
-  // Linux: llama.cpp only (CPU, GPU)
+  // Linux: llama.cpp (CPU, GPU), FastFlowLM (NPU)
   { os: 'linux', fw: 'llama', dev: 'cpu' },
   { os: 'linux', fw: 'llama', dev: 'gpu' },
+  { os: 'linux', fw: 'flm', dev: 'npu' },
   // Docker: llama.cpp only (CPU, GPU)
   { os: 'docker', fw: 'llama', dev: 'cpu' },
   { os: 'docker', fw: 'llama', dev: 'gpu' },
@@ -107,6 +108,12 @@ window.lmnRender = function() {
       if (lmnState[category] === opt) el.classList.add('lmn-active');
     });
   });
+
+  // Update NPU label based on selected framework
+  const npuEl = document.getElementById('dev-npu');
+  if (npuEl) {
+    npuEl.textContent = (fw === 'flm') ? 'NPU' : 'NPU, Hybrid';
+  }
 
   // Gray out invalid combinations
   cells.fw.forEach(f => {
@@ -495,9 +502,14 @@ function renderQuickStart() {
   // Add contextual notes based on inference engine and device
   let notes = '';
 
-  // NPU driver note
-  if (dev === 'npu') {
+  // NPU driver note (Windows only)
+  if (dev === 'npu' && os === 'win') {
     notes += `<div class="lmn-note"><strong>Note:</strong> NPU requires an AMD Ryzen AI 300-series PC with Windows 11 and driver installation. Download and install the <a href="${NPU_DRIVER_URL}" target="_blank">NPU Driver</a> before proceeding.</div>`;
+  }
+
+  // FLM Linux NPU setup note (above Early Access notice, matching Windows driver note placement)
+  if (fw === 'flm' && os === 'linux') {
+    notes += `<div class="lmn-note"><strong>Linux NPU Setup:</strong> See the <a href="https://lemonade-server.ai/flm_npu_linux.html" target="_blank">FastFlowLM NPU on Linux guide</a> for setup instructions.</div>`;
   }
 
   // FastFlowLM Early Access note
