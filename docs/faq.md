@@ -240,7 +240,7 @@
 
 ### 1. **What if I encounter installation or runtime errors?**
 
-   Check the Lemonade Server logs via the App (all supported OSes) or tray icon (Windows only). Common issues include model compatibility or outdated versions.
+   Check the Lemonade Server logs via the App or tray icon. Common issues include model compatibility or outdated versions.
 
    👉 [Open an Issue on GitHub](https://github.com/lemonade-sdk/lemonade/issues)
 
