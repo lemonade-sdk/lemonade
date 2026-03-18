@@ -1,0 +1,4 @@
+# Protect AI agent and assistant configuration files from accidental overwrites
+AGENTS.md @ramkrishna2910 @jeremyfowers
+CLAUDE.md @ramkrishna2910 @jeremyfowers
+CLAUDE.local.md @ramkrishna2910 @jeremyfowers
