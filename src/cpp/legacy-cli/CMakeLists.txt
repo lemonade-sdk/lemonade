@@ -1,7 +1,5 @@
 # Legacy shim: backwards-compatible lemonade-server binary.
-# Excluded from the default "all" build — only built when explicitly requested
-# (e.g., cmake --build . --target lemonade-server) or as an installer dependency.
-add_executable(lemonade-server EXCLUDE_FROM_ALL main.cpp)
+add_executable(lemonade-server main.cpp)
 
 target_include_directories(lemonade-server PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -34,10 +32,19 @@ if(WIN32)
     )
 endif()
 
-# Install rule — requires the target to have been built first.
-# Since this target is EXCLUDE_FROM_ALL, packagers must build it explicitly:
-#   cmake --build . --target lemonade-server && cpack
-# On Windows, the WiX installer targets already depend on lemonade-server.
+# Install rule
 if(NOT APPLE)
     install(TARGETS lemonade-server RUNTIME DESTINATION bin)
+endif()
+
+# Create symlink in standard bin path only if not installing to /usr
+if(UNIX AND NOT APPLE AND NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+    install(CODE "
+        file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+                ${CMAKE_INSTALL_PREFIX}/bin/lemonade-server
+                \"\$ENV{DESTDIR}/usr/bin/lemonade-server\"
+        )
+    ")
 endif()
