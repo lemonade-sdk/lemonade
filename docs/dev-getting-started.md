@@ -156,13 +156,13 @@ This will:
 5. Package the application as an AppImage using electron-builder
 
 The generated AppImage will be located in:
-- `build/app-appimage/Lemonade-<version>-<arch>.AppImage`
+- `build/app-appimage/lemonade-app-<version>-<arch>.AppImage`
 
 The AppImage is a self-contained executable that includes all dependencies and can be run on any Linux distribution without installation. Simply make it executable and run it:
 
 ```bash
-chmod +x build/app-appimage/Lemonade-*.AppImage
-./build/app-appimage/Lemonade-*.AppImage
+chmod +x build/app-appimage/lemonade-app-*.AppImage
+./build/app-appimage/lemonade-app-*.AppImage
 ```
 
 ### Platform-Specific Notes

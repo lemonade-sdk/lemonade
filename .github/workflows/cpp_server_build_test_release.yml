@@ -633,7 +633,7 @@ jobs:
           cmake --build --preset default --target appimage
 
           # Verify AppImage was created
-          APPIMAGE_FILE="build/app-appimage/Lemonade-${LEMONADE_VERSION}-x86_64.AppImage"
+          APPIMAGE_FILE="build/app-appimage/lemonade-app-${LEMONADE_VERSION}-x86_64.AppImage"
           if [ ! -f "$APPIMAGE_FILE" ]; then
               echo "ERROR: AppImage not created!"
               echo "Contents of build/app-appimage directory:"
@@ -652,7 +652,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-appimage
-          path: build/app-appimage/Lemonade-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
+          path: build/app-appimage/lemonade-app-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
           retention-days: 7
 
 
@@ -1230,7 +1230,7 @@ jobs:
           ls -lh lemonade-server_${LEMONADE_VERSION}_amd64.deb
           ls -lh lemonade-server-${LEMONADE_VERSION}.x86_64.rpm
           ls -lh *.pkg
-          ls -lh Lemonade-${LEMONADE_VERSION}-x86_64.AppImage
+          ls -lh lemonade-app-${LEMONADE_VERSION}-x86_64.AppImage
 
       - name: Generate release notes
         id: release-notes
@@ -1251,5 +1251,5 @@ jobs:
             lemonade-server_${{ env.LEMONADE_VERSION }}_amd64.deb
             lemonade-server-${{ env.LEMONADE_VERSION }}.x86_64.rpm
             *.pkg
-            Lemonade-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
+            lemonade-app-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
           fail_on_unmatched_files: true

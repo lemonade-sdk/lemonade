@@ -241,7 +241,12 @@ int main(int argc, char *argv[]) {
 #else
         fs::path server = sibling_exe(dir, "lemonade-router");
 #endif
-        std::vector<std::string> server_args(args.begin() + 1, args.end());
+        // Strip flags that were valid for old lemonade-server but not for lemonade-router
+        std::vector<std::string> server_args;
+        for (size_t i = 1; i < args.size(); ++i) {
+            if (args[i] == "--no-tray") continue;
+            server_args.push_back(args[i]);
+        }
         exec_program(server, server_args);
         // exec_program is [[noreturn]]
     }

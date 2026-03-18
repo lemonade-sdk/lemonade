@@ -201,7 +201,7 @@ function renderDownload() {
     if (distro === 'ubuntu') {
       // Ubuntu: Show structured server + frontend installation
       const debFile = `lemonade-server_${version}_amd64.deb`;
-      const appImageFile = `Lemonade-${version}-x86_64.AppImage`;
+      const appImageFile = `lemonade-app-${version}-x86_64.AppImage`;
       const downloadUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${debFile}`;
       const appImageUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${appImageFile}`;
 
