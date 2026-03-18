@@ -38,10 +38,10 @@ This guide covers everything you need to build, test, and contribute to Lemonade
 
 Lemonade consists of these main executables:
 - **lemonade-router** - Core HTTP server that handles requests and LLM backend orchestration
-- **lemonade** - CLI client for terminal users (list, pull, delete, run, status, stop, logs, launch)
+- **lemonade** - CLI client for terminal users (list, pull, delete, run, status, logs, launch, recipes, scan)
 - **LemonadeServer.exe** (Windows only) - SUBSYSTEM:WINDOWS GUI app that embeds the server and shows a system tray icon
 - **lemonade-tray** (macOS/Linux) - Lightweight tray client that connects to a running `lemonade-router`
-- **lemonade-server** - Deprecated backwards-compatibility shim that delegates to `lemonade-router` or `lemonade`
+- **lemonade-server** - Deprecated backwards-compatibility shim (delegates to `lemonade-router` or `lemonade`)
 
 ## Building from Source
 
@@ -108,7 +108,7 @@ cmake --build --preset vs18
 
 ### Building the Electron Desktop App (Optional)
 
-The tray menu's "Open app" option and the `lemonade-server run` command can launch the Electron desktop app. To include it in your build:
+The tray menu's "Open app" option and the `lemonade run` command can launch the Electron desktop app. To include it in your build:
 
 Build the Electron app using CMake (requires Node.js 20+):
 
@@ -173,20 +173,19 @@ chmod +x build/app-appimage/Lemonade-*.AppImage
 - Security features enabled: Control Flow Guard, ASLR, DEP
 
 **Linux:**
-- `lemonade-server` is always headless on Linux (GTK-free, daemon-friendly); use `lemonade-server serve` to start the server
+- `lemonade-router` is always headless on Linux (GTK-free, daemon-friendly); use `lemonade-router` to start the server directly
 - `lemonade-tray` is a separate binary for the system tray, auto-detected at build time: built if AppIndicator3 libraries are found (GTK3 only needed for non-glib variants)
 - To require tray support (fail if deps missing): `-DREQUIRE_LINUX_TRAY=ON`
 - Optional tray dependencies: one of `ayatana-appindicator-glib-devel` (preferred, no GTK3 needed), `ayatana-appindicator3-devel`, or `libappindicator-gtk3-devel` (the latter two also require `gtk3-devel`)
 - Fully functional for server operations and model management
 - Uses permissively licensed dependencies only (MIT, Apache 2.0, BSD, curl license)
 - Clean .deb package with only runtime files (no development headers)
-- PID file system for reliable process management
 - Proper graceful shutdown - all child processes cleaned up correctly
 - File locations:
   - Installed binaries: `/opt/bin`
   - Downloaded backends (llama-server, ryzenai-server): `~/.cache/lemonade/bin/`
   - Model downloads: `~/.cache/huggingface/` (follows HF conventions)
-  - Runtime files (PID, lock, log): `$XDG_RUNTIME_DIR/lemonade/` when set and writable, otherwise `/tmp/`
+  - Runtime files (lock, log): `$XDG_RUNTIME_DIR/lemonade/` when set and writable, otherwise `/tmp/`
 
 **macOS (beta):**
 - Uses native system frameworks (Cocoa, Foundation)
@@ -276,14 +275,8 @@ sudo dpkg -r lemonade-server
 
 The executables will be available in PATH:
 ```bash
-lemonade-server --help
+lemonade --help
 lemonade-router --help
-
-# Start server in headless mode:
-lemonade-server serve --no-tray
-
-# Or just:
-lemonade-server serve
 ```
 
 ### Linux .rpm Package (Fedora, RHEL etc)
@@ -435,7 +428,7 @@ The notarization process will:
     }
 ```
 2. If you want to debug lemonade-router you may pass --llamacpp cpu for cpu based tests.
-3. For lemonade-server you may pass serve as a argument as well.
+3. For `lemonade` you may pass a subcommand (e.g., `run MODEL`) as arguments.
 
 ##### The hard way - commands only.
 1. Now if you want to do it the hard way below are the commands in which you can run in the command dropdown in which you can see if you use the following keyboard shortcuts. cmd + p / control + p
@@ -590,53 +583,40 @@ A pure HTTP server that:
 - Thread-safe model loading with serialization to prevent races
 - Protection against evicting models actively serving inference requests
 
-#### lemonade-server (CLI Client Component)
+#### lemonade (CLI Client)
 
 A console application for terminal users:
-- Provides command-based user interface (`list`, `pull`, `delete`, `run`, `status`, `stop`, `serve`)
-- Manages server lifecycle (start/stop persistent or ephemeral servers)
+- Provides command-based user interface (`list`, `pull`, `delete`, `run`, `status`, `logs`, `launch`, `recipes`, `scan`)
 - Communicates with `lemonade-router` via HTTP endpoints
-- Starts `lemonade-router` with appropriate options
-- Provides optional system tray interface via `serve` command (Windows/macOS; on Linux the tray is provided by the separate `lemonade-tray` binary)
+- Expects the server to already be running (auto-started by the OS after installation)
 
-**Command Types:**
-- **serve:** Starts a persistent server (with optional tray interface)
-- **run:** Starts persistent server, loads model, opens browser
-- **Other commands:** Use existing server or start ephemeral server, execute command via API, auto-cleanup
-
-#### lemonade-tray (GUI Tray Application - Windows and Linux)
+#### lemonade-tray / LemonadeServer.exe (GUI Tray Application)
 
 A GUI application for desktop users that exposes the server via a system tray icon:
-- **Windows:** Minimal launcher — finds `lemonade-server.exe`, launches it with the `serve` command, then exits. The server process owns the tray icon.
-- **Linux:** Tray application (requires GTK3 + AppIndicator3). Connects to an already-running server if one is found; otherwise starts one (via systemd if a unit is installed, or by spawning `lemonade-router` directly).
+- **Windows:** `LemonadeServer.exe` — a SUBSYSTEM:WINDOWS app that embeds the server and shows a system tray icon. No console window.
+- **Linux:** `lemonade-tray` — tray application (requires GTK3 + AppIndicator3). Connects to an already-running server if one is found; otherwise starts one (via systemd if a unit is installed, or by spawning `lemonade-router` directly).
 - Zero console output or CLI interface
 - Used by application launchers, desktop shortcuts, and autostart entries
 - Provides seamless GUI experience for non-technical users
 
 ### Client-Server Communication
 
-The `lemonade-server` client communicates with `lemonade-router` server via HTTP:
+The `lemonade` client communicates with `lemonade-router` server via HTTP:
 - **Model operations:** `/api/v1/models`, `/api/v1/pull`, `/api/v1/delete`
 - **Model control:** `/api/v1/load`, `/api/v1/unload`
 - **Server management:** `/api/v1/health`, `/internal/shutdown`
 - **Inference:** `/api/v1/chat/completions`, `/api/v1/completions`, `/api/v1/audio/transcriptions`
 
 The client automatically:
-- Detects if a server is already running
-- Starts ephemeral servers for one-off commands
-- Cleans up ephemeral servers after command completion
-- Manages persistent servers with proper lifecycle handling
+- Discovers the running server's port
+- Reports an error if no server is reachable
 
 **Single-Instance Protection:**
-- Each component (`lemonade-router`, `lemonade-server serve`, `lemonade-tray`) enforces single-instance using system-wide mutexes
-- Only the `serve` command is blocked when a server is running
-- Commands like `status`, `list`, `pull`, `delete`, `stop` can run alongside an active server
-- Provides clear error messages with suggestions when blocked
-- **Linux-specific:** Uses a PID file (`lemonade-router.pid`) for efficient server discovery and port detection
-  - Stored in `$XDG_RUNTIME_DIR/lemonade/` when the XDG runtime directory is set and writable, otherwise falls back to `/tmp/`
-  - Avoids port scanning, finds exact server PID and port instantly
-  - Validated on read (checks if process is still alive)
-  - Automatically cleaned up on graceful shutdown
+- **Windows:** `LemonadeServer.exe` holds a system-wide mutex (`Global\LemonadeRouterMutex`). A second launch shows a "Server is already running" dialog and exits.
+- **Linux/macOS:** `lemonade-tray` acquires an exclusive `flock()` on a lock file in the runtime directory to prevent duplicate tray instances.
+
+**Server Discovery:**
+- The `lemonade` CLI auto-discovers the running server via UDP beacon broadcast, falling back to the default port if no beacon is found.
 
 **Network Beacon based broadcasting:**
 - Uses port 8000 to broadcast to the network that it exists
@@ -681,70 +661,51 @@ The `lemonade-router` executable is a pure HTTP server without any command-based
 #   --help, -h               Show help
 ```
 
-### lemonade-server.exe (Console CLI Client)
+### lemonade (CLI Client)
 
-The `lemonade-server` executable is the command-line interface for terminal users:
-- Command-line interface for all model and server management
-- Starts persistent servers (with optional tray interface)
-- Manages ephemeral servers for one-off commands
+The `lemonade` executable is the command-line interface for terminal users:
+- Command-line interface for model management and server interaction
 - Communicates with `lemonade-router` via HTTP endpoints
+- Expects the server to already be running (auto-started by the OS after installation)
 
 ```bash
 # List available models
-./lemonade-server list
+./lemonade list
 
 # Pull a model
-./lemonade-server pull Llama-3.2-1B-Instruct-CPU
+./lemonade pull Llama-3.2-1B-Instruct-CPU
 
 # Delete a model
-./lemonade-server delete Llama-3.2-1B-Instruct-CPU
+./lemonade delete Llama-3.2-1B-Instruct-CPU
 
 # Check server status
-./lemonade-server status
+./lemonade status
 
-# Stop the server
-./lemonade-server stop
+# Run a model (loads model and opens browser)
+./lemonade run Llama-3.2-1B-Instruct-CPU
 
-# Run a model (starts persistent server with tray and opens browser)
-./lemonade-server run Llama-3.2-1B-Instruct-CPU
+# View server logs
+./lemonade logs
 
-# Start persistent server (with tray on Windows/macOS; always headless on Linux — use lemonade-tray for tray)
-./lemonade-server serve
-
-# Start persistent server without tray (headless mode, explicit on all platforms)
-./lemonade-server serve --no-tray
-
-# Start server with custom options
-./lemonade-server serve --port 8080 --ctx-size 8192
+# List recipes and backends
+./lemonade recipes
 ```
 
-**Available Options:**
-- `--port PORT` - Server port (default: 8000)
-- `--host HOST` - Server host (default: localhost)
-- `--ctx-size SIZE` - Context size (default: 4096)
-- `--log-level LEVEL` - Logging verbosity: info, debug (default: info)
-- `--log-file PATH` - Custom log file location
-- `--server-binary PATH` - Path to lemonade-router executable
-- `--no-tray` - Run without tray (headless mode)
-- `--max-loaded-models N` - Maximum number of models to keep loaded per type slot (default: 1)
+### LemonadeServer.exe / lemonade-tray (GUI Tray Application)
 
-**Note:** `lemonade-router` is always launched with `--log-level debug` for optimal troubleshooting. Use `--log-level debug` on `lemonade-server` commands to see client-side debug output.
-
-### lemonade-tray (GUI Tray Application - Windows and Linux)
-
-The `lemonade-tray` executable provides a system tray icon for desktop users:
+The tray application provides a system tray icon for desktop users:
 - Double-click from Start Menu, application launcher, or Desktop to start server
 - Zero console windows or CLI interface — always starts the tray directly
 - Perfect for non-technical users
 - Single-instance protection: shows friendly message if already running
 
 **Platform support:**
-- **Windows:** Always available; uses Win32 notification area APIs. Acts as a minimal launcher: finds `lemonade-server.exe` in the same directory, launches it with the `serve` command, then exits (the server process owns the tray icon).
-- **Linux:** Available when compiled with GTK3 + AppIndicator3 support (auto-detected at build time). Connects to an already-running server if one is found; otherwise starts one (via systemd if a unit is installed, or by spawning `lemonade-router` directly).
+- **Windows:** `LemonadeServer.exe` — a SUBSYSTEM:WINDOWS app that embeds `lemonade-router` and shows a system tray icon. No separate console process. Auto-starts via the Windows startup folder.
+- **Linux:** `lemonade-tray` — available when compiled with GTK3 + AppIndicator3 support (auto-detected at build time). Connects to an already-running server if one is found; otherwise starts one (via systemd if a unit is installed, or by spawning `lemonade-router` directly).
 
 **What it does (Linux):**
 1. Starts immediately in tray mode (no subcommand needed)
-2. Connects to an already-running server via the PID file, or starts one (via systemd if a unit is installed, otherwise spawns `lemonade-router` directly)
+2. Connects to an already-running server, or starts one (via systemd if a unit is installed, otherwise spawns `lemonade-router` directly)
 3. Shows a system tray icon connected to the server
 
 **When to use:**
@@ -770,10 +731,9 @@ The `lemonade-tray` executable provides a system tray icon for desktop users:
 
 ### Logging and Console Output
 
-When running `lemonade-server.exe serve`:
-- **Console Output:** Router logs are streamed to the terminal in real-time via a background tail thread
+When running `LemonadeServer.exe` or `lemonade-router`:
 - **Log File:** All logs are written to a persistent log file (default: `%TEMP%\lemonade-server.log`)
-- **Log Viewer:** Click "Show Logs" in the tray to open `lemonade-log-viewer.exe`
+- **Log Viewer:** Click "Show Logs" in the tray to open `lemonade-log-viewer.exe`, or use `lemonade logs`
   - Displays last 100KB of historical logs
   - Live tails new content as it's written
   - Automatically closes when server stops
