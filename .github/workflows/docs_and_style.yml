@@ -2,7 +2,13 @@ name: Docs And Style
 on:
   push:
     branches: ["main"]
+    paths:
+      - "**/*.md"
+      - "docs/**"
   pull_request:
+    paths:
+      - "**/*.md"
+      - "docs/**"
   merge_group:
 
 permissions:

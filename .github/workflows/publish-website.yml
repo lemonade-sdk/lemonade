@@ -5,6 +5,11 @@ on:
     branches: ["main"]
     tags:
       - v*
+    paths:
+      - "docs/**"
+      - "README.md"
+      - "mkdocs.yml"
+      - ".github/workflows/publish-website.yml"
   workflow_dispatch:
   repository_dispatch:
     types: [marketplace-updated]
