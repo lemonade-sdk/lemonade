@@ -2,9 +2,23 @@ name: Docker Build Smoke Test
 
 on:
   pull_request:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "src/cpp/**"
+      - "include/**"
+      - "resources/**"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "setup.sh"
+      - ".github/workflows/docker-build-smoke-test.yml"
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   docker-smoke-test:
