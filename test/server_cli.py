@@ -359,7 +359,7 @@ class PersistentServerCLITests(CLITestBase):
         print(f"[OK] Recipes command output shows recipe/backend status")
 
     def test_007_pull_json(self):
-        """Test pull command to download a model via JSON file"""
+        """Test import command to download a model via JSON file"""
         json_file = os.path.join(tempfile.gettempdir(), "lemonade_pull_json.json")
         with open(json_file, "w") as f:
             f.write(
@@ -373,7 +373,7 @@ class PersistentServerCLITests(CLITestBase):
             )
 
         result = self.assertCommandSucceeds(
-            ["pull", json_file], timeout=TIMEOUT_MODEL_OPERATION
+            ["import", json_file], timeout=TIMEOUT_MODEL_OPERATION
         )
         # Pull should succeed
         output = result.stdout.lower() + result.stderr.lower()
@@ -383,7 +383,7 @@ class PersistentServerCLITests(CLITestBase):
         )
 
     def test_008_pull_malformed_json(self):
-        """Test pull command to download a model via JSON file"""
+        """Test import command with malformed JSON file"""
         json_file = os.path.join(
             tempfile.gettempdir(), "lemonade_pull_malformed_json.json"
         )
@@ -391,13 +391,13 @@ class PersistentServerCLITests(CLITestBase):
             f.write('{"checkpoint:')
 
         result = self.assertCommandFails(
-            ["pull", json_file], timeout=TIMEOUT_MODEL_OPERATION
+            ["import", json_file], timeout=TIMEOUT_MODEL_OPERATION
         )
-        # Pull should fail
+        # Import should fail
         output = result.stdout.lower() + result.stderr.lower()
         self.assertTrue(
             "error" in output,
-            f"Pull should fail: {result.stdout}",
+            f"Import should fail: {result.stdout}",
         )
 
     def _get_test_backend(self):

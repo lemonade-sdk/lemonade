@@ -19,6 +19,13 @@ endif()
 if(WIN32)
     target_link_libraries(lemonade-server PRIVATE ws2_32)
     target_compile_definitions(lemonade-server PRIVATE UNICODE _UNICODE)
+elseif(APPLE)
+    target_link_libraries(lemonade-server PRIVATE
+        "-framework CoreFoundation"
+        "-framework CFNetwork"
+        "-framework Foundation"
+        "-framework CoreServices"
+    )
 endif()
 
 # Output directory

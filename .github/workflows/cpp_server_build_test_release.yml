@@ -187,7 +187,7 @@ jobs:
           }
 
           # Verify the build output exists
-          if (-not (Test-Path "build\app\win-unpacked\Lemonade.exe")) {
+          if (-not (Test-Path "build\app\win-unpacked\lemonade-app.exe")) {
               Write-Host "ERROR: Electron app executable not found!" -ForegroundColor Red
               exit 1
           }
