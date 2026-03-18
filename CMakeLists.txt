@@ -1050,7 +1050,7 @@ if(APPLE)
             COMMENT "Signing ${EXECUTABLE_NAME} with Hardened Runtime"
             VERBATIM
         )
-        # Note: 'lemonade-server' signs itself in tray/CMakeLists.txt
+        # Note: 'lemonade-server' is signed at install time below (line ~1110)
     endif()
 
     # Prepare Electron App
@@ -1107,6 +1107,19 @@ if(APPLE)
     # Legacy shim -> /usr/local/bin
     if(TARGET lemonade-server)
         install(TARGETS lemonade-server RUNTIME DESTINATION "bin" COMPONENT Runtime)
+
+        # Sign the legacy shim after installation (Release builds only)
+        if(CMAKE_BUILD_TYPE STREQUAL "Release")
+            install(CODE "
+                execute_process(
+                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/lemonade-server\"
+                    RESULT_VARIABLE SIGN_RESULT
+                )
+                if(NOT SIGN_RESULT EQUAL 0)
+                    message(FATAL_ERROR \"Failed to sign lemonade-server\")
+                endif()
+            " COMPONENT Runtime)
+        endif()
     endif()
 
     # CLI -> /usr/local/bin

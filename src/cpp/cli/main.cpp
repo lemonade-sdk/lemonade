@@ -158,6 +158,13 @@ static int exec_open_url(const char* opener, const std::string& url, bool wait) 
 // Try to open a lemonade:// URL via the OS. Returns true if the OS reports success.
 static bool try_lemonade_protocol(const std::string& lemonade_url) {
 #ifdef _WIN32
+    // Check registry before calling ShellExecuteA — Windows shows a "Get an app"
+    // dialog for unregistered URI schemes and still returns > 32 (success).
+    HKEY hKey = nullptr;
+    if (RegOpenKeyExA(HKEY_CLASSES_ROOT, "lemonade", 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
+        return false;
+    }
+    RegCloseKey(hKey);
     HINSTANCE result = ShellExecuteA(nullptr, "open", lemonade_url.c_str(),
                                      nullptr, nullptr, SW_SHOWNORMAL);
     return reinterpret_cast<intptr_t>(result) > 32;

@@ -545,6 +545,13 @@ bool TrayUI::try_open_lemonade_url(const std::string& lemonade_url) {
     // Ask the OS to open the lemonade:// URL.
     // Returns true if the OS reports success (handler registered).
 #ifdef _WIN32
+    // Check registry before calling ShellExecuteA — Windows shows a "Get an app"
+    // dialog for unregistered URI schemes and still returns > 32 (success).
+    HKEY hKey = nullptr;
+    if (RegOpenKeyExA(HKEY_CLASSES_ROOT, "lemonade", 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
+        return false;
+    }
+    RegCloseKey(hKey);
     HINSTANCE result = ShellExecuteA(nullptr, "open", lemonade_url.c_str(),
                                      nullptr, nullptr, SW_SHOWNORMAL);
     return reinterpret_cast<intptr_t>(result) > 32;

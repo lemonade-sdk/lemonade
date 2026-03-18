@@ -39,6 +39,18 @@ if(WIN32)
     )
 endif()
 
+# macOS signing (Release builds only)
+if(APPLE AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    if(DEFINED SIGNING_IDENTITY AND DEFINED ENTITLEMENTS_PATH)
+        add_custom_command(TARGET lemonade-server POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "--- Signing lemonade-server ---"
+            COMMAND codesign --force --options runtime --timestamp --entitlements "${ENTITLEMENTS_PATH}" --sign "${SIGNING_IDENTITY}" -v $<TARGET_FILE:lemonade-server>
+            COMMENT "Signing lemonade-server with Hardened Runtime"
+            VERBATIM
+        )
+    endif()
+endif()
+
 # Install rule
 if(NOT APPLE)
     install(TARGETS lemonade-server RUNTIME DESTINATION bin)

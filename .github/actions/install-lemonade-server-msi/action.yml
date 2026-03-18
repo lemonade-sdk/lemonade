@@ -81,9 +81,9 @@ runs:
 
         # Check for key binaries
         $expectedBinaries = @(
-            "bin\lemonade-router.exe",
+            "bin\LemonadeServer.exe",
             "bin\lemonade-server.exe",
-            "bin\lemonade-tray.exe"
+            "bin\lemonade.exe"
         )
 
         $missingItems = @()

@@ -67,8 +67,12 @@
     <!-- GUI only supports per-user install (no UAC needed) -->
     <Property Id="MSIINSTALLPERUSER" Value="1" Secure="yes" />
 
-    <!-- Enable optional 'Open Lemonade App' checkbox on ExitDialog -->
+    <!-- Enable optional checkbox on ExitDialog to open the app after install -->
+<?if $(var.IncludeElectron) = 1 ?>
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Open Lemonade App" />
+<?else?>
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Open Lemonade Web App" />
+<?endif?>
 
     <!-- Existing MSI-based C++ install location (for in-place upgrades) -->
     <!-- Check both HKCU (per-user) and HKLM (all-users) -->
@@ -156,6 +160,15 @@
 
       <Component Id="LemonadeCli" Guid="12ffa6b7-831b-4d56-889c-3e7f43c8d134">
         <File Id="lemonade.exe" Source="$(var.BuildDir)\Release\lemonade.exe" KeyPath="yes" />
+      </Component>
+
+      <!-- Clean up stale lemonade:// protocol handler keys on every install.
+           Handles: previous full install replaced by minimal, or Electron runtime registration.
+           In full installs, LemonadeProtocolHandler recreates the keys afterward
+           (WiX runs RemoveRegistryValues before WriteRegistryValues). -->
+      <Component Id="CleanupProtocolHandler" Guid="f2a3b4c5-d6e7-4f8a-9b0c-1d2e3f4a5b6c">
+        <RemoveRegistryKey Root="HKCU" Key="Software\Classes\lemonade" Action="removeOnInstall" />
+        <RegistryValue Root="HKCU" Key="Software\AMD\Lemonade Server" Name="ProtocolCleanup" Type="integer" Value="1" KeyPath="yes" />
       </Component>
 
 <?if $(var.IncludeElectron) = 1 ?>
@@ -274,6 +287,7 @@
 <?if $(var.IncludeElectron) = 1 ?>
       <ComponentGroupRef Id="ElectronAppComponents" />
 <?endif?>
+      <ComponentRef Id="CleanupProtocolHandler" />
       <ComponentRef Id="PathEnvironmentUser" />
       <ComponentRef Id="PathEnvironmentMachine" />
       <ComponentRef Id="RegistryEntriesUser" />
@@ -335,13 +349,22 @@
                   Impersonate="yes"
                   Return="ignore" />
 
-    <!-- Open the Electron desktop app via lemonade:// protocol (triggered by ExitDialog checkbox).
-         Falls back gracefully if no protocol handler is registered (minimal installer). -->
+    <!-- Open the app via ExitDialog checkbox.
+         Full installer: open Electron app via lemonade:// protocol.
+         Minimal installer: open web app in browser. -->
+<?if $(var.IncludeElectron) = 1 ?>
     <CustomAction Id="LaunchApplication"
                   Directory="SystemFolder"
                   ExeCommand='"[SystemFolder]explorer.exe" "lemonade://open"'
                   Impersonate="yes"
                   Return="asyncNoWait" />
+<?else?>
+    <CustomAction Id="LaunchApplication"
+                  Directory="SystemFolder"
+                  ExeCommand='"[SystemFolder]explorer.exe" "http://127.0.0.1:8000/"'
+                  Impersonate="yes"
+                  Return="asyncNoWait" />
+<?endif?>
 
     <!-- Auto-launch LemonadeServer.exe after install completes (always runs).
          Run the exe directly — it's SUBSYSTEM:WINDOWS so no console flash. -->
