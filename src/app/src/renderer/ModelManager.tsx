@@ -559,7 +559,34 @@ const [searchQuery, setSearchQuery] = useState('');
         return;
       }
       const ggufData: HFModelInfo[] = ggufRes.ok ? await ggufRes.json() : [];
-      setHfSearchResults(ggufData);
+      const EXCLUDED_PIPELINE_TAGS = new Set([
+        // Audio input/output
+        'automatic-speech-recognition',
+        'text-to-speech',
+        'audio-text-to-text',
+        'text-to-audio',
+        'audio-to-audio',
+        'voice-activity-detection',
+        // Image/video input/output
+        'text-to-image',
+        'image-to-image',
+        'image-to-video',
+        'image-to-3d',
+        'image-text-to-image',
+        'image-text-to-video',
+        'unconditional-image-generation',
+        'image-segmentation',
+        'object-detection',
+        'depth-estimation',
+        'mask-generation',
+        'zero-shot-object-detection',
+        // Video
+        'text-to-video',
+        'text-to-3d',
+        'video-to-video'
+      ]);
+      const filteredData = ggufData.filter(m => !m.pipeline_tag || !EXCLUDED_PIPELINE_TAGS.has(m.pipeline_tag.toLowerCase()));
+      setHfSearchResults(filteredData);
     } catch {
       setHfSearchResults([]);
     } finally {
@@ -1480,11 +1507,17 @@ const [searchQuery, setSearchQuery] = useState('');
                   hfSearchResults.length === 0 ||
                   (hfSearchResults.length > 0 &&
                     detectingBackendFor === null &&
-                    hfSearchResults.every((m: HFModelInfo) => hfModelBackends[m.id] === null))
+                    hfSearchResults.every((m: HFModelInfo) => {
+                      const backend = hfModelBackends[m.id];
+                      return backend === null || (backend != null && ['sd-cpp', 'whispercpp'].includes(backend.recipe));
+                    }))
                 ) && (
                   <div className="hf-search-message">No compatible models found.</div>
                 )}
-                {hfSearchResults.filter((hfModel: HFModelInfo) => hfModelBackends[hfModel.id] !== null).map((hfModel: HFModelInfo) => {
+                {hfSearchResults.filter((hfModel: HFModelInfo) => {
+                  const backend = hfModelBackends[hfModel.id];
+                  return backend !== null && !(backend != null && ['sd-cpp', 'whispercpp'].includes(backend.recipe));
+                }).map((hfModel: HFModelInfo) => {
                   const backend = hfModelBackends[hfModel.id];
                   const isDetecting = detectingBackendFor === hfModel.id;
                   const quants = backend?.quantizations ?? [];
