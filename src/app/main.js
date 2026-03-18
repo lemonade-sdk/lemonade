@@ -674,6 +674,18 @@ const startBeaconListener = async () => {
   }
 };
 
+// Renderer signals that React has mounted and IPC listeners are active.
+// Deliver any pending lemonade:// protocol navigation now.
+ipcMain.on('renderer-ready', () => {
+  rendererReady = true;
+  if (pendingProtocolNav && Object.keys(pendingProtocolNav).length > 0) {
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('navigate', pendingProtocolNav);
+    }
+    pendingProtocolNav = null;
+  }
+});
+
 ipcMain.handle('write-clipboard', (_event, text) => {
   clipboard.writeText(String(text));
 });
@@ -905,14 +917,9 @@ function createWindow() {
 
   mainWindow.loadFile(htmlPath);
 
-  // Deliver any pending lemonade:// navigation once the renderer is ready
-  mainWindow.webContents.on('did-finish-load', () => {
-    rendererReady = true;
-    if (pendingProtocolNav && Object.keys(pendingProtocolNav).length > 0) {
-      mainWindow.webContents.send('navigate', pendingProtocolNav);
-      pendingProtocolNav = null;
-    }
-  });
+  // Pending lemonade:// navigation is delivered when the renderer signals ready
+  // via the 'renderer-ready' IPC (see ipcMain.on below), not on did-finish-load,
+  // because React effects haven't registered their listeners at that point.
 
   // Open all external links in the default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

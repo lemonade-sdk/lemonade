@@ -87,23 +87,6 @@
                       Type="raw" />
     </Property>
 
-    <!-- Detect legacy C++ NSIS-based installer location and uninstaller command -->
-    <Property Id="NSISINSTALLED">
-      <RegistrySearch Id="FindNsisInstall"
-                      Root="HKCU"
-                      Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Lemonade Server"
-                      Name="InstallLocation"
-                      Type="raw" />
-    </Property>
-
-    <Property Id="NSISUNINSTALLSTRING">
-      <RegistrySearch Id="FindNsisUninstall"
-                      Root="HKCU"
-                      Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Lemonade Server"
-                      Name="UninstallString"
-                      Type="raw" />
-    </Property>
-
     <!-- ============================================ -->
     <!-- Conflict Detection: Block dual per-user/all-users installs -->
     <!-- ============================================ -->
@@ -334,52 +317,20 @@
                   Property="INSTALLDIR"
                   Value="[ProgramFilesFolder]Lemonade Server\" />
 
-    <!-- Stop the C++ NSIS server before uninstalling it, wait for processes to fully terminate -->
-    <CustomAction Id="StopNsisServer"
-                  Directory="SystemFolder"
-                  ExeCommand='[SystemFolder]cmd.exe /c if exist "[NSISINSTALLED]\bin\lemonade-server.exe" ("[NSISINSTALLED]\bin\lemonade-server.exe" stop &amp; ping 127.0.0.1 -n 3 &gt;nul)'
-                  Execute="immediate"
-                  Impersonate="yes"
-                  Return="check" />
-
-    <!-- If a legacy C++ NSIS-based installer exists, run its uninstaller and wait for it to complete.
-         The uninstaller may take time to delete large caches, so we wait 10 seconds using ping. -->
-    <CustomAction Id="RunNsisUninstall"
-                  Directory="SystemFolder"
-                  ExeCommand='[SystemFolder]cmd.exe /c ""[NSISUNINSTALLSTRING]" /S &amp; echo Cleaing up legacy Lemonade_Server_Installer.exe installation... &amp; ping 127.0.0.1 -n 11 &gt;nul &amp; if exist "[NSISINSTALLED]" (echo ERROR: Directory still exists after uninstall &amp; dir "[NSISINSTALLED]" &amp; exit /b 1) else (echo Legacy uninstall succeeded &amp; exit /b 0)"'
-                  Execute="immediate"
-                  Impersonate="yes"
-                  Return="check" />
-
-    <!-- Stop server before upgrade using lemonade-server stop from existing MSI install (per-user) -->
-    <!-- This properly stops all child processes (router, llama-server, etc.) -->
+    <!-- Stop server before upgrade — kill all known server processes directly.
+         Works for both old installs (lemonade-server.exe god binary, lemonade-router.exe)
+         and new installs (LemonadeServer.exe embedded server). -->
     <CustomAction Id="StopServerCmd"
                   Directory="SystemFolder"
-                  ExeCommand='[SystemFolder]cmd.exe /c "[EXISTINGINSTALLDIR]bin\lemonade-server.exe" stop'
+                  ExeCommand='cmd.exe /c "taskkill /f /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemonade-router.exe 2>nul &amp; taskkill /f /im lemonade-server.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
 
-    <!-- Stop server before upgrade using lemonade-server stop from existing MSI install (machine-wide) -->
+    <!-- Alias for machine-wide — same action, both scopes use the same process names -->
     <CustomAction Id="StopServerCmdMachine"
                   Directory="SystemFolder"
-                  ExeCommand='[SystemFolder]cmd.exe /c "[EXISTINGINSTALLDIRMACHINE]bin\lemonade-server.exe" stop'
-                  Execute="immediate"
-                  Impersonate="yes"
-                  Return="ignore" />
-
-    <!-- Stop legacy Python-based server from the previous Python NSIS install in INSTALLDIR -->
-    <CustomAction Id="StopLegacyPythonServer"
-                  Directory="SystemFolder"
-                  ExeCommand='[SystemFolder]cmd.exe /c if exist "[INSTALLDIR]bin\lemonade-server.bat" "[INSTALLDIR]bin\lemonade-server.bat" stop'
-                  Execute="immediate"
-                  Impersonate="yes"
-                  Return="ignore" />
-
-    <!-- Clean legacy Python-based install directory in INSTALLDIR before MSI takes over -->
-    <CustomAction Id="CleanLegacyInstall"
-                  Directory="INSTALLDIR"
-                  ExeCommand='[SystemFolder]cmd.exe /c rmdir /s /q "[INSTALLDIR]"'
+                  ExeCommand='cmd.exe /c "taskkill /f /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemonade-router.exe 2>nul &amp; taskkill /f /im lemonade-server.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
@@ -393,26 +344,28 @@
                   Return="asyncNoWait" />
 
     <!-- Auto-launch LemonadeServer.exe after install completes (always runs).
-         Use explorer.exe to launch via the Start Menu shortcut — this avoids a
-         console window flash and ensures the correct working directory. -->
+         Run the exe directly — it's SUBSYSTEM:WINDOWS so no console flash. -->
     <CustomAction Id="AutoLaunchLemonade"
-                  Directory="SystemFolder"
-                  ExeCommand='"[SystemFolder]explorer.exe" "[ProgramMenuDir]Lemonade Server.lnk"'
+                  Directory="BinDir"
+                  ExeCommand='[BinDir]LemonadeServer.exe'
+                  Execute="immediate"
                   Impersonate="yes"
                   Return="asyncNoWait" />
 
-    <!-- Close Electron desktop app before install/upgrade/uninstall -->
+    <!-- Close Electron desktop app before install/upgrade/uninstall.
+         Kill both old name (Lemonade.exe) and new name (lemonade-app.exe),
+         plus LemonadeServer.exe (the new tray+server) for clean upgrade. -->
     <CustomAction Id="CloseElectronApp"
                   Directory="SystemFolder"
-                  ExeCommand='cmd.exe /c "taskkill /f /im lemonade-app.exe 2>nul &amp; exit /b 0"'
+                  ExeCommand='cmd.exe /c "taskkill /f /im lemonade-app.exe 2>nul &amp; taskkill /f /im Lemonade.exe 2>nul &amp; taskkill /f /im LemonadeServer.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
 
-    <!-- Stop server during uninstall -->
+    <!-- Stop server during uninstall — kill directly instead of using the shim -->
     <CustomAction Id="StopServerOnUninstall"
-                  Directory="BinDir"
-                  ExeCommand='cmd.exe /c "lemonade-server.exe stop"'
+                  Directory="SystemFolder"
+                  ExeCommand='cmd.exe /c "taskkill /f /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemonade-router.exe 2>nul &amp; taskkill /f /im lemonade-server.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
@@ -431,27 +384,6 @@
       <Custom Action="SetInstallDirAllUsers"
               Before="CostFinalize"
               Condition="ALLUSERS = 1" />
-
-      <!-- If NSIS-based C++ installer is present, stop the server first, then uninstall -->
-      <Custom Action="StopNsisServer"
-              Before="RunNsisUninstall"
-              Condition="NSISUNINSTALLSTRING AND NOT Installed" />
-
-      <Custom Action="RunNsisUninstall"
-              Before="StopLegacyPythonServer"
-              Condition="NSISUNINSTALLSTRING AND NOT Installed" />
-
-      <!-- Stop legacy Python-based server from the previous Python NSIS install before cleaning its files.
-           Only runs if lemonade-server.bat exists (evidence of Python install). -->
-      <Custom Action="StopLegacyPythonServer"
-              Before="CleanLegacyInstall"
-              Condition="NOT Installed AND NOT NSISUNINSTALLSTRING" />
-
-      <!-- Remove any legacy Python-based install tree in INSTALLDIR (Python NSIS layout).
-           Only runs if we already stopped the Python server (which only runs if .bat exists). -->
-      <Custom Action="CleanLegacyInstall"
-              Before="InstallValidate"
-              Condition="NOT Installed AND NOT NSISUNINSTALLSTRING" />
 
       <!-- Close Electron app before upgrading files -->
       <Custom Action="CloseElectronApp"

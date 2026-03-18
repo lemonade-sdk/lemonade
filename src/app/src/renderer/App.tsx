@@ -156,6 +156,8 @@ const AppContent: React.FC = () => {
         setIsLogsVisible(true);
       }
     });
+    // Tell main process that IPC listeners are active — safe to deliver pending nav
+    window?.api?.signalReady?.();
     return unsubscribe;
   }, []);
 

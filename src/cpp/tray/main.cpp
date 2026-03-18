@@ -45,8 +45,10 @@ static bool wait_for_server(const std::string& host, int port, int timeout_secon
         try {
             httplib::Client cli(connect_host, port);
             cli.set_connection_timeout(1);
-            cli.set_read_timeout(1);
-            auto res = cli.Get("/live");
+            cli.set_read_timeout(5);
+            // Use /api/v1/health instead of /live — /live responds before the model
+            // cache is built, which causes 500s on /models if clients connect too early.
+            auto res = cli.Get("/api/v1/health");
             if (res && res->status == 200) {
                 return true;
             }
