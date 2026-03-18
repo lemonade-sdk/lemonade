@@ -1031,6 +1031,7 @@ jobs:
         run: |
           DEB_FILE="lemonade-server_${{ env.LEMONADE_VERSION }}_amd64.deb"
           echo "Installing .deb package: $DEB_FILE"
+          sudo apt-get update
           sudo apt install ./"$DEB_FILE"
 
           # Verify binaries installed
