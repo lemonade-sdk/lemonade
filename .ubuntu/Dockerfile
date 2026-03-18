@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y \
     libjs-katex \
     libssl-dev \
     libsystemd-dev \
+    libwebsockets-dev \
     libzstd-dev \
     nlohmann-json3-dev \
     ninja-build \
