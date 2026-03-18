@@ -651,11 +651,17 @@ if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
     target_include_directories(lemonade-server-core PUBLIC ${HTTPLIB_INCLUDE_DIRS})
 endif()
 
-# IXWebSocket for WebSocket support (Windows and Linux)
-if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(lemonade-server-core PUBLIC ixwebsocket)
-    target_compile_definitions(lemonade-server-core PUBLIC LEMON_HAS_WEBSOCKET)
+# libwebsockets for WebSocket support
+if(USE_SYSTEM_LWS)
+    target_link_libraries(lemonade-server-core PUBLIC ${LWS_LIBRARIES})
+    target_include_directories(lemonade-server-core PUBLIC ${LWS_INCLUDE_DIRS})
+    target_link_directories(lemonade-server-core PUBLIC ${LWS_LIBRARY_DIRS})
+    target_compile_options(lemonade-server-core PUBLIC ${LWS_CFLAGS_OTHER})
+else()
+    target_link_libraries(lemonade-server-core PUBLIC websockets)
+    target_include_directories(lemonade-server-core PUBLIC ${libwebsockets_BINARY_DIR}/include ${libwebsockets_SOURCE_DIR}/include)
 endif()
+target_compile_definitions(lemonade-server-core PUBLIC LEMON_HAS_WEBSOCKET)
 
 # Enable ARC (Automatic Reference Counting) for macOS Objective-C++ files
 if(APPLE)
