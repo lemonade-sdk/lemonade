@@ -70,9 +70,9 @@ set(MIN_NLOHMANN_JSON_VERSION "3.11.3")
 set(MIN_CLI11_VERSION "2.4.2")
 set(MIN_CURL_VERSION "8.5.0")
 set(MIN_ZSTD_VERSION "1.5.5")
-set(MIN_HTTPLIB_VERSION "0.26.0")
-# If system not found, this is the version that would be downloaded
 set(DOWNLOAD_ZSTD_VERSION "1.5.7")
+set(MIN_HTTPLIB_VERSION "0.26.0")
+set(MIN_LWS_VERSION "4.3.3")
 
 find_package(PkgConfig QUIET)
 
@@ -82,6 +82,7 @@ if(PkgConfig_FOUND)
     pkg_check_modules(CURL QUIET libcurl>=${MIN_CURL_VERSION})
     pkg_check_modules(ZSTD QUIET libzstd>=${MIN_ZSTD_VERSION})
     pkg_check_modules(HTTPLIB QUIET cpp-httplib>=${MIN_HTTPLIB_VERSION})
+    pkg_check_modules(LWS QUIET libwebsockets>=${MIN_LWS_VERSION})
 endif()
 find_path(CLI11_INCLUDE_DIRS "CLI/CLI.hpp")
 find_path(HTTPLIB_INCLUDE_DIRS "httplib.h")
@@ -105,12 +106,14 @@ set(USE_SYSTEM_CURL ${CURL_FOUND})
 set(USE_SYSTEM_ZSTD ${ZSTD_FOUND})
 set(USE_SYSTEM_CLI11 ${CLI11_INCLUDE_DIRS})
 set(USE_SYSTEM_HTTPLIB ${HTTPLIB_FOUND})
+set(USE_SYSTEM_LWS ${LWS_FOUND})
 
 # On macOS, always statically link dependencies to avoid Homebrew dylib issues
 if(APPLE)
     set(USE_SYSTEM_ZSTD OFF)
     set(USE_SYSTEM_CURL OFF)
     set(USE_SYSTEM_HTTPLIB OFF)
+    set(USE_SYSTEM_LWS OFF)
 endif()
 
 if(USE_SYSTEM_JSON)
@@ -151,6 +154,16 @@ else()
     message(STATUS "System cpp-httplib not found or version < ${MIN_HTTPLIB_VERSION}, will use FetchContent")
 endif()
 
+if(USE_SYSTEM_LWS)
+    if(LWS_VERSION)
+        message(STATUS "Using system libwebsockets (version ${LWS_VERSION}, >= ${MIN_LWS_VERSION})")
+    else()
+        message(STATUS "Using system libwebsockets (>= ${MIN_LWS_VERSION})")
+    endif()
+else()
+    message(STATUS "System libwebsockets not found or version < ${MIN_LWS_VERSION}, will use FetchContent")
+endif()
+
 # ============================================================
 # Common dependency configurations
 # ============================================================
@@ -161,7 +174,7 @@ set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "")  # Build static libraries
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # Fetch missing dependencies
-if(NOT USE_SYSTEM_JSON OR NOT USE_SYSTEM_CURL OR NOT USE_SYSTEM_ZSTD OR NOT USE_SYSTEM_CLI11 OR NOT USE_SYSTEM_HTTPLIB)
+if(NOT USE_SYSTEM_JSON OR NOT USE_SYSTEM_CURL OR NOT USE_SYSTEM_ZSTD OR NOT USE_SYSTEM_CLI11 OR NOT USE_SYSTEM_HTTPLIB OR NOT USE_SYSTEM_LWS)
     include(FetchContent)
 endif()
 
@@ -295,23 +308,43 @@ if(NOT USE_SYSTEM_HTTPLIB)
     endif()
 endif()
 
-# === IXWebSocket (for WebSocket support: Windows and Linux) ===
-if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(MIN_IXWEBSOCKET_VERSION "11.4.4")
-    FetchContent_Declare(ixwebsocket
-        GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
-        GIT_TAG v${MIN_IXWEBSOCKET_VERSION}
+# === libwebsockets (for WebSocket support) ===
+if(NOT USE_SYSTEM_LWS)
+    # Workaround: libwebsockets v4.3.3 uses cmake_minimum_required(VERSION 2.8.12)
+    # which CMake 4.x rejects. Allow older policy versions for subdirectory builds.
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.27")
+        cmake_policy(SET CMP0148 OLD)
+    endif()
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+    FetchContent_Declare(libwebsockets
+        GIT_REPOSITORY https://github.com/warmcat/libwebsockets.git
+        GIT_TAG v${MIN_LWS_VERSION}
     )
-    # Disable TLS and ZLIB for simpler setup (localhost only, no compression needed)
-    set(USE_TLS OFF CACHE INTERNAL "")
-    set(USE_OPEN_SSL OFF CACHE INTERNAL "")
-    set(USE_MBED_TLS OFF CACHE INTERNAL "")
-    set(USE_ZLIB OFF CACHE INTERNAL "")
-    set(IXWEBSOCKET_INSTALL OFF CACHE INTERNAL "")
-    FetchContent_MakeAvailable(ixwebsocket)
-    message(STATUS "IXWebSocket will be fetched (v${MIN_IXWEBSOCKET_VERSION})")
+    # Build as static library, disable features we don't need
+    set(LWS_WITH_SHARED OFF CACHE BOOL "" FORCE)
+    set(LWS_WITHOUT_TESTAPPS ON CACHE BOOL "" FORCE)
+    set(LWS_WITHOUT_TEST_SERVER ON CACHE BOOL "" FORCE)
+    set(LWS_WITHOUT_TEST_PING ON CACHE BOOL "" FORCE)
+    set(LWS_WITHOUT_TEST_CLIENT ON CACHE BOOL "" FORCE)
+    set(LWS_WITH_MINIMAL_EXAMPLES OFF CACHE BOOL "" FORCE)
+    # Disable TLS for now (can be enabled later for WSS/network access)
+    set(LWS_WITH_SSL OFF CACHE BOOL "" FORCE)
+    set(LWS_WITH_ZLIB OFF CACHE BOOL "" FORCE)
+    set(LWS_WITH_ZIP_FOPS OFF CACHE BOOL "" FORCE)
+    # Disable -Werror for libwebsockets — newer GCC/Clang triggers warnings in upstream code
+    # First populate to get the source
+    FetchContent_Populate(libwebsockets)
+    # Patch the CMakeLists.txt files to remove -Werror
+    file(READ "${libwebsockets_SOURCE_DIR}/CMakeLists.txt" LWS_CMAKE_MAIN)
+    string(REPLACE "-Werror" "" LWS_CMAKE_MAIN "${LWS_CMAKE_MAIN}")
+    file(WRITE "${libwebsockets_SOURCE_DIR}/CMakeLists.txt" "${LWS_CMAKE_MAIN}")
+    file(READ "${libwebsockets_SOURCE_DIR}/lib/CMakeLists.txt" LWS_CMAKE_LIB)
+    string(REPLACE "-Werror" "" LWS_CMAKE_LIB "${LWS_CMAKE_LIB}")
+    file(WRITE "${libwebsockets_SOURCE_DIR}/lib/CMakeLists.txt" "${LWS_CMAKE_LIB}")
+    # Now add the subdirectory
+    add_subdirectory(${libwebsockets_SOURCE_DIR} ${libwebsockets_BINARY_DIR})
+    message(STATUS "libwebsockets will be fetched (v${MIN_LWS_VERSION})")
 endif()
-
 
 # Use brotli for compression on macOS
 if(APPLE)
@@ -587,10 +620,10 @@ set(SOURCES
     src/cpp/server/backend_manager.cpp
     src/cpp/server/ollama_api.cpp
     src/cpp/server/anthropic_api.cpp
-    $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/streaming_audio_buffer.cpp>
-    $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/vad.cpp>
-    $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/realtime_session.cpp>
-    $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/websocket_server.cpp>
+    src/cpp/server/streaming_audio_buffer.cpp
+    src/cpp/server/vad.cpp
+    src/cpp/server/realtime_session.cpp
+    src/cpp/server/websocket_server.cpp
 )
 
 # Add platform-specific source files
@@ -671,11 +704,17 @@ if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
     target_include_directories(${EXECUTABLE_NAME} PRIVATE ${HTTPLIB_INCLUDE_DIRS})
 endif()
 
-# IXWebSocket for WebSocket support (Windows and Linux)
-if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ixwebsocket)
-    target_compile_definitions(${EXECUTABLE_NAME} PRIVATE LEMON_HAS_WEBSOCKET)
+# libwebsockets for WebSocket support
+if(USE_SYSTEM_LWS)
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${LWS_LIBRARIES})
+    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${LWS_INCLUDE_DIRS})
+    target_link_directories(${EXECUTABLE_NAME} PRIVATE ${LWS_LIBRARY_DIRS})
+    target_compile_options(${EXECUTABLE_NAME} PRIVATE ${LWS_CFLAGS_OTHER})
+else()
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE websockets)
+    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${libwebsockets_BINARY_DIR}/include ${libwebsockets_SOURCE_DIR}/include)
 endif()
+target_compile_definitions(${EXECUTABLE_NAME} PRIVATE LEMON_HAS_WEBSOCKET)
 
 # Enable ARC (Automatic Reference Counting) for macOS Objective-C++ files
 if(APPLE)
@@ -1213,6 +1252,8 @@ if(UNIX AND NOT APPLE)
     set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
     set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
     set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
+    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+    set(CPACK_DEBIAN_PACKAGE_DEBUG ON)
 
     # Installation paths - use ~/.local for user install (no sudo needed)
     # Set via environment: cmake -DCPACK_PACKAGING_INSTALL_PREFIX=$HOME/.local ..
