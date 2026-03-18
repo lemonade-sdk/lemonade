@@ -176,6 +176,19 @@ def _stop_server_via_systemd():
     return False
 
 
+def _wait_for_port_closed(port=PORT, timeout=30):
+    """Wait until nothing is listening on the given port."""
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            conn = socket.create_connection(("localhost", port), timeout=1)
+            conn.close()
+            time.sleep(1)
+        except socket.error:
+            return True
+    return False
+
+
 def stop_lemonade():
     """Kill the lemonade server and stop the model."""
     print("\n=== Stopping Lemonade ===")
@@ -204,6 +217,10 @@ def stop_lemonade():
         print("Warning: stop command timed out")
     except Exception as e:
         print(f"Warning: failed to stop server: {e}")
+
+    # Wait for the server to fully exit before returning — the process may still
+    # hold resources (mutex, port) briefly after acknowledging the shutdown request
+    _wait_for_port_closed()
 
 
 def wait_for_server(port=PORT, timeout=60):

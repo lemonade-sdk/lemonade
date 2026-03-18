@@ -96,10 +96,6 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
 
     // Single instance check — prevents running alongside lemonade-router
     if (lemon::SingleInstance::IsAnotherInstanceRunning("Router")) {
-        MessageBoxA(NULL,
-            "Lemonade Server is already running.\n\n"
-            "Check your system tray for the lemon icon.",
-            "Lemonade Server", MB_OK | MB_ICONINFORMATION);
         return 0;
     }
 
