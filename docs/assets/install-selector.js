@@ -696,7 +696,7 @@ window.lmnInit = function() {
             <td class="lmn-label">Linux Distribution</td>
             <td id="distro-ubuntu" class="lmn-active">Ubuntu 24.04+</td>
             <td id="distro-arch">Arch Linux</td>
-            <td id="distro-fedora">Fedora</td>
+            <td id="distro-fedora">Fedora 43+</td>
             <td id="distro-debian">Debian Trixie+</td>
           </tr>
           <tr id="lmn-install-type">
