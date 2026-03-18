@@ -19,8 +19,67 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  prepare-matrix:
+    name: Prepare build matrix
+    runs-on: ubuntu-latest
+    outputs:
+      build_matrix: ${{ steps.set-matrix.outputs.build_matrix }}
+    steps:
+      - name: Select matrix based on event
+        id: set-matrix
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            {
+              echo 'build_matrix<<EOF'
+              cat <<'JSON'
+          {
+            "include": [
+              {
+                "distro": "Debian",
+                "image": "debian:trixie",
+                "python": "python3"
+              }
+            ]
+          }
+          JSON
+              echo 'EOF'
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo 'build_matrix<<EOF'
+              cat <<'JSON'
+          {
+            "include": [
+              {
+                "distro": "Arch",
+                "image": "archlinux:latest",
+                "python": "python"
+              },
+              {
+                "distro": "Debian",
+                "image": "debian:trixie",
+                "python": "python3"
+              },
+              {
+                "distro": "Fedora",
+                "image": "fedora:latest",
+                "python": "python3"
+              }
+            ]
+          }
+          JSON
+              echo 'EOF'
+            } >> "$GITHUB_OUTPUT"
+          fi
+
   build-linux:
+    needs: prepare-matrix
     name: Build on ${{ matrix.distro }}
     runs-on: ubuntu-latest
     container:
@@ -28,17 +87,7 @@ jobs:
 
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - distro: Arch
-            image: archlinux:latest
-            python: python
-          - distro: Debian
-            image: debian:trixie
-            python: python3
-          - distro: Fedora
-            image: fedora:latest
-            python: python3
+      matrix: ${{ fromJSON(needs.prepare-matrix.outputs.build_matrix) }}
 
     steps:
       - name: Checkout code

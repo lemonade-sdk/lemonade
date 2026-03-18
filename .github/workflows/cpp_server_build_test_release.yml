@@ -31,6 +31,10 @@ permissions:
 env:
   LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ========================================================================
   # BUILD JOBS - Run on rai-160-sdk workers
@@ -39,6 +43,7 @@ jobs:
   build-lemonade-server-installer:
     name: Build Lemonade Server Installer
     runs-on: windows-latest
+    if: github.event_name != 'pull_request'
     outputs:
       unsigned-artifact-id: ${{ steps.upload-unsigned-msi.outputs.artifact-id }}
     steps:
@@ -363,6 +368,7 @@ jobs:
   build-lemonade-rpm:
     name: Build Lemonade .rpm Package
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
     container:
       image: fedora:latest
     outputs:
@@ -421,6 +427,7 @@ jobs:
   build-lemonade-macos-dmg:
     name: Build Lemonade macOS .dmg (with Electron App)
     runs-on: macos-latest
+    if: github.event_name != 'pull_request'
     outputs:
       version: ${{ steps.get_version.outputs.version }}
       has_signing: ${{ steps.check_signing.outputs.has_signing }}
@@ -607,6 +614,7 @@ jobs:
   build-lemonade-appimage:
     name: Build Lemonade AppImage
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
@@ -673,7 +681,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     needs: build-lemonade-server-installer
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
+    if: ${{ github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
     strategy:
       fail-fast: false
       matrix:
@@ -790,7 +798,7 @@ jobs:
     runs-on: [rai300_400, Linux]
     needs: build-lemonade-deb
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
+    if: ${{ github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
     strategy:
       fail-fast: false
       matrix:
@@ -896,6 +904,7 @@ jobs:
   test-rpm-package:
     name: Test .rpm - Fedora
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
     needs: build-lemonade-rpm
     container:
       image: fedora:latest
@@ -942,7 +951,7 @@ jobs:
     needs: build-lemonade-macos-dmg
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
     # Also skip when no signing secrets (tests already ran inline in build job)
-    if: ${{ needs.build-lemonade-macos-dmg.outputs.has_signing == 'true' && !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
+    if: ${{ github.event_name != 'pull_request' && needs.build-lemonade-macos-dmg.outputs.has_signing == 'true' && !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -1003,7 +1012,67 @@ jobs:
   # CLI AND ENDPOINTS TESTS - Run on GitHub-hosted runners (no GPU needed)
   # ========================================================================
 
+  test-cli-endpoints-pr:
+    name: Test PR smoke (ubuntu)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs:
+      - build-lemonade-deb
+    env:
+      LEMONADE_CI_MODE: "True"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download .deb package
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-deb
+          path: .
+
+      - name: Install Lemonade (.deb)
+        shell: bash
+        run: |
+          DEB_FILE="lemonade-server_${{ env.LEMONADE_VERSION }}_amd64.deb"
+          echo "Installing .deb package: $DEB_FILE"
+          sudo apt-get update
+          sudo apt install ./"$DEB_FILE"
+          lemonade-server --version
+
+      - name: Set environment (Linux)
+        shell: bash
+        run: |
+          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+          echo "VENV_PYTHON=.venv/bin/python" >> $GITHUB_ENV
+          echo "SERVER_BINARY=lemonade-server" >> $GITHUB_ENV
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Stop systemd service before tests (Linux)
+        shell: bash
+        run: |
+          echo "Stopping lemonade-server systemd service..."
+          sudo systemctl stop lemonade-server || true
+          sudo systemctl status lemonade-server || true
+
+      - name: Run CLI and endpoint smoke tests
+        shell: bash
+        env:
+          HF_HOME: ${{ env.HF_HOME }}
+        run: |
+          set -e
+          $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY"
+          $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY"
+
   test-cli-endpoints:
+    if: github.event_name != 'pull_request'
     name: Test ${{ matrix.test_type }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs:
