@@ -29,6 +29,8 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/audio/speech` - Text to speech (text -> audio)
 - WS `/realtime` - Realtime Audio Transcription (streaming audio -> text, OpenAI SDK compatible)
 - POST `/api/v1/images/generations` - Image Generation (prompt -> image)
+- POST `/api/v1/images/edits` - Image Editing (image + prompt -> edited image)
+- POST `/api/v1/images/variations` - Image Variations (image -> varied image)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
 
@@ -117,6 +119,7 @@ lemonade-server serve --max-loaded-models -1
 ### Model Types
 
 Models are categorized into these types:
+
 - **LLM** - Chat and completion models (default type)
 - **Embedding** - Models for generating text embeddings (identified by the `embeddings` label)
 - **Reranking** - Models for document reranking (identified by the `reranking` label)
@@ -127,7 +130,11 @@ Each type has its own independent LRU cache, all sharing the same slot limit set
 
 ### Device Constraints
 
-- **NPU Exclusivity:** Only one model can use the NPU at a time. Loading a new NPU model will evict any existing NPU model regardless of type or limits.
+- **NPU Exclusivity:** `flm`, `ryzenai-llm`, and `whispercpp` are mutually exclusive on the NPU.
+    - Loading a model from one of these backends will automatically evict all NPU models from the other backends.
+    - `flm` supports loading 1 ASR model, 1 LLM, and 1 embedding model on the NPU at the same time.
+    - `ryzenai-llm` supports loading exactly 1 LLM, which uses the entire NPU. 
+    - `whispercpp` supports loading exactly 1 ASR model at a time, which uses the entire NPU.
 - **CPU/GPU:** No inherent limits beyond available RAM. Multiple models can coexist on CPU or GPU.
 
 ### Eviction Policy
@@ -808,6 +815,118 @@ Image Generation API. You provide a text prompt and receive a generated image. T
           }'
     ```
 
+### `POST /api/v1/images/edits` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Image Editing API. You provide a source image and a text prompt describing the desired change, and receive an edited image. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend.
+
+> **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Use editing-capable models such as `Flux-2-Klein-4B` or `SD-Turbo`.
+>
+> **Performance:** CPU inference takes several minutes per image. GPU (ROCm) is significantly faster.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `model` | Yes | The Stable Diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` | Yes | The source image file to edit (PNG). Sent as a file in multipart/form-data. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `prompt` | Yes | A text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `mask` | No | An optional mask image (PNG). White areas indicate regions to edit; black areas are preserved. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `size` | No | The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `n` | No | Number of images to generate. Allowed range: `1`–`10`. Default: `1`. Values outside this range are rejected with `400 Bad Request`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `steps` | No | Number of inference steps. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `cfg_scale` | No | Classifier-free guidance scale. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `seed` | No | Random seed for reproducibility. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `user` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `background` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `quality` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `input_fidelity` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `output_compression` | No | OpenAI API compatibility field. Accepted; silently ignored by the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+
+#### Example request
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/images/edits \
+      -F "model=Flux-2-Klein-4B" \
+      -F "prompt=Add a red barn and mountains in the background, photorealistic" \
+      -F "size=512x512" \
+      -F "n=1" \
+      -F "response_format=b64_json" \
+      -F "image=@/path/to/source_image.png"
+    ```
+
+=== "Python (OpenAI client)"
+
+    ```python
+    from openai import OpenAI
+    client = OpenAI(base_url="http://localhost:8000/api/v1", api_key="not-needed")
+    with open("source_image.png", "rb") as image_file:
+        response = client.images.edit(
+            model="Flux-2-Klein-4B",
+            image=image_file,
+            prompt="Add a red barn and mountains in the background, photorealistic",
+            size="512x512",
+        )
+    import base64
+    image_data = base64.b64decode(response.data[0].b64_json)
+    open("edited_image.png", "wb").write(image_data)
+    ```
+
+---
+
+### `POST /api/v1/images/variations` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Image Variations API. You provide a source image and receive a variation of it. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend.
+
+> **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Unlike `/images/edits`, a `prompt` parameter is not supported and will be ignored — the model generates a variation based solely on the input image.
+>
+> **Performance:** CPU inference takes several minutes per image. GPU (ROCm) is significantly faster.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `model` | Yes | The Stable Diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` | Yes | The source image file (PNG). Sent as a file in multipart/form-data. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `size` | No | The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `n` | No | Number of variations to generate. Integer between 1 and 10 inclusive. Default: `1`. Values outside this range result in a 400 Bad Request error. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `user` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+
+#### Example request
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/images/variations \
+      -F "model=Flux-2-Klein-4B" \
+      -F "size=512x512" \
+      -F "n=1" \
+      -F "response_format=b64_json" \
+      -F "image=@/path/to/source_image.png"
+    ```
+
+=== "Python (OpenAI client)"
+
+    ```python
+    from openai import OpenAI
+    client = OpenAI(base_url="http://localhost:8000/api/v1", api_key="not-needed")
+    with open("source_image.png", "rb") as image_file:
+        response = client.images.create_variation(
+            model="Flux-2-Klein-4B",
+            image=image_file,
+            size="512x512",
+            n=1,
+        )
+    import base64
+    image_data = base64.b64decode(response.data[0].b64_json)
+    open("variation.png", "wb").write(image_data)
+    ```
+
+---
+
 ### `POST /api/v1/audio/speech` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Speech Generation API. You provide a text input and receive an audio file. This API uses [Kokoros](https://github.com/lucasjinreal/Kokoros) as the backend.
@@ -1149,6 +1268,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
 | `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`, `--jinja`, `--mmproj`, `--embeddings`, `--reranking`. |
 | `whispercpp_backend` | No | whispercpp | WhisperCpp backend: `npu` or `cpu` on Windows; `cpu` or `vulkan` on Linux. Default is `npu` if supported. |
+| `whispercpp_args` | No | whispercpp | Custom arguments to pass to whisper-server. The following are NOT allowed: `-m`, `--model`, `--port`. Example: `--convert`. |
 | `steps` | No | sd-cpp | Number of inference steps for image generation. Default: 20. |
 | `cfg_scale` | No | sd-cpp | Classifier-free guidance scale for image generation. Default: 7.0. |
 | `width` | No | sd-cpp | Image width in pixels. Default: 512. |
@@ -1177,7 +1297,8 @@ You can configure recipe-specific options on a per-model basis. Lemonade manages
     "llamacpp_backend": "rocm"
   },
   "whisper-large-v3-turbo-q8_0.bin": {
-    "whispercpp_backend": "npu"
+    "whispercpp_backend": "npu",
+    "whispercpp_args": "--convert"
   }
 }
 ```
@@ -1223,14 +1344,15 @@ curl -X POST http://localhost:8000/api/v1/load \
   }'
 ```
 
-Load a Whisper model with NPU backend:
+Load a Whisper model with NPU backend and conversion enabled:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/load \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "whisper-large-v3-turbo-q8_0.bin",
-    "whispercpp_backend": "npu"
+    "whispercpp_backend": "npu",
+    "whispercpp_args": "--convert"
   }'
 ```
 
@@ -1381,7 +1503,7 @@ curl http://localhost:8000/api/v1/health
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
-  - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`)
+  - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
 - `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `--max-loaded-models`):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models

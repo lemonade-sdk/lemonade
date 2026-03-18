@@ -1,11 +1,12 @@
 #include "lemon_tray/tray_app.h"
+#include "lemon_tray/agent_launcher.h"
 #ifdef _WIN32
 #include "lemon_tray/platform/windows_tray.h"  // For set_menu_update_callback
 #endif
 #include "LemonadeServiceManager.h"  // For macOS service management
 #include <lemon/single_instance.h>
-#include <lemon/system_info.h>
 #include <lemon/version.h>
+#include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <httplib.h>
 #include <lemon/utils/aixlog.hpp>
@@ -21,6 +22,7 @@
 #include <cctype>
 #include <vector>
 #include <set>
+#include <optional>
 
 #ifdef _WIN32
 #include <winsock2.h>  // Must come before windows.h
@@ -39,11 +41,10 @@
 #include <fcntl.h>     // for open
 #include <cerrno>      // for errno
 #ifdef HAVE_SYSTEMD
-#include <systemd/sd-bus.h>
-#include <systemd/sd-daemon.h>
 #include <systemd/sd-login.h>
-#endif
-#endif
+#endif // HAVE_SYSTEMD
+#endif // !_WIN32
+#include "lemon_tray/platform/linux_systemd.h"
 
 #ifdef __APPLE__
 #include <mach-o/dyld.h>  // for _NSGetExecutablePath
@@ -72,231 +73,51 @@ static bool is_local_path(const std::string& path) {
     return false;
 }
 
-#if !defined(_WIN32)
-// Check if systemd is running and a unit is active
-static bool is_systemd_service_active(const char* unit_name) {
-#ifdef HAVE_SYSTEMD
-    if (!unit_name || unit_name[0] == '\0') {
-        return false;
+// Normalize a host string into one that is valid for outgoing connections.
+// "0.0.0.0" is a bind-all address, not a connection target.
+// "localhost" can resolve to IPv6 (::1) on some systems, which fails if the
+// server only listens on IPv4.  Both are mapped to "127.0.0.1".
+static std::string normalize_connect_host(const std::string& host) {
+    if (host.empty() || host == "0.0.0.0" || host == "localhost") {
+        return "127.0.0.1";
     }
-
-    if (sd_booted() <= 0) {
-        return false;
-    }
-
-    sd_bus* bus = nullptr;
-    sd_bus_message* reply = nullptr;
-    sd_bus_error error = SD_BUS_ERROR_NULL;
-
-    int r = sd_bus_open_system(&bus);
-    if (r < 0 || !bus) {
-        sd_bus_error_free(&error);
-        return false;
-    }
-
-    r = sd_bus_call_method(
-        bus,
-        "org.freedesktop.systemd1",
-        "/org/freedesktop/systemd1",
-        "org.freedesktop.systemd1.Manager",
-        "GetUnit",
-        &error,
-        &reply,
-        "s",
-        unit_name
-    );
-
-    if (r < 0 || !reply) {
-        sd_bus_error_free(&error);
-        sd_bus_unref(bus);
-        return false;
-    }
-
-    const char* unit_path = nullptr;
-    r = sd_bus_message_read(reply, "o", &unit_path);
-    sd_bus_message_unref(reply);
-    reply = nullptr;
-
-    if (r < 0 || !unit_path) {
-        sd_bus_error_free(&error);
-        sd_bus_unref(bus);
-        return false;
-    }
-
-    char* active_state = nullptr;
-    r = sd_bus_get_property_string(
-        bus,
-        "org.freedesktop.systemd1",
-        unit_path,
-        "org.freedesktop.systemd1.Unit",
-        "ActiveState",
-        &error,
-        &active_state
-    );
-
-    if (r < 0 || !active_state) {
-        sd_bus_error_free(&error);
-        sd_bus_unref(bus);
-        return false;
-    }
-
-    bool is_active =
-        (strcmp(active_state, "active") == 0) ||
-        (strcmp(active_state, "activating") == 0) ||
-        (strcmp(active_state, "reloading") == 0);
-
-    free(active_state);
-    sd_bus_error_free(&error);
-    sd_bus_unref(bus);
-
-    return is_active;
-#else
-    (void)unit_name;
-    return false;
-#endif
+    return host;
 }
 
-// Get systemd service MainPID (returns 0 if unavailable)
-static int get_systemd_service_main_pid(const char* unit_name) {
-#ifdef HAVE_SYSTEMD
-    if (!unit_name || unit_name[0] == '\0') {
-        return 0;
+static std::string trim_whitespace(const std::string& value) {
+    const auto begin = value.find_first_not_of(" \t\r\n");
+    if (begin == std::string::npos) {
+        return "";
     }
 
-    if (sd_booted() <= 0) {
-        return 0;
-    }
-
-    sd_bus* bus = nullptr;
-    sd_bus_message* reply = nullptr;
-    sd_bus_error error = SD_BUS_ERROR_NULL;
-
-    int r = sd_bus_open_system(&bus);
-    if (r < 0 || !bus) {
-        sd_bus_error_free(&error);
-        return 0;
-    }
-
-    r = sd_bus_call_method(
-        bus,
-        "org.freedesktop.systemd1",
-        "/org/freedesktop/systemd1",
-        "org.freedesktop.systemd1.Manager",
-        "GetUnit",
-        &error,
-        &reply,
-        "s",
-        unit_name
-    );
-
-    if (r < 0 || !reply) {
-        sd_bus_error_free(&error);
-        sd_bus_unref(bus);
-        return 0;
-    }
-
-    const char* unit_path = nullptr;
-    r = sd_bus_message_read(reply, "o", &unit_path);
-    sd_bus_message_unref(reply);
-    reply = nullptr;
-
-    if (r < 0 || !unit_path) {
-        sd_bus_error_free(&error);
-        sd_bus_unref(bus);
-        return 0;
-    }
-
-    unsigned int main_pid = 0;
-    r = sd_bus_get_property_trivial(
-        bus,
-        "org.freedesktop.systemd1",
-        unit_path,
-        "org.freedesktop.systemd1.Service",
-        "MainPID",
-        &error,
-        'u',
-        &main_pid
-    );
-
-    if (r < 0) {
-        sd_bus_error_free(&error);
-        sd_bus_unref(bus);
-        return 0;
-    }
-
-    sd_bus_error_free(&error);
-    sd_bus_unref(bus);
-
-    return static_cast<int>(main_pid);
-#else
-    (void)unit_name;
-    return 0;
-#endif
+    const auto end = value.find_last_not_of(" \t\r\n");
+    return value.substr(begin, end - begin + 1);
 }
 
-// Check if systemd service is active in another process (not this one)
-static bool is_systemd_service_active_other_process(const char* unit_name) {
-#ifdef HAVE_SYSTEMD
-    if (!is_systemd_service_active(unit_name)) {
-        return false;
+static std::string build_launch_llamacpp_args(const lemon::TrayConfig& tray_config) {
+    static const std::string default_args = "-b 16384 -ub 16384 -fa on";
+    const std::string trimmed_user_args = trim_whitespace(tray_config.launch_llamacpp_args);
+
+    if (tray_config.launch_use_recipe) {
+        return trimmed_user_args;
     }
 
-    int main_pid = get_systemd_service_main_pid(unit_name);
-    if (main_pid <= 0) {
-        return false;
+    if (!trimmed_user_args.empty()) {
+        return trimmed_user_args;
     }
 
-    return (main_pid != getpid());
-#else
-    (void)unit_name;
-    return false;
-#endif
+    return default_args;
 }
 
-// Known systemd unit names for lemonade server (native or snap)
-static const char* kSystemdUnitNames[] = {
-    "lemonade-server.service",
-    "snap.lemonade-server.daemon.service"
-};
-
-static const char* get_active_systemd_unit_name() {
-    for (const auto* unit_name : kSystemdUnitNames) {
-        if (is_systemd_service_active(unit_name)) {
-            return unit_name;
-        }
+static nlohmann::json build_launch_recipe_options(const lemon::TrayConfig& tray_config) {
+    nlohmann::json recipe_options = nlohmann::json::object();
+    const std::string merged_args = build_launch_llamacpp_args(tray_config);
+    if (!merged_args.empty()) {
+        recipe_options["llamacpp_args"] = merged_args;
     }
-    return nullptr;
+    return recipe_options;
 }
 
-static bool is_any_systemd_service_active() {
-    return get_active_systemd_unit_name() != nullptr;
-}
-
-static int get_systemd_any_service_main_pid() {
-    const char* unit_name = get_active_systemd_unit_name();
-    if (!unit_name) {
-        return 0;
-    }
-    return get_systemd_service_main_pid(unit_name);
-}
-
-static bool is_systemd_any_service_active_other_process() {
-    for (const auto* unit_name : kSystemdUnitNames) {
-        if (is_systemd_service_active_other_process(unit_name)) {
-            return true;
-        }
-    }
-    return false;
-}
-#endif
-
-static bool is_service_active() {
-#ifdef HAVE_SYSTEMD
-    return is_any_systemd_service_active();
-#else
-    return false;
-#endif
-}
 
 #ifndef _WIN32
 
@@ -522,8 +343,9 @@ int TrayApp::run() {
     bool server_already_running = false;
     bool run_command_already_executed = false;
 
-    // Find server binary automatically (needed for most commands)
-    if (server_binary_.empty()) {
+    // Find server binary automatically (not needed for launch/status/stop)
+    if (server_binary_.empty() && tray_config_.command != "launch" &&
+        tray_config_.command != "status" && tray_config_.command != "stop") {
     LOG(DEBUG, "TrayApp") << "Searching for server binary..." << std::endl;
         if (!find_server_binary()) {
             std::cerr << "Error: Could not find lemonade-router binary" << std::endl;
@@ -553,6 +375,8 @@ int TrayApp::run() {
         return execute_recipes_command();
     } else if (tray_config_.command == "logs") {
         return execute_logs_command();
+    } else if (tray_config_.command == "launch") {
+        return execute_launch_command();
     } else if (tray_config_.command == "serve" || tray_config_.command == "run") {
         auto connect_to_running_server = [this, &server_already_running, &run_command_already_executed](const char* context) -> int {
             std::cout << "Lemonade Server is " << context << " already running. Connecting to it..." << std::endl;
@@ -564,14 +388,11 @@ int TrayApp::run() {
                 return 1;
             }
 
+            server_config_.host = normalize_connect_host(server_config_.host);
             server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
             server_config_.port = running_port;
 
             server_already_running = true;
-
-            if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
-                server_config_.host = "localhost";
-            }
 
             if (tray_config_.command == "run") {
                 int result = execute_run_command();
@@ -651,10 +472,7 @@ int TrayApp::run() {
             if (running_port != 0) {
                 std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
                 // Create server manager to communicate with running server
-                // Use localhost to connect (works regardless of what the server is bound to)
-                if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
-                    server_config_.host = "localhost";
-                }
+                server_config_.host = normalize_connect_host(server_config_.host);
                 server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
                 server_manager_->set_port(running_port);
                 server_config_.port = running_port;  // Update config to match running server
@@ -676,14 +494,10 @@ int TrayApp::run() {
                     std::cout << "Server service started on port " << running_port << std::endl;
 
                     // Create server manager to communicate with running server
+                    server_config_.host = normalize_connect_host(server_config_.host);
                     server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
                     server_manager_->set_port(running_port);
                     server_config_.port = running_port;  // Update config to match running server
-
-                    // Use localhost to connect (works regardless of what the server is bound to)
-                    if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
-                        server_config_.host = "localhost";
-                    }
 
                     // Continue to tray initialization below
                     break;
@@ -694,31 +508,60 @@ int TrayApp::run() {
                 }
             }
         }
-#else
-        // Other platforms: Tray-only mode - just show tray connected to existing server
-        // Check if server is already running
-        auto [pid, running_port] = get_server_info();
-        if (running_port == 0) {
-            std::cerr << "Error: No Lemonade Server is currently running.\n"
-                      << "Start the server first with: lemonade-server serve\n"
-                      << "Or run: lemonade-server serve --no-tray" << std::endl;
-            return 1;
-        }
+#elif !defined(_WIN32)
+        // Linux/Unix: Try to connect to running server, or start one
+        {
+            auto [pid, running_port] = get_server_info();
+            if (running_port != 0) {
+                // Server is already running — connect to it
+                // Track PID only for non-systemd processes (systemd ones are tracked by unit name)
+                if (!is_any_systemd_service_active()) {
+                    external_server_pid_ = pid;
+                }
+                server_config_.host = normalize_connect_host(server_config_.host);
+                server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
+                server_manager_->set_port(running_port);
+                server_config_.port = running_port;
+                std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
+            } else {
+                // No server running — try to start one
+                bool started = false;
 
-        // Create server manager to communicate with running server
-        server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
-        server_manager_->set_port(running_port);
-        server_config_.port = running_port;  // Update config to match running server
-
-        // Use localhost to connect (works regardless of what the server is bound to)
-        if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
-            server_config_.host = "localhost";
-        }
-
-        std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
-
-        // Continue to tray initialization below (skip server startup)
+#ifdef HAVE_SYSTEMD
+                auto unit = get_first_known_systemd_unit();
+                if (unit) {
+                    std::cout << "Starting server via systemd: " << unit.name << std::endl;
+                    if (systemd_control_service(unit, /*start=*/true)) {
+                        // Wait up to 10 seconds for server to appear
+                        for (int i = 0; i < 10 && !started; ++i) {
+                            std::this_thread::sleep_for(std::chrono::seconds(1));
+                            auto [spid, sport] = get_server_info();
+                            if (sport != 0) {
+                                server_config_.host = normalize_connect_host(server_config_.host);
+                                server_manager_ = std::make_unique<ServerManager>(server_config_.host, sport);
+                                server_manager_->set_port(sport);
+                                server_config_.port = sport;
+                                started = true;
+                            }
+                        }
+                    }
+                }
 #endif
+
+                if (!started) {
+                    // No systemd unit available — spawn lemonade-router directly
+                    std::cout << "Starting Lemonade Server..." << std::endl;
+                    server_config_.host = normalize_connect_host(server_config_.host);
+                    server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
+                    if (!start_server()) {
+                        std::cerr << "Error: Failed to start Lemonade Server" << std::endl;
+                        return 1;
+                    }
+                    process_owns_server_ = true;
+                }
+            }
+        }
+#endif  // !__APPLE__ && !_WIN32
     } else {
         std::cerr << "Internal Error: Unhandled command '" << tray_config_.command << "'\n" << std::endl;
         return 1;
@@ -845,11 +688,74 @@ int TrayApp::run() {
     } else {
     LOG(DEBUG, "TrayApp") << "Icon found at: " << icon_path << std::endl;
     }
+#elif defined(__linux__)
+    // On Linux, search XDG data directories for the installed icon first.
+    // The SVG in the hicolor icon theme is the preferred format for AppIndicator3.
+    {
+        std::vector<std::string> data_dirs;
+        // XDG_DATA_HOME takes priority (defaults to ~/.local/share)
+        const char* xdg_data_home = getenv("XDG_DATA_HOME");
+        if (xdg_data_home && xdg_data_home[0]) {
+            data_dirs.push_back(xdg_data_home);
+        } else {
+            const char* home = getenv("HOME");
+            if (home && home[0]) data_dirs.push_back(std::string(home) + "/.local/share");
+        }
+        // Then XDG_DATA_DIRS (system-wide locations)
+        const char* xdg_data_dirs = getenv("XDG_DATA_DIRS");
+        if (xdg_data_dirs && xdg_data_dirs[0]) {
+            std::istringstream ss(xdg_data_dirs);
+            std::string d;
+            while (std::getline(ss, d, ':')) {
+                if (!d.empty()) data_dirs.push_back(d);
+            }
+        } else {
+            data_dirs.push_back("/usr/local/share");
+            data_dirs.push_back("/usr/share");
+            data_dirs.push_back("/opt/lemonade/share");
+        }
+        for (const auto& d : data_dirs) {
+            // Preferred: SVG in the hicolor icon theme (installed by RPM/DEB)
+            auto svg = fs::path(d) / "icons/hicolor/scalable/apps/ai.lemonade_server.Lemonade.svg";
+            if (fs::exists(svg)) {
+                icon_path = svg.string();
+                LOG(DEBUG, "TrayApp") << "Icon found in hicolor theme: " << icon_path << std::endl;
+                break;
+            }
+            // Fallback: favicon.ico in the lemonade-server share directory
+            auto ico = fs::path(d) / "lemonade-server/resources/static/favicon.ico";
+            if (fs::exists(ico)) {
+                icon_path = ico.string();
+                LOG(DEBUG, "TrayApp") << "Icon found in share dir: " << icon_path << std::endl;
+                break;
+            }
+        }
+    }
+
+    if (icon_path.empty()) {
+        // Development build: try relative to CWD and executable directory
+        fs::path exe_path = fs::path(server_binary_).parent_path();
+        std::vector<fs::path> dev_paths = {
+            "resources/static/favicon.ico",
+            exe_path / "resources" / "static" / "favicon.ico",
+            exe_path / "resources" / "favicon.ico",
+        };
+        for (const auto& p : dev_paths) {
+            if (fs::exists(p)) {
+                icon_path = p.string();
+                LOG(DEBUG, "TrayApp") << "Icon found (dev path): " << icon_path << std::endl;
+                break;
+            }
+        }
+    }
+
+    if (icon_path.empty()) {
+        LOG(WARNING, "TrayApp") << "Icon not found at any known location; will use default icon" << std::endl;
+    }
 #else
-    // On other platforms, find icon file path
+    // On Windows and other platforms, find icon file path
     icon_path = "resources/static/favicon.ico";
     LOG(DEBUG, "TrayApp") << "Checking icon at: " << fs::absolute(icon_path).string() << std::endl;
-
 
     if (!fs::exists(icon_path)) {
         // Try relative to executable directory
@@ -857,14 +763,12 @@ int TrayApp::run() {
         icon_path = (exe_path / "resources" / "static" / "favicon.ico").string();
     LOG(DEBUG, "TrayApp") << "Icon not found, trying: " << icon_path << std::endl;
 
-
         // If still not found, try without static subdir (fallback)
         if (!fs::exists(icon_path)) {
             icon_path = (exe_path / "resources" / "favicon.ico").string();
         LOG(DEBUG, "TrayApp") << "Icon not found, trying fallback: " << icon_path << std::endl;
         }
     }
-
 
     if (fs::exists(icon_path)) {
     LOG(DEBUG, "TrayApp") << "Icon found at: " << icon_path << std::endl;
@@ -892,9 +796,7 @@ int TrayApp::run() {
     // This allows us to handle Ctrl+C cleanly even when tray is running
     LOG(DEBUG, "TrayApp") << "Starting signal monitor thread..." << std::endl;
     signal_monitor_thread_ = std::thread([this]() {
-        #ifdef __APPLE__
         auto last_tick = std::chrono::steady_clock::now();
-        #endif
         while (!stop_signal_monitor_ && !should_exit_) {
             fd_set readfds;
             FD_ZERO(&readfds);
@@ -902,18 +804,13 @@ int TrayApp::run() {
 
             struct timeval tv = {0, 100000};  // 100ms timeout
             int result = select(signal_pipe_[0] + 1, &readfds, nullptr, nullptr, &tv);
-            #ifdef __APPLE__
-            // Check if 5 seconds have passed, refresh menu
+            // Check if 5 seconds have passed, refresh menu (both macOS and Linux)
             auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_tick).count() >= 5) {
-
             LOG(DEBUG, "TrayApp") << "Checking if menu needs refresh" << std::endl;
                 refresh_menu();
-
-                // Reset the tracker
                 last_tick = now;
             }
-            #endif
             if (result > 0 && FD_ISSET(signal_pipe_[0], &readfds)) {
                 // Signal received (SIGINT from Ctrl+C)
                 char sig;
@@ -1314,23 +1211,8 @@ int TrayApp::execute_pull_command() {
 
         std::cout << "Importing model from local path: " << tray_config_.checkpoint << std::endl;
 
-        // Get HF cache directory (same logic as ModelManager)
-        std::string hf_cache;
-        if (const char* env = std::getenv("HF_HUB_CACHE")) {
-            hf_cache = env;
-        } else if (const char* env = std::getenv("HF_HOME")) {
-            hf_cache = std::string(env) + "/hub";
-        } else {
-#ifdef _WIN32
-            if (const char* userprofile = std::getenv("USERPROFILE")) {
-                hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
-            }
-#else
-            if (const char* home = std::getenv("HOME")) {
-                hf_cache = std::string(home) + "/.cache/huggingface/hub";
-            }
-#endif
-        }
+        // Get HF cache directory
+        std::string hf_cache = lemon::utils::get_hf_cache_dir();
 
         // Copy files to HF cache
         std::string model_name_clean = tray_config_.model.substr(5); // Remove "user." prefix
@@ -1646,6 +1528,87 @@ int TrayApp::execute_status_command() {
     }
 }
 
+int TrayApp::execute_launch_command() {
+    AgentConfig agent_config;
+    std::string config_error;
+    const nlohmann::json launch_recipe_options = build_launch_recipe_options(tray_config_);
+
+    const std::string requested_host = server_config_.host;
+
+    int port = server_config_.port;
+    const bool local_host_target = requested_host.empty() || requested_host == "localhost" ||
+                                   requested_host == "127.0.0.1" || requested_host == "0.0.0.0";
+    if (!tray_config_.launch_port_specified && local_host_target) {
+        auto [pid, discovered_port] = get_server_info();
+        (void)pid;
+        if (discovered_port > 0) {
+            port = discovered_port;
+        }
+    }
+
+    std::string host = normalize_connect_host(server_config_.host);
+
+    if (!build_agent_config(tray_config_.launch_agent, host, port, tray_config_.launch_model,
+                            agent_config, config_error)) {
+        LOG(ERROR, "TrayApp") << "Failed to build agent config: " << config_error << std::endl;
+        return 1;
+    }
+
+    const std::string agent_binary = find_agent_binary(agent_config);
+    if (agent_binary.empty()) {
+        LOG(ERROR, "TrayApp") << "Agent binary not found for " << tray_config_.launch_agent << std::endl;
+        if (!agent_config.install_instructions.empty()) {
+            LOG(ERROR, "TrayApp") << agent_config.install_instructions << std::endl;
+        }
+        return 1;
+    }
+
+    httplib::Client cli(host, port);
+    cli.set_connection_timeout(1);
+    cli.set_read_timeout(1);
+    auto health = cli.Get("/api/version");
+    if (!health) {
+        LOG(ERROR, "TrayApp") << "Error: Lemonade server is not reachable at http://" << host << ":" << port << "." << std::endl;
+        LOG(INFO, "TrayApp") << "Start the server first with: lemonade-server serve --no-tray" << std::endl;
+        return 1;
+    }
+
+    // Start model preload in the background so agent launch is not blocked.
+    const std::string load_host = host;
+    const int load_port = port;
+    const std::string load_model = tray_config_.launch_model;
+    std::thread([load_host, load_port, load_model, launch_recipe_options]() {
+        try {
+            auto load_manager = std::make_unique<ServerManager>(load_host, load_port);
+            load_manager->load_model(load_model, launch_recipe_options, false);
+        } catch (...) {
+            // Silently ignore — the agent TUI owns stdout/stderr now.
+        }
+    }).detach();
+
+    LOG(INFO, "TrayApp") << "Loading model in background: " << tray_config_.launch_model << std::endl;
+    LOG(INFO, "TrayApp") << "Launching " << tray_config_.launch_agent << "..." << std::endl;
+
+    // Disable all logging before the agent takes over the terminal.
+    AixLog::Log::init({});
+
+    lemon::utils::ProcessHandle handle;
+    try {
+        handle = lemon::utils::ProcessManager::start_process(
+            agent_binary,
+            agent_config.extra_args,
+            "",
+            true,
+            false,
+            agent_config.env_vars);
+    } catch (const std::exception& e) {
+        LOG(ERROR, "TrayApp") << "Error: Failed to launch agent process: " << e.what() << std::endl;
+        return 1;
+    }
+
+    return lemon::utils::ProcessManager::wait_for_exit(handle, -1);
+}
+
 int TrayApp::execute_recipes_command() {
     // Handle --install flag
     if (!tray_config_.install_backend.empty()) {
@@ -1796,54 +1759,73 @@ int TrayApp::execute_recipes_command() {
         });
     }
 
-    // Default: list recipes
-    auto statuses = lemon::SystemInfo::get_all_recipe_statuses();
+    // Default: list recipes by querying the server's /system-info endpoint
+    return server_call([](std::unique_ptr<ServerManager> const &server_manager) {
+        try {
+            std::string response = server_manager->make_http_request("/api/v1/system-info");
+            auto system_info = nlohmann::json::parse(response);
 
-    // Print table header
-    std::cout << std::left << std::setw(20) << "Recipe"
-              << std::setw(12) << "Backend"
-              << std::setw(16) << "Status"
-              << std::setw(46) << "Message/Version"
-              << "Action" << std::endl;
-    std::cout << std::string(148, '-') << std::endl;
-
-    for (const auto& status : statuses) {
-        bool first_backend = true;
-
-        if (status.backends.empty()) {
-            std::cout << std::left << std::setw(20) << status.name
-                      << std::setw(12) << "-"
-                      << std::setw(16) << "unsupported"
-                      << std::setw(46) << "No backend definitions"
-                      << "-" << std::endl;
-        } else {
-            for (const auto& backend : status.backends) {
-                std::string recipe_col = first_backend ? status.name : "";
-                std::string status_str = backend.state.empty() ? "unsupported" : backend.state;
-
-                std::string info_col;
-                if (status_str == "installed" && !backend.version.empty() && backend.version != "unknown") {
-                    info_col = backend.version;
-                } else if (!backend.message.empty()) {
-                    info_col = backend.message;
-                } else {
-                    info_col = "-";
-                }
-                std::string action_col = backend.action.empty() ? "-" : backend.action;
-
-                std::cout << std::left << std::setw(20) << recipe_col
-                          << std::setw(12) << backend.name
-                          << std::setw(16) << status_str
-                          << std::setw(46) << info_col
-                          << " " << action_col << std::endl;
-
-                first_backend = false;
+            if (!system_info.contains("recipes") || !system_info["recipes"].is_object()) {
+                std::cerr << "No recipe information available from server" << std::endl;
+                return 1;
             }
-        }
-    }
 
-    std::cout << std::string(148, '-') << std::endl;
-    return 0;
+            // Print table header
+            std::cout << std::left << std::setw(20) << "Recipe"
+                      << std::setw(12) << "Backend"
+                      << std::setw(16) << "Status"
+                      << std::setw(46) << "Message/Version"
+                      << "Action" << std::endl;
+            std::cout << std::string(148, '-') << std::endl;
+
+            const auto& recipes = system_info["recipes"];
+            for (auto& [recipe_name, recipe_info] : recipes.items()) {
+                bool first_backend = true;
+
+                if (!recipe_info.contains("backends") || !recipe_info["backends"].is_object() ||
+                    recipe_info["backends"].empty()) {
+                    std::cout << std::left << std::setw(20) << recipe_name
+                              << std::setw(12) << "-"
+                              << std::setw(16) << "unsupported"
+                              << std::setw(46) << "No backend definitions"
+                              << "-" << std::endl;
+                } else {
+                    for (auto& [backend_name, backend_info] : recipe_info["backends"].items()) {
+                        std::string recipe_col = first_backend ? recipe_name : "";
+                        std::string state = backend_info.value("state", "unsupported");
+                        std::string status_str = state.empty() ? "unsupported" : state;
+
+                        std::string info_col;
+                        std::string version = backend_info.value("version", "");
+                        std::string message = backend_info.value("message", "");
+                        if (status_str == "installed" && !version.empty() && version != "unknown") {
+                            info_col = version;
+                        } else if (!message.empty()) {
+                            info_col = message;
+                        } else {
+                            info_col = "-";
+                        }
+                        std::string action = backend_info.value("action", "");
+                        std::string action_col = action.empty() ? "-" : action;
+
+                        std::cout << std::left << std::setw(20) << recipe_col
+                                  << std::setw(12) << backend_name
+                                  << std::setw(16) << status_str
+                                  << std::setw(46) << info_col
+                                  << " " << action_col << std::endl;
+
+                        first_backend = false;
+                    }
+                }
+            }
+
+            std::cout << std::string(148, '-') << std::endl;
+            return 0;
+        } catch (const std::exception& e) {
+            std::cerr << "Error listing recipes: " << e.what() << std::endl;
+            return 1;
+        }
+    });
 }
 
 // Check if a process is alive (cross-platform)
@@ -1856,6 +1838,27 @@ static bool is_process_alive(int pid) {
 #endif
 }
 
+#ifndef _WIN32
+// Best-effort poll: probes whether the SingleInstance lock for lemonade-router is acquirable.
+// Returns true when the lock appears free, false if timeout_ms elapses.
+// There is an inherent TOCTOU window between this returning true and lemonade-router's own
+// lock acquisition — callers must treat the result as advisory, not a guarantee.
+static bool poll_router_lock_free(int timeout_ms) {
+    std::string lock_file = lemon::utils::get_runtime_dir() + "/lemonade_Router.lock";
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    while (std::chrono::steady_clock::now() < deadline) {
+        int fd = open(lock_file.c_str(), O_RDONLY | O_CLOEXEC);
+        if (fd == -1) return true;  // File doesn't exist — lock is free
+        bool free = (flock(fd, LOCK_EX | LOCK_NB) == 0);
+        if (free) flock(fd, LOCK_UN);
+        close(fd);
+        if (free) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    return false;
+}
+#endif
+
 int TrayApp::execute_stop_command() {
     auto [pid, port] = get_server_info();
 
@@ -1865,12 +1868,13 @@ int TrayApp::execute_stop_command() {
     }
 
     // On Linux, check if server is managed by systemd and warn user
-#ifndef _WIN32
-    const char* active_systemd_unit = get_active_systemd_unit_name();
+#if !defined(_WIN32) && defined(HAVE_SYSTEMD)
+    auto active_systemd_unit = get_active_systemd_unit_info();
     if (active_systemd_unit) {
         std::cerr << "Error: Lemonade Server is managed by systemd." << std::endl;
-        std::string unit_name(active_systemd_unit);
-        std::cerr << "Please use: sudo systemctl stop " << unit_name << std::endl;
+        std::cerr << "Please use: systemctl"
+                  << (active_systemd_unit.scope == SystemdBusScope::User ? " --user" : "")
+                  << " stop " << active_systemd_unit.name << std::endl;
         std::cerr << "Instead of: lemonade-server stop" << std::endl;
         return 1;
     }
@@ -2295,13 +2299,27 @@ void TrayApp::stop_server() {
 void TrayApp::build_menu() {
     if (!tray_) return;
 
+    // Fetch server state once before building the menu so the cached snapshot
+    // matches the state that was used to construct it.
+    auto [reachable, loaded_models] = fetch_server_state();
+    auto available_models = get_downloaded_models();
 
-    Menu menu = create_menu();
+    bool owns_server = false;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        owns_server = process_owns_server_;
+    }
+
+    Menu menu = create_menu(reachable, owns_server);
     tray_->set_menu(menu);
 
-    // Cache current state for refresh comparisons
-    last_menu_loaded_models_ = get_all_loaded_models();
-    last_menu_available_models_ = get_downloaded_models();
+    // Cache state for refresh comparisons — written under state_mutex_ to prevent data race.
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        last_menu_server_reachable_ = reachable;
+        last_menu_loaded_models_ = std::move(loaded_models);
+        last_menu_available_models_ = std::move(available_models);
+    }
 }
 
 void TrayApp::refresh_menu() {
@@ -2315,24 +2333,30 @@ void TrayApp::refresh_menu() {
 }
 
 bool TrayApp::menu_needs_refresh() {
-    // Check if loaded models have changed
-    auto current_loaded = get_all_loaded_models();
-    if (current_loaded != last_menu_loaded_models_) {
-        return true;
+    // Fetch and compare under state_mutex_ to avoid data races with build_menu().
+    // Snapshot last_menu_available_models_ here too so the comparison below is race-free.
+    decltype(last_menu_available_models_) last_available;
+    bool state_changed = false;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        auto [reachable, loaded] = fetch_server_state();
+        if (reachable != last_menu_server_reachable_) state_changed = true;
+        if (!state_changed && loaded != last_menu_loaded_models_) state_changed = true;
+        last_available = last_menu_available_models_;
     }
+    if (state_changed) return true;
 
-    // Check if available models have changed
+    // get_downloaded_models() is an I/O call — done outside the lock to avoid holding
+    // state_mutex_ during network/filesystem access.
     auto current_available = get_downloaded_models();
-    if (current_available != last_menu_available_models_) {
+    if (current_available != last_available) {
         return true;
     }
-
-    // Could add more checks here for other dynamic content
 
     return false;
 }
 
-Menu TrayApp::create_menu() {
+Menu TrayApp::create_menu(bool server_reachable, bool owns_server) {
     Menu menu;
 
     // Open app - at the very top (Electron app takes priority, web app as fallback)
@@ -2467,7 +2491,83 @@ Menu TrayApp::create_menu() {
             build_menu();
         }));
     }
-#endif
+#elif defined(__linux__)
+    // Linux server management (server_reachable and owns_server passed in from build_menu())
+    {
+#ifdef HAVE_SYSTEMD
+        auto active_unit = get_active_systemd_unit_info();
+        if (active_unit) {
+            // Server is actively managed by systemd — delegate stop to systemd
+            std::string stop_label = (active_unit.scope == SystemdBusScope::System)
+                ? "Stop Service (requires admin)" : "Stop Service";
+            menu.add_item(MenuItem::Action(stop_label, [this, active_unit]() {
+                std::thread([this, active_unit]() {
+                    if (!systemd_control_service(active_unit, /*start=*/false)) {
+                        show_notification("Stop Failed",
+                            std::string("Could not stop service. Try: systemctl") +
+                            (active_unit.scope == SystemdBusScope::User ? " --user" : "") +
+                            " stop " + active_unit.name);
+                    }
+                    build_menu();
+                }).detach();
+            }));
+        } else {
+            // systemd unit not active — check if it exists for Start option
+            auto known_unit = get_first_known_systemd_unit();
+            if (known_unit && !server_reachable) {
+                std::string start_label = (known_unit.scope == SystemdBusScope::System)
+                    ? "Start Service (requires admin)" : "Start Service";
+                menu.add_item(MenuItem::Action(start_label, [this, known_unit]() {
+                    std::thread([this, known_unit]() {
+                        if (systemd_control_service(known_unit, /*start=*/true)) {
+                            bool server_appeared = false;
+                            for (int i = 0; i < 10; ++i) {
+                                std::this_thread::sleep_for(std::chrono::seconds(1));
+                                auto [pid, port] = get_server_info();
+                                if (port != 0) {
+                                    {
+                                        std::lock_guard<std::mutex> lock(state_mutex_);
+                                        server_manager_ = std::make_unique<ServerManager>(server_config_.host, port);
+                                        server_manager_->set_port(port);
+                                        server_config_.port = port;
+                                    }
+                                    server_appeared = true;
+                                    break;
+                                }
+                            }
+                            if (!server_appeared) {
+                                LOG(WARNING, "TrayApp") << "Server did not become reachable after systemd start" << std::endl;
+                                show_notification("Start Warning",
+                                    "Service started but server did not respond within 10s.");
+                            }
+                        } else {
+                            show_notification("Start Failed",
+                                std::string("Could not start service. Try: systemctl") +
+                                (known_unit.scope == SystemdBusScope::User ? " --user" : "") +
+                                " start " + known_unit.name);
+                        }
+                        build_menu();
+                    }).detach();
+                }));
+            } else if (server_reachable && owns_server) {
+                menu.add_item(MenuItem::Action("Stop Server", [this]() { on_stop_server(); }));
+            } else if (server_reachable && !owns_server) {
+                menu.add_item(MenuItem::Action("Stop Server", [this]() { on_stop_external_server(); }));
+            } else if (!server_reachable) {
+                menu.add_item(MenuItem::Action("Start Server", [this]() { on_start_server(); }));
+            }
+        }
+#else  // !HAVE_SYSTEMD
+        if (!server_reachable) {
+            menu.add_item(MenuItem::Action("Start Server", [this]() { on_start_server(); }));
+        } else if (owns_server) {
+            menu.add_item(MenuItem::Action("Stop Server", [this]() { on_stop_server(); }));
+        } else {
+            menu.add_item(MenuItem::Action("Stop Server", [this]() { on_stop_external_server(); }));
+        }
+#endif  // HAVE_SYSTEMD
+    }
+#endif  // __APPLE__ / __linux__
 
     // Port submenu
     auto port_submenu = std::make_shared<Menu>();
@@ -2498,7 +2598,8 @@ Menu TrayApp::create_menu() {
         {"256K", 262144}
     };
     for (const auto& [label, size] : ctx_sizes) {
-        bool is_current = (size == server_config_.recipe_options["ctx_size"]);
+        bool is_current = server_config_.recipe_options.contains("ctx_size") &&
+                         (size == server_config_.recipe_options["ctx_size"]);
         ctx_submenu->add_item(MenuItem::Checkable(
             "Context size " + label,
             [this, size = size]() { on_change_context_size(size); },
@@ -2520,6 +2621,79 @@ Menu TrayApp::create_menu() {
 }
 
 // Menu action implementations
+
+#ifndef _WIN32
+void TrayApp::on_start_server() {
+    if (!server_manager_) {
+        server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
+    }
+    std::thread([this]() {
+        // Wait for the previous router process to fully release its lock before starting a new one.
+        // The flock may still appear held briefly after the process disappears from /proc.
+        if (!poll_router_lock_free(3000)) {
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                server_manager_.reset();
+            }
+            show_notification("Start Failed", "Failed to start Lemonade Server (previous instance still running)");
+            build_menu();
+            return;
+        }
+        if (start_server()) {
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                process_owns_server_ = true;
+                server_config_.host = normalize_connect_host(server_config_.host);
+            }
+            show_notification("Server Started", "Lemonade Server is now running");
+        } else {
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                server_manager_.reset();
+            }
+            show_notification("Start Failed", "Failed to start Lemonade Server");
+        }
+        build_menu();
+    }).detach();
+}
+
+void TrayApp::on_stop_server() {
+    std::thread([this]() {
+        stop_server();
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            process_owns_server_ = false;
+            server_manager_.reset();
+        }
+        show_notification("Server Stopped", "Lemonade Server has been stopped");
+        build_menu();
+    }).detach();
+}
+
+void TrayApp::on_stop_external_server() {
+    int pid;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        pid = external_server_pid_;
+    }
+    if (pid <= 0) return;
+    std::thread([this, pid]() {
+        kill(pid, SIGTERM);
+        for (int i = 0; i < 50; ++i) {
+            if (!is_process_alive(pid)) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        if (is_process_alive(pid)) kill(pid, SIGKILL);
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            external_server_pid_ = 0;
+            server_manager_.reset();
+        }
+        show_notification("Server Stopped", "Lemonade Server has been stopped");
+        build_menu();
+    }).detach();
+}
+#endif
 
 void TrayApp::on_load_model(const std::string& model_name) {
     // CRITICAL: Make a copy IMMEDIATELY since model_name is a reference that gets invalidated
@@ -2632,10 +2806,7 @@ void TrayApp::on_change_context_size(int new_ctx_size) {
 }
 
 void TrayApp::on_show_logs() {
-    std::string connect_host = server_config_.host;
-    if (connect_host.empty() || connect_host == "0.0.0.0") {
-        connect_host = "localhost";
-    }
+    std::string connect_host = normalize_connect_host(server_config_.host);
     std::string web_app_url = "http://" + connect_host + ":" + std::to_string(server_config_.port) + "/?logs=true";
     std::cout << "Opening web app logs at: " << web_app_url << std::endl;
     open_url(web_app_url);
@@ -2649,10 +2820,7 @@ int TrayApp::execute_logs_command() {
         return 1;
     }
 
-    std::string connect_host = server_config_.host;
-    if (connect_host.empty() || connect_host == "0.0.0.0") {
-        connect_host = "localhost";
-    }
+    std::string connect_host = normalize_connect_host(server_config_.host);
     std::string web_app_url = "http://" + connect_host + ":" + std::to_string(port) + "/?logs=true";
     std::cout << "Opening web app logs at: " << web_app_url << std::endl;
     open_url(web_app_url);
@@ -2915,11 +3083,7 @@ bool TrayApp::find_web_app() {
 
 void TrayApp::open_web_app() {
     // Compose the web app URL
-    // Translate 0.0.0.0 to localhost since 0.0.0.0 is not a valid connect address
-    std::string connect_host = server_config_.host;
-    if (connect_host.empty() || connect_host == "0.0.0.0") {
-        connect_host = "localhost";
-    }
+    std::string connect_host = normalize_connect_host(server_config_.host);
     std::string web_app_url = "http://" + connect_host + ":" + std::to_string(server_config_.port) + "/";
     std::cout << "Opening web app at: " << web_app_url << std::endl;
     open_url(web_app_url);
@@ -2935,11 +3099,7 @@ void TrayApp::launch_electron_app() {
     }
 
     // Compose the server base URL for the Electron app
-    // Translate 0.0.0.0 to localhost since 0.0.0.0 is not a valid connect address
-    std::string connect_host = server_config_.host;
-    if (connect_host.empty() || connect_host == "0.0.0.0") {
-        connect_host = "localhost";
-    }
+    std::string connect_host = normalize_connect_host(server_config_.host);
     std::string base_url = "http://" + connect_host + ":" + std::to_string(server_config_.port);
     std::cout << "Launching Electron app with server URL: " << base_url << std::endl;
 
@@ -3107,6 +3267,7 @@ void TrayApp::show_notification(const std::string& title, const std::string& mes
 }
 
 std::string TrayApp::get_loaded_model() {
+    if (!server_manager_) return "";
     try {
         auto health = server_manager_->get_health();
 
@@ -3124,13 +3285,13 @@ std::string TrayApp::get_loaded_model() {
     return "";  // No model loaded
 }
 
-std::vector<LoadedModelInfo> TrayApp::get_all_loaded_models() {
+std::pair<bool, std::vector<LoadedModelInfo>> TrayApp::fetch_server_state() {
     std::vector<LoadedModelInfo> loaded_models;
+    if (!server_manager_) return {false, loaded_models};
 
     try {
         auto health = server_manager_->get_health();
 
-        // Check for all_models_loaded array
         if (health.contains("all_models_loaded") && health["all_models_loaded"].is_array()) {
             for (const auto& model : health["all_models_loaded"]) {
                 LoadedModelInfo info;
@@ -3146,14 +3307,19 @@ std::vector<LoadedModelInfo> TrayApp::get_all_loaded_models() {
                 }
             }
         }
+        return {true, loaded_models};
     } catch (const std::exception& e) {
-        std::cerr << "Failed to get loaded models: " << e.what() << std::endl;
+        std::cerr << "Failed to get server state: " << e.what() << std::endl;
+        return {false, loaded_models};
     }
+}
 
-    return loaded_models;
+std::vector<LoadedModelInfo> TrayApp::get_all_loaded_models() {
+    return fetch_server_state().second;
 }
 
 std::vector<ModelInfo> TrayApp::get_downloaded_models() {
+    if (!server_manager_) return {};
     try {
         auto models_json = server_manager_->get_models();
         std::vector<ModelInfo> models;

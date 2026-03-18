@@ -13,6 +13,7 @@ public:
     static Version parse(const std::string& version_str);
 
     bool operator>=(const Version& other) const;
+    bool operator<(const Version& other) const;
     bool operator==(const Version& other) const;
     std::string to_string() const;
     bool empty() const { return parts_.empty(); }

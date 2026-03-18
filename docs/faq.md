@@ -103,7 +103,7 @@
 
    You can:
 
-   - Add a custom model manually via the app's "Add a Model" interface or the [CLI pull command](https://lemonade-server.ai/docs/server/lemonade-server-cli/#options-for-pull).
+   - Add a custom model manually via the app's "Add a Model" interface or the [CLI pull command](https://lemonade-server.ai/docs/server/lemonade-server-cli/#options-for-pull). For advanced manual configuration, see the [Custom Model Configuration Guide](https://lemonade-server.ai/docs/server/custom-models/).
    - Use a pull request to add the model to the built-in `server_models.json` file.
    - Request support by opening a [GitHub issue](https://github.com/lemonade-sdk/lemonade/issues).
 
@@ -240,7 +240,7 @@
 
 ### 1. **What if I encounter installation or runtime errors?**
 
-   Check the Lemonade Server logs via the App (all supported OSes) or tray icon (Windows only). Common issues include model compatibility or outdated versions.
+   Check the Lemonade Server logs via the App or tray icon. Common issues include model compatibility or outdated versions.
 
    👉 [Open an Issue on GitHub](https://github.com/lemonade-sdk/lemonade/issues)
 
