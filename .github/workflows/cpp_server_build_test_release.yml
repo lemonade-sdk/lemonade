@@ -160,8 +160,8 @@ jobs:
               exit 1
           }
 
-          if (-not (Test-Path "build\Release\lemonade-tray.exe")) {
-              Write-Host "ERROR: lemonade-tray.exe not found!" -ForegroundColor Red
+          if (-not (Test-Path "build\Release\LemonadeServer.exe")) {
+              Write-Host "ERROR: LemonadeServer.exe not found!" -ForegroundColor Red
               exit 1
           }
 
@@ -251,8 +251,9 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          # Run the build installer script
-          .\src\cpp\build_installer.ps1
+          Write-Host "Building WiX MSI installers via CMake..." -ForegroundColor Cyan
+          cmake --build build --config Release --target wix_installers
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Verify installers were created
           if (-not (Test-Path "lemonade-server-minimal.msi")) {

@@ -202,16 +202,8 @@ chmod +x build/app-appimage/Lemonade-*.AppImage
 
 **Building:**
 
-Using PowerShell script (recommended):
 ```powershell
-cd src\cpp
-.\build_installer.ps1
-```
-
-Manual build using CMake:
-```powershell
-cd src\cpp\build
-cmake --build . --config Release --target wix_installer
+cmake --build build --config Release --target wix_installers
 ```
 
 **Installer Output:**
@@ -460,7 +452,6 @@ The notarization process will:
 
 ```
 src/cpp/
-├── build_installer.ps1         # Installer build script
 ├── CopyElectronApp.cmake       # CMake module to copy Electron app to build output
 ├── CPackRPM.cmake              # RPM packaging configuration
 ├── DOCKER_GUIDE.md             # Docker containerization guide

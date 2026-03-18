@@ -17,8 +17,9 @@
 #else
 #include <cstdlib>
 #include <unistd.h>
-#include <signal.h>
+#include <sys/wait.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/select.h>
 #endif
 
@@ -508,15 +509,35 @@ void TrayUI::on_quit() {
 // App launch helpers
 // ---------------------------------------------------------------------------
 
+// Open a URL via the OS without invoking a shell (avoids shell injection).
+// On macOS/Linux, we fork+execlp the opener directly.
+#ifndef _WIN32
+static int exec_open_url_tray(const char* opener, const std::string& url, bool wait) {
+    pid_t pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        // Child: redirect stdout/stderr to /dev/null
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) { dup2(devnull, STDOUT_FILENO); dup2(devnull, STDERR_FILENO); close(devnull); }
+        execlp(opener, opener, url.c_str(), nullptr);
+        _exit(127);  // execlp failed
+    }
+    if (wait) {
+        int status = 0;
+        waitpid(pid, &status, 0);
+        return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    }
+    return 0;  // fire-and-forget
+}
+#endif
+
 void TrayUI::open_url(const std::string& url) {
 #ifdef _WIN32
     ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 #elif defined(__APPLE__)
-    int result = system(("open \"" + url + "\"").c_str());
-    (void)result;
+    exec_open_url_tray("open", url, false);
 #else
-    int result = system(("xdg-open \"" + url + "\" &").c_str());
-    (void)result;
+    exec_open_url_tray("xdg-open", url, false);
 #endif
 }
 
@@ -528,11 +549,9 @@ bool TrayUI::try_open_lemonade_url(const std::string& lemonade_url) {
                                      nullptr, nullptr, SW_SHOWNORMAL);
     return reinterpret_cast<intptr_t>(result) > 32;
 #elif defined(__APPLE__)
-    int result = system(("open \"" + lemonade_url + "\" 2>/dev/null").c_str());
-    return result == 0;
+    return exec_open_url_tray("open", lemonade_url, true) == 0;
 #else
-    int result = system(("xdg-open \"" + lemonade_url + "\" >/dev/null 2>&1").c_str());
-    return result == 0;
+    return exec_open_url_tray("xdg-open", lemonade_url, true) == 0;
 #endif
 }
 

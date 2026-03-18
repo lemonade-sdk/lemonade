@@ -131,7 +131,7 @@ private:
     double get_vram_usage();
     double get_npu_utilization();
 
-    int port_;
+    std::atomic<int> port_;
     std::string host_;
     std::string log_level_;
     json default_options_;

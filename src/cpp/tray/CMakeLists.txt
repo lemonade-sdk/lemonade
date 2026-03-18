@@ -132,10 +132,11 @@ set(TRAY_UI_SOURCES
     platform/tray_factory.cpp
 )
 
-# path_utils is needed by TrayUI but on Windows it's already in lemonade-server-core
+# path_utils and json_utils are needed by TrayUI but on Windows they're already in lemonade-server-core
 if(NOT WIN32)
     list(APPEND TRAY_UI_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/path_utils.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/json_utils.cpp
     )
 endif()
 

@@ -3349,28 +3349,26 @@ void Server::handle_port_change(const httplib::Request& req, httplib::Response& 
             return;
         }
 
-        if (new_port == port_) {
+        int current_port = port_.load();
+        if (new_port == current_port) {
             nlohmann::json response = {{"status", "success"}, {"port", new_port}, {"message", "Already listening on this port"}};
             res.set_content(response.dump(), "application/json");
             return;
         }
 
-        int old_port = port_;
-        port_ = new_port;
+        port_.store(new_port);
         rebind_requested_ = true;
 
-        LOG(INFO, "Server") << "Port change requested: " << old_port << " -> " << new_port << std::endl;
+        LOG(INFO, "Server") << "Port change requested: " << current_port << " -> " << new_port << std::endl;
 
         nlohmann::json response = {{"status", "success"}, {"port", new_port}};
         res.set_content(response.dump(), "application/json");
 
-        // Stop listeners asynchronously after response is sent
-        std::thread([this]() {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            udp_beacon_.stopBroadcasting();
-            http_server_->stop();
-            http_server_v6_->stop();
-        }).detach();
+        // Stop listeners so the run() loop can rebind on the new port.
+        // This runs on the HTTP handler thread — stop() is thread-safe in httplib.
+        udp_beacon_.stopBroadcasting();
+        http_server_->stop();
+        http_server_v6_->stop();
 
     } catch (const nlohmann::json::parse_error& e) {
         res.status = 400;

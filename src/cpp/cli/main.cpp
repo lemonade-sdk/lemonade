@@ -22,6 +22,8 @@
     #include <arpa/inet.h>
     #include <netinet/in.h>
     #include <sys/socket.h>
+    #include <sys/wait.h>
+    #include <fcntl.h>
     #include <unistd.h>
 #endif
 
@@ -130,6 +132,29 @@ static bool validate_and_transform_model_json(nlohmann::json& model_data) {
     return true;
 }
 
+// Open a URL via the OS without invoking a shell (avoids shell injection).
+// On Windows, ShellExecuteA is already shell-free.
+// On macOS/Linux, we fork+execvp the opener directly.
+#ifndef _WIN32
+static int exec_open_url(const char* opener, const std::string& url, bool wait) {
+    pid_t pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        // Child: redirect stdout/stderr to /dev/null
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) { dup2(devnull, STDOUT_FILENO); dup2(devnull, STDERR_FILENO); close(devnull); }
+        execlp(opener, opener, url.c_str(), nullptr);
+        _exit(127);  // execlp failed
+    }
+    if (wait) {
+        int status = 0;
+        waitpid(pid, &status, 0);
+        return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    }
+    return 0;  // fire-and-forget
+}
+#endif
+
 // Try to open a lemonade:// URL via the OS. Returns true if the OS reports success.
 static bool try_lemonade_protocol(const std::string& lemonade_url) {
 #ifdef _WIN32
@@ -137,9 +162,9 @@ static bool try_lemonade_protocol(const std::string& lemonade_url) {
                                      nullptr, nullptr, SW_SHOWNORMAL);
     return reinterpret_cast<intptr_t>(result) > 32;
 #elif defined(__APPLE__)
-    return system(("open \"" + lemonade_url + "\" 2>/dev/null").c_str()) == 0;
+    return exec_open_url("open", lemonade_url, true) == 0;
 #else
-    return system(("xdg-open \"" + lemonade_url + "\" >/dev/null 2>&1").c_str()) == 0;
+    return exec_open_url("xdg-open", lemonade_url, true) == 0;
 #endif
 }
 
@@ -162,9 +187,9 @@ static void open_url(const std::string& host, int port, const std::string& path 
     ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     int result = 0;
 #elif defined(__APPLE__)
-    int result = system(("open \"" + url + "\"").c_str());
+    int result = exec_open_url("open", url, false);
 #else
-    int result = system(("xdg-open \"" + url + "\" &").c_str());
+    int result = exec_open_url("xdg-open", url, false);
 #endif
 
     if (result != 0) {
@@ -746,6 +771,14 @@ int main(int argc, char* argv[]) {
     // Execute command
     if (status_cmd->count() > 0) {
         if (config.json_output) {
+            // Verify the server is actually reachable before reporting its port.
+            // Without this check, we'd report the default port even when no server is running,
+            // which could cause callers (e.g. lemonade-server stop) to target the wrong process.
+            bool reachable = try_live_check(config.host, config.port, config.api_key, 500);
+            if (!reachable) {
+                std::cerr << "Server is not running" << std::endl;
+                return 1;
+            }
             nlohmann::json out;
             out["port"] = config.port;
             std::cout << out.dump() << std::endl;
