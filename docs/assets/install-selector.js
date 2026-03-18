@@ -313,12 +313,68 @@ function renderDownload() {
         installCmdDiv.style.display = 'none';
       }
     } else if (distro === 'fedora') {
-      if (downloadArea) downloadArea.style.display = 'none';
-      if (installCmdDiv) installCmdDiv.style.display = 'none';
-      if (cmdDiv) {
-        cmdDiv.innerHTML = `<div class="lmn-coming-soon">For Fedora, please follow the build instructions as described in the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md#building-from-source" target="_blank">Developer Guide</a>.</div>`;
+      // Fedora: Show structured server + frontend installation
+      const rpmFile = `lemonade-server-${version}.x86_64.rpm`;
+      const appImageFile = `Lemonade-${version}-x86_64.AppImage`;
+      const downloadUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${rpmFile}`;
+      const appImageUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${appImageFile}`;
+
+      if (downloadArea) {
+        downloadArea.style.display = 'none';
       }
-      return;
+      if (installCmdDiv) {
+        installCmdDiv.style.display = 'block';
+        const rpmCommands = [
+          `wget ${downloadUrl}`,
+          `sudo dnf install ./${rpmFile}`
+        ];
+
+        let frontendSection = '';
+        if (type === 'app') {
+          frontendSection = `
+            <div class="lmn-install-section-title">Step 2: Choose your frontend</div>
+            <div class="lmn-install-method-header">Option 1: Web App (default, available at <a href="http://localhost:8000" target="_blank">http://localhost:8000</a>)</div>
+            <div class="lmn-note">The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.</div>
+
+            <div class="lmn-install-method-header">Option 2: AppImage (portable desktop app, no installation required)</div>
+            <pre><code class="language-bash" id="lmn-install-appimage-block"></code></pre>
+          `;
+        }
+
+        installCmdDiv.innerHTML = `
+          <div class="lmn-install-section-title">Step 1: Install lemonade-server</div>
+          <div class="lmn-install-method-header">Via RPM package:</div>
+          <pre><code class="language-bash" id="lmn-install-pre-block"></code></pre>
+          ${frontendSection}
+        `;
+
+        setTimeout(() => {
+          // Render rpm commands
+          const pre = document.getElementById('lmn-install-pre-block');
+          if (pre) {
+            pre.innerHTML = rpmCommands.map((line, idx) => {
+              const safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyInstallLine(event, ${idx})">📋</button></div>`;
+            }).join('');
+          }
+
+          // Render AppImage commands if App + Server selected
+          if (type === 'app') {
+            const appImagePre = document.getElementById('lmn-install-appimage-block');
+            if (appImagePre) {
+              const appImageCommands = [
+                `wget ${appImageUrl}`,
+                `chmod +x ${appImageFile}`,
+                `./${appImageFile}`
+              ];
+              appImagePre.innerHTML = appImageCommands.map((cmd, idx) => {
+                const safeLine = cmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyAppImageLine(event, ${idx})">📋</button></div>`;
+              }).join('');
+            }
+          }
+        }, 0);
+      }
     } else if (distro === 'debian') {
       if (downloadArea) downloadArea.style.display = 'none';
       if (installCmdDiv) installCmdDiv.style.display = 'none';
