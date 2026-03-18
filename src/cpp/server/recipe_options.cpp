@@ -37,7 +37,7 @@ static const json CLI_OPTIONS = {
         {"option_name", "device"},
         {"type_name", "DEVICE"},
         {"envname", "LEMONADE_DEVICE"},
-        {"help", "Accelerator device to use (e.g. Vulkan0)"}
+        {"help", "Comma-separated list of accelerator devices to use (e.g. Vulkan0)"}
     }},
     {"--llamacpp", {
         {"option_name", "llamacpp_backend"},
