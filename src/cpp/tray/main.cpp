@@ -87,6 +87,15 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     }
     LocalFree(argvW);
 
+    // Attach to the parent's console (if launched from a terminal) so that
+    // --help and --version print to the terminal the user typed in.
+    // Fails silently when launched from Start Menu / shortcut (no parent console).
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+        FILE* dummy;
+        freopen_s(&dummy, "CONOUT$", "w", stdout);
+        freopen_s(&dummy, "CONOUT$", "w", stderr);
+    }
+
     // Use the same CLIParser as lemonade-router for full arg compatibility
     lemon::CLIParser parser;
     parser.parse(argc, argv_ptrs.data());

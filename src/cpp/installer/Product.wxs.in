@@ -401,6 +401,14 @@
                   Impersonate="yes"
                   Return="asyncNoWait" />
 
+    <!-- Close Electron desktop app before install/upgrade/uninstall -->
+    <CustomAction Id="CloseElectronApp"
+                  Directory="SystemFolder"
+                  ExeCommand='cmd.exe /c "taskkill /f /im lemonade-app.exe 2>nul &amp; exit /b 0"'
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="ignore" />
+
     <!-- Stop server during uninstall -->
     <CustomAction Id="StopServerOnUninstall"
                   Directory="BinDir"
@@ -444,6 +452,10 @@
       <Custom Action="CleanLegacyInstall"
               Before="InstallValidate"
               Condition="NOT Installed AND NOT NSISUNINSTALLSTRING" />
+
+      <!-- Close Electron app before upgrading files -->
+      <Custom Action="CloseElectronApp"
+              Before="StopServerCmd" />
 
       <!-- Stop server from an existing MSI-based C++ install before validation (per-user) -->
       <Custom Action="StopServerCmd"

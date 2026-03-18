@@ -25,14 +25,23 @@ namespace fs = std::filesystem;
 // Helpers
 // ---------------------------------------------------------------------------
 
+static const char* server_binary_name() {
+#ifdef _WIN32
+    return "LemonadeServer.exe";
+#else
+    return "lemonade-router";
+#endif
+}
+
 static void print_deprecation_notice() {
     std::cerr
-        << "WARNING: 'lemonade-server' is deprecated. Use 'lemonade-router' to start the server,\n"
-        << "or 'lemonade' for CLI commands. See 'lemonade --help' for details.\n"
+        << "WARNING: 'lemonade-server' is deprecated. Use '" << server_binary_name()
+        << "' to start the server,\nor 'lemonade' for CLI commands. See 'lemonade --help' for details.\n"
         << std::endl;
 }
 
 static void print_help() {
+    const char* srv = server_binary_name();
     std::cout
         << "lemonade-server " << LEMON_VERSION_STRING << " (deprecated shim)\n"
         << "\n"
@@ -40,7 +49,7 @@ static void print_help() {
         << "\n"
         << "  OLD COMMAND                    NEW COMMAND\n"
         << "  -----------------------------------------------------------\n"
-        << "  lemonade-server serve [args]   lemonade-router [args]\n"
+        << "  lemonade-server serve [args]   " << srv << " [args]\n"
         << "  lemonade-server stop           lemonade stop\n"
         << "  lemonade-server list           lemonade list\n"
         << "  lemonade-server pull <model>   lemonade pull <model>\n"
@@ -49,7 +58,7 @@ static void print_help() {
         << "  lemonade-server status         lemonade status\n"
         << "  lemonade-server logs           lemonade logs\n"
         << "\n"
-        << "Use 'lemonade-router' to start the server, or 'lemonade' for\n"
+        << "Use '" << srv << "' to start the server, or 'lemonade' for\n"
         << "all other CLI commands.\n";
 }
 

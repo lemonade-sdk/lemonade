@@ -1,5 +1,7 @@
-# Legacy shim: backwards-compatible lemonade-server binary
-add_executable(lemonade-server main.cpp)
+# Legacy shim: backwards-compatible lemonade-server binary.
+# Excluded from the default "all" build — only built when explicitly requested
+# (e.g., cmake --build . --target lemonade-server) or as an installer dependency.
+add_executable(lemonade-server EXCLUDE_FROM_ALL main.cpp)
 
 target_include_directories(lemonade-server PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -32,7 +34,10 @@ if(WIN32)
     )
 endif()
 
-# Install
+# Install rule — requires the target to have been built first.
+# Since this target is EXCLUDE_FROM_ALL, packagers must build it explicitly:
+#   cmake --build . --target lemonade-server && cpack
+# On Windows, the WiX installer targets already depend on lemonade-server.
 if(NOT APPLE)
     install(TARGETS lemonade-server RUNTIME DESTINATION bin)
 endif()

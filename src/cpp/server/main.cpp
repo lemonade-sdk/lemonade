@@ -3,7 +3,6 @@
 #include <atomic>
 #include <lemon/cli_parser.h>
 #include <lemon/server.h>
-#include <lemon/single_instance.h>
 #include <lemon/version.h>
 #include <lemon/utils/aixlog.hpp>
 
@@ -42,13 +41,6 @@ void signal_handler(int signal) {
 }
 
 int main(int argc, char** argv) {
-    // Check for single instance early (before parsing args for faster feedback)
-    if (SingleInstance::IsAnotherInstanceRunning("Router")) {
-        std::cerr << "Error: Another instance of lemonade-router is already running.\n"
-                  << "Only one instance can run at a time." << std::endl;
-        return 1;
-    }
-
     try {
         CLIParser parser;
 
