@@ -26,6 +26,13 @@ endif()
 
 # Include GNUInstallDirs for standard installation directories
 include(GNUInstallDirs)
+     # Install man pages
+     install(FILES
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-server.1
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-router.1
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade.1
+          DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
+     )
 # ============================================================
 # Electron source paths (used by both runtime and installers)
 # ============================================================
@@ -62,8 +69,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(MIN_NLOHMANN_JSON_VERSION "3.11.3")
 set(MIN_CLI11_VERSION "2.4.2")
 set(MIN_CURL_VERSION "8.5.0")
-set(MIN_ZSTD_VERSION "1.5.7")
+set(MIN_ZSTD_VERSION "1.5.5")
 set(MIN_HTTPLIB_VERSION "0.26.0")
+# If system not found, this is the version that would be downloaded
+set(DOWNLOAD_ZSTD_VERSION "1.5.7")
 
 find_package(PkgConfig QUIET)
 
@@ -216,7 +225,7 @@ endif()
 if(NOT USE_SYSTEM_ZSTD)
     FetchContent_Declare(zstd
         GIT_REPOSITORY https://github.com/facebook/zstd.git
-        GIT_TAG v${MIN_ZSTD_VERSION}
+        GIT_TAG v${DOWNLOAD_ZSTD_VERSION}
         SOURCE_SUBDIR build/cmake
         EXCLUDE_FROM_ALL
     )
