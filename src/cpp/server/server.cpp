@@ -3305,34 +3305,26 @@ void Server::handle_log_level(const httplib::Request& req, httplib::Response& re
 void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res) {
     LOG(INFO, "Server") << "Shutdown request received" << std::endl;
 
+    // Unload all models SYNCHRONOUSLY before sending the response.
+    // This ensures child processes (llama-server, etc.) are terminated
+    // before the caller proceeds, avoiding zombie processes.
+    if (router_) {
+        LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
+        try {
+            router_->unload_model();
+            LOG(INFO, "Server") << "All models unloaded" << std::endl;
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Error during unload: " << e.what() << std::endl;
+        }
+    }
+
     nlohmann::json response = {{"status", "shutting down"}};
     res.set_content(response.dump(), "application/json");
 
-    // Stop the server asynchronously to allow response to be sent
+    // Stop the HTTP listener and exit asynchronously (allows response to be sent first)
     std::thread([this]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        LOG(INFO, "Server") << "Stopping server..." << std::endl;
-        std::cout.flush();
         stop();
-
-        // Graceful shutdown with timeout: explicitly unload models and stop backend servers
-        if (router_) {
-            LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
-            std::cout.flush();
-
-            // Just call unload_model directly - keep it simple
-            try {
-                router_->unload_model();
-                LOG(INFO, "Server") << "Cleanup completed successfully" << std::endl;
-                std::cout.flush();
-            } catch (const std::exception& e) {
-                LOG(ERROR, "Server") << "Error during unload: " << e.what() << std::endl;
-            }
-        }
-
-        // Force process exit - just use standard exit()
-        LOG(INFO, "Server") << "Calling exit(0)..." << std::endl;
-        std::cout.flush();
         std::exit(0);
     }).detach();
 }

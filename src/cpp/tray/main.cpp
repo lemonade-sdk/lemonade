@@ -28,6 +28,31 @@
 #include <lemon/cli_parser.h>
 #include <winsock2.h>
 #include <windows.h>
+
+// ---------------------------------------------------------------------------
+// Windows Job Object — ensures child processes (llama-server, etc.) are
+// automatically killed when LemonadeServer.exe exits for ANY reason
+// (graceful quit, crash, taskkill, installer uninstall).
+// ---------------------------------------------------------------------------
+static HANDLE g_job_object = nullptr;
+
+static void create_child_process_job() {
+    g_job_object = CreateJobObjectA(nullptr, nullptr);
+    if (!g_job_object) return;
+
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli = {};
+    jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    SetInformationJobObject(g_job_object,
+                            JobObjectExtendedLimitInformation,
+                            &jeli, sizeof(jeli));
+
+    // Assign current process to the job.  All child processes created via
+    // CreateProcess will inherit the job (unless CREATE_BREAKAWAY_FROM_JOB
+    // is used, which our ProcessManager does not).  When the last handle to
+    // the job is closed (i.e. when this process exits), Windows terminates
+    // every remaining process in the job.
+    AssignProcessToJobObject(g_job_object, GetCurrentProcess());
+}
 #else
 #include <csignal>
 #include <unistd.h>
@@ -65,6 +90,10 @@ static bool wait_for_server(const std::string& host, int port, int timeout_secon
 #ifdef _WIN32
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
+    // Create a job object so that all child processes (llama-server, etc.)
+    // are automatically killed when this process exits.
+    create_child_process_job();
+
     // Single instance check — prevents running alongside lemonade-router
     if (lemon::SingleInstance::IsAnotherInstanceRunning("Router")) {
         MessageBoxA(NULL,
@@ -155,18 +184,21 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
 
     tray.run();  // Blocks until quit
 
-    // Shutdown: send shutdown to our own embedded server
+    // Shutdown the embedded server.
+    // /internal/shutdown unloads all models synchronously (kills child
+    // processes like llama-server) before sending the response, then
+    // stops the HTTP listener and exits on a detached thread.
     {
         std::string connect_host = (config.host.empty() || config.host == "0.0.0.0" || config.host == "localhost")
             ? "127.0.0.1" : config.host;
         httplib::Client cli(connect_host, config.port);
         cli.set_connection_timeout(2);
-        cli.set_read_timeout(5);
+        cli.set_read_timeout(30);  // Allow time for model unload (up to 5s per model)
         cli.Post("/internal/shutdown", "", "application/json");
     }
 
-    // Give server a moment to shut down
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    // Give server a moment to stop the HTTP listener and exit
+    std::this_thread::sleep_for(std::chrono::seconds(2));
 
     WSACleanup();
     return 0;

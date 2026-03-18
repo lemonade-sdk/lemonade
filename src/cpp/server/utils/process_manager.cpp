@@ -36,9 +36,11 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <errno.h>
+#ifdef __linux__
+#include <sys/prctl.h>  // PR_SET_PDEATHSIG — kill child when parent dies
+#endif
 #ifdef HAVE_LIBCAP
 #include <sys/capability.h>
-#include <sys/prctl.h>
 #endif
 #endif
 
@@ -403,6 +405,14 @@ ProcessHandle ProcessManager::start_process(
 
     if (pid == 0) {
         // Child process
+#ifdef __linux__
+        // Ensure this child is killed when the parent process dies.
+        // This is the Linux equivalent of the Windows Job Object and
+        // prevents orphaned backend processes (llama-server, etc.)
+        // when lemonade-router is killed or crashes.
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+#endif
+
         if (!working_dir.empty()) {
             chdir(working_dir.c_str());
         }
@@ -861,6 +871,9 @@ int ProcessManager::run_process_with_output(
 
     if (pid == 0) {
         // Child process
+#ifdef __linux__
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+#endif
         close(stdout_pipe[0]);  // Close read end
 
         // Redirect stdout and stderr to pipe
