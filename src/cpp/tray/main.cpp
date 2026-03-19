@@ -13,6 +13,7 @@
 #include <lemon/version.h>
 #include <lemon/utils/aixlog.hpp>
 
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -131,6 +132,17 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     }
     auto config = parser.get_config();
 
+    // Auto-detect CI environments — skip tray UI when running headless in CI.
+    // Standard CI env vars: CI (GitHub Actions, Travis, etc.), LEMONADE_CI_MODE.
+    bool is_ci = false;
+    {
+        const char* ci_env = std::getenv("CI");
+        const char* lemon_ci = std::getenv("LEMONADE_CI_MODE");
+        if ((ci_env && ci_env[0]) || (lemon_ci && lemon_ci[0])) {
+            is_ci = true;
+        }
+    }
+
     // Initialize logging to file (SUBSYSTEM:WINDOWS has no console).
     // The server's /api/v1/logs/stream endpoint tails this same file.
     {
@@ -149,7 +161,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     WSAStartup(MAKEWORD(2, 2), &wsa);
 
     // Start server on background thread (capture config by value — thread outlives the stack frame)
-    std::thread server_thread([config]() {
+    std::atomic<bool> server_failed{false};
+    std::thread server_thread([config, &server_failed]() {
         try {
             lemon::Server server(config.port, config.host, config.log_level,
                                 config.recipe_options, config.max_loaded_models,
@@ -157,28 +170,57 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
                                 config.global_timeout);
             server.run();
         } catch (const std::exception& e) {
-            MessageBoxA(NULL, e.what(), "Lemonade Server Error", MB_OK | MB_ICONERROR);
+            LOG(ERROR, "LemonadeServer") << "Server error: " << e.what() << std::endl;
+            server_failed = true;
         }
     });
     server_thread.detach();
 
     // Wait for server to be ready
     if (!wait_for_server(config.host, config.port, 15)) {
-        MessageBoxA(NULL,
-            "Lemonade Server failed to start within 15 seconds.",
-            "Lemonade Server Error", MB_OK | MB_ICONERROR);
+        LOG(ERROR, "LemonadeServer") << "Server failed to start within 15 seconds." << std::endl;
         WSACleanup();
         return 1;
     }
 
-    // Create and run tray UI
-    lemon_tray::TrayUI tray(config.port, config.host);
-    if (!tray.initialize()) {
-        WSACleanup();
-        return 1;
+    // In CI or when tray init fails, run headless —
+    // keep the server alive and block until /internal/shutdown is called.
+    bool run_headless = is_ci;
+
+    if (!run_headless) {
+        lemon_tray::TrayUI tray(config.port, config.host);
+        if (tray.initialize()) {
+            tray.run();  // Blocks until quit
+        } else {
+            LOG(WARNING, "LemonadeServer")
+                << "Tray UI unavailable — falling back to headless mode. "
+                << "Use POST /internal/shutdown to stop." << std::endl;
+            run_headless = true;
+        }
     }
 
-    tray.run();  // Blocks until quit
+    if (run_headless) {
+        LOG(INFO, "LemonadeServer")
+            << "Running headless (CI environment detected). "
+            << "Use POST /internal/shutdown to stop." << std::endl;
+
+        // Block until the server thread exits or /internal/shutdown is called.
+        std::string connect_host = (config.host.empty() || config.host == "0.0.0.0" || config.host == "localhost")
+            ? "127.0.0.1" : config.host;
+        while (!server_failed) {
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            // Check if server is still alive
+            try {
+                httplib::Client cli(connect_host, config.port);
+                cli.set_connection_timeout(1);
+                cli.set_read_timeout(2);
+                auto res = cli.Get("/live");
+                if (!res || res->status != 200) break;
+            } catch (...) {
+                break;
+            }
+        }
+    }
 
     // Shutdown the embedded server.
     // /internal/shutdown unloads all models synchronously (kills child

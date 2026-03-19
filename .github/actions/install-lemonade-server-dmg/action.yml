@@ -100,9 +100,16 @@ runs:
 
         # Launchd may not work reliably in CI (no GUI session, restricted
         # sandbox). Fall back to starting the server manually.
+        # Use lemonade-router directly — the lemonade-server shim would
+        # exec lemonade-router anyway, but going direct avoids any shim issues.
         echo "Server not reachable after 30s — starting manually..."
         sudo mkdir -p "$LOG_DIR"
-        sudo "$BIN_PATH/lemonade-server" serve --no-tray > "$LOG_FILE" 2>&1 &
+        ROUTER="$BIN_PATH/lemonade-router"
+        if [ -x "$ROUTER" ]; then
+          sudo "$ROUTER" > "$LOG_FILE" 2>&1 &
+        else
+          sudo "$BIN_PATH/lemonade-server" serve --no-tray > "$LOG_FILE" 2>&1 &
+        fi
 
         for i in $(seq 1 15); do
           if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
