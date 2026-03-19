@@ -840,7 +840,13 @@ jobs:
           FLM_VERSION_NUM=$(echo $FLM_VERSION | sed 's/^v//')
           echo "Installing FLM ${FLM_VERSION} for CI inference tests..."
           curl -L -o /tmp/fastflowlm.deb "https://github.com/FastFlowLM/FastFlowLM/releases/download/${FLM_VERSION}/fastflowlm_${FLM_VERSION_NUM}_ubuntu24.04_amd64.deb"
-          sudo apt install -y /tmp/fastflowlm.deb
+          mkdir -p /tmp/flm-extract
+          dpkg-deb -x /tmp/fastflowlm.deb /tmp/flm-extract
+          # Add extracted FLM binary to PATH
+          FLM_BIN=$(find /tmp/flm-extract -name flm -type f | head -1)
+          chmod +x "$FLM_BIN"
+          echo "$(dirname "$FLM_BIN")" >> $GITHUB_PATH
+          export PATH="$(dirname "$FLM_BIN"):$PATH"
           rm /tmp/fastflowlm.deb
           flm version
 
