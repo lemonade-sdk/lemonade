@@ -35,6 +35,7 @@ Build-Depends:
  node-webpack,
  node-webpack-cli,
  nodejs,
+ pkgconf,
  quilt,
 Testsuite: autopkgtest-pkg-python
 Standards-Version: 4.7.3
