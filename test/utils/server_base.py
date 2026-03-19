@@ -374,7 +374,7 @@ def start_server(
     return process
 
 
-class ServerTestBase(unittest.IsolatedAsyncioTestCase):
+class ServerTestBase(unittest.TestCase):
     """
     Base class for server tests.
 

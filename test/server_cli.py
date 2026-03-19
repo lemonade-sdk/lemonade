@@ -214,12 +214,19 @@ class PersistentServerCLITests(CLITestBase):
         if _config["apikey"]:
             os.environ["LEMONADE_API_KEY"] = "api-key"
 
-        cls._server_process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        if sys.platform == "win32":
+            cls._server_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            cls._server_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
 
         # Wait for server to start
         if not wait_for_server_start():
