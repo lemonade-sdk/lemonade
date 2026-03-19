@@ -12,10 +12,12 @@ const Combobox: React.FC<ComboboxProps> = React.memo(function Combobox({ options
   const [datalistOpen, setDatalistOpen] = React.useState<boolean>(false);
   const [filteredList, setFilteredList] = React.useState<string[]>(optionsList);
   const comboboxRef = React.useRef<HTMLDivElement>(null);
+  const [selectedVoice, setSelectedVoice] = React.useState<string>(defaultValue);
 
   const updateInputFromList = (e: any) => {
     let opt = e.target.dataset.option;
     if (opt) onChangeFunc(opt);
+    setSelectedVoice(opt);
     setDatalistOpen(false);
   }
 
@@ -24,6 +26,10 @@ const Combobox: React.FC<ComboboxProps> = React.memo(function Combobox({ options
     let newList = e.target.value == '' ? optionsList : optionsList.filter((word) => word.startsWith(e.target.value));
     onChangeFunc(e.target.value);
     setFilteredList(newList);
+
+    if(optionsList.includes(e.target.value)) {
+      setSelectedVoice(e.target.value);
+    }
   }
 
   const handleClickOutside = (e: any) => {
@@ -55,7 +61,7 @@ const Combobox: React.FC<ComboboxProps> = React.memo(function Combobox({ options
         datalistOpen && (filteredList.length > 0) && (
             <ul className={position == 'top' ? `form-datalist form-datalist-top` : `form-datalist form-datalist-bottom`}>
             {filteredList.sort().map((option: string, index: number) => {
-              return <li key={index} data-option={option} onClick={updateInputFromList} className="form-datalist-option">{option}</li>;
+              return <li key={index} data-option={option} onClick={updateInputFromList} className={`form-datalist-option ${ option === selectedVoice ? ' selected' : ''}`}>{option}</li>;
             })}
           </ul>
           )
