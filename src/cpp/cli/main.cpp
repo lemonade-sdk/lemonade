@@ -327,7 +327,109 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
     return client.load_model(config.model, config.recipe_options, config.save_options);
 }
 
-static int handle_run_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+static bool fetch_models_from_endpoint(lemonade::LemonadeClient& client, bool show_all,
+                                       std::vector<lemonade::ModelInfo>& models_out) {
+    try {
+        std::string path = "/api/v1/models?show_all=" + std::string(show_all ? "true" : "false");
+        std::string response = client.make_request(path, "GET", "", "", 3000, 3000);
+        nlohmann::json json_response = nlohmann::json::parse(response);
+
+        if (!json_response.contains("data") || !json_response["data"].is_array()) {
+            return true;
+        }
+
+        for (const auto& model_item : json_response["data"]) {
+            if (!model_item.is_object()) {
+                continue;
+            }
+
+            lemonade::ModelInfo info;
+            if (model_item.contains("id") && model_item["id"].is_string()) {
+                info.id = model_item["id"].get<std::string>();
+            }
+            if (model_item.contains("recipe") && model_item["recipe"].is_string()) {
+                info.recipe = model_item["recipe"].get<std::string>();
+            }
+            if (model_item.contains("downloaded") && model_item["downloaded"].is_boolean()) {
+                info.downloaded = model_item["downloaded"].get<bool>();
+            }
+
+            if (!info.id.empty()) {
+                models_out.push_back(info);
+            }
+        }
+
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: Failed to query /api/v1/models: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+static bool prompt_model_selection(lemonade::LemonadeClient& client, std::string& model_out) {
+    std::vector<lemonade::ModelInfo> models;
+    if (!fetch_models_from_endpoint(client, false, models)) {
+        return false;
+    }
+    if (models.empty() && !fetch_models_from_endpoint(client, true, models)) {
+        return false;
+    }
+
+    if (models.empty()) {
+        std::cerr << "No models available on server. Try 'lemonade list' or 'lemonade pull <MODEL>'." << std::endl;
+        return false;
+    }
+
+    std::cout << "Select a model:" << std::endl;
+    for (size_t i = 0; i < models.size(); ++i) {
+        const auto& model = models[i];
+        std::cout << "  " << (i + 1) << ") " << model.id
+                  << " [" << (model.downloaded ? "downloaded" : "not-downloaded") << "]"
+                  << " (" << (model.recipe.empty() ? "-" : model.recipe) << ")"
+                  << std::endl;
+    }
+    std::cout << "Enter number: " << std::flush;
+
+    std::string input;
+    if (!std::getline(std::cin, input)) {
+        std::cerr << "Error: Failed to read model selection." << std::endl;
+        return false;
+    }
+
+    size_t parsed_chars = 0;
+    int selected = 0;
+    try {
+        selected = std::stoi(input, &parsed_chars);
+    } catch (const std::exception&) {
+        std::cerr << "Error: Invalid selection." << std::endl;
+        return false;
+    }
+
+    if (parsed_chars != input.size() || selected < 1 || static_cast<size_t>(selected) > models.size()) {
+        std::cerr << "Error: Selection out of range." << std::endl;
+        return false;
+    }
+
+    model_out = models[static_cast<size_t>(selected - 1)].id;
+    std::cout << "Selected model: " << model_out << std::endl;
+    return true;
+}
+
+static bool resolve_model_if_missing(lemonade::LemonadeClient& client, CliConfig& config,
+                                     const std::string& command_name) {
+    if (!config.model.empty()) {
+        return true;
+    }
+
+    std::cout << "No model specified for '" << command_name << "'." << std::endl;
+    return prompt_model_selection(client, config.model);
+}
+
+static int handle_run_command(lemonade::LemonadeClient& client, CliConfig& config) {
+    if (!resolve_model_if_missing(client, config, "run")) {
+        return 1;
+    }
+
     int load_result = handle_load_command(client, config);
     if (load_result != 0) {
         return load_result;
@@ -353,7 +455,11 @@ static int handle_recipes_command(lemonade::LemonadeClient& client, const CliCon
     return client.list_recipes();
 }
 
-static int handle_launch_command(const CliConfig& config) {
+static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
+    if (!resolve_model_if_missing(client, config, "launch")) {
+        return 1;
+    }
+
     lemon_tray::AgentConfig agent_config;
     std::string config_error;
 
@@ -375,7 +481,6 @@ static int handle_launch_command(const CliConfig& config) {
     }
 
     // Preload model (and check if server reachable)
-    lemonade::LemonadeClient client(config.host, config.port, config.api_key);
     if (client.load_model(config.model, config.recipe_options)) {
         return 1;
     }
@@ -729,7 +834,7 @@ int main(int argc, char* argv[]) {
     load_cmd->add_flag("--save-options", config.save_options, "Save model options for future loads");
 
     // Run options (same as load)
-    run_cmd->add_option("model", config.model, "Model name to run")->required()->type_name("MODEL");
+    run_cmd->add_option("model", config.model, "Model name to run")->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*run_cmd, config.recipe_options);
     run_cmd->add_flag("--save-options", config.save_options, "Save model options for future runs");
 
@@ -745,7 +850,7 @@ int main(int argc, char* argv[]) {
         ->required()
         ->type_name("AGENT")
         ->check(CLI::IsMember(SUPPORTED_AGENTS));
-    launch_cmd->add_option("--model", config.model, "Model name to load")->required()->type_name("MODEL");
+    launch_cmd->add_option("--model", config.model, "Model name to load")->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
 
     // Scan options
@@ -811,7 +916,7 @@ int main(int argc, char* argv[]) {
     } else if (recipes_cmd->count() > 0) {
         return handle_recipes_command(client, config);
     } else if (launch_cmd->count() > 0) {
-        return handle_launch_command(config);
+        return handle_launch_command(client, config);
     } else if (logs_cmd->count() > 0) {
         open_url(config.host, config.port, "/?logs=true");
         return 0;
