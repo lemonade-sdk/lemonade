@@ -154,6 +154,19 @@ export function classifyModel(input: ClassifyInput): ModelCompatibility {
   const { modelId, pipelineTag, tags, hasGgufFiles, hasOnnxFiles, hasFlmFiles, hasBinFiles } = input;
   const idLower = modelId.toLowerCase();
 
+  // --- Early reject: Python-only quantization formats ---
+  // BitsAndBytes, AWQ, and GPTQ models require Python runtimes and are
+  // incompatible with all C++ backends (llamacpp, sd-cpp, etc.)
+  if (/[-._](bnb|awq|gptq)([-._]|$)/i.test(idLower)) {
+    return {
+      recipe: '',
+      modelType: 'unknown',
+      label: 'Python-only',
+      level: 'incompatible',
+      reason: 'BitsAndBytes/AWQ/GPTQ quantization requires Python runtime',
+    };
+  }
+
   // --- Pass 1: pipeline_tag (highest confidence) ---
 
   if (pipelineTag) {
