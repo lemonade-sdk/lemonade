@@ -135,3 +135,26 @@ runs:
             Write-Host "ERROR: Failed to run version check: $_" -ForegroundColor Red
             exit 1
         }
+
+    - name: Wait for server to be ready
+      shell: pwsh
+      run: |
+        # The MSI AutoLaunchLemonade custom action starts LemonadeServer.exe
+        # after install. Wait for it to be accepting requests.
+        Write-Host "Waiting for server to be ready..."
+        $maxWait = 60
+        $waited = 0
+        while ($waited -lt $maxWait) {
+          try {
+            $response = Invoke-WebRequest -Uri "http://localhost:8000/live" -TimeoutSec 2 -ErrorAction Stop
+            if ($response.StatusCode -eq 200) {
+              Write-Host "Server is running and healthy" -ForegroundColor Green
+              exit 0
+            }
+          } catch {}
+          Start-Sleep -Seconds 2
+          $waited += 2
+          Write-Host "Waiting for server... ($waited/$maxWait)"
+        }
+        Write-Error "Server did not start within $maxWait seconds"
+        exit 1

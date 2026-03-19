@@ -7,17 +7,40 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Capture server logs
-      if: always()
+    - name: Capture server logs (Windows)
+      if: always() && runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Path server-logs -Force | Out-Null
+
+        # Check common log locations
+        $candidates = @(
+          "$env:TEMP\lemonade-server.log",
+          "$env:TEMP\lemonade-router.log",
+          "$env:LOCALAPPDATA\lemonade_server\lemonade-server.log"
+        )
+
+        $found = $false
+        foreach ($logFile in $candidates) {
+          if (Test-Path $logFile) {
+            Write-Host "=== Last 200 lines of $logFile ==="
+            Get-Content $logFile -Tail 200
+            Copy-Item $logFile server-logs/ -ErrorAction SilentlyContinue
+            $found = $true
+          }
+        }
+
+        if (-not $found) {
+          Write-Host "No server log file found"
+        }
+
+    - name: Capture server logs (Linux/macOS)
+      if: always() && runner.os != 'Windows'
       shell: bash
       run: |
         mkdir -p server-logs
 
-        # Platform-specific log file discovery
-        if [ "$RUNNER_OS" = "Windows" ]; then
-          LOG_FILE="$TEMP/lemonade-server.log"
-          [ ! -f "$LOG_FILE" ] && LOG_FILE="$TEMP/lemonade-router.log"
-        elif [ "$RUNNER_OS" = "macOS" ]; then
+        if [ "$RUNNER_OS" = "macOS" ]; then
           LOG_FILE="/var/log/lemonade/lemonade-server.out.log"
           [ ! -f "$LOG_FILE" ] && LOG_FILE="/tmp/lemonade-server.log"
         else
@@ -42,16 +65,14 @@ runs:
           cp /var/log/lemonade/lemonade-server.err.log server-logs/ 2>/dev/null || true
         fi
 
-        # Capture any temp lemonade logs (macOS/Linux)
-        if [ "$RUNNER_OS" != "Windows" ]; then
-          for f in /tmp/lemonade*.log; do
-            if [ -f "$f" ]; then
-              echo "--- $f ---"
-              tail -50 "$f"
-              cp "$f" server-logs/ 2>/dev/null || true
-            fi
-          done 2>/dev/null || true
-        fi
+        # Capture any temp lemonade logs
+        for f in /tmp/lemonade*.log; do
+          if [ -f "$f" ]; then
+            echo "--- $f ---"
+            tail -50 "$f"
+            cp "$f" server-logs/ 2>/dev/null || true
+          fi
+        done 2>/dev/null || true
 
     - name: Upload server logs
       if: always()

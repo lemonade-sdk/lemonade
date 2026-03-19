@@ -741,40 +741,16 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      - name: Start server and verify
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
-
-          Write-Host "Starting lemonade server..." -ForegroundColor Cyan
-          Start-Process -FilePath $serverExe -ArgumentList "serve","--no-tray" -WindowStyle Hidden
-
-          # Wait for server to be ready
-          $maxWait = 60
-          $waited = 0
-          while ($waited -lt $maxWait) {
-            try {
-              $response = Invoke-WebRequest -Uri "http://localhost:8000/live" -TimeoutSec 2 -ErrorAction Stop
-              if ($response.StatusCode -eq 200) {
-                Write-Host "Server is running and healthy" -ForegroundColor Green
-                break
-              }
-            } catch {}
-            Start-Sleep -Seconds 2
-            $waited += 2
-          }
-          if ($waited -ge $maxWait) {
-            Write-Error "Server did not start within $maxWait seconds"
-            exit 1
-          }
-
       - name: Set debug logging
-        shell: bash
+        shell: pwsh
         run: |
-          curl -sf -X POST http://localhost:8000/internal/set \
-            -H 'Content-Type: application/json' \
-            -d '{"log_level":"debug"}' || echo "Warning: Failed to set debug logging"
+          try {
+            Invoke-WebRequest -Uri "http://localhost:8000/internal/set" -Method POST `
+              -ContentType "application/json" -Body '{"log_level":"debug"}' -ErrorAction Stop | Out-Null
+            Write-Host "Debug logging enabled"
+          } catch {
+            Write-Host "Warning: Failed to set debug logging: $_"
+          }
 
       - name: Install FLM backend for FLM wrapped-server tests
         if: ${{ runner.os == 'Windows' && contains(matrix.extra_args, '--wrapped-server flm') }}
@@ -874,20 +850,6 @@ jobs:
           venv-name: '.venv'
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
-
-      - name: Verify server is running
-        run: |
-          echo "Checking server health..."
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
-              echo "Server is running and healthy"
-              exit 0
-            fi
-            echo "Waiting for server... ($i/30)"
-            sleep 2
-          done
-          echo "ERROR: Server did not start within 60 seconds"
-          exit 1
 
       - name: Set debug logging
         run: |
@@ -992,20 +954,6 @@ jobs:
           venv-name: '.venv'
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
-
-      - name: Verify server is running
-        run: |
-          echo "Checking server health..."
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
-              echo "Server is running and healthy"
-              exit 0
-            fi
-            echo "Waiting for server... ($i/30)"
-            sleep 2
-          done
-          echo "ERROR: Server did not start within 60 seconds"
-          exit 1
 
       - name: Set debug logging
         run: |
@@ -1138,38 +1086,7 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      # ---- Verify Server & Run Tests ----
-      - name: Start server (Windows - MSI doesn't auto-start)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          echo "Starting lemonade server..."
-          "$SERVER_BINARY" serve --no-tray &
-          # Wait for server to be ready
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
-              echo "Server is ready"
-              break
-            fi
-            sleep 1
-          done
-
-      - name: Verify server is running
-        if: ${{ !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
-        shell: bash
-        run: |
-          echo "Checking server health..."
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
-              echo "Server is running and healthy"
-              exit 0
-            fi
-            echo "Waiting for server... ($i/30)"
-            sleep 2
-          done
-          echo "ERROR: Server did not start within 60 seconds"
-          exit 1
-
+      # ---- Run Tests ----
       - name: Set debug logging
         if: ${{ !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
@@ -1297,35 +1214,13 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      - name: Start server (Windows)
-        if: runner.os == 'Windows'
+      - name: Verify API key enforcement
         shell: bash
         run: |
-          echo "Starting lemonade server with API key..."
-          "$SERVER_BINARY" serve --no-tray &
-          for i in $(seq 1 30); do
-            # Use API key header since server enforces auth
-            if curl -sf -H "Authorization: Bearer test-api-key-12345" http://localhost:8000/live > /dev/null 2>&1; then
-              echo "Server is ready"
-              break
-            fi
-            sleep 1
-          done
+          # Install actions already verified server is running.
+          # Now verify API key auth is active.
 
-      - name: Verify server is running with API key enforcement
-        shell: bash
-        run: |
-          echo "Checking server health with API key..."
-          for i in $(seq 1 30); do
-            if curl -sf -H "Authorization: Bearer test-api-key-12345" http://localhost:8000/live > /dev/null 2>&1; then
-              echo "Server is running and healthy"
-              break
-            fi
-            echo "Waiting for server... ($i/30)"
-            sleep 2
-          done
-
-          # Verify that requests WITHOUT API key are rejected
+          # Requests WITHOUT API key should be rejected
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/v1/health 2>/dev/null || echo "000")
           if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
             echo "API key enforcement verified: unauthenticated request returned $HTTP_CODE"
@@ -1333,7 +1228,7 @@ jobs:
             echo "WARNING: Expected 401/403 for unauthenticated request, got $HTTP_CODE"
           fi
 
-          # Verify that requests WITH API key succeed
+          # Requests WITH API key should succeed
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer test-api-key-12345" http://localhost:8000/api/v1/health 2>/dev/null || echo "000")
           if [ "$HTTP_CODE" = "200" ]; then
             echo "API key authentication verified: authenticated request returned 200"

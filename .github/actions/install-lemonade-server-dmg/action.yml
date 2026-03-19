@@ -55,24 +55,6 @@ runs:
 
         echo "Binaries at: $BIN_PATH"
 
-    - name: Stop services before verification
-      shell: bash
-      run: |
-        echo "Stopping any services started by postflight script..."
-        sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
-        sudo launchctl bootout system/com.lemonade.tray 2>/dev/null || true
-        sleep 2
-
-        # Clean up PID and lock files left behind by killed processes
-        echo "Cleaning up stale PID and lock files..."
-        sudo rm -f /tmp/lemonade-router.pid
-        sudo rm -f /tmp/lemonade_Router.lock
-        sudo rm -f /tmp/lemonade_Server.lock
-        sudo rm -f /tmp/lemonade_Tray.lock
-        sudo rm -f /tmp/lemonade*.pid /tmp/lemonade*.lock
-
-        echo "Services stopped and cleaned up."
-
     - name: Verify installation
       shell: bash
       run: |
@@ -97,3 +79,20 @@ runs:
         fi
 
         echo "Installation verification complete!"
+
+    - name: Wait for server to be ready
+      shell: bash
+      run: |
+        # The .pkg postflight script starts the server via launchd.
+        # Wait for it to be accepting requests.
+        echo "Waiting for server to be ready..."
+        for i in $(seq 1 30); do
+          if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
+            echo "Server is running and healthy"
+            exit 0
+          fi
+          echo "Waiting for server... ($i/30)"
+          sleep 2
+        done
+        echo "ERROR: Server did not start within 60 seconds"
+        exit 1

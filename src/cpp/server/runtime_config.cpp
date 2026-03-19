@@ -1,6 +1,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/recipe_options.h"
 #include <algorithm>
+#include <mutex>
 #include <stdexcept>
 
 namespace lemon {
