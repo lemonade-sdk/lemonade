@@ -1,7 +1,6 @@
 name: Validate New llama.cpp Release
 
 on:
-  pull_request:
   workflow_dispatch:
   schedule:
     # Sunday at 12:00 PM ET (17:00 UTC, 16:00 UTC during EDT)
