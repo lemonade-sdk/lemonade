@@ -47,8 +47,8 @@ jobs:
   # ========================================================================
   # Build binaries with updated backend versions
   # ========================================================================
-  build-vulkan:
-    name: Build (vulkan)
+  build:
+    name: Build
     needs: get-latest-releases
     runs-on: windows-latest
     steps:
@@ -60,68 +60,27 @@ jobs:
       - name: Update backend_versions.json
         shell: PowerShell
         env:
-          RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
+          LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
+          LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
         run: |
           $ErrorActionPreference = "Stop"
-          $release = $env:RELEASE
-          Write-Host "Updating llamacpp vulkan/cpu/metal to $release" -ForegroundColor Cyan
           $path = "src/cpp/resources/backend_versions.json"
           $data = Get-Content $path -Raw | ConvertFrom-Json
+
+          $release = $env:LLAMACPP_RELEASE
+          Write-Host "Updating llamacpp vulkan/cpu/metal to $release" -ForegroundColor Cyan
           foreach ($key in @("vulkan", "cpu", "metal")) {
               $old = $data.llamacpp.$key
               $data.llamacpp.$key = $release
               Write-Host "  llamacpp.${key}: $old -> $release"
           }
-          $data | ConvertTo-Json -Depth 10 | Set-Content $path -Encoding UTF8
 
-      - name: Build C++ Server with CMake
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          Write-Host "Building lemonade-router and lemonade-server..." -ForegroundColor Cyan
-          if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
-          cmake --preset windows
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build build --config Release
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path "build\Release\lemonade-server.exe")) {
-              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
-              exit 1
-          }
-          Write-Host "Build successful!" -ForegroundColor Green
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: llamacpp-build-vulkan
-          path: |
-            build/Release/
-            build/resources/
-          retention-days: 7
-
-  build-rocm:
-    name: Build (rocm)
-    needs: get-latest-releases
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          clean: true
-          fetch-depth: 0
-
-      - name: Update backend_versions.json
-        shell: PowerShell
-        env:
-          RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
-        run: |
-          $ErrorActionPreference = "Stop"
-          $release = $env:RELEASE
-          Write-Host "Updating llamacpp rocm to $release" -ForegroundColor Cyan
-          $path = "src/cpp/resources/backend_versions.json"
-          $data = Get-Content $path -Raw | ConvertFrom-Json
+          $rocm = $env:LLAMACPP_ROCM_RELEASE
+          Write-Host "Updating llamacpp rocm to $rocm" -ForegroundColor Cyan
           $old = $data.llamacpp.rocm
-          $data.llamacpp.rocm = $release
-          Write-Host "  llamacpp.rocm: $old -> $release"
+          $data.llamacpp.rocm = $rocm
+          Write-Host "  llamacpp.rocm: $old -> $rocm"
+
           $data | ConvertTo-Json -Depth 10 | Set-Content $path -Encoding UTF8
 
       - name: Build C++ Server with CMake
@@ -143,7 +102,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: llamacpp-build-rocm
+          name: llamacpp-build
           path: |
             build/Release/
             build/resources/
@@ -154,7 +113,7 @@ jobs:
   # ========================================================================
   validate-vulkan:
     name: Validate vulkan
-    needs: [get-latest-releases, build-vulkan]
+    needs: [get-latest-releases, build]
     runs-on: [self-hosted, Windows, 128gb]
     steps:
       - uses: actions/checkout@v4
@@ -167,7 +126,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: llamacpp-build-vulkan
+          name: llamacpp-build
           path: build
 
       - name: Verify binaries
@@ -230,7 +189,7 @@ jobs:
   # ========================================================================
   validate-rocm:
     name: Validate rocm
-    needs: [get-latest-releases, build-rocm]
+    needs: [get-latest-releases, build]
     runs-on: [self-hosted, Windows, 128gb]
     steps:
       - uses: actions/checkout@v4
@@ -243,7 +202,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: llamacpp-build-rocm
+          name: llamacpp-build
           path: build
 
       - name: Verify binaries
