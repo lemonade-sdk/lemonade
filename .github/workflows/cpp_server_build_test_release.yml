@@ -742,7 +742,7 @@ jobs:
           requirements-file: 'test/requirements.txt'
 
       - name: Set debug logging
-        shell: pwsh
+        shell: powershell
         run: |
           try {
             Invoke-WebRequest -Uri "http://localhost:8000/internal/set" -Method POST `
@@ -1035,7 +1035,7 @@ jobs:
       # ---- Windows Setup ----
       - name: Setup (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: |
           $cwd = (Get-Item .).FullName
           echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
@@ -1049,7 +1049,7 @@ jobs:
 
       - name: Set paths (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: |
           echo "VENV_PYTHON=.venv/Scripts/python.exe" >> $Env:GITHUB_ENV
           echo "SERVER_BINARY=$Env:LEMONADE_INSTALL_PATH\bin\lemonade-server.exe" >> $Env:GITHUB_ENV
@@ -1187,7 +1187,7 @@ jobs:
       # ---- Windows Setup ----
       - name: Setup (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: |
           $cwd = (Get-Item .).FullName
           echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
@@ -1201,7 +1201,7 @@ jobs:
 
       - name: Set paths (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: |
           echo "VENV_PYTHON=.venv/Scripts/python.exe" >> $Env:GITHUB_ENV
           echo "SERVER_BINARY=$Env:LEMONADE_INSTALL_PATH\bin\lemonade-server.exe" >> $Env:GITHUB_ENV

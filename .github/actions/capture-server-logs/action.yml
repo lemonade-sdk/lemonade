@@ -9,7 +9,7 @@ runs:
   steps:
     - name: Capture server logs (Windows)
       if: always() && runner.os == 'Windows'
-      shell: pwsh
+      shell: powershell
       run: |
         New-Item -ItemType Directory -Path server-logs -Force | Out-Null
 

@@ -137,7 +137,7 @@ runs:
         }
 
     - name: Wait for server to be ready
-      shell: pwsh
+      shell: powershell
       run: |
         # The MSI AutoLaunchLemonade custom action starts LemonadeServer.exe
         # after install. Wait for it to be accepting requests.
