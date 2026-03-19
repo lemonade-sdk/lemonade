@@ -1,0 +1,19 @@
+#!/usr/bin/make -f
+
+DEB_BUILD_DIR := obj-$(DEB_HOST_GNU_TYPE)
+
+%:
+	dh $@ --buildsystem=cmake+ninja
+
+override_dh_auto_configure:
+	dh_auto_configure -- -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_WEB_APP=ON -DUSE_SYSTEM_NODEJS_MODULES=ON
+
+override_dh_auto_test:
+	# No tests configured
+
+override_dh_install:
+	dh_install
+	# Use system llama.cpp
+ifeq (yes,$(shell dpkg-vendor --derives-from Ubuntu 2>/dev/null && echo yes))
+	sed -i 's/^#LEMONADE_LLAMACPP_PREFER_SYSTEM=/LEMONADE_LLAMACPP_PREFER_SYSTEM=1/' debian/lemonade-server/etc/lemonade/lemonade.conf
+endif
