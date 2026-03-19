@@ -39,40 +39,61 @@ runs:
       shell: bash
       run: |
         mkdir -p server-logs
+        found=false
 
+        # --- macOS: launchd redirects to /var/log/lemonade/ ---
         if [ "$RUNNER_OS" = "macOS" ]; then
-          LOG_FILE="/var/log/lemonade/lemonade-server.out.log"
-          [ ! -f "$LOG_FILE" ] && LOG_FILE="/tmp/lemonade-server.log"
-        else
+          for f in /var/log/lemonade/lemonade-server.out.log /var/log/lemonade/lemonade-server.err.log; do
+            if [ -f "$f" ]; then
+              echo "=== Last 200 lines of $f ==="
+              tail -200 "$f"
+              cp "$f" server-logs/ 2>/dev/null || true
+              found=true
+            fi
+          done
+        fi
+
+        # --- Linux: check file-based logs ---
+        if [ "$RUNNER_OS" = "Linux" ]; then
+          # XDG runtime dir (e.g. /run/user/1001/lemonade/)
           LEMON_RUNTIME_DIR="${XDG_RUNTIME_DIR:+${XDG_RUNTIME_DIR}/lemonade}"
-          LEMON_RUNTIME_DIR="${LEMON_RUNTIME_DIR:-/tmp}"
-          LOG_FILE="${LEMON_RUNTIME_DIR}/lemonade-server.log"
-          [ ! -f "$LOG_FILE" ] && LOG_FILE="/tmp/lemonade-server.log"
+          for candidate in \
+            "${LEMON_RUNTIME_DIR}/lemonade-server.log" \
+            /tmp/lemonade-server.log \
+            /tmp/lemonade-router.log; do
+            if [ -f "$candidate" ]; then
+              echo "=== Last 200 lines of $candidate ==="
+              tail -200 "$candidate"
+              cp "$candidate" server-logs/ 2>/dev/null || true
+              found=true
+            fi
+          done
+
+          # Systemd journal (works when server runs as lemonade-server.service)
+          if [ "$found" = "false" ] && command -v journalctl > /dev/null 2>&1; then
+            echo "=== Last 200 lines from journalctl for lemonade-server ==="
+            sudo journalctl -u lemonade-server --no-pager -n 200 2>/dev/null | tee server-logs/journald-lemonade-server.log || true
+            if [ -s server-logs/journald-lemonade-server.log ]; then
+              found=true
+            else
+              rm -f server-logs/journald-lemonade-server.log
+            fi
+          fi
         fi
 
-        if [ -f "$LOG_FILE" ]; then
-          echo "=== Last 200 lines of $LOG_FILE ==="
-          tail -200 "$LOG_FILE"
-          cp "$LOG_FILE" server-logs/ 2>/dev/null || true
-        else
-          echo "No server log file found"
-        fi
-
-        # Also capture stderr log on macOS
-        if [ "$RUNNER_OS" = "macOS" ] && [ -f /var/log/lemonade/lemonade-server.err.log ]; then
-          echo "=== Last 50 lines of stderr log ==="
-          tail -50 /var/log/lemonade/lemonade-server.err.log
-          cp /var/log/lemonade/lemonade-server.err.log server-logs/ 2>/dev/null || true
-        fi
-
-        # Capture any temp lemonade logs
+        # --- Any platform: glob for /tmp/lemonade*.log ---
         for f in /tmp/lemonade*.log; do
           if [ -f "$f" ]; then
             echo "--- $f ---"
             tail -50 "$f"
             cp "$f" server-logs/ 2>/dev/null || true
+            found=true
           fi
         done 2>/dev/null || true
+
+        if [ "$found" = "false" ]; then
+          echo "No server log files found"
+        fi
 
     - name: Upload server logs
       if: always()

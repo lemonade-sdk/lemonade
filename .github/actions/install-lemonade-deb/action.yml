@@ -93,11 +93,14 @@ runs:
       shell: bash
       run: |
         # The .deb extract doesn't install a systemd service, so start manually.
+        # lemonade-router logs to stdout (SinkCout), so redirect to a file for
+        # the capture-server-logs action to find.
         EXTRACT_PATH="${{ inputs.extract-path }}"
         SERVER_BIN="$EXTRACT_PATH/opt/bin/lemonade-server"
+        LOG_FILE="/tmp/lemonade-server.log"
 
-        echo "Starting lemonade server..."
-        "$SERVER_BIN" serve --no-tray &
+        echo "Starting lemonade server (logging to $LOG_FILE)..."
+        "$SERVER_BIN" serve --no-tray > "$LOG_FILE" 2>&1 &
 
         echo "Waiting for server to be ready..."
         for i in $(seq 1 30); do
