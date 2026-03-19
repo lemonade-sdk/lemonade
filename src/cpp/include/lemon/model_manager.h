@@ -37,6 +37,10 @@ struct ImageDefaults {
     float cfg_scale = 7.0f;
     int width = 512;
     int height = 512;
+    std::string sampling_method;
+    bool diffusion_fa = false;
+    float flow_shift = 0.0f;
+    bool offload_to_cpu = false;
 
     bool has_defaults = false;  // True if explicit defaults were provided in JSON
 };

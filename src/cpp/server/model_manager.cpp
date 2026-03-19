@@ -466,8 +466,9 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
     // HuggingFace models: need to find the GGUF file in cache
     // Parse checkpoint to get repo_id and variant
-    // All files are downloaded in the directory of the main checkpoint
-    std::string repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
+    // Use the checkpoint's own repo if it specifies one, otherwise fall back to main
+    std::string checkpoint_repo = checkpoint_to_repo_id(checkpoint);
+    std::string repo_id = checkpoint_repo.empty() ? checkpoint_to_repo_id(info.checkpoint("main")) : checkpoint_repo;
     std::string variant = checkpoint_to_variant(checkpoint);
 
     // Convert org/model to models--org--model
@@ -794,6 +795,10 @@ void ModelManager::build_cache() {
             info.image_defaults.cfg_scale = JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
             info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
             info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
+            info.image_defaults.sampling_method = JsonUtils::get_or_default<std::string>(img_defaults, "sampling_method", "");
+            info.image_defaults.diffusion_fa = JsonUtils::get_or_default<bool>(img_defaults, "diffusion_fa", false);
+            info.image_defaults.flow_shift = JsonUtils::get_or_default<float>(img_defaults, "flow_shift", 0.0f);
+            info.image_defaults.offload_to_cpu = JsonUtils::get_or_default<bool>(img_defaults, "offload_to_cpu", false);
         }
 
         // Populate type and device fields (multi-model support)
@@ -835,6 +840,10 @@ void ModelManager::build_cache() {
             info.image_defaults.cfg_scale = JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
             info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
             info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
+            info.image_defaults.sampling_method = JsonUtils::get_or_default<std::string>(img_defaults, "sampling_method", "");
+            info.image_defaults.diffusion_fa = JsonUtils::get_or_default<bool>(img_defaults, "diffusion_fa", false);
+            info.image_defaults.flow_shift = JsonUtils::get_or_default<float>(img_defaults, "flow_shift", 0.0f);
+            info.image_defaults.offload_to_cpu = JsonUtils::get_or_default<bool>(img_defaults, "offload_to_cpu", false);
         }
 
         // Populate type and device fields (multi-model support)
@@ -884,6 +893,14 @@ void ModelManager::build_cache() {
             base_options["cfg_scale"] = info.image_defaults.cfg_scale;
             base_options["width"] = info.image_defaults.width;
             base_options["height"] = info.image_defaults.height;
+            if (!info.image_defaults.sampling_method.empty())
+                base_options["sampling_method"] = info.image_defaults.sampling_method;
+            if (info.image_defaults.diffusion_fa)
+                base_options["diffusion_fa"] = info.image_defaults.diffusion_fa ? 1 : 0;
+            if (info.image_defaults.flow_shift > 0.0f)
+                base_options["flow_shift"] = info.image_defaults.flow_shift;
+            if (info.image_defaults.offload_to_cpu)
+                base_options["offload_to_cpu"] = info.image_defaults.offload_to_cpu ? 1 : 0;
         }
 
         // User-saved recipe options override image_defaults
