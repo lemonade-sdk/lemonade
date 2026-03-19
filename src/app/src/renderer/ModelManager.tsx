@@ -2121,7 +2121,7 @@ const [searchQuery, setSearchQuery] = useState('');
                       );
                     })}
                   </div>
-                  <div className="filter-section-label">Group suggested models</div>
+                  <div className="filter-section-label">Suggested models</div>
                   <div className="organization-toggle">
                     <button className={`toggle-button ${organizationMode === 'recipe' ? 'active' : ''}`} onClick={() => {
                       setOrganizationMode('recipe');
@@ -2134,6 +2134,13 @@ const [searchQuery, setSearchQuery] = useState('');
                       By Category
                     </button>
                   </div>
+                  <label className="toggle-switch-label">
+                    <span className="toggle-label-text">Downloaded only</span>
+                    <div className="toggle-switch">
+                      <input type="checkbox" checked={showDownloadedOnly} onChange={(e) => setShowDownloadedOnly(e.target.checked)} />
+                      <span className="toggle-slider"></span>
+                    </div>
+                  </label>
                   <div className="filter-section-label">Sections</div>
                   <label className="toggle-switch-label">
                     <span className="toggle-label-text">Suggested</span>
@@ -2153,13 +2160,6 @@ const [searchQuery, setSearchQuery] = useState('');
                     <span className="toggle-label-text">HF Search</span>
                     <div className="toggle-switch">
                       <input type="checkbox" checked={showSearchSection} onChange={(e) => setShowSearchSection(e.target.checked)} />
-                      <span className="toggle-slider"></span>
-                    </div>
-                  </label>
-                  <label className="toggle-switch-label">
-                    <span className="toggle-label-text">Downloaded only</span>
-                    <div className="toggle-switch">
-                      <input type="checkbox" checked={showDownloadedOnly} onChange={(e) => setShowDownloadedOnly(e.target.checked)} />
                       <span className="toggle-slider"></span>
                     </div>
                   </label>
