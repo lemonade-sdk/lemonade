@@ -171,6 +171,19 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         return 1;
     }
 
+    // In CI mode (no display server), skip the tray UI and just run headless.
+    // The server thread handles requests; we block until /internal/shutdown.
+    bool ci_mode = (std::getenv("LEMONADE_CI_MODE") != nullptr);
+
+    if (ci_mode) {
+        LOG(INFO, "Tray") << "CI mode: running headless (no tray UI)" << std::endl;
+        // Block forever — the server thread handles everything.
+        // /internal/shutdown will call std::exit(0) to terminate.
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::hours(24));
+        }
+    }
+
     // Create and run tray UI
     lemon_tray::TrayUI tray(config.port, config.host);
     if (!tray.initialize()) {

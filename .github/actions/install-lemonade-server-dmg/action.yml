@@ -84,8 +84,7 @@ runs:
       shell: bash
       run: |
         BIN_PATH="${{ steps.install.outputs.bin-path }}"
-        LOG_DIR="/var/log/lemonade"
-        LOG_FILE="$LOG_DIR/lemonade-server.out.log"
+        LOG_FILE="/tmp/lemonade-server.log"
 
         # The .pkg postflight script starts the server via launchd.
         # Give it a few seconds to come up before checking.
@@ -101,8 +100,7 @@ runs:
         # Launchd may not work reliably in CI (no GUI session, restricted
         # sandbox). Fall back to starting the server manually.
         echo "Server not reachable after 30s — starting manually..."
-        sudo mkdir -p "$LOG_DIR"
-        sudo "$BIN_PATH/lemonade-server" serve --no-tray > "$LOG_FILE" 2>&1 &
+        "$BIN_PATH/lemonade-server" serve --no-tray > "$LOG_FILE" 2>&1 &
 
         for i in $(seq 1 15); do
           if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
@@ -113,4 +111,5 @@ runs:
           sleep 2
         done
         echo "ERROR: Server did not start within 60 seconds"
+        cat "$LOG_FILE" 2>/dev/null || true
         exit 1
