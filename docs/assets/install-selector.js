@@ -8,9 +8,10 @@ const ALLOWLIST = [
   { os: 'win', fw: 'llama', dev: 'cpu' },
   { os: 'win', fw: 'llama', dev: 'gpu' },
   { os: 'win', fw: 'flm', dev: 'npu' },
-  // Linux: llama.cpp only (CPU, GPU)
+  // Linux: llama.cpp (CPU, GPU), FastFlowLM (NPU)
   { os: 'linux', fw: 'llama', dev: 'cpu' },
   { os: 'linux', fw: 'llama', dev: 'gpu' },
+  { os: 'linux', fw: 'flm', dev: 'npu' },
   // Docker: llama.cpp only (CPU, GPU)
   { os: 'docker', fw: 'llama', dev: 'cpu' },
   { os: 'docker', fw: 'llama', dev: 'gpu' },
@@ -107,6 +108,12 @@ window.lmnRender = function() {
       if (lmnState[category] === opt) el.classList.add('lmn-active');
     });
   });
+
+  // Update NPU label based on selected framework
+  const npuEl = document.getElementById('dev-npu');
+  if (npuEl) {
+    npuEl.textContent = (fw === 'flm') ? 'NPU' : 'NPU, Hybrid';
+  }
 
   // Gray out invalid combinations
   cells.fw.forEach(f => {
@@ -306,12 +313,68 @@ function renderDownload() {
         installCmdDiv.style.display = 'none';
       }
     } else if (distro === 'fedora') {
-      if (downloadArea) downloadArea.style.display = 'none';
-      if (installCmdDiv) installCmdDiv.style.display = 'none';
-      if (cmdDiv) {
-        cmdDiv.innerHTML = `<div class="lmn-coming-soon">For Fedora, please follow the build instructions as described in the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md#building-from-source" target="_blank">Developer Guide</a>.</div>`;
+      // Fedora: Show structured server + frontend installation
+      const rpmFile = `lemonade-server-${version}.x86_64.rpm`;
+      const appImageFile = `Lemonade-${version}-x86_64.AppImage`;
+      const downloadUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${rpmFile}`;
+      const appImageUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${appImageFile}`;
+
+      if (downloadArea) {
+        downloadArea.style.display = 'none';
       }
-      return;
+      if (installCmdDiv) {
+        installCmdDiv.style.display = 'block';
+        const rpmCommands = [
+          `wget ${downloadUrl}`,
+          `sudo dnf install ./${rpmFile}`
+        ];
+
+        let frontendSection = '';
+        if (type === 'app') {
+          frontendSection = `
+            <div class="lmn-install-section-title">Step 2: Choose your frontend</div>
+            <div class="lmn-install-method-header">Option 1: Web App (default, available at <a href="http://localhost:8000" target="_blank">http://localhost:8000</a>)</div>
+            <div class="lmn-note">The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.</div>
+
+            <div class="lmn-install-method-header">Option 2: AppImage (portable desktop app, no installation required)</div>
+            <pre><code class="language-bash" id="lmn-install-appimage-block"></code></pre>
+          `;
+        }
+
+        installCmdDiv.innerHTML = `
+          <div class="lmn-install-section-title">Step 1: Install lemonade-server</div>
+          <div class="lmn-install-method-header">Via RPM package:</div>
+          <pre><code class="language-bash" id="lmn-install-pre-block"></code></pre>
+          ${frontendSection}
+        `;
+
+        setTimeout(() => {
+          // Render rpm commands
+          const pre = document.getElementById('lmn-install-pre-block');
+          if (pre) {
+            pre.innerHTML = rpmCommands.map((line, idx) => {
+              const safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyInstallLine(event, ${idx})">📋</button></div>`;
+            }).join('');
+          }
+
+          // Render AppImage commands if App + Server selected
+          if (type === 'app') {
+            const appImagePre = document.getElementById('lmn-install-appimage-block');
+            if (appImagePre) {
+              const appImageCommands = [
+                `wget ${appImageUrl}`,
+                `chmod +x ${appImageFile}`,
+                `./${appImageFile}`
+              ];
+              appImagePre.innerHTML = appImageCommands.map((cmd, idx) => {
+                const safeLine = cmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyAppImageLine(event, ${idx})">📋</button></div>`;
+              }).join('');
+            }
+          }
+        }, 0);
+      }
     } else if (distro === 'debian') {
       if (downloadArea) downloadArea.style.display = 'none';
       if (installCmdDiv) installCmdDiv.style.display = 'none';
@@ -495,9 +558,14 @@ function renderQuickStart() {
   // Add contextual notes based on inference engine and device
   let notes = '';
 
-  // NPU driver note
-  if (dev === 'npu') {
+  // NPU driver note (Windows only)
+  if (dev === 'npu' && os === 'win') {
     notes += `<div class="lmn-note"><strong>Note:</strong> NPU requires an AMD Ryzen AI 300-series PC with Windows 11 and driver installation. Download and install the <a href="${NPU_DRIVER_URL}" target="_blank">NPU Driver</a> before proceeding.</div>`;
+  }
+
+  // FLM Linux NPU setup note (above Early Access notice, matching Windows driver note placement)
+  if (fw === 'flm' && os === 'linux') {
+    notes += `<div class="lmn-note"><strong>Linux NPU Setup:</strong> See the <a href="https://lemonade-server.ai/flm_npu_linux.html" target="_blank">FastFlowLM NPU on Linux guide</a> for setup instructions.</div>`;
   }
 
   // FastFlowLM Early Access note
@@ -628,7 +696,7 @@ window.lmnInit = function() {
             <td class="lmn-label">Linux Distribution</td>
             <td id="distro-ubuntu" class="lmn-active">Ubuntu 24.04+</td>
             <td id="distro-arch">Arch Linux</td>
-            <td id="distro-fedora">Fedora</td>
+            <td id="distro-fedora">Fedora 43</td>
             <td id="distro-debian">Debian Trixie+</td>
           </tr>
           <tr id="lmn-install-type">
