@@ -203,6 +203,7 @@ def stop_lemonade():
         return
 
     # Try CLI stop command as fallback
+    stopped = False
     try:
         result = subprocess.run(
             [server_binary, "stop"],
@@ -213,6 +214,7 @@ def stop_lemonade():
         print(result.stdout)
         if result.stderr:
             print(f"stderr: {result.stderr}")
+        stopped = result.returncode == 0
     except subprocess.TimeoutExpired:
         print("Warning: stop command timed out")
     except Exception as e:
@@ -220,7 +222,8 @@ def stop_lemonade():
 
     # Wait for the server to fully exit before returning — the process may still
     # hold resources (mutex, port) briefly after acknowledging the shutdown request
-    _wait_for_port_closed()
+    if stopped:
+        _wait_for_port_closed()
 
 
 def wait_for_server(port=PORT, timeout=60):
