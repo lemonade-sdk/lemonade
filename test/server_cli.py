@@ -12,6 +12,8 @@ Tests the lemonade-server CLI commands directly (not HTTP API):
 - run
 - recipes
 
+Expects a running server (started by the installer or manually).
+
 Usage:
     python server_cli.py
     python server_cli.py --server-binary /path/to/lemonade-server
@@ -21,16 +23,14 @@ import argparse
 import json
 import os
 import re
-import socket
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
-import urllib.error
-import urllib.request
 
-from utils.server_base import _stop_server_via_systemd
+import requests
+from utils.server_base import wait_for_server, set_server_config
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     PORT,
@@ -44,8 +44,6 @@ from utils.test_models import (
 # Global configuration
 _config = {
     "server_binary": None,
-    "apikey": False,
-    "listen_all": False,
 }
 
 
@@ -58,22 +56,10 @@ def parse_cli_args():
         default=get_default_server_binary(),
         help="Path to lemonade-server binary (default: CMake build output)",
     )
-    parser.add_argument(
-        "--api-key",
-        action="store_true",
-        help="Run with API Key",
-    )
-    parser.add_argument(
-        "--listen-all",
-        action="store_true",
-        help="Listens on 0.0.0.0 instead of localhost",
-    )
 
     args, unknown = parser.parse_known_args()
 
     _config["server_binary"] = args.server_binary
-    _config["apikey"] = args.api_key
-    _config["listen_all"] = args.listen_all
 
     return args
 
@@ -115,51 +101,6 @@ def run_cli_command(args, timeout=60, check=False):
     return result
 
 
-def is_server_running(port=PORT):
-    """Check if the server is running on the given port."""
-    try:
-        conn = socket.create_connection(("localhost", port), timeout=2)
-        conn.close()
-        return True
-    except (socket.error, socket.timeout):
-        return False
-
-
-def wait_for_server_start(port=PORT, timeout=60):
-    """Wait for server to start."""
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        if is_server_running(port):
-            return True
-        time.sleep(1)
-    return False
-
-
-def wait_for_server_stop(port=PORT, timeout=30):
-    """Wait for server to stop."""
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        if not is_server_running(port):
-            return True
-        time.sleep(1)
-    return False
-
-
-def stop_server():
-    """Stop the server using systemctl on Linux, or CLI as fallback."""
-    # Try systemd first on Linux
-    if _stop_server_via_systemd():
-        wait_for_server_stop()
-        return
-
-    # Try CLI stop command as fallback
-    try:
-        run_cli_command(["stop"], timeout=30)
-        wait_for_server_stop()
-    except Exception as e:
-        print(f"Warning: Failed to stop server: {e}")
-
-
 class CLITestBase(unittest.TestCase):
     """Base class for CLI tests with common utilities."""
 
@@ -188,63 +129,23 @@ class PersistentServerCLITests(CLITestBase):
     """
     CLI tests that run with a persistent server.
 
-    The server starts once at class setup and stops at teardown.
+    Expects a running server (started by the installer or manually).
     Tests run in order and may depend on previous test state.
     """
 
     @classmethod
     def setUpClass(cls):
-        """Start the server for all tests."""
+        """Verify server is running."""
         super().setUpClass()
-        print("\n=== Starting persistent server for CLI tests ===")
-
-        # Stop any existing server
-        stop_server()
-
-        # Start server in background
-        cmd = [_config["server_binary"], "serve"]
-        # Add --no-tray on Windows or in CI environments (no display server in containers)
-        if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
-            cmd.append("--no-tray")
-
-        if _config["listen_all"]:
-            cmd.append("--host")
-            cmd.append("0.0.0.0")
-
-        if _config["apikey"]:
-            os.environ["LEMONADE_API_KEY"] = "api-key"
-
-        if sys.platform == "win32":
-            cls._server_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+        print("\n=== Verifying server is reachable for CLI tests ===")
+        try:
+            wait_for_server(timeout=30)
+        except TimeoutError:
+            raise RuntimeError(
+                "Server is not running on port %d. "
+                "Start the server before running tests." % PORT
             )
-        else:
-            cls._server_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-
-        # Wait for server to start
-        if not wait_for_server_start():
-            cls._server_process.terminate()
-            raise RuntimeError("Failed to start server for CLI tests")
-
-        print("Server started successfully")
-        time.sleep(3)  # Additional wait for full initialization
-
-    @classmethod
-    def tearDownClass(cls):
-        """Stop the server after all tests."""
-        print("\n=== Stopping persistent server ===")
-        stop_server()
-        if hasattr(cls, "_server_process") and cls._server_process:
-            cls._server_process.terminate()
-            cls._server_process.wait(timeout=10)
-        super().tearDownClass()
+        print("Server is reachable")
 
     def test_001_version(self):
         """Test --version flag."""
@@ -460,14 +361,38 @@ class PersistentServerCLITests(CLITestBase):
         )
         print(f"[OK] Re-installed {target} for clean state")
 
+    def test_012_listen_all_via_runtime_config(self):
+        """Test that setting host to 0.0.0.0 via /internal/set works."""
+        # Set host to 0.0.0.0 (listen on all interfaces)
+        try:
+            set_server_config({"host": "0.0.0.0"})
+            print("[OK] Set host to 0.0.0.0 via /internal/set")
+        except Exception as e:
+            self.fail(f"Failed to set host to 0.0.0.0: {e}")
+
+        # Verify the server still responds (status command should work)
+        result = self.assertCommandSucceeds(["status"])
+        output = result.stdout.lower() + result.stderr.lower()
+        self.assertTrue(
+            "running" in output or "online" in output or "active" in output,
+            f"Status should indicate server is running on 0.0.0.0: {result.stdout}",
+        )
+
+        # Verify via health endpoint too
+        response = requests.get(f"http://localhost:{PORT}/api/v1/health", timeout=10)
+        self.assertEqual(response.status_code, 200)
+
+        # Restore host back to localhost
+        try:
+            set_server_config({"host": "localhost"})
+            print("[OK] Restored host to localhost")
+        except Exception as e:
+            # Best-effort restore — don't fail the test
+            print(f"Warning: Failed to restore host to localhost: {e}")
+
 
 def run_cli_tests():
-    """
-    Run CLI tests based on command line arguments.
-
-    IMPORTANT: This function ensures the server is ALWAYS stopped before exiting,
-    regardless of whether tests passed or failed.
-    """
+    """Run CLI tests based on command line arguments."""
     args = parse_cli_args()
 
     print(f"\n{'=' * 70}")
@@ -477,18 +402,12 @@ def run_cli_tests():
 
     test_class = PersistentServerCLITests
 
-    result = None
-    try:
-        # Create and run test suite
-        loader = unittest.TestLoader()
-        suite = loader.loadTestsFromTestCase(test_class)
+    # Create and run test suite
+    loader = unittest.TestLoader()
+    suite = loader.loadTestsFromTestCase(test_class)
 
-        runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
-        result = runner.run(suite)
-    finally:
-        # ALWAYS stop the server before exiting, regardless of test outcome
-        print("\n=== Final cleanup: ensuring server is stopped ===")
-        stop_server()
+    runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
+    result = runner.run(suite)
 
     sys.exit(0 if (result and result.wasSuccessful()) else 1)
 

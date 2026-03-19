@@ -1,0 +1,63 @@
+name: 'Capture Server Logs'
+description: 'Find, print, and upload lemonade server logs as artifacts'
+inputs:
+  artifact-name:
+    description: 'Name for the uploaded artifact'
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Capture server logs
+      if: always()
+      shell: bash
+      run: |
+        mkdir -p server-logs
+
+        # Platform-specific log file discovery
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          LOG_FILE="$TEMP/lemonade-server.log"
+          [ ! -f "$LOG_FILE" ] && LOG_FILE="$TEMP/lemonade-router.log"
+        elif [ "$RUNNER_OS" = "macOS" ]; then
+          LOG_FILE="/var/log/lemonade/lemonade-server.out.log"
+          [ ! -f "$LOG_FILE" ] && LOG_FILE="/tmp/lemonade-server.log"
+        else
+          LEMON_RUNTIME_DIR="${XDG_RUNTIME_DIR:+${XDG_RUNTIME_DIR}/lemonade}"
+          LEMON_RUNTIME_DIR="${LEMON_RUNTIME_DIR:-/tmp}"
+          LOG_FILE="${LEMON_RUNTIME_DIR}/lemonade-server.log"
+          [ ! -f "$LOG_FILE" ] && LOG_FILE="/tmp/lemonade-server.log"
+        fi
+
+        if [ -f "$LOG_FILE" ]; then
+          echo "=== Last 200 lines of $LOG_FILE ==="
+          tail -200 "$LOG_FILE"
+          cp "$LOG_FILE" server-logs/ 2>/dev/null || true
+        else
+          echo "No server log file found"
+        fi
+
+        # Also capture stderr log on macOS
+        if [ "$RUNNER_OS" = "macOS" ] && [ -f /var/log/lemonade/lemonade-server.err.log ]; then
+          echo "=== Last 50 lines of stderr log ==="
+          tail -50 /var/log/lemonade/lemonade-server.err.log
+          cp /var/log/lemonade/lemonade-server.err.log server-logs/ 2>/dev/null || true
+        fi
+
+        # Capture any temp lemonade logs (macOS/Linux)
+        if [ "$RUNNER_OS" != "Windows" ]; then
+          for f in /tmp/lemonade*.log; do
+            if [ -f "$f" ]; then
+              echo "--- $f ---"
+              tail -50 "$f"
+              cp "$f" server-logs/ 2>/dev/null || true
+            fi
+          done 2>/dev/null || true
+        fi
+
+    - name: Upload server logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: server-logs/
+        retention-days: 7
+        if-no-files-found: ignore

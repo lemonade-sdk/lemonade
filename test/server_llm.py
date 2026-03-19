@@ -59,8 +59,13 @@ class LLMTests(ServerTestBase):
     features not supported by the current wrapped server.
     """
 
-    # Enable multi-model support (2 of each type)
+    # Enable multi-model support (2 of each type) — translated to /internal/set
     additional_server_args = ["--max-loaded-models", "2"]
+
+    @classmethod
+    def setUpClass(cls):
+        """Verify server and apply multi-model config."""
+        super().setUpClass()
 
     # =========================================================================
     # CHAT COMPLETIONS TESTS

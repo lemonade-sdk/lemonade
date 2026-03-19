@@ -1,13 +1,26 @@
+"""
+Tests for the 'system' LlamaCpp backend and LEMONADE_LLAMACPP_PREFER_SYSTEM.
+
+Each test needs a fresh server with different PATH/env vars, so this file
+manages its own server lifecycle independently of ServerTestBase.
+
+Usage:
+    python test/test_llamacpp_system_backend.py
+    python test/test_llamacpp_system_backend.py --server-binary /path/to/lemonade-server
+"""
+
 import os
 import sys
 import shutil
+import socket
+import subprocess
 import tempfile
+import time
 import stat
 import unittest
-from unittest.mock import patch, MagicMock
 
 import requests
-from utils.server_base import ServerTestBase, run_server_tests, parse_args, PORT
+from utils.server_base import wait_for_server, parse_args, get_server_binary, PORT
 
 args = parse_args()  # Initialize global _config
 
@@ -23,9 +36,76 @@ exit 0
 """
 
 
-class LlamaCppSystemBackendTests(ServerTestBase):
+def _is_server_running(port=PORT):
+    """Check if the server is running on the given port."""
+    try:
+        conn = socket.create_connection(("localhost", port), timeout=2)
+        conn.close()
+        return True
+    except (socket.error, socket.timeout):
+        return False
+
+
+def _wait_for_server_stop(port=PORT, timeout=30):
+    """Wait for server to stop."""
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        if not _is_server_running(port):
+            return True
+        time.sleep(1)
+    return False
+
+
+def _stop_server():
+    """Stop the server via CLI stop command."""
+    server_binary = get_server_binary()
+    try:
+        subprocess.run(
+            [server_binary, "stop"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        _wait_for_server_stop()
+    except Exception as e:
+        print(f"Warning: Failed to stop server: {e}")
+
+
+def _start_server():
+    """Start the server and wait for it to be ready."""
+    server_binary = get_server_binary()
+    cmd = [server_binary, "serve", "--log-level", "debug"]
+
+    if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
+        cmd.append("--no-tray")
+
+    if sys.platform == "win32":
+        subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=os.environ.copy(),
+        )
+    else:
+        subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=os.environ.copy(),
+        )
+
+    wait_for_server(timeout=60)
+    print("Server started successfully")
+
+
+class LlamaCppSystemBackendTests(unittest.TestCase):
     """
     Tests for the 'system' LlamaCpp backend and the LEMONADE_LLAMACPP_PREFER_SYSTEM option.
+
+    Each test needs a fresh server with different PATH/env vars,
+    so this class manages its own server lifecycle.
     """
 
     @classmethod
@@ -52,14 +132,16 @@ class LlamaCppSystemBackendTests(ServerTestBase):
 
     @classmethod
     def tearDownClass(cls):
-        super().tearDownClass()
+        # Stop any server we started
+        _stop_server()
         # Clean up temporary directory and restore PATH
         shutil.rmtree(cls.temp_bin_dir)
         os.environ["PATH"] = cls.original_path
+        super().tearDownClass()
 
     def setUp(self):
-        super().setUp()
-        self.stop_server()
+        print(f"\n=== Starting test: {self._testMethodName} ===")
+        _stop_server()
         # Reset environment variables for each test
         os.environ.pop("LEMONADE_LLAMACPP_PREFER_SYSTEM", None)
         os.environ["PATH"] = self.original_path  # Ensure PATH is clean before each test
@@ -90,8 +172,7 @@ class LlamaCppSystemBackendTests(ServerTestBase):
         Verify that is_llamacpp_installed('system') is False when llama-server is not in PATH.
         """
         self._remove_dummy_llama_server_from_path()  # Ensure it's not in PATH
-        self.stop_server()
-        self.start_server()
+        _start_server()
 
         backends = self._get_llamacpp_backends()
         self.assertIn("system", backends)
@@ -108,8 +189,7 @@ class LlamaCppSystemBackendTests(ServerTestBase):
         Verify that is_llamacpp_installed('system') is True when llama-server is in PATH.
         """
         self._add_dummy_llama_server_to_path()  # Add dummy to PATH
-        self.stop_server()
-        self.start_server()
+        _start_server()
 
         backends = self._get_llamacpp_backends()
         self.assertIn("system", backends)
@@ -125,8 +205,7 @@ class LlamaCppSystemBackendTests(ServerTestBase):
         """
         self._add_dummy_llama_server_to_path()
         os.environ["LEMONADE_LLAMACPP_PREFER_SYSTEM"] = "true"
-        self.stop_server()
-        self.start_server()
+        _start_server()
 
         response = requests.get(f"http://localhost:{PORT}/api/v1/system-info")
         data = response.json()
@@ -149,8 +228,7 @@ class LlamaCppSystemBackendTests(ServerTestBase):
         """
         self._remove_dummy_llama_server_from_path()  # Ensure it's not in PATH
         os.environ["LEMONADE_LLAMACPP_PREFER_SYSTEM"] = "true"
-        self.stop_server()
-        self.start_server()
+        _start_server()
 
         response = requests.get(f"http://localhost:{PORT}/api/v1/system-info")
         data = response.json()
@@ -177,8 +255,7 @@ class LlamaCppSystemBackendTests(ServerTestBase):
         self._add_dummy_llama_server_to_path()
         # Test with unset (default behavior) - system should NOT be default (it's disabled by default)
         os.environ.pop("LEMONADE_LLAMACPP_PREFER_SYSTEM", None)
-        self.stop_server()
-        self.start_server()
+        _start_server()
 
         response = requests.get(f"http://localhost:{PORT}/api/v1/system-info")
         data = response.json()
@@ -191,11 +268,11 @@ class LlamaCppSystemBackendTests(ServerTestBase):
         self.assertIn("system", backends)
         self.assertEqual(backends["system"]["state"], "installed")
 
-        self.stop_server()
+        _stop_server()
 
         # Test with false - system backend should be explicitly skipped (same as default)
         os.environ["LEMONADE_LLAMACPP_PREFER_SYSTEM"] = "false"
-        self.start_server()
+        _start_server()
 
         response = requests.get(f"http://localhost:{PORT}/api/v1/system-info")
         data = response.json()
@@ -209,5 +286,18 @@ class LlamaCppSystemBackendTests(ServerTestBase):
         self.assertEqual(backends["system"]["state"], "installed")
 
 
+def _run_tests():
+    """Run llamacpp system backend tests."""
+    print(f"\n{'=' * 70}")
+    print("LLAMACPP SYSTEM BACKEND TESTS")
+    print(f"{'=' * 70}\n")
+
+    loader = unittest.TestLoader()
+    suite = loader.loadTestsFromTestCase(LlamaCppSystemBackendTests)
+    runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
+    result = runner.run(suite)
+    sys.exit(0 if (result and result.wasSuccessful()) else 1)
+
+
 if __name__ == "__main__":
-    run_server_tests(LlamaCppSystemBackendTests, "LLAMACPP SYSTEM BACKEND TESTS")
+    _run_tests()
