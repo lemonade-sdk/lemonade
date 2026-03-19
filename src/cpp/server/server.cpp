@@ -359,6 +359,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_delete(req, res);
     });
 
+    register_post("cleanup-cache", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cleanup_cache(req, res);
+    });
+
     register_post("params", [this](const httplib::Request& req, httplib::Response& res) {
         handle_params(req, res);
     });
@@ -2889,6 +2893,21 @@ void Server::handle_delete(const httplib::Request& req, httplib::Response& res) 
 
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+        bool dry_run = request_json.value("dry_run", true);
+
+        auto result = model_manager_->cleanup_orphaned_cache(dry_run);
+        res.set_content(result.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_cleanup_cache: " << e.what() << std::endl;
+        res.status = 500;
+        auto error_response = create_model_error("", e.what());
+        res.set_content(error_response.dump(), "application/json");
     }
 }
 

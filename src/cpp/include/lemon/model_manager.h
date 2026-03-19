@@ -108,6 +108,9 @@ public:
     // Delete a model
     void delete_model(const std::string& model_name);
 
+    // Clean up orphaned files from multi-repo models downloaded in old layout
+    nlohmann::json cleanup_orphaned_cache(bool dry_run);
+
     // Get model info by name
     ModelInfo get_model_info(const std::string& model_name);
 

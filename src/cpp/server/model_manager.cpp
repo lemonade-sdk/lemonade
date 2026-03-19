@@ -74,6 +74,14 @@ static bool contains_ignore_case(const std::string& str, const std::string& subs
     return to_lower(str).find(to_lower(substr)) != std::string::npos;
 }
 
+static std::string repo_id_to_cache_dir_name(const std::string& repo_id) {
+    std::string cache_dir_name = "models--";
+    for (char c : repo_id) {
+        cache_dir_name += (c == '/') ? "--" : std::string(1, c);
+    }
+    return cache_dir_name;
+}
+
 static std::string checkpoint_to_repo_id(std::string checkpoint) {
     std::string repo_id = checkpoint;
 
@@ -466,18 +474,13 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
     // HuggingFace models: need to find the GGUF file in cache
     // Parse checkpoint to get repo_id and variant
-    // Use the checkpoint's own repo if it specifies one, otherwise fall back to main
-    std::string checkpoint_repo = checkpoint_to_repo_id(checkpoint);
-    std::string repo_id = checkpoint_repo.empty() ? checkpoint_to_repo_id(info.checkpoint("main")) : checkpoint_repo;
+    // Use the checkpoint's own repo, falling back to main repo for backward compatibility
+    std::string checkpoint_repo_id = checkpoint_to_repo_id(checkpoint);
+    std::string main_repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
+    std::string repo_id = checkpoint_repo_id;
     std::string variant = checkpoint_to_variant(checkpoint);
 
-    // Convert org/model to models--org--model
-    std::string cache_dir_name = "models--";
-    for (char c : repo_id) {
-        cache_dir_name += (c == '/') ? "--" : std::string(1, c);
-    }
-
-    std::string model_cache_path = hf_cache + "/" + cache_dir_name;
+    std::string model_cache_path = hf_cache + "/" + repo_id_to_cache_dir_name(repo_id);
     fs::path model_cache_path_fs = path_from_utf8(model_cache_path);
 
     // For RyzenAI LLM models, look for genai_config.json directory
@@ -640,6 +643,28 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
                 }
             }
         }
+        // Variant not found in checkpoint's own repo - try main repo as fallback
+        // (backward compat: older downloads placed all files in the main repo dir)
+        if (checkpoint_repo_id != main_repo_id) {
+            std::string main_cache_path = hf_cache + "/" + repo_id_to_cache_dir_name(main_repo_id);
+            fs::path main_cache_path_fs = path_from_utf8(main_cache_path);
+            if (fs::exists(main_cache_path_fs)) {
+                for (const auto& entry : fs::recursive_directory_iterator(main_cache_path_fs)) {
+                    if (entry.is_regular_file()) {
+                        std::string filename = entry.path().filename().string();
+                        if (filename == variant) {
+                            return path_to_utf8(entry.path());
+                        }
+                    } else if (entry.is_directory()) {
+                        fs::path variant_path = entry.path() / path_from_utf8(variant);
+                        if (fs::exists(variant_path)) {
+                            return path_to_utf8(variant_path);
+                        }
+                    }
+                }
+            }
+        }
+
         // Variant not found - return empty string to indicate model not downloaded
         return "";
     }
@@ -1827,7 +1852,9 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         std::string filename = file_desc["name"].get<std::string>();
         std::string file_url = file_desc["url"].get<std::string>();
         size_t file_size = file_desc["size"].get<size_t>();
-        std::string output_path = download_path + "/" + filename;
+        // Per-file download_path for multi-repo models; fall back to top-level for old manifests
+        std::string file_download_path = file_desc.value("download_path", download_path);
+        std::string output_path = file_download_path + "/" + filename;
 
         // Create parent directory for file (handles folders in filenames)
         fs::create_directories(fs::path(output_path).parent_path());
@@ -1949,7 +1976,8 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         std::string filename = file_desc["name"].get<std::string>();
         size_t expected_size = file_desc["size"].get<size_t>();
 
-        std::string expected_path = download_path + "/" + filename;
+        std::string file_download_path = file_desc.value("download_path", download_path);
+        std::string expected_path = file_download_path + "/" + filename;
         std::string partial_path = expected_path + ".partial";
 
         // Check for .partial file (incomplete download)
@@ -2018,16 +2046,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     // Create cache directory structure
     fs::create_directories(hf_cache_path);
 
-    std::string cache_dir_name = "models--";
-    for (char c : main_repo_id) {
-        if (c == '/') {
-            cache_dir_name += "--";
-        } else {
-            cache_dir_name += c;
-        }
-    }
-
-    fs::path model_cache_path = hf_cache_path / cache_dir_name;
+    fs::path model_cache_path = hf_cache_path / repo_id_to_cache_dir_name(main_repo_id);
     fs::create_directories(model_cache_path);
 
     // Get HF token if available
@@ -2173,11 +2192,49 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     for (auto const& [repo_id, files] : files_to_download) {
         for (const auto& filename : files) {
             total_files++;
-            LOG(INFO, "ModelManager") << "  - " << filename << std::endl;
+            LOG(INFO, "ModelManager") << "  - " << repo_id << ":" << filename << std::endl;
         }
     }
 
     LOG(INFO, "ModelManager") << "  Total file count: " << total_files << std::endl;
+
+    // Create per-repo snapshot directories for non-main repos
+    // Each repo gets its own HF-compatible cache structure
+    std::map<std::string, std::string> repo_snapshot_paths;
+    repo_snapshot_paths[main_repo_id] = path_to_utf8(snapshot_path);
+
+    for (auto const& [repo_id, files] : files_to_download) {
+        if (repo_id == main_repo_id || files.empty()) continue;
+
+        // Query HF API for this repo's commit hash
+        std::string other_api_url = "https://huggingface.co/api/models/" + repo_id;
+        auto other_response = HttpClient::get(other_api_url, headers);
+
+        std::string other_hash = "main";
+        if (other_response.status_code == 200) {
+            auto other_info = JsonUtils::parse(other_response.body);
+            if (other_info.contains("sha") && other_info["sha"].is_string()) {
+                other_hash = other_info["sha"].get<std::string>();
+            }
+        }
+
+        fs::path other_cache_path = hf_cache_path / repo_id_to_cache_dir_name(repo_id);
+        fs::path other_snapshot = other_cache_path / "snapshots" / other_hash;
+        fs::create_directories(other_snapshot);
+
+        // Create refs/main file (matching huggingface_hub behavior)
+        fs::path other_refs_dir = other_cache_path / "refs";
+        fs::create_directories(other_refs_dir);
+        std::ofstream other_refs_file(other_refs_dir / "main");
+        if (other_refs_file.is_open()) {
+            other_refs_file << other_hash;
+            other_refs_file.close();
+        }
+
+        repo_snapshot_paths[repo_id] = path_to_utf8(other_snapshot);
+        LOG(INFO, "ModelManager") << "Created cache dir for " << repo_id
+                    << " at " << path_to_utf8(other_snapshot) << std::endl;
+    }
 
     // Create download manifest to track incomplete downloads
     // This allows us to detect partially downloaded models
@@ -2221,7 +2278,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         LOG(INFO, "ModelManager") << "Retrieved file sizes for " << file_sizes.size() << " files" << std::endl;
     }
 
-    // Create manifest with expected files
+    // Create manifest with expected files (per-file download_path for multi-repo support)
     json manifest;
     manifest["repo_id"] = main_repo_id;
     manifest["commit_hash"] = commit_hash;
@@ -2235,6 +2292,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             file_entry["name"] = filename;
             file_entry["url"] = "https://huggingface.co/" + repo_id + "/resolve/main/" + filename;
             file_entry["size"] = file_sizes.count(size_key) ? file_sizes[size_key] : 0;
+            file_entry["download_path"] = repo_snapshot_paths[repo_id];
             manifest["files"].push_back(file_entry);
         }
     }
@@ -2599,6 +2657,56 @@ void ModelManager::delete_model(const std::string& model_name) {
         LOG(INFO, "ModelManager") << "Warning: Model cache directory not found (may already be deleted)" << std::endl;
     }
 
+    // Clean up non-main checkpoint files in their own repo dirs (multi-repo models)
+    // Only delete if no other model in the registry references the same repo
+    std::string main_repo = checkpoint_to_repo_id(info.checkpoint("main"));
+    for (const auto& [type, checkpoint] : info.checkpoints) {
+        if (type == "main" || type == "npu_cache") continue;
+
+        std::string cp_repo = checkpoint_to_repo_id(checkpoint);
+        if (cp_repo.empty() || cp_repo == main_repo) continue;
+
+        // Check if any other model references this repo
+        bool shared = false;
+        for (const auto& [other_name, other_info] : models_cache_) {
+            if (other_name == model_name) continue;
+            for (const auto& [other_type, other_cp] : other_info.checkpoints) {
+                if (checkpoint_to_repo_id(other_cp) == cp_repo) {
+                    shared = true;
+                    break;
+                }
+            }
+            if (shared) break;
+        }
+
+        if (shared) {
+            LOG(INFO, "ModelManager") << "Keeping shared repo " << cp_repo
+                        << " (used by other models)" << std::endl;
+            continue;
+        }
+
+        // Not shared — safe to delete
+        std::string rpath = info.resolved_paths.count(type) ? info.resolved_paths.at(type) : "";
+        if (rpath.empty()) continue;
+
+        fs::path file_path = path_from_utf8(rpath);
+        if (fs::exists(file_path)) {
+            LOG(INFO, "ModelManager") << "Removing non-main checkpoint: " << rpath << std::endl;
+            fs::remove(file_path);
+
+            // Remove parent dirs if empty (clean up snapshot/refs structure)
+            fs::path parent = file_path.parent_path();
+            for (int i = 0; i < 4 && !parent.empty(); ++i) {
+                if (fs::is_empty(parent)) {
+                    fs::remove(parent);
+                    parent = parent.parent_path();
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
     // Remove from user models if it's a user model
     if (model_name.substr(0, 5) == "user.") {
         std::string clean_name = model_name.substr(5);
@@ -2611,6 +2719,80 @@ void ModelManager::delete_model(const std::string& model_name) {
 
     // Remove from cache after successful deletion
     remove_model_from_cache(model_name);
+}
+
+json ModelManager::cleanup_orphaned_cache(bool dry_run) {
+    build_cache();
+
+    std::string hf_cache = get_hf_cache_dir();
+    json orphaned_files = json::array();
+    size_t total_bytes = 0;
+
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+
+    // Find multi-repo models where non-main checkpoints reference different repos
+    for (const auto& [name, info] : models_cache_) {
+        if (info.checkpoints.size() <= 1) continue;
+
+        std::string main_repo = checkpoint_to_repo_id(info.checkpoint("main"));
+        std::string main_cache = hf_cache + "/" + repo_id_to_cache_dir_name(main_repo);
+
+        for (const auto& [type, checkpoint] : info.checkpoints) {
+            if (type == "main" || type == "npu_cache") continue;
+
+            std::string cp_repo = checkpoint_to_repo_id(checkpoint);
+            if (cp_repo == main_repo) continue;  // Same repo, no orphan possible
+
+            std::string variant = checkpoint_to_variant(checkpoint);
+            if (variant.empty()) continue;
+
+            // Check if file exists in main repo dir (orphaned location)
+            fs::path main_cache_fs = path_from_utf8(main_cache);
+            if (!fs::exists(main_cache_fs)) continue;
+
+            // Search for the variant file in the main repo's cache
+            for (const auto& entry : fs::recursive_directory_iterator(main_cache_fs)) {
+                if (!entry.is_regular_file()) continue;
+
+                std::string filename = entry.path().filename().string();
+                // Match by filename for simple variants, or by path suffix for nested variants
+                bool matches = (filename == variant) ||
+                    (variant.find('/') != std::string::npos &&
+                     path_to_utf8(entry.path()).find(variant) != std::string::npos);
+
+                if (matches) {
+                    size_t file_size = fs::file_size(entry.path());
+                    std::string file_path = path_to_utf8(entry.path());
+
+                    orphaned_files.push_back({
+                        {"path", file_path},
+                        {"size", file_size},
+                        {"model", name},
+                        {"type", type},
+                        {"belongs_to", cp_repo}
+                    });
+                    total_bytes += file_size;
+
+                    if (!dry_run) {
+                        LOG(INFO, "ModelManager") << "Removing orphaned file: " << file_path << std::endl;
+                        fs::remove(entry.path());
+                    }
+                    break;  // Found the orphan for this checkpoint
+                }
+            }
+        }
+    }
+
+    json result;
+    result["orphaned_files"] = orphaned_files;
+    result["total_bytes"] = total_bytes;
+    result["dry_run"] = dry_run;
+
+    LOG(INFO, "ModelManager") << "Cache cleanup: found " << orphaned_files.size()
+                << " orphaned file(s), " << (total_bytes / (1024 * 1024)) << " MB"
+                << (dry_run ? " (dry run)" : " (deleted)") << std::endl;
+
+    return result;
 }
 
 ModelInfo ModelManager::get_model_info(const std::string& model_name) {
