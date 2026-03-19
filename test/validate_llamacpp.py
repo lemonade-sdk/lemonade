@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 import requests
@@ -100,7 +101,11 @@ def install_backend(server_binary, backend):
 
 
 def start_server(server_binary, port):
-    """Start lemonade-server serve in the background."""
+    """Start lemonade-server serve in the background.
+
+    Stdout and stderr are drained in background threads to prevent the
+    OS pipe buffer from filling up and blocking the subprocess.
+    """
     cmd = [server_binary, "serve", "--port", str(port), "--log-level", "debug"]
     print(f"Starting server: {' '.join(cmd)}", flush=True)
     proc = subprocess.Popen(
@@ -108,6 +113,23 @@ def start_server(server_binary, port):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
+
+    def _drain(stream, label):
+        try:
+            for line in stream:
+                print(f"[{label}] {line.strip()}")
+        except Exception:
+            pass
+
+    proc._stdout_thread = threading.Thread(
+        target=_drain, args=(proc.stdout, "stdout"), daemon=True
+    )
+    proc._stderr_thread = threading.Thread(
+        target=_drain, args=(proc.stderr, "stderr"), daemon=True
+    )
+    proc._stdout_thread.start()
+    proc._stderr_thread.start()
+
     return proc
 
 
@@ -150,14 +172,14 @@ def collect_server_logs(output_dir):
     return copied
 
 
-def test_model(base_url, model_name, max_tokens=50):
+def test_model(base_url, model_name, backend, max_tokens=50):
     """Send a chat/completions request and return (success, response_text, stats)."""
-    # Load the model first
-    print(f"  Loading model: {model_name}", flush=True)
+    # Load the model first, explicitly selecting the requested backend
+    print(f"  Loading model: {model_name} (backend={backend})", flush=True)
     try:
         load_resp = requests.post(
             f"{base_url}/v1/load",
-            json={"model_name": model_name},
+            json={"model_name": model_name, "llamacpp_backend": backend},
             timeout=TIMEOUT_INFERENCE,
         )
         if load_resp.status_code != 200:
@@ -302,7 +324,9 @@ def main():
     try:
         for model_name, model_config in hot_models:
             print(f"\nTesting: {model_name}", flush=True)
-            success, response_text, stats = test_model(base_url, model_name)
+            success, response_text, stats = test_model(
+                base_url, model_name, args.backend
+            )
             result = {
                 "model": model_name,
                 "pass": success,
@@ -319,9 +343,6 @@ def main():
                 all_passed = False
                 print(f"  Error: {response_text}", flush=True)
     finally:
-        # Stop server and capture its output
-        server_stdout = ""
-        server_stderr = ""
         if server_proc:
             stop_server(server_binary)
             server_proc.terminate()
@@ -329,31 +350,14 @@ def main():
                 server_proc.wait(timeout=15)
             except subprocess.TimeoutExpired:
                 server_proc.kill()
-            # Read any buffered stdout/stderr from the server process
-            try:
-                out, err = server_proc.communicate(timeout=5)
-                if out:
-                    server_stdout = out.decode("utf-8", errors="replace")
-                if err:
-                    server_stderr = err.decode("utf-8", errors="replace")
-            except Exception:
-                pass
+            # Wait for drain threads to finish reading remaining output
+            server_proc._stdout_thread.join(timeout=5)
+            server_proc._stderr_thread.join(timeout=5)
 
         # Collect server log files for CI debugging
         logs_dir = args.logs_dir
         if logs_dir:
             collect_server_logs(logs_dir)
-            # Also save the server process stdout/stderr
-            if server_stdout:
-                stdout_path = os.path.join(logs_dir, "server_stdout.log")
-                with open(stdout_path, "w", encoding="utf-8") as f:
-                    f.write(server_stdout)
-                print(f"Saved server stdout ({len(server_stdout)} chars)", flush=True)
-            if server_stderr:
-                stderr_path = os.path.join(logs_dir, "server_stderr.log")
-                with open(stderr_path, "w", encoding="utf-8") as f:
-                    f.write(server_stderr)
-                print(f"Saved server stderr ({len(server_stderr)} chars)", flush=True)
 
     # Write results
     with open(output_path, "w", encoding="utf-8") as f:

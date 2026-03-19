@@ -375,6 +375,13 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Skip if backend_versions.json is already up to date
+          if git diff --quiet src/cpp/resources/backend_versions.json; then
+            echo "backend_versions.json is unchanged — nothing to update."
+            exit 0
+          fi
+
           git checkout -b "$BRANCH"
           git add src/cpp/resources/backend_versions.json
           git commit -m "Update llama.cpp to ${LLAMACPP_RELEASE}, rocm to ${LLAMACPP_ROCM_RELEASE}"
