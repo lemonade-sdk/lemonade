@@ -153,7 +153,7 @@ bool WindowsTray::add_tray_icon() {
     nid_.cbSize = sizeof(NOTIFYICONDATAW);
     nid_.hWnd = hwnd_;
     nid_.uID = 1;
-    nid_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    nid_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
     nid_.uCallbackMessage = WM_TRAYICON;
 
     // Load icon
@@ -342,7 +342,7 @@ void WindowsTray::show_notification(
     Shell_NotifyIconW(NIM_MODIFY, &nid_);
 
     // Reset flags
-    nid_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    nid_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
 }
 
 void WindowsTray::set_icon(const std::string& icon_path) {
