@@ -1,0 +1,48 @@
+name: PPA Upload
+on:
+  workflow_call:
+    inputs:
+      target:
+        required: true
+        type: string
+      artifact:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  upload-ppa:
+    runs-on: ubuntu-24.04
+
+    name: Upload to PPA
+    steps:
+      - name: Download source package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y devscripts dput --no-install-recommends
+
+      - name: Setup GPG key
+        run: |
+          echo "Setting up GPG key..."
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --yes
+
+          # Get the key ID
+          GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | head -1 | awk '{print $2}' | cut -d'/' -f2)
+          echo "GPG_KEY_ID=$GPG_KEY_ID" >> $GITHUB_ENV
+
+      - name: Sign source package
+        run: |
+          echo "Signing package with GPG key $GPG_KEY_ID..."
+          debsign -k $GPG_KEY_ID *.changes
+
+      - name: Upload to PPA
+        run: |
+          echo "Uploading to ${{ inputs.target }}..."
+          dput ${{ inputs.target }} *.changes
