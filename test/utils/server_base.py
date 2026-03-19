@@ -308,39 +308,63 @@ def start_server(
     print(f"Starting server: {' '.join(cmd)}")
 
     # Start the server process
-    process = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-        encoding="utf-8",
-        errors="replace",
-        env=os.environ.copy(),
-    )
+    #
+    # On Windows, lemonade-server is a deprecated shim that uses _spawnvp(_P_OVERLAY)
+    # to exec into LemonadeServer.exe (a SUBSYSTEM:WINDOWS GUI app). This creates a
+    # new process and the shim exits. If we use stdout=PIPE/stderr=PIPE, the pipe
+    # handles are inherited by LemonadeServer.exe, which never writes to them. The
+    # reader threads block forever on the pipes, and when Python tries to exit, the
+    # IsolatedAsyncioTestCase cleanup blocks trying to close/join those handles.
+    # Fix: use DEVNULL on Windows so no pipe handles are created.
+    if sys.platform == "win32":
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=os.environ.copy(),
+        )
+    else:
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            encoding="utf-8",
+            errors="replace",
+            env=os.environ.copy(),
+        )
 
-    # Print stdout and stderr in real-time using daemon threads
-    def print_stdout():
-        try:
-            for line in process.stdout:
-                print(f"[stdout] {line.strip()}")
-        except Exception:
-            pass
+        # Print stdout and stderr in real-time using daemon threads
+        def print_stdout():
+            try:
+                for line in process.stdout:
+                    print(f"[stdout] {line.strip()}")
+            except Exception:
+                pass
 
-    def print_stderr():
-        try:
-            for line in process.stderr:
-                print(f"[stderr] {line.strip()}")
-        except Exception:
-            pass
+        def print_stderr():
+            try:
+                for line in process.stderr:
+                    print(f"[stderr] {line.strip()}")
+            except Exception:
+                pass
 
-    stdout_thread = Thread(target=print_stdout, daemon=True)
-    stderr_thread = Thread(target=print_stderr, daemon=True)
-    stdout_thread.start()
-    stderr_thread.start()
+        stdout_thread = Thread(target=print_stdout, daemon=True)
+        stderr_thread = Thread(target=print_stderr, daemon=True)
+        stdout_thread.start()
+        stderr_thread.start()
 
     # Wait for the server to start
     wait_for_server(port)
+
+    if sys.platform == "win32":
+        # The shim has already exited (replaced itself with LemonadeServer.exe).
+        # Reap its process handle so no orphaned handles block Python's exit.
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
 
     # Additional wait for server to fully initialize
     time.sleep(5)
