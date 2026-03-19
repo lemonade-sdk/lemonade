@@ -832,6 +832,24 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
+      - name: Install FLM backend for FLM wrapped-server tests
+        if: ${{ contains(matrix.extra_args, '--wrapped-server flm') }}
+        run: |
+          set -e
+          FLM_VERSION=$(jq -r '.flm.npu' src/cpp/resources/backend_versions.json)
+          FLM_VERSION_NUM=$(echo $FLM_VERSION | sed 's/^v//')
+          echo "Installing FLM ${FLM_VERSION} for CI inference tests..."
+          curl -L -o /tmp/fastflowlm.deb "https://github.com/FastFlowLM/FastFlowLM/releases/download/${FLM_VERSION}/fastflowlm_${FLM_VERSION_NUM}_ubuntu24.04_amd64.deb"
+          mkdir -p /tmp/flm-extract
+          dpkg-deb -x /tmp/fastflowlm.deb /tmp/flm-extract
+          # Add extracted FLM binary to PATH
+          FLM_BIN=$(find /tmp/flm-extract -name flm -type f | head -1)
+          chmod +x "$FLM_BIN"
+          echo "$(dirname "$FLM_BIN")" >> $GITHUB_PATH
+          export PATH="$(dirname "$FLM_BIN"):$PATH"
+          rm /tmp/fastflowlm.deb
+          flm version
+
       - name: Run tests
         env:
           HF_HOME: ${{ env.HF_HOME }}
