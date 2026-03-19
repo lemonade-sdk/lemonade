@@ -336,7 +336,13 @@ void Router::load_model(const std::string& model_name,
         lock.lock();
 
         if (load_success) {
-            // Success: Add to loaded servers
+            // Success: Refresh access time so this model is returned by
+            // get_most_recent_server() (the pre-load timestamp from line 316
+            // may have been overtaken by other models serving requests while
+            // the lock was released during the slow backend load).
+            new_server->update_access_time();
+
+            // Add to loaded servers
             loaded_servers_.push_back(std::move(new_server));
 
             is_loading_ = false;
