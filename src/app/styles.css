@@ -1164,6 +1164,35 @@ footer {
     color: #ddd;
 }
 
+.recipe-chip.state-installed.active {
+    border-color: rgba(76, 175, 80, 0.5);
+    background: rgba(76, 175, 80, 0.15);
+    color: #81c784;
+}
+
+.recipe-chip.state-available.active {
+    border-color: rgba(255, 193, 7, 0.5);
+    background: rgba(255, 193, 7, 0.15);
+    color: #ffd54f;
+}
+
+.recipe-chip.state-unsupported.active {
+    border-color: rgba(244, 67, 54, 0.4);
+    background: rgba(244, 67, 54, 0.12);
+    color: #e57373;
+}
+
+/* Inactive state hints — subtle color so unsupported is distinguishable from deselected */
+.recipe-chip.state-unsupported:not(.active) {
+    border-color: rgba(244, 67, 54, 0.2);
+    color: #a05050;
+}
+
+.recipe-chip.state-available:not(.active) {
+    border-color: rgba(255, 193, 7, 0.15);
+    color: #8a7740;
+}
+
 .model-filter-popover .organization-toggle {
     padding: 2px;
     border: 1px solid rgba(255, 255, 255, 0.06);

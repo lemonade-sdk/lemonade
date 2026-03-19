@@ -341,7 +341,7 @@ void Server::setup_routes(httplib::Server &web_server) {
             // Build HF API URL from query params
             url = "https://huggingface.co/api/models?";
             bool first = true;
-            for (const auto& param : {"search", "filter", "limit", "sort", "direction", "pipeline_tag"}) {
+            for (const auto& param : {"search", "filter", "limit", "sort", "direction", "pipeline_tag", "author"}) {
                 if (req.has_param(param)) {
                     if (!first) url += "&";
                     url += std::string(param) + "=" + httplib::encode_query_component(req.get_param_value(param));

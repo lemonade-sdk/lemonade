@@ -19,7 +19,7 @@ import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon } from './components/Icons';
 import { getExperienceComponents, isExperienceFullyDownloaded, isExperienceFullyLoaded, isExperienceModel, isModelEffectivelyDownloaded } from './utils/experienceModels';
-import { classifyModel, type CompatibilityLevel } from './utils/recipeCompatibility';
+import { classifyModel, SUPPORTED_PIPELINE_TAGS } from './utils/recipeCompatibility';
 
 interface ModelFamily {
   displayName: string;
@@ -228,6 +228,40 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContent
   const [enabledRecipes, setEnabledRecipes] = useState<Set<string>>(new Set([
     'llamacpp', 'sd-cpp', 'whispercpp', 'kokoro', 'flm', 'ryzenai-llm'
   ]));
+  const [recipeDefaultsApplied, setRecipeDefaultsApplied] = useState(false);
+
+  // Compute best backend state per recipe: 'installed' > 'available' > 'unsupported'
+  // 'available' covers installable, update_required, action_required
+  const recipeStates = useMemo<Record<string, 'installed' | 'available' | 'unsupported'>>(() => {
+    const states: Record<string, 'installed' | 'available' | 'unsupported'> = {};
+    const recipes = systemInfo?.recipes;
+    if (!recipes) return states;
+    for (const [recipeName, recipe] of Object.entries(recipes)) {
+      const backends = recipe?.backends;
+      if (!backends) { states[recipeName] = 'unsupported'; continue; }
+      let best: 'installed' | 'available' | 'unsupported' = 'unsupported';
+      for (const backend of Object.values(backends)) {
+        if (backend?.state === 'installed') { best = 'installed'; break; }
+        if (backend?.state && backend.state !== 'unsupported') best = 'available';
+      }
+      states[recipeName] = best;
+    }
+    return states;
+  }, [systemInfo]);
+
+  // Default enabledRecipes to only recipes with a viable backend (not unsupported)
+  useEffect(() => {
+    if (recipeDefaultsApplied || Object.keys(recipeStates).length === 0) return;
+    const viable = new Set<string>();
+    for (const [recipe, state] of Object.entries(recipeStates)) {
+      if (state !== 'unsupported') viable.add(recipe);
+    }
+    if (viable.size > 0) {
+      setEnabledRecipes(viable);
+      setRecipeDefaultsApplied(true);
+    }
+  }, [recipeStates, recipeDefaultsApplied]);
+
   const [showSuggestedSection, setShowSuggestedSection] = useState(true);
   const [showCacheSection, setShowCacheSection] = useState(true);
   const [showSearchSection, setShowSearchSection] = useState(true);
@@ -252,8 +286,8 @@ const [searchQuery, setSearchQuery] = useState('');
   const hfSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hfSearchPage, setHfSearchPage] = useState(0);
   const [hfHasMoreResults, setHfHasMoreResults] = useState(false);
-  const [hfNextCursor, setHfNextCursor] = useState<string | null>(null);
-  const hfPageCursorsRef = useRef<Record<number, string>>({}); // page -> cursor for that page
+  const [hfNextCursors, setHfNextCursors] = useState<(string | null)[]>([]); // one cursor per recipe query
+  const hfPageCursorsRef = useRef<Record<number, (string | null)[]>>({}); // page -> cursors array
   const [hfRateLimitRemaining, setHfRateLimitRemaining] = useState<number | undefined>(undefined);
   const [hfRateLimitReset, setHfRateLimitReset] = useState<number | undefined>(undefined);
   const [hfAuthenticated, setHfAuthenticated] = useState(false);
@@ -618,7 +652,41 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const HF_PAGE_SIZE = 12;
 
-  const searchHuggingFace = useCallback(async (query: string, cursor?: string) => {
+  /**
+   * Build HF search queries per enabled recipe.
+   *
+   * | Backend     | Strategy                                              |
+   * |-------------|-------------------------------------------------------|
+   * | llamacpp    | filter=gguf + user query                              |
+   * | sd-cpp      | filter=safetensors,text-to-image + user query         |
+   * | kokoro      | filter=onnx,text-to-speech + user query               |
+   * | whispercpp  | author=ggerganov, pinned provider                     |
+   * | flm         | author=FastFlowLM, pinned provider                    |
+   * | ryzenai-llm | author=amd & filter=onnx                              |
+   */
+  const buildRecipeSearchUrls = useCallback((query: string): string[] => {
+    const q = encodeURIComponent(query);
+    const base = `&limit=${HF_PAGE_SIZE}&sort=downloads&direction=-1`;
+    const urls: string[] = [];
+
+    if (enabledRecipes.has('llamacpp'))
+      urls.push(`/hf/search?search=${q}&filter=gguf${base}`);
+    if (enabledRecipes.has('sd-cpp'))
+      urls.push(`/hf/search?search=${q}&filter=safetensors,text-to-image${base}`);
+    if (enabledRecipes.has('kokoro'))
+      urls.push(`/hf/search?search=${q}&filter=onnx,text-to-speech${base}`);
+    // Pinned providers — scoped to author, user query filters within
+    if (enabledRecipes.has('whispercpp'))
+      urls.push(`/hf/search?search=${q}&author=ggerganov&pipeline_tag=automatic-speech-recognition${base}`);
+    if (enabledRecipes.has('flm'))
+      urls.push(`/hf/search?search=${q}&author=FastFlowLM${base}`);
+    if (enabledRecipes.has('ryzenai-llm'))
+      urls.push(`/hf/search?search=${q}&author=amd&filter=onnx${base}`);
+
+    return urls;
+  }, [enabledRecipes]);
+
+  const searchHuggingFace = useCallback(async (query: string, cursors?: (string | null)[]) => {
     if (!query.trim() || query.length < 3) {
       setHfSearchResults([]);
       setHfRateLimited(false);
@@ -628,39 +696,80 @@ const [searchQuery, setSearchQuery] = useState('');
     setIsSearchingHF(true);
     setHfRateLimited(false);
     try {
-      // Use server proxy for HF search (benefits from HF_TOKEN for higher rate limits)
-      let proxyUrl: string;
-      if (cursor) {
-        // For pagination, pass the full cursor URL to the proxy
-        proxyUrl = `/hf/search?next_url=${encodeURIComponent(cursor)}`;
+      // Build fetch URLs — either from cursors (pagination) or fresh per-recipe queries
+      let urls: (string | null)[];
+      if (cursors) {
+        // Pagination — use cursor URLs where available, null = no more results for that query
+        urls = cursors.map(c => c ? `/hf/search?next_url=${encodeURIComponent(c)}` : null);
       } else {
-        proxyUrl = `/hf/search?search=${encodeURIComponent(query)}&filter=gguf&limit=${HF_PAGE_SIZE}&sort=downloads&direction=-1`;
+        // Initial search — build per-recipe query URLs
+        urls = buildRecipeSearchUrls(query);
       }
-      const proxyRes = await serverFetch(proxyUrl);
-      const result = await proxyRes.json();
 
-      if (result.status === 429) {
-        setHfRateLimited(true);
+      // Filter to non-null URLs (skip exhausted cursors)
+      const activeIndices: number[] = [];
+      const activeUrls: string[] = [];
+      urls.forEach((url, i) => {
+        if (url) { activeIndices.push(i); activeUrls.push(url); }
+      });
+
+      if (activeUrls.length === 0) {
         setHfSearchResults([]);
+        setHfSearchCompleted(true);
+        setHfHasMoreResults(false);
+        setHfNextCursors([]);
         return;
       }
 
-      const ggufData: HFModelInfo[] = Array.isArray(result.data) ? result.data : [];
-      setHfSearchResults(ggufData);
-      setHfSearchCompleted(true);
-      setHfNextCursor(result.next_cursor ?? null);
-      setHfHasMoreResults(!!result.next_cursor);
+      const activeResults = await Promise.all(
+        activeUrls.map(url => serverFetch(url).then(r => r.json()).catch(() => ({ data: [] })))
+      );
 
-      // Track rate limit info
-      if (result.rate_limit_remaining !== undefined) setHfRateLimitRemaining(result.rate_limit_remaining);
-      if (result.rate_limit_reset !== undefined) setHfRateLimitReset(result.rate_limit_reset);
-      if (result.authenticated !== undefined) setHfAuthenticated(result.authenticated);
+      // Check for rate limiting on any response
+      for (const result of activeResults) {
+        if (result.status === 429) {
+          setHfRateLimited(true);
+          setHfSearchResults([]);
+          return;
+        }
+      }
+
+      // Rebuild full cursors array (preserving positions for exhausted queries)
+      const nextCursors: (string | null)[] = new Array(urls.length).fill(null);
+      activeIndices.forEach((origIdx, i) => {
+        nextCursors[origIdx] = activeResults[i]?.next_cursor ?? null;
+      });
+
+      // Merge, deduplicate by model id, sort by downloads descending
+      const seen = new Set<string>();
+      const merged: HFModelInfo[] = [];
+      for (const result of activeResults) {
+        const data: HFModelInfo[] = Array.isArray(result.data) ? result.data : [];
+        for (const model of data) {
+          if (!seen.has(model.id)) {
+            seen.add(model.id);
+            merged.push(model);
+          }
+        }
+      }
+      merged.sort((a, b) => (b.downloads ?? 0) - (a.downloads ?? 0));
+
+      setHfSearchResults(merged);
+      setHfSearchCompleted(true);
+      setHfNextCursors(nextCursors);
+      setHfHasMoreResults(nextCursors.some(c => c !== null));
+
+      // Rate limit info from the last response
+      const last = activeResults[activeResults.length - 1];
+      if (last?.rate_limit_remaining !== undefined) setHfRateLimitRemaining(last.rate_limit_remaining);
+      if (last?.rate_limit_reset !== undefined) setHfRateLimitReset(last.rate_limit_reset);
+      if (last?.authenticated !== undefined) setHfAuthenticated(last.authenticated);
     } catch {
       setHfSearchResults([]);
     } finally {
       setIsSearchingHF(false);
     }
-  }, []);
+  }, [buildRecipeSearchUrls]);
 
   const detectBackend = useCallback(async (modelId: string) => {
     if (hfModelBackends[modelId] !== undefined) return;
@@ -1069,7 +1178,7 @@ const [searchQuery, setSearchQuery] = useState('');
       setHfSearchResults([]);
       setHfRateLimited(false);
       setHfHasMoreResults(false);
-      setHfNextCursor(null);
+      setHfNextCursors([]);
     }
     return () => { if (hfSearchTimeoutRef.current) clearTimeout(hfSearchTimeoutRef.current); };
   }, [searchQuery, currentView, searchHuggingFace]);
@@ -1091,13 +1200,13 @@ const [searchQuery, setSearchQuery] = useState('');
   }, [hfRateLimitRemaining]);
 
   const hfNextPage = useCallback(() => {
-    if (!hfNextCursor || hfPageCooldown) return;
+    if (!hfNextCursors.some(c => c !== null) || hfPageCooldown) return;
     const nextPage = hfSearchPage + 1;
-    hfPageCursorsRef.current[nextPage] = hfNextCursor;
+    hfPageCursorsRef.current[nextPage] = hfNextCursors;
     setHfSearchPage(nextPage);
-    searchHuggingFace(searchQuery, hfNextCursor);
+    searchHuggingFace(searchQuery, hfNextCursors);
     startPageCooldown();
-  }, [hfSearchPage, hfNextCursor, searchQuery, searchHuggingFace, hfPageCooldown, startPageCooldown]);
+  }, [hfSearchPage, hfNextCursors, searchQuery, searchHuggingFace, hfPageCooldown, startPageCooldown]);
 
   const hfPrevPage = useCallback(() => {
     if (hfSearchPage <= 0 || hfPageCooldown) return;
@@ -1106,16 +1215,25 @@ const [searchQuery, setSearchQuery] = useState('');
     if (prevPage === 0) {
       searchHuggingFace(searchQuery);
     } else {
-      const cursor = hfPageCursorsRef.current[prevPage];
-      searchHuggingFace(searchQuery, cursor);
+      const cursors = hfPageCursorsRef.current[prevPage];
+      searchHuggingFace(searchQuery, cursors);
     }
     startPageCooldown();
   }, [hfSearchPage, searchQuery, searchHuggingFace, hfPageCooldown, startPageCooldown]);
 
-  // Trigger backend detection for new HF results
+  // Trigger backend detection for new HF results.
+  // Pre-filter: skip models whose pipeline_tag is known to be incompatible
+  // (saves 2 HF API calls per model that would just classify as incompatible).
+  // Models with no pipeline_tag are allowed through for tag/name/format fallbacks.
   useEffect(() => {
     hfSearchResults.forEach((model: HFModelInfo) => {
-      if (hfModelBackends[model.id] === undefined) detectBackend(model.id);
+      if (hfModelBackends[model.id] !== undefined) return;
+      if (model.pipeline_tag && !SUPPORTED_PIPELINE_TAGS.has(model.pipeline_tag)) {
+        // Incompatible pipeline_tag — mark as null without calling detectBackend
+        setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [model.id]: null }));
+        return;
+      }
+      detectBackend(model.id);
     });
   }, [hfSearchResults, hfModelBackends, detectBackend]);
 
@@ -1925,7 +2043,7 @@ const [searchQuery, setSearchQuery] = useState('');
               />
               {showInlineFilterButton && (
                 <button
-                  className={`left-panel-inline-filter-btn ${showFilterPanel ? 'active' : ''}${(enabledRecipes.size < 6 || !showSuggestedSection || !showCacheSection || !showSearchSection || showDownloadedOnly) ? ' filter-active' : ''}`}
+                  className={`left-panel-inline-filter-btn ${showFilterPanel ? 'active' : ''}${(() => { const viableCount = Object.values(recipeStates).filter(s => s !== 'unsupported').length || 6; return enabledRecipes.size !== viableCount || !showSuggestedSection || !showCacheSection || !showSearchSection || showDownloadedOnly; })() ? ' filter-active' : ''}`}
                   onClick={() => setShowFilterPanel(prev => !prev)}
                   title="Filters"
                   aria-label="Filters"
@@ -1983,20 +2101,25 @@ const [searchQuery, setSearchQuery] = useState('');
                       { key: 'kokoro', label: 'Kokoro' },
                       { key: 'flm', label: 'FLM' },
                       { key: 'ryzenai-llm', label: 'RyzenAI' },
-                    ].map(r => (
-                      <button
-                        key={r.key}
-                        className={`recipe-chip${enabledRecipes.has(r.key) ? ' active' : ''}`}
-                        onClick={() => {
-                          setEnabledRecipes(prev => {
-                            const next = new Set(prev);
-                            if (next.has(r.key)) next.delete(r.key);
-                            else next.add(r.key);
-                            return next;
-                          });
-                        }}
-                      >{r.label}</button>
-                    ))}
+                    ].map(r => {
+                      const state = recipeStates[r.key] ?? 'unsupported';
+                      const isActive = enabledRecipes.has(r.key);
+                      return (
+                        <button
+                          key={r.key}
+                          className={`recipe-chip${isActive ? ' active' : ''} state-${state}`}
+                          title={state === 'installed' ? 'Backend installed' : state === 'available' ? 'Backend available (not installed)' : 'Backend not supported on this system'}
+                          onClick={() => {
+                            setEnabledRecipes(prev => {
+                              const next = new Set(prev);
+                              if (next.has(r.key)) next.delete(r.key);
+                              else next.add(r.key);
+                              return next;
+                            });
+                          }}
+                        >{r.label}</button>
+                      );
+                    })}
                   </div>
                   <div className="filter-section-label">Group suggested models</div>
                   <div className="organization-toggle">
@@ -2117,7 +2240,10 @@ const [searchQuery, setSearchQuery] = useState('');
                   hfSearchResults.length === 0 ||
                   (hfSearchResults.length > 0 &&
                     detectingBackendFor === null &&
-                    hfSearchResults.every((m: HFModelInfo) => hfModelBackends[m.id] === null))
+                    hfSearchResults.every((m: HFModelInfo) => {
+                      const b = hfModelBackends[m.id];
+                      return b === null || (b != null && !enabledRecipes.has(b.recipe));
+                    }))
                 ) && (
                   <div className="hf-search-message">{hfSearchPage > 0 ? 'No more results.' : 'No compatible models found.'}</div>
                 )}

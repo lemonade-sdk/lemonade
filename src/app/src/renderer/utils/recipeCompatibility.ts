@@ -66,7 +66,19 @@ export const TASK_RECIPE_MAP: TaskRecipeMapping[] = [
 ];
 
 /** Pipeline tags that indicate an LLM (including multimodal/vision LLMs). */
-const LLM_PIPELINE_TAGS = ['text-generation', 'conversational', 'text2text-generation', 'image-text-to-text'];
+const LLM_PIPELINE_TAGS = ['text-generation', 'conversational', 'text2text-generation', 'image-text-to-text', 'translation', 'image-to-text'];
+
+/**
+ * All pipeline_tag values that any Lemonade backend can handle.
+ * Models with a pipeline_tag NOT in this set are incompatible and can be
+ * skipped before calling detectBackend (saves 2 HF API calls per model).
+ * Models with no pipeline_tag are allowed through (classification falls
+ * back to HF tags / name patterns / format detection).
+ */
+export const SUPPORTED_PIPELINE_TAGS = new Set([
+  ...LLM_PIPELINE_TAGS,
+  ...TASK_RECIPE_MAP.flatMap(m => m.pipelineTags),
+]);
 
 export type CompatibilityLevel = 'supported' | 'likely' | 'experimental' | 'incompatible';
 
@@ -89,6 +101,43 @@ export interface ClassifyInput {
 }
 
 /**
+ * File formats currently supported by each recipe/backend.
+ * When a backend gains format support (e.g. whisper.cpp adds GGUF),
+ * just add the format tag here.
+ * See https://lemonade-server.ai/docs/server/server_spec/
+ */
+export const RECIPE_FORMATS: Record<string, string[]> = {
+  'llamacpp':    ['gguf'],
+  'sd-cpp':      ['safetensors'],
+  'whispercpp':  ['bin'],
+  'kokoro':      ['onnx'],
+  'flm':         ['flm'],
+  'ryzenai-llm': ['onnx'],
+};
+
+/**
+ * Check whether the model has at least one file in a format the recipe supports.
+ * Uses HF tags (gguf, safetensors, onnx) with fallback to file-based detection
+ * for formats not represented as HF tags (bin, flm).
+ */
+function hasRequiredFormat(recipe: string, input: ClassifyInput): boolean {
+  const formats = RECIPE_FORMATS[recipe];
+  if (!formats) return true; // unknown recipe — don't gate
+  return formats.some(fmt => {
+    // HF tags cover the common formats
+    if (input.tags.includes(fmt)) return true;
+    // Fallback to file-based detection for formats without HF tags
+    switch (fmt) {
+      case 'gguf': return input.hasGgufFiles;
+      case 'onnx': return input.hasOnnxFiles;
+      case 'bin': return input.hasBinFiles;
+      case 'flm': return input.hasFlmFiles;
+      default: return false;
+    }
+  });
+}
+
+/**
  * Classify a HuggingFace model into a Lemonade recipe with a confidence level.
  *
  * Priority order:
@@ -108,9 +157,9 @@ export function classifyModel(input: ClassifyInput): ModelCompatibility {
   // --- Pass 1: pipeline_tag (highest confidence) ---
 
   if (pipelineTag) {
-    // Check non-LLM mappings first
+    // Check non-LLM mappings first (must also have a supported file format)
     for (const mapping of TASK_RECIPE_MAP) {
-      if (mapping.pipelineTags.includes(pipelineTag)) {
+      if (mapping.pipelineTags.includes(pipelineTag) && hasRequiredFormat(mapping.recipe, input)) {
         return {
           recipe: mapping.recipe,
           modelType: mapping.modelType,
@@ -159,7 +208,7 @@ export function classifyModel(input: ClassifyInput): ModelCompatibility {
   // --- Pass 2: HF tags (medium confidence) ---
 
   for (const mapping of TASK_RECIPE_MAP) {
-    if (mapping.hfTags.some(t => tags.includes(t))) {
+    if (mapping.hfTags.some(t => tags.includes(t)) && hasRequiredFormat(mapping.recipe, input)) {
       return {
         recipe: mapping.recipe,
         modelType: mapping.modelType,
@@ -173,7 +222,7 @@ export function classifyModel(input: ClassifyInput): ModelCompatibility {
   // --- Pass 3: Model ID name patterns (low confidence) ---
 
   for (const mapping of TASK_RECIPE_MAP) {
-    if (mapping.namePatterns.some(p => p.test(idLower))) {
+    if (mapping.namePatterns.some(p => p.test(idLower)) && hasRequiredFormat(mapping.recipe, input)) {
       return {
         recipe: mapping.recipe,
         modelType: mapping.modelType,
