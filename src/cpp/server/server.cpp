@@ -54,6 +54,68 @@ namespace fs = std::filesystem;
 
 namespace lemon {
 
+namespace {
+
+bool should_disable_thinking(const json& request_json) {
+    // enable_thinking takes precedence over thinking when both are present.
+    if (request_json.contains("enable_thinking") && request_json["enable_thinking"].is_boolean()) {
+        return request_json["enable_thinking"].get<bool>() == false;
+    }
+
+    if (request_json.contains("thinking")) {
+        const auto& thinking = request_json["thinking"];
+        if (thinking.is_boolean()) {
+            return thinking.get<bool>() == false;
+        }
+        if (thinking.is_object()) {
+            const std::string type = thinking.value("type", "");
+            if (type == "disabled") {
+                return true;
+            }
+            if (type == "enabled") {
+                return false;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool strip_handled_thinking_fields(json& request_json) {
+    bool modified = false;
+    modified = request_json.erase("enable_thinking") > 0 || modified;
+    modified = request_json.erase("thinking") > 0 || modified;
+    return modified;
+}
+
+bool prepend_no_think_to_last_user_message(json& request_json) {
+    if (!request_json.contains("messages") || !request_json["messages"].is_array()) {
+        LOG(DEBUG, "Server") << "No messages array found for /no_think injection" << std::endl;
+        return false;
+    }
+
+    auto& messages = request_json["messages"];
+
+    for (int i = static_cast<int>(messages.size()) - 1; i >= 0; i--) {
+        if (messages[i].is_object() &&
+            messages[i].contains("role") &&
+            messages[i]["role"].is_string() &&
+            messages[i]["role"].get<std::string>() == "user" &&
+            messages[i].contains("content") &&
+            messages[i]["content"].is_string()) {
+
+            std::string original_content = messages[i]["content"].get<std::string>();
+            messages[i]["content"] = "/no_think\n" + original_content;
+            return true;
+        }
+    }
+
+    LOG(DEBUG, "Server") << "No string-content user message found for /no_think injection" << std::endl;
+    return false;
+}
+
+} // namespace
+
 
 static const json MIME_TYPES = {
     {"mp3",  "audio/mpeg"},
@@ -1337,32 +1399,12 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         std::string request_body = req.body;
         bool request_modified = false;
 
-        // Handle enable_thinking=false by prepending /no_think to last user message
-        if (request_json.contains("enable_thinking") &&
-            request_json["enable_thinking"].is_boolean() &&
-            request_json["enable_thinking"].get<bool>() == false) {
-
-            if (request_json.contains("messages") && request_json["messages"].is_array()) {
-                auto& messages = request_json["messages"];
-
-                // Find the last user message (iterate backwards)
-                for (int i = messages.size() - 1; i >= 0; i--) {
-                    if (messages[i].is_object() &&
-                        messages[i].contains("role") &&
-                        messages[i]["role"].is_string() &&
-                        messages[i]["role"].get<std::string>() == "user") {
-
-                        // Prepend /no_think to the content
-                        if (messages[i].contains("content") && messages[i]["content"].is_string()) {
-                            std::string original_content = messages[i]["content"].get<std::string>();
-                            messages[i]["content"] = "/no_think\n" + original_content;
-                            request_modified = true;
-                            break;
-                        }
-                    }
-                }
-            }
+        // OpenCode and other OpenAI-compatible clients may send thinking=false
+        // instead of Lemonade's enable_thinking=false.
+        if (should_disable_thinking(request_json)) {
+            request_modified = prepend_no_think_to_last_user_message(request_json);
         }
+        request_modified = strip_handled_thinking_fields(request_json) || request_modified;
 
         // If we modified the request, serialize it back to string
         if (request_modified) {
