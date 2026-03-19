@@ -1,0 +1,164 @@
+name: Launchpad PPA
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  prepare-matrix:
+    name: Prepare matrix
+    runs-on: ubuntu-latest
+    outputs:
+      package_matrix: ${{ steps.set-matrix.outputs.package_matrix }}
+    steps:
+      - name: Define shared matrix values
+        id: set-matrix
+        run: |
+          {
+            echo 'package_matrix<<EOF'
+            cat <<'JSON'
+          {
+            "include": [
+              {
+                "ubuntu_version": "24.04",
+                "container_tag": "ubuntu24.04",
+                "deb_codename": "noble"
+              },
+              {
+                "ubuntu_version": "25.10",
+                "container_tag": "ubuntu25.10",
+                "deb_codename": "questing"
+              },
+              {
+                "ubuntu_version": "26.04",
+                "container_tag": "ubuntu26.04",
+                "deb_codename": "resolute"
+              }
+            ]
+          }
+          JSON
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+  package:
+    name: Build
+    needs: prepare-matrix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:${{ matrix.container_tag }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $(pwd)
+
+      - name: Get version from git describe
+        id: get_version
+        run: |
+          VERSION=$(git describe --tags --always)
+          # Strip leading 'v' for Debian version compatibility
+          DEB_VERSION=$(echo "${VERSION}" | sed 's/^v//')
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "deb_version=${DEB_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Get short SHA
+        id: short_sha
+        run: echo "sha=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Create Debian packaging metadata
+        working-directory: ${{ github.workspace }}
+        run: |
+          mv contrib/debian .
+          sed -e "s|@@DEB_VERSION@@|${{ steps.get_version.outputs.deb_version }}~${{ matrix.ubuntu_version }}|g" \
+              -e "s|@@DEB_CODENAME@@|${{ matrix.deb_codename }}|g" \
+              -e "s|@@DEB_DATE@@|$(date -R)|g" \
+              debian/changelog.in > debian/changelog
+
+      - name: Catch missing build-deps
+        run: |
+          apt-get update && apt-get build-dep . -y
+
+      - name: Build binary package
+        if: github.event_name == 'pull_request'
+        run: |
+          dpkg-buildpackage -us -uc -b
+          mkdir -p build-output
+          mv ../*.deb build-output/ || true
+          mv ../*.buildinfo build-output/ || true
+          mv ../*.changes build-output/ || true
+
+      - name: Build source package
+        if: github.event_name != 'pull_request'
+        run: |
+          dpkg-buildpackage -us -uc -S -sa
+          mkdir -p source-output
+          mv ../*.dsc source-output/ || true
+          mv ../*.tar.* source-output/ || true
+          mv ../*.changes source-output/ || true
+          mv ../*.buildinfo source-output/ || true
+
+      - name: Upload Debian package
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-${{ matrix.deb_codename }}-deb
+          path: build-output/*.deb
+          retention-days: 30
+
+      - name: Upload source package
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-${{ matrix.deb_codename }}-source-package
+          path: source-output/*
+          retention-days: 30
+
+  upload-stable:
+    name: Upload (Stable)
+    strategy:
+      matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
+    needs: [prepare-matrix, package]
+    permissions:
+      contents: read
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request' }}
+    uses: ./.github/workflows/upload.yml
+    with:
+      target: ppa:lemonade-team/stable
+      artifact: lemonade-${{ matrix.deb_codename }}-source-package
+    secrets: inherit
+
+  upload-bleeding-edge:
+    name: Upload (Bleeding Edge)
+    strategy:
+      matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
+    needs: [prepare-matrix, package]
+    permissions:
+      contents: read
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request' }}
+    uses: ./.github/workflows/upload.yml
+    with:
+      target: ppa:lemonade-team/bleeding-edge
+      artifact: lemonade-${{ matrix.deb_codename }}-source-package
+    secrets: inherit
