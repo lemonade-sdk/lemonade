@@ -15,6 +15,7 @@ export interface AudioContent {
   audio: {
     data: string;
     mime: string;
+    name?: string;
   };
 }
 

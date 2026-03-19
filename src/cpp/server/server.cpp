@@ -1568,38 +1568,73 @@ void Server::handle_experience_chat(const json& request_json,
             }
         }
 
-        // 5. Pre-process: extract audio data from user messages
-        //    Audio data is too large for the LLM context, so we extract it
-        //    and replace with a placeholder. The transcribe_audio tool will use the extracted data.
+        // 5. Pre-process: extract audio and image data from user messages
+        //    Binary data is too large for the LLM context, so we extract it
+        //    and replace with placeholders. Tools will use the extracted data.
         struct ExtractedAudio {
             std::string b64_data;
             std::string mime;
         };
+        struct ExtractedImage {
+            std::string data_url;  // Full data:image/...;base64,... URL
+        };
         std::vector<ExtractedAudio> extracted_audio_data;
+        std::vector<ExtractedImage> extracted_image_data;
         {
             for (auto& msg : messages) {
-                if (!msg.contains("role") || msg["role"] != "user" || !msg.contains("content")) continue;
+                if (!msg.contains("content")) continue;
+                bool is_user = msg.contains("role") && msg["role"] == "user";
 
                 if (msg["content"].is_array()) {
-                    // Handle structured content array: [{type:"text",...}, {type:"audio",...}, ...]
+                    // Handle structured content array: [{type:"text",...}, {type:"audio",...}, {type:"image_url",...}]
+                    // For user messages: extract audio/image data for tool use
+                    // For all messages: strip unsupported types (audio) so llama.cpp doesn't reject them
                     json new_content = json::array();
                     for (const auto& item : msg["content"]) {
-                        if (item.contains("type") && item["type"] == "audio" &&
-                            item.contains("audio") && item["audio"].contains("data")) {
-                            std::string b64_data = item["audio"]["data"].get<std::string>();
-                            std::string mime = item["audio"].value("mime", "audio/wav");
-                            extracted_audio_data.push_back({b64_data, mime});
-                            std::string placeholder = "[User provided audio file #" +
-                                std::to_string(extracted_audio_data.size()) + "]";
-                            new_content.push_back({{"type", "text"}, {"text", placeholder}});
-                            LOG(INFO, "Server") << "Extracted audio from content array ("
-                                                << b64_data.size() << " base64 chars)" << std::endl;
+                        if (!item.contains("type")) {
+                            new_content.push_back(item);
+                            continue;
+                        }
+                        std::string item_type = item["type"].get<std::string>();
+
+                        if (item_type == "audio" && item.contains("audio") && item["audio"].contains("data")) {
+                            if (is_user) {
+                                std::string b64_data = item["audio"]["data"].get<std::string>();
+                                std::string mime = item["audio"].value("mime", "audio/wav");
+                                extracted_audio_data.push_back({b64_data, mime});
+                                std::string placeholder = "[User provided audio file #" +
+                                    std::to_string(extracted_audio_data.size()) + "]";
+                                new_content.push_back({{"type", "text"}, {"text", placeholder}});
+                                LOG(INFO, "Server") << "Extracted audio from content array ("
+                                                    << b64_data.size() << " base64 chars)" << std::endl;
+                            }
+                            // Drop audio items from non-user messages (llama.cpp doesn't support them)
+                        } else if (item_type == "image_url" && item.contains("image_url") && item["image_url"].contains("url")) {
+                            if (is_user) {
+                                std::string url = item["image_url"]["url"].get<std::string>();
+                                extracted_image_data.push_back({url});
+                                std::string placeholder = "[User provided image #" +
+                                    std::to_string(extracted_image_data.size()) + "]";
+                                new_content.push_back({{"type", "text"}, {"text", placeholder}});
+                                LOG(INFO, "Server") << "Extracted image from content array ("
+                                                    << url.size() << " chars)" << std::endl;
+                            }
+                            // Drop image_url items from non-user messages (base64 data too large)
                         } else {
                             new_content.push_back(item);
                         }
                     }
-                    msg["content"] = new_content;
-                } else if (msg["content"].is_string()) {
+                    // If all items were stripped, convert to empty text
+                    if (new_content.empty()) {
+                        msg["content"] = "";
+                    } else if (new_content.size() == 1 && new_content[0].contains("type") &&
+                               new_content[0]["type"] == "text") {
+                        // Simplify single-text arrays to plain string
+                        msg["content"] = new_content[0]["text"];
+                    } else {
+                        msg["content"] = new_content;
+                    }
+                } else if (msg["content"].is_string() && is_user) {
                     // Handle inline data URIs in string content
                     const std::string audio_prefix = "data:audio/";
                     const std::string base64_marker = ";base64,";
@@ -1630,8 +1665,29 @@ void Server::handle_experience_chat(const json& request_json,
             }
         }
 
-        // 6. Agentic loop: call LLM, check for tool_calls, execute, repeat
+        // 5b. Seed artifacts with user-uploaded images so edit_image auto-routing works
         json artifacts = json::array();
+        for (const auto& img : extracted_image_data) {
+            // Extract base64 data from data URL (e.g. "data:image/png;base64,iVBOR...")
+            const std::string b64_marker = ";base64,";
+            auto b64_pos = img.data_url.find(b64_marker);
+            if (b64_pos != std::string::npos) {
+                std::string b64_data = img.data_url.substr(b64_pos + b64_marker.size());
+                // Extract mime type (e.g. "image/png" from "data:image/png;base64,...")
+                std::string mime = "image/png";
+                if (img.data_url.size() > 5) {
+                    mime = img.data_url.substr(5, b64_pos - 5);  // skip "data:"
+                }
+                artifacts.push_back({
+                    {"type", "image"},
+                    {"data", b64_data},
+                    {"mime", mime}
+                });
+                LOG(INFO, "Server") << "Seeded artifact with user-uploaded image (" << mime << ")" << std::endl;
+            }
+        }
+
+        // 6. Agentic loop: call LLM, check for tool_calls, execute, repeat
         json final_assistant_message;
 
         for (int iteration = 0; iteration < MAX_TOOL_ITERATIONS; ++iteration) {
@@ -1832,6 +1888,14 @@ void Server::handle_experience_chat(const json& request_json,
                         // Route back to the LLM itself with the image as a vision message
                         std::string image_url = func_args.value("image_url", "");
                         std::string question = func_args.value("question", "Describe this image.");
+
+                        // If the LLM didn't provide a valid image_url (it can't — too large for context),
+                        // use the most recent pre-extracted image from the user message
+                        if ((image_url.empty() || image_url.find("data:") == std::string::npos) &&
+                            !extracted_image_data.empty()) {
+                            image_url = extracted_image_data.back().data_url;
+                            LOG(INFO, "Server") << "Using pre-extracted image data for analyze_image" << std::endl;
+                        }
 
                         json vision_content = json::array({
                             {{"type", "image_url"}, {"image_url", {{"url", image_url}}}},
@@ -3105,17 +3169,48 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             info = model_manager_->get_model_info(model_name);
         }
 
-        // Load model with optional per-model settings
-        router_->load_model(model_name, info, options, true);
+        // Experience models: load each component model instead
+        if (info.recipe == "experience" && !info.composite_models.empty()) {
+            LOG(INFO, "Server") << "Loading experience components for: " << model_name << std::endl;
+            for (const auto& component : info.composite_models) {
+                if (!model_manager_->model_exists(component)) {
+                    LOG(WARNING, "Server") << "Skipping unknown component: " << component << std::endl;
+                    continue;
+                }
+                if (router_->is_model_loaded(component)) {
+                    LOG(INFO, "Server") << "Component already loaded: " << component << std::endl;
+                    continue;
+                }
+                auto comp_info = model_manager_->get_model_info(component);
+                if (!comp_info.downloaded) {
+                    LOG(INFO, "Server") << "Downloading component: " << component << std::endl;
+                    model_manager_->download_registered_model(comp_info);
+                    comp_info = model_manager_->get_model_info(component);
+                }
+                LOG(INFO, "Server") << "Loading component: " << component << std::endl;
+                RecipeOptions comp_options = RecipeOptions(comp_info.recipe, request_json);
+                router_->load_model(component, comp_info, comp_options, true);
+            }
 
-        // Return success response
-        nlohmann::json response = {
-            {"status", "success"},
-            {"model_name", model_name},
-            {"checkpoint", info.checkpoint()},
-            {"recipe", info.recipe}
-        };
-        res.set_content(response.dump(), "application/json");
+            nlohmann::json response = {
+                {"status", "success"},
+                {"model_name", model_name},
+                {"recipe", "experience"}
+            };
+            res.set_content(response.dump(), "application/json");
+        } else {
+            // Load model with optional per-model settings
+            router_->load_model(model_name, info, options, true);
+
+            // Return success response
+            nlohmann::json response = {
+                {"status", "success"},
+                {"model_name", model_name},
+                {"checkpoint", info.checkpoint()},
+                {"recipe", info.recipe}
+            };
+            res.set_content(response.dump(), "application/json");
+        }
 
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;

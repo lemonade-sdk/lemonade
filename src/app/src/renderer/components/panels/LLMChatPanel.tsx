@@ -555,7 +555,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
         contentArray.push({ type: 'image_url', image_url: { url: imageUrl } });
       });
       uploadedAudioFiles.forEach(audio => {
-        contentArray.push({ type: 'audio', audio: { data: audio.data, mime: audio.mime } });
+        contentArray.push({ type: 'audio', audio: { data: audio.data, mime: audio.mime, name: audio.name } });
       });
       messageContent = contentArray;
     } else {
@@ -800,11 +800,25 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           {content.map((item, index) => {
             if (item.type === 'text') return <MarkdownMessage key={index} content={item.text} isComplete={isComplete} />;
             if (item.type === 'image_url') return <img key={index} src={item.image_url.url} alt="Uploaded" className="message-image" />;
-            if (item.type === 'audio') return (
-              <div key={index} className="message-audio">
-                <audio controls src={`data:${(item as AudioContent).audio.mime};base64,${(item as AudioContent).audio.data}`} />
-              </div>
-            );
+            if (item.type === 'audio') {
+              const audioItem = item as AudioContent;
+              const fileName = audioItem.audio.name;
+              if (fileName) {
+                return (
+                  <div key={index} className="message-audio-file">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+                    </svg>
+                    <span className="message-audio-filename">{fileName}</span>
+                  </div>
+                );
+              }
+              return (
+                <div key={index} className="message-audio">
+                  <audio controls src={`data:${audioItem.audio.mime};base64,${audioItem.audio.data}`} />
+                </div>
+              );
+            }
             return null;
           })}
         </div>
@@ -1018,8 +1032,11 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             <div className="audio-preview-list">
               {uploadedAudioFiles.map((audio, index) => (
                 <div key={index} className="audio-preview-item">
+                  <svg className="audio-preview-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+                  </svg>
                   <span className="audio-preview-name">{audio.name}</span>
-                  <button className="audio-preview-remove" onClick={() => setUploadedAudioFiles(prev => prev.filter((_, i) => i !== index))}>×</button>
+                  <button className="audio-preview-remove" onClick={() => setUploadedAudioFiles(prev => prev.filter((_, i) => i !== index))} title="Remove audio file">×</button>
                 </div>
               ))}
             </div>

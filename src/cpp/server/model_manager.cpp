@@ -1691,6 +1691,31 @@ void ModelManager::download_model(const std::string& model_name,
         variant = actual_checkpoint.substr(colon_pos + 1);
     }
 
+    // Experience models don't have their own backend — download each component model instead
+    if (actual_recipe == "experience") {
+        auto info = get_model_info(model_name);
+        if (info.composite_models.empty()) {
+            throw std::runtime_error("Experience model '" + model_name + "' has no composite_models defined");
+        }
+        LOG(INFO, "ModelManager") << "Downloading " << info.composite_models.size()
+                                  << " component(s) for experience: " << model_name << std::endl;
+        for (const auto& component : info.composite_models) {
+            if (!model_exists(component)) {
+                LOG(WARNING, "ModelManager") << "Skipping unknown component: " << component << std::endl;
+                continue;
+            }
+            auto comp_info = get_model_info(component);
+            if (comp_info.downloaded) {
+                LOG(INFO, "ModelManager") << "Component already downloaded: " << component << std::endl;
+                continue;
+            }
+            LOG(INFO, "ModelManager") << "Downloading component: " << component << std::endl;
+            json comp_data = json::object();
+            download_model(component, comp_data, do_not_upgrade, progress_callback);
+        }
+        return;
+    }
+
     // Check if this recipe is supported on the current system
     bool disable_filtering = parse_TF_env_var("LEMONADE_DISABLE_MODEL_FILTERING");
     std::string unsupported_reason = SystemInfo::check_recipe_supported(actual_recipe);

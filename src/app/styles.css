@@ -3533,40 +3533,77 @@ footer {
     border-radius: 8px;
 }
 
+.message-audio-file {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    color: #ccc;
+    font-size: 13px;
+}
+
+.message-audio-file svg {
+    flex-shrink: 0;
+    color: #888;
+}
+
+.message-audio-filename {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* Audio File Preview */
 .audio-preview-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    padding: 6px 8px 0;
+    gap: 8px;
+    padding: 8px 8px 4px;
+}
+
+.chat-window-experience-mode .audio-preview-list {
+    padding-left: calc(var(--experience-composer-text-base-inset) + var(--experience-composer-text-offset-x));
 }
 
 .audio-preview-item {
     display: flex;
     align-items: center;
-    gap: 6px;
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: 6px;
-    padding: 4px 8px;
-    font-size: 12px;
+    gap: 8px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
     color: #ccc;
+    max-width: 220px;
+}
+
+.audio-preview-icon {
+    flex-shrink: 0;
+    color: #888;
 }
 
 .audio-preview-name {
-    max-width: 150px;
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .audio-preview-remove {
+    flex-shrink: 0;
     background: none;
     border: none;
-    color: #888;
+    color: #666;
     cursor: pointer;
-    font-size: 14px;
-    padding: 0 2px;
+    font-size: 16px;
+    padding: 0;
     line-height: 1;
+    transition: color 0.15s;
 }
 
 .audio-preview-remove:hover {
