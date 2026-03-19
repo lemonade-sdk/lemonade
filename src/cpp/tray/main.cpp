@@ -140,7 +140,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         auto file_sink = std::make_shared<AixLog::SinkFile>(
             AixLog::Filter(AixLog::to_severity(config.log_level)),
             log_file,
-            "%Y-%m-%d %H:%M:%S.#ms [#severity] (#tag_func) #message");
+            lemon::RuntimeConfig::LOG_FORMAT);
         AixLog::Log::init({file_sink});
     }
 

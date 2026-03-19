@@ -471,7 +471,7 @@ void TrayUI::on_unload_specific_model(const std::string& model_name) {
 void TrayUI::on_change_port(int new_port) {
     nlohmann::json body;
     body["port"] = new_port;
-    std::string result = http_post("/internal/port", body.dump());
+    std::string result = http_post("/internal/set", body.dump());
     if (!result.empty()) {
         port_ = new_port;
         build_menu();

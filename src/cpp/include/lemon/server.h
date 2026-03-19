@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <httplib.h>
+#include "runtime_config.h"
 #include "router.h"
 #include "model_manager.h"
 #include "backend_manager.h"
@@ -55,8 +56,12 @@ private:
     // Setup HTTP servers (create httplib::Server instances, routes, CORS, thread pool)
     void setup_http_servers();
 
-    // Port change endpoint handler
-    void handle_port_change(const httplib::Request& req, httplib::Response& res);
+    // Unified config endpoints
+    void handle_config_set(const httplib::Request& req, httplib::Response& res);
+    void handle_config_get(const httplib::Request& req, httplib::Response& res);
+
+    // Side-effect callback for RuntimeConfig::set()
+    void apply_config_side_effects(const std::vector<std::string>& changed_keys);
 
     // Endpoint handlers
     void handle_health(const httplib::Request& req, httplib::Response& res);
@@ -131,12 +136,9 @@ private:
     double get_vram_usage();
     double get_npu_utilization();
 
-    std::atomic<int> port_;
-    std::string host_;
-    std::string log_level_;
-    json default_options_;
+    std::shared_ptr<RuntimeConfig> config_;
+    std::atomic<int> port_;  // Atomic cache for lock-free reads from listener threads
     std::string log_file_path_;
-    bool no_broadcast_;
 
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;

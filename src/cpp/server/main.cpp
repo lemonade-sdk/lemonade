@@ -55,7 +55,7 @@ int main(int argc, char** argv) {
         auto config = parser.get_config();
 
         // Initialize logging
-        auto sink = std::make_shared<AixLog::SinkCout>(AixLog::Filter(AixLog::to_severity(config.log_level)), "%Y-%m-%d %H:%M:%S.#ms [#severity] (#tag_func) #message");
+        auto sink = std::make_shared<AixLog::SinkCout>(AixLog::Filter(AixLog::to_severity(config.log_level)), RuntimeConfig::LOG_FORMAT);
         AixLog::Log::init({sink});
 
         // Start the server

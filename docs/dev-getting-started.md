@@ -20,6 +20,7 @@ This guide covers everything you need to build, test, and contribute to Lemonade
 - [Architecture Overview](#architecture-overview)
   - [Overview](#overview)
   - [Client-Server Communication](#client-server-communication)
+  - [Internal Endpoints](#internal-endpoints)
   - [Dependencies](#dependencies)
 - [Usage](#usage)
   - [lemonade-router (Server Only)](#lemonade-router-server-only)
@@ -595,7 +596,7 @@ A GUI application for desktop users that exposes the server via a system tray ic
 The `lemonade` client communicates with `lemonade-router` server via HTTP:
 - **Model operations:** `/api/v1/models`, `/api/v1/pull`, `/api/v1/delete`
 - **Model control:** `/api/v1/load`, `/api/v1/unload`
-- **Server management:** `/api/v1/health`, `/internal/shutdown`
+- **Server management:** `/api/v1/health`, `/internal/shutdown`, `/internal/set`, `/internal/config`
 - **Inference:** `/api/v1/chat/completions`, `/api/v1/completions`, `/api/v1/audio/transcriptions`
 
 The client automatically:
@@ -615,6 +616,66 @@ The client automatically:
 - Uses machine hostname as broadcast name.
 - The custom flag --no-broadcast is available in the command line to disable.
 - Auto protection, doesnt broadcast on non RFC1918 Networks.
+
+### Internal Endpoints
+
+> **These endpoints are for first-party Lemonade software only** (CLI, tray app, desktop app). They are not part of the public API, may change without notice, and must not be relied upon by third-party integrations.
+
+Internal endpoints are restricted to loopback (`127.0.0.1` / `::1`) — requests from non-localhost addresses receive `403 Forbidden`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/internal/shutdown` | Unloads all models and shuts down the server |
+| `POST` | `/internal/set` | Unified config setter (see below) |
+| `GET`  | `/internal/config` | Returns the full runtime config snapshot |
+
+#### `POST /internal/set`
+
+Accepts a JSON object with one or more keys to update atomically. Returns `{"status":"success","updated":{...}}` on success, or `400` with an error message on validation failure.
+
+**Server-level keys** (trigger immediate side effects):
+
+| Key | Type | Side Effect |
+|-----|------|-------------|
+| `port` | int (1–65535) | HTTP rebind |
+| `host` | string | HTTP rebind |
+| `log_level` | string (`trace`, `debug`, `info`, `warning`, `error`, `fatal`, `none`) | Reconfigures log filter |
+| `global_timeout` | int (positive) | Updates default HTTP client timeout |
+| `no_broadcast` | bool | Stops or starts UDP beacon |
+| `extra_models_dir` | string | Updates model manager search path |
+
+**Deferred keys** (affect the next model load or eviction decision, no immediate side effect):
+
+| Key | Type |
+|-----|------|
+| `max_loaded_models` | int (-1 or positive) |
+| `ctx_size` | int (positive) |
+| `llamacpp_backend` | string |
+| `llamacpp_args` | string |
+| `sdcpp_backend` | string |
+| `whispercpp_backend` | string |
+| `whispercpp_args` | string |
+| `steps` | int (positive) |
+| `cfg_scale` | number |
+| `width` | int (positive) |
+| `height` | int (positive) |
+| `flm_args` | string |
+
+**Example:**
+```bash
+curl -X POST http://localhost:8000/internal/set \
+  -H "Content-Type: application/json" \
+  -d '{"ctx_size": 8192, "max_loaded_models": 3, "log_level": "debug"}'
+```
+
+#### `GET /internal/config`
+
+Returns the full runtime configuration as a flat JSON object containing all server-level and recipe option keys with their current values.
+
+**Example:**
+```bash
+curl http://localhost:8000/internal/config
+```
 
 ### Dependencies
 
