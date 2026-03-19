@@ -383,6 +383,11 @@ static bool prompt_model_selection(lemonade::LemonadeClient& client, std::string
     std::cout << "Select a model:" << std::endl;
     for (size_t i = 0; i < models.size(); ++i) {
         const auto& model = models[i];
+
+        if (model.recipe != "llamacpp") {
+            continue;
+        }
+
         std::cout << "  " << (i + 1) << ") " << model.id
                   << " [" << (model.downloaded ? "downloaded" : "not-downloaded") << "]"
                   << " (" << (model.recipe.empty() ? "-" : model.recipe) << ")"
