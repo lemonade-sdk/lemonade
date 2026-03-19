@@ -26,6 +26,13 @@ endif()
 
 # Include GNUInstallDirs for standard installation directories
 include(GNUInstallDirs)
+     # Install man pages
+     install(FILES
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-server.1
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-router.1
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade.1
+          DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
+     )
 # ============================================================
 # Electron source paths (used by both runtime and installers)
 # ============================================================
@@ -49,6 +56,10 @@ endif()
 get_filename_component(WEB_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/web-app" ABSOLUTE)
 set(WEB_APP_BUILD_DIR "${CMAKE_BINARY_DIR}/resources/web-app")
 
+# When ON, use system-provided Node.js modules (for example, webpack and distro-packaged JS deps)
+# instead of installing project-local dependencies with npm for web-app builds.
+option(USE_SYSTEM_NODEJS_MODULES "Use system-installed Node.js modules for building the Web app" OFF)
+
 # C++ Standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -58,8 +69,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(MIN_NLOHMANN_JSON_VERSION "3.11.3")
 set(MIN_CLI11_VERSION "2.4.2")
 set(MIN_CURL_VERSION "8.5.0")
-set(MIN_ZSTD_VERSION "1.5.7")
+set(MIN_ZSTD_VERSION "1.5.5")
+set(DOWNLOAD_ZSTD_VERSION "1.5.7")
 set(MIN_HTTPLIB_VERSION "0.26.0")
+set(MIN_LWS_VERSION "4.3.3")
 
 find_package(PkgConfig QUIET)
 
@@ -69,6 +82,7 @@ if(PkgConfig_FOUND)
     pkg_check_modules(CURL QUIET libcurl>=${MIN_CURL_VERSION})
     pkg_check_modules(ZSTD QUIET libzstd>=${MIN_ZSTD_VERSION})
     pkg_check_modules(HTTPLIB QUIET cpp-httplib>=${MIN_HTTPLIB_VERSION})
+    pkg_check_modules(LWS QUIET libwebsockets>=${MIN_LWS_VERSION})
 endif()
 find_path(CLI11_INCLUDE_DIRS "CLI/CLI.hpp")
 find_path(HTTPLIB_INCLUDE_DIRS "httplib.h")
@@ -92,12 +106,14 @@ set(USE_SYSTEM_CURL ${CURL_FOUND})
 set(USE_SYSTEM_ZSTD ${ZSTD_FOUND})
 set(USE_SYSTEM_CLI11 ${CLI11_INCLUDE_DIRS})
 set(USE_SYSTEM_HTTPLIB ${HTTPLIB_FOUND})
+set(USE_SYSTEM_LWS ${LWS_FOUND})
 
 # On macOS, always statically link dependencies to avoid Homebrew dylib issues
 if(APPLE)
     set(USE_SYSTEM_ZSTD OFF)
     set(USE_SYSTEM_CURL OFF)
     set(USE_SYSTEM_HTTPLIB OFF)
+    set(USE_SYSTEM_LWS OFF)
 endif()
 
 if(USE_SYSTEM_JSON)
@@ -138,6 +154,16 @@ else()
     message(STATUS "System cpp-httplib not found or version < ${MIN_HTTPLIB_VERSION}, will use FetchContent")
 endif()
 
+if(USE_SYSTEM_LWS)
+    if(LWS_VERSION)
+        message(STATUS "Using system libwebsockets (version ${LWS_VERSION}, >= ${MIN_LWS_VERSION})")
+    else()
+        message(STATUS "Using system libwebsockets (>= ${MIN_LWS_VERSION})")
+    endif()
+else()
+    message(STATUS "System libwebsockets not found or version < ${MIN_LWS_VERSION}, will use FetchContent")
+endif()
+
 # ============================================================
 # Common dependency configurations
 # ============================================================
@@ -148,7 +174,7 @@ set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "")  # Build static libraries
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # Fetch missing dependencies
-if(NOT USE_SYSTEM_JSON OR NOT USE_SYSTEM_CURL OR NOT USE_SYSTEM_ZSTD OR NOT USE_SYSTEM_CLI11 OR NOT USE_SYSTEM_HTTPLIB)
+if(NOT USE_SYSTEM_JSON OR NOT USE_SYSTEM_CURL OR NOT USE_SYSTEM_ZSTD OR NOT USE_SYSTEM_CLI11 OR NOT USE_SYSTEM_HTTPLIB OR NOT USE_SYSTEM_LWS)
     include(FetchContent)
 endif()
 
@@ -212,7 +238,7 @@ endif()
 if(NOT USE_SYSTEM_ZSTD)
     FetchContent_Declare(zstd
         GIT_REPOSITORY https://github.com/facebook/zstd.git
-        GIT_TAG v${MIN_ZSTD_VERSION}
+        GIT_TAG v${DOWNLOAD_ZSTD_VERSION}
         SOURCE_SUBDIR build/cmake
         EXCLUDE_FROM_ALL
     )
@@ -282,23 +308,43 @@ if(NOT USE_SYSTEM_HTTPLIB)
     endif()
 endif()
 
-# === IXWebSocket (for WebSocket support: Windows and Linux) ===
-if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(MIN_IXWEBSOCKET_VERSION "11.4.4")
-    FetchContent_Declare(ixwebsocket
-        GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
-        GIT_TAG v${MIN_IXWEBSOCKET_VERSION}
+# === libwebsockets (for WebSocket support) ===
+if(NOT USE_SYSTEM_LWS)
+    # Workaround: libwebsockets v4.3.3 uses cmake_minimum_required(VERSION 2.8.12)
+    # which CMake 4.x rejects. Allow older policy versions for subdirectory builds.
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.27")
+        cmake_policy(SET CMP0148 OLD)
+    endif()
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+    FetchContent_Declare(libwebsockets
+        GIT_REPOSITORY https://github.com/warmcat/libwebsockets.git
+        GIT_TAG v${MIN_LWS_VERSION}
     )
-    # Disable TLS and ZLIB for simpler setup (localhost only, no compression needed)
-    set(USE_TLS OFF CACHE INTERNAL "")
-    set(USE_OPEN_SSL OFF CACHE INTERNAL "")
-    set(USE_MBED_TLS OFF CACHE INTERNAL "")
-    set(USE_ZLIB OFF CACHE INTERNAL "")
-    set(IXWEBSOCKET_INSTALL OFF CACHE INTERNAL "")
-    FetchContent_MakeAvailable(ixwebsocket)
-    message(STATUS "IXWebSocket will be fetched (v${MIN_IXWEBSOCKET_VERSION})")
+    # Build as static library, disable features we don't need
+    set(LWS_WITH_SHARED OFF CACHE BOOL "" FORCE)
+    set(LWS_WITHOUT_TESTAPPS ON CACHE BOOL "" FORCE)
+    set(LWS_WITHOUT_TEST_SERVER ON CACHE BOOL "" FORCE)
+    set(LWS_WITHOUT_TEST_PING ON CACHE BOOL "" FORCE)
+    set(LWS_WITHOUT_TEST_CLIENT ON CACHE BOOL "" FORCE)
+    set(LWS_WITH_MINIMAL_EXAMPLES OFF CACHE BOOL "" FORCE)
+    # Disable TLS for now (can be enabled later for WSS/network access)
+    set(LWS_WITH_SSL OFF CACHE BOOL "" FORCE)
+    set(LWS_WITH_ZLIB OFF CACHE BOOL "" FORCE)
+    set(LWS_WITH_ZIP_FOPS OFF CACHE BOOL "" FORCE)
+    # Disable -Werror for libwebsockets — newer GCC/Clang triggers warnings in upstream code
+    # First populate to get the source
+    FetchContent_Populate(libwebsockets)
+    # Patch the CMakeLists.txt files to remove -Werror
+    file(READ "${libwebsockets_SOURCE_DIR}/CMakeLists.txt" LWS_CMAKE_MAIN)
+    string(REPLACE "-Werror" "" LWS_CMAKE_MAIN "${LWS_CMAKE_MAIN}")
+    file(WRITE "${libwebsockets_SOURCE_DIR}/CMakeLists.txt" "${LWS_CMAKE_MAIN}")
+    file(READ "${libwebsockets_SOURCE_DIR}/lib/CMakeLists.txt" LWS_CMAKE_LIB)
+    string(REPLACE "-Werror" "" LWS_CMAKE_LIB "${LWS_CMAKE_LIB}")
+    file(WRITE "${libwebsockets_SOURCE_DIR}/lib/CMakeLists.txt" "${LWS_CMAKE_LIB}")
+    # Now add the subdirectory
+    add_subdirectory(${libwebsockets_SOURCE_DIR} ${libwebsockets_BINARY_DIR})
+    message(STATUS "libwebsockets will be fetched (v${MIN_LWS_VERSION})")
 endif()
-
 
 # Use brotli for compression on macOS
 if(APPLE)
@@ -574,10 +620,10 @@ set(SOURCES
     src/cpp/server/backend_manager.cpp
     src/cpp/server/ollama_api.cpp
     src/cpp/server/anthropic_api.cpp
-    $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/streaming_audio_buffer.cpp>
-    $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/vad.cpp>
-    $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/realtime_session.cpp>
-    $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/websocket_server.cpp>
+    src/cpp/server/streaming_audio_buffer.cpp
+    src/cpp/server/vad.cpp
+    src/cpp/server/realtime_session.cpp
+    src/cpp/server/websocket_server.cpp
 )
 
 # Add platform-specific source files
@@ -658,11 +704,17 @@ if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
     target_include_directories(${EXECUTABLE_NAME} PRIVATE ${HTTPLIB_INCLUDE_DIRS})
 endif()
 
-# IXWebSocket for WebSocket support (Windows and Linux)
-if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ixwebsocket)
-    target_compile_definitions(${EXECUTABLE_NAME} PRIVATE LEMON_HAS_WEBSOCKET)
+# libwebsockets for WebSocket support
+if(USE_SYSTEM_LWS)
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${LWS_LIBRARIES})
+    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${LWS_INCLUDE_DIRS})
+    target_link_directories(${EXECUTABLE_NAME} PRIVATE ${LWS_LIBRARY_DIRS})
+    target_compile_options(${EXECUTABLE_NAME} PRIVATE ${LWS_CFLAGS_OTHER})
+else()
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE websockets)
+    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${libwebsockets_BINARY_DIR}/include ${libwebsockets_SOURCE_DIR}/include)
 endif()
+target_compile_definitions(${EXECUTABLE_NAME} PRIVATE LEMON_HAS_WEBSOCKET)
 
 # Enable ARC (Automatic Reference Counting) for macOS Objective-C++ files
 if(APPLE)
@@ -699,6 +751,21 @@ elseif(UNIX)
             target_compile_definitions(${EXECUTABLE_NAME} PRIVATE
                 HAVE_SYSTEMD
                 LEMONADE_SYSTEMD_UNIT_NAME="${LEMONADE_SYSTEMD_UNIT_NAME}")
+        endif()
+    endif()
+
+    # Link libcap for capability management on Linux
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        if(PkgConfig_FOUND)
+            pkg_check_modules(LIBCAP QUIET libcap)
+            if(LIBCAP_FOUND)
+                target_include_directories(${EXECUTABLE_NAME} PRIVATE ${LIBCAP_INCLUDE_DIRS})
+                target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${LIBCAP_LIBRARIES})
+                target_compile_definitions(${EXECUTABLE_NAME} PRIVATE HAVE_LIBCAP)
+                message(STATUS "libcap found - capability inheritance will be enabled")
+            else()
+                message(STATUS "libcap not found - capability inheritance will be disabled")
+            endif()
         endif()
     endif()
 endif()
@@ -814,8 +881,22 @@ else()
     option(BUILD_WEB_APP "Build the Web app automatically" ON)
 endif()
 
+# Check if webpack is available for system-package mode
+if(USE_SYSTEM_NODEJS_MODULES)
+    find_program(WEBPACK_EXECUTABLE webpack)
+    if(WEBPACK_EXECUTABLE)
+        message(STATUS "Using system webpack: ${WEBPACK_EXECUTABLE}")
+        set(CAN_BUILD_WEB_APP TRUE)
+    endif()
+else()
+    # Non-system mode requires npm for dependency install + build
+    if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
+        set(CAN_BUILD_WEB_APP TRUE)
+    endif()
+endif()
+
 # Custom target to build the Web app with proper dependency tracking
-if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
+if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
     # Create a stamp file to track build state
     set(WEB_APP_STAMP "${CMAKE_CURRENT_BINARY_DIR}/web-app.stamp")
     set(WEB_APP_BUILD_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/web-app-src")
@@ -839,10 +920,12 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
             -DWEB_APP_BUILD_SOURCE_DIR=${WEB_APP_BUILD_SOURCE_DIR}
             -DWEB_APP_BUILD_DIR=${WEB_APP_BUILD_DIR}
             -DNPM_EXECUTABLE=${NPM_EXECUTABLE}
+            -DWEBPACK_EXECUTABLE=${WEBPACK_EXECUTABLE}
+            -DUSE_SYSTEM_NODEJS_MODULES=${USE_SYSTEM_NODEJS_MODULES}
             -DWEB_APP_STAMP=${WEB_APP_STAMP}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/src/web-app/BuildWebApp.cmake
         DEPENDS ${WEB_APP_SOURCES}
-        COMMENT "Building Web app with npm"
+        COMMENT "Building Web app"
     )
 
     # Add custom target that depends on the stamp file
@@ -899,23 +982,44 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
         endif()
     endif()
 else()
-    if(NOT NODE_EXECUTABLE OR NOT NPM_EXECUTABLE)
-        message(STATUS "Node.js or npm not found - Web app build target disabled")
+    if(NOT CAN_BUILD_WEB_APP)
+        if(USE_SYSTEM_NODEJS_MODULES)
+            message(STATUS "Web app build disabled - webpack not found (install webpack package)")
+        else()
+            message(STATUS "Web app build disabled - Node.js or npm not found")
+        endif()
     else()
         message(STATUS "Web app automatic build disabled (enable with -DBUILD_WEB_APP=ON)")
     endif()
 endif()
 
 # Add manual web-app target for platforms where automatic build is disabled
-if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND NOT BUILD_WEB_APP)
-    add_custom_target(web-app
-        COMMAND ${CMAKE_COMMAND} -E echo "Building Web app..."
-        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} install
-        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} run build
-        COMMENT "Building Web app with npm"
-        WORKING_DIRECTORY "${WEB_APP_SOURCE_DIR}"
-        VERBATIM
-    )
+if(CAN_BUILD_WEB_APP AND NOT BUILD_WEB_APP)
+    if(USE_SYSTEM_NODEJS_MODULES)
+        set(WEB_APP_BUILD_SOURCE_DIR_MANUAL "${CMAKE_CURRENT_BINARY_DIR}/web-app-manual-src")
+        add_custom_target(web-app
+            COMMAND ${CMAKE_COMMAND}
+                -DWEB_APP_SOURCE_DIR=${WEB_APP_SOURCE_DIR}
+                -DWEB_APP_BUILD_SOURCE_DIR=${WEB_APP_BUILD_SOURCE_DIR_MANUAL}
+                -DWEB_APP_BUILD_DIR=${WEB_APP_BUILD_DIR}
+                -DWEBPACK_EXECUTABLE=${WEBPACK_EXECUTABLE}
+                -DUSE_SYSTEM_NODEJS_MODULES=${USE_SYSTEM_NODEJS_MODULES}
+                -DWEB_APP_STAMP=${CMAKE_CURRENT_BINARY_DIR}/web-app-manual.stamp
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/src/web-app/BuildWebApp.cmake
+            COMMENT "Building Web app with system nodejs modules"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+            VERBATIM
+        )
+    else()
+        add_custom_target(web-app
+            COMMAND ${CMAKE_COMMAND} -E echo "Building Web app..."
+            COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} install
+            COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} run build
+            COMMENT "Building Web app with npm"
+            WORKING_DIRECTORY "${WEB_APP_SOURCE_DIR}"
+            VERBATIM
+        )
+    endif()
     message(STATUS "Web app can be built manually with: cmake --build . --target web-app")
 endif()
 
@@ -971,6 +1075,9 @@ endif()
 
 # Add tray application subdirectory
 add_subdirectory(src/cpp/tray)
+
+# Add CLI application subdirectory
+add_subdirectory(src/cpp/cli)
 
 if(APPLE)
     # SIGNING LOGIC (Release Only)
@@ -1034,6 +1141,24 @@ if(APPLE)
                 )
                 if(NOT SIGN_RESULT EQUAL 0)
                     message(FATAL_ERROR \"Failed to sign lemonade-server\")
+                endif()
+            " COMPONENT Runtime)
+        endif()
+    endif()
+
+    # CLI -> /usr/local/bin
+    if(TARGET lemonade)
+        install(TARGETS lemonade RUNTIME DESTINATION "bin" COMPONENT Runtime)
+
+        # Sign the CLI binary after installation (Release builds only)
+        if(CMAKE_BUILD_TYPE STREQUAL "Release")
+            install(CODE "
+                execute_process(
+                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/lemonade\"
+                    RESULT_VARIABLE SIGN_RESULT
+                )
+                if(NOT SIGN_RESULT EQUAL 0)
+                    message(FATAL_ERROR \"Failed to sign lemonade\")
                 endif()
             " COMPONENT Runtime)
         endif()
@@ -1127,6 +1252,8 @@ if(UNIX AND NOT APPLE)
     set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
     set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
     set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
+    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+    set(CPACK_DEBIAN_PACKAGE_DEBUG ON)
 
     # Installation paths - use ~/.local for user install (no sudo needed)
     # Set via environment: cmake -DCPACK_PACKAGING_INSTALL_PREFIX=$HOME/.local ..
@@ -1153,10 +1280,48 @@ if(UNIX AND NOT APPLE)
         PATTERN "*.sh" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
     )
 
-    # Configure systemd service file with correct paths
+    function(lemon_extract_source_default filepath pattern out_var)
+        file(READ "${filepath}" lemon_source_default_content)
+        string(REGEX MATCH "${pattern}" lemon_source_default_match "${lemon_source_default_content}")
+        if(NOT lemon_source_default_match)
+            message(FATAL_ERROR "Failed to extract ${out_var} from ${filepath}")
+        endif()
+        set(${out_var} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+    endfunction()
+
+    set(LEMON_CLI_PARSER_HEADER "${CMAKE_SOURCE_DIR}/src/cpp/include/lemon/cli_parser.h")
+    set(LEMON_RECIPE_OPTIONS_CPP "${CMAKE_SOURCE_DIR}/src/cpp/server/recipe_options.cpp")
+
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "int port = ([0-9]+);" LEMONADE_DEFAULT_PORT)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "std::string host = \"([^\"]*)\";" LEMONADE_DEFAULT_HOST)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "std::string log_level = \"([^\"]*)\";" LEMONADE_DEFAULT_LOG_LEVEL)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "std::string extra_models_dir = \"([^\"]*)\";" LEMONADE_DEFAULT_EXTRA_MODELS_DIR)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "bool no_broadcast = (true|false);" LEMONADE_DEFAULT_NO_BROADCAST_BOOL)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "long global_timeout = ([0-9]+);" LEMONADE_DEFAULT_GLOBAL_TIMEOUT)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "int max_loaded_models = ([0-9-]+);" LEMONADE_DEFAULT_MAX_LOADED_MODELS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"ctx_size\", ([0-9]+)" LEMONADE_DEFAULT_CTX_SIZE)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"llamacpp_args\", \"([^\"]*)\"" LEMONADE_DEFAULT_LLAMACPP_ARGS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"flm_args\", \"([^\"]*)\"" LEMONADE_DEFAULT_FLM_ARGS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"steps\", ([0-9]+)" LEMONADE_DEFAULT_STEPS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"cfg_scale\", ([0-9.]+)" LEMONADE_DEFAULT_CFG_SCALE)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"width\", ([0-9]+)" LEMONADE_DEFAULT_WIDTH)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"height\", ([0-9]+)" LEMONADE_DEFAULT_HEIGHT)
+
+    if(LEMONADE_DEFAULT_NO_BROADCAST_BOOL STREQUAL "true")
+        set(LEMONADE_DEFAULT_NO_BROADCAST 1)
+    else()
+        set(LEMONADE_DEFAULT_NO_BROADCAST 0)
+    endif()
+
+    # Configure systemd service file and config files with current source defaults
     configure_file(
         ${CMAKE_SOURCE_DIR}/data/lemonade-server.service.in
         ${CMAKE_BINARY_DIR}/lemonade-server.service
+        @ONLY
+    )
+    configure_file(
+        ${CMAKE_SOURCE_DIR}/data/lemonade.conf.in
+        ${CMAKE_BINARY_DIR}/lemonade.conf
         @ONLY
     )
 
@@ -1176,13 +1341,14 @@ if(UNIX AND NOT APPLE)
             )
         ")
     endif()
-    install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.conf
+    install(FILES ${CMAKE_BINARY_DIR}/lemonade.conf
         DESTINATION /etc/lemonade
         PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE WORLD_READ
     )
 
     install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
-        DESTINATION /etc/lemonade
+        DESTINATION /etc/lemonade/conf.d
+        RENAME zz-secrets.conf
         PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE
     )
 

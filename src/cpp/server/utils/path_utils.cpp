@@ -342,6 +342,35 @@ std::string get_cache_dir() {
     return ".cache/lemonade";
 }
 
+std::string get_hf_cache_dir() {
+    // Check HF_HUB_CACHE first (highest priority)
+    std::string hf_hub_cache_env = get_environment_variable_utf8("HF_HUB_CACHE");
+    if (!hf_hub_cache_env.empty()) {
+        return hf_hub_cache_env;
+    }
+
+    // Check HF_HOME second (append /hub)
+    std::string hf_home_env = get_environment_variable_utf8("HF_HOME");
+    if (!hf_home_env.empty()) {
+        return hf_home_env + "/hub";
+    }
+
+    // Default platform-specific paths
+#ifdef _WIN32
+    std::string userprofile = get_environment_variable_utf8("USERPROFILE");
+    if (!userprofile.empty()) {
+        return userprofile + "\\.cache\\huggingface\\hub";
+    }
+    return "C:\\.cache\\huggingface\\hub";
+#else
+    std::string home = get_environment_variable_utf8("HOME");
+    if (!home.empty()) {
+        return home + "/.cache/huggingface/hub";
+    }
+    return "/tmp/.cache/huggingface/hub";
+#endif
+}
+
 std::string get_runtime_dir() {
 #ifdef _WIN32
     char temp_path[MAX_PATH];

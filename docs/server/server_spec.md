@@ -119,6 +119,7 @@ lemonade-server serve --max-loaded-models -1
 ### Model Types
 
 Models are categorized into these types:
+
 - **LLM** - Chat and completion models (default type)
 - **Embedding** - Models for generating text embeddings (identified by the `embeddings` label)
 - **Reranking** - Models for document reranking (identified by the `reranking` label)
@@ -129,7 +130,11 @@ Each type has its own independent LRU cache, all sharing the same slot limit set
 
 ### Device Constraints
 
-- **NPU Exclusivity:** Only one model can use the NPU at a time. Loading a new NPU model will evict any existing NPU model regardless of type or limits.
+- **NPU Exclusivity:** `flm`, `ryzenai-llm`, and `whispercpp` are mutually exclusive on the NPU.
+    - Loading a model from one of these backends will automatically evict all NPU models from the other backends.
+    - `flm` supports loading 1 ASR model, 1 LLM, and 1 embedding model on the NPU at the same time.
+    - `ryzenai-llm` supports loading exactly 1 LLM, which uses the entire NPU. 
+    - `whispercpp` supports loading exactly 1 ASR model at a time, which uses the entire NPU.
 - **CPU/GPU:** No inherent limits beyond available RAM. Multiple models can coexist on CPU or GPU.
 
 ### Eviction Policy
