@@ -155,7 +155,7 @@ jobs:
   validate-vulkan:
     name: Validate vulkan
     needs: [get-latest-releases, build-vulkan]
-    runs-on: [self-hosted, Windows, stx-halo, 128gb]
+    runs-on: [self-hosted, Windows, 128gb]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -231,7 +231,7 @@ jobs:
   validate-rocm:
     name: Validate rocm
     needs: [get-latest-releases, build-rocm]
-    runs-on: [self-hosted, Windows, stx-halo, 128gb]
+    runs-on: [self-hosted, Windows, 128gb]
     steps:
       - uses: actions/checkout@v4
         with:
