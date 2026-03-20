@@ -1242,37 +1242,76 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
+      - name: Inject API key into server (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          # The deb postinst starts lemonade-router via systemd, but the
+          # service doesn't have LEMONADE_API_KEY. Inject it via the
+          # conf.d EnvironmentFile mechanism and restart.
+          sudo mkdir -p /etc/lemonade/conf.d
+          echo "LEMONADE_API_KEY=$LEMONADE_API_KEY" | sudo tee /etc/lemonade/conf.d/ci-apikey.conf
+          sudo systemctl restart lemonade-server
+          # Wait for server to come back up
+          for i in $(seq 1 30); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $LEMONADE_API_KEY" http://localhost:8000/api/v1/health 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Server restarted with API key enforcement"
+              break
+            fi
+            sleep 2
+          done
+
       - name: Verify API key enforcement
         shell: bash
         run: |
-          # Install actions already verified server is running.
-          # Now verify API key auth is active.
+          set -e
+          PASS=0
+          FAIL=0
 
-          # Requests WITHOUT API key should be rejected
+          # 1. No API key → must get 401
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/v1/health 2>/dev/null || echo "000")
-          if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
-            echo "API key enforcement verified: unauthenticated request returned $HTTP_CODE"
+          if [ "$HTTP_CODE" = "401" ]; then
+            echo "PASS: No API key → $HTTP_CODE"
+            PASS=$((PASS+1))
           else
-            echo "WARNING: Expected 401/403 for unauthenticated request, got $HTTP_CODE"
+            echo "FAIL: No API key → $HTTP_CODE (expected 401)"
+            FAIL=$((FAIL+1))
           fi
 
-          # Requests WITH API key should succeed
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer test-api-key-12345" http://localhost:8000/api/v1/health 2>/dev/null || echo "000")
-          if [ "$HTTP_CODE" = "200" ]; then
-            echo "API key authentication verified: authenticated request returned 200"
+          # 2. Wrong API key → must get 401
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer wrong-key" http://localhost:8000/api/v1/health 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" = "401" ]; then
+            echo "PASS: Wrong API key → $HTTP_CODE"
+            PASS=$((PASS+1))
           else
-            echo "ERROR: Expected 200 for authenticated request, got $HTTP_CODE"
+            echo "FAIL: Wrong API key → $HTTP_CODE (expected 401)"
+            FAIL=$((FAIL+1))
+          fi
+
+          # 3. Correct API key → must get 200
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $LEMONADE_API_KEY" http://localhost:8000/api/v1/health 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "PASS: Correct API key → $HTTP_CODE"
+            PASS=$((PASS+1))
+          else
+            echo "FAIL: Correct API key → $HTTP_CODE (expected 200)"
+            FAIL=$((FAIL+1))
+          fi
+
+          echo ""
+          echo "Results: $PASS passed, $FAIL failed"
+          if [ "$FAIL" -gt 0 ]; then
+            echo "ERROR: API key enforcement tests failed"
             exit 1
           fi
 
-      - name: Run API key CLI tests
+      - name: Run CLI tests with API key
         shell: bash
         env:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           set -e
-          echo "Running CLI tests with API key enforcement..."
-
           # CLI commands should work because LEMONADE_API_KEY is in the env
           # and the CLI client reads it automatically
           $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY"
