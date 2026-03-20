@@ -832,6 +832,24 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
+      - name: Install FLM backend for FLM wrapped-server tests
+        if: ${{ contains(matrix.extra_args, '--wrapped-server flm') }}
+        run: |
+          set -e
+          FLM_VERSION=$(jq -r '.flm.npu' src/cpp/resources/backend_versions.json)
+          FLM_VERSION_NUM=$(echo $FLM_VERSION | sed 's/^v//')
+          echo "Installing FLM ${FLM_VERSION} for CI inference tests..."
+          curl -L -o /tmp/fastflowlm.deb "https://github.com/FastFlowLM/FastFlowLM/releases/download/${FLM_VERSION}/fastflowlm_${FLM_VERSION_NUM}_ubuntu24.04_amd64.deb"
+          mkdir -p /tmp/flm-extract
+          dpkg-deb -x /tmp/fastflowlm.deb /tmp/flm-extract
+          # Add extracted FLM binary to PATH
+          FLM_BIN=$(find /tmp/flm-extract -name flm -type f | head -1)
+          chmod +x "$FLM_BIN"
+          echo "$(dirname "$FLM_BIN")" >> $GITHUB_PATH
+          export PATH="$(dirname "$FLM_BIN"):$PATH"
+          rm /tmp/fastflowlm.deb
+          flm version
+
       - name: Run tests
         env:
           HF_HOME: ${{ env.HF_HOME }}
@@ -1031,6 +1049,7 @@ jobs:
         run: |
           DEB_FILE="lemonade-server_${{ env.LEMONADE_VERSION }}_amd64.deb"
           echo "Installing .deb package: $DEB_FILE"
+          sudo apt-get update
           sudo apt install ./"$DEB_FILE"
 
           # Verify binaries installed
@@ -1152,6 +1171,8 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "system-info" ]; then
               echo "Running system-info mock hardware tests..."
               # Unset LEMONADE_CI_MODE so the server uses mock cache files
+              # Note: On Linux, caching is disabled by default, but the test sets
+              # LEMONADE_CACHE_DIR to enable it for testing purposes
               unset LEMONADE_CI_MODE
               $VENV_PYTHON test/server_system_info.py --server-binary "$SERVER_BINARY"
           elif [ "${{ matrix.test_type }}" = "ollama" ]; then
