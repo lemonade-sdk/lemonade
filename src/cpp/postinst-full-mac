@@ -37,13 +37,13 @@ if launchctl list | grep -q "$DAEMON_LABEL"; then
 fi
 
 # Stop Agent (User-specific)
-# Try both bootout and unload to handle stale plists from previous installs
+# launchctl bootout from root context often fails to unload a user's GUI agent,
+# so we also use "launchctl asuser $UID launchctl unload" which runs in the
+# user's domain and reliably removes the stale cached plist.
 if [ -n "$CURRENT_UID" ] && [ "$CURRENT_UID" -ne 0 ]; then
     echo "Stopping existing Tray Agent for UID $CURRENT_UID..."
     launchctl bootout gui/"$CURRENT_UID"/"$AGENT_LABEL" 2>/dev/null || true
-    # Also try unloading any old plist locations
-    launchctl asuser "$CURRENT_UID" launchctl unload "$AGENT_PLIST" 2>/dev/null || true
-    launchctl asuser "$CURRENT_UID" launchctl unload "${INSTALL_ROOT}/Users/*/Library/LaunchAgents/${AGENT_LABEL}.plist" 2>/dev/null || true
+    launchctl asuser "$CURRENT_UID" launchctl unload -w "$AGENT_PLIST" 2>/dev/null || true
 fi
 
 # Kill any lingering lemonade processes to ensure clean startup
@@ -188,10 +188,10 @@ launchctl kickstart -k system/"$DAEMON_LABEL" 2>/dev/null || true
 if [ -n "$CURRENT_UID" ] && [ "$CURRENT_UID" -ne 0 ]; then
     echo "Loading Tray Agent for user (UID: $CURRENT_UID)..."
 
-    # 1. Bootstrap: Registers the service in the user's GUI session
-    launchctl bootstrap gui/"$CURRENT_UID" "$AGENT_PLIST" 2>/dev/null || true
-
-    # 2. Kickstart: Forces the app to launch visually RIGHT NOW
+    # Use launchctl load (via asuser) which re-reads the plist from disk,
+    # then bootstrap+kickstart as fallback for newer macOS versions.
+    launchctl asuser "$CURRENT_UID" launchctl load -w "$AGENT_PLIST" 2>/dev/null || \
+        launchctl bootstrap gui/"$CURRENT_UID" "$AGENT_PLIST" 2>/dev/null || true
     launchctl kickstart -k gui/"$CURRENT_UID"/"$AGENT_LABEL" 2>/dev/null || true
 else
     echo "No GUI user detected. Tray agent will start on next login."
