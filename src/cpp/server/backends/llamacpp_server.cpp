@@ -380,5 +380,18 @@ json LlamaCppServer::responses(const json& request) {
     return forward_request("/v1/responses", request);
 }
 
+json LlamaCppServer::anthropic_messages(const json& request) {
+    return forward_request("/v1/messages", request);
+}
+
+void LlamaCppServer::anthropic_messages_stream(const std::string& request_body, httplib::DataSink& sink) {
+    // Anthropic streaming uses typed SSE events and must not be rewritten with OpenAI [DONE] semantics.
+    forward_streaming_request("/v1/messages", request_body, sink, false);
+}
+
+json LlamaCppServer::anthropic_count_tokens(const json& request) {
+    return forward_request("/v1/messages/count_tokens", request);
+}
+
 } // namespace backends
 } // namespace lemon

@@ -658,6 +658,30 @@ json Router::responses(const json& request) {
     });
 }
 
+json Router::anthropic_messages(const json& request) {
+    return execute_inference(request, [&](WrappedServer* server) {
+        auto anthropic_server = dynamic_cast<IAnthropicServer*>(server);
+        if (!anthropic_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Anthropic messages", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return anthropic_server->anthropic_messages(request);
+    });
+}
+
+json Router::anthropic_count_tokens(const json& request) {
+    return execute_inference(request, [&](WrappedServer* server) {
+        auto anthropic_server = dynamic_cast<IAnthropicServer*>(server);
+        if (!anthropic_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Anthropic token counting", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return anthropic_server->anthropic_count_tokens(request);
+    });
+}
+
 json Router::audio_transcriptions(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
         auto audio_server = dynamic_cast<IAudioServer*>(server);
@@ -758,6 +782,16 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
 void Router::responses_stream(const std::string& request_body, httplib::DataSink& sink) {
     execute_streaming(request_body, sink, [&](WrappedServer* server) {
         server->forward_streaming_request("/v1/responses", request_body, sink);
+    });
+}
+
+void Router::anthropic_messages_stream(const std::string& request_body, httplib::DataSink& sink) {
+    execute_streaming(request_body, sink, [&](WrappedServer* server) {
+        auto anthropic_server = dynamic_cast<IAnthropicServer*>(server);
+        if (!anthropic_server) {
+            throw UnsupportedOperationException("Anthropic messages", device_type_to_string(server->get_device_type()));
+        }
+        anthropic_server->anthropic_messages_stream(request_body, sink);
     });
 }
 
