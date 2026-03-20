@@ -2405,10 +2405,14 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             }
 
             upscale_model_path = info.resolved_path("main");
-            // Resolve backend from the ESRGAN model's own recipe options,
-            // not from whatever model happens to be loaded
-            std::string b = info.recipe_options.get_option("sd-cpp_backend");
-            if (!b.empty()) backend = b;
+            // Use the server's --sdcpp CLI setting so we pick up the same
+            // backend binary that was installed at startup, not whatever
+            // the system auto-detects (which may be a stale installation).
+            if (default_options_.contains("sd-cpp_backend") &&
+                default_options_["sd-cpp_backend"].is_string()) {
+                std::string b = default_options_["sd-cpp_backend"];
+                if (!b.empty()) backend = b;
+            }
         } catch (const std::exception& e) {
             res.status = 404;
             nlohmann::json error = {{"error", {
