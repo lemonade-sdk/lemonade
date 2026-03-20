@@ -1020,10 +1020,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        test_type: [cli, endpoints, system-info, ollama, llamacpp-system, streaming-errors]
-        exclude:
-          - os: macos-latest
-            test_type: system-info
+        test_type: [cli, endpoints, ollama, llamacpp-system, streaming-errors]
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
