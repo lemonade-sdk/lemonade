@@ -27,8 +27,11 @@ echo "=== Starting Lemonade Post-Install ==="
 # ------------------------------------------------------------------------------
 
 # Find the current GUI User ID (The person currently logged in)
-# 'id -u' returns 0 (root) here, so we must ask System Configuration for the Console User.
-CURRENT_UID=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/kCGSSessionUserIDKey/ { print $3 }')
+# 'id -u' returns 0 (root) here, so we must ask the system for the Console User.
+# Use stat on /dev/console which reliably returns a single UID even when
+# multiple users have sessions (scutil returns all session UIDs, breaking
+# integer comparisons).
+CURRENT_UID=$(stat -f '%u' /dev/console 2>/dev/null)
 
 # Stop Daemon (System-wide)
 if launchctl list | grep -q "$DAEMON_LABEL"; then
