@@ -102,7 +102,7 @@ SAMPLE_TOOL = {
 ENDPOINT_TEST_MODEL = "Tiny-Test-Model-GGUF"
 
 # Model for tool-calling tests (must have native tool-calling support in its chat template)
-TOOL_CALLING_MODEL = "Qwen3-0.6B-GGUF"
+TOOL_CALLING_MODEL = "Qwen3-4B-Instruct-2507-GGUF"
 
 # Secondary model for multi-model testing (small, fast to load)
 MULTI_MODEL_SECONDARY = "Tiny-Test-Model-GGUF"
