@@ -2396,6 +2396,14 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         std::string backend = "cpu";
         try {
             auto info = model_manager_->get_model_info(upscale_model_name);
+
+            if (!model_manager_->is_model_downloaded(upscale_model_name)) {
+                LOG(INFO, "Server") << "Upscale model not cached, downloading from Hugging Face..." << std::endl;
+                model_manager_->download_registered_model(info, true);
+                LOG(INFO, "Server") << "Upscale model download complete: " << upscale_model_name << std::endl;
+                info = model_manager_->get_model_info(upscale_model_name);
+            }
+
             upscale_model_path = info.resolved_path("main");
             // Resolve backend from the ESRGAN model's own recipe options,
             // not from whatever model happens to be loaded
