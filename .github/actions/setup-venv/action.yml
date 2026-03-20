@@ -119,7 +119,7 @@ runs:
 
           # Install pip manually
           Write-Host "Installing pip manually..."
-          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$VENV_PATH\get-pip.py"
+          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$VENV_PATH\get-pip.py" -UseBasicParsing
           & "$VENV_PATH\Scripts\python.exe" "$VENV_PATH\get-pip.py"
         }
 

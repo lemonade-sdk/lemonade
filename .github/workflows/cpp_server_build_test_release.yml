@@ -52,7 +52,7 @@ jobs:
               $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
               $cmakeInstaller = "cmake-installer.msi"
 
-              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller
+              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller -UseBasicParsing
 
               # Install CMake silently
               Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
