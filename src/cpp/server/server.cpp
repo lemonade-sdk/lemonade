@@ -138,9 +138,10 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     // Set global HttpClient timeout
     utils::HttpClient::set_default_timeout(global_timeout);
 
-    // Detect log file path (same location as tray uses)
-    // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
-    // This server only READS from the file for the SSE streaming endpoint
+    // Detect log file path for the SSE streaming endpoint.
+    // This server only READS from the file — something else writes it
+    // (Windows: AixLog file sink, Linux: systemd journal, macOS: launchd
+    // StandardOutPath, or tray ServerManager stdout redirect).
 #ifdef _WIN32
     char temp_path[MAX_PATH];
     GetTempPathA(MAX_PATH, temp_path);
@@ -151,7 +152,17 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
         log_file_path_ = "";  // Empty signals journald usage
         LOG(INFO, "Server") << "Detected systemd environment - will use journald for log streaming" << std::endl;
     } else {
-        log_file_path_ = utils::get_runtime_dir() + "/lemonade-server.log";
+        // On macOS, the LaunchDaemon's stdout is redirected to
+        // /var/log/lemonade/lemonade-server.out.log by the plist.
+        // Check for that file first; fall back to the runtime dir
+        // log (used when launched by tray/ServerManager).
+        const std::string launchd_log = "/var/log/lemonade/lemonade-server.out.log";
+        const std::string runtime_log = utils::get_runtime_dir() + "/lemonade-server.log";
+        if (std::filesystem::exists(launchd_log)) {
+            log_file_path_ = launchd_log;
+        } else {
+            log_file_path_ = runtime_log;
+        }
     }
 #endif
 
