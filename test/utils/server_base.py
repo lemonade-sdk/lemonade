@@ -152,10 +152,21 @@ def wait_for_server(port=PORT, timeout=60):
             time.sleep(1)
 
 
+def _auth_headers():
+    """Return Authorization header if LEMONADE_API_KEY is set."""
+    api_key = os.environ.get("LEMONADE_API_KEY")
+    if api_key:
+        return {"Authorization": f"Bearer {api_key}"}
+    return {}
+
+
 def set_server_config(config: dict, port=PORT):
     """POST /internal/set to update server config at runtime."""
     response = requests.post(
-        f"http://localhost:{port}/internal/set", json=config, timeout=10
+        f"http://localhost:{port}/internal/set",
+        json=config,
+        headers=_auth_headers(),
+        timeout=10,
     )
     response.raise_for_status()
     return response.json()
@@ -164,7 +175,10 @@ def set_server_config(config: dict, port=PORT):
 def unload_all_models(port=PORT):
     """POST /api/v1/unload to unload all models for clean state."""
     response = requests.post(
-        f"http://localhost:{port}/api/v1/unload", json={}, timeout=30
+        f"http://localhost:{port}/api/v1/unload",
+        json={},
+        headers=_auth_headers(),
+        timeout=30,
     )
     # 200 = unloaded, 404 = nothing loaded — both OK
     return response
@@ -302,7 +316,7 @@ class ServerTestBase(unittest.TestCase):
         """Get a synchronous OpenAI client configured for the test server."""
         return OpenAI(
             base_url=self.base_url,
-            api_key="lemonade",  # required but unused
+            api_key=os.environ.get("LEMONADE_API_KEY", "lemonade"),
             timeout=TIMEOUT_MODEL_OPERATION,  # inference may trigger model download
         )
 
@@ -310,7 +324,7 @@ class ServerTestBase(unittest.TestCase):
         """Get an async OpenAI client configured for the test server."""
         return AsyncOpenAI(
             base_url=self.base_url,
-            api_key="lemonade",  # required but unused
+            api_key=os.environ.get("LEMONADE_API_KEY", "lemonade"),
             timeout=TIMEOUT_MODEL_OPERATION,  # inference may trigger model download
         )
 

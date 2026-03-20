@@ -30,7 +30,7 @@ import time
 import unittest
 
 import requests
-from utils.server_base import wait_for_server, set_server_config
+from utils.server_base import wait_for_server, set_server_config, _auth_headers
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     PORT,
@@ -378,7 +378,11 @@ class PersistentServerCLITests(CLITestBase):
         )
 
         # Verify via health endpoint too
-        response = requests.get(f"http://localhost:{PORT}/api/v1/health", timeout=10)
+        response = requests.get(
+            f"http://localhost:{PORT}/api/v1/health",
+            headers=_auth_headers(),
+            timeout=10,
+        )
         self.assertEqual(response.status_code, 200)
 
         # Restore host back to localhost
