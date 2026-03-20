@@ -1,0 +1,393 @@
+name: Validate New llama.cpp Release
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Sunday at 12:00 PM ET (17:00 UTC, 16:00 UTC during EDT)
+    - cron: "0 16 * * 0"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  LEMONADE_CI_MODE: "True"
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  # ========================================================================
+  # Discover the latest llama.cpp release for each upstream repo
+  # ========================================================================
+  get-latest-releases:
+    name: Get latest releases
+    runs-on: ubuntu-latest
+    outputs:
+      llamacpp_release: ${{ steps.llamacpp.outputs.release }}
+      llamacpp_rocm_release: ${{ steps.llamacpp_rocm.outputs.release }}
+    steps:
+      - name: Get latest llama.cpp release
+        id: llamacpp
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE=$(gh api repos/ggml-org/llama.cpp/releases/latest --jq '.tag_name')
+          echo "Latest llama.cpp release: $RELEASE"
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+
+      - name: Get latest llamacpp-rocm release
+        id: llamacpp_rocm
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE=$(gh api repos/lemonade-sdk/llamacpp-rocm/releases/latest --jq '.tag_name')
+          echo "Latest llamacpp-rocm release: $RELEASE"
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+
+  # ========================================================================
+  # Build binaries with updated backend versions
+  # ========================================================================
+  build:
+    name: Build
+    needs: get-latest-releases
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Update backend_versions.json
+        shell: PowerShell
+        env:
+          LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
+          LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $path = "src/cpp/resources/backend_versions.json"
+          $data = Get-Content $path -Raw | ConvertFrom-Json
+
+          $release = $env:LLAMACPP_RELEASE
+          Write-Host "Updating llamacpp vulkan/cpu/metal to $release" -ForegroundColor Cyan
+          foreach ($key in @("vulkan", "cpu", "metal")) {
+              $old = $data.llamacpp.$key
+              $data.llamacpp.$key = $release
+              Write-Host "  llamacpp.${key}: $old -> $release"
+          }
+
+          $rocm = $env:LLAMACPP_ROCM_RELEASE
+          Write-Host "Updating llamacpp rocm to $rocm" -ForegroundColor Cyan
+          $old = $data.llamacpp.rocm
+          $data.llamacpp.rocm = $rocm
+          Write-Host "  llamacpp.rocm: $old -> $rocm"
+
+          $data | ConvertTo-Json -Depth 10 | Set-Content $path -Encoding UTF8
+
+      - name: Build C++ Server with CMake
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "Building lemonade-router and lemonade-server..." -ForegroundColor Cyan
+          if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
+          cmake --preset windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build --config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "build\Release\lemonade-server.exe")) {
+              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
+              exit 1
+          }
+          Write-Host "Build successful!" -ForegroundColor Green
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: llamacpp-build
+          path: |
+            build/Release/
+            build/resources/
+          retention-days: 7
+
+  # ========================================================================
+  # Validate vulkan backend on self-hosted runner
+  # ========================================================================
+  validate-vulkan:
+    name: Validate vulkan
+    needs: [get-latest-releases, build]
+    runs-on: [self-hosted, Windows, 128gb]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: llamacpp-build
+          path: build
+
+      - name: Verify binaries
+        shell: PowerShell
+        run: |
+          $serverExe = "build\Release\lemonade-server.exe"
+          if (-not (Test-Path $serverExe)) {
+              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
+              Get-ChildItem -Recurse build | Select-Object FullName
+              exit 1
+          }
+          & $serverExe --version
+          Write-Host "Binaries verified!" -ForegroundColor Green
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Run validation
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $venvPython = ".\.venv\Scripts\python.exe"
+          $serverExe = (Resolve-Path "build\Release\lemonade-server.exe").Path
+
+          & $venvPython test/validate_llamacpp.py `
+            --backend vulkan `
+            --server-binary $serverExe `
+            --output llamacpp_validation_vulkan.json `
+            --logs-dir server-logs-vulkan
+
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-results-vulkan
+          path: llamacpp_validation_vulkan.json
+          retention-days: 30
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-logs-vulkan
+          path: server-logs-vulkan/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-windows
+
+  # ========================================================================
+  # Validate rocm backend on self-hosted runner
+  # ========================================================================
+  validate-rocm:
+    name: Validate rocm
+    needs: [get-latest-releases, build]
+    runs-on: [self-hosted, Windows, 128gb]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: llamacpp-build
+          path: build
+
+      - name: Verify binaries
+        shell: PowerShell
+        run: |
+          $serverExe = "build\Release\lemonade-server.exe"
+          if (-not (Test-Path $serverExe)) {
+              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
+              Get-ChildItem -Recurse build | Select-Object FullName
+              exit 1
+          }
+          & $serverExe --version
+          Write-Host "Binaries verified!" -ForegroundColor Green
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Run validation
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $venvPython = ".\.venv\Scripts\python.exe"
+          $serverExe = (Resolve-Path "build\Release\lemonade-server.exe").Path
+
+          & $venvPython test/validate_llamacpp.py `
+            --backend rocm `
+            --server-binary $serverExe `
+            --output llamacpp_validation_rocm.json `
+            --logs-dir server-logs-rocm
+
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-results-rocm
+          path: llamacpp_validation_rocm.json
+          retention-days: 30
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-logs-rocm
+          path: server-logs-rocm/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-windows
+
+  # ========================================================================
+  # Create PR if both validations passed (schedule or workflow_dispatch only)
+  # ========================================================================
+  create-pr:
+    name: Create update PR
+    needs: [get-latest-releases, validate-vulkan, validate-rocm]
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      needs.validate-vulkan.result == 'success' &&
+      needs.validate-rocm.result == 'success'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download validation results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: validation-results-*
+          merge-multiple: true
+
+      - name: Update backend_versions.json with both releases
+        shell: bash
+        env:
+          LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
+          LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
+        run: |
+          python3 -c "
+          import json, os
+          path = 'src/cpp/resources/backend_versions.json'
+          with open(path, 'r') as f:
+              data = json.load(f)
+          llamacpp = os.environ['LLAMACPP_RELEASE']
+          rocm = os.environ['LLAMACPP_ROCM_RELEASE']
+          data['llamacpp']['vulkan'] = llamacpp
+          data['llamacpp']['cpu'] = llamacpp
+          data['llamacpp']['metal'] = llamacpp
+          data['llamacpp']['rocm'] = rocm
+          with open(path, 'w') as f:
+              json.dump(data, f, indent=2)
+              f.write('\n')
+          print(f'Updated: vulkan/cpu/metal={llamacpp}, rocm={rocm}')
+          "
+
+      - name: Generate PR body
+        shell: bash
+        env:
+          LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
+          LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
+        run: |
+          python3 << 'PYEOF'
+          import json, os
+
+          body_lines = []
+          llamacpp = os.environ.get("LLAMACPP_RELEASE", "unknown")
+          rocm = os.environ.get("LLAMACPP_ROCM_RELEASE", "unknown")
+
+          body_lines.append("## Auto-update llama.cpp backends")
+          body_lines.append("")
+          body_lines.append(f"- **llama.cpp** (vulkan/cpu/metal): `{llamacpp}`")
+          body_lines.append(f"- **llamacpp-rocm**: `{rocm}`")
+          body_lines.append("")
+          body_lines.append("## Validation Results")
+          body_lines.append("")
+          body_lines.append("| Model | Result | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
+          body_lines.append("|-------|--------|----------|--------------|---------------|---------------------|-------------------|")
+
+          for backend in ["vulkan", "rocm"]:
+              results_file = f"llamacpp_validation_{backend}.json"
+              if not os.path.isfile(results_file):
+                  body_lines.append(f"| _{backend}: no results_ | | | | | | |")
+                  continue
+              with open(results_file, "r") as f:
+                  results = json.load(f)
+              for r in results:
+                  status = "PASS" if r["pass"] else "FAIL"
+                  # Truncate response for table readability
+                  resp = str(r.get("response", ""))[:80].replace("|", "\\|").replace("\n", " ")
+                  ttft = r.get("time_to_first_token", "N/A")
+                  if isinstance(ttft, float):
+                      ttft = f"{ttft:.3f}s"
+                  tps = r.get("tokens_per_second", "N/A")
+                  if isinstance(tps, float):
+                      tps = f"{tps:.1f}"
+                  body_lines.append(
+                      f"| {r['model']} ({backend}) | {status} | {resp} | "
+                      f"{r.get('input_tokens', 'N/A')} | {r.get('output_tokens', 'N/A')} | "
+                      f"{ttft} | {tps} |"
+                  )
+
+          body_lines.append("")
+          body_lines.append("---")
+          body_lines.append("*Auto-generated by validate_llamacpp workflow*")
+
+          body = "\n".join(body_lines)
+          with open("pr_body.md", "w") as f:
+              f.write(body)
+          PYEOF
+
+      - name: Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
+          LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
+        run: |
+          BRANCH="auto/llamacpp-update-${LLAMACPP_RELEASE}-${LLAMACPP_ROCM_RELEASE}"
+
+          # Check if a PR already exists for this update
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR #$EXISTING_PR already exists for branch $BRANCH. Skipping."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Skip if backend_versions.json is already up to date
+          if git diff --quiet src/cpp/resources/backend_versions.json; then
+            echo "backend_versions.json is unchanged — nothing to update."
+            exit 0
+          fi
+
+          git checkout -b "$BRANCH"
+          git add src/cpp/resources/backend_versions.json
+          git commit -m "Update llama.cpp to ${LLAMACPP_RELEASE}, rocm to ${LLAMACPP_ROCM_RELEASE}"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "Update llama.cpp to ${LLAMACPP_RELEASE}" \
+            --body-file pr_body.md \
+            --base main \
+            --head "$BRANCH"
