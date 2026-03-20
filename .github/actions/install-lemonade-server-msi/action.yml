@@ -136,11 +136,26 @@ runs:
             exit 1
         }
 
-    - name: Wait for server to be ready
+    - name: Start server and wait for ready
       shell: powershell
       run: |
-        # The MSI AutoLaunchLemonade custom action starts LemonadeServer.exe
-        # after install. Wait for it to be accepting requests.
+        $installPath = "${{ inputs.install-path }}"
+        $routerExe = Join-Path $installPath "bin\lemonade-router.exe"
+        $logFile = Join-Path $env:TEMP "lemonade-server.log"
+
+        # The MSI AutoLaunchLemonade runs LemonadeServer.exe (GUI app) which
+        # hangs without a display. Kill it and start lemonade-router directly.
+        Write-Host "Stopping any GUI server process..." -ForegroundColor Gray
+        Stop-Process -Name "LemonadeServer" -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+
+        Write-Host "Starting lemonade-router (headless)..." -ForegroundColor Cyan
+        Start-Process -FilePath $routerExe `
+          -ArgumentList "--port","8000","--log-level","debug" `
+          -RedirectStandardOutput $logFile `
+          -RedirectStandardError "$logFile.err" `
+          -WindowStyle Hidden
+
         Write-Host "Waiting for server to be ready..."
         $maxWait = 60
         $waited = 0
@@ -156,5 +171,8 @@ runs:
           $waited += 2
           Write-Host "Waiting for server... ($waited/$maxWait)"
         }
+        Write-Host "=== Server log ===" -ForegroundColor Yellow
+        if (Test-Path $logFile) { Get-Content $logFile -Tail 50 }
+        if (Test-Path "$logFile.err") { Get-Content "$logFile.err" -Tail 50 }
         Write-Error "Server did not start within $maxWait seconds"
         exit 1
