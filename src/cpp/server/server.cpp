@@ -968,8 +968,13 @@ void Server::setup_http_logger(httplib::Server &web_server) {
 
 void Server::run() {
     std::string host = config_->host();
+    LOG(INFO, "Server") << "Starting HTTP server on " << host << ":" << port_ << std::endl;
+
     std::string ipv4 = resolve_host_to_ip(AF_INET, host);
     std::string ipv6 = resolve_host_to_ip(AF_INET6, host);
+
+    LOG(INFO, "Server") << "Host resolution: IPv4=" << (ipv4.empty() ? "(none)" : ipv4)
+                        << ", IPv6=" << (ipv6.empty() ? "(none)" : ipv6) << std::endl;
 
     if (ipv4.empty() && ipv6.empty()) {
         throw std::runtime_error("Failed to resolve host '" + host + "' to any address. "
@@ -997,13 +1002,17 @@ void Server::run() {
             // setup ipv4 thread
             setup_http_logger(*http_server_);
             http_v4_thread_ = std::thread([this, ipv4, &listener_started, &listener_start_failed]() {
+                LOG(INFO, "Server") << "Binding IPv4 HTTP server to " << ipv4 << ":" << port_ << "..." << std::endl;
                 int result = http_server_->bind_to_port(ipv4, port_);
                 if (result <= 0) {
+                    LOG(ERROR, "Server") << "Failed to bind IPv4 HTTP server to " << ipv4 << ":" << port_ << std::endl;
                     listener_start_failed = true;
                     return;
                 }
+                LOG(INFO, "Server") << "IPv4 HTTP server listening on " << ipv4 << ":" << port_ << std::endl;
                 listener_started = true;
                 if (!http_server_->listen_after_bind()) {
+                    LOG(ERROR, "Server") << "IPv4 HTTP server listen_after_bind() failed" << std::endl;
                     listener_start_failed = true;
                 }
             });
@@ -1012,13 +1021,17 @@ void Server::run() {
             // setup ipv6 thread
             setup_http_logger(*http_server_v6_);
             http_v6_thread_ = std::thread([this, ipv6, &listener_started, &listener_start_failed]() {
+                LOG(INFO, "Server") << "Binding IPv6 HTTP server to [" << ipv6 << "]:" << port_ << "..." << std::endl;
                 int result = http_server_v6_->bind_to_port(ipv6, port_);
                 if (result <= 0) {
+                    LOG(ERROR, "Server") << "Failed to bind IPv6 HTTP server to [" << ipv6 << "]:" << port_ << std::endl;
                     listener_start_failed = true;
                     return;
                 }
+                LOG(INFO, "Server") << "IPv6 HTTP server listening on [" << ipv6 << "]:" << port_ << std::endl;
                 listener_started = true;
                 if (!http_server_v6_->listen_after_bind()) {
+                    LOG(ERROR, "Server") << "IPv6 HTTP server listen_after_bind() failed" << std::endl;
                     listener_start_failed = true;
                 }
             });
