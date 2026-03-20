@@ -183,7 +183,7 @@ runs:
         $waited = 0
         while ($waited -lt $maxWait) {
           try {
-            $response = Invoke-WebRequest -Uri "http://localhost:8000/live" -TimeoutSec 2 -ErrorAction Stop
+            $response = Invoke-WebRequest -Uri "http://localhost:8000/live" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
             if ($response.StatusCode -eq 200) {
               Write-Host "Server is running and healthy" -ForegroundColor Green
               exit 0
@@ -210,7 +210,7 @@ runs:
 
         Write-Host "`nTrying 127.0.0.1 directly:" -ForegroundColor Cyan
         try {
-          $r = Invoke-WebRequest -Uri "http://127.0.0.1:8000/live" -TimeoutSec 3 -ErrorAction Stop
+          $r = Invoke-WebRequest -Uri "http://127.0.0.1:8000/live" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop
           Write-Host "  127.0.0.1 responded: $($r.StatusCode)" -ForegroundColor Green
         } catch {
           Write-Host "  127.0.0.1 failed: $($_.Exception.Message)" -ForegroundColor Red
@@ -218,7 +218,7 @@ runs:
 
         Write-Host "`nTrying [::1] directly:" -ForegroundColor Cyan
         try {
-          $r = Invoke-WebRequest -Uri "http://[::1]:8000/live" -TimeoutSec 3 -ErrorAction Stop
+          $r = Invoke-WebRequest -Uri "http://[::1]:8000/live" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop
           Write-Host "  [::1] responded: $($r.StatusCode)" -ForegroundColor Green
         } catch {
           Write-Host "  [::1] failed: $($_.Exception.Message)" -ForegroundColor Red

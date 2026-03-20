@@ -759,7 +759,7 @@ jobs:
         run: |
           try {
             Invoke-WebRequest -Uri "http://localhost:8000/internal/set" -Method POST `
-              -ContentType "application/json" -Body '{"log_level":"debug"}' -ErrorAction Stop | Out-Null
+              -ContentType "application/json" -Body '{"log_level":"debug"}' -UseBasicParsing -ErrorAction Stop | Out-Null
             Write-Host "Debug logging enabled"
           } catch {
             Write-Host "Warning: Failed to set debug logging: $_"
@@ -869,7 +869,7 @@ jobs:
           export PATH="$(dirname "$FLM_BIN"):$PATH"
           rm /tmp/fastflowlm.deb
           flm version
-      
+
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb
         with:
