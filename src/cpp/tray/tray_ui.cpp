@@ -47,9 +47,10 @@ std::string TrayUI::get_connect_host() const {
 // Construction / destruction
 // ---------------------------------------------------------------------------
 
-TrayUI::TrayUI(int port, const std::string& host)
+TrayUI::TrayUI(int port, const std::string& host, bool silent)
     : port_(port)
     , host_(host)
+    , silent_(silent)
     , recipe_options_(nlohmann::json::object())
 {
 #ifndef _WIN32
@@ -92,7 +93,9 @@ bool TrayUI::initialize() {
     }
 
     tray_->set_ready_callback([this]() {
-        show_notification("Woohoo!", "Lemonade Server is running! Right-click the tray icon to access options.");
+        if (!silent_) {
+            show_notification("Woohoo!", "Lemonade Server is running! Right-click the tray icon to access options.");
+        }
     });
 
 #ifdef _WIN32

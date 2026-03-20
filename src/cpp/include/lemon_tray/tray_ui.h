@@ -42,7 +42,7 @@ struct LoadedModelInfo {
 
 class TrayUI {
 public:
-    TrayUI(int port, const std::string& host);
+    TrayUI(int port, const std::string& host, bool silent = false);
     ~TrayUI();
 
     bool initialize();
@@ -94,6 +94,7 @@ private:
     // State
     int port_;
     std::string host_;
+    bool silent_;  // Suppress startup notification
     std::unique_ptr<TrayInterface> tray_;
 
     // Model loading state

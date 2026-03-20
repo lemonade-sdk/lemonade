@@ -63,7 +63,7 @@ const AppContent: React.FC = () => {
       } finally {
         // Override with URL parameters if present
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('logs') === 'true') {
+        if (urlParams.get('view') === 'logs') {
           setIsLogsVisible(true);
         }
         setLayoutLoaded(true);

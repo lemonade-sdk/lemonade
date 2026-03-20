@@ -269,6 +269,7 @@
       <Shortcut Id="StartupShortcutId"
                 Name="Lemonade Server"
                 Target="[BinDir]LemonadeServer.exe"
+                Arguments="--silent"
                 WorkingDirectory="BinDir"
                 Icon="LemonadeIcon" />
       <RegistryValue Root="HKCU" Key="Software\AMD\Lemonade Server" Name="Startup" Type="integer" Value="1" KeyPath="yes" />

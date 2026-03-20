@@ -123,8 +123,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         freopen_s(&dummy, "CONOUT$", "w", stderr);
     }
 
-    // Use the same CLIParser as lemonade-router for full arg compatibility
+    // Parse CLI args. LemonadeServer.exe shares the server's CLIParser for
+    // --port, --host, --log-level, etc.  We add --silent here (tray-only flag
+    // used by the Windows startup shortcut to suppress the startup notification).
+    bool silent = false;
     lemon::CLIParser parser;
+    parser.add_flag("--silent", silent, "Suppress startup notification");
     parser.parse(argc, argv_ptrs.data());
     if (!parser.should_continue()) {
         return parser.get_exit_code();
@@ -177,7 +181,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     // thread; we just need to block until shutdown.
     bool headless = false;
     try {
-        lemon_tray::TrayUI tray(config.port, config.host);
+        lemon_tray::TrayUI tray(config.port, config.host, silent);
         if (tray.initialize()) {
             tray.run();  // Blocks until quit
         } else {

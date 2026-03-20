@@ -210,7 +210,6 @@ namespace lemon::backends {
         return get_version_file(install_dir);
     }
 
-#ifndef LEMONADE_TRAY
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
         std::string config_path = utils::get_resource_path("resources/backend_versions.json");
 
@@ -385,5 +384,4 @@ namespace lemon::backends {
             }
         }
     }
-#endif
 } // namespace lemon::backends
