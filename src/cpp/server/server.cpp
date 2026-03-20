@@ -3605,7 +3605,8 @@ void Server::stream_download_operation(
 
             try {
                 // Create progress callback that emits SSE events
-                DownloadProgressCallback progress_cb = [&sink](const DownloadProgress& p) -> bool {
+                bool complete_sent = false;
+                DownloadProgressCallback progress_cb = [&sink, &complete_sent](const DownloadProgress& p) -> bool {
                     nlohmann::json event_data;
                     event_data["file"] = p.file;
                     event_data["file_index"] = p.file_index;
@@ -3617,6 +3618,7 @@ void Server::stream_download_operation(
                     std::string event;
                     if (p.complete) {
                         event = "event: complete\ndata: " + event_data.dump() + "\n\n";
+                        complete_sent = true;
                     } else {
                         event = "event: progress\ndata: " + event_data.dump() + "\n\n";
                     }
@@ -3629,6 +3631,14 @@ void Server::stream_download_operation(
                 };
 
                 operation(progress_cb);
+
+                // If operation completed without sending a "complete" event
+                // (e.g. backend was already installed), send one now
+                if (!complete_sent) {
+                    nlohmann::json done_data = {{"status", "ok"}};
+                    std::string event = "event: complete\ndata: " + done_data.dump() + "\n\n";
+                    sink.write(event.c_str(), event.size());
+                }
 
             } catch (const std::exception& e) {
                 std::string error_msg = e.what();

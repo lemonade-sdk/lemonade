@@ -36,7 +36,9 @@ static httplib::Client make_client(const std::string& host, int port, const std:
 
 static void assert_http_ok(const httplib::Result& res) {
     if (!res) {
-        throw std::runtime_error("Connection failed: " + httplib::to_string(res.error()));
+        throw std::runtime_error(
+            "Could not connect to Lemonade server (" + httplib::to_string(res.error()) + ").\n"
+            "Make sure the server is running and try again.");
     } else if (res->status == 401) {
         throw std::runtime_error("Forbidden by the server. Did you set the API key?");
     } else if (res->status != 200) {
@@ -345,6 +347,15 @@ int LemonadeClient::pull_model(const json& model_data) {
             if (event_type == "complete") {
                 std::cout << std::endl;
                 state.success = true;
+            } else if (event_type == "error") {
+                try {
+                    auto error_json = json::parse(event_data);
+                    if (error_json.contains("error")) {
+                        state.error_message = error_json["error"].get<std::string>();
+                    }
+                } catch (...) {
+                    state.error_message = event_data;
+                }
             } else {
                 parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
             }
@@ -555,6 +566,16 @@ int LemonadeClient::install_backend(const std::string& recipe, const std::string
             if (event_type == "complete") {
                 std::cout << std::endl;
                 state.success = true;
+            } else if (event_type == "error") {
+                // Server sent an explicit error event
+                try {
+                    auto error_json = json::parse(event_data);
+                    if (error_json.contains("error")) {
+                        state.error_message = error_json["error"].get<std::string>();
+                    }
+                } catch (...) {
+                    state.error_message = event_data;
+                }
             } else {
                 parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
             }
@@ -563,13 +584,13 @@ int LemonadeClient::install_backend(const std::string& recipe, const std::string
             if (!state.error_message.empty()) {
                 throw std::runtime_error(state.error_message);
             }
-            throw std::runtime_error("Backend installation failed");
+            throw std::runtime_error("Backend installation failed (no details from server)");
         }
 
         std::cout << "Backend installed successfully: " << recipe << ":" << backend << std::endl;
         return 0;
     } catch (const std::exception& e) {
-        std::cerr << "Error installing backend: " << e.what() << std::endl;
+        std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
 }
