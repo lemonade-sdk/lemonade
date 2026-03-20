@@ -141,6 +141,7 @@ This file configures per-model runtime settings. Each key is a **full model name
 |--------|---------|-------------|-------------|
 | `ctx_size` | 4096 | `LEMONADE_CTX_SIZE` | Context window size in tokens |
 | `llamacpp_backend` | vulkan (Windows/Linux), metal (macOS) | `LEMONADE_LLAMACPP` | Inference backend: `vulkan`, `rocm`, `cpu`, `metal` |
+| `llamacpp_device` | (empty) | LEMONADE_LLAMACPP_DEVICE | Comma-separated list of accelerator devices to use (e.g. Vulkan0) |
 | `llamacpp_args` | (empty) | `LEMONADE_LLAMACPP_ARGS` | Extra arguments passed to llama-server |
 
 #### whispercpp
