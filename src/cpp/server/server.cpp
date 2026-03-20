@@ -2449,9 +2449,17 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         }
 
         std::vector<std::pair<std::string, std::string>> env_vars;
-#ifdef _WIN32
+        std::filesystem::path cli_dir = cli_exe.parent_path();
+#ifndef _WIN32
+        std::string lib_path = cli_dir.string();
+        const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+        if (existing_ld_path && strlen(existing_ld_path) > 0) {
+            lib_path = lib_path + ":" + std::string(existing_ld_path);
+        }
+        env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+#else
         if (backend == "rocm") {
-            std::string new_path = std::filesystem::path(exe_dir).parent_path().string();
+            std::string new_path = cli_dir.string();
             const char* existing_path = std::getenv("PATH");
             if (existing_path) new_path += ";" + std::string(existing_path);
             env_vars.push_back({"PATH", new_path});
