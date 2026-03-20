@@ -68,16 +68,20 @@ public:
     virtual json image_variations(const json& request) = 0;
 };
 
-// Optional slots capability (llama.cpp server slots information)
-class ISlotsServer : public virtual ICapability {
+// Optional Anthropic Messages API capability
+class IAnthropicServer : public virtual ICapability {
 public:
-    virtual ~ISlotsServer() = default;
+    virtual ~IAnthropicServer() = default;
 
-    // Get server slot information
-    virtual json get_slots() = 0;
+    // Anthropic /v1/messages
+    virtual json anthropic_messages(const json& request) = 0;
 
-    // Perform action on specific slot (with slot ID)
-    virtual json slots_action(int slot_id, const std::string& action, const json& request_body) = 0;
+    // Anthropic /v1/messages streaming
+    virtual void anthropic_messages_stream(const std::string& request_body,
+                                           httplib::DataSink& sink) = 0;
+
+    // Anthropic /v1/messages/count_tokens
+    virtual json anthropic_count_tokens(const json& request) = 0;
 };
 
 // Optional tokenize capability (llama.cpp tokenization of input)

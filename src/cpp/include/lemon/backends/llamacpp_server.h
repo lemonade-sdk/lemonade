@@ -7,7 +7,13 @@
 namespace lemon {
 namespace backends {
 
-class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer, public ISlotsServer, public ITokenizerServer {
+<<<<<<< HEAD
+class LlamaCppServer : public WrappedServer,
+                       public IEmbeddingsServer,
+                       public IRerankingServer,
+                       public ISlotsServer,
+                       public ITokenizerServer,
+                       public IAnthropicServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -51,6 +57,11 @@ public:
 
     // ITokenizerServer implementation
     json tokenize(const json& request) override;
+
+    // IAnthropicServer implementation
+    json anthropic_messages(const json& request) override;
+    void anthropic_messages_stream(const std::string& request_body, httplib::DataSink& sink) override;
+    json anthropic_count_tokens(const json& request) override;
 };
 
 } // namespace backends
