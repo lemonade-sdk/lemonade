@@ -171,27 +171,34 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         return 1;
     }
 
-    // In CI mode (no display server), skip the tray UI and just run headless.
-    // The server thread handles requests; we block until /internal/shutdown.
-    bool ci_mode = (std::getenv("LEMONADE_CI_MODE") != nullptr);
+    // Create and run tray UI.  If initialization fails (e.g. no display
+    // server in CI, headless VM, or RDP session), fall back to running
+    // headless — the server is already handling requests on the background
+    // thread; we just need to block until shutdown.
+    bool headless = false;
+    try {
+        lemon_tray::TrayUI tray(config.port, config.host);
+        if (tray.initialize()) {
+            tray.run();  // Blocks until quit
+        } else {
+            LOG(WARNING, "Tray") << "Tray UI initialization failed — running headless" << std::endl;
+            headless = true;
+        }
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Tray") << "Tray UI error: " << e.what() << " — running headless" << std::endl;
+        headless = true;
+    } catch (...) {
+        LOG(WARNING, "Tray") << "Tray UI error — running headless" << std::endl;
+        headless = true;
+    }
 
-    if (ci_mode) {
-        LOG(INFO, "Tray") << "CI mode: running headless (no tray UI)" << std::endl;
-        // Block forever — the server thread handles everything.
-        // /internal/shutdown will call std::exit(0) to terminate.
+    if (headless) {
+        // Server is running on the background thread.
+        // Block until /internal/shutdown calls std::exit(0).
         while (true) {
             std::this_thread::sleep_for(std::chrono::hours(24));
         }
     }
-
-    // Create and run tray UI
-    lemon_tray::TrayUI tray(config.port, config.host);
-    if (!tray.initialize()) {
-        WSACleanup();
-        return 1;
-    }
-
-    tray.run();  // Blocks until quit
 
     // Shutdown the embedded server.
     // /internal/shutdown unloads all models synchronously (kills child
