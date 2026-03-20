@@ -158,7 +158,7 @@ void LlamaCppServer::load(const std::string& model_name,
     LOG(DEBUG, "LlamaCpp") << "Per-model settings: " << options.to_log_string() << std::endl;
 
     int ctx_size = options.get_option("ctx_size");
-    std::string backend_device = options.get_option("device");
+    std::string llamacpp_device = options.get_option("llamacpp_device");
     std::string llamacpp_backend = options.get_option("llamacpp_backend");
     std::string llamacpp_args = options.get_option("llamacpp_args");
 
@@ -201,8 +201,10 @@ void LlamaCppServer::load(const std::string& model_name,
 
     push_arg(args, reserved_flags, "-m", gguf_path, std::vector<std::string>{"--model"});
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
-    if (backend_device != "") {
-      push_arg(args, reserved_flags, "--device", backend_device);
+    if (llamacpp_device != "") {
+        push_arg(args, reserved_flags, "--device", llamacpp_device, std::vector<std::string>{"-dev"});
+    } else {
+        push_reserved(reserved_flags, "--device", std::vector<std::string>{"-dev"});
     }
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
     push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});

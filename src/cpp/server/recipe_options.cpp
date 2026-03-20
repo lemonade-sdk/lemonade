@@ -9,7 +9,7 @@ using json = nlohmann::json;
 
 static const json DEFAULTS = {
     {"ctx_size", 4096},
-    {"device", ""},
+    {"llamacpp_device", ""},
     {"llamacpp_backend", ""},  // Will be overridden dynamically
     {"llamacpp_args", ""},
     {"sd-cpp_backend", ""},  // sd.cpp backend selection (cpu or rocm)
@@ -34,9 +34,9 @@ static const json CLI_OPTIONS = {
         {"help", "Context size for the model"}
     }},
     {"--device", {
-        {"option_name", "device"},
-        {"type_name", "DEVICE"},
-        {"envname", "LEMONADE_DEVICE"},
+        {"option_name", "llamacpp_device"},
+        {"type_name", "DEVICES"},
+        {"envname", "LEMONADE_LLAMACPP_DEVICE"},
         {"help", "Comma-separated list of accelerator devices to use (e.g. Vulkan0)"}
     }},
     {"--llamacpp", {
@@ -107,7 +107,7 @@ static const json CLI_OPTIONS = {
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
-        return {"ctx_size", "device", "llamacpp_backend", "llamacpp_args"};
+        return {"ctx_size", "llamacpp_device", "llamacpp_backend", "llamacpp_args"};
     } else if (recipe == "whispercpp") {
         return {"whispercpp_backend", "whispercpp_args"};
     } else if (recipe == "flm") {
