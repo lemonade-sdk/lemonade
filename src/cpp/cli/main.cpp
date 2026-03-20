@@ -366,7 +366,7 @@ static bool fetch_models_from_endpoint(lemonade::LemonadeClient& client, bool sh
     }
 }
 
-static bool prompt_model_selection(lemonade::LemonadeClient& client, std::string& model_out) {
+static bool prompt_model_selection(lemonade::LemonadeClient& client, std::string& model_out, bool show_all) {
     std::vector<lemonade::ModelInfo> models;
     if (!fetch_models_from_endpoint(client, false, models)) {
         return false;
@@ -384,7 +384,8 @@ static bool prompt_model_selection(lemonade::LemonadeClient& client, std::string
     for (size_t i = 0; i < models.size(); ++i) {
         const auto& model = models[i];
 
-        if (model.recipe != "llamacpp") {
+        // show_all determines whether to display all models or only those with recipe "llamacpp"
+        if (model.recipe != "llamacpp" && !show_all) {
             continue;
         }
 
@@ -421,17 +422,17 @@ static bool prompt_model_selection(lemonade::LemonadeClient& client, std::string
 }
 
 static bool resolve_model_if_missing(lemonade::LemonadeClient& client, CliConfig& config,
-                                     const std::string& command_name) {
+                                     const std::string& command_name, bool show_all = true) {
     if (!config.model.empty()) {
         return true;
     }
 
     std::cout << "No model specified for '" << command_name << "'." << std::endl;
-    return prompt_model_selection(client, config.model);
+    return prompt_model_selection(client, config.model, show_all);
 }
 
 static int handle_run_command(lemonade::LemonadeClient& client, CliConfig& config) {
-    if (!resolve_model_if_missing(client, config, "run")) {
+    if (!resolve_model_if_missing(client, config, "run", true)) {
         return 1;
     }
 
@@ -461,7 +462,7 @@ static int handle_recipes_command(lemonade::LemonadeClient& client, const CliCon
 }
 
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
-    if (!resolve_model_if_missing(client, config, "launch")) {
+    if (!resolve_model_if_missing(client, config, "launch", false)) {
         return 1;
     }
 
