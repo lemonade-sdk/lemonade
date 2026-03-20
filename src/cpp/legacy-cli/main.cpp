@@ -19,6 +19,10 @@
 #include <unistd.h>
 #endif
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
 namespace fs = std::filesystem;
 
 // ---------------------------------------------------------------------------
@@ -83,7 +87,14 @@ static fs::path get_exe_dir() {
     if (!ec) return p.parent_path();
 #endif
 #ifdef __APPLE__
-    // _NSGetExecutablePath could be used; keep it simple with argv[0].
+    char buf[1024];
+    uint32_t size = sizeof(buf);
+    if (_NSGetExecutablePath(buf, &size) == 0) {
+        std::error_code ec;
+        auto real = fs::canonical(buf, ec);
+        if (!ec) return real.parent_path();
+        return fs::path(buf).parent_path();
+    }
 #endif
     return fs::path(); // empty — will search PATH as fallback
 }

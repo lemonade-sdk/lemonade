@@ -37,12 +37,19 @@ if launchctl list | grep -q "$DAEMON_LABEL"; then
 fi
 
 # Stop Agent (User-specific)
+# Try both bootout and unload to handle stale plists from previous installs
 if [ -n "$CURRENT_UID" ] && [ "$CURRENT_UID" -ne 0 ]; then
-    if launchctl print gui/"$CURRENT_UID"/"$AGENT_LABEL" >/dev/null 2>&1; then
-        echo "Stopping existing Tray Agent for UID $CURRENT_UID..."
-        launchctl bootout gui/"$CURRENT_UID"/"$AGENT_LABEL" 2>/dev/null || true
-    fi
+    echo "Stopping existing Tray Agent for UID $CURRENT_UID..."
+    launchctl bootout gui/"$CURRENT_UID"/"$AGENT_LABEL" 2>/dev/null || true
+    # Also try unloading any old plist locations
+    launchctl asuser "$CURRENT_UID" launchctl unload "$AGENT_PLIST" 2>/dev/null || true
+    launchctl asuser "$CURRENT_UID" launchctl unload "${INSTALL_ROOT}/Users/*/Library/LaunchAgents/${AGENT_LABEL}.plist" 2>/dev/null || true
 fi
+
+# Kill any lingering lemonade processes to ensure clean startup
+killall lemonade-router 2>/dev/null || true
+killall lemonade-tray 2>/dev/null || true
+killall lemonade-server 2>/dev/null || true
 sleep 1
 
 # ------------------------------------------------------------------------------
@@ -81,8 +88,9 @@ mkdir -p "$CONFIG_DIR"
 chmod 755 "$CONFIG_DIR"
 
 # Log Directory (Critical: Service crashes if missing)
+# Permissions 777 so both the root daemon and user-level tray agent can write logs
 mkdir -p "$LOG_DIR"
-chmod 755 "$LOG_DIR"
+chmod 777 "$LOG_DIR"
 chown root:wheel "$LOG_DIR"
 
 # Share Directory
