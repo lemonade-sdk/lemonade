@@ -58,7 +58,16 @@ static void add_serve_options(CLI::App* serve, ServerConfig& config) {
                    "Global timeout for HTTP requests, inference, and readiness checks in seconds")
         ->envname("LEMONADE_GLOBAL_TIMEOUT")
         ->type_name("SECONDS")
-        ->default_val(config.global_timeout);
+        ->default_val(config.global_timeout)
+        ->transform([](std::string val) {
+            try {
+                long t = std::stol(val);
+                if (t > 0 && t < 300) return std::string("300");
+            } catch (...) {
+                // Ignore invalid values, let CLI11 handle them
+            }
+            return val;
+        });
 
     // Multi-model support: Max loaded models per type slot
     serve->add_option("--max-loaded-models", config.max_loaded_models,
