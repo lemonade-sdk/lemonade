@@ -313,12 +313,21 @@ json SDServer::image_edits(const json& request) {
 }
 
 json SDServer::image_variations(const json& request) {
-    // Use sd-server's /v1/images/variations endpoint.
+    // Use sd-server's /v1/images/edits endpoint for variations.
     // Note: OpenAI variations API does NOT accept a prompt parameter.
     // The endpoint expects multipart/form-data (like the OpenAI API).
 
+    // Build extra_args with a default strength for img2img (same pattern as image_edits).
+    // strength controls denoising: 0.0 = identical to input, 1.0 = ignore input entirely.
+    json extra_args;
+    extra_args["strength"] = 0.75;
+    extra_args["steps"] = static_cast<int>(recipe_options_.get_option("steps"));
+    extra_args["cfg_scale"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
+
+    std::string prompt = "variation <sd_cpp_extra_args>" + extra_args.dump() + "</sd_cpp_extra_args>";
+
     std::vector<MultipartField> fields;
-    fields.push_back({"prompt", "variation", "", ""});  // variations have no user prompt; use placeholder to satisfy non-empty check
+    fields.push_back({"prompt", prompt, "", ""});
     fields.push_back({"n", std::to_string(request.value("n", 1)), "", ""});
     if (request.contains("size")) {
         fields.push_back({"size", request["size"].get<std::string>(), "", ""});
