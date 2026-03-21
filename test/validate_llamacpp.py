@@ -107,6 +107,9 @@ def start_server(server_binary, port):
     OS pipe buffer from filling up and blocking the subprocess.
     """
     cmd = [server_binary, "serve", "--port", str(port), "--log-level", "debug"]
+    # Add --no-tray on Windows or in CI environments (no display server in containers)
+    if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
+        cmd.append("--no-tray")
     print(f"Starting server: {' '.join(cmd)}", flush=True)
     proc = subprocess.Popen(
         cmd,
