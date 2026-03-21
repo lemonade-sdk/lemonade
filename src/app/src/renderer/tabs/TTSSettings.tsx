@@ -62,7 +62,7 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({ settings, onValueChangeFunc, 
         </div>
         <input type="text" value={settings.tts["model"].value} onChange={(e) => onValueChangeFunc('model', e.target.value)} className="settings-text-input" />
       </div>
-      <div className={`settings-section ${settings.tts.userVoice.useDefault ? "settings-section-default" : ""}`}>
+      <div className="settings-section">
         <div className="settings-label-row">
           <label className="settings-label">
             <span className="settings-label-text">User Voice</span>
@@ -72,9 +72,9 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({ settings, onValueChangeFunc, 
             Reset
           </button>
         </div>
-        <Combobox defaultValue={userVoice} onChangeFunc={updateUserVoice} optionsList={voiceOptions} placeholder='Select a voice...' />
+        <Combobox defaultValue={userVoice} useDefault={settings.tts.userVoice.useDefault} onChangeFunc={updateUserVoice} optionsList={voiceOptions} placeholder='Select a voice...' />
       </div>
-      <div className={`settings-section ${settings.tts.assistantVoice.useDefault ? "settings-section-default" : ""}`}>
+      <div className="settings-section">
         <div className="settings-label-row">
           <label className="settings-label">
             <span className="settings-label-text">Assistant Voice</span>
@@ -84,7 +84,7 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({ settings, onValueChangeFunc, 
             Reset
           </button>
         </div>
-        <Combobox defaultValue={assistantVoice} onChangeFunc={updateAssistantVoice} optionsList={voiceOptions} placeholder='Select a voice...' />
+        <Combobox defaultValue={assistantVoice} useDefault={settings.tts.assistantVoice.useDefault} onChangeFunc={updateAssistantVoice} optionsList={voiceOptions} placeholder='Select a voice...' />
       </div>
       <div className={`settings-section ${settings.tts.enableTTS.useDefault ? 'settings-section-default' : ''}`}>
         <div className="settings-label-row">

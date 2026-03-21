@@ -5,10 +5,11 @@ interface ComboboxProps {
   onChangeFunc: (e: string) => void;
   defaultValue: string;
   placeholder?: string;
+  useDefault?: boolean;
   position?: 'top' | 'bottom';
 }
 
-const Combobox: React.FC<ComboboxProps> = React.memo(function Combobox({ optionsList, onChangeFunc, defaultValue, placeholder, position }) {
+const Combobox: React.FC<ComboboxProps> = React.memo(function Combobox({ optionsList, onChangeFunc, defaultValue, placeholder, position, useDefault }) {
   const [datalistOpen, setDatalistOpen] = React.useState<boolean>(false);
   const [filteredList, setFilteredList] = React.useState<string[]>(optionsList);
   const comboboxRef = React.useRef<HTMLDivElement>(null);
@@ -51,7 +52,7 @@ const Combobox: React.FC<ComboboxProps> = React.memo(function Combobox({ options
   return (
     <div className="form-combobox-container" ref={comboboxRef}>
       <input
-        className="form-combobox"
+        className={`form-combobox ${typeof useDefault != "undefined" && (useDefault ? "combobox-default" : "combobox-input-selected")}`}
         value={defaultValue}
         onChange={handleInputChange}
         onClick={() => setDatalistOpen(!datalistOpen)}
