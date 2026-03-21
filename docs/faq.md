@@ -246,6 +246,10 @@ Lemonade supports most of the voices listed in [Kokoro-82M VOICES](https://huggi
 
 Yes, two voices can be mixed using the following format: `af_jessica.5+af_kore.4`
 
+### 3. **I entered a voice, but no audio is playing?**
+
+Some voices are not supported yet. If you manually enter a voice name instead of selecting one from the default list, and that voice is not supported, a muted audio will be generated.
+
 ## Support & Roadmap
 
 ### 1. **What if I encounter installation or runtime errors?**
