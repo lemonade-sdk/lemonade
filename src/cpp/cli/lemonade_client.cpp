@@ -286,8 +286,30 @@ int LemonadeClient::list_models(bool show_all) const {
 }
 
 // Helper function to parse SSE progress events
-static bool parse_sse_progress(const std::string& event_data, std::string& last_file, int& last_percent,
-                                  std::string& error_message) {
+static std::string format_speed(double bytes_per_sec) {
+    if (bytes_per_sec < 1024.0) {
+        return std::to_string(static_cast<int>(bytes_per_sec)) + " B/s";
+    } else if (bytes_per_sec < 1024.0 * 1024.0) {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(1) << (bytes_per_sec / 1024.0) << " KB/s";
+        return oss.str();
+    } else if (bytes_per_sec < 1024.0 * 1024.0 * 1024.0) {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(1) << (bytes_per_sec / (1024.0 * 1024.0)) << " MB/s";
+        return oss.str();
+    } else {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(1) << (bytes_per_sec / (1024.0 * 1024.0 * 1024.0)) << " GB/s";
+        return oss.str();
+    }
+}
+
+static bool parse_sse_progress(const std::string& event_data, StreamingRequestState& state) {
+    std::string& last_file = state.last_file;
+    int& last_percent = state.last_percent;
+    std::string& error_message = state.error_message;
+    bool& total_size_printed = state.total_size_printed;
+    uint64_t& last_file_size = state.last_file_size;
     try {
         auto json_data = json::parse(event_data);
 
@@ -298,9 +320,23 @@ static bool parse_sse_progress(const std::string& event_data, std::string& last_
             // Use uint64_t explicitly to avoid JSON type inference issues with large numbers
             uint64_t bytes_downloaded = json_data.value("bytes_downloaded", (uint64_t)0);
             uint64_t bytes_total = json_data.value("bytes_total", (uint64_t)0);
+            uint64_t bytes_prev = json_data.value("bytes_previously_downloaded", (uint64_t)0);
+            uint64_t total_download_size = json_data.value("total_download_size", (uint64_t)0);
+
+            // Print total download size once on first event
+            if (!total_size_printed && total_download_size > 0 && total_files > 0) {
+                double size_gb = total_download_size / (1024.0 * 1024.0 * 1024.0);
+                std::cout << "Total: " << std::fixed << std::setprecision(1)
+                          << size_gb << " GB, " << total_files << " files" << std::endl;
+                total_size_printed = true;
+            }
 
             if (file != last_file) {
-                if (!last_file.empty()) {
+                // First event for this file — remember its size for progress display
+                last_file_size = bytes_total;
+
+                // Add newline after progress bar (carriage-return based), but not after "(already downloaded)"
+                if (!last_file.empty() && last_percent != 100) {
                     std::cout << std::endl;
                 }
                 std::cout << "[" << file_index << "/" << total_files << "] " << file;
@@ -308,20 +344,45 @@ static bool parse_sse_progress(const std::string& event_data, std::string& last_
                     std::cout << " (" << std::fixed << std::setprecision(1)
                             << (bytes_total / (1024.0 * 1024.0)) << " MB)";
                 }
+
+                // Check if already downloaded: bytes_prev equals the KNOWN file size
+                bool is_already_downloaded = bytes_prev > 0 && bytes_prev == bytes_total;
+                if (is_already_downloaded) {
+                    std::cout << " (already downloaded)";
+                    last_percent = 100;
+                } else {
+                    last_percent = -1;
+                    state.file_start_time = std::chrono::steady_clock::now();
+                    state.file_bytes_resumed = bytes_prev;
+                }
                 std::cout << std::endl;
                 last_file = file;
-                last_percent = -1;
+            } else if (last_percent != 100 && bytes_prev > 0 && bytes_prev == last_file_size) {
+                // Completion event: bytes_prev matches known file size (not a redirect artifact)
+                std::cout << "\r" << std::string(80, ' ') << "\r  (already downloaded)" << std::endl;
+                last_percent = 100;
             }
 
-            if (bytes_total > 0 && json_data.contains("percent") && json_data["percent"].is_number_integer()) {
-                int percent = json_data["percent"].get<int>();
+            // Show progress bar using the known file size as denominator
+            if (last_percent != 100 && last_file_size > 0) {
+                int display_percent = static_cast<int>((bytes_downloaded * 100) / last_file_size);
+                if (display_percent > 100) display_percent = 100;
+                if (display_percent != last_percent) {
+                    // Calculate speed from session bytes only (exclude resumed bytes)
+                    std::string speed_str;
+                    auto elapsed = std::chrono::steady_clock::now() - state.file_start_time;
+                    double elapsed_sec = std::chrono::duration<double>(elapsed).count();
+                    if (elapsed_sec > 0.5 && bytes_downloaded > state.file_bytes_resumed) {
+                        double speed = (bytes_downloaded - state.file_bytes_resumed) / elapsed_sec;
+                        speed_str = " " + format_speed(speed);
+                    }
 
-                if (percent != last_percent) {
-                    std::cout << "\r  Progress: " << percent << "% ("
+                    std::cout << "\r  Progress: " << display_percent << "% ("
                             << std::fixed << std::setprecision(1)
                             << (bytes_downloaded / (1024.0 * 1024.0)) << "/"
-                            << (bytes_total / (1024.0 * 1024.0)) << " MB)" << std::flush;
-                    last_percent = percent;
+                            << (last_file_size / (1024.0 * 1024.0)) << " MB)"
+                            << speed_str << "    " << std::flush;
+                    last_percent = display_percent;
                 }
             }
         }
@@ -360,7 +421,7 @@ int LemonadeClient::pull_model(const json& model_data) {
                 std::cout << std::endl;
                 state.success = true;
             } else {
-                parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
+                parse_sse_progress(event_data, state);
             }
         }, 86400, 30);
 
@@ -570,7 +631,7 @@ int LemonadeClient::install_backend(const std::string& recipe, const std::string
                 std::cout << std::endl;
                 state.success = true;
             } else {
-                parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
+                parse_sse_progress(event_data, state);
             }
         }, 86400, 30);
         if (!state.success) {
