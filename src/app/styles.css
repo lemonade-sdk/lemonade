@@ -2481,7 +2481,7 @@ input::-webkit-calendar-picker-indicator {
     background-position: right 8px center;
 }
 
-combobox-default {
+.combobox-default {
   opacity: .65;
 }
 
