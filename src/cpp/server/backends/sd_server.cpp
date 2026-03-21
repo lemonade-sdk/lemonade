@@ -252,8 +252,8 @@ json SDServer::image_generations(const json& request) {
     LOG(DEBUG, "SDServer") << "Forwarding request to sd-server: "
                   << sd_request.dump(2) << std::endl;
 
-    // Use base class forward_request with 10 minute timeout for image generation
-    return forward_request("/v1/images/generations", sd_request, 600);
+    // Image generation can take 20+ minutes for large models — use global timeout
+    return forward_request("/v1/images/generations", sd_request, utils::HttpClient::get_default_timeout());
 }
 
 json SDServer::image_edits(const json& request) {
@@ -307,7 +307,7 @@ json SDServer::image_edits(const json& request) {
                   << " size=" << request.value("size", "")
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, 600);
+    return forward_multipart_request("/v1/images/edits", fields, utils::HttpClient::get_default_timeout());
 }
 
 json SDServer::image_variations(const json& request) {
@@ -335,7 +335,7 @@ json SDServer::image_variations(const json& request) {
                   << " size=" << request.value("size", "")
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, 600);
+    return forward_multipart_request("/v1/images/edits", fields, utils::HttpClient::get_default_timeout());
 }
 
 } // namespace backends

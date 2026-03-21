@@ -56,7 +56,8 @@ bool ServerManager::start_server(
     bool is_ephemeral,
     const std::string& host,
     int max_loaded_models,
-    const std::string& extra_models_dir)
+    const std::string& extra_models_dir,
+    long global_timeout)
 {
     if (is_server_running()) {
         LOG(DEBUG, "ServerManager") << "Server is already running" << std::endl;
@@ -67,6 +68,7 @@ bool ServerManager::start_server(
     port_ = port;
     recipe_options_ = recipe_options;
     max_loaded_models_ = max_loaded_models;
+    global_timeout_ = global_timeout;
     log_file_ = log_file;
     log_level_ = log_level;
     show_console_ = show_console;
@@ -228,7 +230,7 @@ bool ServerManager::stop_server() {
 bool ServerManager::restart_server() {
     stop_server();
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    return start_server(server_binary_path_, port_, recipe_options_, log_file_, log_level_, show_console_, false, host_, max_loaded_models_, extra_models_dir_);
+    return start_server(server_binary_path_, port_, recipe_options_, log_file_, log_level_, show_console_, false, host_, max_loaded_models_, extra_models_dir_, global_timeout_);
 }
 
 bool ServerManager::is_server_running() const {
@@ -362,6 +364,10 @@ bool ServerManager::spawn_process() {
     // Extra models directory
     if (!extra_models_dir_.empty()) {
         cmdline += " --extra-models-dir \"" + extra_models_dir_ + "\"";
+    }
+    // Global timeout (only if not default)
+    if (global_timeout_ != 300) {
+        cmdline += " --global-timeout " + std::to_string(global_timeout_);
     }
 
     LOG(DEBUG, "ServerManager") << "Starting server: " << cmdline << std::endl;
@@ -579,6 +585,14 @@ bool ServerManager::spawn_process() {
         if (!extra_models_dir_.empty()) {
             args.push_back("--extra-models-dir");
             args.push_back(extra_models_dir_.c_str());
+        }
+
+        // Global timeout (only if not default)
+        std::string global_timeout_str;
+        if (global_timeout_ != 300) {
+            args.push_back("--global-timeout");
+            global_timeout_str = std::to_string(global_timeout_);
+            args.push_back(global_timeout_str.c_str());
         }
 
         args.push_back(nullptr);
