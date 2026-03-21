@@ -7,6 +7,8 @@ export interface DownloadProgressEvent {
   bytes_downloaded: number;
   bytes_total: number;
   percent: number;
+  total_download_size?: number;  // Total bytes across ALL files in this download
+  bytes_previously_downloaded?: number;  // Bytes already on disk for current file (resume/skip)
 }
 
 class DownloadTracker {
@@ -15,6 +17,7 @@ class DownloadTracker {
   private cumulativeData: Map<string, {
     completedFilesBytes: number;  // Total bytes from completed files
     fileSizes: Map<number, number>;  // Map of file_index -> file size
+    preExistingBytes: Map<number, number>;  // Map of file_index -> bytes already on disk
   }>;
 
   constructor() {
@@ -56,6 +59,7 @@ class DownloadTracker {
       percent: 0,
       status: 'downloading',
       startTime: Date.now(),
+      bytesResumed: 0,
       abortController,
       downloadType,
     };
@@ -64,6 +68,7 @@ class DownloadTracker {
     this.cumulativeData.set(downloadId, {
       completedFilesBytes: 0,
       fileSizes: new Map(),
+      preExistingBytes: new Map(),
     });
     this.emitUpdate(downloadItem);
 
@@ -85,6 +90,13 @@ class DownloadTracker {
       cumulative.fileSizes.set(progress.file_index, progress.bytes_total);
     }
 
+    // Track pre-existing bytes per file (from backend's bytes_previously_downloaded)
+    if (progress.bytes_previously_downloaded != null && progress.bytes_previously_downloaded > 0) {
+      if (!cumulative.preExistingBytes.has(progress.file_index)) {
+        cumulative.preExistingBytes.set(progress.file_index, progress.bytes_previously_downloaded);
+      }
+    }
+
     // If we moved to a new file, add the previous file's size to completed bytes
     if (progress.file_index > download.fileIndex) {
       // Only add the previous file's size if we have it tracked
@@ -96,7 +108,31 @@ class DownloadTracker {
 
     // Calculate cumulative totals
     const cumulativeBytesDownloaded = cumulative.completedFilesBytes + progress.bytes_downloaded;
-    const cumulativeBytesTotal = Array.from(cumulative.fileSizes.values()).reduce((sum, size) => sum + size, 0);
+
+    // Determine total download size:
+    // 1. Server-reported total (covers all files) — best option
+    // 2. Local sum of known file sizes — only accurate once all files have been seen
+    // 3. File-count-based estimation — use known sizes to estimate unknown files
+    let cumulativeBytesTotal: number;
+    if (progress.total_download_size && progress.total_download_size > 0) {
+      cumulativeBytesTotal = progress.total_download_size;
+    } else {
+      const knownSizes = Array.from(cumulative.fileSizes.values());
+      const knownTotal = knownSizes.reduce((sum, size) => sum + size, 0);
+      const knownCount = knownSizes.filter(s => s > 0).length;
+
+      if (knownCount > 0 && progress.total_files > knownCount) {
+        // Estimate total: extrapolate from known file sizes to all files
+        const avgFileSize = knownTotal / knownCount;
+        cumulativeBytesTotal = knownTotal + avgFileSize * (progress.total_files - knownCount);
+      } else {
+        cumulativeBytesTotal = knownTotal;
+      }
+    }
+
+    // Sum all pre-existing bytes across files for accurate speed calculation
+    const totalPreExistingBytes = Array.from(cumulative.preExistingBytes.values())
+      .reduce((sum, bytes) => sum + bytes, 0);
 
     // Calculate overall percent
     let overallPercent: number;
@@ -104,10 +140,9 @@ class DownloadTracker {
       // Have byte-level data: calculate from cumulative bytes
       overallPercent = Math.round((cumulativeBytesDownloaded / cumulativeBytesTotal) * 100);
     } else if (progress.total_files > 0) {
-      // No byte data: estimate from file count + intra-file percent from server
-      // (file_index - 1) completed files + current file progress (percent/100)
+      // No byte data at all: estimate from file count + intra-file percent from server
       const completedFiles = progress.file_index - 1;
-      const currentFileProgress = progress.percent / 100;  // Server sends intra-file percent
+      const currentFileProgress = progress.percent / 100;
       overallPercent = Math.round(((completedFiles + currentFileProgress) / progress.total_files) * 100);
     } else {
       overallPercent = 0;
@@ -129,6 +164,7 @@ class DownloadTracker {
       bytesDownloaded: displayBytesDownloaded,
       bytesTotal: cumulativeBytesTotal,
       percent: overallPercent,
+      bytesResumed: totalPreExistingBytes,
     };
 
     this.activeDownloads.set(downloadId, updatedDownload);

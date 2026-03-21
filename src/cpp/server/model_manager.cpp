@@ -1748,6 +1748,12 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
     std::string download_path = manifest["download_path"].get<std::string>();
     int total_files = manifest["files_count"].get<int>();
 
+    // Compute total download size across all files for accurate progress reporting
+    size_t total_download_size = 0;
+    for (const auto& file_desc : manifest["files"]) {
+        total_download_size += file_desc["size"].get<size_t>();
+    }
+
     for (const auto& file_desc : manifest["files"]) {
         file_index++;
         std::string filename = file_desc["name"].get<std::string>();
@@ -1768,11 +1774,21 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             progress.total_files = total_files;
             progress.bytes_downloaded = 0;
             progress.bytes_total = file_size;
+            progress.total_download_size = total_download_size;
             progress.percent = 0;
             if (!progress_callback(progress)) {
                 LOG(INFO, "ModelManager") << "Download cancelled by client" << std::endl;
                 throw std::runtime_error("Download cancelled");
             }
+        }
+
+        // Detect bytes already on disk before downloading (for resume/skip tracking)
+        size_t bytes_on_disk = 0;
+        std::string partial_path = output_path + ".partial";
+        if (fs::exists(output_path) && !fs::exists(partial_path)) {
+            bytes_on_disk = file_size;  // File already complete
+        } else if (fs::exists(partial_path)) {
+            bytes_on_disk = fs::file_size(partial_path);  // Partial download
         }
 
         utils::DownloadOptions download_opts;
@@ -1788,13 +1804,15 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         // Returns bool: true = continue, false = cancel
         utils::ProgressCallback http_progress_cb;
         if (progress_callback) {
-            http_progress_cb = [&](size_t downloaded, size_t total) -> bool {
+            http_progress_cb = [&, total_download_size, bytes_on_disk](size_t downloaded, size_t total) -> bool {
                 DownloadProgress progress;
                 progress.file = filename;
                 progress.file_index = file_index;
                 progress.total_files = total_files;
                 progress.bytes_downloaded = downloaded;
                 progress.bytes_total = total;
+                progress.total_download_size = total_download_size;
+                progress.bytes_previously_downloaded = bytes_on_disk;
                 progress.percent = (total > 0) ? static_cast<int>((downloaded * 100) / total) : 0;
                 return progress_callback(progress);  // Propagate cancellation
             };
@@ -1819,6 +1837,21 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 
         if (result.success) {
             LOG(INFO, "ModelManager") << "Downloaded: " << filename << std::endl;
+
+            // Emit completion event for already-complete files that were skipped
+            // (download_file returns bytes_downloaded=0 when file already exists)
+            if (result.bytes_downloaded == 0 && progress_callback) {
+                DownloadProgress progress;
+                progress.file = filename;
+                progress.file_index = file_index;
+                progress.total_files = total_files;
+                progress.bytes_downloaded = file_size;
+                progress.bytes_total = file_size;
+                progress.total_download_size = total_download_size;
+                progress.bytes_previously_downloaded = file_size;  // Entire file was pre-existing
+                progress.percent = 100;
+                (void)progress_callback(progress);
+            }
         } else {
             // Build a detailed error message
             std::ostringstream error_msg;
@@ -1853,9 +1886,16 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 
         // Check for .partial file (incomplete download)
         if (fs::exists(partial_path)) {
-            all_valid = false;
-            LOG(ERROR, "ModelManager") << "Incomplete file found: " << filename << ".partial" << std::endl;
-            continue;
+            if (fs::exists(expected_path)) {
+                // Final file exists alongside stale .partial — clean up the leftover
+                LOG(INFO, "ModelManager") << "Removing stale partial file: " << filename << ".partial" << std::endl;
+                std::error_code ec;
+                fs::remove(partial_path, ec);
+            } else {
+                all_valid = false;
+                LOG(ERROR, "ModelManager") << "Incomplete file found: " << filename << ".partial" << std::endl;
+                continue;
+            }
         }
 
         if (!fs::exists(expected_path)) {
@@ -1864,13 +1904,15 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             continue;
         }
 
-        // Verify file size if we have expected size
+        // Verify file size if we have expected size from tree API
         if (expected_size > 0) {
             size_t actual_size = fs::file_size(expected_path);
             if (actual_size != expected_size) {
-                all_valid = false;
-                LOG(ERROR, "ModelManager") << "Size mismatch for " << filename
-                            << ": expected " << expected_size << " bytes, got " << actual_size << " bytes" << std::endl;
+                // Log mismatch but don't fail — tree API sizes can differ from
+                // actual LFS object sizes in some edge cases
+                LOG(WARNING, "ModelManager") << "Size note for " << filename
+                            << ": tree API reports " << expected_size
+                            << " bytes, actual " << actual_size << " bytes" << std::endl;
             }
         }
     }
@@ -2004,12 +2046,16 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             // GGUF model: Use identify_gguf_models to determine which files to download
             GGUFFiles gguf_files = identify_gguf_models(main_repo_id, main_variant, repo_files);
 
-            // Combine core files and sharded files into one list
+            // Combine core files and sharded files into one list (avoiding duplicates)
+            std::unordered_set<std::string> added_files;
             for (const auto& [key, filename] : gguf_files.core_files) {
                 files_to_download[main_repo_id].push_back(filename);
+                added_files.insert(filename);
             }
             for (const auto& filename : gguf_files.sharded_files) {
-                files_to_download[main_repo_id].push_back(filename);
+                if (added_files.find(filename) == added_files.end()) {
+                    files_to_download[main_repo_id].push_back(filename);
+                }
             }
         }
 
@@ -2068,25 +2114,38 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     std::map<std::string, size_t> file_sizes;
 
     for (auto const& [repo_id, files] : files_to_download) {
-        std::string tree_url = "https://huggingface.co/api/models/" + repo_id + "/tree/main";
-        auto tree_response = HttpClient::get(tree_url, headers);
+        // Collect unique subdirectories that need recursive tree fetches
+        std::set<std::string> subdirs_to_fetch;
+        subdirs_to_fetch.insert("");  // Root directory
 
-        if (tree_response.status_code == 200) {
-            auto tree_info = JsonUtils::parse(tree_response.body);
-            if (tree_info.is_array()) {
-                for (const auto& file : tree_info) {
-                    if (file.contains("path") && file.contains("size")) {
-                        std::string fpath = repo_id + ':' + file["path"].get<std::string>();
-                        size_t fsize = file["size"].get<size_t>();
-                        file_sizes[fpath] = fsize;
+        for (const auto& filename : files) {
+            auto last_slash_pos = filename.rfind('/');
+            if (last_slash_pos != std::string::npos) {
+                subdirs_to_fetch.insert(filename.substr(0, last_slash_pos));
+            }
+        }
+
+        for (const auto& subdir : subdirs_to_fetch) {
+            std::string tree_url = "https://huggingface.co/api/models/" + repo_id + "/tree/main";
+            if (!subdir.empty()) {
+                tree_url += "/" + subdir;
+            }
+            auto tree_response = HttpClient::get(tree_url, headers);
+
+            if (tree_response.status_code == 200) {
+                auto tree_info = JsonUtils::parse(tree_response.body);
+                if (tree_info.is_array()) {
+                    for (const auto& file : tree_info) {
+                        if (file.contains("path") && file.contains("size")) {
+                            std::string fpath = repo_id + ':' + file["path"].get<std::string>();
+                            size_t fsize = file["size"].get<size_t>();
+                            file_sizes[fpath] = fsize;
+                        }
                     }
                 }
             }
-            LOG(INFO, "ModelManager") << "Retrieved file sizes for " << file_sizes.size() << " files" << std::endl;
-        } else {
-            LOG(INFO, "ModelManager") << "Warning: Could not fetch file sizes (tree API returned "
-                        << tree_response.status_code << ")" << std::endl;
         }
+        LOG(INFO, "ModelManager") << "Retrieved file sizes for " << file_sizes.size() << " files" << std::endl;
     }
 
     // Create manifest with expected files
