@@ -6,6 +6,44 @@ This file provides guidance to agent driven code reviews when working with this 
 
 Lemonade is a local LLM server (v10.0.0) providing GPU and NPU acceleration for running large language models on consumer hardware. It exposes OpenAI-compatible, Ollama-compatible, and Anthropic-compatible REST APIs, plus a WebSocket Realtime API. It supports multiple backends: llama.cpp, FastFlowLM, RyzenAI, whisper.cpp, stable-diffusion.cpp, and Kokoro TTS.
 
+## Quick Reference: Build
+
+**Setup** (installs dependencies, creates build directory):
+- Windows: `./setup.ps1`
+- Linux/macOS: `./setup.sh`
+
+**Build:**
+- Windows (VS 2022): `cmake --build --preset windows`
+- Linux/macOS: `cmake --build --preset default`
+
+**Start the server:**
+- Windows: `build/Release/lemonade-server.exe serve`
+- Linux/macOS: `build/lemonade-server serve`
+
+**Tests** (Python 3.10+, `pip install -r test/requirements.txt`):
+```bash
+python test/server_cli.py          # CLI tests (no backend needed)
+python test/server_endpoints.py    # Endpoint tests (no backend needed)
+python test/server_llm.py --wrapped-server llamacpp --backend vulkan  # LLM inference
+```
+
+For installers, code style, IDE setup, and platform notes see [`docs/dev-getting-started.md`](docs/dev-getting-started.md).
+
+## Quick Reference: Server
+
+**Key endpoints** (all available under `/api/v1/`, also registered under `/api/v0/`, `/v0/`, `/v1/`):
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `health` | GET | Server status, loaded models, websocket port |
+| `models` | GET | List downloaded models (`?show_all=true` for all) |
+| `chat/completions` | POST | Chat inference (OpenAI-compatible) |
+| `pull` | POST | Download a model |
+| `load` | POST | Pre-load a model into memory |
+| `system-info` | GET | NPU/GPU device enumeration |
+
+For all endpoints, request/response formats, Ollama compatibility details, Anthropic API, and WebSocket Realtime API see [`docs/server/server_spec.md`](docs/server/server_spec.md).
+
 ## Architecture
 
 ### Four Executables
@@ -58,10 +96,18 @@ All core endpoints are registered under **4 path prefixes**:
 
 Optional API key auth via `LEMONADE_API_KEY` env var. CORS enabled on all routes.
 
-### Desktop & Web App
+### Web App & Electron App
 
-- **Electron app** — React 19 + TypeScript in `src/app/`. Pure CSS (dark theme), context-based state. Key components: `ChatWindow.tsx`, `ModelManager.tsx`, `DownloadManager.tsx`, `BackendManager.tsx`. Feature panels: LLMChat, ImageGeneration, Transcription, TTS, Embedding, Reranking.
-- **Web app** — Browser-only version in `src/web-app/`. Symlinks source from `src/app/src/`. Built via CMake `BUILD_WEB_APP=ON`. Served at `/app`.
+The shared React UI code lives in `src/app/src/renderer/`. Two build targets produce different outputs from it:
+
+- **Web app** (`src/web-app/`) — Browser-only build. Symlinks into `src/app/src` and `src/app/assets`, then builds with webpack (`target: 'web'`). Output is served by the C++ server at `/app`. Auto-built on Linux; manual target on Windows/macOS.
+- **Electron app** (`src/app/`) — Desktop build. Uses the same React code with webpack (`target: 'electron-renderer'`) plus `main.js` and `preload.js` for native features (IPC, settings, server auto-discovery via UDP beacons). Requires Node.js 20+.
+
+Shared components check `window.api` to detect Electron vs browser context.
+
+**Build commands:**
+- Web app — Windows: `cmake --build --preset windows --target web-app` / Linux/macOS: `cmake --build --preset default --target web-app`
+- Electron app — Windows: `cmake --build --preset windows --target electron-app` / Linux/macOS: `cmake --build --preset default --target electron-app`
 
 ### Key Dependencies
 
