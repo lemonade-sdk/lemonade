@@ -155,6 +155,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
 
     const handleModelLoadStart = (e: CustomEvent) => {
       setSelectedModel(e.detail.modelId);
+      setUserHasSelectedModel(true);
     };
 
     window.addEventListener('modelLoadStart' as any, handleModelLoadStart);
