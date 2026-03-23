@@ -3465,7 +3465,6 @@ void Server::stream_download_operation(
                 };
 
                 operation(progress_cb);
-
             } catch (const std::exception& e) {
                 std::string error_msg = e.what();
                 if (error_msg != "Download cancelled") {
@@ -3487,6 +3486,7 @@ void Server::stream_download_operation(
 void Server::handle_install(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+
         std::string recipe = request_json.value("recipe", "");
         std::string backend = request_json.value("backend", "");
         bool stream = request_json.value("stream", false);

@@ -1310,10 +1310,9 @@ int TrayApp::execute_pull_command() {
                 request_body["stream"] = true;
             }
 
-            httplib::Client cli = server_manager->make_http_client(86400, 30);
-
             // For local imports, use simple POST (no SSE streaming needed)
             if (local_import) {
+                httplib::Client cli = server_manager->make_http_client(86400, 30);
                 auto res = cli.Post("/api/v1/pull", request_body.dump(), "application/json");
 
                 if (!res) {
@@ -1341,8 +1340,11 @@ int TrayApp::execute_pull_command() {
             std::string error_message;
             std::string buffer;  // Buffer for partial SSE messages
 
+            std::string request_body_str = request_body.dump();
+
             httplib::Headers headers;
-            auto res = cli.Post("/api/v1/pull", headers, request_body.dump(), "application/json",
+            httplib::Client cli = server_manager->make_http_client(86400, 30);
+            auto res = cli.Post("/api/v1/pull", headers, request_body_str, "application/json",
                 [&](const char* data, size_t len) {
                     buffer.append(data, len);
 
