@@ -40,15 +40,17 @@ runs:
 
         VERSION="${{ inputs.version }}"
         EXTRACT_PATH="${{ inputs.extract-path }}"
-        DEB_FILE="lemonade-server_${VERSION}_amd64.deb"
 
-        echo "Extracting .deb package: $DEB_FILE"
+        # Try to find the .deb file - it may have ~24.04 suffix from dpkg-buildpackage
+        DEB_FILE=$(ls lemonade-server_${VERSION}*_amd64.deb 2>/dev/null | head -n1)
 
-        if [ ! -f "$DEB_FILE" ]; then
-            echo "ERROR: .deb file not found: $DEB_FILE"
+        if [ -z "$DEB_FILE" ]; then
+            echo "ERROR: .deb file not found matching pattern: lemonade-server_${VERSION}*_amd64.deb"
             ls -la *.deb 2>/dev/null || echo "No .deb files found in current directory"
             exit 1
         fi
+
+        echo "Extracting .deb package: $DEB_FILE"
 
         # Extract the .deb package
         mkdir -p "$EXTRACT_PATH"
