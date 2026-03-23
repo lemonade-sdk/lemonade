@@ -1227,6 +1227,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#tts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TTS
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="TTS">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-what-voices-are-supported" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. What voices are supported?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-can-voices-be-mixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Can voices be mixed?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-i-entered-a-voice-but-no-audio-is-playing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. I entered a voice, but no audio is playing?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#support-roadmap" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1721,6 +1771,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#tts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TTS
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="TTS">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-what-voices-are-supported" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. What voices are supported?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-can-voices-be-mixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Can voices be mixed?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-i-entered-a-voice-but-no-audio-is-playing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. I entered a voice, but no audio is playing?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#support-roadmap" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1946,6 +2046,13 @@
 <h3 id="1-how-do-i-use-my-own-llamacpp-or-whispercpp-binaries">1. <strong>How do I use my own llama.cpp or whisper.cpp binaries?</strong></h3>
 <p>Lemonade Server allows you to use custom <code>llama-server</code> or <code>whisper-server</code> binaries instead of the bundled ones by setting environment variables to the full path of your binary.</p>
 <p>👉 <a href="../server/lemonade-server-cli/#custom-backend-binaries">Custom Backend Binaries</a></p>
+<h2 id="tts">TTS</h2>
+<h3 id="1-what-voices-are-supported">1. <strong>What voices are supported?</strong></h3>
+<p>Lemonade supports most of the voices listed in <a href="https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md">Kokoro-82M VOICES</a>. OpenAI voices can be selected from a default list, while other voices must be entered manually via text.</p>
+<h3 id="2-can-voices-be-mixed">2. <strong>Can voices be mixed?</strong></h3>
+<p>Yes, two voices can be mixed using the following format: <code>af_jessica.5+af_kore.4</code></p>
+<h3 id="3-i-entered-a-voice-but-no-audio-is-playing">3. <strong>I entered a voice, but no audio is playing?</strong></h3>
+<p>Some voices are not supported yet. If you manually enter a voice name instead of selecting one from the default list, and that voice is not supported, a muted audio will be generated.</p>
 <h2 id="support-roadmap">Support &amp; Roadmap</h2>
 <h3 id="1-what-if-i-encounter-installation-or-runtime-errors">1. <strong>What if I encounter installation or runtime errors?</strong></h3>
 <p>Check the Lemonade Server logs via the App or tray icon. Common issues include model compatibility or outdated versions.</p>
