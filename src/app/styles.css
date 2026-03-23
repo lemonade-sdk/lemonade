@@ -2436,14 +2436,142 @@ footer {
     background: #1f1f1f;
 }
 
-.form-input::placeholder {
+.form-input::placeholder, .form-combobox::placeholder {
     color: #666;
 }
 
-.form-input:disabled {
+.form-input:disabled, .form-combobox:disabled {
     opacity: 0.5;
     cursor: not-allowed;
     background: #1a1a1a;
+}
+
+input::-webkit-calendar-picker-indicator {
+  opacity: 0;
+}
+
+.form-combobox-container {
+  position: relative;
+  width: 100%;
+  height: max-content;
+}
+
+.form-combobox {
+  padding: 6px 8px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  color: #ccc;
+  font-size: 0.7rem;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  width: 100%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.combobox-input-selected {
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.015);
+    color: white;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+}
+
+.combobox-default {
+  opacity: .65;
+}
+
+.form-combobox:-webkit-autofill,
+.form-combobox:-webkit-autofill:hover,
+.form-combobox:-webkit-autofill:focus {
+  -webkit-transition-delay: 9999s;
+  transition-delay: 9999s;
+}
+
+.form-combobox:focus {
+  outline: none;
+  border-color: #4a4a4a;
+  background: #1f1f1f;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  color: #fff;
+}
+
+.form-datalist {
+  position: absolute;
+  left: 0;
+  background: #1e1e1e;
+  border: 1px solid #444;
+  border-radius: 6px;
+  z-index: 10200;
+  display: flex;
+  list-style: none;
+  font-size: .7rem;
+  backdrop-filter: blur(10px);
+  width: 100%;
+  height: fit-content;
+  min-height: 30px;
+  max-height: 134px;
+  padding: 6px;
+  box-sizing: border-box;
+  cursor: pointer;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #444 transparent;
+}
+
+.form-datalist-top {
+  bottom: 32px;
+  flex-direction: column-reverse;
+}
+
+.form-datalist-bottom {
+  top: 32px;
+  flex-direction: column;
+}
+
+.form-datalist::-webkit-scrollbar {
+    width: 4px;
+}
+
+.form-datalist::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.form-datalist::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 4px;
+}
+
+.form-datalist-option {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    color: #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    line-height: 22px;
+}
+
+.form-datalist-option:hover {
+    background: #2a2a2a;
+    color: #fff;
+}
+
+.form-datalist-option.selected {
+    color: #fff;
+    background: #2e2e2e;
+}
+
+.form-datalist-option.highlighted {
+    background: #2a2a2a;
+    color: #fff;
 }
 
 .form-select {
