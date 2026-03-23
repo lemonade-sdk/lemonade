@@ -1051,6 +1051,20 @@ jobs:
       - name: Configure git safe directory
         run: git config --global --add safe.directory $(pwd)
 
+      - name: Install pip and test dependencies
+        shell: bash
+        run: |
+          set -e
+          # Install pip if not already available
+          if ! command -v pip3 &> /dev/null; then
+            apt-get update
+            apt-get install -y python3-pip python3-venv
+          fi
+          # Create venv and install test dependencies
+          python3 -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r test/requirements.txt
+
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb
         with:
@@ -1062,11 +1076,6 @@ jobs:
           echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
           echo "VENV_PYTHON=.venv/bin/python" >> $GITHUB_ENV
           echo "SERVER_BINARY=lemonade-server" >> $GITHUB_ENV
-
-      - name: Setup Python and virtual environment
-        uses: ./.github/actions/setup-venv
-        with:
-          python-version: '3.12'
 
       - name: Run tests
         shell: bash
