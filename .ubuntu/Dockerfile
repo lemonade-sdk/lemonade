@@ -19,7 +19,11 @@ COPY contrib /contrib
 RUN apt update && apt install -y \
     build-essential \
     dpkg-dev \
-    git && \
+    git \
+    python3-pip \
+    python3-venv \
+    unzip \
+    && \
     cd /contrib && \
     apt build-dep . -y && \
     rm -rf /var/lib/apt/lists/*
