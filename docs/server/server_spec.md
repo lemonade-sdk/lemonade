@@ -961,16 +961,15 @@ A typical workflow is to generate an image first, then upscale it:
             "response_format": "b64_json"
           }')
 
-    # Step 2: Extract the base64 image from the response
-    IMAGE_B64=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['data'][0]['b64_json'])")
-
-    # Step 3: Upscale the image with Real-ESRGAN (512x512 -> 2048x2048)
-    curl -X POST http://localhost:8000/api/v1/images/upscale \
+    # Step 2: Build the upscale JSON payload and pipe it to curl via stdin
+    # (base64 images are too large for command-line interpolation)
+    echo "$RESPONSE" | python3 -c "
+    import sys, json
+    b64 = json.load(sys.stdin)['data'][0]['b64_json']
+    print(json.dumps({'image': b64, 'model': 'RealESRGAN-x4plus'}))
+    " | curl -X POST http://localhost:8000/api/v1/images/upscale \
       -H "Content-Type: application/json" \
-      -d "{
-            \"image\": \"$IMAGE_B64\",
-            \"model\": \"RealESRGAN-x4plus\"
-          }"
+      -d @-
     ```
 
 === "PowerShell"
