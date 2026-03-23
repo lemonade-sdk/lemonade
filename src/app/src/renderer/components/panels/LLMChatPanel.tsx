@@ -11,7 +11,7 @@ import { useSystem } from '../../hooks/useSystem';
 import { Modality } from '../../hooks/useInferenceState';
 import { ModelsData } from '../../utils/modelData';
 import { useTTS } from '../../hooks/useTTS';
-import { Message, MessageContent, TextContent, ImageContent, AudioContent } from '../../utils/chatTypes';
+import { Message, MessageContent, TextContent, ImageContent, AudioContent, Artifact } from '../../utils/chatTypes';
 import { adjustTextareaHeight } from '../../utils/textareaUtils';
 import { SendIcon, ImageUploadIcon, PlusIcon, MicrophoneIcon, RefreshIcon, EjectIcon } from '../Icons';
 import InferenceControls from '../InferenceControls';
@@ -21,6 +21,12 @@ import EmptyState from '../EmptyState';
 import TypingIndicator from '../TypingIndicator';
 import { getExperiencePrimaryChatModel } from '../../utils/experienceModels';
 import RecordButton from '../RecordButton';
+import {
+  buildLemonadeTools,
+  executeLemonadeTool,
+  LemonadeToolsResult,
+  ToolExecutionContext,
+} from '../../utils/lemonadeTools';
 
 interface LLMChatPanelProps {
   isBusy: boolean;
@@ -65,6 +71,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const [isUserAtBottom, setIsUserAtBottom] = useState(true);
   const [isExperienceLayoutActive, setIsExperienceLayoutActive] = useState(experienceMode);
   const [modeTransitionClass, setModeTransitionClass] = useState('');
+  const [lemonadeTools, setLemonadeTools] = useState<LemonadeToolsResult | null>(null);
   const userScrolledAwayRef = useRef(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -160,6 +167,15 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       }, TRANSITION_MS);
     }
   }, [experienceMode, isExperienceLayoutActive]);
+
+  // Build lemonade tools when experience mode activates
+  useEffect(() => {
+    if (!experienceMode || !modelsData[selectedModel]) {
+      setLemonadeTools(null);
+      return;
+    }
+    setLemonadeTools(buildLemonadeTools(selectedModel, modelsData));
+  }, [experienceMode, selectedModel, modelsData]);
 
   // Consolidated image handlers
   const createImageHandlers = (
@@ -312,7 +328,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     model: chatModelName,
     messages: messageHistory,
     stream: true,
-    ...(experienceMode ? { experience: selectedModel } : {}),
     ...buildChatRequestOverrides(appSettings),
   });
 
@@ -332,6 +347,245 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     }
 
     return `Error: ${errorMessage}${helpText}`;
+  };
+
+  /**
+   * Client-side agentic loop for experience mode.
+   * Calls LLM with tools, executes tool_calls locally via Lemonade endpoints, loops.
+   */
+  const handleExperienceChat = async (messageHistory: Message[]): Promise<void> => {
+    if (!lemonadeTools) throw new Error('Lemonade tools not loaded');
+    const MAX_ITERATIONS = 5;
+    const isNewModelLoad = currentLoadedModel !== chatModelName;
+
+    // Pre-extract audio and image data from user messages
+    const extractedAudio: Array<{ data: string; mime: string }> = [];
+    const extractedImages: Array<{ dataUrl: string }> = [];
+
+    const processedMessages: any[] = messageHistory.map(msg => {
+      if (typeof msg.content === 'string') {
+        return { role: msg.role, content: msg.content };
+      }
+      // Content is an array — strip binary data (images/audio) from all messages
+      // For user messages: extract into context for tool use
+      // For assistant messages: replace with placeholders so LLM doesn't choke
+      const isUser = msg.role === 'user';
+      const newContent: any[] = [];
+      for (const item of msg.content) {
+        if (item.type === 'audio' && 'audio' in item) {
+          if (isUser) {
+            extractedAudio.push({ data: item.audio.data, mime: item.audio.mime });
+            newContent.push({ type: 'text', text: `[User provided audio file #${extractedAudio.length}]` });
+          }
+          // Drop audio from assistant messages
+        } else if (item.type === 'image_url' && 'image_url' in item) {
+          if (isUser) {
+            extractedImages.push({ dataUrl: item.image_url.url });
+            newContent.push({ type: 'text', text: `[User provided image #${extractedImages.length}]` });
+          } else {
+            newContent.push({ type: 'text', text: '[Generated image]' });
+          }
+        } else {
+          newContent.push(item);
+        }
+      }
+      // Simplify single-text arrays
+      if (newContent.length === 1 && newContent[0].type === 'text') {
+        return { role: msg.role, content: newContent[0].text };
+      }
+      return { role: msg.role, content: newContent.length > 0 ? newContent : '' };
+    });
+
+    // Prepend system prompt
+    if (lemonadeTools.systemPrompt) {
+      if (processedMessages.length > 0 && processedMessages[0].role === 'system') {
+        processedMessages[0].content = lemonadeTools.systemPrompt + '\n\n' + processedMessages[0].content;
+      } else {
+        processedMessages.unshift({ role: 'system', content: lemonadeTools.systemPrompt });
+      }
+    }
+
+    // Seed artifacts with only the most recent image from conversation history
+    // (needed for edit_image auto-routing). Audio is not carried forward — each TTS is independent.
+    const artifacts: Artifact[] = [];
+
+    // Find the last image in prior messages (scan in reverse)
+    let seededImage = false;
+    for (let i = messageHistory.length - 1; i >= 0 && !seededImage; i--) {
+      const msg = messageHistory[i];
+      if (typeof msg.content === 'string') continue;
+      for (let j = msg.content.length - 1; j >= 0 && !seededImage; j--) {
+        const item = msg.content[j];
+        if (item.type === 'image_url' && 'image_url' in item) {
+          const url = item.image_url.url;
+          const b64Marker = ';base64,';
+          const b64Pos = url.indexOf(b64Marker);
+          if (b64Pos !== -1) {
+            artifacts.push({
+              type: 'image',
+              data: url.substring(b64Pos + b64Marker.length),
+              mime: url.substring(5, b64Pos),
+            });
+            seededImage = true;
+          }
+        }
+      }
+    }
+
+    // Also seed from user-uploaded images extracted this turn
+    for (const img of extractedImages) {
+      const b64Marker = ';base64,';
+      const b64Pos = img.dataUrl.indexOf(b64Marker);
+      if (b64Pos !== -1) {
+        const b64Data = img.dataUrl.substring(b64Pos + b64Marker.length);
+        let mime = 'image/png';
+        if (img.dataUrl.length > 5) {
+          mime = img.dataUrl.substring(5, b64Pos); // skip "data:"
+        }
+        artifacts.push({ type: 'image', data: b64Data, mime });
+      }
+    }
+
+    // Agentic loop
+    const llmMessages = [...processedMessages];
+
+    for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+      console.log(`[LLMChat] Experience loop iteration ${iteration + 1}`);
+
+      const requestBody = {
+        model: chatModelName,
+        messages: llmMessages,
+        stream: false,
+        tools: lemonadeTools.tools,
+        ...buildChatRequestOverrides(appSettings),
+      };
+
+      const response = await serverFetch('/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+        signal: abortControllerRef.current?.signal,
+      });
+
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data = await response.json();
+
+      // Notify UI that model is loaded on first response
+      if (iteration === 0) {
+        setCurrentLoadedModel(chatModelName);
+        if (isNewModelLoad) {
+          window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: selectedModel } }));
+        }
+      }
+
+      if (data.error) throw new Error(data.error.message || 'LLM returned error');
+      if (!data.choices?.length) throw new Error('LLM returned empty response');
+
+      const assistantMsg = data.choices[0].message;
+
+      // No tool_calls → final response
+      if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
+        const text = assistantMsg.content || '';
+        const finalContent = buildFinalContent(text, artifacts);
+        setMessages(prev => {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1] = { role: 'assistant', content: finalContent };
+          return newMessages;
+        });
+        return;
+      }
+
+      // Process tool calls
+      llmMessages.push(assistantMsg);
+
+      for (const toolCall of assistantMsg.tool_calls) {
+        const funcName = toolCall.function.name;
+        const toolModel = lemonadeTools.models[funcName];
+
+        let resultContent: string;
+        if (toolModel) {
+          try {
+            const context: ToolExecutionContext = {
+              extractedAudio,
+              extractedImages,
+              previousArtifacts: artifacts,
+            };
+            const result = await executeLemonadeTool(toolCall, toolModel, context);
+
+            if (result.type === 'image' && result.data) {
+              // For edits, replace the last image; for generation, append
+              let lastImageIdx = -1;
+              for (let i = artifacts.length - 1; i >= 0; i--) {
+                if (artifacts[i].type === 'image') { lastImageIdx = i; break; }
+              }
+              if (funcName === 'edit_image' && lastImageIdx !== -1) {
+                artifacts[lastImageIdx] = { type: 'image', data: result.data, mime: result.mime || 'image/png' };
+              } else {
+                artifacts.push({ type: 'image', data: result.data, mime: result.mime || 'image/png' });
+              }
+              resultContent = funcName === 'edit_image' ? 'Image edited successfully.' : 'Image generated successfully.';
+            } else if (result.type === 'audio' && result.data) {
+              artifacts.push({ type: 'audio', data: result.data, mime: result.mime || 'audio/wav' });
+              resultContent = 'Audio generated successfully.';
+            } else {
+              resultContent = result.text || 'Tool executed successfully.';
+            }
+          } catch (err: any) {
+            resultContent = `Error: ${err.message || 'Tool execution failed'}`;
+          }
+        } else {
+          resultContent = `Error: Unknown tool '${funcName}'`;
+        }
+
+        llmMessages.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: resultContent,
+        });
+
+        // Update UI with artifacts as they come in
+        const text = assistantMsg.content || '';
+        setMessages(prev => {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1] = {
+            role: 'assistant',
+            content: buildFinalContent(text, artifacts),
+          };
+          return newMessages;
+        });
+      }
+    }
+
+    // Max iterations reached — show whatever we have
+    setMessages(prev => {
+      const newMessages = [...prev];
+      newMessages[newMessages.length - 1] = {
+        role: 'assistant',
+        content: buildFinalContent('', artifacts),
+      };
+      return newMessages;
+    });
+  };
+
+  /** Build MessageContent from artifacts + text */
+  const buildFinalContent = (text: string, artifacts: Artifact[]): MessageContent => {
+    if (artifacts.length === 0) return text;
+    const contentArray: Array<TextContent | ImageContent | AudioContent> = [];
+    for (const artifact of artifacts) {
+      if (artifact.type === 'image') {
+        contentArray.push({
+          type: 'image_url',
+          image_url: { url: `data:${artifact.mime};base64,${artifact.data}` },
+        });
+      } else if (artifact.type === 'audio') {
+        contentArray.push({
+          type: 'audio',
+          audio: { data: artifact.data, mime: artifact.mime },
+        });
+      }
+    }
+    if (text) contentArray.push({ type: 'text', text });
+    return contentArray;
   };
 
   const extractThinking = (content: string): { content: string; thinking: string } => {
@@ -354,34 +608,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     let thinkingAutoExpanded = false;
     const STREAM_UPDATE_INTERVAL_MS = 33;
     const isNewModelLoad = currentLoadedModel !== chatModelName;
-    const collectedArtifacts: Array<{ type: string; data: string; mime: string }> = [];
-    let nextEventType = '';
-
-    const buildMessageContent = (text: string): MessageContent => {
-      if (collectedArtifacts.length === 0) return text;
-
-      const contentArray: Array<TextContent | ImageContent | AudioContent> = [];
-
-      for (const artifact of collectedArtifacts) {
-        if (artifact.type === 'image') {
-          contentArray.push({
-            type: 'image_url',
-            image_url: { url: `data:${artifact.mime};base64,${artifact.data}` },
-          });
-        } else if (artifact.type === 'audio') {
-          contentArray.push({
-            type: 'audio',
-            audio: { data: artifact.data, mime: artifact.mime },
-          });
-        }
-      }
-
-      if (text) {
-        contentArray.push({ type: 'text', text });
-      }
-
-      return contentArray;
-    };
 
     const flushAssistantUpdate = (force = false) => {
       const now = Date.now();
@@ -399,7 +625,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
         const messageIndex = newMessages.length - 1;
         newMessages[messageIndex] = {
           role: 'assistant',
-          content: buildMessageContent(displayContent),
+          content: displayContent,
           thinking: totalThinking || undefined,
         };
         return newMessages;
@@ -418,7 +644,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     const requestBody = buildChatRequestBody(messageHistory);
     console.log('[LLMChat] sending chat request:', {
       model: requestBody.model,
-      experience: (requestBody as any).experience,
       messageCount: requestBody.messages.length,
       stream: requestBody.stream,
     });
@@ -451,41 +676,11 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
         const lines = parts;
 
         for (const line of lines) {
-          // Track SSE event types
-          if (line.startsWith('event: ')) {
-            nextEventType = line.slice(7).trim();
-            continue;
-          }
-
           if (line.startsWith('data: ')) {
             const data = line.slice(6).trim();
-            if (data === '[DONE]' || !data) {
-              nextEventType = '';
-              continue;
-            }
+            if (data === '[DONE]' || !data) continue;
 
             try {
-              // Handle artifact events from experience mode
-              if (nextEventType === 'artifact') {
-                const artifact = JSON.parse(data);
-                collectedArtifacts.push({
-                  type: artifact.type,
-                  data: artifact.data,
-                  mime: artifact.mime,
-                });
-                // Trigger a render update so artifacts appear immediately
-                if (!receivedFirstChunk) {
-                  receivedFirstChunk = true;
-                  setCurrentLoadedModel(chatModelName);
-                  if (isNewModelLoad) {
-                    window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: selectedModel } }));
-                  }
-                }
-                flushAssistantUpdate(true);
-                nextEventType = '';
-                continue;
-              }
-
               const parsed = JSON.parse(data);
               const delta = parsed.choices?.[0]?.delta;
               const content = delta?.content;
@@ -507,8 +702,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             } catch (e) {
               console.warn('Failed to parse SSE data:', data, e);
             }
-
-            nextEventType = '';
           }
         }
       }
@@ -517,7 +710,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       reader.releaseLock();
     }
 
-    if (!accumulatedContent && collectedArtifacts.length === 0) throw new Error('No content received from stream');
+    if (!accumulatedContent) throw new Error('No content received from stream');
   };
 
   const sendMessage = async (textOverride?: string) => {
@@ -572,7 +765,11 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
 
     try {
-      await handleStreamingResponse(messageHistory);
+      if (experienceMode && lemonadeTools) {
+        await handleExperienceChat(messageHistory);
+      } else {
+        await handleStreamingResponse(messageHistory);
+      }
     } catch (error: any) {
       if (error.name === 'AbortError') {
         console.log('Request aborted - keeping partial response');
@@ -639,7 +836,11 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
 
     try {
-      await handleStreamingResponse(messageHistory);
+      if (experienceMode && lemonadeTools) {
+        await handleExperienceChat(messageHistory);
+      } else {
+        await handleStreamingResponse(messageHistory);
+      }
     } catch (error: any) {
       if (error.name === 'AbortError') {
         console.log('Request aborted - keeping partial response');
