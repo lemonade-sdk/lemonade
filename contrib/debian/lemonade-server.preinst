@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+# For migrating systemd service from /opt to /usr
+if [ -L "/usr/lib/systemd/system/lemonade-server.service" ]; then
+	deb-systemd-helper purge 'lemonade-server.service' >/dev/null || true
+	rm -f /etc/systemd/system/lemonade-server.service
+	rm -f /etc/systemd/system/*/lemonade-server.service
+	systemctl --system daemon-reload
+fi
