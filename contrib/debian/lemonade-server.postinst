@@ -14,23 +14,10 @@ if [ "$1" = "configure" ]; then
 		useradd -m -r -g lemonade -d "$new_home" -s /usr/sbin/nologin lemonade
 	fi
 
-	# Ensure target data directory exists for upgrades from legacy /opt installs.
-	mkdir -p "$new_home"
-
-	# Move all data from the legacy home and remove the old tree when done.
-	if [ -d "$legacy_home" ] && [ "$legacy_home" != "$new_home" ]; then
-		if [ -z "$(ls -A "$new_home" 2>/dev/null)" ]; then
-			rmdir "$new_home"
-			mv "$legacy_home" "$new_home"
-		else
-			cp -a "$legacy_home"/. "$new_home"/
-			rm -rf "$legacy_home"
-		fi
+	# Move all data from the legacy home
+	if [ -d "$legacy_home" ]; then
+		usermod -d "$new_home" -m lemonade >/dev/null
 	fi
-
-	# Existing users created by older packages may still point to /opt.
-	usermod -d "$new_home" lemonade
-	chown lemonade:lemonade "$new_home"
 
 	# Add lemonade user to systemd-journal group for journal access.
 	if getent group systemd-journal > /dev/null; then
@@ -42,6 +29,5 @@ if [ "$1" = "configure" ]; then
 		usermod -a -G render lemonade
 	fi
 fi
-
 
 #DEBHELPER#
