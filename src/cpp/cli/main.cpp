@@ -5,8 +5,8 @@
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/network_beacon.h>
+#include <lemon/utils/http_client.h>
 #include <CLI/CLI.hpp>
-#include <httplib.h>
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -283,29 +283,26 @@ static bool fetch_github_recipe_contents(const std::string& subpath,
         api_path += "/" + subpath;
     }
 
-    httplib::Client cli("https://api.github.com");
-    cli.set_follow_location(true);
-    cli.set_connection_timeout(3);
-    cli.set_read_timeout(10);
-
-    httplib::Headers headers = {
+    std::map<std::string, std::string> headers = {
         {"Accept", "application/vnd.github+json"},
         {"X-GitHub-Api-Version", "2022-11-28"},
         {"User-Agent", "lemonade-cli"}
     };
 
-    auto res = cli.Get(api_path.c_str(), headers);
-    if (!res) {
-        error_out = "GitHub API request failed: " + httplib::to_string(res.error());
+    lemon::utils::HttpResponse res;
+    try {
+        res = lemon::utils::HttpClient::get("https://api.github.com" + api_path, headers);
+    } catch (const std::exception& e) {
+        error_out = "GitHub API request failed: " + std::string(e.what());
         return false;
     }
-    if (res->status != 200) {
-        error_out = "GitHub API request failed with status " + std::to_string(res->status);
+    if (res.status_code != 200) {
+        error_out = "GitHub API request failed with status " + std::to_string(res.status_code);
         return false;
     }
 
     try {
-        response_out = nlohmann::json::parse(res->body);
+        response_out = nlohmann::json::parse(res.body);
     } catch (const nlohmann::json::exception& e) {
         error_out = std::string("Failed to parse GitHub API JSON: ") + e.what();
         return false;
@@ -367,60 +364,29 @@ static int prompt_numbered_choice(const std::string& title,
     return selected - 1;
 }
 
-static bool parse_https_url(const std::string& url, std::string& host_out, std::string& path_out) {
-    static const std::string prefix = "https://";
-    if (url.rfind(prefix, 0) != 0) {
-        return false;
-    }
-
-    const std::string remainder = url.substr(prefix.size());
-    size_t slash_pos = remainder.find('/');
-    if (slash_pos == std::string::npos || slash_pos == 0) {
-        return false;
-    }
-
-    host_out = remainder.substr(0, slash_pos);
-    path_out = remainder.substr(slash_pos);
-    return !host_out.empty() && !path_out.empty();
-}
-
 static bool download_recipe_to_temp_file(const std::string& download_url,
                                          std::filesystem::path& temp_file_out,
                                          std::string& error_out) {
-    std::string host;
-    std::string path;
-    if (!parse_https_url(download_url, host, path)) {
-        error_out = "Invalid recipe download URL: " + download_url;
-        return false;
-    }
-
-    httplib::Client cli("https://" + host);
-    cli.set_follow_location(true);
-    cli.set_connection_timeout(3);
-    cli.set_read_timeout(30);
-
-    auto res = cli.Get(path.c_str());
-    if (!res) {
-        error_out = "Recipe download failed: " + httplib::to_string(res.error());
-        return false;
-    }
-    if (res->status != 200) {
-        error_out = "Recipe download failed with status " + std::to_string(res->status);
-        return false;
-    }
-
     auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     temp_file_out = std::filesystem::temp_directory_path() /
         ("lemonade-recipe-" + std::to_string(timestamp) + ".json");
 
-    std::ofstream out(temp_file_out, std::ios::binary);
-    if (!out.is_open()) {
-        error_out = "Failed to create temp file for recipe download.";
+    lemon::utils::DownloadResult result;
+    try {
+        result = lemon::utils::HttpClient::download_file(download_url, temp_file_out.string());
+    } catch (const std::exception& e) {
+        error_out = "Recipe download failed: " + std::string(e.what());
         return false;
     }
-    out.write(res->body.data(), static_cast<std::streamsize>(res->body.size()));
-    out.close();
+
+    if (!result.success) {
+        error_out = "Recipe download failed: " + result.error_message;
+        if (result.http_code > 0) {
+            error_out += " (HTTP " + std::to_string(result.http_code) + ")";
+        }
+        return false;
+    }
 
     return true;
 }
