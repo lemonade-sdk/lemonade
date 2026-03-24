@@ -173,15 +173,28 @@ lemonade pull user.MyCodingModel \
 
 ## Options for import
 
-The `import` command imports a model from a JSON configuration file. This is useful for importing models with complex configurations that would be cumbersome to specify via command-line options:
+The `import` command supports two flows:
+- Import from a local JSON file.
+- Browse remote recipes from `lemonade-sdk/recipes` and import one interactively.
+
+This is useful for importing models with complex configurations that would be cumbersome to specify via command-line options:
 
 ```bash
-lemonade import JSON_FILE
+lemonade import [JSON_FILE] [options]
 ```
 
 | Option | Description | Required |
 |--------|-------------|----------|
-| `JSON_FILE` | Path to a JSON configuration file | Yes |
+| `JSON_FILE` | Path to a JSON configuration file | No |
+| `--repo-dir DIR` | Remote recipes directory to query (e.g., `claude-code`) | No |
+| `--recipe-file FILE` | Specific recipe JSON filename from the selected directory | No |
+| `--skip-prompt` | Run non-interactively (requires `--repo-dir` and `--recipe-file` for remote import) | No |
+| `--yes` | Alias for `--skip-prompt` | No |
+
+**Remote import notes:**
+- Running `lemonade import` without `JSON_FILE` starts interactive recipe browsing from GitHub.
+- You can skip recipe import during prompts and continue.
+- In non-interactive mode, you must provide both `--repo-dir` and `--recipe-file`.
 
 **JSON File Format:**
 
@@ -226,6 +239,12 @@ The JSON file must contain the following fields:
 ```bash
 # Import a model from a JSON file
 lemonade import model.json
+
+# Interactively browse and import a remote recipe
+lemonade import
+
+# Non-interactive remote import
+lemonade import --repo-dir claude-code --recipe-file GLM-4.7-Flash-GGUF-NoThinking.json --yes
 ```
 
 `model-with-multiple-checkpoints.json`:
@@ -418,22 +437,27 @@ lemonade recipes --install flm:npu
 
 ## Options for launch
 
-The `launch` command launches an agent with a model loaded. It requires an agent name and a model name, and supports recipe-specific options:
+The `launch` command launches an agent and triggers model loading asynchronously. It supports selecting/importing remote recipes during launch:
 
 ```bash
-lemonade launch AGENT --model MODEL_NAME [options]
+lemonade launch AGENT [--model MODEL_NAME] [options]
 ```
 
 | Option/Argument | Description | Required |
 |-----------------|-------------|----------|
 | `AGENT` | Agent name to launch. Supported agents: `claude`, `codex` | Yes |
-| `--model MODEL_NAME` | Model name to load before launching the agent | Yes |
+| `--model MODEL_NAME` | Model name to launch with. If omitted, you will be prompted to select one. | No |
+| `--use-recipe` | Import a recipe from `lemonade-sdk/recipes` before launch | No |
+| `--repo-dir DIR` | Remote recipes directory to use when importing a recipe | No |
+| `--recipe-file FILE` | Specific remote recipe JSON filename to import | No |
 | `--ctx-size SIZE` | Context size for the model | `4096` |
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server (must not conflict with managed args) | `""` |
 
 **Notes:**
-- The model is loaded before launching the agent
+- The model load request is asynchronous: launch starts the agent immediately while loading continues in the background.
+- If `--use-recipe` is not passed, launch prompts whether to import a recipe.
+- `--api-key` is propagated to the launched agent process.
 - Supported agents: `claude`, `codex`
 
 **Examples:**
@@ -450,6 +474,12 @@ lemonade launch codex --model Qwen3-0.6B-GGUF --llamacpp vulkan
 
 # Launch an agent with custom llama.cpp arguments
 lemonade launch claude --model Qwen3-0.6B-GGUF --ctx-size 4096 --llamacpp-args "--flash-attn on --no-mmap"
+
+# Launch and force recipe import flow
+lemonade launch claude --use-recipe
+
+# Launch with non-interactive recipe selection
+lemonade launch claude --use-recipe --repo-dir claude-code --recipe-file Qwen3.5-35B-A3B-NoThinking.json
 ```
 
 ## Options for scan
