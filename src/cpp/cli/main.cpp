@@ -833,11 +833,13 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
                  recipe_options = config.recipe_options]() {
         try {
             lemonade::LemonadeClient async_client(host, port, api_key);
-            if (async_client.load_model(model, recipe_options) != 0) {
-                std::cerr << "Async model load failed for '" << model << "'." << std::endl;
-            }
+            nlohmann::json request_body = recipe_options;
+            request_body["model_name"] = model;
+            request_body["save_options"] = false;
+            // Keep async load silent to avoid disrupting interactive agent UIs.
+            (void)async_client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json");
         } catch (const std::exception& e) {
-            std::cerr << "Async model load error for '" << model << "': " << e.what() << std::endl;
+            (void)e;
         }
     }).detach();
 
