@@ -11,6 +11,7 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <chrono>
+#include <thread>
 #include <unordered_set>
 
 #ifdef _WIN32
@@ -493,10 +494,23 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         return 1;
     }
 
-    // Preload model (and check if server reachable)
-    if (client.load_model(config.model, config.recipe_options)) {
-        return 1;
-    }
+    std::cout << "Loading model in background: " << config.model << std::endl;
+
+    // Trigger load asynchronously so launch is non-blocking for agent startup.
+    std::thread([host = config.host,
+                 port = config.port,
+                 api_key = config.api_key,
+                 model = config.model,
+                 recipe_options = config.recipe_options]() {
+        try {
+            lemonade::LemonadeClient async_client(host, port, api_key);
+            if (async_client.load_model(model, recipe_options) != 0) {
+                std::cerr << "Async model load failed for '" << model << "'." << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Async model load error for '" << model << "': " << e.what() << std::endl;
+        }
+    }).detach();
 
     std::cout << "Launching " << config.agent << "..." << std::endl;
 
