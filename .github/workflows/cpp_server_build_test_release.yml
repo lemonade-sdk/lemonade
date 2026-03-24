@@ -1271,6 +1271,8 @@ jobs:
       - test-cli-endpoints
       - test-rpm-package
     if: startsWith(github.ref, 'refs/tags/v')
+    env:
+      LEMONADE_VERSION: ${{ needs.build-lemonade-rpm.outputs.version }}
     steps:
       - name: Checkout for release notes action
         uses: actions/checkout@v4
