@@ -10,6 +10,8 @@ namespace fs = std::filesystem;
 namespace lemon_tray {
 namespace {
 
+constexpr const char* kDefaultAgentApiKey = "lemonade";
+
 std::string expand_home(const std::string& path) {
     if (path.empty() || path[0] != '~') {
         return path;
@@ -52,6 +54,85 @@ bool file_is_executable(const std::string& candidate) {
     return fs::exists(p, ec) && fs::is_regular_file(p, ec);
 }
 
+void add_windows_npm_fallbacks(std::vector<std::string>& fallback_paths,
+                               const std::string& binary_base_name) {
+#ifdef _WIN32
+    const char* appdata = std::getenv("APPDATA");
+    if (appdata) {
+        fallback_paths.push_back(std::string(appdata) + "\\npm\\" + binary_base_name + ".cmd");
+        fallback_paths.push_back(std::string(appdata) + "\\npm\\" + binary_base_name + ".exe");
+    }
+#else
+    (void)fallback_paths;
+    (void)binary_base_name;
+#endif
+}
+
+std::string build_server_base_url(const std::string& host, int port) {
+    return "http://" + host + ":" + std::to_string(port);
+}
+
+void configure_claude_agent(const std::string& base_url,
+                            const std::string& model,
+                            AgentConfig& config) {
+    config.binary_name = "claude";
+#ifdef _WIN32
+    config.binary_alternatives = {"claude.cmd", "claude.exe"};
+#else
+    config.binary_alternatives = {};
+#endif
+    config.fallback_paths = {
+        "~/.npm-global/bin/claude",
+        "/usr/local/bin/claude"
+    };
+    add_windows_npm_fallbacks(config.fallback_paths, "claude");
+
+    config.env_vars = {
+        // Claude Code sends requests to /v1/messages relative to ANTHROPIC_BASE_URL.
+        // Keep this as origin-only to avoid /v1/v1/messages.
+        {"ANTHROPIC_BASE_URL", base_url},
+        {"ANTHROPIC_API_KEY", kDefaultAgentApiKey},
+        {"ANTHROPIC_AUTH_TOKEN", kDefaultAgentApiKey},
+        {"ANTHROPIC_DEFAULT_OPUS_MODEL", model},
+        {"ANTHROPIC_DEFAULT_SONNET_MODEL", model},
+        {"ANTHROPIC_DEFAULT_HAIKU_MODEL", model},
+        {"CLAUDE_CODE_SUBAGENT_MODEL", model},
+        {"CLAUDE_CODE_ATTRIBUTION_HEADER", "0"},
+        {"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"}
+    };
+    config.extra_args = {};
+    config.install_instructions = "Install Claude Code CLI and ensure 'claude' is on PATH.";
+}
+
+void configure_codex_agent(const std::string& base_url,
+                           const std::string& model,
+                           AgentConfig& config) {
+    config.binary_name = "codex";
+#ifdef _WIN32
+    config.binary_alternatives = {"codex.cmd", "codex.exe"};
+#else
+    config.binary_alternatives = {};
+#endif
+    config.fallback_paths = {
+        "~/.npm-global/bin/codex",
+        "/usr/local/bin/codex"
+    };
+    add_windows_npm_fallbacks(config.fallback_paths, "codex");
+
+    config.env_vars = {
+        {"OPENAI_BASE_URL", base_url + "/v1/"},
+        {"OPENAI_API_KEY", kDefaultAgentApiKey}
+    };
+    config.extra_args = {
+        "--oss",
+        "-m",
+        model,
+        "--config",
+        "web_search=\"disabled\""
+    };
+    config.install_instructions = "Install Codex CLI and ensure 'codex' is on PATH.";
+}
+
 } // namespace
 
 bool build_agent_config(const std::string& agent,
@@ -60,74 +141,15 @@ bool build_agent_config(const std::string& agent,
                         const std::string& model,
                         AgentConfig& config,
                         std::string& error_message) {
-    const std::string base = "http://" + host + ":" + std::to_string(port);
+    const std::string base = build_server_base_url(host, port);
 
     if (agent == "claude") {
-        config.binary_name = "claude";
-#ifdef _WIN32
-        config.binary_alternatives = {"claude.cmd", "claude.exe"};
-#else
-        config.binary_alternatives = {};
-#endif
-        config.fallback_paths = {
-            "~/.npm-global/bin/claude",
-            "/usr/local/bin/claude"
-        };
-#ifdef _WIN32
-        const char* appdata = std::getenv("APPDATA");
-        if (appdata) {
-            config.fallback_paths.push_back(std::string(appdata) + "\\npm\\claude.cmd");
-            config.fallback_paths.push_back(std::string(appdata) + "\\npm\\claude.exe");
-        }
-#endif
-        config.env_vars = {
-            // Claude Code sends requests to /v1/messages relative to ANTHROPIC_BASE_URL.
-            // Keep this as origin-only to avoid /v1/v1/messages.
-            {"ANTHROPIC_BASE_URL", base},
-            {"ANTHROPIC_API_KEY", "lemonade"},
-            {"ANTHROPIC_AUTH_TOKEN", "lemonade"},
-            {"ANTHROPIC_DEFAULT_OPUS_MODEL", model},
-            {"ANTHROPIC_DEFAULT_SONNET_MODEL", model},
-            {"ANTHROPIC_DEFAULT_HAIKU_MODEL", model},
-            {"CLAUDE_CODE_SUBAGENT_MODEL", model},
-            {"CLAUDE_CODE_ATTRIBUTION_HEADER", "0"},
-            {"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"}
-        };
-        config.extra_args = {};
-        config.install_instructions = "Install Claude Code CLI and ensure 'claude' is on PATH.";
+    configure_claude_agent(base, model, config);
         return true;
     }
 
     if (agent == "codex") {
-        config.binary_name = "codex";
-#ifdef _WIN32
-        config.binary_alternatives = {"codex.cmd", "codex.exe"};
-#else
-        config.binary_alternatives = {};
-#endif
-        config.fallback_paths = {
-            "~/.npm-global/bin/codex",
-            "/usr/local/bin/codex"
-        };
-#ifdef _WIN32
-        const char* appdata = std::getenv("APPDATA");
-        if (appdata) {
-            config.fallback_paths.push_back(std::string(appdata) + "\\npm\\codex.cmd");
-            config.fallback_paths.push_back(std::string(appdata) + "\\npm\\codex.exe");
-        }
-#endif
-        config.env_vars = {
-            {"OPENAI_BASE_URL", base + "/v1/"},
-            {"OPENAI_API_KEY", "lemonade"}
-        };
-        config.extra_args = {
-            "--oss",
-            "-m",
-            model,
-            "--config",
-            "web_search=\"disabled\""
-        };
-        config.install_instructions = "Install Codex CLI and ensure 'codex' is on PATH.";
+    configure_codex_agent(base, model, config);
         return true;
     }
 
