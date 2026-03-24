@@ -180,8 +180,8 @@
               </div>
               <ol>
                 <li>Add the PPA:
-                  <div class="flm-code-block"><code>sudo add-apt-repository ppa:amd-team/xrt<br>sudo apt update</code></div>
-                  <span class="flm-inline-note">See <a href="https://launchpad.net/~amd-team/+archive/ubuntu/xrt" target="_blank" rel="noopener">amd-team/xrt</a> for details.</span>
+                  <div class="flm-code-block"><code>sudo add-apt-repository ppa:lemonade-team/stable<br>sudo apt update</code></div>
+                  <span class="flm-inline-note">See <a href="https://launchpad.net/~lemonade-team/+archive/ubuntu/stable" target="_blank" rel="noopener">lemonade-team/stable</a> for details.</span>
                 </li>
                 <li>Install packages:
                   <div class="flm-code-block"><code>sudo apt install libxrt-npu2 amdxdna-dkms</code></div>
@@ -193,13 +193,6 @@
                 <li>Install FLM:
                   <div class="flm-code-block"><code>sudo apt install ./&lt;flm_package.deb&gt;</code></div>
                 </li>
-                <li>Validate:
-                  <div class="flm-code-block"><code>flm validate</code></div>
-                  <div class="flm-code-block flm-sample-output">
-❮ flm validate<br>[Linux]  Kernel: 7.0.0-rc1-00052-g27936bfca73d<br>[Linux]  NPU: /dev/accel/accel0<br>[Linux]  NPU FW Version: 1.1.2.64<br>[Linux]  Memlock Limit: infinity
-                  </div>
-                </li>
-                <li>If needed, use the memlock troubleshooting notes below.</li>
               </ol>
             </div>
           </div>
@@ -211,8 +204,8 @@
               </div>
               <ol>
                 <li>Add the PPA:
-                  <div class="flm-code-block"><code>sudo add-apt-repository ppa:amd-team/xrt<br>sudo apt update</code></div>
-                  <span class="flm-inline-note">See <a href="https://launchpad.net/~amd-team/+archive/ubuntu/xrt" target="_blank" rel="noopener">amd-team/xrt</a> for details.</span>
+                  <div class="flm-code-block"><code>sudo add-apt-repository ppa:lemonade-team/stable<br>sudo apt update</code></div>
+                  <span class="flm-inline-note">See <a href="https://launchpad.net/~lemonade-team/+archive/ubuntu/stable" target="_blank" rel="noopener">lemonade-team/stable</a> for details.</span>
                 </li>
                 <li>Install packages:
                   <div class="flm-code-block"><code>sudo apt install libxrt-npu2 amdxdna-dkms</code></div>
@@ -224,13 +217,6 @@
                 <li>Install FLM:
                   <div class="flm-code-block"><code>sudo apt install ./&lt;flm_package.deb&gt;</code></div>
                 </li>
-                <li>Validate:
-                  <div class="flm-code-block"><code>flm validate</code></div>
-                  <div class="flm-code-block flm-sample-output">
-❮ flm validate<br>[Linux]  Kernel: 7.0.0-rc1-00052-g27936bfca73d<br>[Linux]  NPU: /dev/accel/accel0<br>[Linux]  NPU FW Version: 1.1.2.64<br>[Linux]  Memlock Limit: infinity
-                  </div>
-                </li>
-                <li>If needed, use the memlock troubleshooting notes below.</li>
               </ol>
             </div>
           </div>
@@ -241,32 +227,11 @@
                 <span class="flm-instruction-label">For Ubuntu 26.04</span>
               </div>
               <ol>
-                <li>Install <code>libxrt-npu2</code> from Ubuntu repos:
-                  <div class="flm-code-block"><code>sudo apt install libxrt-npu2</code></div>
-                </li>
-                <li>Add the PPA:
-                  <div class="flm-code-block"><code>sudo add-apt-repository ppa:amd-team/xrt<br>sudo apt update</code></div>
-                  <span class="flm-inline-note">See <a href="https://launchpad.net/~amd-team/+archive/ubuntu/xrt" target="_blank" rel="noopener">amd-team/xrt</a> for details.</span>
-                </li>
-                <li>Install <code>amdxdna-dkms</code>:
-                  <div class="flm-code-block"><code>sudo apt install amdxdna-dkms</code></div>
-                </li>
-                <li>Reboot:
-                  <div class="flm-code-block"><code>sudo reboot</code></div>
-                </li>
                 <li>Download FLM from <a href="https://github.com/FastFlowLM/FastFlowLM/releases" target="_blank" rel="noopener">GitHub releases</a>.</li>
                 <li>Install FLM:
                   <div class="flm-code-block"><code>sudo apt install ./&lt;flm_package.deb&gt;</code></div>
                 </li>
-                <li>Validate:
-                  <div class="flm-code-block"><code>flm validate</code></div>
-                  <div class="flm-code-block flm-sample-output">
-❮ flm validate<br>[Linux]  Kernel: 7.0.0-rc1-00052-g27936bfca73d<br>[Linux]  NPU: /dev/accel/accel0<br>[Linux]  NPU FW Version: 1.1.2.64<br>[Linux]  Memlock Limit: infinity
-                  </div>
-                </li>
-                <li>If needed, use the memlock troubleshooting notes below.</li>
               </ol>
-              <p class="flm-inline-note">These steps are only applicable until Ubuntu moves to 7.0-rc2. They will be updated after that.</p>
             </div>
           </div>
 
@@ -294,13 +259,6 @@
                 <li>Install FastFlowLM:
                   <div class="flm-code-block"><code>sudo pacman -S fastflowlm</code></div>
                 </li>
-                <li>Validate:
-                  <div class="flm-code-block"><code>flm validate</code></div>
-                  <div class="flm-code-block flm-sample-output">
-❮ flm validate<br>[Linux]  Kernel: 7.0.0-rc1-00052-g27936bfca73d<br>[Linux]  NPU: /dev/accel/accel0<br>[Linux]  NPU FW Version: 1.1.2.64<br>[Linux]  Memlock Limit: infinity
-                  </div>
-                </li>
-                <li>If needed, use the memlock troubleshooting notes below.</li>
               </ol>
             </div>
           </div>
@@ -319,13 +277,6 @@
                 <li>Build and install FLM:
                   <div class="flm-code-block"><code>cmake -S src --preset linux-default<br>ninja -C src/build<br>sudo ninja -C src/build install</code></div>
                 </li>
-                <li>Validate:
-                  <div class="flm-code-block"><code>flm validate</code></div>
-                  <div class="flm-code-block flm-sample-output">
-❮ flm validate<br>[Linux]  Kernel: 7.0.0-rc1-00052-g27936bfca73d<br>[Linux]  NPU: /dev/accel/accel0<br>[Linux]  NPU FW Version: 1.1.2.64<br>[Linux]  Memlock Limit: infinity
-                  </div>
-                </li>
-                <li>If needed, use the memlock troubleshooting notes below.</li>
               </ol>
             </div>
           </div>
@@ -334,9 +285,13 @@
         <div class="section-card" id="flm-faq-section" style="display:none;">
           <div class="section-header">
             <span class="section-kicker">Troubleshooting</span>
-            <h2 class="section-title">Common flm validate issues</h2>
-            <p>If setup does not validate, use these checks to isolate the failing layer quickly.</p>
+            <h2 class="section-title">Common issues</h2>
+            <p>If setup does not work, use these checks to isolate the failing layer quickly.</p>
           </div>
+          The first thing you should do is run <code>flm validate</code> to check your system's compatibility and identify any issues. A successful validation will look like this:
+            <div class="flm-code-block flm-sample-output">
+❮ flm validate<br>[Linux]  Kernel: 7.0.0-rc1-00052-g27936bfca73d<br>[Linux]  NPU: /dev/accel/accel0<br>[Linux]  NPU FW Version: 1.1.2.64<br>[Linux]  Memlock Limit: infinity
+            </div>
 
           <h3>1. Outdated NPU firmware</h3>
           <p>If <code>flm validate</code> reports firmware issues, ensure version <strong>1.1.0.0 or later</strong>.</p>
@@ -361,7 +316,7 @@
           <div class="flm-code-block"><pre><code>*    soft    memlock    unlimited
 *    hard    memlock    unlimited</code></pre></div>
           <p>Log out and log back in for the change to apply.</p>
-          
+
           <h3>4. AMD IOMMU disabled</h3>
           <p>If AMD IOMMU is disabled on your system, your NPU will not be detected:</p>
           <div class="flm-code-block"><code>

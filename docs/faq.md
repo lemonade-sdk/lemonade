@@ -147,9 +147,9 @@
    **Linux**
 
    Please see the official AMD guidance [here](https://rocm.docs.amd.com/en/latest/how-to/system-optimization/strixhalo.html).
-   
+
    **Windows**
-   
+
    Strix Halo PCs can have up to 128 GB of unified RAM and Windows allows the user to allocate a portion of this to dedicated GPU RAM.
 
    We suggest setting dedicated GPU RAM to `64/64 (auto)`.
@@ -235,6 +235,20 @@
    Lemonade Server allows you to use custom `llama-server` or `whisper-server` binaries instead of the bundled ones by setting environment variables to the full path of your binary.
 
    👉 [Custom Backend Binaries](./server/lemonade-server-cli.md#custom-backend-binaries)
+
+## TTS
+
+### 1. **What voices are supported?**
+
+Lemonade supports most of the voices listed in [Kokoro-82M VOICES](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md). OpenAI voices can be selected from a default list, while other voices must be entered manually via text.
+
+### 2. **Can voices be mixed?**
+
+Yes, two voices can be mixed using the following format: `af_jessica.5+af_kore.4`
+
+### 3. **I entered a voice, but no audio is playing?**
+
+Some voices are not supported yet. If you manually enter a voice name instead of selecting one from the default list, and that voice is not supported, a muted audio will be generated.
 
 ## Support & Roadmap
 

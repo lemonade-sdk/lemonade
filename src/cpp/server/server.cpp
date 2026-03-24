@@ -3589,6 +3589,8 @@ void Server::stream_download_operation(
                     event_data["total_files"] = p.total_files;
                     event_data["bytes_downloaded"] = static_cast<uint64_t>(p.bytes_downloaded);
                     event_data["bytes_total"] = static_cast<uint64_t>(p.bytes_total);
+                    event_data["total_download_size"] = static_cast<uint64_t>(p.total_download_size);
+                    event_data["bytes_previously_downloaded"] = static_cast<uint64_t>(p.bytes_previously_downloaded);
                     event_data["percent"] = p.percent;
 
                     std::string event;
@@ -3606,7 +3608,6 @@ void Server::stream_download_operation(
                 };
 
                 operation(progress_cb);
-
             } catch (const std::exception& e) {
                 std::string error_msg = e.what();
                 if (error_msg != "Download cancelled") {
@@ -3628,6 +3629,7 @@ void Server::stream_download_operation(
 void Server::handle_install(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+
         std::string recipe = request_json.value("recipe", "");
         std::string backend = request_json.value("backend", "");
         bool stream = request_json.value("stream", false);

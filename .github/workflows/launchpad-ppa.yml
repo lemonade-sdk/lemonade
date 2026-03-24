@@ -30,19 +30,19 @@ jobs:
           {
             "include": [
               {
-                "ubuntu_version": "24.04",
-                "container_tag": "ubuntu24.04",
-                "deb_codename": "noble"
+                "release": "24.04",
+                "distro": "ubuntu",
+                "codename": "noble"
               },
               {
-                "ubuntu_version": "25.10",
-                "container_tag": "ubuntu25.10",
-                "deb_codename": "questing"
+                "release": "25.10",
+                "distro": "ubuntu",
+                "codename": "questing"
               },
               {
-                "ubuntu_version": "26.04",
-                "container_tag": "ubuntu26.04",
-                "deb_codename": "resolute"
+                "release": "26.04",
+                "distro": "ubuntu",
+                "codename": "resolute"
               }
             ]
           }
@@ -59,7 +59,7 @@ jobs:
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
     container:
-      image: ghcr.io/lemonade-sdk/lemonade/build-environment:${{ matrix.container_tag }}
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:${{ matrix.distro }}${{ matrix.release }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -74,65 +74,51 @@ jobs:
       - name: Configure git safe directory
         run: git config --global --add safe.directory $(pwd)
 
-      - name: Get version from git describe
+      - name: Prepare Debian build
         id: get_version
-        run: |
-          VERSION=$(git describe --tags --always)
-          # Strip leading 'v' for Debian version compatibility
-          DEB_VERSION=$(echo "${VERSION}" | sed 's/^v//')
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "deb_version=${DEB_VERSION}" >> $GITHUB_OUTPUT
+        uses: ./.github/actions/prepare-debian-build
+        with:
+          release: ${{ matrix.release }}
+          codename: ${{ matrix.codename }}
 
       - name: Get short SHA
         id: short_sha
         run: echo "sha=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
-
-      - name: Create Debian packaging metadata
-        working-directory: ${{ github.workspace }}
-        run: |
-          mv contrib/debian .
-          sed -e "s|@@DEB_VERSION@@|${{ steps.get_version.outputs.deb_version }}~${{ matrix.ubuntu_version }}|g" \
-              -e "s|@@DEB_CODENAME@@|${{ matrix.deb_codename }}|g" \
-              -e "s|@@DEB_DATE@@|$(date -R)|g" \
-              debian/changelog.in > debian/changelog
 
       - name: Catch missing build-deps
         run: |
           apt-get update && apt-get build-dep . -y
 
       - name: Build binary package
+        id: build_binary
         if: github.event_name == 'pull_request'
-        run: |
-          dpkg-buildpackage -us -uc -b
-          mkdir -p build-output
-          mv ../*.deb build-output/ || true
-          mv ../*.buildinfo build-output/ || true
-          mv ../*.changes build-output/ || true
+        uses: ./.github/actions/build-debian-package
+        with:
+          package-type: binary
+          deb-version: ${{ steps.get_version.outputs.version }}
 
       - name: Build source package
+        id: build_source
         if: github.event_name != 'pull_request'
-        run: |
-          dpkg-buildpackage -us -uc -S -sa
-          mkdir -p source-output
-          mv ../*.dsc source-output/ || true
-          mv ../*.tar.* source-output/ || true
-          mv ../*.changes source-output/ || true
-          mv ../*.buildinfo source-output/ || true
+        uses: ./.github/actions/build-debian-package
+        with:
+          package-type: source
+          deb-version: ${{ steps.get_version.outputs.version }}
 
       - name: Upload Debian package
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: lemonade-${{ matrix.deb_codename }}-deb
-          path: build-output/*.deb
+          name: lemonade-${{ matrix.codename }}-deb
+          path: ${{ steps.build_binary.outputs.output-dir }}/*.deb
           retention-days: 30
 
       - name: Upload source package
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: lemonade-${{ matrix.deb_codename }}-source-package
-          path: source-output/*
+          name: lemonade-${{ matrix.codename }}-source-package
+          path: ${{ steps.build_source.outputs.output-dir }}/*
           retention-days: 30
 
   upload-stable:
@@ -146,7 +132,7 @@ jobs:
     uses: ./.github/workflows/upload.yml
     with:
       target: ppa:lemonade-team/stable
-      artifact: lemonade-${{ matrix.deb_codename }}-source-package
+      artifact: lemonade-${{ matrix.codename }}-source-package
     secrets: inherit
 
   upload-bleeding-edge:
@@ -160,5 +146,5 @@ jobs:
     uses: ./.github/workflows/upload.yml
     with:
       target: ppa:lemonade-team/bleeding-edge
-      artifact: lemonade-${{ matrix.deb_codename }}-source-package
+      artifact: lemonade-${{ matrix.codename }}-source-package
     secrets: inherit
