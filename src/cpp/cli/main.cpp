@@ -6,9 +6,12 @@
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/network_beacon.h>
 #include <CLI/CLI.hpp>
+#include <httplib.h>
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <cctype>
+#include <filesystem>
 #include <nlohmann/json.hpp>
 #include <chrono>
 #include <thread>
@@ -70,6 +73,11 @@ struct CliConfig {
     std::string output_file;
     bool downloaded = false;
     std::string agent;
+    bool use_recipe = false;
+    std::string repo_dir;
+    std::string recipe_file;
+    bool skip_prompt = false;
+    bool yes = false;
     int scan_duration = 30;
     bool json_output = false;
 };
@@ -222,13 +230,15 @@ static bool handle_backend_operation(const std::string& spec, const std::string&
     return true;
 }
 
-static int handle_import_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+static int import_model_from_json_file(lemonade::LemonadeClient& client,
+                                       const std::string& json_path,
+                                       std::string* imported_model_out = nullptr) {
     nlohmann::json model_data;
 
     // Load JSON from file
-    std::ifstream file(config.model);
+    std::ifstream file(json_path);
     if (!file.good()) {
-        std::cerr << "Error: Failed to open JSON file '" << config.model << "'" << std::endl;
+        std::cerr << "Error: Failed to open JSON file '" << json_path << "'" << std::endl;
         return 1;
     }
 
@@ -239,12 +249,322 @@ static int handle_import_command(lemonade::LemonadeClient& client, const CliConf
         if (!validate_and_transform_model_json(model_data)) {
             return 1;
         }
+
+        if (imported_model_out != nullptr && model_data.contains("model_name") && model_data["model_name"].is_string()) {
+            *imported_model_out = model_data["model_name"].get<std::string>();
+        }
     } catch (const nlohmann::json::exception& e) {
-        std::cerr << "Error: Failed to parse JSON file '" << config.model << "': " << e.what() << std::endl;
+        std::cerr << "Error: Failed to parse JSON file '" << json_path << "': " << e.what() << std::endl;
         return 1;
     }
 
     return client.pull_model(model_data);
+}
+
+static bool is_json_recipe_file(const nlohmann::json& entry) {
+    if (!entry.is_object()) {
+        return false;
+    }
+    if (!entry.contains("type") || !entry["type"].is_string() || entry["type"].get<std::string>() != "file") {
+        return false;
+    }
+    if (!entry.contains("name") || !entry["name"].is_string()) {
+        return false;
+    }
+    const std::string name = entry["name"].get<std::string>();
+    return name.size() >= 5 && name.substr(name.size() - 5) == ".json";
+}
+
+static bool fetch_github_recipe_contents(const std::string& subpath,
+                                         nlohmann::json& response_out,
+                                         std::string& error_out) {
+    std::string api_path = "/repos/lemonade-sdk/recipes/contents";
+    if (!subpath.empty()) {
+        api_path += "/" + subpath;
+    }
+
+    httplib::Client cli("https://api.github.com");
+    cli.set_follow_location(true);
+    cli.set_connection_timeout(3);
+    cli.set_read_timeout(10);
+
+    httplib::Headers headers = {
+        {"Accept", "application/vnd.github+json"},
+        {"X-GitHub-Api-Version", "2022-11-28"},
+        {"User-Agent", "lemonade-cli"}
+    };
+
+    auto res = cli.Get(api_path.c_str(), headers);
+    if (!res) {
+        error_out = "GitHub API request failed: " + httplib::to_string(res.error());
+        return false;
+    }
+    if (res->status != 200) {
+        error_out = "GitHub API request failed with status " + std::to_string(res->status);
+        return false;
+    }
+
+    try {
+        response_out = nlohmann::json::parse(res->body);
+    } catch (const nlohmann::json::exception& e) {
+        error_out = std::string("Failed to parse GitHub API JSON: ") + e.what();
+        return false;
+    }
+
+    if (!response_out.is_array()) {
+        error_out = "Unexpected GitHub API response shape (expected array).";
+        return false;
+    }
+    return true;
+}
+
+static int prompt_numbered_choice(const std::string& title,
+                                  const std::vector<std::string>& options,
+                                  bool allow_skip,
+                                  const std::string& skip_label) {
+    if (options.empty()) {
+        return -2;
+    }
+
+    std::cout << title << std::endl;
+    if (allow_skip) {
+        std::cout << "  0) " << skip_label << std::endl;
+    }
+    for (size_t i = 0; i < options.size(); ++i) {
+        std::cout << "  " << (i + 1) << ") " << options[i] << std::endl;
+    }
+    std::cout << "Enter number: " << std::flush;
+
+    std::string input;
+    if (!std::getline(std::cin, input)) {
+        std::cerr << "Error: Failed to read selection." << std::endl;
+        return -2;
+    }
+
+    size_t parsed_chars = 0;
+    int selected = 0;
+    try {
+        selected = std::stoi(input, &parsed_chars);
+    } catch (const std::exception&) {
+        std::cerr << "Error: Invalid selection." << std::endl;
+        return -2;
+    }
+
+    if (parsed_chars != input.size()) {
+        std::cerr << "Error: Invalid selection." << std::endl;
+        return -2;
+    }
+
+    if (allow_skip && selected == 0) {
+        return -1;
+    }
+
+    if (selected < 1 || static_cast<size_t>(selected) > options.size()) {
+        std::cerr << "Error: Selection out of range." << std::endl;
+        return -2;
+    }
+
+    return selected - 1;
+}
+
+static bool parse_https_url(const std::string& url, std::string& host_out, std::string& path_out) {
+    static const std::string prefix = "https://";
+    if (url.rfind(prefix, 0) != 0) {
+        return false;
+    }
+
+    const std::string remainder = url.substr(prefix.size());
+    size_t slash_pos = remainder.find('/');
+    if (slash_pos == std::string::npos || slash_pos == 0) {
+        return false;
+    }
+
+    host_out = remainder.substr(0, slash_pos);
+    path_out = remainder.substr(slash_pos);
+    return !host_out.empty() && !path_out.empty();
+}
+
+static bool download_recipe_to_temp_file(const std::string& download_url,
+                                         std::filesystem::path& temp_file_out,
+                                         std::string& error_out) {
+    std::string host;
+    std::string path;
+    if (!parse_https_url(download_url, host, path)) {
+        error_out = "Invalid recipe download URL: " + download_url;
+        return false;
+    }
+
+    httplib::Client cli("https://" + host);
+    cli.set_follow_location(true);
+    cli.set_connection_timeout(3);
+    cli.set_read_timeout(30);
+
+    auto res = cli.Get(path.c_str());
+    if (!res) {
+        error_out = "Recipe download failed: " + httplib::to_string(res.error());
+        return false;
+    }
+    if (res->status != 200) {
+        error_out = "Recipe download failed with status " + std::to_string(res->status);
+        return false;
+    }
+
+    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    temp_file_out = std::filesystem::temp_directory_path() /
+        ("lemonade-recipe-" + std::to_string(timestamp) + ".json");
+
+    std::ofstream out(temp_file_out, std::ios::binary);
+    if (!out.is_open()) {
+        error_out = "Failed to create temp file for recipe download.";
+        return false;
+    }
+    out.write(res->body.data(), static_cast<std::streamsize>(res->body.size()));
+    out.close();
+
+    return true;
+}
+
+static int handle_import_remote_recipe_command(lemonade::LemonadeClient& client,
+                                               const CliConfig& config,
+                                               std::string* imported_model_out,
+                                               bool allow_skip) {
+    std::string selected_dir = config.repo_dir;
+    const bool non_interactive = config.skip_prompt || config.yes;
+
+    if (non_interactive && selected_dir.empty()) {
+        std::cerr << "Error: Non-interactive mode requires --repo-dir." << std::endl;
+        return 1;
+    }
+    if (non_interactive && config.recipe_file.empty()) {
+        std::cerr << "Error: Non-interactive mode requires --recipe-file." << std::endl;
+        return 1;
+    }
+
+    if (selected_dir.empty()) {
+        nlohmann::json top_entries;
+        std::string fetch_error;
+        if (!fetch_github_recipe_contents("", top_entries, fetch_error)) {
+            std::cerr << "Error: " << fetch_error << std::endl;
+            return 1;
+        }
+
+        std::vector<std::string> dir_names;
+        for (const auto& entry : top_entries) {
+            if (entry.is_object() && entry.contains("type") && entry["type"].is_string() &&
+                entry["type"].get<std::string>() == "dir" &&
+                entry.contains("name") && entry["name"].is_string()) {
+                dir_names.push_back(entry["name"].get<std::string>());
+            }
+        }
+
+        if (dir_names.empty()) {
+            std::cerr << "Error: No recipe directories found in lemonade-sdk/recipes." << std::endl;
+            return 1;
+        }
+
+        const int dir_idx = prompt_numbered_choice(
+            "Select a recipe directory:", dir_names, allow_skip, "Continue without recipe import");
+        if (dir_idx == -1) {
+            std::cout << "Skipping recipe import." << std::endl;
+            return 0;
+        }
+        if (dir_idx < 0) {
+            return 1;
+        }
+
+        selected_dir = dir_names[static_cast<size_t>(dir_idx)];
+    }
+
+    nlohmann::json dir_entries;
+    std::string fetch_error;
+    if (!fetch_github_recipe_contents(selected_dir, dir_entries, fetch_error)) {
+        std::cerr << "Error: " << fetch_error << std::endl;
+        if (allow_skip) {
+            std::cout << "Continuing without recipe import." << std::endl;
+            return 0;
+        }
+        return 1;
+    }
+
+    std::vector<nlohmann::json> recipe_entries;
+    std::vector<std::string> recipe_names;
+    for (const auto& entry : dir_entries) {
+        if (is_json_recipe_file(entry)) {
+            recipe_entries.push_back(entry);
+            recipe_names.push_back(entry["name"].get<std::string>());
+        }
+    }
+
+    if (recipe_entries.empty()) {
+        std::cerr << "Error: No JSON recipes found in directory '" << selected_dir << "'." << std::endl;
+        if (allow_skip) {
+            std::cout << "Continuing without recipe import." << std::endl;
+            return 0;
+        }
+        return 1;
+    }
+
+    nlohmann::json selected_entry;
+    if (!config.recipe_file.empty()) {
+        bool found = false;
+        for (const auto& entry : recipe_entries) {
+            if (entry["name"].get<std::string>() == config.recipe_file) {
+                selected_entry = entry;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            std::cerr << "Error: Recipe file '" << config.recipe_file
+                      << "' not found in directory '" << selected_dir << "'." << std::endl;
+            return 1;
+        }
+    } else {
+        const int file_idx = prompt_numbered_choice(
+            "Select a recipe to import:", recipe_names, allow_skip, "Continue without recipe import");
+        if (file_idx == -1) {
+            std::cout << "Skipping recipe import." << std::endl;
+            return 0;
+        }
+        if (file_idx < 0) {
+            return 1;
+        }
+        selected_entry = recipe_entries[static_cast<size_t>(file_idx)];
+    }
+
+    if (!selected_entry.contains("download_url") || !selected_entry["download_url"].is_string()) {
+        std::cerr << "Error: Selected recipe does not expose a download URL." << std::endl;
+        return 1;
+    }
+
+    std::filesystem::path temp_file;
+    std::string download_error;
+    if (!download_recipe_to_temp_file(selected_entry["download_url"].get<std::string>(), temp_file, download_error)) {
+        std::cerr << "Error: " << download_error << std::endl;
+        if (allow_skip) {
+            std::cout << "Continuing without recipe import." << std::endl;
+            return 0;
+        }
+        return 1;
+    }
+
+    int import_result = import_model_from_json_file(client, temp_file.string(), imported_model_out);
+    std::error_code rm_ec;
+    std::filesystem::remove(temp_file, rm_ec);
+    if (rm_ec) {
+        std::cerr << "Warning: Failed to remove temp recipe file '" << temp_file.string() << "'." << std::endl;
+    }
+
+    return import_result;
+}
+
+static int handle_import_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+    if (!config.model.empty()) {
+        return import_model_from_json_file(client, config.model);
+    }
+
+    return handle_import_remote_recipe_command(client, config, nullptr, true);
 }
 
 static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
@@ -432,6 +752,32 @@ static bool resolve_model_if_missing(lemonade::LemonadeClient& client, CliConfig
     return prompt_model_selection(client, config.model, show_all);
 }
 
+static bool prompt_yes_no(const std::string& prompt, bool default_yes = false) {
+    std::cout << prompt << (default_yes ? " [Y/n]: " : " [y/N]: ") << std::flush;
+
+    std::string input;
+    if (!std::getline(std::cin, input)) {
+        return default_yes;
+    }
+
+    if (input.empty()) {
+        return default_yes;
+    }
+
+    for (char& c : input) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+
+    if (input == "y" || input == "yes") {
+        return true;
+    }
+    if (input == "n" || input == "no") {
+        return false;
+    }
+
+    return default_yes;
+}
+
 static int handle_run_command(lemonade::LemonadeClient& client, CliConfig& config) {
     if (!resolve_model_if_missing(client, config, "run", true)) {
         return 1;
@@ -465,6 +811,23 @@ static int handle_recipes_command(lemonade::LemonadeClient& client, const CliCon
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
     if (!resolve_model_if_missing(client, config, "launch", false)) {
         return 1;
+    }
+
+    bool should_import_recipe = config.use_recipe;
+    if (!config.use_recipe) {
+        should_import_recipe = prompt_yes_no("Do you want to import and use a recipe for launch?", false);
+    }
+
+    if (should_import_recipe) {
+        std::string imported_model;
+        int import_result = handle_import_remote_recipe_command(client, config, &imported_model, true);
+        if (import_result != 0) {
+            return import_result;
+        }
+        if (!imported_model.empty()) {
+            config.model = imported_model;
+            std::cout << "Using imported recipe model: " << config.model << std::endl;
+        }
     }
 
     lemon_tray::AgentConfig agent_config;
@@ -793,7 +1156,15 @@ int main(int argc, char* argv[]) {
         ->check(CLI::IsMember(VALID_LABELS));
 
     // Import options
-    import_cmd->add_option("json_file", config.model, "Path to JSON file")->required()->type_name("JSON_FILE");
+    import_cmd->add_option("json_file", config.model, "Path to JSON file")->type_name("JSON_FILE");
+    import_cmd->add_option("--repo-dir", config.repo_dir,
+        "Remote recipe directory to query (e.g., claude-code)")->type_name("DIR");
+    import_cmd->add_option("--recipe-file", config.recipe_file,
+        "Recipe JSON filename to import from the selected remote directory")->type_name("FILE");
+    import_cmd->add_flag("--skip-prompt", config.skip_prompt,
+        "Run non-interactively (requires --repo-dir and --recipe-file for remote import)");
+    import_cmd->add_flag("--yes", config.yes,
+        "Alias for --skip-prompt to support non-interactive scripting");
 
     // Delete options
     delete_cmd->add_option("model", config.model, "Model name to delete")->required()->type_name("MODEL");
@@ -821,6 +1192,12 @@ int main(int argc, char* argv[]) {
         ->type_name("AGENT")
         ->check(CLI::IsMember(SUPPORTED_AGENTS));
     launch_cmd->add_option("--model", config.model, "Model name to load")->type_name("MODEL");
+    launch_cmd->add_flag("--use-recipe", config.use_recipe,
+        "Import a recipe from the lemonade-sdk/recipes repository before launch");
+    launch_cmd->add_option("--repo-dir", config.repo_dir,
+        "Remote recipe directory to query when --use-recipe is enabled")->type_name("DIR");
+    launch_cmd->add_option("--recipe-file", config.recipe_file,
+        "Recipe JSON filename to import when --use-recipe is enabled")->type_name("FILE");
     lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
 
     // Scan options
