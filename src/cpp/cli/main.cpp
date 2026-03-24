@@ -412,61 +412,73 @@ static bool try_live_check(const std::string& host, int port, const std::string&
     }
 }
 
+// RAII wrapper for a UDP socket bound to the beacon port, used by both
+// discover_local_server_port() and handle_scan_command().
+struct BeaconListener {
+#ifdef _WIN32
+    SOCKET fd = INVALID_SOCKET;
+    bool wsa_initialized = false;
+#else
+    int fd = -1;
+#endif
+    bool valid = false;
+
+    BeaconListener(int beacon_port, int recv_timeout_ms) {
+#ifdef _WIN32
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) return;
+        wsa_initialized = true;
+        fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (fd == INVALID_SOCKET) return;
+#else
+        fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (fd < 0) return;
+#endif
+
+        int enable_broadcast = 1;
+        setsockopt(fd, SOL_SOCKET, SO_BROADCAST, (char*)&enable_broadcast, sizeof(enable_broadcast));
+
+        int reuse_addr = 1;
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse_addr, sizeof(reuse_addr));
+
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = INADDR_ANY;
+        addr.sin_port = htons(beacon_port);
+
+        if (bind(fd, (sockaddr*)&addr, sizeof(addr)) < 0) return;
+
+        struct timeval timeout;
+        timeout.tv_sec = recv_timeout_ms / 1000;
+        timeout.tv_usec = (recv_timeout_ms % 1000) * 1000;
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
+
+        valid = true;
+    }
+
+    ~BeaconListener() {
+#ifdef _WIN32
+        if (fd != INVALID_SOCKET) closesocket(fd);
+        if (wsa_initialized) WSACleanup();
+#else
+        if (fd >= 0) close(fd);
+#endif
+    }
+
+    BeaconListener(const BeaconListener&) = delete;
+    BeaconListener& operator=(const BeaconListener&) = delete;
+};
+
 // Listen for a UDP beacon from localhost and return the server's HTTP port, or 0 if none found
 static int discover_local_server_port() {
-    const int beacon_port = 8000;
-    const int max_wait_seconds = 3;
+    BeaconListener listener(8000, 250);
+    if (!listener.valid) return 0;
 
-#ifdef _WIN32
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        return 0;
-    }
-    SOCKET socket_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (socket_fd == INVALID_SOCKET) {
-        WSACleanup();
-        return 0;
-    }
-#else
-    int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (socket_fd < 0) {
-        return 0;
-    }
-#endif
-
-    int enable_broadcast = 1;
-    setsockopt(socket_fd, SOL_SOCKET, SO_BROADCAST, (char*)&enable_broadcast, sizeof(enable_broadcast));
-
-    int reuse_addr = 1;
-    setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse_addr, sizeof(reuse_addr));
-
-    sockaddr_in server_addr{};
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(beacon_port);
-
-    if (bind(socket_fd, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-#ifdef _WIN32
-        closesocket(socket_fd);
-        WSACleanup();
-#else
-        close(socket_fd);
-#endif
-        return 0;
-    }
-
-    // Short recv timeout to catch beacons promptly (beacon interval is 2s)
-    struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 250000;  // 250ms
-    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
-
-    int discovered_port = 0;
     auto start_time = std::chrono::steady_clock::now();
 
     while (true) {
         auto elapsed = std::chrono::steady_clock::now() - start_time;
-        if (std::chrono::duration_cast<std::chrono::seconds>(elapsed).count() >= max_wait_seconds) {
+        if (std::chrono::duration_cast<std::chrono::seconds>(elapsed).count() >= 3) {
             break;
         }
 
@@ -474,7 +486,7 @@ static int discover_local_server_port() {
         sockaddr_in client_addr{};
         socklen_t addr_size = sizeof(client_addr);
 
-        int bytes_received = recvfrom(socket_fd, buffer, sizeof(buffer) - 1, 0,
+        int bytes_received = recvfrom(listener.fd, buffer, sizeof(buffer) - 1, 0,
                                        (sockaddr*)&client_addr, &addr_size);
 
         if (bytes_received <= 0) {
@@ -503,11 +515,10 @@ static int discover_local_server_port() {
                         ? url.substr(port_start, port_end - port_start)
                         : url.substr(port_start);
                     try {
-                        discovered_port = std::stoi(port_str);
+                        return std::stoi(port_str);
                     } catch (...) {
                         continue;
                     }
-                    break;  // Got a valid local beacon, return immediately
                 }
             }
         } catch (const nlohmann::json::exception&) {
@@ -515,14 +526,7 @@ static int discover_local_server_port() {
         }
     }
 
-#ifdef _WIN32
-    closesocket(socket_fd);
-    WSACleanup();
-#else
-    close(socket_fd);
-#endif
-
-    return discovered_port;
+    return 0;
 }
 
 static int handle_scan_command(const CliConfig& config) {
@@ -532,57 +536,11 @@ static int handle_scan_command(const CliConfig& config) {
     std::cout << "Scanning for network beacons on port " << beacon_port << " for "
               << scan_duration_seconds << " seconds..." << std::endl;
 
-    // Create UDP socket for receiving beacons
-#ifdef _WIN32
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        std::cerr << "Error: WSAStartup failed" << std::endl;
+    BeaconListener listener(beacon_port, 1000);
+    if (!listener.valid) {
+        std::cerr << "Error: Could not bind to beacon port " << beacon_port << std::endl;
         return 1;
     }
-    SOCKET socket_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (socket_fd == INVALID_SOCKET) {
-        std::cerr << "Error: Could not create socket" << std::endl;
-        WSACleanup();
-        return 1;
-    }
-#else
-    int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (socket_fd < 0) {
-        std::cerr << "Error: Could not create socket" << std::endl;
-        return 1;
-    }
-#endif
-
-    // Set socket options for broadcast reception
-    int enable_broadcast = 1;
-    setsockopt(socket_fd, SOL_SOCKET, SO_BROADCAST, (char*)&enable_broadcast, sizeof(enable_broadcast));
-
-    // Allow multiple sockets to bind to the same port
-    int reuse_addr = 1;
-    setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse_addr, sizeof(reuse_addr));
-
-    // Bind to all interfaces on the beacon port
-    sockaddr_in server_addr{};
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(beacon_port);
-
-    if (bind(socket_fd, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        std::cerr << "Error: Could not bind to port " << beacon_port << std::endl;
-#ifdef _WIN32
-        closesocket(socket_fd);
-        WSACleanup();
-#else
-        close(socket_fd);
-#endif
-        return 1;
-    }
-
-    // Set timeout for recvfrom
-    struct timeval timeout;
-    timeout.tv_sec = 1;
-    timeout.tv_usec = 0;
-    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
 
     // Store discovered beacons (use URL as key to avoid duplicates)
     std::unordered_set<std::string> discovered_urls;
@@ -604,7 +562,7 @@ static int handle_scan_command(const CliConfig& config) {
         sockaddr_in client_addr{};
         socklen_t addr_size = sizeof(client_addr);
 
-        int bytes_received = recvfrom(socket_fd, buffer, sizeof(buffer) - 1, 0,
+        int bytes_received = recvfrom(listener.fd, buffer, sizeof(buffer) - 1, 0,
                                        (sockaddr*)&client_addr, &addr_size);
 
         if (bytes_received > 0) {
@@ -632,14 +590,6 @@ static int handle_scan_command(const CliConfig& config) {
             }
         }
     }
-
-    // Cleanup
-#ifdef _WIN32
-    closesocket(socket_fd);
-    WSACleanup();
-#else
-    close(socket_fd);
-#endif
 
     // Print summary
     std::cout << "\nScan complete. Found " << beacon_details.size() << " beacon(s):" << std::endl;
