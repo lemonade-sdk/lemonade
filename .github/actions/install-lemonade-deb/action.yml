@@ -67,6 +67,7 @@ runs:
         # Make binaries executable
         chmod +x "$EXTRACT_PATH/usr/bin/lemonade-server"
         chmod +x "$EXTRACT_PATH/usr/bin/lemonade-router"
+        chmod +x "$EXTRACT_PATH/usr/bin/lemonade" 2>/dev/null || true
 
         # Add binaries to PATH for subsequent steps
         BIN_PATH="$(pwd)/$EXTRACT_PATH/usr/bin"
@@ -98,11 +99,11 @@ runs:
         # lemonade-router logs to stdout (SinkCout), so redirect to a file for
         # the capture-server-logs action to find.
         EXTRACT_PATH="${{ inputs.extract-path }}"
-        SERVER_BIN="$EXTRACT_PATH/opt/bin/lemonade-server"
+        SERVER_BIN="$EXTRACT_PATH/usr/bin/lemonade-router"
         LOG_FILE="/tmp/lemonade-server.log"
 
         echo "Starting lemonade server (logging to $LOG_FILE)..."
-        "$SERVER_BIN" serve --no-tray > "$LOG_FILE" 2>&1 &
+        "$SERVER_BIN" > "$LOG_FILE" 2>&1 &
 
         echo "Waiting for server to be ready..."
         for i in $(seq 1 30); do
