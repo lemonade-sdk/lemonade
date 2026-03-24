@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+if [ purge = "$1" ]; then
+	# Handle the rare case "userdel" not being available, see bug #1071142.
+	if command -v userdel > /dev/null 2>&1; then
+		userdel lemonade
+	fi
+fi
+
+#DEBHELPER#

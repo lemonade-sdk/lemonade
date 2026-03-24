@@ -315,7 +315,6 @@ export async function pullModel(
   options?: {
     registrationData?: ModelRegistrationData;
     showInDownloadManager?: boolean;
-    isExportedModel?: boolean | undefined
   }
 ): Promise<void> {
   const showInDownloadManager = options?.showInDownloadManager ?? true;

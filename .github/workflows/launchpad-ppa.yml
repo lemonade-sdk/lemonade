@@ -1,0 +1,150 @@
+name: Launchpad PPA
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  prepare-matrix:
+    name: Prepare matrix
+    runs-on: ubuntu-latest
+    outputs:
+      package_matrix: ${{ steps.set-matrix.outputs.package_matrix }}
+    steps:
+      - name: Define shared matrix values
+        id: set-matrix
+        run: |
+          {
+            echo 'package_matrix<<EOF'
+            cat <<'JSON'
+          {
+            "include": [
+              {
+                "release": "24.04",
+                "distro": "ubuntu",
+                "codename": "noble"
+              },
+              {
+                "release": "25.10",
+                "distro": "ubuntu",
+                "codename": "questing"
+              },
+              {
+                "release": "26.04",
+                "distro": "ubuntu",
+                "codename": "resolute"
+              }
+            ]
+          }
+          JSON
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+  package:
+    name: Build
+    needs: prepare-matrix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:${{ matrix.distro }}${{ matrix.release }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $(pwd)
+
+      - name: Prepare Debian build
+        id: get_version
+        uses: ./.github/actions/prepare-debian-build
+        with:
+          release: ${{ matrix.release }}
+          codename: ${{ matrix.codename }}
+
+      - name: Get short SHA
+        id: short_sha
+        run: echo "sha=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Catch missing build-deps
+        run: |
+          apt-get update && apt-get build-dep . -y
+
+      - name: Build binary package
+        id: build_binary
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/build-debian-package
+        with:
+          package-type: binary
+          deb-version: ${{ steps.get_version.outputs.version }}
+
+      - name: Build source package
+        id: build_source
+        if: github.event_name != 'pull_request'
+        uses: ./.github/actions/build-debian-package
+        with:
+          package-type: source
+          deb-version: ${{ steps.get_version.outputs.version }}
+
+      - name: Upload Debian package
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-${{ matrix.codename }}-deb
+          path: ${{ steps.build_binary.outputs.output-dir }}/*.deb
+          retention-days: 30
+
+      - name: Upload source package
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-${{ matrix.codename }}-source-package
+          path: ${{ steps.build_source.outputs.output-dir }}/*
+          retention-days: 30
+
+  upload-stable:
+    name: Upload (Stable)
+    strategy:
+      matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
+    needs: [prepare-matrix, package]
+    permissions:
+      contents: read
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request' }}
+    uses: ./.github/workflows/upload.yml
+    with:
+      target: ppa:lemonade-team/stable
+      artifact: lemonade-${{ matrix.codename }}-source-package
+    secrets: inherit
+
+  upload-bleeding-edge:
+    name: Upload (Bleeding Edge)
+    strategy:
+      matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
+    needs: [prepare-matrix, package]
+    permissions:
+      contents: read
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request' }}
+    uses: ./.github/workflows/upload.yml
+    with:
+      target: ppa:lemonade-team/bleeding-edge
+      artifact: lemonade-${{ matrix.codename }}-source-package
+    secrets: inherit
