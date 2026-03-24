@@ -77,17 +77,17 @@ const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
     {"gfx1032", "gfx103X"},
     {"gfx1034", "gfx103X"},
     // Note: gfx1033, gfx1035, gfx1036 are NOT included (not confirmed as supported)
-    
+
     // RDNA3 family (gfx110X)
     {"gfx1100", "gfx110X"},
     {"gfx1101", "gfx110X"},
     {"gfx1102", "gfx110X"},
     {"gfx1103", "gfx110X"},
-    
+
     // RDNA3.5 iGPUs - explicit binary names (no family mapping)
     {"gfx1150", "gfx1150"},  // Maps to exact binary name
     {"gfx1151", "gfx1151"},  // Maps to exact binary name
-    
+
     // RDNA4 family (gfx120X)
     {"gfx1200", "gfx120X"},
     {"gfx1201", "gfx120X"},
@@ -1216,8 +1216,8 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     }
 
     // RDNA2 GPUs (gfx103X architecture)
-    // AMD Radeon RX 6800 XT, AMD Radeon RX 6800, AMD Radeon RX 6700 XT, 
-    // AMD Radeon RX 6700, AMD Radeon RX 6600 XT, AMD Radeon RX 6600, 
+    // AMD Radeon RX 6800 XT, AMD Radeon RX 6800, AMD Radeon RX 6700 XT,
+    // AMD Radeon RX 6700, AMD Radeon RX 6600 XT, AMD Radeon RX 6600,
     // AMD Radeon RX 6500 XT, AMD Radeon RX 6500
     if (device_lower.find("6800") != std::string::npos ||
         device_lower.find("6700") != std::string::npos ||
@@ -1976,6 +1976,10 @@ std::string WindowsSystemInfo::get_windows_power_setting() {
     if (rc != 0) {
         return "Windows power setting not found (command failed)";
     }
+
+    // Command output is in the system ANSI code page; convert to UTF-8
+    // so the string is safe for nlohmann::json::dump().
+    result = wmi::acp_to_utf8(result);
 
     // Extract power scheme name from parentheses
     // Output format: "Power Scheme GUID: ... (Power Scheme Name)"
