@@ -9,15 +9,19 @@ namespace backends {
 
 class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer, public IAudioServer {
 public:
+    static InstallParams get_install_params(const std::string& backend, const std::string& version);
+
     inline static const BackendSpec SPEC = BackendSpec(
         // recipe
             "flm",
         // executable
     #ifdef _WIN32
-            "flm.exe"
+            "flm.exe",
     #else
-            "flm"
+            "flm",
     #endif
+        // install_params_fn
+            &FastFlowLMServer::get_install_params
     );
 
     FastFlowLMServer(const std::string& log_level, ModelManager* model_manager = nullptr,
@@ -62,20 +66,7 @@ public:
                                    long timeout_seconds = 0) override;
 
 private:
-    // Static helpers for install logic (no instance state needed)
     static std::string get_flm_path();
-
-    // Version management
-    static std::string get_flm_required_version();
-
-    // Installation - returns true if FLM was upgraded (may invalidate existing models)
-    static bool install_flm_if_needed();
-    static bool download_flm_installer(const std::string& output_path);
-    static void run_flm_installer(const std::string& installer_path, bool silent);
-
-    // Environment management
-    static void refresh_environment_path();
-    static bool verify_flm_installation(const std::string& expected_version, int max_retries = 10);
 
     bool is_loaded_ = false;
 };

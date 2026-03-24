@@ -172,30 +172,29 @@ bool is_safe_executable_path(const std::string& path) {
 }
 
 std::string find_flm_executable() {
+    // First check the lemonade install directory (~/.lemonade/bin/flm/npu/).
+    // This is where the zip-based install extracts FLM.
+    {
+        fs::path install_dir = fs::path(get_downloaded_bin_dir()) / "flm" / "npu";
+        if (fs::exists(install_dir)) {
 #ifdef _WIN32
-    // Refresh PATH from Windows registry to pick up any changes since process started
-    // This is important because users may install FLM after starting lemonade-server
-    HKEY hKey;
-    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-                      "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
-                      0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        char buffer[32767];
-        DWORD bufferSize = sizeof(buffer);
-        if (RegQueryValueExA(hKey, "PATH", nullptr, nullptr,
-                            reinterpret_cast<LPBYTE>(buffer), &bufferSize) == ERROR_SUCCESS) {
-            std::string system_path = buffer;
-            // Combine with current process PATH (system PATH takes priority for FLM lookup)
-            const char* current_path = std::getenv("PATH");
-            if (current_path) {
-                system_path = system_path + ";" + std::string(current_path);
+            std::string binary_name = "flm.exe";
+#else
+            std::string binary_name = "flm";
+#endif
+            for (const auto& entry : fs::recursive_directory_iterator(install_dir)) {
+                if (entry.is_regular_file() && entry.path().filename() == binary_name) {
+                    std::string path = entry.path().string();
+                    if (is_safe_executable_path(path)) {
+                        return path;
+                    }
+                }
             }
-            _putenv(("PATH=" + system_path).c_str());
         }
-        RegCloseKey(hKey);
     }
 
-    // Use SearchPathA which is the same API that CreateProcessA uses internally
-    // This ensures we find the exact same executable that will be launched
+    // Fall back to searching PATH (supports legacy system-wide installs)
+#ifdef _WIN32
     char found_path[MAX_PATH];
     DWORD result = SearchPathA(
         nullptr,      // Use system PATH
@@ -458,7 +457,14 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
 
     try {
         if (!output.empty()) {
-            json j = JsonUtils::parse(output);
+            // FLM may print non-JSON lines before the JSON object,
+            // so extract just the JSON portion.
+            std::string json_str = output;
+            size_t brace_pos = output.find('{');
+            if (brace_pos != std::string::npos) {
+                json_str = output.substr(brace_pos);
+            }
+            json j = JsonUtils::parse(json_str);
             if (j.is_object()) {
                 // Check for overall status
                 bool validation_ok = false;

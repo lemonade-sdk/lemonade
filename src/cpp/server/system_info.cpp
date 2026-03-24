@@ -324,37 +324,30 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
 #endif
             }
 
+            // FLM: additional validation (version check + NPU driver validation)
+            if (recipe == "flm") {
+                std::string flm_path = utils::find_flm_executable();
+                std::string version = SystemInfo::get_flm_version();
+                std::string required = get_expected_backend_version("flm", "npu");
+                if (!required.empty()) {
+                    if (version == "unknown") {
+                        error_message = "FLM version unknown, requires " + required;
+                        return false;
+                    }
+                    if (utils::Version::parse(version) < utils::Version::parse(required)) {
+                        error_message = "FLM " + version + " installed, requires " + required;
+                        return false;
+                    }
+                }
+                if (!utils::run_flm_validate(flm_path, error_message)) {
+                    return false;
+                }
+            }
+
             return true;
         } catch (...) {
             return false;
         }
-    }
-    if (recipe == "flm") {
-        // 1. Is flm binary present?
-        std::string flm_path = utils::find_flm_executable();
-        if (flm_path.empty()) {
-            error_message = "FLM is not installed";
-            return false;
-        }
-        // 2. Is version >= required?
-        std::string version = SystemInfo::get_flm_version();
-        std::string required = get_expected_backend_version("flm", "npu");
-        if (!required.empty()) {
-            if (version == "unknown") {
-                // Can't determine version (FLM too old for --json flag) → treat as outdated
-                error_message = "FLM version unknown, requires " + required;
-                return false;
-            }
-            if (utils::Version::parse(version) < utils::Version::parse(required)) {
-                error_message = "FLM " + version + " installed, requires " + required;
-                return false;
-            }
-        }
-        // 3. Does flm validate pass?
-        if (!utils::run_flm_validate(flm_path, error_message)) {
-            return false;
-        }
-        return true;
     }
     return false;
 }
@@ -365,14 +358,16 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
     }
     auto* spec = try_get_spec_for_recipe(recipe);
     if (spec) {
+        // FLM: get version by running the binary (more reliable than version.txt
+        // since FLM may also be installed system-wide)
+        if (recipe == "flm") {
+            return SystemInfo::get_flm_version();
+        }
         std::string version_file = BackendUtils::get_installed_version_file(*spec, backend);
         if (version_file.empty()) {
             return "unknown";
         }
         return read_version_file(version_file);
-    }
-    if (recipe == "flm") {
-        return SystemInfo::get_flm_version();
     }
     return "";
 }
@@ -1514,8 +1509,15 @@ std::string SystemInfo::get_flm_version() {
     #endif
 
     // Parse JSON output: { "version": "0.9.34" }
+    // FLM may print non-JSON lines (e.g. "[FLM] Using models directory: ...")
+    // before the JSON object, so extract just the JSON portion.
     try {
-        json j = JsonUtils::parse(output);
+        std::string json_str = output;
+        size_t brace_pos = output.find('{');
+        if (brace_pos != std::string::npos) {
+            json_str = output.substr(brace_pos);
+        }
+        json j = JsonUtils::parse(json_str);
         if (j.contains("version") && j["version"].is_string()) {
             std::string version = j["version"].get<std::string>();
             // If the version doesn't start with 'v', prepend it
