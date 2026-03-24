@@ -471,9 +471,16 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
 
     // Build agent config
     if (!lemon_tray::build_agent_config(config.agent, config.host, config.port, config.model,
+                                         config.api_key,
                                          agent_config, config_error)) {
         std::cerr << "Failed to build agent config: " << config_error << std::endl;
         return 1;
+    }
+
+    if (config.api_key.empty()) {
+        std::cout << "Launch auth: no API key provided; using default agent auth token." << std::endl;
+    } else {
+        std::cout << "Launch auth: API key provided and propagated to the launched agent." << std::endl;
     }
 
     // Find agent binary

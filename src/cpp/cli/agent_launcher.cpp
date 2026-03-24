@@ -74,7 +74,10 @@ std::string build_server_base_url(const std::string& host, int port) {
 
 void configure_claude_agent(const std::string& base_url,
                             const std::string& model,
+                            const std::string& api_key,
                             AgentConfig& config) {
+    const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
+
     config.binary_name = "claude";
 #ifdef _WIN32
     config.binary_alternatives = {"claude.cmd", "claude.exe"};
@@ -91,8 +94,9 @@ void configure_claude_agent(const std::string& base_url,
         // Claude Code sends requests to /v1/messages relative to ANTHROPIC_BASE_URL.
         // Keep this as origin-only to avoid /v1/v1/messages.
         {"ANTHROPIC_BASE_URL", base_url},
-        {"ANTHROPIC_API_KEY", kDefaultAgentApiKey},
-        {"ANTHROPIC_AUTH_TOKEN", kDefaultAgentApiKey},
+        {"ANTHROPIC_API_KEY", resolved_api_key},
+        {"ANTHROPIC_AUTH_TOKEN", resolved_api_key},
+        {"LEMONADE_API_KEY", resolved_api_key},
         {"ANTHROPIC_DEFAULT_OPUS_MODEL", model},
         {"ANTHROPIC_DEFAULT_SONNET_MODEL", model},
         {"ANTHROPIC_DEFAULT_HAIKU_MODEL", model},
@@ -106,7 +110,10 @@ void configure_claude_agent(const std::string& base_url,
 
 void configure_codex_agent(const std::string& base_url,
                            const std::string& model,
+                           const std::string& api_key,
                            AgentConfig& config) {
+    const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
+
     config.binary_name = "codex";
 #ifdef _WIN32
     config.binary_alternatives = {"codex.cmd", "codex.exe"};
@@ -121,7 +128,8 @@ void configure_codex_agent(const std::string& base_url,
 
     config.env_vars = {
         {"OPENAI_BASE_URL", base_url + "/v1/"},
-        {"OPENAI_API_KEY", kDefaultAgentApiKey}
+        {"OPENAI_API_KEY", resolved_api_key},
+        {"LEMONADE_API_KEY", resolved_api_key}
     };
     config.extra_args = {
         "--oss",
@@ -139,17 +147,18 @@ bool build_agent_config(const std::string& agent,
                         const std::string& host,
                         int port,
                         const std::string& model,
+                        const std::string& api_key,
                         AgentConfig& config,
                         std::string& error_message) {
     const std::string base = build_server_base_url(host, port);
 
     if (agent == "claude") {
-    configure_claude_agent(base, model, config);
+        configure_claude_agent(base, model, api_key, config);
         return true;
     }
 
     if (agent == "codex") {
-    configure_codex_agent(base, model, config);
+        configure_codex_agent(base, model, api_key, config);
         return true;
     }
 
