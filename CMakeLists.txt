@@ -1236,31 +1236,15 @@ if(APPLE)
 endif()
 
 # ============================================================
-# CPack Configuration for .deb Package (Linux only)
+# CPack Configuration (Linux only)
 # ============================================================
 if(UNIX AND NOT APPLE)
-    set(CPACK_GENERATOR "DEB")
     set(CPACK_SET_DESTDIR ON)
     set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
     set(CPACK_PACKAGE_VENDOR "Lemonade")
     set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lemonade Local LLM Server")
     set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server with support for multiple backends including llama.cpp, FastFlowLM, and RyzenAI.")
-
-    # Debian-specific settings
-    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Lemonade Team <lemonade@amd.com>")
-    set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
-    set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
-    set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
-    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
-    set(CPACK_DEBIAN_PACKAGE_DEBUG ON)
-
-    # Installation paths - use ~/.local for user install (no sudo needed)
-    # Set via environment: cmake -DCPACK_PACKAGING_INSTALL_PREFIX=$HOME/.local ..
-    # Default to /opt to match the install prefix used by the project.
-    if(NOT DEFINED CPACK_PACKAGING_INSTALL_PREFIX)
-        set(CPACK_PACKAGING_INSTALL_PREFIX "/opt")
-    endif()
 
     # Only install our executables (not curl/development files)
     # Note: lemonade-server installation is handled in tray/CMakeLists.txt
@@ -1423,13 +1407,6 @@ if(UNIX AND NOT APPLE)
         # Full package name
         set(CPACK_PACKAGE_NAME "lemonade-server")
 
-        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libsecret-1-0, libasound2t64, fonts-katex")
-        # whisper.cpp can use ffmpeg for input audio resampling and/or
-        # transcoding, but it is not required for server startup or WAV-only
-        # transcription flows.
-        set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "ffmpeg")
-        set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
-
         # Install Electron app
         install(DIRECTORY "${ELECTRON_APP_UNPACKED_DIR}/"
             DESTINATION share/lemonade-server/app
@@ -1507,12 +1484,7 @@ if(UNIX AND NOT APPLE)
 
     else()
         set(CPACK_PACKAGE_NAME "lemonade-server")
-        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, fonts-katex")
-        set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "ffmpeg, chromium-browser | google-chrome-stable | chromium")
-        set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
     endif()
-    # Control scripts for debian package
-    set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst;${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/prerm;${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postrm")
 
     # RPM specific variables defined within
     include(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/CPackRPM.cmake)
