@@ -224,6 +224,7 @@ void signal_handler(int signal) {
 
 // SIGCHLD handler to automatically reap zombie children
 void sigchld_handler(int signal) {
+    (void)signal;
     // Reap all zombie children without blocking
     // This prevents the router process from becoming a zombie
     int status;
@@ -268,6 +269,27 @@ static bool is_process_alive_not_zombie(pid_t pid) {
     return true;
 #endif
 }
+
+#ifdef __linux__
+static bool process_name_matches(pid_t pid, const std::string& expected_name) {
+    std::ifstream comm_file("/proc/" + std::to_string(pid) + "/comm");
+    if (!comm_file.is_open()) {
+        return false;
+    }
+
+    std::string process_name;
+    std::getline(comm_file, process_name);
+    if (!process_name.empty()) {
+        size_t trim_pos = process_name.find_last_not_of("\n\r");
+        if (trim_pos == std::string::npos) {
+            process_name.clear();
+        } else {
+            process_name.erase(trim_pos + 1);
+        }
+    }
+    return process_name == expected_name;
+}
+#endif
 #endif
 
 TrayApp::TrayApp(const lemon::ServerConfig& server_config, const lemon::TrayConfig& tray_config)
@@ -1034,8 +1056,16 @@ std::pair<int, int> TrayApp::get_server_info() {
         pid_file >> pid >> port;
         pid_file.close();
 
-        // Verify the PID is still alive
-        if (getpgid(pid) != -1) {
+        bool pid_matches_router = false;
+        if (is_process_alive_not_zombie(pid)) {
+#ifdef __linux__
+            pid_matches_router = process_name_matches(pid, "lemonade-router");
+#else
+            pid_matches_router = true;
+#endif
+        }
+
+        if (pid_matches_router) {
             return {pid, port};
         }
 
@@ -1310,10 +1340,9 @@ int TrayApp::execute_pull_command() {
                 request_body["stream"] = true;
             }
 
-            httplib::Client cli = server_manager->make_http_client(86400, 30);
-
             // For local imports, use simple POST (no SSE streaming needed)
             if (local_import) {
+                httplib::Client cli = server_manager->make_http_client(86400, 30);
                 auto res = cli.Post("/api/v1/pull", request_body.dump(), "application/json");
 
                 if (!res) {
@@ -1341,8 +1370,11 @@ int TrayApp::execute_pull_command() {
             std::string error_message;
             std::string buffer;  // Buffer for partial SSE messages
 
+            std::string request_body_str = request_body.dump();
+
             httplib::Headers headers;
-            auto res = cli.Post("/api/v1/pull", headers, request_body.dump(), "application/json",
+            httplib::Client cli = server_manager->make_http_client(86400, 30);
+            auto res = cli.Post("/api/v1/pull", headers, request_body_str, "application/json",
                 [&](const char* data, size_t len) {
                     buffer.append(data, len);
 
@@ -1834,8 +1866,8 @@ static bool is_process_alive(int pid) {
 #ifdef __APPLE__
     // macOS doesn't have /proc — use kill(pid, 0) which checks existence without signaling
     return (kill(pid, 0) == 0 || errno == EPERM);
-#else
-    return std::filesystem::exists("/proc/" + std::to_string(pid));
+#elif __linux__
+    return is_process_alive_not_zombie(pid);
 #endif
 }
 

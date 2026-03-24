@@ -207,9 +207,7 @@ function renderDownload() {
 
     if (distro === 'ubuntu') {
       // Ubuntu: Show structured server + frontend installation
-      const debFile = `lemonade-server_${version}_amd64.deb`;
       const appImageFile = `Lemonade-${version}-x86_64.AppImage`;
-      const downloadUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${debFile}`;
       const appImageUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${appImageFile}`;
 
       if (downloadArea) {
@@ -217,9 +215,9 @@ function renderDownload() {
       }
       if (installCmdDiv) {
         installCmdDiv.style.display = 'block';
-        const debCommands = [
-          `wget ${downloadUrl}`,
-          `sudo apt install ./${debFile}`
+        const ppaCommands = [
+          'sudo add-apt-repository ppa:lemonade-team/stable',
+          'sudo apt install lemonade-server'
         ];
 
         let frontendSection = '';
@@ -229,17 +227,20 @@ function renderDownload() {
             <div class="lmn-install-method-header">Option 1: Web App (default, available at <a href="http://localhost:8000" target="_blank">http://localhost:8000</a>)</div>
             <div class="lmn-note">The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.</div>
 
-            <div class="lmn-install-method-header">Option 2: AppImage (portable desktop app, no installation required)</div>
+            <div class="lmn-install-method-header">Option 2: Lemonade Desktop package (web app launcher)</div>
+            <pre><code class="language-bash" id="lmn-install-desktop-block"></code></pre>
+
+            <div class="lmn-install-method-header">Option 3: AppImage (portable desktop app, no installation required)</div>
             <pre><code class="language-bash" id="lmn-install-appimage-block"></code></pre>
 
-            <div class="lmn-install-method-header">Option 3: Snap (fully sandboxed desktop app)</div>
+            <div class="lmn-install-method-header">Option 4: Snap (fully sandboxed desktop app)</div>
             <pre><code class="language-bash" id="lmn-install-snap-app-block"></code></pre>
           `;
         }
 
         installCmdDiv.innerHTML = `
           <div class="lmn-install-section-title">Step 1: Install lemonade-server</div>
-          <div class="lmn-install-method-header">Via Debian package:</div>
+          <div class="lmn-install-method-header">Via stable PPA (recommended):</div>
           <pre><code class="language-bash" id="lmn-install-pre-block"></code></pre>
           <div class="lmn-install-method-header">Or via Snap:</div>
           <pre><code class="language-bash" id="lmn-install-snap-server-block"></code></pre>
@@ -247,10 +248,10 @@ function renderDownload() {
         `;
 
         setTimeout(() => {
-          // Render deb commands
+          // Render PPA commands
           const pre = document.getElementById('lmn-install-pre-block');
           if (pre) {
-            pre.innerHTML = debCommands.map((line, idx) => {
+            pre.innerHTML = ppaCommands.map((line, idx) => {
               const safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
               return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyInstallLine(event, ${idx})">📋</button></div>`;
             }).join('');
@@ -266,6 +267,13 @@ function renderDownload() {
 
           // Render AppImage commands if App + Server selected
           if (type === 'app') {
+            const desktopPre = document.getElementById('lmn-install-desktop-block');
+            if (desktopPre) {
+              const desktopCmd = 'sudo apt install lemonade-desktop';
+              const safeLine = desktopCmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              desktopPre.innerHTML = `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyDesktopLine(event)">📋</button></div>`;
+            }
+
             const appImagePre = document.getElementById('lmn-install-appimage-block');
             if (appImagePre) {
               const appImageCommands = [
@@ -481,6 +489,20 @@ window.lmnCopyServerSnapLine = function(e) {
 window.lmnCopyAppSnapLine = function(e) {
   e.stopPropagation();
   const pre = document.getElementById('lmn-install-snap-app-block');
+  if (!pre) return;
+  const line = pre.querySelector('.lmn-command-line span');
+  if (line) {
+    navigator.clipboard.writeText(line.textContent);
+    const btn = e.currentTarget;
+    const old = btn.textContent;
+    btn.textContent = '✔';
+    setTimeout(() => { btn.textContent = old; }, 900);
+  }
+};
+
+window.lmnCopyDesktopLine = function(e) {
+  e.stopPropagation();
+  const pre = document.getElementById('lmn-install-desktop-block');
   if (!pre) return;
   const line = pre.querySelector('.lmn-command-line span');
   if (line) {
