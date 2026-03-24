@@ -1,0 +1,38 @@
+name: Prepare Debian Build
+description: Extract version from git and create Debian packaging metadata from template
+
+inputs:
+  release:
+    description: Ubuntu version (e.g., 24.04, 25.10, 26.04)
+    required: true
+  codename:
+    description: Debian codename (e.g., noble, questing, resolute)
+    required: true
+
+outputs:
+  version:
+    description: Debian version (version without leading 'v')
+    value: ${{ steps.get_version.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Get version from git describe
+      id: get_version
+      shell: bash
+      run: |
+        VERSION=$(git describe --tags --always)
+        # Strip leading 'v' for Debian version compatibility
+        DEB_VERSION=$(echo "${VERSION}" | sed 's/^v//')
+        echo "version=${DEB_VERSION}" >> $GITHUB_OUTPUT
+
+    - name: Create Debian packaging metadata
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        set -e
+        mv contrib/debian .
+        sed -e "s|@@DEB_VERSION@@|${{ steps.get_version.outputs.version }}~${{ inputs.release }}|g" \
+            -e "s|@@DEB_CODENAME@@|${{ inputs.codename }}|g" \
+            -e "s|@@DEB_DATE@@|$(date -R)|g" \
+            debian/changelog.in > debian/changelog
