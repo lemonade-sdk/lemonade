@@ -560,6 +560,32 @@ class PersistentServerCLIClientTests(unittest.TestCase):
             f"Should show error about nonexistent file: {output}",
         )
 
+    def test_067_import_remote_noninteractive_requires_repo_dir(self):
+        """Remote import should fail in non-interactive mode without --repo-dir."""
+        result = self.assertCommandFails(
+            ["import", "--skip-prompt"],
+            timeout=TIMEOUT_DEFAULT,
+        )
+        output = result.stdout + result.stderr
+        self.assertIn(
+            "--repo-dir",
+            output.lower(),
+            f"Should require --repo-dir in non-interactive mode: {output}",
+        )
+
+    def test_068_import_remote_noninteractive_requires_recipe_file(self):
+        """Remote import should fail in non-interactive mode without --recipe-file."""
+        result = self.assertCommandFails(
+            ["import", "--skip-prompt", "--repo-dir", "claude-code"],
+            timeout=TIMEOUT_DEFAULT,
+        )
+        output = result.stdout + result.stderr
+        self.assertIn(
+            "--recipe-file",
+            output.lower(),
+            f"Should require --recipe-file in non-interactive mode: {output}",
+        )
+
     # =============================================================================
     # Load Tests
     # =============================================================================
