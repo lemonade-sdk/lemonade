@@ -1060,6 +1060,14 @@ footer {
     background: rgba(255, 255, 255, 0.16);
 }
 
+.left-panel-inline-filter-btn.filter-active {
+    color: #4ade80;
+}
+
+.left-panel-inline-filter-btn.filter-active:hover {
+    color: #86efac;
+}
+
 .left-panel-filter-popover {
     position: absolute;
     top: calc(100% + 6px);
@@ -1118,6 +1126,71 @@ footer {
     border-color: rgba(255, 255, 255, 0.11);
     background: rgba(255, 255, 255, 0.075);
     color: #ffffff;
+}
+
+.filter-section-label {
+    font-size: 0.55rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: -4px;
+}
+
+.recipe-filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.recipe-chip {
+    font-size: 0.58rem;
+    padding: 3px 8px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: transparent;
+    color: #777;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.recipe-chip:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #aaa;
+}
+
+.recipe-chip.active {
+    border-color: rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.08);
+    color: #ddd;
+}
+
+.recipe-chip.state-installed.active {
+    border-color: rgba(76, 175, 80, 0.5);
+    background: rgba(76, 175, 80, 0.15);
+    color: #81c784;
+}
+
+.recipe-chip.state-available.active {
+    border-color: rgba(255, 193, 7, 0.5);
+    background: rgba(255, 193, 7, 0.15);
+    color: #ffd54f;
+}
+
+.recipe-chip.state-unsupported.active {
+    border-color: rgba(244, 67, 54, 0.4);
+    background: rgba(244, 67, 54, 0.12);
+    color: #e57373;
+}
+
+/* Inactive state hints — subtle color so unsupported is distinguishable from deselected */
+.recipe-chip.state-unsupported:not(.active) {
+    border-color: rgba(244, 67, 54, 0.2);
+    color: #a05050;
+}
+
+.recipe-chip.state-available:not(.active) {
+    border-color: rgba(255, 193, 7, 0.15);
+    color: #8a7740;
 }
 
 .model-filter-popover .organization-toggle {
@@ -1214,6 +1287,55 @@ footer {
     to { transform: rotate(360deg); }
 }
 
+.hf-pagination {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.hf-page-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    color: #aaa;
+    font-size: 0.75rem;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.hf-page-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ddd;
+}
+
+.hf-page-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.hf-page-cooldown {
+    animation: hf-cooldown-fade 2s ease-out forwards;
+}
+
+@keyframes hf-cooldown-fade {
+    0% { background: rgba(200, 60, 60, 0.4); border-color: rgba(200, 60, 60, 0.5); }
+    100% { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.1); }
+}
+
+.hf-page-label {
+    font-size: 0.6rem;
+    color: #888;
+    min-width: 14px;
+    text-align: center;
+}
+
 .hf-search-message {
     font-size: 0.68rem;
     color: #555;
@@ -1259,6 +1381,12 @@ footer {
     text-overflow: ellipsis;
     flex-shrink: 1;
     min-width: 0;
+    text-decoration: none;
+}
+
+.hf-model-name:hover {
+    color: #fff;
+    text-decoration: underline;
 }
 
 .hf-model-meta {
@@ -1290,6 +1418,49 @@ footer {
     padding: 1px 5px;
     letter-spacing: 0.2px;
     flex-shrink: 0;
+    cursor: default;
+}
+
+.hf-badge-experimental {
+    color: #c9a227;
+    border-color: rgba(201, 162, 39, 0.3);
+    background: rgba(201, 162, 39, 0.08);
+}
+
+/* HF cache provider grouping */
+.hf-provider-group {
+    margin: 0;
+}
+
+.hf-provider-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px 4px 13px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.hf-provider-header:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.hf-provider-name {
+    font-size: 0.65rem;
+    color: #d0d0d0;
+}
+
+.hf-provider-count {
+    font-size: 0.58rem;
+    color: #666;
+}
+
+.hf-provider-members {
+    padding-left: 6px;
+}
+
+.hf-provider-member {
+    padding-left: 16px;
 }
 
 .hf-quant-select {
@@ -2596,6 +2767,16 @@ input::-webkit-calendar-picker-indicator {
 .form-subsection {
     margin-top: 8px;
     padding-left: 8px;
+}
+
+.form-warning {
+    font-size: 0.75rem;
+    color: #c9a227;
+    background: rgba(201, 162, 39, 0.08);
+    border: 1px solid rgba(201, 162, 39, 0.2);
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-top: 8px;
 }
 
 .form-checkboxes {
@@ -5372,6 +5553,20 @@ input::-webkit-calendar-picker-indicator {
     font-size: 0.9rem;
     color: #aaa;
     line-height: 1.5;
+}
+
+.confirm-dialog-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: #aaa;
+    margin-bottom: 16px;
+    cursor: pointer;
+}
+
+.confirm-dialog-checkbox input {
+    cursor: pointer;
 }
 
 .confirm-dialog-actions {

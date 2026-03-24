@@ -46,14 +46,14 @@ const ConnectedBackendRow: React.FC<ConnectedBackendRowProps> = ({
   const info = statusMessage ? { ...backendInfo, message: statusMessage } : backendInfo;
 
   const onConfirmUninstall = useCallback(async (r: string, b: string) => {
-    const confirmed = await confirm({
+    const result = await confirm({
       title: 'Uninstall Backend',
       message: `Are you sure you want to uninstall ${RECIPE_DISPLAY_NAMES[r] || r} ${b}?`,
       confirmText: 'Uninstall',
       cancelText: 'Cancel',
       danger: true,
     });
-    if (confirmed) await handleUninstall(r, b);
+    if (result.confirmed) await handleUninstall(r, b);
   }, [confirm, handleUninstall]);
 
   return (

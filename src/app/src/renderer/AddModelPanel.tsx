@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSystem } from './hooks/useSystem';
+import { TASK_RECIPE_MAP } from './utils/recipeCompatibility';
 
 export interface AddModelInitialValues {
   name: string;
@@ -58,11 +59,31 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
   useEffect(() => {
     const newForm = createEmptyForm(initialValues);
     if (initialValues?.mmprojOptions && initialValues.mmprojOptions.length > 0) {
-      newForm.mmproj = initialValues.mmprojOptions[0];
+      // Prefer BF16 > F16 > F32 > first available
+      const priority = [/bf16/i, /f16/i, /f32/i];
+      let best = initialValues.mmprojOptions[0];
+      for (const pattern of priority) {
+        const match = initialValues.mmprojOptions.find(f => pattern.test(f));
+        if (match) { best = match; break; }
+      }
+      newForm.mmproj = best;
     }
     setForm(newForm);
     setError(null);
   }, [initialValues]);
+
+  // Detect recipe/name mismatch — warn when checkpoint suggests a different modality
+  const recipeMismatchWarning = useMemo(() => {
+    const checkpoint = form.checkpoint.toLowerCase();
+    const name = form.name.toLowerCase();
+    const combined = `${checkpoint} ${name}`;
+    for (const mapping of TASK_RECIPE_MAP) {
+      if (mapping.namePatterns.some(p => p.test(combined)) && form.recipe !== mapping.recipe) {
+        return `This looks like a ${mapping.label} model. The selected recipe (${RECIPE_LABELS[form.recipe] ?? form.recipe}) may not be compatible.`;
+      }
+    }
+    return null;
+  }, [form.checkpoint, form.name, form.recipe]);
 
   const handleChange = (field: string, value: string | boolean) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -252,6 +273,7 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
           </div>
         </div>
 
+        {recipeMismatchWarning && <div className="form-warning">{recipeMismatchWarning}</div>}
         {error && <div className="form-error">{error}</div>}
       </div>
 

@@ -2,6 +2,7 @@
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/aixlog.hpp>
 #include <curl/curl.h>
+#include <algorithm>
 #include <sstream>
 #include <stdexcept>
 #include <iostream>
@@ -57,6 +58,26 @@ static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow
     return 0;  // Continue transfer
 }
 
+// Header callback for capturing response headers
+static size_t header_write_callback(char* buffer, size_t size, size_t nitems, void* userdata) {
+    size_t total = size * nitems;
+    auto* resp_headers = static_cast<std::map<std::string, std::string>*>(userdata);
+    std::string line(buffer, total);
+    // Trim trailing whitespace/newlines
+    while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) line.pop_back();
+    auto colon = line.find(':');
+    if (colon != std::string::npos) {
+        std::string key = line.substr(0, colon);
+        std::string value = line.substr(colon + 1);
+        // Trim leading whitespace from value
+        while (!value.empty() && value.front() == ' ') value.erase(value.begin());
+        // Store with lowercase key for case-insensitive lookup
+        std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+        resp_headers->emplace(key, value);
+    }
+    return total;
+}
+
 HttpResponse HttpClient::get(const std::string& url,
                              const std::map<std::string, std::string>& headers) {
     CURL* curl = curl_easy_init();
@@ -70,6 +91,8 @@ HttpResponse HttpClient::get(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_write_callback);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response.headers);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, default_timeout_seconds_);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");

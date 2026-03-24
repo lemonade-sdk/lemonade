@@ -388,6 +388,83 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_system_stats(req, res);
     });
 
+    register_get("cache/models", [this](const httplib::Request&, httplib::Response& res) {
+        auto models = model_manager_->discover_hf_cache_models();
+        res.set_content(models.dump(), "application/json");
+    });
+
+    // HuggingFace search proxy — uses server-side HF_TOKEN for higher rate limits
+    register_get("hf/search", [](const httplib::Request& req, httplib::Response& res) {
+        std::string url;
+        if (req.has_param("next_url")) {
+            // Use the full cursor URL directly (for pagination)
+            url = req.get_param_value("next_url");
+        } else {
+            // Build HF API URL from query params
+            url = "https://huggingface.co/api/models?";
+            bool first = true;
+            for (const auto& param : {"search", "filter", "limit", "sort", "direction", "pipeline_tag", "author"}) {
+                if (req.has_param(param)) {
+                    if (!first) url += "&";
+                    url += std::string(param) + "=" + httplib::encode_query_component(req.get_param_value(param));
+                    first = false;
+                }
+            }
+        }
+
+        // Add HF_TOKEN if available
+        std::map<std::string, std::string> headers;
+        const char* hf_token = std::getenv("HF_TOKEN");
+        if (hf_token) {
+            headers["Authorization"] = "Bearer " + std::string(hf_token);
+        }
+
+        auto hf_res = lemon::utils::HttpClient::get(url, headers);
+
+        // Build response with rate limit info
+        nlohmann::json response;
+        response["status"] = hf_res.status_code;
+
+        if (hf_res.status_code == 200) {
+            response["data"] = nlohmann::json::parse(hf_res.body, nullptr, false);
+        } else if (hf_res.status_code == 429) {
+            response["data"] = nlohmann::json::array();
+        } else {
+            response["data"] = nlohmann::json::array();
+        }
+
+        // Parse Link header for next cursor (headers stored lowercase)
+        auto link_it = hf_res.headers.find("link");
+        if (link_it != hf_res.headers.end()) {
+            std::string link = link_it->second;
+            auto pos = link.find("<");
+            auto end = link.find(">");
+            if (pos != std::string::npos && end != std::string::npos) {
+                response["next_cursor"] = link.substr(pos + 1, end - pos - 1);
+            }
+        }
+
+        // Parse RateLimit header (headers stored lowercase)
+        auto rl_it = hf_res.headers.find("ratelimit");
+        if (rl_it != hf_res.headers.end()) {
+            response["rate_limit_header"] = rl_it->second;
+            // Parse remaining and time-to-reset: format is "api;r=123;t=45"
+            std::string rl = rl_it->second;
+            auto r_pos = rl.find("r=");
+            auto t_pos = rl.find("t=");
+            if (r_pos != std::string::npos) {
+                try { response["rate_limit_remaining"] = std::stoi(rl.substr(r_pos + 2)); } catch (...) {}
+            }
+            if (t_pos != std::string::npos) {
+                try { response["rate_limit_reset"] = std::stoi(rl.substr(t_pos + 2)); } catch (...) {}
+            }
+        }
+
+        response["authenticated"] = (hf_token != nullptr);
+
+        res.set_content(response.dump(), "application/json");
+    });
+
     register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
         handle_log_level(req, res);
     });
@@ -2660,7 +2737,10 @@ void Server::handle_delete(const httplib::Request& req, httplib::Response& res) 
             request_json["model"].get<std::string>() :
             request_json["model_name"].get<std::string>();
 
-        LOG(INFO, "Server") << "Deleting model: " << model_name << std::endl;
+        bool keep_files = request_json.value("keep_files", false);
+
+        LOG(INFO, "Server") << "Deleting model: " << model_name
+                  << (keep_files ? " (keeping files)" : "") << std::endl;
 
         // If the model is currently loaded, unload it first to release file locks
         if (router_->is_model_loaded(model_name)) {
@@ -2677,7 +2757,7 @@ void Server::handle_delete(const httplib::Request& req, httplib::Response& res) 
 
         for (int attempt = 0; attempt <= max_retries; ++attempt) {
             try {
-                model_manager_->delete_model(model_name);
+                model_manager_->delete_model(model_name, keep_files);
 
                 // Success - send response and return
                 nlohmann::json response = {
