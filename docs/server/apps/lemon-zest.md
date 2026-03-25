@@ -1,6 +1,6 @@
 # Lemon Zest
 
-Lemon Zest is a local, AI-powered image editor for object removal and inpainting. Using **Flux-2-Klein-4B** on a **Lemonade Server**, it provides a near-instant "Magic Eraser" experience — all running on your own hardware.
+[Lemon Zest](https://github.com/phqen1x/lemon-zest) is a local, AI-powered image editor for object removal and inpainting. Using **Flux-2-Klein-4B** on a **Lemonade Server**, it provides a near-instant "Magic Eraser" experience — all running on your own hardware.
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
