@@ -1,4 +1,3 @@
-#include "lemon/utils/aixlog.hpp"
 #include "lemon_cli/lemonade_client.h"
 #include "lemon_cli/model_selection.h"
 #include "lemon_cli/recipe_import.h"
@@ -33,6 +32,9 @@
     #include <fcntl.h>
     #include <unistd.h>
 #endif
+
+#include "lemon/utils/aixlog.hpp"
+
 
 static const std::vector<std::string> VALID_LABELS = {
     "coding",
