@@ -20,9 +20,10 @@ import sys
 import os
 
 # Enable ANSI escape codes on Windows
-if os.name == 'nt':
+if os.name == "nt":
     try:
         import ctypes
+
         kernel32 = ctypes.windll.kernel32
         # Enable ENABLE_VIRTUAL_TERMINAL_PROCESSING
         kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
@@ -52,7 +53,7 @@ except ImportError:
     sys.exit(1)
 
 TARGET_RATE = 16000  # Whisper expects 16kHz mono PCM16
-CHUNK_SIZE = 4096    # Samples per read at native rate (~85ms at 48kHz)
+CHUNK_SIZE = 4096  # Samples per read at native rate (~85ms at 48kHz)
 
 
 def downsample_to_16k(pcm16_bytes, native_rate):
@@ -64,7 +65,7 @@ def downsample_to_16k(pcm16_bytes, native_rate):
         return pcm16_bytes
 
     n_samples = len(pcm16_bytes) // 2
-    samples = struct.unpack(f'<{n_samples}h', pcm16_bytes)
+    samples = struct.unpack(f"<{n_samples}h", pcm16_bytes)
 
     ratio = native_rate / TARGET_RATE
     output_length = int(n_samples / ratio)
@@ -77,7 +78,7 @@ def downsample_to_16k(pcm16_bytes, native_rate):
         frac = src_idx - idx_floor
         sample = samples[idx_floor] * (1 - frac) + samples[idx_ceil] * frac
         clamped = max(-32768, min(32767, int(sample)))
-        struct.pack_into('<h', output, i * 2, clamped)
+        struct.pack_into("<h", output, i * 2, clamped)
 
     return bytes(output)
 
@@ -93,13 +94,13 @@ def transcribe_microphone(model: str, server_url: str):
         req = urllib.request.Request(
             f"{server_url}/load",
             data=json.dumps({"model_name": model}).encode(),
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(req, timeout=120) as resp:
             print(f"Model loaded: {model}")
     except Exception as e:
         print(f"Error loading model: {e}")
-        print("Make sure Lemonade Server is running: lemonade-server serve")
+        print("Make sure Lemonade Server is running: lemonade status")
         return
 
     # Get WebSocket port from /health endpoint
@@ -109,7 +110,9 @@ def transcribe_microphone(model: str, server_url: str):
             health = json.loads(resp.read().decode())
             ws_port = health.get("websocket_port")
             if not ws_port:
-                print("Error: Server did not provide websocket_port in /health response")
+                print(
+                    "Error: Server did not provide websocket_port in /health response"
+                )
                 return
             print(f"WebSocket port: {ws_port}")
     except Exception as e:
@@ -134,7 +137,7 @@ def transcribe_microphone(model: str, server_url: str):
             # Initialize microphone at its native sample rate
             pa = pyaudio.PyAudio()
             device_info = pa.get_default_input_device_info()
-            native_rate = int(device_info['defaultSampleRate'])
+            native_rate = int(device_info["defaultSampleRate"])
             print(f"Microphone native sample rate: {native_rate} Hz")
 
             stream = pa.open(
@@ -142,7 +145,7 @@ def transcribe_microphone(model: str, server_url: str):
                 channels=1,
                 rate=native_rate,
                 input=True,
-                frames_per_buffer=CHUNK_SIZE
+                frames_per_buffer=CHUNK_SIZE,
             )
 
             print("Recording... Press Ctrl+C to stop")
@@ -172,22 +175,38 @@ def transcribe_microphone(model: str, server_url: str):
                     term_width = 80
                 try:
                     async for event in conn:
-                        if event.type == "conversation.item.input_audio_transcription.delta":
-                            delta_text = getattr(event, "delta", "").replace('\n', ' ').strip()
+                        if (
+                            event.type
+                            == "conversation.item.input_audio_transcription.delta"
+                        ):
+                            delta_text = (
+                                getattr(event, "delta", "").replace("\n", " ").strip()
+                            )
                             if delta_text:
                                 # Truncate to one terminal line so \r can fully overwrite
                                 if len(delta_text) > term_width - 4:
-                                    delta_text = "..." + delta_text[-(term_width - 4):]
+                                    delta_text = "..." + delta_text[-(term_width - 4) :]
                                 print(f"\r\033[2K{delta_text}", end="", flush=True)
-                        elif event.type == "conversation.item.input_audio_transcription.completed":
-                            transcript = getattr(event, "transcript", "").replace('\n', ' ').strip()
+                        elif (
+                            event.type
+                            == "conversation.item.input_audio_transcription.completed"
+                        ):
+                            transcript = (
+                                getattr(event, "transcript", "")
+                                .replace("\n", " ")
+                                .strip()
+                            )
                             if transcript:
                                 transcripts.append(transcript)
                                 # Clear interim line, print final on its own line
                                 print(f"\r\033[2K{transcript}")
                         elif event.type == "error":
                             error = getattr(event, "error", None)
-                            msg = getattr(error, "message", "Unknown") if error else "Unknown"
+                            msg = (
+                                getattr(error, "message", "Unknown")
+                                if error
+                                else "Unknown"
+                            )
                             print(f"\nError: {msg}")
                 except asyncio.CancelledError:
                     pass
@@ -209,7 +228,10 @@ def transcribe_microphone(model: str, server_url: str):
                 try:
                     while True:
                         event = await asyncio.wait_for(conn.recv(), timeout=3)
-                        if event.type == "conversation.item.input_audio_transcription.completed":
+                        if (
+                            event.type
+                            == "conversation.item.input_audio_transcription.completed"
+                        ):
                             transcript = getattr(event, "transcript", "").strip()
                             if transcript:
                                 transcripts.append(transcript)
@@ -236,14 +258,10 @@ def main():
         description="Realtime transcription using OpenAI-compatible API"
     )
     parser.add_argument(
-        "--model",
-        default="Whisper-Tiny",
-        help="Whisper model (default: Whisper-Tiny)"
+        "--model", default="Whisper-Tiny", help="Whisper model (default: Whisper-Tiny)"
     )
     parser.add_argument(
-        "--server",
-        default="http://localhost:8000/api/v1",
-        help="REST API URL"
+        "--server", default="http://localhost:8000/api/v1", help="REST API URL"
     )
 
     args = parser.parse_args()

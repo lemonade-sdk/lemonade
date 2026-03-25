@@ -817,7 +817,7 @@
                 <li>Download <strong>Lemonade Server</strong> from <br/><a href="https://lemonade-server.ai" target="_blank">lemonade-server.ai</a></li>
                 <li>Run the installer</li>
                 <li>Start the server with multi-model support:<br>
-                    <code>lemonade-server serve --max-loaded-models 9</code></li>
+                    <code>Set LEMONADE_MAX_LOADED_MODELS=9 and restart the server</code></li>
                 <li>Open this page and click <strong>Load</strong>!<br>
                     <span style="color: var(--text-muted); font-size: 0.8em;">Models with ⬇️ will be downloaded automatically.</span></li>
             </ol>
@@ -832,7 +832,7 @@
             <p id="errorPopupMessage" style="color: var(--text-secondary); margin-bottom: 1rem;"></p>
             <p style="color: var(--text-secondary); font-size: 0.85rem;">
                 Restart the server with more slots:<br>
-                <code id="errorPopupCommand">lemonade-server serve --max-loaded-models 9</code>
+                <code id="errorPopupCommand">Set LEMONADE_MAX_LOADED_MODELS=9 and restart the server</code>
             </p>
             <button class="got-it-btn" style="background: linear-gradient(135deg, var(--accent-red) 0%, #dc2626 100%);" onclick="document.getElementById('errorPopup').style.display='none'">Got it!</button>
         </div>
@@ -1177,7 +1177,7 @@
             const command = document.getElementById('errorPopupCommand');
 
             message.textContent = `You selected ${selectedCount} models, but the server only has ${maxSlots} LLM slot${maxSlots === 1 ? '' : 's'} available.`;
-            command.textContent = `lemonade-server serve --max-loaded-models ${selectedCount}`;
+            command.textContent = `Set LEMONADE_MAX_LOADED_MODELS=${selectedCount} and restart the server`;
             popup.style.display = 'flex';
         }
 

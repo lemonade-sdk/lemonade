@@ -6,7 +6,6 @@ with Lemonade's inference backends.
 
 Usage:
     python test_ollama.py
-    python test_ollama.py --server-per-test
     python test_ollama.py --server-binary /path/to/lemonade-server
 """
 
@@ -23,7 +22,6 @@ except ImportError:
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
-    parse_args,
 )
 from utils.test_models import (
     PORT,
@@ -46,7 +44,7 @@ class OllamaTests(ServerTestBase):
 
     @classmethod
     def setUpClass(cls):
-        """Set up class - start server and ensure test model is pulled."""
+        """Set up class - verify server is running."""
         super().setUpClass()
 
     def get_ollama_client(self):
@@ -694,5 +692,4 @@ class OllamaTests(ServerTestBase):
 
 
 if __name__ == "__main__":
-    parse_args()
     run_server_tests(OllamaTests, "OLLAMA API TESTS")

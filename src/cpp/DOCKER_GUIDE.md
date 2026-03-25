@@ -28,7 +28,7 @@ docker run -d \
   -v lemonade-recipe:/root/.cache/lemonade \
   -e LEMONADE_LLAMACPP_BACKEND=cpu \
   ghcr.io/lemonade-sdk/lemonade-server:v9.1.3 \
-  ./lemonade-server serve --no-tray --host 0.0.0.0 --port 5000
+  ./lemonade-router --host 0.0.0.0 --port 5000
 ```
 
 > This will run the server on port 5000 inside the container, mapped to port 4000 on your host.
@@ -237,7 +237,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/live || exit 1
 
 # Default command: start server in headless mode
-CMD ["./lemonade-server", "serve", "--no-tray", "--host", "0.0.0.0"]
+CMD ["./lemonade-router", "--host", "0.0.0.0"]
 ```
 
 ### 2. Build the Docker Image

@@ -67,6 +67,7 @@ runs:
         # Make binaries executable
         chmod +x "$EXTRACT_PATH/usr/bin/lemonade-server"
         chmod +x "$EXTRACT_PATH/usr/bin/lemonade-router"
+        chmod +x "$EXTRACT_PATH/usr/bin/lemonade" 2>/dev/null || true
 
         # Add binaries to PATH for subsequent steps
         BIN_PATH="$(pwd)/$EXTRACT_PATH/usr/bin"
@@ -90,3 +91,38 @@ runs:
         "$EXTRACT_PATH/usr/bin/lemonade-server" --version
 
         echo "Binaries verified successfully!"
+
+    - name: Start server and wait for ready
+      shell: bash
+      run: |
+        # The .deb extract doesn't install a systemd service, so start manually.
+        # lemonade-router logs to stdout (SinkCout), so redirect to a file for
+        # the capture-server-logs action to find.
+        EXTRACT_PATH="${{ inputs.extract-path }}"
+        SERVER_BIN="$EXTRACT_PATH/usr/bin/lemonade-router"
+        LOG_FILE="/tmp/lemonade-server.log"
+
+        echo "Starting lemonade server (logging to $LOG_FILE)..."
+        "$SERVER_BIN" > "$LOG_FILE" 2>&1 &
+        SERVER_PID=$!
+
+        echo "Waiting for server to be ready (PID $SERVER_PID)..."
+        for i in $(seq 1 30); do
+          if curl -sf http://127.0.0.1:8000/live > /dev/null 2>&1; then
+            echo "Server is running and healthy"
+            exit 0
+          fi
+          # Check if process is still alive
+          if ! kill -0 $SERVER_PID 2>/dev/null; then
+            echo "ERROR: Server process (PID $SERVER_PID) exited prematurely"
+            echo "=== Server log ==="
+            cat "$LOG_FILE" 2>/dev/null || echo "(no log file)"
+            exit 1
+          fi
+          echo "Waiting for server... ($i/30)"
+          sleep 2
+        done
+        echo "ERROR: Server did not start within 60 seconds"
+        echo "=== Server log (last 50 lines) ==="
+        tail -50 "$LOG_FILE" 2>/dev/null || echo "(no log file)"
+        exit 1

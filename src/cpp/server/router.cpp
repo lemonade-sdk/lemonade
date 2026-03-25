@@ -14,15 +14,14 @@
 
 namespace lemon {
 
-Router::Router(const json& default_options, const std::string& log_level, ModelManager* model_manager,
-               int max_loaded_models, BackendManager* backend_manager)
-    : default_options_(default_options), log_level_(log_level), model_manager_(model_manager),
-      max_loaded_models_(max_loaded_models), backend_manager_(backend_manager) {
+Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManager* backend_manager)
+    : config_(config), model_manager_(model_manager), backend_manager_(backend_manager) {
 
-    if (max_loaded_models_ == -1) {
+    int max = config_->max_loaded_models();
+    if (max == -1) {
     LOG(DEBUG, "Router") << "Max loaded models per type: unlimited" << std::endl;
     } else {
-    LOG(DEBUG, "Router") << "Max loaded models per type: " << max_loaded_models_ << std::endl;
+    LOG(DEBUG, "Router") << "Max loaded models per type: " << max << std::endl;
     }
 }
 
@@ -177,19 +176,20 @@ void Router::evict_all_servers() {
 
 std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& model_info) {
     std::unique_ptr<WrappedServer> new_server;
+    std::string log_level = config_->log_level();
 
     if (model_info.recipe == "whispercpp") {
     LOG(DEBUG, "Router") << "Creating WhisperServer backend" << std::endl;
-        new_server = std::make_unique<backends::WhisperServer>(log_level_, model_manager_, backend_manager_);
+        new_server = std::make_unique<backends::WhisperServer>(log_level, model_manager_, backend_manager_);
     } else if (model_info.recipe == "kokoro") {
     LOG(DEBUG, "Router") << "Creating Kokoro backend" << std::endl;
-        new_server = std::make_unique<backends::KokoroServer>(log_level_, model_manager_, backend_manager_);
+        new_server = std::make_unique<backends::KokoroServer>(log_level, model_manager_, backend_manager_);
     } else if (model_info.recipe == "sd-cpp") {
     LOG(DEBUG, "Router") << "Creating SDServer backend" << std::endl;
-        new_server = std::make_unique<backends::SDServer>(log_level_, model_manager_, backend_manager_);
+        new_server = std::make_unique<backends::SDServer>(log_level, model_manager_, backend_manager_);
     } else if (model_info.recipe == "flm") {
     LOG(DEBUG, "Router") << "Creating FastFlowLM backend" << std::endl;
-        new_server = std::make_unique<backends::FastFlowLMServer>(log_level_, model_manager_, backend_manager_);
+        new_server = std::make_unique<backends::FastFlowLMServer>(log_level, model_manager_, backend_manager_);
     } else if (model_info.recipe == "ryzenai-llm") {
     LOG(DEBUG, "Router") << "Creating RyzenAI-Server backend" << std::endl;
 
@@ -197,12 +197,12 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     LOG(DEBUG, "Router") << "Using model path: " << model_path << std::endl;
 
         auto* ryzenai_server = new RyzenAIServer(model_info.model_name,
-                                                  log_level_ == "debug", model_manager_, backend_manager_);
+                                                  log_level == "debug", model_manager_, backend_manager_);
         ryzenai_server->set_model_path(model_path);
         new_server.reset(ryzenai_server);
     } else {
     LOG(DEBUG, "Router") << "Creating LlamaCpp backend" << std::endl;
-        new_server = std::make_unique<backends::LlamaCppServer>(log_level_, model_manager_, backend_manager_);
+        new_server = std::make_unique<backends::LlamaCppServer>(log_level, model_manager_, backend_manager_);
     }
 
     return new_server;
@@ -212,7 +212,7 @@ void Router::load_model(const std::string& model_name,
                        const ModelInfo& model_info,
                        RecipeOptions options,
                        bool do_not_upgrade) {
-    RecipeOptions default_opt = RecipeOptions(model_info.recipe, default_options_);
+    RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options());
 
     // Resolve settings: load overrides take precedence over per-model overrides which take precedence over defaults
         RecipeOptions effective_options = options.inherit(model_info.recipe_options.inherit(default_opt));
@@ -254,7 +254,7 @@ void Router::load_model(const std::string& model_name,
         DeviceType device_type = model_info.device;
 
         // Get max models for this type (same limit for all types)
-        int max_models = max_loaded_models_;
+        int max_models = config_->max_loaded_models();
 
         // NPU EXCLUSIVITY CHECK (recipe-aware rules)
         // FLM can run up to 3 concurrent NPU processes (1 LLM + 1 audio + 1 embedding)
@@ -477,13 +477,14 @@ json Router::get_all_loaded_models() const {
 }
 
 json Router::get_max_model_limits() const {
+    int max = config_->max_loaded_models();
     return {
-        {"llm", max_loaded_models_},
-        {"embedding", max_loaded_models_},
-        {"reranking", max_loaded_models_},
-        {"audio", max_loaded_models_},
-        {"image", max_loaded_models_},
-        {"tts", max_loaded_models_}
+        {"llm", max},
+        {"embedding", max},
+        {"reranking", max},
+        {"audio", max},
+        {"image", max},
+        {"tts", max}
     };
 }
 

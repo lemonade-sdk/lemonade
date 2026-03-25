@@ -5,7 +5,6 @@ Tests the /images/generations endpoint with Stable Diffusion models.
 
 Usage:
     python server_sd.py
-    python server_sd.py --server-per-test
     python server_sd.py --server-binary /path/to/lemonade-server
 
 Note: Image generation with CPU backend takes ~2-3 minutes per image at 256x256.

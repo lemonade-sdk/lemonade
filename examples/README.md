@@ -20,8 +20,8 @@ Interactive demos that work with Lemonade Server.
 ## Setup
 
 1. Install Lemonade Server from the [latest release](https://github.com/lemonade-sdk/lemonade/releases/latest)
-2. Start the server: `lemonade-server serve`
-3. Pull a model if needed (e.g., `lemonade-server-dev pull Whisper-Tiny`)
+2. The server starts automatically after installation.
+3. Pull a model if needed (e.g., `lemonade pull Whisper-Tiny`)
 
 ## Running the Examples
 

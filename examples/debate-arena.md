@@ -5,7 +5,7 @@ Debate Arena is a single-file HTML/CSS/JS web app that pits up to 9 LLMs against
 ### Quick start instructions
 
 1. Install Lemonade Server v9.0.8 or higher: https://github.com/lemonade-sdk/lemonade/releases
-2. In a terminal: `lemonade-server serve --max-loaded-models 9`
+2. Set the `LEMONADE_MAX_LOADED_MODELS` environment variable to `9` and restart the server (see [Server Configuration](../docs/server/configuration.md#environment-variables))
 3. Download https://github.com/lemonade-sdk/lemonade/blob/main/examples/llm-debate.html and open it in your web browser
 4. You can uncheck some models to save VRAM. Running all 9 requires ~32 GB.
 

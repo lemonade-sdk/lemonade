@@ -1,6 +1,6 @@
-# `lemonade` CLI (EXPERIMENTAL)
+# `lemonade` CLI
 
-The `lemonade` command-line interface (CLI) provides an HTTP client for interacting with Lemonade Server. It allows you to manage models, recipes, and backends through a simple command-line interface.
+The `lemonade` CLI is the primary tool for interacting with Lemonade Server from the terminal. It allows you to manage models, recipes, and backends through a simple command-line interface.
 
 **Contents:**
 
@@ -20,23 +20,41 @@ The `lemonade` command-line interface (CLI) provides an HTTP client for interact
 
 `lemonade` provides these utilities:
 
-| Option/Command      | Description                         |
+### Quick Start
+
+| Command             | Description                         |
 |---------------------|-------------------------------------|
-| `--help`            | Display help information. |
-| `--help-all`        | Display help information for all subcommands. |
-| `--version`         | Print the `lemonade` CLI version. |
-| `status`            | Check if server can be reached. If it is, prints server information. |
+| `run MODEL_NAME`    | Load a model for inference and open the web app in the browser. See command options [below](#options-for-run). |
+| `launch AGENT`      | Launch an agent with a model. See command options [below](#options-for-launch). |
+
+### Server
+
+| Command             | Description                         |
+|---------------------|-------------------------------------|
+| `status`            | Check if server can be reached. If it is, prints server information. Use `--json` for machine-readable output. |
+| `logs`              | Open server logs in the web UI. |
+| `recipes`           | List available recipes and backends. Use `--install` or `--uninstall` to manage backends. |
+| `scan`              | Scan for network beacons on the local network. See command options [below](#options-for-scan). |
+
+### Model Management
+
+| Command             | Description                         |
+|---------------------|-------------------------------------|
 | `list`              | List all available models. |
 | `pull MODEL_NAME`   | Download and install a model. See command options [below](#options-for-pull). |
 | `import JSON_FILE`  | Import a model from a JSON configuration file. See command options [below](#options-for-import). |
 | `delete MODEL_NAME` | Delete a model and its files from local storage. |
 | `load MODEL_NAME`   | Load a model for inference. See command options [below](#options-for-load). |
-| `run MODEL_NAME`    | Load a model for inference and open the web app in the browser. See command options [below](#options-for-run). |
 | `unload [MODEL_NAME]` | Unload a model. If no model name is provided, unload all loaded models. |
-| `recipes`           | List available recipes and backends. Use `--install` or `--uninstall` to manage backends. |
 | `export MODEL_NAME` | Export model information to JSON format. See command options [below](#options-for-export). |
-| `launch AGENT`      | Launch an agent with a model. See command options [below](#options-for-launch). |
-| `scan`              | Scan for network beacons on the local network. See command options [below](#options-for-scan). |
+
+### Global Flags
+
+| Flag                | Description                         |
+|---------------------|-------------------------------------|
+| `--help`            | Display help information. |
+| `--help-all`        | Display help information for all subcommands. |
+| `--version`         | Print the `lemonade` CLI version. |
 
 ## Global Options
 
@@ -464,4 +482,4 @@ lemonade scan --duration 5
 
 ## Next Steps
 
-The [Lemonade Server API documentation](../server_spec.md) provides more information about the endpoints that the CLI interacts with. For details on model formats and recipes, see the [custom model guide](./custom-models.md).
+The [Lemonade Server API documentation](./server/server_spec.md) provides more information about the endpoints that the CLI interacts with. For details on model formats and recipes, see the [custom model guide](./server/custom-models.md).

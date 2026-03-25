@@ -13,23 +13,23 @@ The first part of this guide contains instructions that are common for both inte
 
 ### Identifying Existing Installation
 
-To identify if Lemonade Server is installed on a system, you can use the [`lemonade-server` CLI command](./lemonade-server-cli.md), which is added to path when using our installer. This is a reliable method to:
+To identify if Lemonade Server is installed on a system, you can use the [`lemonade` CLI](../lemonade-cli.md), which is added to PATH when using our installer. This is a reliable method to:
 
 - Verify if the server is installed.
 - Check which version is currently available by running the command below.
 
 ```
-lemonade-server --version
+lemonade --version
 ```
 
->Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (lemonade-server-minimal.msi), Debian Installer (lemonade-server_<VERSION>_amd64.deb), or macOS Installer (Lemonade-<VERSION>-Darwin.pkg).
+>Note: The `lemonade` CLI is added to PATH when using the Windows Installer (lemonade-server-minimal.msi), Debian Installer (lemonade-server_<VERSION>_amd64.deb), or macOS Installer (Lemonade-<VERSION>-Darwin.pkg).
 
 ### Checking Server Status
 
-To identify whether or not the server is running anywhere on the system you may use the `status` command of `lemonade-server`.
+To identify whether or not the server is running anywhere on the system you may use the `status` command:
 
 ```
-lemonade-server status
+lemonade status
 ```
 
 This command will return either `Server is not running` or `Server is running on port <PORT>`.
@@ -65,17 +65,17 @@ The recommended way of directing users to the installer is pointing users to htt
 If you want to install models on behalf of your users, the following tools are available:
 
 - LLMs that are already available in lemonade:
-  - Run `lemonade-server list`.
+  - Run `lemonade list`.
   - Use the [models endpoint](./server_spec.md#get-apiv1models).
   - [A human-readable list of supported models](https://lemonade-server.ai/models.html). Do not modify this file in an existing install (see `user_models.json` below).
   - [A JSON file that defines the list of built-in models](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/server_models.json).
-  - `lemonade-server pull MODEL` on the command line interface.
+  - `lemonade pull MODEL` on the command line interface.
 
 - Adding new LLMs:
 
   - The `user_models.json` file is similar to `server_models.json` (see above), but contains a user-specific registry that persists across lemonade updates. It is located at `$LEMONADE_CACHE_DIR/user_models.json`, which defaults to `~/.cache/lemonade/user_models.json`. For a full template and field reference, see the [Custom Model Configuration Guide](./custom-models.md).
   - [The `pull` endpoint in the server](./server_spec.md#post-apiv1pull) automates the process of registering models into `user_models.json` and downloading them.
-  - The `lemonade-server pull` CLI command can also register and download new models, see [Options for pull](./lemonade-server-cli.md#options-for-pull).
+  - The `lemonade pull` CLI command can also register and download new models, see [Options for pull](../lemonade-cli.md#options-for-pull).
 
 
 ## Stand-Alone Server Integration
@@ -84,32 +84,26 @@ Some apps might prefer to be responsible for installing and managing Lemonade Se
 
 Definitions:
 
-- Command line usage allows the server process to be launched programmatically, so that your application can manage starting and stopping the server process on your user's behalf.
 - "Silent installation" refers to an automatic command for installing Lemonade Server without running any GUI or prompting the user for any questions. It does assume that the end-user fully accepts the license terms, so be sure that your own application makes this clear to the user.
 
-### Command Line Invocation
+### Server Lifecycle
 
-This command line invocation starts the Lemonade Server process so that your application can connect to it via REST API endpoints. To start the server, simply run the command below.
-
-```bash
-lemonade-server serve
-```
-
-By default, the server runs on port 8000. Optionally, you can specify a custom port using the --port argument:
+Lemonade Server auto-starts with the OS after installation. To verify the server is running:
 
 ```bash
-lemonade-server serve --port 8123
+lemonade status
 ```
 
-You can also prevent the server from showing a system tray icon by using the `--no-tray` flag:
+Or use the HTTP health endpoint: `GET /api/v1/health`.
+
+For custom configuration (host, port, etc.), see [Server Configuration](./configuration.md).
+
+On Linux, service control is available via systemd:
 
 ```bash
-lemonade-server serve --no-tray
+sudo systemctl restart lemonade-server
+sudo systemctl status lemonade-server
 ```
-
-You can also run the server as a background process using a subprocess or any preferred method.
-
-To stop the server, you may use the `lemonade-server stop` command, or simply terminate the process you created by keeping track of its PID. Please do not run the `lemonade-server stop` command if your application has not started the server, as the server may be used by other applications.
 
 ## Windows Installation
 
@@ -233,48 +227,14 @@ sudo journalctl -u lemonade-server -f
 
 **Configuration:**
 
-The Lemonade Server systemd service reads configuration in this order:
-
-- `/etc/lemonade/lemonade.conf`
-- `/etc/lemonade/conf.d/*.conf`
-
-Use `/etc/lemonade/lemonade.conf` for base settings, add local overrides as numbered drop-ins under `/etc/lemonade/conf.d/`, and keep secrets like `LEMONADE_API_KEY` in `/etc/lemonade/conf.d/zz-secrets.conf`.
-
-Edit the base configuration file:
+Edit `/etc/lemonade/lemonade.conf` to customize server behavior (environment variables like `LEMONADE_PORT`, `LEMONADE_LOG_LEVEL`, etc.), then restart:
 
 ```bash
 sudo nano /etc/lemonade/lemonade.conf
-```
-
-Create a drop-in override file:
-
-```bash
-sudo nano /etc/lemonade/conf.d/50-local.conf
-```
-
-Secrets, like `LEMONADE_API_KEY`, are defined in `/etc/lemonade/conf.d/zz-secrets.conf`:
-
-```bash
-sudo nano /etc/lemonade/conf.d/zz-secrets.conf
-```
-
-Using `/etc/lemonade/conf.d/` for local overrides keeps them separate from the package-provided base config and is the recommended path for persistent customization.
-
-After making changes to the configuration files, restart the service for changes to take effect:
-
-```bash
 sudo systemctl restart lemonade-server
 ```
 
-**Service File Location:**
-
-The systemd service file is located at `/etc/systemd/system/lemonade-server.service`. This file should not be edited directly as it may be overwritten during package updates. Instead, use `/etc/lemonade/lemonade.conf` and `/etc/lemonade/conf.d/*.conf` to customize server behavior.
-
-If you need to make persistent changes to the service file, use systemd's drop-in override mechanism:
-
-```bash
-sudo systemctl edit lemonade-server
-```
+For the full list of environment variables and advanced configuration options, see [Server Configuration](./configuration.md).
 
 This creates an override file that takes precedence over the original service file and persists across updates.
 
@@ -298,7 +258,7 @@ sudo installer -pkg Lemonade-<VERSION>-Darwin.pkg -target /
 sudo installer -pkg Lemonade-<VERSION>-Darwin.pkg -target /
 ```
 
-The macOS installer places binaries in `/usr/local/bin`, so `lemonade-server` is available in PATH immediately after installation.
+The macOS installer places binaries in `/usr/local/bin`, so `lemonade` is available in PATH immediately after installation.
 
 > **Note:** macOS support is currently in beta. The llama.cpp backend with Metal acceleration is supported on Apple Silicon Macs.
 

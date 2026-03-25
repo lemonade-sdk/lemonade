@@ -3,6 +3,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/version_utils.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/process_manager.h"
 #include "lemon/backends/backend_utils.h"
 #include <filesystem>
 #include <fstream>
@@ -1107,25 +1108,21 @@ static std::string read_version_file(const fs::path& version_file) {
 }
 
 std::string SystemInfo::get_system_llamacpp_version() {
+    std::string output;
     #ifdef _WIN32
-    FILE* pipe = _popen("llama-server --version 2>NUL", "r");
+    std::string command = "llama-server --version 2>NUL";
+    int rc = lemon::utils::ProcessManager::run_command(command, output);
     #else
     FILE* pipe = popen("llama-server --version 2>/dev/null", "r");
-    #endif
-
     if (!pipe) {
         return "unknown";
     }
 
     char buffer[256];
-    std::string output;
     if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output = buffer;
     }
 
-    #ifdef _WIN32
-    _pclose(pipe);
-    #else
     pclose(pipe);
     #endif
 
@@ -1489,27 +1486,22 @@ std::string SystemInfo::get_flm_version() {
         return "unknown";
     }
 
+    std::string output;
     #ifdef _WIN32
     std::string command = "\"" + flm_path + "\" version --json 2>NUL";
-    FILE* pipe = _popen(command.c_str(), "r");
+    int rc = lemon::utils::ProcessManager::run_command(command, output);
     #else
     std::string command = "\"" + flm_path + "\" version --json 2>/dev/null";
     FILE* pipe = popen(command.c_str(), "r");
-    #endif
-
     if (!pipe) {
         return "unknown";
     }
 
     char buffer[256];
-    std::string output;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output += buffer;
     }
 
-    #ifdef _WIN32
-    _pclose(pipe);
-    #else
     pclose(pipe);
     #endif
 
@@ -1805,17 +1797,11 @@ std::string WindowsSystemInfo::get_npu_power_mode() {
     // Execute xrt-smi examine -r platform
     std::string command = "\"" + xrt_smi_path + "\" examine -r platform 2>NUL";
 
-    FILE* pipe = _popen(command.c_str(), "r");
-    if (!pipe) {
+    std::string result;
+    int rc = lemon::utils::ProcessManager::run_command(command, result);
+    if (rc != 0) {
         return "Unknown";
     }
-
-    char buffer[128];
-    std::string result;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
-    }
-    _pclose(pipe);
 
     // Parse output for "Mode" line
     std::istringstream iss(result);
@@ -1984,17 +1970,12 @@ std::string WindowsSystemInfo::get_max_clock_speed() {
 
 std::string WindowsSystemInfo::get_windows_power_setting() {
     // Execute powercfg /getactivescheme
-    FILE* pipe = _popen("powercfg /getactivescheme 2>NUL", "r");
-    if (!pipe) {
+    std::string result;
+    std::string command = "powercfg /getactivescheme 2>NUL";
+    int rc = lemon::utils::ProcessManager::run_command(command, result);
+    if (rc != 0) {
         return "Windows power setting not found (command failed)";
     }
-
-    char buffer[256];
-    std::string result;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
-    }
-    _pclose(pipe);
 
     // Extract power scheme name from parentheses
     // Output format: "Power Scheme GUID: ... (Power Scheme Name)"
@@ -2025,17 +2006,21 @@ double WindowsSystemInfo::get_gpu_vram_dxdiag(const std::string& gpu_name) {
         GetTempPathA(MAX_PATH, temp_dir);
         GetTempFileNameA(temp_dir, "dxd", 0, temp_path);
 
-        // Run dxdiag /t temp_path
-        std::string command = "dxdiag /t \"" + std::string(temp_path) + "\" 2>NUL";
-        int result = system(command.c_str());
-
-        if (result != 0) {
+        // Run dxdiag /t temp_path (use CreateProcess to avoid console window flash)
+        std::string command = "dxdiag /t \"" + std::string(temp_path) + "\"";
+        STARTUPINFOA si = {};
+        si.cb = sizeof(si);
+        PROCESS_INFORMATION pi = {};
+        if (!CreateProcessA(nullptr, const_cast<char*>(command.c_str()),
+                           nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+                           nullptr, nullptr, &si, &pi)) {
             DeleteFileA(temp_path);
             return 0.0;
         }
-
-        // Wait a bit for dxdiag to finish writing (it can take a few seconds)
-        Sleep(3000);
+        // Wait for dxdiag to finish (up to 10s)
+        WaitForSingleObject(pi.hProcess, 10000);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
 
         // Read the file
         std::ifstream file(temp_path);

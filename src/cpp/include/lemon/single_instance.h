@@ -1,10 +1,9 @@
 #pragma once
 
 #include <string>
-#include "lemon/system_info.h"
+
 #ifdef _WIN32
 #include <windows.h>
-#include <tlhelp32.h>
 #else
 #include <fcntl.h>
 #include <unistd.h>
@@ -65,7 +64,7 @@ public:
     }
 
 #ifdef _WIN32
-    // Windows-specific: Find and activate existing window
+    // Find and activate existing window
     static bool ActivateExistingInstance(const std::string& window_title) {
         HWND existing = FindWindowA(NULL, window_title.c_str());
         if (existing) {

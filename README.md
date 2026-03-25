@@ -66,34 +66,34 @@ Apps like [n8n](https://n8n.io/integrations/lemonade-model/), [VS Code Copilot](
 To run and chat with Gemma 3:
 
 ```
-lemonade-server run Gemma-3-4b-it-GGUF
+lemonade run Gemma-3-4b-it-GGUF
 ```
 
 More modalities:
 
 ```
 # image gen
-lemonade-server run SDXL-Turbo
+lemonade run SDXL-Turbo
 
 # speech gen
-lemonade-server run kokoro-v1
+lemonade run kokoro-v1
 
 # transcription
-lemonade-server run Whisper-Large-v3-Turbo
+lemonade run Whisper-Large-v3-Turbo
 ```
 
 To see models availables and download them:
 
 ```
-lemonade-server list
+lemonade list
 
-lemonade-server pull Gemma-3-4b-it-GGUF
+lemonade pull Gemma-3-4b-it-GGUF
 ```
 
 To see the backends available on your PC:
 
 ```
-lemonade-server recipes
+lemonade recipes
 ```
 
 
@@ -103,7 +103,7 @@ lemonade-server recipes
 
 Lemonade supports a wide variety of LLMs (**GGUF**, **FLM**, and **ONNX**), whisper, stable diffusion, etc. models across CPU, GPU, and NPU.
 
-Use `lemonade-server pull` or the built-in **Model Manager** to download models. You can also import custom GGUF/ONNX models from Hugging Face.
+Use `lemonade pull` or the built-in **Model Manager** to download models. You can also import custom GGUF/ONNX models from Hugging Face.
 
 **[Browse all built-in models →](https://lemonade-server.ai/models.html)**
 
@@ -205,7 +205,7 @@ Lemonade supports multiple recipes (LLM, speech, TTS, and image generation), and
 To check exactly which recipes/backends are supported on your own machine, run:
 
 ```
-lemonade-server recipes
+lemonade recipes
 ```
 
 <details>

@@ -8,6 +8,7 @@
 #include <memory>
 #include <iostream>
 #include <iomanip>
+#include <atomic>
 
 namespace lemon {
 namespace utils {
@@ -97,7 +98,7 @@ public:
     static bool is_reachable(const std::string& url, int timeout_seconds = 5);
 
 private:
-    static long default_timeout_seconds_;
+    static std::atomic<long> default_timeout_seconds_;
 
     // Single download attempt, may resume from offset
     static DownloadResult download_attempt(const std::string& url,

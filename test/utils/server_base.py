@@ -4,20 +4,18 @@ Shared base functionality for server testing.
 This module contains the common setup, cleanup, and utility functions
 used by all lemonade server test files.
 
-Supports two server lifecycle modes:
-- Class-level (default): Start server in setUpClass(), stop in tearDownClass()
-- Per-test mode (--server-per-test): Start/stop server for each test method
+Tests expect a running server (started by the installer or manually).
+ServerTestBase.setUpClass() verifies the server is reachable and applies
+runtime configuration via POST /internal/set.
 """
 
 import unittest
-import subprocess
 import socket
 import time
 import sys
 import io
 import os
 import argparse
-from threading import Thread
 
 try:
     from openai import OpenAI, AsyncOpenAI
@@ -56,7 +54,6 @@ _config = {
     "wrapped_server": None,
     "backend": None,
     "modality": None,
-    "server_per_test": False,
     "offline": False,
     "additional_server_args": [],
 }
@@ -103,11 +100,6 @@ def parse_args(additional_args=None, modality=None):
         type=str,
         help="Backend for the wrapped server (vulkan, rocm, cpu, hybrid, npu, etc.)",
     )
-    parser.add_argument(
-        "--server-per-test",
-        action="store_true",
-        help="Start/stop server for each test instead of once per class",
-    )
 
     # Use parse_known_args to ignore unittest arguments
     args, unknown = parser.parse_known_args()
@@ -117,7 +109,6 @@ def parse_args(additional_args=None, modality=None):
     _config["wrapped_server"] = args.wrapped_server
     _config["backend"] = args.backend
     _config["modality"] = modality
-    _config["server_per_test"] = args.server_per_test
     _config["offline"] = args.offline
     _config["additional_server_args"] = additional_args or []
 
@@ -136,74 +127,6 @@ def get_config():
 def get_server_binary():
     """Get the server binary path."""
     return _config["server_binary"]
-
-
-def _stop_server_via_systemd():
-    """
-    Attempt to stop the server via systemctl on Linux.
-
-    Returns:
-        True if successfully stopped via systemd, False otherwise
-    """
-    if not sys.platform.startswith("linux"):
-        return False
-
-    try:
-        result = subprocess.run(
-            ["systemctl", "is-active", "lemonade-server"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        if result.returncode == 0:  # Service is active
-            print("Stopping lemonade-server via systemctl...")
-            stop_result = subprocess.run(
-                ["sudo", "systemctl", "stop", "lemonade-server"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False,
-            )
-            if stop_result.returncode == 0:
-                print("Successfully stopped lemonade-server via systemctl")
-                return True
-            else:
-                print(f"Warning: systemctl stop failed: {stop_result.stderr}")
-    except (OSError, subprocess.TimeoutExpired) as e:
-        print(f"Systemd check failed ({e}), trying fallback...")
-
-    return False
-
-
-def stop_lemonade():
-    """Kill the lemonade server and stop the model."""
-    print("\n=== Stopping Lemonade ===")
-    server_binary = _config["server_binary"]
-
-    if server_binary is None:
-        print("No server binary configured, skipping stop")
-        return
-
-    # Try systemd first on Linux
-    if _stop_server_via_systemd():
-        return
-
-    # Try CLI stop command as fallback
-    try:
-        result = subprocess.run(
-            [server_binary, "stop"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        print(result.stdout)
-        if result.stderr:
-            print(f"stderr: {result.stderr}")
-    except subprocess.TimeoutExpired:
-        print("Warning: stop command timed out")
-    except Exception as e:
-        print(f"Warning: failed to stop server: {e}")
 
 
 def wait_for_server(port=PORT, timeout=60):
@@ -229,129 +152,110 @@ def wait_for_server(port=PORT, timeout=60):
             time.sleep(1)
 
 
-def start_server(
-    server_binary=None,
-    wrapped_server=None,
-    backend=None,
-    additional_args=None,
-    port=PORT,
-):
+def _auth_headers():
+    """Return Authorization header if LEMONADE_API_KEY is set."""
+    api_key = os.environ.get("LEMONADE_API_KEY")
+    if api_key:
+        return {"Authorization": f"Bearer {api_key}"}
+    return {}
+
+
+def set_server_config(config: dict, port=PORT):
+    """POST /internal/set to update server config at runtime."""
+    response = requests.post(
+        f"http://localhost:{port}/internal/set",
+        json=config,
+        headers=_auth_headers(),
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def unload_all_models(port=PORT):
+    """POST /api/v1/unload to unload all models for clean state."""
+    response = requests.post(
+        f"http://localhost:{port}/api/v1/unload",
+        json={},
+        headers=_auth_headers(),
+        timeout=30,
+    )
+    # 200 = unloaded, 404 = nothing loaded — both OK
+    return response
+
+
+def _build_runtime_config(additional_server_args=None):
     """
-    Start the lemonade server.
+    Translate CLI args (--wrapped-server, --backend, additional_server_args)
+    into a dict suitable for POST /internal/set.
 
     Args:
-        server_binary: Path to server binary (uses config if None)
-        wrapped_server: Wrapped server type (uses config if None)
-        backend: Backend for wrapped server (uses config if None)
-        additional_args: Additional arguments for the server
-        port: Port to run on
-
-    Returns:
-        The subprocess.Popen object for the server process
+        additional_server_args: Extra args to parse (merged with global config's args).
+                                If None, uses only the global config's args.
     """
-    if server_binary is None:
-        server_binary = _config["server_binary"]
-    if wrapped_server is None:
-        wrapped_server = _config["wrapped_server"]
-    if backend is None:
-        backend = _config["backend"]
-    if additional_args is None:
-        additional_args = _config.get("additional_server_args", [])
+    config = {}
 
-    # Build the command
-    cmd = [server_binary, "serve"]
+    wrapped_server = _config.get("wrapped_server")
+    backend = _config.get("backend")
 
-    # Add --no-tray option on Windows or in CI environments
-    # The tray app requires a display server (X11/Wayland) which isn't available in CI containers
-    if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
-        cmd.append("--no-tray")
-
-    # Add debug logging for CI environments
-    cmd.extend(["--log-level", "debug"])
-
-    # Add port if not default
-    if port != PORT:
-        cmd.extend(["--port", str(port)])
-
-    # Add llamacpp backend option if specified
+    # Map --wrapped-server + --backend to the correct recipe option key
     if wrapped_server == "llamacpp" and backend:
-        cmd.extend(["--llamacpp", backend])
+        config["llamacpp_backend"] = backend
+    elif wrapped_server == "sd-cpp" and backend:
+        config["sd-cpp_backend"] = backend
+    elif wrapped_server == "whispercpp" and backend:
+        config["whispercpp_backend"] = backend
 
-    # Add sdcpp backend option if specified
-    if wrapped_server == "sd-cpp" and backend:
-        cmd.extend(["--sdcpp", backend])
+    # Parse additional_server_args for known flags
+    additional = list(_config.get("additional_server_args", []))
+    if additional_server_args:
+        additional.extend(additional_server_args)
 
-    # Add any additional server arguments
-    if additional_args:
-        cmd.extend(additional_args)
+    i = 0
+    while i < len(additional):
+        arg = additional[i]
+        if arg == "--max-loaded-models" and i + 1 < len(additional):
+            config["max_loaded_models"] = int(additional[i + 1])
+            i += 2
+        elif arg == "--llamacpp" and i + 1 < len(additional):
+            config["llamacpp_backend"] = additional[i + 1]
+            i += 2
+        elif arg == "--sdcpp" and i + 1 < len(additional):
+            config["sd-cpp_backend"] = additional[i + 1]
+            i += 2
+        elif arg == "--whispercpp" and i + 1 < len(additional):
+            config["whispercpp_backend"] = additional[i + 1]
+            i += 2
+        elif arg == "--ctx-size" and i + 1 < len(additional):
+            config["ctx_size"] = int(additional[i + 1])
+            i += 2
+        elif arg == "--log-level" and i + 1 < len(additional):
+            config["log_level"] = additional[i + 1]
+            i += 2
+        else:
+            i += 1
 
-    print(f"Starting server: {' '.join(cmd)}")
-
-    # Start the server process
-    process = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-        encoding="utf-8",
-        errors="replace",
-        env=os.environ.copy(),
-    )
-
-    # Print stdout and stderr in real-time using daemon threads
-    def print_stdout():
-        try:
-            for line in process.stdout:
-                print(f"[stdout] {line.strip()}")
-        except Exception:
-            pass
-
-    def print_stderr():
-        try:
-            for line in process.stderr:
-                print(f"[stderr] {line.strip()}")
-        except Exception:
-            pass
-
-    stdout_thread = Thread(target=print_stdout, daemon=True)
-    stderr_thread = Thread(target=print_stderr, daemon=True)
-    stdout_thread.start()
-    stderr_thread.start()
-
-    # Wait for the server to start
-    wait_for_server(port)
-
-    # Additional wait for server to fully initialize
-    time.sleep(5)
-
-    print("Server started successfully")
-
-    return process
+    return config
 
 
-class ServerTestBase(unittest.IsolatedAsyncioTestCase):
+class ServerTestBase(unittest.TestCase):
     """
     Base class for server tests.
 
-    Supports two lifecycle modes controlled by --server-per-test flag:
-    - Class-level (default): Server starts once for all tests in the class
-    - Per-test mode: Server starts fresh for each test method
+    Expects a running server (started by the installer or manually).
+    setUpClass() verifies the server is reachable and applies runtime config.
+    No server start/stop is performed.
 
-    Subclasses should not override setUpClass/tearDownClass directly.
-    Instead, use class variables to configure behavior:
-    - additional_server_args: List of extra args to pass to server
+    Subclasses can set class variables to configure behavior:
+    - additional_server_args: List of extra args translated to /internal/set calls
     """
-
-    # Class-level server process (used in class-level mode)
-    _server_process = None
 
     # Configuration
     additional_server_args = []
 
     @classmethod
     def setUpClass(cls):
-        """Start server if using class-level mode."""
+        """Verify server is reachable and apply runtime configuration."""
         super().setUpClass()
 
         # Ensure stdout can handle Unicode
@@ -363,50 +267,56 @@ class ServerTestBase(unittest.IsolatedAsyncioTestCase):
                 sys.stderr.buffer, encoding="utf-8", errors="replace"
             )
 
-        # Stop any existing server
-        stop_lemonade()
-
-        # Start server if not in per-test mode
-        if not _config.get("server_per_test", False):
-            all_args = (
-                _config.get("additional_server_args", []) + cls.additional_server_args
+        # Verify server is running
+        print("\n=== Verifying server is reachable ===")
+        try:
+            wait_for_server(timeout=30)
+        except TimeoutError:
+            raise RuntimeError(
+                "Server is not running on port %d. "
+                "Start the server before running tests "
+                "(e.g., install the package or run lemonade-router manually)." % PORT
             )
-            cls._server_process = start_server(additional_args=all_args)
+        print("Server is reachable on port %d" % PORT)
+
+        # Build and apply runtime config from CLI args + class-level args
+        runtime_config = _build_runtime_config(cls.additional_server_args)
+
+        if runtime_config:
+            print(f"Applying runtime config: {runtime_config}")
+            try:
+                set_server_config(runtime_config)
+            except Exception as e:
+                print(f"Warning: Failed to apply runtime config: {e}")
+
+        # Unload all models for clean state
+        print("Unloading all models for clean state...")
+        try:
+            unload_all_models()
+        except Exception as e:
+            print(f"Warning: Failed to unload models: {e}")
 
     @classmethod
     def tearDownClass(cls):
-        """Stop server. Always stops regardless of mode to ensure cleanup."""
-        # Always stop the server to ensure no orphaned processes
-        stop_lemonade()
-        cls._server_process = None
+        """No server lifecycle management needed."""
         super().tearDownClass()
 
     def setUp(self):
-        """Set up for each test. Starts server if in per-test mode."""
+        """Set up for each test."""
         print(f"\n=== Starting test: {self._testMethodName} ===")
 
         self.base_url = f"http://localhost:{PORT}/api/v1"
         self.messages = STANDARD_MESSAGES.copy()
 
-        # Start server if in per-test mode
-        if _config.get("server_per_test", False):
-            stop_lemonade()
-            all_args = (
-                _config.get("additional_server_args", []) + self.additional_server_args
-            )
-            self._test_server_process = start_server(additional_args=all_args)
-
     def tearDown(self):
-        """Clean up after each test. Stops server if in per-test mode."""
-        if _config.get("server_per_test", False):
-            stop_lemonade()
-            self._test_server_process = None
+        """Clean up after each test."""
+        pass
 
     def get_openai_client(self) -> OpenAI:
         """Get a synchronous OpenAI client configured for the test server."""
         return OpenAI(
             base_url=self.base_url,
-            api_key="lemonade",  # required but unused
+            api_key=os.environ.get("LEMONADE_API_KEY", "lemonade"),
             timeout=TIMEOUT_MODEL_OPERATION,  # inference may trigger model download
         )
 
@@ -414,7 +324,7 @@ class ServerTestBase(unittest.IsolatedAsyncioTestCase):
         """Get an async OpenAI client configured for the test server."""
         return AsyncOpenAI(
             base_url=self.base_url,
-            api_key="lemonade",  # required but unused
+            api_key=os.environ.get("LEMONADE_API_KEY", "lemonade"),
             timeout=TIMEOUT_MODEL_OPERATION,  # inference may trigger model download
         )
 
@@ -430,14 +340,6 @@ class ServerTestBase(unittest.IsolatedAsyncioTestCase):
         """
         return get_test_model(model_type)
 
-    def start_server(self, **kwargs):
-        """Helper to start the server from within a test."""
-        return start_server(**kwargs)
-
-    def stop_server(self):
-        """Helper to stop the server from within a test."""
-        stop_lemonade()
-
 
 def run_server_tests(
     test_class,
@@ -450,9 +352,6 @@ def run_server_tests(
 ):
     """
     Run server tests with the given test class.
-
-    IMPORTANT: This function ensures the server is ALWAYS stopped before exiting,
-    regardless of whether tests passed or failed.
 
     Args:
         test_class: The unittest.TestCase class to run
@@ -488,26 +387,18 @@ def run_server_tests(
 
     ws = _config.get("wrapped_server", "unknown")
     be = _config.get("backend", "default")
-    mode = "per-test" if _config.get("server_per_test") else "class-level"
 
     print(f"\n{'=' * 70}")
     print(f"{description}")
     print(f"Wrapped Server: {ws}, Backend: {be}")
-    print(f"Server Lifecycle: {mode}")
     print(f"{'=' * 70}\n")
 
-    result = None
-    try:
-        # Create and run test suite
-        loader = unittest.TestLoader()
-        suite = loader.loadTestsFromTestCase(test_class)
+    # Create and run test suite
+    loader = unittest.TestLoader()
+    suite = loader.loadTestsFromTestCase(test_class)
 
-        runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
-        result = runner.run(suite)
-    finally:
-        # ALWAYS stop the server before exiting, regardless of test outcome
-        print("\n=== Final cleanup: ensuring server is stopped ===")
-        stop_lemonade()
+    runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
+    result = runner.run(suite)
 
     # Exit with appropriate code
     sys.exit(0 if (result and result.wasSuccessful()) else 1)
@@ -519,9 +410,9 @@ __all__ = [
     "parse_args",
     "get_config",
     "get_server_binary",
-    "stop_lemonade",
     "wait_for_server",
-    "start_server",
+    "set_server_config",
+    "unload_all_models",
     "run_server_tests",
     "OpenAI",
     "AsyncOpenAI",

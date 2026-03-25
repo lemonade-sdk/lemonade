@@ -56,6 +56,11 @@ public:
     // Kill process forcefully
     static void kill_process(ProcessHandle handle);
 
+    // Run a command and capture its stdout as a string (no console window on Windows).
+    // Replacement for system()/popen() that avoids console flashes in GUI apps.
+    // Returns the exit code; stdout is written to `output`.
+    static int run_command(const std::string& command, std::string& output, int timeout_seconds = 30);
+
     // Find a free network port
     static int find_free_port(int start_port = 8001);
 };

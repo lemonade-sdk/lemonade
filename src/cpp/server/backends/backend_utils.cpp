@@ -9,6 +9,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/process_manager.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -52,17 +53,21 @@ namespace lemon::backends {
 
     static bool is_native_tar_available() {
         std::string tar_path = get_native_tar_path();
-        return system((tar_path + " --version >nul 2>&1").c_str()) == 0;
+        std::string command = tar_path + " --version >nul 2>&1";
+        std::string unused;
+        return lemon::utils::ProcessManager::run_command(command, unused) == 0;
     }
 #endif
 
     static void ensure_directory(const std::string& dir) {
 #ifdef _WIN32
         std::string cmd = "if not exist \"" + dir + "\" mkdir \"" + dir + "\" >nul 2>&1";
+        std::string unused;
+        lemon::utils::ProcessManager::run_command(cmd, unused);
 #else
         std::string cmd = "mkdir -p \"" + dir + "\"";
-#endif
         system(cmd.c_str());
+#endif
     }
 
     bool BackendUtils::extract_zip(const std::string& zip_path, const std::string& dest_dir, const std::string& backend_name) {
@@ -205,7 +210,6 @@ namespace lemon::backends {
         return get_version_file(install_dir);
     }
 
-#ifndef LEMONADE_TRAY
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
         std::string config_path = utils::get_resource_path("resources/backend_versions.json");
 
@@ -380,5 +384,4 @@ namespace lemon::backends {
             }
         }
     }
-#endif
 } // namespace lemon::backends

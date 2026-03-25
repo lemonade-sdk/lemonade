@@ -195,6 +195,14 @@ std::vector<std::string> RecipeOptions::to_cli_options(const json& raw_options) 
     return cli;
 }
 
+std::vector<std::string> RecipeOptions::known_keys() {
+    std::vector<std::string> keys;
+    for (auto& [key, value] : DEFAULTS.items()) {
+        keys.push_back(key);
+    }
+    return keys;
+}
+
 RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
     recipe_ = recipe;
     std::vector<std::string> to_copy = get_keys_for_recipe(recipe_);

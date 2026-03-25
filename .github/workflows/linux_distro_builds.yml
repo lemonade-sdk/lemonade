@@ -125,6 +125,25 @@ jobs:
 
           echo "Python environment setup complete!"
 
+      - name: Start server
+        env:
+          LEMONADE_CI_MODE: "True"
+        run: |
+          echo "Starting lemonade-router in background..."
+          ./build/lemonade-router --port 8000 --log-level debug > /tmp/lemonade-server.log 2>&1 &
+
+          echo "Waiting for server to be ready..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
+              echo "Server is running and healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "ERROR: Server did not start"
+          cat /tmp/lemonade-server.log 2>/dev/null || true
+          exit 1
+
       - name: Run CLI tests
         env:
           LEMONADE_CI_MODE: "True"
@@ -154,3 +173,9 @@ jobs:
           python test/server_endpoints.py --server-binary "$SERVER_BINARY"
 
           echo "Endpoint tests PASSED!"
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-distro-${{ matrix.distro }}

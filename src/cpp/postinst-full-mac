@@ -27,8 +27,11 @@ echo "=== Starting Lemonade Post-Install ==="
 # ------------------------------------------------------------------------------
 
 # Find the current GUI User ID (The person currently logged in)
-# 'id -u' returns 0 (root) here, so we must ask System Configuration for the Console User.
-CURRENT_UID=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/kCGSSessionUserIDKey/ { print $3 }')
+# 'id -u' returns 0 (root) here, so we must ask the system for the Console User.
+# Use stat on /dev/console which reliably returns a single UID even when
+# multiple users have sessions (scutil returns all session UIDs, breaking
+# integer comparisons).
+CURRENT_UID=$(stat -f '%u' /dev/console 2>/dev/null)
 
 # Stop Daemon (System-wide)
 if launchctl list | grep -q "$DAEMON_LABEL"; then
@@ -37,12 +40,19 @@ if launchctl list | grep -q "$DAEMON_LABEL"; then
 fi
 
 # Stop Agent (User-specific)
+# Use bootout (modern) then asuser+unload (legacy) to cover all macOS versions.
+# Do NOT use -w flag on unload — it sets a persistent "disabled" override that
+# can prevent the service from starting even after re-loading.
 if [ -n "$CURRENT_UID" ] && [ "$CURRENT_UID" -ne 0 ]; then
-    if launchctl print gui/"$CURRENT_UID"/"$AGENT_LABEL" >/dev/null 2>&1; then
-        echo "Stopping existing Tray Agent for UID $CURRENT_UID..."
-        launchctl bootout gui/"$CURRENT_UID"/"$AGENT_LABEL" 2>/dev/null || true
-    fi
+    echo "Stopping existing Tray Agent for UID $CURRENT_UID..."
+    launchctl bootout gui/"$CURRENT_UID"/"$AGENT_LABEL" 2>/dev/null || true
+    launchctl asuser "$CURRENT_UID" launchctl unload "$AGENT_PLIST" 2>/dev/null || true
 fi
+
+# Kill any lingering lemonade processes to ensure clean startup
+killall lemonade-router 2>/dev/null || true
+killall lemonade-tray 2>/dev/null || true
+killall lemonade-server 2>/dev/null || true
 sleep 1
 
 # ------------------------------------------------------------------------------
@@ -81,8 +91,9 @@ mkdir -p "$CONFIG_DIR"
 chmod 755 "$CONFIG_DIR"
 
 # Log Directory (Critical: Service crashes if missing)
+# Permissions 777 so both the root daemon and user-level tray agent can write logs
 mkdir -p "$LOG_DIR"
-chmod 755 "$LOG_DIR"
+chmod 777 "$LOG_DIR"
 chown root:wheel "$LOG_DIR"
 
 # Share Directory
@@ -180,11 +191,14 @@ launchctl kickstart -k system/"$DAEMON_LABEL" 2>/dev/null || true
 if [ -n "$CURRENT_UID" ] && [ "$CURRENT_UID" -ne 0 ]; then
     echo "Loading Tray Agent for user (UID: $CURRENT_UID)..."
 
-    # 1. Bootstrap: Registers the service in the user's GUI session
-    launchctl bootstrap gui/"$CURRENT_UID" "$AGENT_PLIST" 2>/dev/null || true
+    # bootstrap (modern API) registers and starts via RunAtLoad.
+    # Fall back to asuser+load (legacy API) for older macOS versions.
+    launchctl bootstrap gui/"$CURRENT_UID" "$AGENT_PLIST" 2>/dev/null || \
+        launchctl asuser "$CURRENT_UID" launchctl load "$AGENT_PLIST" 2>/dev/null || true
 
-    # 2. Kickstart: Forces the app to launch visually RIGHT NOW
-    launchctl kickstart -k gui/"$CURRENT_UID"/"$AGENT_LABEL" 2>/dev/null || true
+    # kickstart via asuser so it runs in the user's GUI session (root can't
+    # directly start a process that needs the Aqua/tray session).
+    launchctl asuser "$CURRENT_UID" launchctl kickstart -k gui/"$CURRENT_UID"/"$AGENT_LABEL" 2>/dev/null || true
 else
     echo "No GUI user detected. Tray agent will start on next login."
 fi

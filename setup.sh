@@ -140,7 +140,7 @@ if command_exists pkg-config; then
                 # Map pkg-config names to apt packages
                 for lib in "${missing_libs[@]}"; do
                     case "$lib" in
-                        libcurl) missing_packages+=("libcurl4-openssl-dev") ;;
+                        libcurl) missing_packages+=("curl" "libcurl4-openssl-dev") ;;
                         openssl) missing_packages+=("libssl-dev") ;;
                         zlib) missing_packages+=("zlib1g-dev") ;;
                         libsystemd) missing_packages+=("libsystemd-dev") ;;
@@ -192,7 +192,7 @@ else
     print_warning "pkg-config not found, assuming libraries need to be installed"
     if [ "$OS" = "linux" ]; then
         if command_exists apt; then
-            missing_packages+=("pkg-config" "libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev" "libdrm-dev" "libcap-dev" "libwebsockets-dev")
+            missing_packages+=("pkg-config" "curl" "libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev" "libdrm-dev" "libcap-dev" "libwebsockets-dev")
         elif command_exists pacman; then
             missing_packages+=("pkgconf" "curl" "openssl" "zlib" "systemd" "libdrm" "libcap")
         elif command_exists dnf; then

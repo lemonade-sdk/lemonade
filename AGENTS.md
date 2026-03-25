@@ -8,11 +8,13 @@ Lemonade is a local LLM server (v10.0.0) providing GPU and NPU acceleration for 
 
 ## Architecture
 
-### Four Executables
+### Executables
 
 - **lemonade-router** — Pure HTTP server. Handles REST API, routes requests to backends, manages model loading/unloading. No CLI.
-- **lemonade-server** — CLI client. Commands: `list`, `pull`, `delete`, `run`, `serve`, `status`, `stop`, `logs`. Communicates with router via HTTP.
-- **lemonade-tray** — GUI launcher (Windows/macOS/Linux). Starts `lemonade-server serve` without a console. Platform code in `src/cpp/tray/platform/`.
+- **lemonade** — CLI client (`src/cpp/cli/`). Commands: `list`, `pull`, `delete`, `run`, `status`, `logs`, `launch`, `recipes`, `scan`. Communicates with router via HTTP. Discovers running server via UDP beacon.
+- **LemonadeServer.exe** (Windows) — SUBSYSTEM:WINDOWS GUI app that embeds `lemonade-router` and shows a system tray icon. Auto-starts via Windows startup folder.
+- **lemonade-tray** (macOS/Linux) — Lightweight tray client that connects to a running `lemonade-router`. Platform code in `src/cpp/tray/platform/`.
+- **lemonade-server** — Deprecated backwards-compatibility shim. Delegates to `lemonade-router` or `lemonade`.
 - **lemonade-log-viewer** — Windows-only log file viewer.
 
 ### Backend Abstraction

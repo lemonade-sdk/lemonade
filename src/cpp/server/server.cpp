@@ -130,15 +130,18 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
                const json& default_options, int max_loaded_models,
                const std::string& extra_models_dir, bool no_broadcast,
                long global_timeout)
-    : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
-      no_broadcast_(no_broadcast), running_(false), udp_beacon_() {
+    : config_(std::make_shared<RuntimeConfig>(port, host, log_level, extra_models_dir,
+                                               no_broadcast, global_timeout,
+                                               max_loaded_models, default_options)),
+      port_(port), running_(false), udp_beacon_() {
 
     // Set global HttpClient timeout
     utils::HttpClient::set_default_timeout(global_timeout);
 
-    // Detect log file path (same location as tray uses)
-    // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
-    // This server only READS from the file for the SSE streaming endpoint
+    // Detect log file path for the SSE streaming endpoint.
+    // This server only READS from the file — something else writes it
+    // (Windows: AixLog file sink, Linux: systemd journal, macOS: launchd
+    // StandardOutPath, or tray ServerManager stdout redirect).
 #ifdef _WIN32
     char temp_path[MAX_PATH];
     GetTempPathA(MAX_PATH, temp_path);
@@ -149,10 +152,45 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
         log_file_path_ = "";  // Empty signals journald usage
         LOG(INFO, "Server") << "Detected systemd environment - will use journald for log streaming" << std::endl;
     } else {
-        log_file_path_ = utils::get_runtime_dir() + "/lemonade-server.log";
+        // On macOS, the LaunchDaemon's stdout is redirected to
+        // /var/log/lemonade/lemonade-server.out.log by the plist.
+        // Check for that file first; fall back to the runtime dir
+        // log (used when launched by tray/ServerManager).
+        const std::string launchd_log = "/var/log/lemonade/lemonade-server.out.log";
+        const std::string runtime_log = utils::get_runtime_dir() + "/lemonade-server.log";
+        if (std::filesystem::exists(launchd_log)) {
+            log_file_path_ = launchd_log;
+        } else {
+            log_file_path_ = runtime_log;
+        }
     }
 #endif
 
+    model_manager_ = std::make_unique<ModelManager>();
+
+    // Set extra models directory for GGUF discovery
+    model_manager_->set_extra_models_dir(extra_models_dir);
+
+    backend_manager_ = std::make_unique<BackendManager>();
+
+    router_ = std::make_unique<Router>(config_.get(),
+                                       model_manager_.get(),
+                                       backend_manager_.get());
+
+    LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
+
+    const char* api_key_env = std::getenv("LEMONADE_API_KEY");
+    api_key_ = api_key_env ? std::string(api_key_env) : "";
+
+    setup_http_servers();
+
+#ifdef LEMON_HAS_WEBSOCKET
+    // Initialize WebSocket server (binds to OS-assigned port, exposed via /health)
+    websocket_server_ = std::make_unique<WebSocketServer>(router_.get());
+#endif
+}
+
+void Server::setup_http_servers() {
     http_server_ = std::make_unique<httplib::Server>();
     http_server_v6_ = std::make_unique<httplib::Server>();
 
@@ -167,29 +205,8 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     http_server_->new_task_queue = task_queue_factory;
     http_server_v6_->new_task_queue = task_queue_factory;
 
-    model_manager_ = std::make_unique<ModelManager>();
-
-    // Set extra models directory for GGUF discovery
-    model_manager_->set_extra_models_dir(extra_models_dir);
-
-    backend_manager_ = std::make_unique<BackendManager>();
-
-    router_ = std::make_unique<Router>(default_options_, log_level_,
-                                       model_manager_.get(), max_loaded_models,
-                                       backend_manager_.get());
-
-    LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
-
-    const char* api_key_env = std::getenv("LEMONADE_API_KEY");
-    api_key_ = api_key_env ? std::string(api_key_env) : "";
-
     setup_routes(*http_server_);
     setup_routes(*http_server_v6_);
-
-#ifdef LEMON_HAS_WEBSOCKET
-    // Initialize WebSocket server (binds to OS-assigned port, exposed via /health)
-    websocket_server_ = std::make_unique<WebSocketServer>(router_.get());
-#endif
 }
 
 Server::~Server() {
@@ -209,12 +226,25 @@ void Server::log_request(const httplib::Request& req) {
 }
 
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
-    // Check if path requires authentication (API routes with /api/, /v0/, or /v1/ prefix)
+    // Check if path requires authentication (API routes and internal endpoints)
     bool is_api_route = (req.path.rfind("/api/", 0) == 0) ||
                         (req.path.rfind("/v0/", 0) == 0) ||
                         (req.path.rfind("/v1/", 0) == 0);
+    bool is_internal_route = (req.path.rfind("/internal/", 0) == 0);
 
-    if ((api_key_ != "") && (req.method != "OPTIONS") && is_api_route) {
+    // Internal endpoints are restricted to loopback regardless of API key
+    if (is_internal_route) {
+        bool is_loopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+        if (!is_loopback) {
+            LOG(WARNING, "Server") << "Rejected internal request from non-loopback address: "
+                        << req.remote_addr << " " << req.path << std::endl;
+            res.status = 403;
+            res.set_content("{\"error\": \"Internal endpoints are only accessible from localhost\"}", "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+    }
+
+    if ((api_key_ != "") && (req.method != "OPTIONS") && (is_api_route || is_internal_route)) {
         if (api_key_ != httplib::get_bearer_token_auth(req)) {
             res.status = 401;
             res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
@@ -403,6 +433,14 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Internal shutdown endpoint (not part of public API)
     web_server.Post("/internal/shutdown", [this](const httplib::Request& req, httplib::Response& res) {
         handle_shutdown(req, res);
+    });
+
+    // Unified config endpoints (not part of public API)
+    web_server.Post("/internal/set", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_config_set(req, res);
+    });
+    web_server.Get("/internal/config", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_config_get(req, res);
     });
 
     // Test endpoint to verify POST works
@@ -940,13 +978,17 @@ void Server::setup_http_logger(httplib::Server &web_server) {
 }
 
 void Server::run() {
-    std::string ipv4 = resolve_host_to_ip(AF_INET, host_);
-    std::string ipv6 = resolve_host_to_ip(AF_INET6, host_);
-    std::atomic<bool> listener_started(false);
-    std::atomic<bool> listener_start_failed(false);
+    std::string host = config_->host();
+    LOG(INFO, "Server") << "Starting HTTP server on " << host << ":" << port_ << std::endl;
+
+    std::string ipv4 = resolve_host_to_ip(AF_INET, host);
+    std::string ipv6 = resolve_host_to_ip(AF_INET6, host);
+
+    LOG(INFO, "Server") << "Host resolution: IPv4=" << (ipv4.empty() ? "(none)" : ipv4)
+                        << ", IPv6=" << (ipv6.empty() ? "(none)" : ipv6) << std::endl;
 
     if (ipv4.empty() && ipv6.empty()) {
-        throw std::runtime_error("Failed to resolve host '" + host_ + "' to any address. "
+        throw std::runtime_error("Failed to resolve host '" + host + "' to any address. "
                                  "Cannot start server.");
     }
 
@@ -963,70 +1005,102 @@ void Server::run() {
     }
 #endif
 
-    if (!ipv4.empty()) {
-        // setup ipv4 thread
-        setup_http_logger(*http_server_);
-        http_v4_thread_ = std::thread([this, ipv4, &listener_started, &listener_start_failed]() {
-            int result = http_server_->bind_to_port(ipv4, port_);
-            if (result <= 0) {
-                listener_start_failed = true;
-                return;
-            }
-            listener_started = true;
-            if (!http_server_->listen_after_bind()) {
-                listener_start_failed = true;
-            }
-        });
-    }
-    if (!ipv6.empty()) {
-        // setup ipv6 thread
-        setup_http_logger(*http_server_v6_);
-        http_v6_thread_ = std::thread([this, ipv6, &listener_started, &listener_start_failed]() {
-            int result = http_server_v6_->bind_to_port(ipv6, port_);
-            if (result <= 0) {
-                listener_start_failed = true;
-                return;
-            }
-            listener_started = true;
-            if (!http_server_v6_->listen_after_bind()) {
-                listener_start_failed = true;
-            }
-        });
-    }
+    while (true) {
+        std::atomic<bool> listener_started(false);
+        std::atomic<bool> listener_start_failed(false);
 
-    //Enumerate all RFC1918 interfaces to determine if we can broadcast.
-    //The beacon will send per-interface with the correct IP in the payload.
-    auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
-    if(!rfc1918Interfaces.empty() && !no_broadcast_) {
-        std::cout << "[Server] [Net Broadcast] Broadcasting on " << rfc1918Interfaces.size()
-                  << " RFC1918 interface(s):";
-        for (const auto& iface : rfc1918Interfaces) {
-            std::cout << " " << iface.ipAddress << " (bcast " << iface.broadcastAddress << ")";
+        if (!ipv4.empty()) {
+            // setup ipv4 thread
+            setup_http_logger(*http_server_);
+            http_v4_thread_ = std::thread([this, ipv4, &listener_started, &listener_start_failed]() {
+                LOG(INFO, "Server") << "Binding IPv4 HTTP server to " << ipv4 << ":" << port_ << "..." << std::endl;
+                int result = http_server_->bind_to_port(ipv4, port_);
+                if (result <= 0) {
+                    LOG(ERROR, "Server") << "Failed to bind IPv4 HTTP server to " << ipv4 << ":" << port_ << std::endl;
+                    listener_start_failed = true;
+                    return;
+                }
+                LOG(INFO, "Server") << "IPv4 HTTP server listening on " << ipv4 << ":" << port_ << std::endl;
+                listener_started = true;
+                if (!http_server_->listen_after_bind()) {
+                    LOG(ERROR, "Server") << "IPv4 HTTP server listen_after_bind() failed" << std::endl;
+                    listener_start_failed = true;
+                }
+            });
         }
-        std::cout << std::endl;
-        udp_beacon_.startBroadcasting(
-            8000, //Broadcast port best to not make it adjustable, so clients dont have to scan.
-            port_,
-            2
-        );
-    }
-    else if (!rfc1918Interfaces.empty() && no_broadcast_) {
-        LOG(INFO, "Server") << "Broadcasting disabled by --no-broadcast option" << std::endl;
-    }
-    else {
-        LOG(INFO, "Server") << "Unable to broadcast my existance please use a RFC1918 IPv4," << std::endl
-                    << "or hostname that resolves to RFC1918 IPv4." << std::endl;
-    }
+        if (!ipv6.empty()) {
+            // setup ipv6 thread
+            setup_http_logger(*http_server_v6_);
+            http_v6_thread_ = std::thread([this, ipv6, &listener_started, &listener_start_failed]() {
+                LOG(INFO, "Server") << "Binding IPv6 HTTP server to [" << ipv6 << "]:" << port_ << "..." << std::endl;
+                int result = http_server_v6_->bind_to_port(ipv6, port_);
+                if (result <= 0) {
+                    LOG(ERROR, "Server") << "Failed to bind IPv6 HTTP server to [" << ipv6 << "]:" << port_ << std::endl;
+                    listener_start_failed = true;
+                    return;
+                }
+                LOG(INFO, "Server") << "IPv6 HTTP server listening on [" << ipv6 << "]:" << port_ << std::endl;
+                listener_started = true;
+                if (!http_server_v6_->listen_after_bind()) {
+                    LOG(ERROR, "Server") << "IPv6 HTTP server listen_after_bind() failed" << std::endl;
+                    listener_start_failed = true;
+                }
+            });
+        }
 
-    if(http_v4_thread_.joinable())
-        http_v4_thread_.join();
-    if(http_v6_thread_.joinable())
-        http_v6_thread_.join();
+        // Enumerate all RFC1918 interfaces to determine if we can broadcast.
+        // The beacon will send per-interface with the correct IP in the payload.
+        auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
+        bool no_bcast = config_->no_broadcast();
+        if (!rfc1918Interfaces.empty() && !no_bcast) {
+            std::cout << "[Server] [Net Broadcast] Broadcasting on " << rfc1918Interfaces.size()
+                      << " RFC1918 interface(s):";
+            for (const auto& iface : rfc1918Interfaces) {
+                std::cout << " " << iface.ipAddress << " (bcast " << iface.broadcastAddress << ")";
+            }
+            std::cout << std::endl;
+            udp_beacon_.startBroadcasting(
+                8000, // Broadcast port best to not make it adjustable, so clients dont have to scan.
+                port_,
+                2
+            );
+        } else if (!rfc1918Interfaces.empty() && no_bcast) {
+            LOG(INFO, "Server") << "Broadcasting disabled by --no-broadcast option" << std::endl;
+        } else {
+            LOG(INFO, "Server") << "Unable to broadcast my existance please use a RFC1918 IPv4," << std::endl
+                        << "or hostname that resolves to RFC1918 IPv4." << std::endl;
+        }
 
-    if (!listener_started && listener_start_failed) {
-        std::cerr << "[Server] Another Lemonade router/server instance is already running on "
-                  << host_ << ":" << port_ << ". Duplicate instance now exiting." << std::endl;
-        stop();
+        if (http_v4_thread_.joinable())
+            http_v4_thread_.join();
+        if (http_v6_thread_.joinable())
+            http_v6_thread_.join();
+
+        if (!listener_started && listener_start_failed) {
+            if (rebind_requested_) {
+                // Port rebind failed (e.g. port in use) — restore old port and retry
+                LOG(ERROR, "Server") << "Failed to bind to new port " << port_
+                            << ", will not retry" << std::endl;
+                rebind_requested_ = false;
+                break;
+            }
+            std::cerr << "[Server] Another Lemonade router/server instance is already running on "
+                      << config_->host() << ":" << port_ << ". Duplicate instance now exiting." << std::endl;
+            stop();
+            break;
+        }
+
+        if (!rebind_requested_) {
+            break;  // Normal exit (stop() was called)
+        }
+
+        // Rebind requested: re-resolve host, recreate HTTP servers, loop back to bind+listen
+        host = config_->host();
+        ipv4 = resolve_host_to_ip(AF_INET, host);
+        ipv6 = resolve_host_to_ip(AF_INET6, host);
+        LOG(INFO, "Server") << "Rebinding to " << host << ":" << port_ << "..." << std::endl;
+        rebind_requested_ = false;
+        setup_http_servers();
     }
 }
 
@@ -2728,9 +2802,22 @@ void Server::handle_delete(const httplib::Request& req, httplib::Response& res) 
 
 void Server::handle_params(const httplib::Request& req, httplib::Response& res) {
     try {
-        // Update model parameters (stub for now)
-        nlohmann::json response = {{"status", "success"}};
-        res.set_content(response.dump(), "application/json");
+        auto body = nlohmann::json::parse(req.body);
+
+        // Delegate to RuntimeConfig — accepts all known recipe option keys
+        auto result = config_->set(body, [this](const std::vector<std::string>& keys) {
+            apply_config_side_effects(keys);
+        });
+        res.set_content(result.dump(), "application/json");
+    } catch (const nlohmann::json::parse_error& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_params: invalid JSON: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", "Invalid JSON in request body"}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_params: " << e.what() << std::endl;
         res.status = 500;
@@ -3267,10 +3354,20 @@ void Server::handle_system_stats(const httplib::Request& req, httplib::Response&
 void Server::handle_log_level(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
-        log_level_ = request_json["level"];
 
-        nlohmann::json response = {{"status", "success"}, {"level", log_level_}};
+        // Translate {"level":"debug"} -> config_->set({"log_level":"debug"})
+        json changes = {{"log_level", request_json["level"]}};
+        config_->set(changes, [this](const std::vector<std::string>& keys) {
+            apply_config_side_effects(keys);
+        });
+
+        // Return same response format for backward compatibility
+        nlohmann::json response = {{"status", "success"}, {"level", config_->log_level()}};
         res.set_content(response.dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_log_level: " << e.what() << std::endl;
         res.status = 500;
@@ -3282,36 +3379,116 @@ void Server::handle_log_level(const httplib::Request& req, httplib::Response& re
 void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res) {
     LOG(INFO, "Server") << "Shutdown request received" << std::endl;
 
+    // Unload all models SYNCHRONOUSLY before sending the response.
+    // This ensures child processes (llama-server, etc.) are terminated
+    // before the caller proceeds, avoiding zombie processes.
+    if (router_) {
+        LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
+        try {
+            router_->unload_model();
+            LOG(INFO, "Server") << "All models unloaded" << std::endl;
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Error during unload: " << e.what() << std::endl;
+        }
+    }
+
     nlohmann::json response = {{"status", "shutting down"}};
     res.set_content(response.dump(), "application/json");
 
-    // Stop the server asynchronously to allow response to be sent
+    // Stop the HTTP listener and exit asynchronously (allows response to be sent first)
     std::thread([this]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        LOG(INFO, "Server") << "Stopping server..." << std::endl;
-        std::cout.flush();
         stop();
-
-        // Graceful shutdown with timeout: explicitly unload models and stop backend servers
-        if (router_) {
-            LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
-            std::cout.flush();
-
-            // Just call unload_model directly - keep it simple
-            try {
-                router_->unload_model();
-                LOG(INFO, "Server") << "Cleanup completed successfully" << std::endl;
-                std::cout.flush();
-            } catch (const std::exception& e) {
-                LOG(ERROR, "Server") << "Error during unload: " << e.what() << std::endl;
-            }
-        }
-
-        // Force process exit - just use standard exit()
-        LOG(INFO, "Server") << "Calling exit(0)..." << std::endl;
-        std::cout.flush();
         std::exit(0);
     }).detach();
+}
+
+void Server::handle_config_set(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto body = nlohmann::json::parse(req.body);
+
+        auto result = config_->set(body, [this](const std::vector<std::string>& keys) {
+            apply_config_side_effects(keys);
+        });
+
+        res.set_content(result.dump(), "application/json");
+    } catch (const nlohmann::json::parse_error& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "Invalid JSON in request body"}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_config_set: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_config_get(const httplib::Request& /*req*/, httplib::Response& res) {
+    try {
+        auto snap = config_->snapshot();
+        res.set_content(snap.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_config_get: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::apply_config_side_effects(const std::vector<std::string>& changed_keys) {
+    for (const auto& key : changed_keys) {
+        if (key == "port") {
+            int new_port = config_->port();
+            int current_port = port_.load();
+            if (new_port != current_port) {
+                LOG(INFO, "Server") << "Port change requested: " << current_port << " -> " << new_port << std::endl;
+                port_.store(new_port);
+                rebind_requested_ = true;
+                udp_beacon_.stopBroadcasting();
+                http_server_->stop();
+                http_server_v6_->stop();
+            }
+        } else if (key == "host") {
+            LOG(INFO, "Server") << "Host change requested to: " << config_->host() << std::endl;
+            rebind_requested_ = true;
+            udp_beacon_.stopBroadcasting();
+            http_server_->stop();
+            http_server_v6_->stop();
+        } else if (key == "log_level") {
+            std::string level = config_->log_level();
+            LOG(INFO, "Server") << "Log level changed to: " << level << std::endl;
+            // Re-initialize logging with the new severity filter
+            auto sink = std::make_shared<AixLog::SinkCout>(
+                AixLog::Filter(AixLog::to_severity(level)),
+                RuntimeConfig::LOG_FORMAT);
+            AixLog::Log::init({sink});
+        } else if (key == "global_timeout") {
+            long timeout = config_->global_timeout();
+            LOG(INFO, "Server") << "Global timeout changed to: " << timeout << "s" << std::endl;
+            utils::HttpClient::set_default_timeout(timeout);
+        } else if (key == "no_broadcast") {
+            bool nb = config_->no_broadcast();
+            LOG(INFO, "Server") << "Broadcast " << (nb ? "disabled" : "enabled") << std::endl;
+            if (nb) {
+                udp_beacon_.stopBroadcasting();
+            } else {
+                auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
+                if (!rfc1918Interfaces.empty()) {
+                    udp_beacon_.startBroadcasting(8000, port_, 2);
+                }
+            }
+        } else if (key == "extra_models_dir") {
+            std::string dir = config_->extra_models_dir();
+            LOG(INFO, "Server") << "Extra models dir changed to: " << dir << std::endl;
+            model_manager_->set_extra_models_dir(dir);
+        }
+        // Recipe option keys (ctx_size, llamacpp_backend, etc.) need no side effects
+    }
 }
 
 void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& res) {
@@ -3439,7 +3616,8 @@ void Server::stream_download_operation(
 
             try {
                 // Create progress callback that emits SSE events
-                DownloadProgressCallback progress_cb = [&sink](const DownloadProgress& p) -> bool {
+                bool complete_sent = false;
+                DownloadProgressCallback progress_cb = [&sink, &complete_sent](const DownloadProgress& p) -> bool {
                     nlohmann::json event_data;
                     event_data["file"] = p.file;
                     event_data["file_index"] = p.file_index;
@@ -3453,6 +3631,7 @@ void Server::stream_download_operation(
                     std::string event;
                     if (p.complete) {
                         event = "event: complete\ndata: " + event_data.dump() + "\n\n";
+                        complete_sent = true;
                     } else {
                         event = "event: progress\ndata: " + event_data.dump() + "\n\n";
                     }
@@ -3465,6 +3644,15 @@ void Server::stream_download_operation(
                 };
 
                 operation(progress_cb);
+
+                // If operation completed without sending a "complete" event
+                // (e.g. backend was already installed), send one now
+                if (!complete_sent) {
+                    nlohmann::json done_data = {{"status", "ok"}};
+                    std::string event = "event: complete\ndata: " + done_data.dump() + "\n\n";
+                    sink.write(event.c_str(), event.size());
+                }
+
             } catch (const std::exception& e) {
                 std::string error_msg = e.what();
                 if (error_msg != "Download cancelled") {

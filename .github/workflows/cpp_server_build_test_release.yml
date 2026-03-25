@@ -52,7 +52,7 @@ jobs:
               $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
               $cmakeInstaller = "cmake-installer.msi"
 
-              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller
+              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller -UseBasicParsing
 
               # Install CMake silently
               Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
@@ -160,8 +160,8 @@ jobs:
               exit 1
           }
 
-          if (-not (Test-Path "build\Release\lemonade-tray.exe")) {
-              Write-Host "ERROR: lemonade-tray.exe not found!" -ForegroundColor Red
+          if (-not (Test-Path "build\Release\LemonadeServer.exe")) {
+              Write-Host "ERROR: LemonadeServer.exe not found!" -ForegroundColor Red
               exit 1
           }
 
@@ -187,7 +187,7 @@ jobs:
           }
 
           # Verify the build output exists
-          if (-not (Test-Path "build\app\win-unpacked\Lemonade.exe")) {
+          if (-not (Test-Path "build\app\win-unpacked\lemonade-app.exe")) {
               Write-Host "ERROR: Electron app executable not found!" -ForegroundColor Red
               exit 1
           }
@@ -251,8 +251,9 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          # Run the build installer script
-          .\src\cpp\build_installer.ps1
+          Write-Host "Building WiX MSI installers via CMake..." -ForegroundColor Cyan
+          cmake --build build --config Release --target wix_installers
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Verify installers were created
           if (-not (Test-Path "lemonade-server-minimal.msi")) {
@@ -513,24 +514,42 @@ jobs:
 
           echo "Local installation complete!"
 
-      - name: Stop services after local install (unsigned path)
+      - name: Verify server is running (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
         run: |
-          echo "Stopping services started by postinst..."
-          sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
-          CURRENT_UID=$(id -u)
-          launchctl bootout gui/"$CURRENT_UID"/com.lemonade.tray 2>/dev/null || true
-          sleep 2
+          echo "Checking server health..."
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
+              echo "Server is running and healthy"
+              exit 0
+            fi
+            sleep 2
+          done
 
-          # Clean up PID and lock files
-          sudo rm -f /tmp/lemonade-router.pid
-          sudo rm -f /tmp/lemonade_Router.lock
-          sudo rm -f /tmp/lemonade_Server.lock
-          sudo rm -f /tmp/lemonade_Tray.lock
-          sudo rm -f /tmp/lemonade*.pid /tmp/lemonade*.lock
+          # Launchd may not start reliably in CI. Fall back to manual start.
+          echo "Server not reachable after 30s — starting manually..."
+          /usr/local/bin/lemonade-server serve --no-tray > /tmp/lemonade-server.log 2>&1 &
 
-          echo "Services stopped and cleaned up."
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
+              echo "Server is running and healthy (started manually)"
+              exit 0
+            fi
+            echo "Waiting for server... ($i/15)"
+            sleep 2
+          done
+          echo "ERROR: Server did not start within 60 seconds"
+          cat /tmp/lemonade-server.log 2>/dev/null || true
+          exit 1
+
+      - name: Set debug logging (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        run: |
+          curl -sf -X POST http://localhost:8000/internal/set \
+            -H 'Content-Type: application/json' \
+            -d '{"log_level":"debug"}' || echo "Warning: Failed to set debug logging"
 
       - name: Setup Python and virtual environment (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
@@ -552,9 +571,6 @@ jobs:
           set -e
           echo "Running CLI tests..."
           .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server
-          .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server --ephemeral
-          .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server --listen-all
-          .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server --api-key
           .venv/bin/python test/server_cli2.py --server-binary /usr/local/bin/lemonade-server
           echo "CLI tests PASSED!"
 
@@ -570,7 +586,6 @@ jobs:
           set -e
           echo "Running endpoint tests..."
           .venv/bin/python test/server_endpoints.py --server-binary /usr/local/bin/lemonade-server
-          .venv/bin/python test/server_endpoints.py --server-binary /usr/local/bin/lemonade-server --server-per-test
           echo "Endpoint tests PASSED!"
 
       - name: Run Ollama API tests (unsigned path)
@@ -647,7 +662,7 @@ jobs:
           cmake --build --preset default --target appimage
 
           # Verify AppImage was created
-          APPIMAGE_FILE="build/app-appimage/Lemonade-${LEMONADE_VERSION}-x86_64.AppImage"
+          APPIMAGE_FILE="build/app-appimage/lemonade-app-${LEMONADE_VERSION}-x86_64.AppImage"
           if [ ! -f "$APPIMAGE_FILE" ]; then
               echo "ERROR: AppImage not created!"
               echo "Contents of build/app-appimage directory:"
@@ -666,7 +681,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-appimage
-          path: build/app-appimage/Lemonade-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
+          path: build/app-appimage/lemonade-app-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
           retention-days: 7
 
 
@@ -754,6 +769,17 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
+      - name: Set debug logging
+        shell: powershell
+        run: |
+          try {
+            Invoke-WebRequest -Uri "http://localhost:8000/internal/set" -Method POST `
+              -ContentType "application/json" -Body '{"log_level":"debug"}' -UseBasicParsing -ErrorAction Stop | Out-Null
+            Write-Host "Debug logging enabled"
+          } catch {
+            Write-Host "Warning: Failed to set debug logging: $_"
+          }
+
       - name: Install FLM backend for FLM wrapped-server tests
         if: ${{ runner.os == 'Windows' && contains(matrix.extra_args, '--wrapped-server flm') }}
         shell: PowerShell
@@ -786,6 +812,12 @@ jobs:
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             }
           }
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-exe-${{ matrix.name }}
 
       - name: Cleanup
         if: always()
@@ -835,18 +867,6 @@ jobs:
       - name: Set HF_HOME environment variable
         run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
 
-      - name: Install Lemonade (.deb)
-        uses: ./.github/actions/install-lemonade-deb
-        with:
-          version: ${{ env.LEMONADE_VERSION }}
-
-      - name: Setup Python and virtual environment
-        uses: ./.github/actions/setup-venv
-        with:
-          venv-name: '.venv'
-          python-version: '3.10'
-          requirements-file: 'test/requirements.txt'
-
       - name: Install FLM backend for FLM wrapped-server tests
         if: ${{ contains(matrix.extra_args, '--wrapped-server flm') }}
         run: |
@@ -865,6 +885,24 @@ jobs:
           rm /tmp/fastflowlm.deb
           flm version
 
+      - name: Install Lemonade (.deb)
+        uses: ./.github/actions/install-lemonade-deb
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Set debug logging
+        run: |
+          curl -sf -X POST http://localhost:8000/internal/set \
+            -H 'Content-Type: application/json' \
+            -d '{"log_level":"debug"}' || echo "Warning: Failed to set debug logging"
+
       - name: Run tests
         env:
           HF_HOME: ${{ env.HF_HOME }}
@@ -880,38 +918,11 @@ jobs:
             done
           fi
 
-      - name: Print server logs on failure
-        if: failure()
-        run: |
-          # Resolve runtime dir: $XDG_RUNTIME_DIR/lemonade when available, else /tmp
-          LEMON_RUNTIME_DIR="${XDG_RUNTIME_DIR:+${XDG_RUNTIME_DIR}/lemonade}"
-          LEMON_RUNTIME_DIR="${LEMON_RUNTIME_DIR:-/tmp}"
-
-          echo "=== Server Log (if exists) ==="
-          LOG_FILE="${LEMON_RUNTIME_DIR}/lemonade-server.log"
-          # Also check /tmp as a safety net when XDG was active but log went to fallback
-          if [ ! -f "$LOG_FILE" ]; then LOG_FILE="/tmp/lemonade-server.log"; fi
-          if [ -f "$LOG_FILE" ]; then
-            echo "Last 100 lines of ${LOG_FILE}:"
-            tail -100 "$LOG_FILE"
-          else
-            echo "Log file not found (checked ${LEMON_RUNTIME_DIR} and /tmp)"
-          fi
-
-          echo ""
-          echo "=== Router PID file (if exists) ==="
-          PID_FILE="${LEMON_RUNTIME_DIR}/lemonade-router.pid"
-          if [ ! -f "$PID_FILE" ]; then PID_FILE="/tmp/lemonade-router.pid"; fi
-          if [ -f "$PID_FILE" ]; then
-            cat "$PID_FILE"
-          else
-            echo "PID file not found"
-          fi
-
-          echo ""
-          echo "=== Lock file status ==="
-          ls -la "${LEMON_RUNTIME_DIR}"/lemonade*.lock 2>/dev/null || true
-          ls -la /tmp/lemonade*.lock 2>/dev/null || echo "No lock files found"
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-deb-${{ matrix.name }}
 
       - name: Cleanup
         if: always()
@@ -990,6 +1001,12 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
+      - name: Set debug logging
+        run: |
+          curl -sf -X POST http://localhost:8000/internal/set \
+            -H 'Content-Type: application/json' \
+            -d '{"log_level":"debug"}' || echo "Warning: Failed to set debug logging"
+
       - name: Test llamacpp (metal)
         env:
           HF_HOME: ${{ env.HF_HOME }}
@@ -997,31 +1014,11 @@ jobs:
           set -e
           .venv/bin/python test/server_llm.py --wrapped-server llamacpp --backend metal --server-binary /usr/local/bin/lemonade-server
 
-      - name: Print server logs on failure
-        if: failure()
-        run: |
-          echo "=== Server Log (if exists) ==="
-          if [ -f /var/log/lemonade/lemonade-server.out.log ]; then
-            echo "Last 100 lines of lemonade-server.out.log:"
-            tail -100 /var/log/lemonade/lemonade-server.out.log
-          fi
-          if [ -f /var/log/lemonade/lemonade-server.err.log ]; then
-            echo "Last 100 lines of lemonade-server.err.log:"
-            tail -100 /var/log/lemonade/lemonade-server.err.log
-          fi
-
-          echo ""
-          echo "=== Temp logs ==="
-          for f in /tmp/lemonade*.log; do
-            if [ -f "$f" ]; then
-              echo "--- $f ---"
-              tail -50 "$f"
-            fi
-          done 2>/dev/null || echo "No temp log files found"
-
-          echo ""
-          echo "=== Lock file status ==="
-          ls -la /tmp/lemonade*.lock 2>/dev/null || echo "No lock files found"
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-dmg-llamacpp
 
   # ========================================================================
   # CLI AND ENDPOINTS TESTS - Run on GitHub-hosted runners (no GPU needed)
@@ -1122,10 +1119,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
-        test_type: [cli, endpoints, system-info, ollama, llamacpp-system, streaming-errors]
-        exclude:
-          - os: macos-latest
-            test_type: system-info
+        test_type: [cli, endpoints, ollama, llamacpp-system, streaming-errors]
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -1137,7 +1131,7 @@ jobs:
       # ---- Windows Setup ----
       - name: Setup (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: |
           $cwd = (Get-Item .).FullName
           echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
@@ -1151,7 +1145,7 @@ jobs:
 
       - name: Set paths (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: |
           echo "VENV_PYTHON=.venv/Scripts/python.exe" >> $Env:GITHUB_ENV
           echo "SERVER_BINARY=$Env:LEMONADE_INSTALL_PATH\bin\lemonade-server.exe" >> $Env:GITHUB_ENV
@@ -1189,33 +1183,13 @@ jobs:
           requirements-file: 'test/requirements.txt'
 
       # ---- Run Tests ----
-      - name: Stop systemd service before tests (Linux)
-        if: runner.os == 'Linux'
+      - name: Set debug logging
+        if: ${{ !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
         run: |
-          echo "Stopping lemonade-server systemd service..."
-          sudo systemctl stop lemonade-server || true
-          sudo systemctl status lemonade-server || true
-
-      - name: Stop LaunchDaemon before tests (macOS)
-        if: runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing == 'true'
-        shell: bash
-        run: |
-          echo "Stopping lemonade-server LaunchDaemon..."
-          sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
-          CURRENT_UID=$(id -u)
-          launchctl bootout gui/"$CURRENT_UID"/com.lemonade.tray 2>/dev/null || true
-          sleep 2
-
-          # Clean up PID and lock files left behind by killed processes
-          echo "Cleaning up stale PID and lock files..."
-          sudo rm -f /tmp/lemonade-router.pid
-          sudo rm -f /tmp/lemonade_Router.lock
-          sudo rm -f /tmp/lemonade_Server.lock
-          sudo rm -f /tmp/lemonade_Tray.lock
-          sudo rm -f /tmp/lemonade*.pid /tmp/lemonade*.lock
-
-          echo "LaunchDaemon stopped and cleaned up."
+          curl -sf -X POST http://localhost:8000/internal/set \
+            -H 'Content-Type: application/json' \
+            -d '{"log_level":"debug"}' || echo "Warning: Failed to set debug logging"
 
       - name: Run ${{ matrix.test_type }} tests
         if: ${{ !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
@@ -1228,14 +1202,10 @@ jobs:
           if [ "${{ matrix.test_type }}" = "cli" ]; then
               echo "Running CLI tests..."
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY"
-              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --ephemeral
-              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --listen-all
-              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --api-key
               $VENV_PYTHON test/server_cli2.py --server-binary "$SERVER_BINARY"
           elif [ "${{ matrix.test_type }}" = "endpoints" ]; then
               echo "Running endpoint tests..."
               $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY"
-              $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY" --server-per-test
           elif [ "${{ matrix.test_type }}" = "system-info" ]; then
               echo "Running system-info mock hardware tests..."
               # Unset LEMONADE_CI_MODE so the server uses mock cache files
@@ -1255,6 +1225,208 @@ jobs:
           fi
 
           echo "${{ matrix.test_type }} tests PASSED!"
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-${{ matrix.os }}-${{ matrix.test_type }}
+
+  # ========================================================================
+  # API KEY TESTS - Separate job with LEMONADE_API_KEY env var
+  # ========================================================================
+
+  test-cli-apikey-linux:
+    name: Test API Key (ubuntu-latest)
+    runs-on: ubuntu-latest
+    needs: build-lemonade-deb
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      LEMONADE_CI_MODE: "True"
+      LEMONADE_API_KEY: "test-api-key-12345"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $(pwd)
+
+      - name: Install pip and test dependencies
+        shell: bash
+        run: |
+          set -e
+          if ! command -v pip3 &> /dev/null; then
+            apt-get update
+            apt-get install -y python3-pip python3-venv
+          fi
+          python3 -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r test/requirements.txt
+
+      - name: Install Lemonade (.deb)
+        uses: ./.github/actions/install-lemonade-deb
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+
+      - name: Verify API key enforcement
+        shell: bash
+        run: |
+          set -e
+          PASS=0
+          FAIL=0
+
+          # 1. No API key → must get 401
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/api/v1/health 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" = "401" ]; then
+            echo "PASS: No API key → $HTTP_CODE"
+            PASS=$((PASS+1))
+          else
+            echo "FAIL: No API key → $HTTP_CODE (expected 401)"
+            FAIL=$((FAIL+1))
+          fi
+
+          # 2. Wrong API key → must get 401
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer wrong-key" http://127.0.0.1:8000/api/v1/health 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" = "401" ]; then
+            echo "PASS: Wrong API key → $HTTP_CODE"
+            PASS=$((PASS+1))
+          else
+            echo "FAIL: Wrong API key → $HTTP_CODE (expected 401)"
+            FAIL=$((FAIL+1))
+          fi
+
+          # 3. Correct API key → must get 200
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $LEMONADE_API_KEY" http://127.0.0.1:8000/api/v1/health 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "PASS: Correct API key → $HTTP_CODE"
+            PASS=$((PASS+1))
+          else
+            echo "FAIL: Correct API key → $HTTP_CODE (expected 200)"
+            FAIL=$((FAIL+1))
+          fi
+
+          echo ""
+          echo "Results: $PASS passed, $FAIL failed"
+          if [ "$FAIL" -gt 0 ]; then
+            echo "ERROR: API key enforcement tests failed"
+            exit 1
+          fi
+
+      - name: Run CLI tests with API key
+        shell: bash
+        run: |
+          set -e
+          # CLI commands should work because LEMONADE_API_KEY is in the env
+          # and the CLI client reads it automatically
+          .venv/bin/python test/server_cli.py --server-binary lemonade-server
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-apikey-ubuntu-latest
+
+  test-cli-apikey:
+    name: Test API Key (windows-latest)
+    runs-on: windows-latest
+    needs:
+      - build-lemonade-server-installer
+    env:
+      LEMONADE_CI_MODE: "True"
+      LEMONADE_API_KEY: "test-api-key-12345"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup (Windows)
+        shell: powershell
+        run: |
+          $cwd = (Get-Item .).FullName
+          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
+          echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
+
+      - name: Install Lemonade Server (Windows)
+        uses: ./.github/actions/install-lemonade-server-msi
+        with:
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+
+      - name: Set paths (Windows)
+        shell: powershell
+        run: |
+          echo "VENV_PYTHON=.venv/Scripts/python.exe" >> $Env:GITHUB_ENV
+          echo "SERVER_BINARY=$Env:LEMONADE_INSTALL_PATH\bin\lemonade-server.exe" >> $Env:GITHUB_ENV
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Verify API key enforcement
+        shell: bash
+        run: |
+          set -e
+          PASS=0
+          FAIL=0
+
+          # 1. No API key → must get 401
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/v1/health 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" = "401" ]; then
+            echo "PASS: No API key → $HTTP_CODE"
+            PASS=$((PASS+1))
+          else
+            echo "FAIL: No API key → $HTTP_CODE (expected 401)"
+            FAIL=$((FAIL+1))
+          fi
+
+          # 2. Wrong API key → must get 401
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer wrong-key" http://localhost:8000/api/v1/health 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" = "401" ]; then
+            echo "PASS: Wrong API key → $HTTP_CODE"
+            PASS=$((PASS+1))
+          else
+            echo "FAIL: Wrong API key → $HTTP_CODE (expected 401)"
+            FAIL=$((FAIL+1))
+          fi
+
+          # 3. Correct API key → must get 200
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $LEMONADE_API_KEY" http://localhost:8000/api/v1/health 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "PASS: Correct API key → $HTTP_CODE"
+            PASS=$((PASS+1))
+          else
+            echo "FAIL: Correct API key → $HTTP_CODE (expected 200)"
+            FAIL=$((FAIL+1))
+          fi
+
+          echo ""
+          echo "Results: $PASS passed, $FAIL failed"
+          if [ "$FAIL" -gt 0 ]; then
+            echo "ERROR: API key enforcement tests failed"
+            exit 1
+          fi
+
+      - name: Run CLI tests with API key
+        shell: bash
+        env:
+          HF_HOME: ${{ env.HF_HOME }}
+        run: |
+          set -e
+          $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY"
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-apikey-windows-latest
 
   # ========================================================================
   # RELEASE JOB - Add artifacts to GitHub release
@@ -1310,7 +1482,7 @@ jobs:
           ls -lh lemonade.msi
           ls -lh lemonade-server-${LEMONADE_VERSION}.x86_64.rpm
           ls -lh *.pkg
-          ls -lh Lemonade-${LEMONADE_VERSION}-x86_64.AppImage
+          ls -lh lemonade-app-${LEMONADE_VERSION}-x86_64.AppImage
 
       - name: Generate release notes
         id: release-notes
@@ -1330,5 +1502,5 @@ jobs:
             lemonade.msi
             lemonade-server-${{ env.LEMONADE_VERSION }}.x86_64.rpm
             *.pkg
-            Lemonade-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
+            lemonade-app-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
           fail_on_unmatched_files: true

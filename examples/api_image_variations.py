@@ -4,7 +4,7 @@ variations of images using Stable Diffusion models via the OpenAI Python client.
 
 Prerequisites:
 1. Install the OpenAI client: pip install openai pillow
-2. Start the lemonade server with SD backend: lemonade-server --sdcpp rocm  (or --sdcpp cpu)
+2. The lemonade server should be running (starts automatically after installation)
 3. An image model will be auto-downloaded on first use
 4. You need a source image (example creates a simple one)
 
@@ -185,8 +185,7 @@ if __name__ == "__main__":
     print("Lemonade Image Variations Example")
     print("=" * 60)
     print()
-    print("Make sure the lemonade server is running with SD backend:")
-    print("  lemonade-server --sdcpp rocm")
+    print("Make sure the lemonade server is running (lemonade status)")
     print()
 
     # Get or create an image
