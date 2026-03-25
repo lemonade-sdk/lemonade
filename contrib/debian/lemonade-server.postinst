@@ -1,0 +1,33 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+	legacy_home="/opt/var/lib/lemonade"
+	new_home="/var/lib/lemonade"
+
+	# Create the lemonade user and group if they don't exist
+	if ! getent group lemonade > /dev/null; then
+		groupadd lemonade
+	fi
+
+	if ! getent passwd lemonade > /dev/null; then
+		useradd -m -r -g lemonade -d "$new_home" -s /usr/sbin/nologin lemonade
+	fi
+
+	# Move all data from the legacy home
+	if [ -d "$legacy_home" ]; then
+		usermod -d "$new_home" -m lemonade >/dev/null
+	fi
+
+	# Add lemonade user to systemd-journal group for journal access.
+	if getent group systemd-journal > /dev/null; then
+		usermod -a -G systemd-journal lemonade
+	fi
+
+	# Add lemonade user to render group for GPU access
+	if getent group render > /dev/null; then
+		usermod -a -G render lemonade
+	fi
+fi
+
+#DEBHELPER#

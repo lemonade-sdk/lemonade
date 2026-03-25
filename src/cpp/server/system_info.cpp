@@ -70,15 +70,26 @@ const std::vector<std::string> NVIDIA_DISCRETE_GPU_KEYWORDS = {
 
 // ROCm architecture mapping - maps specific gfx architectures to their family
 const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
-    // RDNA4 family (gfx120X)
-    {"gfx1200", "gfx120X"},
-    {"gfx1201", "gfx120X"},
-
+    // RDNA2 family (gfx103X)
+    {"gfx1030", "gfx103X"},
+    {"gfx1031", "gfx103X"},
+    {"gfx1032", "gfx103X"},
+    {"gfx1034", "gfx103X"},
+    // Note: gfx1033, gfx1035, gfx1036 are NOT included (not confirmed as supported)
+    
     // RDNA3 family (gfx110X)
     {"gfx1100", "gfx110X"},
     {"gfx1101", "gfx110X"},
     {"gfx1102", "gfx110X"},
     {"gfx1103", "gfx110X"},
+    
+    // RDNA3.5 iGPUs - explicit binary names (no family mapping)
+    {"gfx1150", "gfx1150"},  // Maps to exact binary name
+    {"gfx1151", "gfx1151"},  // Maps to exact binary name
+    
+    // RDNA4 family (gfx120X)
+    {"gfx1200", "gfx120X"},
+    {"gfx1201", "gfx120X"},
 };
 
 // ============================================================================
@@ -118,8 +129,8 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_dgpu", {}},      // all dGPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_igpu", {"gfx1150", "gfx1151"}},                      // STX Point/Halo iGPUs
-        {"amd_dgpu", {"gfx110X", "gfx120X"}},                      // RDNA3/RDNA4 dGPUs
+        {"amd_igpu", {"gfx1150", "gfx1151"}},                      // STX Point/Halo iGPUs (explicit binaries)
+        {"amd_dgpu", {"gfx103X", "gfx110X", "gfx120X"}},          // RDNA2/3/4 dGPUs (family binaries)
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
@@ -149,7 +160,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 #endif
             "gfx1151"
         }},
-        {"amd_dgpu", {"gfx110X", "gfx120X"}},
+        {"amd_dgpu", {"gfx103X", "gfx110X", "gfx120X"}},
     }},
 
     // stable-diffusion.cpp - CPU backend (Windows/Linux x86_64)
@@ -182,6 +193,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     // AMD iGPU/dGPU architectures (ROCm)
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
+    {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
     {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
 
@@ -1136,11 +1148,12 @@ std::string SystemInfo::get_system_llamacpp_version() {
 }
 
 // Helper to identify ROCm architecture from GPU name
+// Returns empty string if the architecture is NOT in ROCM_ARCH_MAPPING (unsupported)
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
 
-    // linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
+    // Linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
     if (std::all_of(device_lower.begin(), device_lower.end(), ::isdigit)) {
         if (device_lower.length() >= 4) {
             std::string major = device_lower.substr(0, 2);
@@ -1154,12 +1167,13 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
             std::string arch = "gfx" + major + minor + revision;
 
             // Apply architecture family mapping
+            // If not in mapping, return empty string (unsupported)
             auto it = ROCM_ARCH_MAPPING.find(arch);
             if (it != ROCM_ARCH_MAPPING.end()) {
                 return it->second;
             }
 
-            return arch;
+            return "";  // Unmapped architecture = unsupported
         }
     }
 
@@ -1202,6 +1216,17 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         device_lower.find("7900") != std::string::npos ||
         device_lower.find("v710") != std::string::npos) {
         return "gfx110X";
+    }
+
+    // RDNA2 GPUs (gfx103X architecture)
+    // AMD Radeon RX 6800 XT, AMD Radeon RX 6800, AMD Radeon RX 6700 XT, 
+    // AMD Radeon RX 6700, AMD Radeon RX 6600 XT, AMD Radeon RX 6600, 
+    // AMD Radeon RX 6500 XT, AMD Radeon RX 6500
+    if (device_lower.find("6800") != std::string::npos ||
+        device_lower.find("6700") != std::string::npos ||
+        device_lower.find("6600") != std::string::npos ||
+        device_lower.find("6500") != std::string::npos) {
+        return "gfx103X";
     }
 
     return "";

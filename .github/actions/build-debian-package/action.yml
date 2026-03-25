@@ -1,0 +1,57 @@
+name: Build Debian Package
+description: Install build dependencies, build Debian package, and collect artifacts
+
+inputs:
+  package-type:
+    description: 'Type of package to build: binary or source'
+    required: true
+  deb-version:
+    description: 'Debian version (for logging)'
+    required: true
+
+outputs:
+  output-dir:
+    description: 'Directory containing collected artifacts'
+    value: ${{ steps.build.outputs.output-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install build dependencies
+      shell: bash
+      run: |
+        set -e
+        apt-get update && apt-get build-dep . -y
+
+    - name: Build Debian package
+      id: build
+      shell: bash
+      run: |
+        set -e
+        PACKAGE_TYPE="${{ inputs.package-type }}"
+        DEB_VERSION="${{ inputs.deb-version }}"
+
+        if [ "$PACKAGE_TYPE" = "binary" ]; then
+          echo "Building binary .deb package for version $DEB_VERSION..."
+          dpkg-buildpackage -us -uc -b
+          OUTPUT_DIR="build-output"
+          mkdir -p "$OUTPUT_DIR"
+          mv ../*.deb "$OUTPUT_DIR/" || true
+          mv ../*.buildinfo "$OUTPUT_DIR/" || true
+          mv ../*.changes "$OUTPUT_DIR/" || true
+        elif [ "$PACKAGE_TYPE" = "source" ]; then
+          echo "Building source package for version $DEB_VERSION..."
+          dpkg-buildpackage -us -uc -S -sa
+          OUTPUT_DIR="source-output"
+          mkdir -p "$OUTPUT_DIR"
+          mv ../*.dsc "$OUTPUT_DIR/" || true
+          mv ../*.tar.* "$OUTPUT_DIR/" || true
+          mv ../*.changes "$OUTPUT_DIR/" || true
+          mv ../*.buildinfo "$OUTPUT_DIR/" || true
+        else
+          echo "ERROR: Invalid package-type '$PACKAGE_TYPE' (must be 'binary' or 'source')"
+          exit 1
+        fi
+
+        echo "output-dir=$OUTPUT_DIR" >> $GITHUB_OUTPUT
+        echo "Artifacts collected in: $OUTPUT_DIR"

@@ -28,6 +28,7 @@ from utils.server_base import (
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
+    TOOL_CALLING_MODEL,
     VISION_MODEL,
     SD_MODEL,
     SAMPLE_TOOL,
@@ -641,7 +642,15 @@ class OllamaTests(ServerTestBase):
 
     def test_026_anthropic_messages_tool_calling(self):
         """Test Anthropic-compatible tool calling maps to tool_use blocks."""
-        self.ensure_model_pulled()
+        # Use a model with native tool-calling support in its chat template;
+        # the tiny test model (gemma-3) lacks tool markers so the llama.cpp
+        # autoparser ignores tools even with tool_choice required.
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={"model_name": TOOL_CALLING_MODEL, "stream": False},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
 
         anthropic_tool = {
             "name": SAMPLE_TOOL["function"]["name"],
@@ -650,7 +659,7 @@ class OllamaTests(ServerTestBase):
         }
 
         payload = {
-            "model": ENDPOINT_TEST_MODEL,
+            "model": TOOL_CALLING_MODEL,
             "messages": [
                 {
                     "role": "user",

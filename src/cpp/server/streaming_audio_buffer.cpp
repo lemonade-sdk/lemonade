@@ -1,5 +1,5 @@
 #include "lemon/streaming_audio_buffer.h"
-#include <ixwebsocket/IXBase64.h>
+#include <libwebsockets.h>
 #include <cstring>
 #include <algorithm>
 #include <iostream>
@@ -12,9 +12,12 @@ void StreamingAudioBuffer::append(const std::string& base64_audio) {
         return;
     }
 
-    // Decode base64 to raw bytes using ixwebsocket's base64 implementation
-    std::string decoded_str;
-    macaron::Base64::Decode(base64_audio, decoded_str);
+    // Decode base64 to raw bytes using libwebsockets' base64 implementation
+    std::vector<char> decode_buf(base64_audio.size());
+    int decoded_len = lws_b64_decode_string_len(
+        base64_audio.c_str(), static_cast<int>(base64_audio.size()),
+        decode_buf.data(), static_cast<int>(decode_buf.size()));
+    std::string decoded_str(decode_buf.data(), decoded_len > 0 ? decoded_len : 0);
     const auto* raw_bytes = reinterpret_cast<const uint8_t*>(decoded_str.data());
     size_t raw_size = decoded_str.size();
 
