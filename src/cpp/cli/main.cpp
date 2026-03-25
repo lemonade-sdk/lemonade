@@ -1,22 +1,24 @@
 #include "lemon/utils/aixlog.hpp"
 #include "lemon_cli/lemonade_client.h"
+#include "lemon_cli/model_selection.h"
+#include "lemon_cli/recipe_import.h"
 #include <lemon/recipe_options.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/network_beacon.h>
-#include <lemon/utils/http_client.h>
 #include <CLI/CLI.hpp>
 #include <iostream>
 #include <string>
 #include <fstream>
-#include <cctype>
-#include <filesystem>
 #include <nlohmann/json.hpp>
 #include <chrono>
 #include <thread>
 #include <unordered_set>
+#include <functional>
+#include <map>
+#include <vector>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -40,17 +42,6 @@ static const std::vector<std::string> VALID_LABELS = {
     "reranking",
     "tool-calling",
     "vision"
-};
-
-static const std::vector<std::string> KNOWN_KEYS = {
-    "checkpoint",
-    "checkpoints",
-    "model_name",
-    "image_defaults",
-    "labels",
-    "recipe",
-    "recipe_options",
-    "size"
 };
 
 static const std::vector<std::string> SUPPORTED_AGENTS = {
@@ -82,65 +73,6 @@ struct CliConfig {
     int scan_duration = 30;
     bool json_output = false;
 };
-
-static bool validate_and_transform_model_json(nlohmann::json& model_data) {
-    // Validate model_name (or id -> model_name)
-    if (!model_data.contains("model_name") || !model_data["model_name"].is_string()) {
-        if (model_data.contains("id") && model_data["id"].is_string()) {
-            model_data["model_name"] = model_data["id"];
-            model_data.erase("id");
-        } else {
-            std::cerr << "Error: JSON file must contain a 'model_name' string field" << std::endl;
-            return false;
-        }
-    }
-
-    // Prepend "user." to model_name if it doesn't already start with "user."
-    std::string model_name = model_data["model_name"].get<std::string>();
-    if (model_name.substr(0, 5) != "user.") {
-        model_data["model_name"] = "user." + model_name;
-    }
-
-    // Validate recipe
-    if (!model_data.contains("recipe") || !model_data["recipe"].is_string()) {
-        std::cerr << "Error: JSON file must contain a 'recipe' string field" << std::endl;
-        return false;
-    }
-
-    // Validate checkpoints or checkpoint
-    bool has_checkpoints = model_data.contains("checkpoints") && model_data["checkpoints"].is_object();
-    bool has_checkpoint = model_data.contains("checkpoint") && model_data["checkpoint"].is_string();
-    if (!has_checkpoints && !has_checkpoint) {
-        std::cerr << "Error: JSON file must contain either 'checkpoints' (object) or 'checkpoint' (string)" << std::endl;
-        return false;
-    }
-
-    // If both checkpoints and checkpoint exist, remove checkpoint
-    if (has_checkpoints && has_checkpoint) {
-        model_data.erase("checkpoint");
-    }
-
-    // Remove unrecognized top-level keys after validation
-    std::vector<std::string> keys_to_remove;
-    for (auto& [key, _] : model_data.items()) {
-        bool is_known = false;
-        for (const auto& known_key : KNOWN_KEYS) {
-            if (key == known_key) {
-                is_known = true;
-                break;
-            }
-        }
-        if (!is_known) {
-            keys_to_remove.push_back(key);
-        }
-    }
-
-    for (const auto& key : keys_to_remove) {
-        model_data.erase(key);
-    }
-
-    return true;
-}
 
 // Open a URL via the OS without invoking a shell (avoids shell injection).
 // On Windows, ShellExecuteA is already shell-free.
@@ -231,307 +163,13 @@ static bool handle_backend_operation(const std::string& spec, const std::string&
     return true;
 }
 
-static int import_model_from_json_file(lemonade::LemonadeClient& client,
-                                       const std::string& json_path,
-                                       std::string* imported_model_out = nullptr) {
-    nlohmann::json model_data;
-
-    // Load JSON from file
-    std::ifstream file(json_path);
-    if (!file.good()) {
-        std::cerr << "Error: Failed to open JSON file '" << json_path << "'" << std::endl;
-        return 1;
-    }
-
-    try {
-        model_data = nlohmann::json::parse(file);
-        file.close();
-
-        if (!validate_and_transform_model_json(model_data)) {
-            return 1;
-        }
-
-        if (imported_model_out != nullptr && model_data.contains("model_name") && model_data["model_name"].is_string()) {
-            *imported_model_out = model_data["model_name"].get<std::string>();
-        }
-    } catch (const nlohmann::json::exception& e) {
-        std::cerr << "Error: Failed to parse JSON file '" << json_path << "': " << e.what() << std::endl;
-        return 1;
-    }
-
-    return client.pull_model(model_data);
-}
-
-static bool is_json_recipe_file(const nlohmann::json& entry) {
-    if (!entry.is_object()) {
-        return false;
-    }
-    if (!entry.contains("type") || !entry["type"].is_string() || entry["type"].get<std::string>() != "file") {
-        return false;
-    }
-    if (!entry.contains("name") || !entry["name"].is_string()) {
-        return false;
-    }
-    const std::string name = entry["name"].get<std::string>();
-    return name.size() >= 5 && name.substr(name.size() - 5) == ".json";
-}
-
-static bool fetch_github_recipe_contents(const std::string& subpath,
-                                         nlohmann::json& response_out,
-                                         std::string& error_out) {
-    std::string api_path = "/repos/lemonade-sdk/recipes/contents";
-    if (!subpath.empty()) {
-        api_path += "/" + subpath;
-    }
-
-    std::map<std::string, std::string> headers = {
-        {"Accept", "application/vnd.github+json"},
-        {"X-GitHub-Api-Version", "2022-11-28"},
-        {"User-Agent", "lemonade-cli"}
-    };
-
-    lemon::utils::HttpResponse res;
-    try {
-        res = lemon::utils::HttpClient::get("https://api.github.com" + api_path, headers);
-    } catch (const std::exception& e) {
-        error_out = "GitHub API request failed: " + std::string(e.what());
-        return false;
-    }
-    if (res.status_code != 200) {
-        error_out = "GitHub API request failed with status " + std::to_string(res.status_code);
-        return false;
-    }
-
-    try {
-        response_out = nlohmann::json::parse(res.body);
-    } catch (const nlohmann::json::exception& e) {
-        error_out = std::string("Failed to parse GitHub API JSON: ") + e.what();
-        return false;
-    }
-
-    if (!response_out.is_array()) {
-        error_out = "Unexpected GitHub API response shape (expected array).";
-        return false;
-    }
-    return true;
-}
-
-static int prompt_numbered_choice(const std::string& title,
-                                  const std::vector<std::string>& options,
-                                  bool allow_skip,
-                                  const std::string& skip_label) {
-    if (options.empty()) {
-        return -2;
-    }
-
-    std::cout << title << std::endl;
-    if (allow_skip) {
-        std::cout << "  0) " << skip_label << std::endl;
-    }
-    for (size_t i = 0; i < options.size(); ++i) {
-        std::cout << "  " << (i + 1) << ") " << options[i] << std::endl;
-    }
-    std::cout << "Enter number: " << std::flush;
-
-    std::string input;
-    if (!std::getline(std::cin, input)) {
-        std::cerr << "Error: Failed to read selection." << std::endl;
-        return -2;
-    }
-
-    size_t parsed_chars = 0;
-    int selected = 0;
-    try {
-        selected = std::stoi(input, &parsed_chars);
-    } catch (const std::exception&) {
-        std::cerr << "Error: Invalid selection." << std::endl;
-        return -2;
-    }
-
-    if (parsed_chars != input.size()) {
-        std::cerr << "Error: Invalid selection." << std::endl;
-        return -2;
-    }
-
-    if (allow_skip && selected == 0) {
-        return -1;
-    }
-
-    if (selected < 1 || static_cast<size_t>(selected) > options.size()) {
-        std::cerr << "Error: Selection out of range." << std::endl;
-        return -2;
-    }
-
-    return selected - 1;
-}
-
-static bool download_recipe_to_temp_file(const std::string& download_url,
-                                         std::filesystem::path& temp_file_out,
-                                         std::string& error_out) {
-    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    temp_file_out = std::filesystem::temp_directory_path() /
-        ("lemonade-recipe-" + std::to_string(timestamp) + ".json");
-
-    lemon::utils::DownloadResult result;
-    try {
-        result = lemon::utils::HttpClient::download_file(download_url, temp_file_out.string());
-    } catch (const std::exception& e) {
-        error_out = "Recipe download failed: " + std::string(e.what());
-        return false;
-    }
-
-    if (!result.success) {
-        error_out = "Recipe download failed: " + result.error_message;
-        if (result.http_code > 0) {
-            error_out += " (HTTP " + std::to_string(result.http_code) + ")";
-        }
-        return false;
-    }
-
-    return true;
-}
-
-static int handle_import_remote_recipe_command(lemonade::LemonadeClient& client,
-                                               const CliConfig& config,
-                                               std::string* imported_model_out,
-                                               bool allow_skip) {
-    std::string selected_dir = config.repo_dir;
-    const bool non_interactive = config.skip_prompt || config.yes;
-
-    if (non_interactive && selected_dir.empty()) {
-        std::cerr << "Error: Non-interactive mode requires --repo-dir." << std::endl;
-        return 1;
-    }
-    if (non_interactive && config.recipe_file.empty()) {
-        std::cerr << "Error: Non-interactive mode requires --recipe-file." << std::endl;
-        return 1;
-    }
-
-    if (selected_dir.empty()) {
-        nlohmann::json top_entries;
-        std::string fetch_error;
-        if (!fetch_github_recipe_contents("", top_entries, fetch_error)) {
-            std::cerr << "Error: " << fetch_error << std::endl;
-            return 1;
-        }
-
-        std::vector<std::string> dir_names;
-        for (const auto& entry : top_entries) {
-            if (entry.is_object() && entry.contains("type") && entry["type"].is_string() &&
-                entry["type"].get<std::string>() == "dir" &&
-                entry.contains("name") && entry["name"].is_string()) {
-                dir_names.push_back(entry["name"].get<std::string>());
-            }
-        }
-
-        if (dir_names.empty()) {
-            std::cerr << "Error: No recipe directories found in lemonade-sdk/recipes." << std::endl;
-            return 1;
-        }
-
-        const int dir_idx = prompt_numbered_choice(
-            "Select a recipe directory:", dir_names, allow_skip, "Continue without recipe import");
-        if (dir_idx == -1) {
-            std::cout << "Skipping recipe import." << std::endl;
-            return 0;
-        }
-        if (dir_idx < 0) {
-            return 1;
-        }
-
-        selected_dir = dir_names[static_cast<size_t>(dir_idx)];
-    }
-
-    nlohmann::json dir_entries;
-    std::string fetch_error;
-    if (!fetch_github_recipe_contents(selected_dir, dir_entries, fetch_error)) {
-        std::cerr << "Error: " << fetch_error << std::endl;
-        if (allow_skip) {
-            std::cout << "Continuing without recipe import." << std::endl;
-            return 0;
-        }
-        return 1;
-    }
-
-    std::vector<nlohmann::json> recipe_entries;
-    std::vector<std::string> recipe_names;
-    for (const auto& entry : dir_entries) {
-        if (is_json_recipe_file(entry)) {
-            recipe_entries.push_back(entry);
-            recipe_names.push_back(entry["name"].get<std::string>());
-        }
-    }
-
-    if (recipe_entries.empty()) {
-        std::cerr << "Error: No JSON recipes found in directory '" << selected_dir << "'." << std::endl;
-        if (allow_skip) {
-            std::cout << "Continuing without recipe import." << std::endl;
-            return 0;
-        }
-        return 1;
-    }
-
-    nlohmann::json selected_entry;
-    if (!config.recipe_file.empty()) {
-        bool found = false;
-        for (const auto& entry : recipe_entries) {
-            if (entry["name"].get<std::string>() == config.recipe_file) {
-                selected_entry = entry;
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            std::cerr << "Error: Recipe file '" << config.recipe_file
-                      << "' not found in directory '" << selected_dir << "'." << std::endl;
-            return 1;
-        }
-    } else {
-        const int file_idx = prompt_numbered_choice(
-            "Select a recipe to import:", recipe_names, allow_skip, "Continue without recipe import");
-        if (file_idx == -1) {
-            std::cout << "Skipping recipe import." << std::endl;
-            return 0;
-        }
-        if (file_idx < 0) {
-            return 1;
-        }
-        selected_entry = recipe_entries[static_cast<size_t>(file_idx)];
-    }
-
-    if (!selected_entry.contains("download_url") || !selected_entry["download_url"].is_string()) {
-        std::cerr << "Error: Selected recipe does not expose a download URL." << std::endl;
-        return 1;
-    }
-
-    std::filesystem::path temp_file;
-    std::string download_error;
-    if (!download_recipe_to_temp_file(selected_entry["download_url"].get<std::string>(), temp_file, download_error)) {
-        std::cerr << "Error: " << download_error << std::endl;
-        if (allow_skip) {
-            std::cout << "Continuing without recipe import." << std::endl;
-            return 0;
-        }
-        return 1;
-    }
-
-    int import_result = import_model_from_json_file(client, temp_file.string(), imported_model_out);
-    std::error_code rm_ec;
-    std::filesystem::remove(temp_file, rm_ec);
-    if (rm_ec) {
-        std::cerr << "Warning: Failed to remove temp recipe file '" << temp_file.string() << "'." << std::endl;
-    }
-
-    return import_result;
-}
-
 static int handle_import_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     if (!config.model.empty()) {
-        return import_model_from_json_file(client, config.model);
+        return lemon_cli::import_model_from_json_file(client, config.model);
     }
 
-    return handle_import_remote_recipe_command(client, config, nullptr, true);
+    return lemon_cli::import_remote_recipe(client, config.repo_dir, config.recipe_file,
+                                           config.skip_prompt, config.yes, nullptr, true);
 }
 
 static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
@@ -560,7 +198,7 @@ static int handle_export_command(lemonade::LemonadeClient& client, const CliConf
         return 1;
     }
 
-    if (!validate_and_transform_model_json(model_json)) {
+    if (!lemon_cli::validate_and_transform_model_json(model_json)) {
         return 1;
     }
 
@@ -615,142 +253,8 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
     return client.load_model(config.model, config.recipe_options, config.save_options);
 }
 
-static bool fetch_models_from_endpoint(lemonade::LemonadeClient& client, bool show_all,
-                                       std::vector<lemonade::ModelInfo>& models_out) {
-    try {
-        std::string path = "/api/v1/models?show_all=" + std::string(show_all ? "true" : "false");
-        std::string response = client.make_request(path, "GET", "", "", 3000, 3000);
-        nlohmann::json json_response = nlohmann::json::parse(response);
-
-        if (!json_response.contains("data") || !json_response["data"].is_array()) {
-            return true;
-        }
-
-        for (const auto& model_item : json_response["data"]) {
-            if (!model_item.is_object()) {
-                continue;
-            }
-
-            lemonade::ModelInfo info;
-            if (model_item.contains("id") && model_item["id"].is_string()) {
-                info.id = model_item["id"].get<std::string>();
-            }
-            if (model_item.contains("recipe") && model_item["recipe"].is_string()) {
-                info.recipe = model_item["recipe"].get<std::string>();
-            }
-            if (model_item.contains("downloaded") && model_item["downloaded"].is_boolean()) {
-                info.downloaded = model_item["downloaded"].get<bool>();
-            }
-
-            if (!info.id.empty()) {
-                models_out.push_back(info);
-            }
-        }
-
-        return true;
-    } catch (const std::exception& e) {
-        LOG(ERROR, "AgentLauncher") << "Error: Failed to query /api/v1/models: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-static bool prompt_model_selection(lemonade::LemonadeClient& client,
-                                   std::string& model_out,
-                                   bool show_all) {
-    std::vector<lemonade::ModelInfo> models;
-    if (!fetch_models_from_endpoint(client, false, models)) {
-        return false;
-    }
-    if (models.empty() && !fetch_models_from_endpoint(client, true, models)) {
-        return false;
-    }
-
-    if (models.empty()) {
-        LOG(ERROR, "ModelSelector") << "No models available on server. Try 'lemonade list' or 'lemonade pull <MODEL>'." << std::endl;
-        return false;
-    }
-
-    std::cout << "Select a model:" << std::endl;
-    for (size_t i = 0; i < models.size(); ++i) {
-        const auto& model = models[i];
-
-        if (model.recipe != "llamacpp" && !show_all) {
-            continue;
-        }
-
-        std::cout << "  " << (i + 1) << ") " << model.id
-                  << " [" << (model.downloaded ? "downloaded" : "not-downloaded") << "]"
-                  << " (" << (model.recipe.empty() ? "-" : model.recipe) << ")"
-                  << std::endl;
-
-    }
-
-    std::cout << "Enter number: " << std::flush;
-
-    std::string input;
-    if (!std::getline(std::cin, input)) {
-        LOG(ERROR, "ModelSelector") << "Error: Failed to read model selection." << std::endl;
-        return false;
-    }
-
-    size_t parsed_chars = 0;
-    int selected = 0;
-    try {
-        selected = std::stoi(input, &parsed_chars);
-    } catch (const std::exception&) {
-        LOG(ERROR, "ModelSelector") << "Error: Invalid selection." << std::endl;
-        return false;
-    }
-
-    if (parsed_chars != input.size() || selected < 1 || static_cast<size_t>(selected) > models.size()) {
-        LOG(ERROR, "ModelSelector") << "Error: Selection out of range." << std::endl;
-        return false;
-    }
-
-    model_out = models[static_cast<size_t>(selected - 1)].id;
-
-    std::cout << "Selected model: " << model_out << std::endl;
-    return true;
-}
-
-static bool resolve_model_if_missing(lemonade::LemonadeClient& client, CliConfig& config,
-                                     const std::string& command_name, bool show_all = true) {
-    if (!config.model.empty()) {
-        return true;
-    }
-
-    std::cout << "No model specified for '" << command_name << "'." << std::endl;
-    return prompt_model_selection(client, config.model, show_all);
-}
-
-static bool prompt_yes_no(const std::string& prompt, bool default_yes = false) {
-    std::cout << prompt << (default_yes ? " [Y/n]: " : " [y/N]: ") << std::flush;
-
-    std::string input;
-    if (!std::getline(std::cin, input)) {
-        return default_yes;
-    }
-
-    if (input.empty()) {
-        return default_yes;
-    }
-
-    for (char& c : input) {
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    }
-
-    if (input == "y" || input == "yes") {
-        return true;
-    }
-    if (input == "n" || input == "no") {
-        return false;
-    }
-
-    return default_yes;
-}
-
 static int handle_run_command(lemonade::LemonadeClient& client, CliConfig& config) {
-    if (!resolve_model_if_missing(client, config, "run", true)) {
+    if (!lemon_cli::resolve_model_if_missing(client, config.model, "run", true)) {
         return 1;
     }
 
@@ -780,7 +284,7 @@ static int handle_recipes_command(lemonade::LemonadeClient& client, const CliCon
 }
 
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
-    if (!resolve_model_if_missing(client, config, "launch", false)) {
+    if (!lemon_cli::resolve_model_if_missing(client, config.model, "launch", false)) {
         return 1;
     }
 
@@ -788,12 +292,14 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
     if (config.use_recipe) {
         std::cout << "--use-recipe set: skipping recipe import and using selected/provided model." << std::endl;
     } else {
-        should_import_recipe = prompt_yes_no("Do you want to import and use a recipe for launch?", false);
+        should_import_recipe = lemon_cli::prompt_yes_no("Do you want to import and use a recipe for launch?", false);
     }
 
     if (should_import_recipe) {
         std::string imported_model;
-        int import_result = handle_import_remote_recipe_command(client, config, &imported_model, true);
+        int import_result = lemon_cli::import_remote_recipe(client, config.repo_dir, config.recipe_file,
+                                                            config.skip_prompt, config.yes,
+                                                            &imported_model, true);
         if (import_result != 0) {
             return import_result;
         }
