@@ -67,11 +67,7 @@ The additional endpoints are:
 
 Lemonade supports the [Ollama API](https://github.com/ollama/ollama/blob/main/docs/api.md), allowing applications built for Ollama to work with Lemonade without modification.
 
-To enable auto-detection by Ollama-integrated apps, launch the server on the Ollama default port:
-
-```bash
-lemonade-server serve --port 11434
-```
+To enable auto-detection by Ollama-integrated apps, configure the server to use the Ollama default port. See [Server Configuration](./configuration.md#environment-variables) for how to change the port.
 
 | Endpoint | Status | Notes |
 |----------|--------|-------|
@@ -105,15 +101,7 @@ Lemonade Server supports loading multiple models simultaneously, allowing you to
 
 ### Configuration
 
-Use the `--max-loaded-models` option to specify how many models to keep loaded per type slot:
-
-```bash
-# Allow up to 5 models of each type (5 LLMs, 5 embedding, 5 reranking, 5 audio, 5 image)
-lemonade-server serve --max-loaded-models 5
-
-# Unlimited models (no LRU eviction)
-lemonade-server serve --max-loaded-models -1
-```
+Configure via the `LEMONADE_MAX_LOADED_MODELS` environment variable. See [Server Configuration](./configuration.md#environment-variables).
 
 **Default:** `1` (one model of each type). Use `-1` for unlimited.
 
@@ -134,7 +122,7 @@ Each type has its own independent LRU cache, all sharing the same slot limit set
 - **NPU Exclusivity:** `flm`, `ryzenai-llm`, and `whispercpp` are mutually exclusive on the NPU.
     - Loading a model from one of these backends will automatically evict all NPU models from the other backends.
     - `flm` supports loading 1 ASR model, 1 LLM, and 1 embedding model on the NPU at the same time.
-    - `ryzenai-llm` supports loading exactly 1 LLM, which uses the entire NPU. 
+    - `ryzenai-llm` supports loading exactly 1 LLM, which uses the entire NPU.
     - `whispercpp` supports loading exactly 1 ASR model at a time, which uses the entire NPU.
 - **CPU/GPU:** No inherent limits beyond available RAM. Multiple models can coexist on CPU or GPU.
 
@@ -153,18 +141,14 @@ Each model can be loaded with custom settings (context size, llamacpp backend, l
 
 **Setting Priority Order:**
 1. Values passed explicitly in `/api/v1/load` request (highest priority)
-2. Values from `lemonade-server` CLI arguments or environment variables
+2. Values from environment variables or server startup arguments (see [Server Configuration](./configuration.md))
 3. Hardcoded defaults in `lemonade-router` (lowest priority)
 
 ## Start the HTTP Server
 
 > **NOTE:** This server is intended for use on local systems only. Do not expose the server port to the open internet.
 
-See the [Lemonade Server getting started instructions](./README.md).
-
-```bash
-lemonade-server serve
-```
+Lemonade Server starts automatically with the OS after installation. See the [Getting Started instructions](./README.md). For server configuration options, see [Server Configuration](./configuration.md).
 
 ## OpenAI-Compatible Endpoints
 
@@ -1412,7 +1396,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 When loading a model, settings are applied in this priority order:
 1. Values explicitly passed in the `load` request (highest priority)
 2. Per-model values configurable in `recipe_options.json` (see below for details)
-3. Values set via `lemonade-server` CLI arguments or environment variables
+3. Values from environment variables or server startup arguments (see [Server Configuration](./configuration.md))
 4. Default hardcoded values in `lemonade-router` (lowest priority)
 
 #### Per-model options
@@ -1740,7 +1724,7 @@ curl "http://localhost:8000/api/v1/system-info"
           "devices": ["amd_igpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade-server recipes --install llamacpp:rocm"
+          "action": "lemonade recipes --install llamacpp:rocm"
         },
         "metal": {
           "devices": [],
@@ -1752,7 +1736,7 @@ curl "http://localhost:8000/api/v1/system-info"
           "devices": ["cpu"],
           "state": "update_required",
           "message": "Backend update is required before use.",
-          "action": "lemonade-server recipes --install llamacpp:cpu"
+          "action": "lemonade recipes --install llamacpp:cpu"
         }
       }
     },
@@ -1763,7 +1747,7 @@ curl "http://localhost:8000/api/v1/system-info"
           "devices": ["cpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade-server recipes --install whispercpp:default"
+          "action": "lemonade recipes --install whispercpp:default"
         }
       }
     },
@@ -1774,7 +1758,7 @@ curl "http://localhost:8000/api/v1/system-info"
           "devices": ["cpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade-server recipes --install sd-cpp:default"
+          "action": "lemonade recipes --install sd-cpp:default"
         }
       }
     },
@@ -1906,13 +1890,9 @@ In case of an error, returns an `error` field with details.
 
 # Debugging
 
-To help debug the Lemonade server, you can use the `--log-level` parameter to control the verbosity of logging information. The server supports multiple logging levels that provide increasing amounts of detail about server operations.
+To control logging verbosity, set the `LEMONADE_LOG_LEVEL` environment variable (see [Server Configuration](./configuration.md#environment-variables)).
 
-```
-lemonade-server serve --log-level [level]
-```
-
-Where `[level]` can be one of:
+Available levels:
 
 - **critical**: Only critical errors that prevent server operation.
 - **error**: Error conditions that might allow continued operation.
@@ -1924,7 +1904,7 @@ Where `[level]` can be one of:
 # GGUF Support
 
 The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows and Ubuntu Linux are supported. Details:
-- Lemonade Server wraps `llama-server` with support for the `lemonade-server` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
+- Lemonade Server wraps `llama-server` with support for the `lemonade` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
   - The `chat/completions`, `completions`, `embeddings`, and `reranking` endpoints are supported.
   - The `embeddings` endpoint requires embedding-specific models (e.g., nomic-embed-text models).
   - The `reranking` endpoint requires reranker-specific models (e.g., bge-reranker models).
@@ -1952,7 +1932,7 @@ To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by nav
 Similar to the [llama-server support](#gguf-support), Lemonade can also route OpenAI API requests to a FastFlowLM `flm serve` backend.
 
 The `flm serve` backend works with Lemonade's suggested `*-FLM` models, as well as any model mentioned in `flm list`. Windows is the only supported operating system. Details:
-- Lemonade Server wraps `flm serve` with support for the `lemonade-server` CLI, client web app, and all Lemonade custom endpoints (e.g., `pull`, `load`, etc.).
+- Lemonade Server wraps `flm serve` with support for the `lemonade` CLI, client web app, and all Lemonade custom endpoints (e.g., `pull`, `load`, etc.).
   - OpenAI API endpoints supported: `models`, `chat/completions` (streaming), and `embeddings`.
   - The `embeddings` endpoint requires embedding-specific models supported by FLM.
 - A single Lemonade Server process can seamlessly switch between FLM, OGA, and GGUF models.

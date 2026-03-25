@@ -19,6 +19,29 @@
 namespace fs = std::filesystem;
 using namespace lemon::utils;
 
+#ifdef _WIN32
+#include <windows.h>
+// MSVC's std::filesystem refuses to traverse reparse points it considers
+// "untrusted" when the process token lacks symlink privileges (e.g., when
+// launched from an MSI installer custom action). The Win32 API has no such
+// restriction. These helpers replace fs::exists / fs::is_directory for paths
+// that may contain symlinks (HuggingFace cache uses them for deduplication).
+static bool safe_exists(const fs::path& p) {
+    return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+static bool safe_is_directory(const fs::path& p) {
+    DWORD attrs = GetFileAttributesW(p.c_str());
+    return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY);
+}
+// fs::recursive_directory_iterator also throws on these reparse points.
+// skip_permission_denied tells it to skip inaccessible entries instead of throwing.
+static constexpr auto safe_dir_options = fs::directory_options::skip_permission_denied;
+#else
+static bool safe_exists(const fs::path& p) { return fs::exists(p); }
+static bool safe_is_directory(const fs::path& p) { return fs::is_directory(p); }
+static constexpr auto safe_dir_options = fs::directory_options::none;
+#endif
+
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
@@ -437,8 +460,8 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
     // For RyzenAI LLM models, look for genai_config.json directory
     if (info.recipe == "ryzenai-llm") {
-        if (fs::exists(model_cache_path_fs)) {
-            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
+        if (safe_exists(model_cache_path_fs)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
                 if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
                     return path_to_utf8(entry.path().parent_path());
                 }
@@ -449,8 +472,8 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
     // For kokoro models, look for index.json directory
     if (info.recipe == "kokoro") {
-        if (fs::exists(model_cache_path_fs)) {
-            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
+        if (safe_exists(model_cache_path_fs)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
                 if (entry.is_regular_file() && entry.path().filename() == "index.json") {
                     return path_to_utf8(entry.path());
                 }
@@ -463,13 +486,13 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
     // For whispercpp, find the .bin model file
     if (info.recipe == "whispercpp" && variant.empty()) {
         // No variant specified - use fallback logic to find any .bin file
-        if (!fs::exists(model_cache_path_fs)) {
+        if (!safe_exists(model_cache_path_fs)) {
             return model_cache_path;  // Return directory path even if not found
         }
 
         // Collect all .bin files
         std::vector<std::string> all_bin_files;
-        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
+        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
             if (entry.is_regular_file()) {
                 std::string filename = entry.path().filename().string();
                 if (filename.find(".bin") != std::string::npos) {
@@ -491,13 +514,13 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
     // For llamacpp, find the GGUF file with advanced sharded model support
     if (info.recipe == "llamacpp" && type == "main") {
-        if (!fs::exists(model_cache_path_fs)) {
+        if (!safe_exists(model_cache_path_fs)) {
             return model_cache_path;  // Return directory path even if not found
         }
 
         // Collect all GGUF files (exclude mmproj files)
         std::vector<std::string> all_gguf_files;
-        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
+        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
             if (entry.is_regular_file()) {
                 std::string filename = entry.path().filename().string();
                 std::string filename_lower = filename;
@@ -580,8 +603,8 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
     // Everything else
     if (!variant.empty()) {
         // Try to find the exact variant in snapshots subdirectories
-        if (fs::exists(model_cache_path_fs)) {
-            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
+        if (safe_exists(model_cache_path_fs)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
                 if (entry.is_regular_file()) {
                     std::string filename = entry.path().filename().string();
                     if (filename == variant) {
@@ -589,7 +612,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
                     }
                 } else if (entry.is_directory()) {
                     fs::path variant_path = entry.path() / path_from_utf8(variant);
-                    if (fs::exists(variant_path)) {
+                    if (safe_exists(variant_path)) {
                         return path_to_utf8(variant_path);
                     }
                 }
@@ -756,7 +779,11 @@ void ModelManager::build_cache() {
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
 
-        resolve_all_model_paths(info);
+        try {
+            resolve_all_model_paths(info);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "ModelManager") << "  EXCEPTION resolving '" << key << "': " << e.what() << std::endl;
+        }
         all_models[key] = info;
     }
 
@@ -793,7 +820,11 @@ void ModelManager::build_cache() {
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
 
-        resolve_all_model_paths(info);
+        try {
+            resolve_all_model_paths(info);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "ModelManager") << "  EXCEPTION resolving '" << info.model_name << "': " << e.what() << std::endl;
+        }
         all_models[info.model_name] = info;
     }
 
@@ -863,7 +894,7 @@ void ModelManager::build_cache() {
             info.downloaded = flm_set.count(info.checkpoint()) > 0;
         } else {
             // Check if model file/dir exists
-            bool file_exists = !info.resolved_path().empty() && fs::exists(info.resolved_path());
+            bool file_exists = !info.resolved_path().empty() && safe_exists(info.resolved_path());
 
             if (file_exists) {
                 // Also check for incomplete downloads:
@@ -873,17 +904,18 @@ void ModelManager::build_cache() {
 
                 // For directories (OGA models), check within the directory
                 // For files (GGUF models), check in parent directory
-                fs::path snapshot_dir = fs::is_directory(resolved) ? resolved : resolved.parent_path();
+                fs::path snapshot_dir = safe_is_directory(resolved) ? resolved : resolved.parent_path();
 
                 // Check for manifest (indicates incomplete multi-file download)
                 fs::path manifest_path = snapshot_dir / ".download_manifest.json";
-                bool has_manifest = fs::exists(manifest_path);
+                bool has_manifest = safe_exists(manifest_path);
 
                 // Check for .partial files
                 bool has_partial = false;
-                if (fs::is_directory(resolved)) {
+                if (safe_is_directory(resolved)) {
                     // For directories, scan for any .partial files inside
-                    for (const auto& entry : fs::directory_iterator(snapshot_dir)) {
+                    std::error_code ec;
+                    for (const auto& entry : fs::directory_iterator(snapshot_dir, ec)) {
                         if (entry.path().extension() == ".partial") {
                             has_partial = true;
                             break;
@@ -891,7 +923,7 @@ void ModelManager::build_cache() {
                     }
                 } else {
                     // For files, check if the specific file has a .partial version
-                    has_partial = fs::exists(info.resolved_path() + ".partial");
+                    has_partial = safe_exists(info.resolved_path() + ".partial");
                 }
 
                 info.downloaded = !has_manifest && !has_partial;
@@ -991,26 +1023,27 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
         auto flm_models = get_flm_installed_models();
         info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint()) != flm_models.end();
     } else {
-        bool file_exists = !info.resolved_path().empty() && fs::exists(info.resolved_path());
+        bool file_exists = !info.resolved_path().empty() && safe_exists(info.resolved_path());
 
         if (file_exists) {
             // Check for incomplete downloads
             fs::path resolved(info.resolved_path());
-            fs::path snapshot_dir = fs::is_directory(resolved) ? resolved : resolved.parent_path();
+            fs::path snapshot_dir = safe_is_directory(resolved) ? resolved : resolved.parent_path();
 
             fs::path manifest_path = snapshot_dir / ".download_manifest.json";
-            bool has_manifest = fs::exists(manifest_path);
+            bool has_manifest = safe_exists(manifest_path);
 
             bool has_partial = false;
-            if (fs::is_directory(resolved)) {
-                for (const auto& entry : fs::directory_iterator(snapshot_dir)) {
+            if (safe_is_directory(resolved)) {
+                std::error_code ec;
+                for (const auto& entry : fs::directory_iterator(snapshot_dir, ec)) {
                     if (entry.path().extension() == ".partial") {
                         has_partial = true;
                         break;
                     }
                 }
             } else {
-                has_partial = fs::exists(info.resolved_path() + ".partial");
+                has_partial = safe_exists(info.resolved_path() + ".partial");
             }
 
             info.downloaded = !has_manifest && !has_partial;
@@ -1406,27 +1439,22 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
 
     // Run 'flm list --filter installed --quiet --json' to get only installed models
     // Use the full path to flm.exe to avoid PATH issues
+    std::string output;
 #ifdef _WIN32
     std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>NUL";
-    FILE* pipe = _popen(command.c_str(), "r");
+    int rc = lemon::utils::ProcessManager::run_command(command, output);
 #else
     std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>/dev/null";
     FILE* pipe = popen(command.c_str(), "r");
-#endif
-
     if (!pipe) {
         return installed_models;
     }
 
     char buffer[256];
-    std::string output;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output += buffer;
     }
 
-#ifdef _WIN32
-    _pclose(pipe);
-#else
     pclose(pipe);
 #endif
 
@@ -1487,27 +1515,22 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
     }
 
     // Run 'flm list --json' to get all available models
+    std::string output;
 #ifdef _WIN32
     std::string command = "\"" + flm_path + "\" list --json 2>NUL";
-    FILE* pipe = _popen(command.c_str(), "r");
+    int rc = lemon::utils::ProcessManager::run_command(command, output);
 #else
     std::string command = "\"" + flm_path + "\" list --json 2>/dev/null";
     FILE* pipe = popen(command.c_str(), "r");
-#endif
-
     if (!pipe) {
         return flm_models;
     }
 
     char buffer[256];
-    std::string output;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output += buffer;
     }
 
-#ifdef _WIN32
-    _pclose(pipe);
-#else
     pclose(pipe);
 #endif
 

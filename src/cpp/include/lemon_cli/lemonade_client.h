@@ -68,7 +68,7 @@ public:
     int launch_model(const std::string& model_name, const nlohmann::json& recipe_options, const std::string& agent);
 
     // Status commands
-    int status() const;
+    int status(int display_port = 0) const;
     std::vector<ModelInfo> get_models(bool show_all) const;
 
     // Recipe/backend commands
@@ -76,16 +76,16 @@ public:
     int install_backend(const std::string& recipe, const std::string& backend);
     int uninstall_backend(const std::string& recipe, const std::string& backend);
 
-    // Utility
+    // Utility (timeouts are in milliseconds)
     std::string make_request(const std::string& path, const std::string& method = "GET",
                              const std::string& body = "", const std::string& content_type = "",
-                             int connection_timeout = 30, int read_timeout = 30) const;
+                             int connection_timeout_ms = 30000, int read_timeout_ms = 30000) const;
 
-    // Streaming request overload
+    // Streaming request overload (timeouts are in milliseconds)
     bool make_request(const std::string& path, const std::string& method,
                       const std::string& body, const std::string& content_type,
                       std::function<void(const std::string& event_type, const std::string& event_data)> callback,
-                      int connection_timeout = 30, int read_timeout = 30) const;
+                      int connection_timeout_ms = 30000, int read_timeout_ms = 30000) const;
 
 private:
     std::string host_;

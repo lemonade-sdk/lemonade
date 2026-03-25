@@ -1,0 +1,105 @@
+name: 'Capture Server Logs'
+description: 'Find, print, and upload lemonade server logs as artifacts'
+inputs:
+  artifact-name:
+    description: 'Name for the uploaded artifact'
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Capture server logs (Windows)
+      if: always() && runner.os == 'Windows'
+      shell: powershell
+      run: |
+        New-Item -ItemType Directory -Path server-logs -Force | Out-Null
+
+        # Check common log locations
+        $candidates = @(
+          "$env:TEMP\lemonade-server.log",
+          "$env:TEMP\lemonade-router.log",
+          "$env:LOCALAPPDATA\lemonade_server\lemonade-server.log"
+        )
+
+        $found = $false
+        foreach ($logFile in $candidates) {
+          if (Test-Path $logFile) {
+            Write-Host "=== Last 200 lines of $logFile ==="
+            Get-Content $logFile -Tail 200
+            Copy-Item $logFile server-logs/ -ErrorAction SilentlyContinue
+            $found = $true
+          }
+        }
+
+        if (-not $found) {
+          Write-Host "No server log file found"
+        }
+
+    - name: Capture server logs (Linux/macOS)
+      if: always() && runner.os != 'Windows'
+      shell: bash
+      run: |
+        mkdir -p server-logs
+        found=false
+
+        # --- macOS: launchd redirects to /var/log/lemonade/ ---
+        if [ "$RUNNER_OS" = "macOS" ]; then
+          for f in /var/log/lemonade/lemonade-server.out.log /var/log/lemonade/lemonade-server.err.log; do
+            if [ -f "$f" ]; then
+              echo "=== Last 200 lines of $f ==="
+              tail -200 "$f"
+              cp "$f" server-logs/ 2>/dev/null || true
+              found=true
+            fi
+          done
+        fi
+
+        # --- Linux: check file-based logs ---
+        if [ "$RUNNER_OS" = "Linux" ]; then
+          # XDG runtime dir (e.g. /run/user/1001/lemonade/)
+          LEMON_RUNTIME_DIR="${XDG_RUNTIME_DIR:+${XDG_RUNTIME_DIR}/lemonade}"
+          for candidate in \
+            "${LEMON_RUNTIME_DIR}/lemonade-server.log" \
+            /tmp/lemonade-server.log \
+            /tmp/lemonade-router.log; do
+            if [ -f "$candidate" ]; then
+              echo "=== Last 200 lines of $candidate ==="
+              tail -200 "$candidate"
+              cp "$candidate" server-logs/ 2>/dev/null || true
+              found=true
+            fi
+          done
+
+          # Systemd journal (works when server runs as lemonade-server.service)
+          if [ "$found" = "false" ] && command -v journalctl > /dev/null 2>&1; then
+            echo "=== Last 200 lines from journalctl for lemonade-server ==="
+            sudo journalctl -u lemonade-server --no-pager -n 200 2>/dev/null | tee server-logs/journald-lemonade-server.log || true
+            if [ -s server-logs/journald-lemonade-server.log ]; then
+              found=true
+            else
+              rm -f server-logs/journald-lemonade-server.log
+            fi
+          fi
+        fi
+
+        # --- Any platform: glob for /tmp/lemonade*.log ---
+        for f in /tmp/lemonade*.log; do
+          if [ -f "$f" ]; then
+            echo "--- $f ---"
+            tail -50 "$f"
+            cp "$f" server-logs/ 2>/dev/null || true
+            found=true
+          fi
+        done 2>/dev/null || true
+
+        if [ "$found" = "false" ]; then
+          echo "No server log files found"
+        fi
+
+    - name: Upload server logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: server-logs/
+        retention-days: 7
+        if-no-files-found: ignore

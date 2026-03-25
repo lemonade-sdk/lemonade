@@ -72,7 +72,12 @@
        - llamacpp: `%LOCALAPPDATA%\llama.cpp` (e.g., `C:\Users\You\AppData\Local\llama.cpp`)
    - **Linux:** `~/.cache/llama.cpp`
 
-   Example: `lemonade-server serve --extra-models-dir "%LOCALAPPDATA%\llama.cpp"`
+   Set the `LEMONADE_EXTRA_MODELS_DIR` environment variable to point to your models directory:
+
+   - **Windows:** `setx LEMONADE_EXTRA_MODELS_DIR "%LOCALAPPDATA%\llama.cpp"`
+   - **Linux:** Add `LEMONADE_EXTRA_MODELS_DIR=/home/you/.cache/llama.cpp` to `/etc/lemonade/lemonade.conf`
+
+   Then restart the server for the change to take effect.
 
    Any `.gguf` files found in this directory (including subdirectories) will automatically appear in Lemonade's model list in the `custom` category.
 
@@ -85,7 +90,7 @@
    Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, gpt-oss, LFM, and many more. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface in the app or the `pull` command on the CLI.
 
    👉 [Supported Models List](https://lemonade-server.ai/models.html)
-   👉 [pull command](https://lemonade-server.ai/docs/server/lemonade-server-cli/#options-for-pull)
+   👉 [pull command](https://lemonade-server.ai/docs/lemonade-cli/#options-for-pull)
 
 ### 3. **How do I know what size model will work with my setup?**
 
@@ -103,7 +108,7 @@
 
    You can:
 
-   - Add a custom model manually via the app's "Add a Model" interface or the [CLI pull command](https://lemonade-server.ai/docs/server/lemonade-server-cli/#options-for-pull). For advanced manual configuration, see the [Custom Model Configuration Guide](https://lemonade-server.ai/docs/server/custom-models/).
+   - Add a custom model manually via the app's "Add a Model" interface or the [CLI pull command](https://lemonade-server.ai/docs/lemonade-cli/#options-for-pull). For advanced manual configuration, see the [Custom Model Configuration Guide](https://lemonade-server.ai/docs/server/custom-models/).
    - Use a pull request to add the model to the built-in `server_models.json` file.
    - Request support by opening a [GitHub issue](https://github.com/lemonade-sdk/lemonade/issues).
 
@@ -132,7 +137,7 @@
    curl http://localhost:8000/api/v1/stats
    ```
 
-   Or, you can launch `lemonade-server` with the option `--log-level debug` and that will also print out stats.
+   Or, set `LEMONADE_LOG_LEVEL=debug` and restart the server, or use `lemonade logs` to view logs.
 
 ### 2. **How does Lemonade's performance compare to llama.cpp?**
 
@@ -217,16 +222,15 @@
    Lemonade supports running the server on one machine while using the app from another machine on the same network.
 
    **Quick setup:**
-   1. On the server machine, start with network access enabled:
-      ```bash
-      lemonade-server serve --host 0.0.0.0 --port 8000
-      ```
+   1. On the server machine, enable network access by setting `LEMONADE_HOST=0.0.0.0`:
+      - **Windows:** `setx LEMONADE_HOST 0.0.0.0` then quit from the tray icon and relaunch from the Start Menu
+      - **Linux:** Add `LEMONADE_HOST=0.0.0.0` to `/etc/lemonade/lemonade.conf`, then `sudo systemctl restart lemonade-server`
    2. On the client machine, launch the app and configure the endpoint through the UI:
       ```bash
       lemonade-app
       ```
 
-   For detailed instructions and security considerations, see [Remote Server Connection](./lemonade-server-cli.md#remote-server-connection).
+   For detailed instructions and security considerations, see [Remote Server Connection](./server/configuration.md#remote-server-connection).
 
 ## Customization
 
@@ -234,7 +238,21 @@
 
    Lemonade Server allows you to use custom `llama-server` or `whisper-server` binaries instead of the bundled ones by setting environment variables to the full path of your binary.
 
-   👉 [Custom Backend Binaries](./server/lemonade-server-cli.md#custom-backend-binaries)
+   👉 [Custom Backend Binaries](./server/configuration.md#custom-backend-binaries)
+
+## TTS
+
+### 1. **What voices are supported?**
+
+Lemonade supports most of the voices listed in [Kokoro-82M VOICES](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md). OpenAI voices can be selected from a default list, while other voices must be entered manually via text.
+
+### 2. **Can voices be mixed?**
+
+Yes, two voices can be mixed using the following format: `af_jessica.5+af_kore.4`
+
+### 3. **I entered a voice, but no audio is playing?**
+
+Some voices are not supported yet. If you manually enter a voice name instead of selecting one from the default list, and that voice is not supported, a muted audio will be generated.
 
 ## TTS
 
