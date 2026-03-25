@@ -2482,9 +2482,10 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             // Use the server's --sdcpp CLI setting so we pick up the same
             // backend binary that was installed at startup, not whatever
             // the system auto-detects (which may be a stale installation).
-            if (default_options_.contains("sd-cpp_backend") &&
-                default_options_["sd-cpp_backend"].is_string()) {
-                std::string b = default_options_["sd-cpp_backend"];
+            auto recipe_opts = config_->recipe_options();
+            if (recipe_opts.contains("sd-cpp_backend") &&
+                recipe_opts["sd-cpp_backend"].is_string()) {
+                std::string b = recipe_opts["sd-cpp_backend"];
                 if (!b.empty()) backend = b;
             }
         } catch (const std::exception& e) {
