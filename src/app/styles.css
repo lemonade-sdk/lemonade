@@ -6249,9 +6249,40 @@ input::-webkit-calendar-picker-indicator {
     color: #aaa;
 }
 
-.generated-image-container {
+.generated-images-row {
+    display: flex;
+    gap: 16px;
+}
+
+.generated-images-row.side-by-side {
+    flex-direction: row;
+    align-items: stretch;
+}
+
+.generated-images-row.side-by-side .generated-image-column {
+    flex: 1;
+    min-width: 0;
+}
+
+.generated-image-column {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.image-wrapper {
     position: relative;
     display: inline-block;
+    line-height: 0;
+}
+
+.image-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
 }
 
 .generated-image {
@@ -6263,23 +6294,40 @@ input::-webkit-calendar-picker-indicator {
 
 .save-image-button {
     position: absolute;
-    bottom: 12px;
-    right: 12px;
+    bottom: 8px;
+    right: 8px;
     display: flex;
     align-items: center;
-    gap: 6px;
-    background: rgba(0, 0, 0, 0.7);
+    gap: 4px;
+    background: rgba(0, 0, 0, 0.75);
     color: #fff;
     border: 1px solid rgba(255, 255, 255, 0.2);
-    padding: 8px 12px;
+    padding: 5px 8px;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 13px;
+    font-size: 11px;
     transition: background 0.2s;
+    white-space: nowrap;
 }
 
 .save-image-button:hover {
-    background: rgba(0, 0, 0, 0.85);
+    background: rgba(0, 0, 0, 0.9);
+}
+
+.upscale-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex: 1;
+    align-self: stretch;
+    min-height: 200px;
+    background: #111;
+    border: 1px dashed #444;
+    border-radius: 8px;
+    color: #888;
+    font-size: 13px;
 }
 
 .image-generating-indicator {
@@ -6479,9 +6527,40 @@ input::-webkit-calendar-picker-indicator {
     color: #aaa;
 }
 
-.generated-image-container {
+.generated-images-row {
+    display: flex;
+    gap: 16px;
+}
+
+.generated-images-row.side-by-side {
+    flex-direction: row;
+    align-items: stretch;
+}
+
+.generated-images-row.side-by-side .generated-image-column {
+    flex: 1;
+    min-width: 0;
+}
+
+.generated-image-column {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.image-wrapper {
     position: relative;
     display: inline-block;
+    line-height: 0;
+}
+
+.image-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
 }
 
 .generated-image {
@@ -6493,23 +6572,40 @@ input::-webkit-calendar-picker-indicator {
 
 .save-image-button {
     position: absolute;
-    bottom: 12px;
-    right: 12px;
+    bottom: 8px;
+    right: 8px;
     display: flex;
     align-items: center;
-    gap: 6px;
-    background: rgba(0, 0, 0, 0.7);
+    gap: 4px;
+    background: rgba(0, 0, 0, 0.75);
     color: #fff;
     border: 1px solid rgba(255, 255, 255, 0.2);
-    padding: 8px 12px;
+    padding: 5px 8px;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 13px;
+    font-size: 11px;
     transition: background 0.2s;
+    white-space: nowrap;
 }
 
 .save-image-button:hover {
-    background: rgba(0, 0, 0, 0.85);
+    background: rgba(0, 0, 0, 0.9);
+}
+
+.upscale-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex: 1;
+    align-self: stretch;
+    min-height: 200px;
+    background: #111;
+    border: 1px dashed #444;
+    border-radius: 8px;
+    color: #888;
+    font-size: 13px;
 }
 
 .image-generating-indicator {
@@ -7210,4 +7306,11 @@ input::-webkit-calendar-picker-indicator {
 
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+.image-timing {
+    display: block;
+    font-size: 11px;
+    color: #888;
+    margin-top: 4px;
 }

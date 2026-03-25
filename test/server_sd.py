@@ -23,6 +23,7 @@ from utils.server_base import (
 )
 from utils.test_models import (
     SD_MODEL,
+    ESRGAN_MODEL,
     PORT,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
@@ -504,6 +505,120 @@ class StableDiffusionTests(ServerTestBase):
         decoded = base64.b64decode(b64_data)
         self.assertTrue(decoded[:4] == b"\x89PNG", "Result should be a valid PNG")
         print(f"[OK] Image variations successful ({len(decoded)} bytes)")
+
+
+    def test_017_upscale_missing_image(self):
+        """Test that /images/upscale returns 400 when image field is missing."""
+        payload = {"model": ESRGAN_MODEL}
+
+        response = requests.post(
+            f"{self.base_url}/images/upscale",
+            json=payload,
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 for missing image, got {response.status_code}",
+        )
+        print(f"[OK] Correctly rejected upscale request without image: {response.status_code}")
+
+    def test_018_upscale_missing_model(self):
+        """Test that /images/upscale returns 400 when model field is missing."""
+        png_bytes = create_minimal_png()
+        b64_image = base64.b64encode(png_bytes).decode("utf-8")
+        payload = {"image": b64_image}
+
+        response = requests.post(
+            f"{self.base_url}/images/upscale",
+            json=payload,
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 for missing model, got {response.status_code}",
+        )
+        print(f"[OK] Correctly rejected upscale request without model: {response.status_code}")
+
+    def test_019_upscale_invalid_model(self):
+        """Test that /images/upscale returns 404 for an unknown model name."""
+        png_bytes = create_minimal_png()
+        b64_image = base64.b64encode(png_bytes).decode("utf-8")
+        payload = {"image": b64_image, "model": "nonexistent-upscale-model"}
+
+        response = requests.post(
+            f"{self.base_url}/images/upscale",
+            json=payload,
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        self.assertEqual(
+            response.status_code,
+            404,
+            f"Expected 404 for invalid upscale model, got {response.status_code}",
+        )
+        print(f"[OK] Correctly rejected upscale with invalid model: {response.status_code}")
+
+    def test_020_upscale_basic(self):
+        """Test basic upscale: generate an image then upscale it."""
+        # First generate an image
+        gen_payload = {
+            "model": SD_MODEL,
+            "prompt": "A red circle",
+            "size": "256x256",
+            "steps": 2,
+            "n": 1,
+            "response_format": "b64_json",
+        }
+
+        print(f"[INFO] Generating image for upscale test")
+        gen_response = requests.post(
+            f"{self.base_url}/images/generations",
+            json=gen_payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        self.assertEqual(
+            gen_response.status_code,
+            200,
+            f"Image generation failed: {gen_response.text}",
+        )
+
+        gen_result = gen_response.json()
+        b64_image = gen_result["data"][0]["b64_json"]
+
+        # Now upscale
+        upscale_payload = {
+            "image": b64_image,
+            "model": ESRGAN_MODEL,
+        }
+
+        print(f"[INFO] Sending upscale request with {ESRGAN_MODEL}")
+        upscale_response = requests.post(
+            f"{self.base_url}/images/upscale",
+            json=upscale_payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        self.assertEqual(
+            upscale_response.status_code,
+            200,
+            f"Upscale failed with status {upscale_response.status_code}: {upscale_response.text}",
+        )
+
+        result = upscale_response.json()
+        self.assertIn("data", result, "Response should contain 'data' field")
+        self.assertIn("b64_json", result["data"][0], "Should contain base64 image")
+
+        decoded = base64.b64decode(result["data"][0]["b64_json"])
+        self.assertTrue(
+            decoded[:4] == b"\x89PNG",
+            "Upscaled data should be a valid PNG",
+        )
+        print(f"[OK] Upscale successful ({len(decoded)} bytes)")
 
 
 if __name__ == "__main__":

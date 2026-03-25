@@ -50,6 +50,9 @@ public:
     // Check if a specific model is loaded
     bool is_model_loaded(const std::string& model_name) const;
 
+    // Get the recipe options for a loaded model (empty if not loaded)
+    RecipeOptions get_model_recipe_options(const std::string& model_name) const;
+
     // Get the model type for a loaded model (returns LLM if not found)
     ModelType get_model_type(const std::string& model_name = "") const;
 

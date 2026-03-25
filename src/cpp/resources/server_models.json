@@ -1281,5 +1281,25 @@
             "speech"
         ],
         "size": 0.34
+    },
+    "RealESRGAN-x4plus": {
+        "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "esrgan",
+            "image"
+        ],
+        "size": 0.064
+    },
+    "RealESRGAN-x4plus-anime": {
+        "checkpoint": "amd/realesrgan-x4plus-anime-6b:RealESRGAN_x4plus_anime_6B.pth",
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "esrgan",
+            "image"
+        ],
+        "size": 0.017
     }
 }

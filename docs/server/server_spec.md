@@ -31,6 +31,7 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/images/generations` - Image Generation (prompt -> image)
 - POST `/api/v1/images/edits` - Image Editing (image + prompt -> edited image)
 - POST `/api/v1/images/variations` - Image Variations (image -> varied image)
+- POST `/api/v1/images/upscale` - Image Upscaling (image + ESRGAN model -> upscaled image)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
 
@@ -908,6 +909,138 @@ Image Variations API. You provide a source image and receive a variation of it. 
     image_data = base64.b64decode(response.data[0].b64_json)
     open("variation.png", "wb").write(image_data)
     ```
+
+---
+
+### `POST /api/v1/images/upscale` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model name, and receive a 4x upscaled image. This API uses the `sd-cli` binary from [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) to perform super-resolution.
+
+> **Note:** Available upscale models are `RealESRGAN-x4plus` (general-purpose, 64 MB) and `RealESRGAN-x4plus-anime` (optimized for anime-style art, 17 MB). Both produce a 4x resolution increase (e.g., 256x256 → 1024x1024).
+>
+> **Note:** Unlike `/images/edits` and `/images/variations`, this endpoint accepts a JSON body (not multipart/form-data). The image must be provided as a base64-encoded string.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `image` | Yes | Base64-encoded PNG image to upscale. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The ESRGAN model to use (e.g., `RealESRGAN-x4plus`, `RealESRGAN-x4plus-anime`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+#### Example request
+
+A typical workflow is to generate an image first, then upscale it:
+
+=== "Bash"
+
+    ```bash
+    # Step 1: Generate an image and save the base64 response
+    RESPONSE=$(curl -s -X POST http://localhost:8000/api/v1/images/generations \
+      -H "Content-Type: application/json" \
+      -d '{
+            "model": "SD-Turbo",
+            "prompt": "A serene mountain landscape at sunset",
+            "size": "512x512",
+            "steps": 4,
+            "response_format": "b64_json"
+          }')
+
+    # Step 2: Build the upscale JSON payload and pipe it to curl via stdin
+    # (base64 images are too large for command-line interpolation)
+    echo "$RESPONSE" | python3 -c "
+    import sys, json
+    b64 = json.load(sys.stdin)['data'][0]['b64_json']
+    print(json.dumps({'image': b64, 'model': 'RealESRGAN-x4plus'}))
+    " | curl -X POST http://localhost:8000/api/v1/images/upscale \
+      -H "Content-Type: application/json" \
+      -d @-
+    ```
+
+=== "PowerShell"
+
+    ```powershell
+    # Step 1: Generate an image
+    $genResponse = Invoke-WebRequest `
+      -Uri "http://localhost:8000/api/v1/images/generations" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+        "model": "SD-Turbo",
+        "prompt": "A serene mountain landscape at sunset",
+        "size": "512x512",
+        "steps": 4,
+        "response_format": "b64_json"
+      }'
+
+    # Step 2: Extract the base64 image
+    $imageB64 = ($genResponse.Content | ConvertFrom-Json).data[0].b64_json
+
+    # Step 3: Upscale the image with Real-ESRGAN
+    $body = @{ image = $imageB64; model = "RealESRGAN-x4plus" } | ConvertTo-Json
+    Invoke-WebRequest `
+      -Uri "http://localhost:8000/api/v1/images/upscale" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body $body
+    ```
+
+=== "Python (requests)"
+
+    ```python
+    import requests
+    import base64
+
+    BASE_URL = "http://localhost:8000/api/v1"
+
+    # Step 1: Generate an image
+    gen_response = requests.post(f"{BASE_URL}/images/generations", json={
+        "model": "SD-Turbo",
+        "prompt": "A serene mountain landscape at sunset",
+        "size": "512x512",
+        "steps": 4,
+        "response_format": "b64_json",
+    })
+    image_b64 = gen_response.json()["data"][0]["b64_json"]
+
+    # Step 2: Upscale the image with Real-ESRGAN (512x512 -> 2048x2048)
+    upscale_response = requests.post(f"{BASE_URL}/images/upscale", json={
+        "image": image_b64,
+        "model": "RealESRGAN-x4plus",
+    })
+
+    # Step 3: Save the upscaled image to a file
+    upscaled_b64 = upscale_response.json()["data"][0]["b64_json"]
+    with open("upscaled.png", "wb") as f:
+        f.write(base64.b64decode(upscaled_b64))
+    ```
+
+#### Response format
+
+```json
+{
+  "created": 1742927481,
+  "data": [
+    {
+      "b64_json": "<base64-encoded upscaled PNG>"
+    }
+  ]
+}
+```
+
+**Field Descriptions:**
+
+- `created` - Unix timestamp of when the upscaled image was generated
+- `data` - Array containing the upscaled image
+  - `b64_json` - Base64-encoded PNG of the upscaled image
+
+#### Error responses
+
+| Status Code | Condition | Example |
+|-------------|-----------|---------|
+| 400 | Missing `image` field | `{"error": {"message": "Missing 'image' field (base64 encoded)", "type": "invalid_request_error"}}` |
+| 400 | Missing `model` field | `{"error": {"message": "Missing 'model' field", "type": "invalid_request_error"}}` |
+| 404 | Unknown model name | `{"error": {"message": "Upscale model not found: bad-model", "type": "invalid_request_error"}}` |
+| 500 | Upscale failed | `{"error": {"message": "ESRGAN upscale failed", "type": "server_error"}}` |
 
 ---
 

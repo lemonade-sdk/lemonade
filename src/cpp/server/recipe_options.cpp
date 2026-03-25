@@ -48,6 +48,7 @@ static const json CLI_OPTIONS = {
     {"--sdcpp", {
         {"option_name", "sd-cpp_backend"},
         {"type_name", "BACKEND"},
+        {"allowed_values", {"cpu", "rocm"}},
         {"envname", "LEMONADE_SDCPP"},
         {"help", "SD.cpp backend to use (cpu for CPU, rocm for AMD GPU)"}
     }},
