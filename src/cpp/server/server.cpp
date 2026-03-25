@@ -3503,12 +3503,11 @@ void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& 
     // Check if log file exists
     if (log_file_path_.empty() || !std::filesystem::exists(log_file_path_)) {
         LOG(ERROR, "Server") << "Log file not found: " << log_file_path_ << std::endl;
-        LOG(ERROR, "Server") << "Note: Log streaming only works when server is launched via tray/ServerManager" << std::endl;
         res.status = 404;
         nlohmann::json error = {
-            {"error", "Log file not found. Log streaming requires server to be launched via tray application."},
+            {"error", "Log file not found for log streaming."},
             {"path", log_file_path_},
-            {"note", "When running directly, logs appear in console instead."}
+            {"note", "No readable log source is available for streaming."}
         };
         res.set_content(error.dump(), "application/json");
         return;

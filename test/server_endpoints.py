@@ -159,6 +159,30 @@ class EndpointTests(ServerTestBase):
             f"[OK] /health endpoint response: status={data['status']}, models_loaded={len(data['all_models_loaded'])}"
         )
 
+    def test_002b_logs_stream_endpoint(self):
+        """Test the /logs/stream endpoint returns an SSE stream for direct runs."""
+        response = requests.get(
+            f"{self.base_url}/logs/stream",
+            headers={"Accept": "text/event-stream"},
+            stream=True,
+            timeout=(TIMEOUT_DEFAULT, TIMEOUT_DEFAULT),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers.get("Content-Type"),
+            "text/event-stream",
+        )
+
+        chunk_iter = response.iter_content(chunk_size=256, decode_unicode=True)
+        first_chunk = next(chunk_iter)
+        self.assertTrue(
+            "data: " in first_chunk or ": heartbeat" in first_chunk,
+            f"Unexpected SSE payload: {first_chunk!r}",
+        )
+
+        response.close()
+        print("[OK] /logs/stream endpoint returned an SSE stream")
+
     def test_003_models_list(self):
         """Test listing available models via /models endpoint."""
         # Model is already pulled in setUpClass
