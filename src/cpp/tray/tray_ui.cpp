@@ -1,26 +1,26 @@
 #include "lemon_tray/tray_ui.h"
-#include <lemon/version.h>
 #include <lemon/utils/path_utils.h>
+#include <lemon/version.h>
 
+#include <algorithm>
+#include <chrono>
+#include <filesystem>
 #include <iostream>
 #include <sstream>
-#include <filesystem>
-#include <algorithm>
 #include <thread>
-#include <chrono>
 
 #ifdef _WIN32
+#include "lemon_tray/platform/windows_tray.h"
+#include <shellapi.h>
 #include <winsock2.h>
 #include <windows.h>
-#include <shellapi.h>
-#include "lemon_tray/platform/windows_tray.h"
 #else
 #include <cstdlib>
-#include <unistd.h>
-#include <sys/wait.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/select.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 
