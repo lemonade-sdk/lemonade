@@ -71,11 +71,11 @@ runs:
             exit 1
         fi
 
-        if [ -x "$BIN_PATH/lemonade-router" ]; then
-            echo "Found: lemonade-router"
-            "$BIN_PATH/lemonade-router" --version
+        if [ -x "$BIN_PATH/lemond" ]; then
+            echo "Found: lemond"
+            "$BIN_PATH/lemond" --version
         else
-            echo "WARNING: lemonade-router not found at $BIN_PATH"
+            echo "WARNING: lemond not found at $BIN_PATH"
         fi
 
         echo "Installation verification complete!"

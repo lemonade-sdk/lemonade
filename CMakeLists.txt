@@ -29,7 +29,7 @@ include(GNUInstallDirs)
      # Install man pages
      install(FILES
           ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-server.1
-          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-router.1
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemond.1
           ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade.1
           DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
      )
@@ -354,10 +354,10 @@ endif()
 
 
 # ============================================================
-# Application: lemonade-router
+# Application: lemond
 # ============================================================
 
-set(EXECUTABLE_NAME "lemonade-router")
+set(EXECUTABLE_NAME "lemond")
 
 
 # ============================================================
@@ -581,12 +581,12 @@ if(APPLE)
 endif()
 
 # ============================================================
-# Server core OBJECT library (shared by lemonade-router and Lemonade.exe)
+# Server core OBJECT library (shared by lemond and Lemonade.exe)
 # ============================================================
 add_library(lemonade-server-core OBJECT ${SOURCES_CORE})
 
 # ============================================================
-# lemonade-router executable
+# lemond executable
 # ============================================================
 add_executable(${EXECUTABLE_NAME} src/cpp/server/main.cpp)
 if(WIN32)
@@ -717,7 +717,7 @@ elseif(UNIX)
     endif()
 endif()
 
-# lemonade-router inherits all deps from lemonade-server-core
+# lemond inherits all deps from lemonade-server-core
 target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 
 # ============================================================
@@ -1092,7 +1092,7 @@ if(APPLE)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         message(STATUS "Release Build: Configuring Hardened Runtime Signing for Router")
 
-        # Sign 'lemonade-router'
+        # Sign 'lemond'
         add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E echo "--- Signing ${EXECUTABLE_NAME} ---"
             COMMAND codesign --force --options runtime --timestamp --entitlements "${ENTITLEMENTS_PATH}" --sign "${SIGNING_IDENTITY}" -v $<TARGET_FILE:${EXECUTABLE_NAME}>

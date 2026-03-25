@@ -141,7 +141,7 @@ Each model can be loaded with custom settings (context size, llamacpp backend, l
 **Setting Priority Order:**
 1. Values passed explicitly in `/api/v1/load` request (highest priority)
 2. Values from environment variables or server startup arguments (see [Server Configuration](./configuration.md))
-3. Hardcoded defaults in `lemonade-router` (lowest priority)
+3. Hardcoded defaults in `lemond` (lowest priority)
 
 ## Start the HTTP Server
 
@@ -1264,7 +1264,7 @@ When loading a model, settings are applied in this priority order:
 1. Values explicitly passed in the `load` request (highest priority)
 2. Per-model values configurable in `recipe_options.json` (see below for details)
 3. Values from environment variables or server startup arguments (see [Server Configuration](./configuration.md))
-4. Default hardcoded values in `lemonade-router` (lowest priority)
+4. Default hardcoded values in `lemond` (lowest priority)
 
 #### Per-model options
 

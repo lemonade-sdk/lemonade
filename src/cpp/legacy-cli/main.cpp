@@ -1,5 +1,5 @@
 // Legacy shim: backwards-compatible lemonade-server binary
-// Prints a deprecation notice and delegates to lemonade-router or lemonade CLI.
+// Prints a deprecation notice and delegates to lemond or lemonade CLI.
 
 #include <lemon/version.h>
 
@@ -33,7 +33,7 @@ static const char* server_binary_name() {
 #ifdef _WIN32
     return "LemonadeServer.exe";
 #else
-    return "lemonade-router";
+    return "lemond";
 #endif
 }
 
@@ -250,9 +250,9 @@ int main(int argc, char *argv[]) {
         // On Windows, LemonadeServer.exe is the embedded server + tray
         fs::path server = sibling_exe(dir, "LemonadeServer");
 #else
-        fs::path server = sibling_exe(dir, "lemonade-router");
+        fs::path server = sibling_exe(dir, "lemond");
 #endif
-        // Strip flags that were valid for old lemonade-server but not for lemonade-router
+        // Strip flags that were valid for old lemonade-server but not for lemond
         std::vector<std::string> server_args;
         for (size_t i = 1; i < args.size(); ++i) {
             if (args[i] == "--no-tray") continue;

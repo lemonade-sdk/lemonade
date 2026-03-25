@@ -23,7 +23,7 @@ This guide covers everything you need to build, test, and contribute to Lemonade
   - [Internal Endpoints](#internal-endpoints)
   - [Dependencies](#dependencies)
 - [Usage](#usage)
-  - [lemonade-router (Server Only)](#lemonade-router-server-only)
+  - [lemond (Server Only)](#lemond-server-only)
   - [lemonade-server.exe (Console CLI Client)](#lemonade-serverexe-console-cli-client)
   - [lemonade-tray (GUI Tray Application)](#lemonade-tray-gui-tray-application---windows-and-linux)
   - [Logging and Console Output](#logging-and-console-output)
@@ -38,11 +38,11 @@ This guide covers everything you need to build, test, and contribute to Lemonade
 ## Components
 
 Lemonade consists of these main executables:
-- **lemonade-router** - Core HTTP server that handles requests and LLM backend orchestration
+- **lemond** - Core HTTP server that handles requests and LLM backend orchestration
 - **lemonade** - CLI client for terminal users (list, pull, delete, run, status, logs, launch, recipes, scan)
 - **LemonadeServer.exe** (Windows only) - SUBSYSTEM:WINDOWS GUI app that embeds the server and shows a system tray icon
-- **lemonade-tray** (macOS/Linux) - Lightweight tray client that connects to a running `lemonade-router`
-- **lemonade-server** - Deprecated backwards-compatibility shim (delegates to `lemonade-router` or `lemonade`)
+- **lemonade-tray** (macOS/Linux) - Lightweight tray client that connects to a running `lemond`
+- **lemonade-server** - Deprecated backwards-compatibility shim (delegates to `lemond` or `lemonade`)
 
 ## Building from Source
 
@@ -96,12 +96,12 @@ cmake --build --preset vs18
 ### Build Outputs
 
 - **Windows:**
-  - `build/Release/lemonade-router.exe` - HTTP server
+  - `build/Release/lemond.exe` - HTTP server
   - `build/Release/LemonadeServer.exe` - GUI app (embedded server + system tray)
   - `build/Release/lemonade.exe` - CLI client
   - `build/Release/lemonade-server.exe` - Legacy shim (deprecated)
 - **Linux/macOS:**
-  - `build/lemonade-router` - HTTP server
+  - `build/lemond` - HTTP server
   - `build/lemonade` - CLI client
   - `build/lemonade-tray` - System tray client (macOS always; Linux when AppIndicator3 found)
   - `build/lemonade-server` - Legacy shim (deprecated)
@@ -174,7 +174,7 @@ chmod +x build/app-appimage/lemonade-app-*.AppImage
 - Security features enabled: Control Flow Guard, ASLR, DEP
 
 **Linux:**
-- `lemonade-router` is always headless on Linux (GTK-free, daemon-friendly); use `lemonade-router` to start the server directly
+- `lemond` is always headless on Linux (GTK-free, daemon-friendly); use `lemond` to start the server directly
 - `lemonade-tray` is a separate binary for the system tray, auto-detected at build time: built if AppIndicator3 libraries are found (GTK3 only needed for non-glib variants)
 - To require tray support (fail if deps missing): `-DREQUIRE_LINUX_TRAY=ON`
 - Optional tray dependencies: one of `ayatana-appindicator-glib-devel` (preferred, no GTK3 needed), `ayatana-appindicator3-devel`, or `libappindicator-gtk3-devel` (the latter two also require `gtk3-devel`)
@@ -269,7 +269,7 @@ sudo dpkg -r lemonade-server
 The executables will be available in PATH:
 ```bash
 lemonade --help
-lemonade-router --help
+lemond --help
 ```
 
 ### Linux .rpm Package (Fedora, RHEL etc)
@@ -346,7 +346,7 @@ cmake --build . --config Release -j
 
 The build system provides several CMake targets for different build configurations:
 
-- **`lemonade-router`**: The main HTTP server executable that handles LLM inference requests
+- **`lemond`**: The main HTTP server executable that handles LLM inference requests
 - **`package-macos`**: Creates a signed macOS installer package (.pkg) using productbuild
 - **`notarize_package`**: Builds and submits the package to Apple for notarization and staples the ticket
 - **`electron-app`**: Builds the Electron-based GUI application
@@ -420,7 +420,7 @@ The notarization process will:
         ]
     }
 ```
-2. If you want to debug lemonade-router you may pass --llamacpp cpu for cpu based tests.
+2. If you want to debug lemond you may pass --llamacpp cpu for cpu based tests.
 3. For `lemonade` you may pass a subcommand (e.g., `run MODEL`) as arguments.
 
 ##### The hard way - commands only.
@@ -550,7 +550,7 @@ src/cpp/
 
 The Lemonade Server C++ implementation uses a client-server architecture:
 
-#### lemonade-router (Server Component)
+#### lemond (Server Component)
 
 A pure HTTP server that:
 - Serves OpenAI-compatible REST API endpoints (supports both `/api/v0` and `/api/v1`)
@@ -579,21 +579,21 @@ A pure HTTP server that:
 
 A console application for terminal users:
 - Provides command-based user interface (`list`, `pull`, `delete`, `run`, `status`, `logs`, `launch`, `recipes`, `scan`)
-- Communicates with `lemonade-router` via HTTP endpoints
+- Communicates with `lemond` via HTTP endpoints
 - Expects the server to already be running (auto-started by the OS after installation)
 
 #### lemonade-tray / LemonadeServer.exe (GUI Tray Application)
 
 A GUI application for desktop users that exposes the server via a system tray icon:
 - **Windows:** `LemonadeServer.exe` — a SUBSYSTEM:WINDOWS app that embeds the server and shows a system tray icon. No console window.
-- **Linux:** `lemonade-tray` — tray application (requires GTK3 + AppIndicator3). Connects to an already-running server if one is found; otherwise starts one (via systemd if a unit is installed, or by spawning `lemonade-router` directly).
+- **Linux:** `lemonade-tray` — tray application (requires GTK3 + AppIndicator3). Connects to an already-running server if one is found; otherwise starts one (via systemd if a unit is installed, or by spawning `lemond` directly).
 - Zero console output or CLI interface
 - Used by application launchers, desktop shortcuts, and autostart entries
 - Provides seamless GUI experience for non-technical users
 
 ### Client-Server Communication
 
-The `lemonade` client communicates with `lemonade-router` server via HTTP:
+The `lemonade` client communicates with `lemond` server via HTTP:
 - **Model operations:** `/api/v1/models`, `/api/v1/pull`, `/api/v1/delete`
 - **Model control:** `/api/v1/load`, `/api/v1/unload`
 - **Server management:** `/api/v1/health`, `/internal/shutdown`, `/internal/set`, `/internal/config`
@@ -604,7 +604,7 @@ The client automatically:
 - Reports an error if no server is reachable
 
 **Single-Instance Protection:**
-- **Windows:** `LemonadeServer.exe` holds a system-wide mutex (`Global\LemonadeRouterMutex`). A second launch shows a "Server is already running" dialog and exits.
+- **Windows:** `LemonadeServer.exe` holds a system-wide mutex (`Global\LemondMutex`). A second launch shows a "Server is already running" dialog and exits.
 - **Linux/macOS:** `lemonade-tray` acquires an exclusive `flock()` on a lock file in the runtime directory to prevent duplicate tray instances.
 
 **Server Discovery:**
@@ -691,16 +691,16 @@ Platform-specific SSL backends are used (Schannel on Windows, SecureTransport on
 
 ## Usage
 
-### lemonade-router (Server Only)
+### lemond (Server Only)
 
-The `lemonade-router` executable is a pure HTTP server without any command-based interface:
+The `lemond` executable is a pure HTTP server without any command-based interface:
 
 ```bash
 # Start server with default options
-./lemonade-router
+./lemond
 
 # Start server with custom options
-./lemonade-router --port 8080 --ctx-size 8192 --log-level debug
+./lemond --port 8080 --ctx-size 8192 --log-level debug
 
 # Available options:
 #   --port PORT              Port number (default: 8000)
@@ -717,7 +717,7 @@ The `lemonade-router` executable is a pure HTTP server without any command-based
 
 The `lemonade` executable is the command-line interface for terminal users:
 - Command-line interface for model management and server interaction
-- Communicates with `lemonade-router` via HTTP endpoints
+- Communicates with `lemond` via HTTP endpoints
 - Expects the server to already be running (auto-started by the OS after installation)
 
 ```bash
@@ -752,12 +752,12 @@ The tray application provides a system tray icon for desktop users:
 - Single-instance protection: shows friendly message if already running
 
 **Platform support:**
-- **Windows:** `LemonadeServer.exe` — a SUBSYSTEM:WINDOWS app that embeds `lemonade-router` and shows a system tray icon. No separate console process. Auto-starts via the Windows startup folder.
-- **Linux:** `lemonade-tray` — available when compiled with GTK3 + AppIndicator3 support (auto-detected at build time). Connects to an already-running server if one is found; otherwise starts one (via systemd if a unit is installed, or by spawning `lemonade-router` directly).
+- **Windows:** `LemonadeServer.exe` — a SUBSYSTEM:WINDOWS app that embeds `lemond` and shows a system tray icon. No separate console process. Auto-starts via the Windows startup folder.
+- **Linux:** `lemonade-tray` — available when compiled with GTK3 + AppIndicator3 support (auto-detected at build time). Connects to an already-running server if one is found; otherwise starts one (via systemd if a unit is installed, or by spawning `lemond` directly).
 
 **What it does (Linux):**
 1. Starts immediately in tray mode (no subcommand needed)
-2. Connects to an already-running server, or starts one (via systemd if a unit is installed, otherwise spawns `lemonade-router` directly)
+2. Connects to an already-running server, or starts one (via systemd if a unit is installed, otherwise spawns `lemond` directly)
 3. Shows a system tray icon connected to the server
 
 **When to use:**
@@ -783,7 +783,7 @@ The tray application provides a system tray icon for desktop users:
 
 ### Logging and Console Output
 
-When running `LemonadeServer.exe` or `lemonade-router`:
+When running `LemonadeServer.exe` or `lemond`:
 - **Log File:** All logs are written to a persistent log file (default: `%TEMP%\lemonade-server.log`)
 - **Log Viewer:** Click "Show Logs" in the tray to open `lemonade-log-viewer.exe`, or use `lemonade logs`
   - Displays last 100KB of historical logs

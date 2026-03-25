@@ -157,7 +157,7 @@ def collect_server_logs(output_dir):
     """
     os.makedirs(output_dir, exist_ok=True)
     temp_dir = tempfile.gettempdir()
-    patterns = ["lemonade*.log", "lemonade-router*.log", "lemonade-server*.log"]
+    patterns = ["lemonade*.log", "lemond*.log", "lemonade-server*.log"]
     copied = []
     for pattern in patterns:
         for log_file in glob.glob(os.path.join(temp_dir, pattern)):

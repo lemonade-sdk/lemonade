@@ -5,7 +5,7 @@
 //   Output binary: LemonadeServer.exe
 //
 // macOS / Linux:
-//   Connects to an already-running lemonade-router, then runs TrayUI.
+//   Connects to an already-running lemond, then runs TrayUI.
 //   Output binary: lemonade-tray
 
 #include "lemon_tray/tray_ui.h"
@@ -93,7 +93,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     // are automatically killed when this process exits.
     create_child_process_job();
 
-    // Single instance check — prevents running alongside lemonade-router
+    // Single instance check — prevents running alongside lemond
     if (lemon::SingleInstance::IsAnotherInstanceRunning("Router")) {
         return 0;
     }
@@ -264,14 +264,14 @@ int main(int argc, char* argv[]) {
     signal(SIGTERM, tray_signal_handler);
 
     // Wait for router to be reachable (retry with backoff up to 30s)
-    std::cout << "Connecting to lemonade-router at " << host << ":" << port << "..." << std::endl;
+    std::cout << "Connecting to lemond at " << host << ":" << port << "..." << std::endl;
     if (!wait_for_server(host, port, 30)) {
-        std::cerr << "Error: Could not connect to lemonade-router at " << host << ":" << port << std::endl;
-        std::cerr << "Make sure lemonade-router is running." << std::endl;
+        std::cerr << "Error: Could not connect to lemond at " << host << ":" << port << std::endl;
+        std::cerr << "Make sure lemond is running." << std::endl;
         return 1;
     }
 
-    std::cout << "Connected to lemonade-router v" << LEMON_VERSION_STRING << std::endl;
+    std::cout << "Connected to lemond v" << LEMON_VERSION_STRING << std::endl;
 
     // Create and run tray UI
     lemon_tray::TrayUI tray(port, host);

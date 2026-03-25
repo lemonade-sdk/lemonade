@@ -4,7 +4,7 @@ A desktop GUI for interacting with the Lemonade Server.
 
 ## Overview
 
-This app provides a native desktop experience for managing models and chatting with LLMs running on `lemonade-router`. It connects to the server via HTTP API and offers a modern, resizable panel-based interface.
+This app provides a native desktop experience for managing models and chatting with LLMs running on `lemond`. It connects to the server via HTTP API and offers a modern, resizable panel-based interface.
 
 **Key Features:**
 - Model management (list, pull, load/unload)
@@ -50,7 +50,7 @@ src/app/
 │         UI components, state management         │
 ├─────────────────────────────────────────────────┤
 │         HTTP API                                │
-│         Communicates with lemonade-router       │
+│         Communicates with lemond       │
 └─────────────────────────────────────────────────┘
 ```
 

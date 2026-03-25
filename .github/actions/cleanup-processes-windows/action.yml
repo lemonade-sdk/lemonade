@@ -46,8 +46,9 @@ runs:
         # Kill FLM processes (Windows only)
         Stop-ProcessByPattern -Pattern "flm" -Description "FLM"
 
-        # Kill lemonade processes (lemonade-server, lemonade-router, lemonade-server-dev, etc.)
+        # Kill lemonade processes (lemonade-server, lemond, lemonade-server-dev, etc.)
         Stop-ProcessByPattern -Pattern "lemonade" -Description "lemonade"
+        Stop-ProcessByPattern -Pattern "lemond" -Description "lemond"
 
         # Kill Python processes
         Stop-ProcessByPattern -Pattern "python" -Description "Python"
@@ -117,7 +118,7 @@ runs:
 
         # Clean up log files to avoid confusion between test runs
         Write-Host "`nCleaning up log files..." -ForegroundColor Yellow
-        $logPatterns = @("lemonade*.log", "lemonade-router*.log", "lemonade-server*.log")
+        $logPatterns = @("lemonade*.log", "lemond*.log", "lemonade-server*.log")
         foreach ($pattern in $logPatterns) {
             $logFiles = Get-ChildItem "$env:TEMP\$pattern" -ErrorAction SilentlyContinue
             if ($logFiles) {

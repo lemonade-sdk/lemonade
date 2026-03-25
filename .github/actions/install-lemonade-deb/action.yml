@@ -66,7 +66,7 @@ runs:
 
         # Make binaries executable
         chmod +x "$EXTRACT_PATH/usr/bin/lemonade-server"
-        chmod +x "$EXTRACT_PATH/usr/bin/lemonade-router"
+        chmod +x "$EXTRACT_PATH/usr/bin/lemond"
         chmod +x "$EXTRACT_PATH/usr/bin/lemonade" 2>/dev/null || true
 
         # Add binaries to PATH for subsequent steps
@@ -87,7 +87,7 @@ runs:
         echo "Verifying binaries..."
 
         # Test version commands
-        "$EXTRACT_PATH/usr/bin/lemonade-router" --version
+        "$EXTRACT_PATH/usr/bin/lemond" --version
         "$EXTRACT_PATH/usr/bin/lemonade-server" --version
 
         echo "Binaries verified successfully!"
@@ -96,10 +96,10 @@ runs:
       shell: bash
       run: |
         # The .deb extract doesn't install a systemd service, so start manually.
-        # lemonade-router logs to stdout (SinkCout), so redirect to a file for
+        # lemond logs to stdout (SinkCout), so redirect to a file for
         # the capture-server-logs action to find.
         EXTRACT_PATH="${{ inputs.extract-path }}"
-        SERVER_BIN="$EXTRACT_PATH/usr/bin/lemonade-router"
+        SERVER_BIN="$EXTRACT_PATH/usr/bin/lemond"
         LOG_FILE="/tmp/lemonade-server.log"
 
         echo "Starting lemonade server (logging to $LOG_FILE)..."

@@ -156,7 +156,7 @@
         <File Id="lemonade_server.exe" Source="$(var.BuildDir)\Release\lemonade-server.exe" KeyPath="yes" />
       </Component>
 
-      <!-- lemonade-router.exe is not installed on Windows; LemonadeServer.exe embeds the server -->
+      <!-- lemond.exe is not installed on Windows; LemonadeServer.exe embeds the server -->
 
       <Component Id="LemonadeCli" Guid="12ffa6b7-831b-4d56-889c-3e7f43c8d134">
         <File Id="lemonade.exe" Source="$(var.BuildDir)\Release\lemonade.exe" KeyPath="yes" />
@@ -337,7 +337,7 @@
          in LemonadeServer.exe also guarantees children die when the parent exits. -->
     <CustomAction Id="StopServerCmd"
                   Directory="SystemFolder"
-                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemonade-router.exe 2>nul &amp; taskkill /f /im lemonade-server.exe 2>nul &amp; exit /b 0"'
+                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; taskkill /f /im lemonade-server.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
@@ -345,7 +345,7 @@
     <!-- Alias for machine-wide — same action -->
     <CustomAction Id="StopServerCmdMachine"
                   Directory="SystemFolder"
-                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemonade-router.exe 2>nul &amp; taskkill /f /im lemonade-server.exe 2>nul &amp; exit /b 0"'
+                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; taskkill /f /im lemonade-server.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
@@ -387,7 +387,7 @@
     <!-- Stop server during uninstall — taskkill /t kills process tree. -->
     <CustomAction Id="StopServerOnUninstall"
                   Directory="SystemFolder"
-                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemonade-router.exe 2>nul &amp; taskkill /f /im lemonade-server.exe 2>nul &amp; exit /b 0"'
+                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; taskkill /f /im lemonade-server.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />

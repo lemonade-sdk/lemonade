@@ -50,7 +50,7 @@ runs:
       run: |
         set -e
 
-        echo "Building lemonade-router and lemonade-server for macOS..."
+        echo "Building lemond and lemonade-server for macOS..."
 
         # Reconfigure if Electron app is included (setup.sh already did basic config)
         EXTRA_CMAKE_ARGS=""
@@ -71,8 +71,8 @@ runs:
         cmake --build --preset default
 
         # Verify binaries exist
-        if [ ! -f "build/lemonade-router" ]; then
-            echo "ERROR: lemonade-router not found!"
+        if [ ! -f "build/lemond" ]; then
+            echo "ERROR: lemond not found!"
             echo "Build directory contents:"
             ls -lh build/
             exit 1
@@ -86,12 +86,12 @@ runs:
         fi
 
         echo "Verifying binary executability..."
-        ./build/lemonade-router --version
+        ./build/lemond --version
         ./build/lemonade-server --version
 
         # Check if binaries are signed (non-fatal)
         echo "Checking code signatures..."
-        codesign --verify --verbose=2 build/lemonade-router 2>&1 || echo "WARNING: lemonade-router not signed (expected for non-release builds)"
+        codesign --verify --verbose=2 build/lemond 2>&1 || echo "WARNING: lemond not signed (expected for non-release builds)"
         codesign --verify --verbose=2 build/lemonade-server 2>&1 || echo "WARNING: lemonade-server not signed (expected for non-release builds)"
 
         echo "C++ build successful!"
