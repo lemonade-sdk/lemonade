@@ -33,7 +33,7 @@ static const json CLI_OPTIONS = {
         {"envname", "LEMONADE_CTX_SIZE"},
         {"help", "Context size for the model"}
     }},
-    {"--device", {
+    {"--llamacpp-device", {
         {"option_name", "llamacpp_device"},
         {"type_name", "DEVICES"},
         {"envname", "LEMONADE_LLAMACPP_DEVICE"},
