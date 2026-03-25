@@ -846,6 +846,44 @@ sys.exit(0)
         print(f"Delete model exit code: {result.returncode}")
 
 
+class CLIHelpDocsConsistencyTests(unittest.TestCase):
+    """Lightweight checks that compare launch help semantics with CLI docs text."""
+
+    def test_900_launch_use_recipe_docs_match_help_text(self):
+        """The launch --use-recipe wording in docs should match actual CLI behavior/help."""
+        result = run_cli_command(["launch", "--help"], timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(result.returncode, 0)
+
+        help_output = result.stdout + result.stderr
+        self.assertIn(
+            "Skip recipe import prompts and launch with the selected/provided model",
+            help_output,
+        )
+        self.assertIn(
+            "Remote recipe directory used only if you choose recipe import at prompt",
+            help_output,
+        )
+        self.assertIn(
+            "Recipe JSON filename used only if you choose recipe import at prompt",
+            help_output,
+        )
+
+        docs_path = os.path.join(
+            os.path.dirname(__file__), "..", "docs", "lemonade-cli.md"
+        )
+        with open(docs_path, "r", encoding="utf-8") as f:
+            docs_text = f.read()
+
+        self.assertIn(
+            "Skip recipe import prompts and launch directly with the selected/provided model",
+            docs_text,
+        )
+        self.assertNotIn(
+            "Import a recipe from `lemonade-sdk/recipes` before launch",
+            docs_text,
+        )
+
+
 def run_cli_client_tests():
     """Run CLI client tests based on command line arguments."""
     args = parse_cli_args()
