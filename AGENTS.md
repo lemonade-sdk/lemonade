@@ -144,6 +144,7 @@ Test utilities in `test/utils/` with `server_base.py` as the base class. Test de
 - C++17, `lemon::` namespace
 - `snake_case` for functions/variables, `CamelCase` for classes/types
 - 4-space indent, `#pragma once` for headers
+- Keep `#include` directives in alphabetical order within each include block
 - Platform guards: `#ifdef _WIN32`, `#ifdef __APPLE__`, `#ifdef __linux__`
 
 ### Python

@@ -9,23 +9,22 @@
 //   Output binary: lemonade-tray
 
 #include "lemon_tray/tray_ui.h"
+#include <lemon/cli_parser.h>
+#include <lemon/server.h>
 #include <lemon/single_instance.h>
-#include <lemon/version.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/version.h>
 
+#include <atomic>
+#include <chrono>
 #include <iostream>
 #include <string>
 #include <thread>
-#include <chrono>
-#include <atomic>
-
 #include <CLI/CLI.hpp>
 #include <httplib.h>
 
 #ifdef _WIN32
 // Windows embeds the server
-#include <lemon/server.h>
-#include <lemon/cli_parser.h>
 #include <winsock2.h>
 #include <windows.h>
 
