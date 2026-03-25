@@ -46,6 +46,9 @@ _config = {
     "server_binary": None,
 }
 
+IS_WINDOWS = platform.system() == "Windows"
+WINDOWS_LAUNCH_STUB_SKIP_REASON = "Windows launch-stub execution uses non-native script binaries; covered on Unix runners"
+
 
 def get_cli_binary():
     """Get the CLI binary path (same as server binary but called 'lemonade')."""
@@ -195,7 +198,7 @@ sys.exit(0)
         return env
 
     def _build_noop_opener_env(self, stub_dir):
-        """Build env with no-op URL opener binaries to avoid GUI popups in run tests."""
+        """Build env with no-op URL opener binaries to avoid GUI popups in run tests on Unix."""
         opener_script = "#!/usr/bin/env sh\nexit 0\n"
         for name in ["xdg-open", "open"]:
             opener_path = os.path.join(stub_dir, name)
@@ -204,6 +207,12 @@ sys.exit(0)
             os.chmod(opener_path, 0o755)
 
         return self._build_stubbed_agent_env(stub_dir)
+
+    def _build_missing_agent_env(self, stub_dir):
+        """Build env that guarantees agent binary lookup fails deterministically on all OSes."""
+        env = self._build_stubbed_agent_env(stub_dir)
+        env["PATH"] = stub_dir
+        return env
 
     # =============================================================================
     # Status Tests
@@ -626,6 +635,8 @@ sys.exit(0)
     # =============================================================================
     # Launch Tests
     # =============================================================================
+    # parser-only tests: run on all OSes
+    # process-execution tests: run on non-Windows only with shebang-based fake binaries
 
     def test_100_launch_invalid_agent_rejected(self):
         """Launch should reject unsupported agent names."""
@@ -638,6 +649,9 @@ sys.exit(0)
 
     def test_101_launch_claude_with_fake_binary_and_api_key(self):
         """Launch should execute fake claude binary and wire expected auth/model env vars."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
             capture_path = os.path.join(temp_dir, "claude_capture.json")
             self._write_fake_agent(temp_dir, "claude", capture_path)
@@ -683,6 +697,9 @@ sys.exit(0)
 
     def test_102_launch_codex_with_fake_binary(self):
         """Launch should execute fake codex binary and pass expected argv/env."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
             capture_path = os.path.join(temp_dir, "codex_capture.json")
             self._write_fake_agent(temp_dir, "codex", capture_path)
@@ -719,9 +736,7 @@ sys.exit(0)
     def test_103_launch_use_recipe_with_repo_flags_is_deterministic(self):
         """--use-recipe should skip import flow even when repo flags are present."""
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
-            capture_path = os.path.join(temp_dir, "claude_capture_repo_flags.json")
-            self._write_fake_agent(temp_dir, "claude", capture_path)
-            env = self._build_stubbed_agent_env(temp_dir)
+            env = self._build_missing_agent_env(temp_dir)
 
             result = run_cli_command(
                 [
@@ -739,13 +754,10 @@ sys.exit(0)
                 env=env,
             )
 
-            self.assertEqual(result.returncode, 0)
-            self.assertTrue(
-                os.path.exists(capture_path),
-                "Fake claude binary was not executed",
-            )
+            self.assertNotEqual(result.returncode, 0)
             output = result.stdout + result.stderr
             self.assertIn("--use-recipe set: skipping recipe import", output)
+            self.assertIn("Agent binary not found", output)
 
     def test_104_launch_missing_binary_fails_fast(self):
         """Without a stub and no real claude installed, launch should fail at binary lookup."""
