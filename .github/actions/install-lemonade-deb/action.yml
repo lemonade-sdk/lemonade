@@ -103,12 +103,12 @@ runs:
         LOG_FILE="/tmp/lemonade-server.log"
 
         echo "Starting lemonade server (logging to $LOG_FILE)..."
-        "$SERVER_BIN" --log-level debug > "$LOG_FILE" 2>&1 &
+        "$SERVER_BIN" > "$LOG_FILE" 2>&1 &
         SERVER_PID=$!
 
         echo "Waiting for server to be ready (PID $SERVER_PID)..."
         for i in $(seq 1 30); do
-          if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
+          if curl -sf http://127.0.0.1:8000/live > /dev/null 2>&1; then
             echo "Server is running and healthy"
             exit 0
           fi
