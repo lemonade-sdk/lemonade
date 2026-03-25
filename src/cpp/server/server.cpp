@@ -3463,10 +3463,19 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
             std::string level = config_->log_level();
             LOG(INFO, "Server") << "Log level changed to: " << level << std::endl;
             // Re-initialize logging with the new severity filter
-            auto sink = std::make_shared<AixLog::SinkCout>(
-                AixLog::Filter(AixLog::to_severity(level)),
-                RuntimeConfig::LOG_FORMAT);
-            AixLog::Log::init({sink});
+            auto filter = AixLog::Filter(AixLog::to_severity(level));
+            auto console_sink = std::make_shared<AixLog::SinkCout>(filter, RuntimeConfig::LOG_FORMAT);
+#ifdef _WIN32
+            AixLog::Log::init({console_sink});
+#else
+            if (SystemInfo::is_running_under_systemd()) {
+                AixLog::Log::init({console_sink});
+            } else {
+                std::string log_file = utils::get_runtime_dir() + "/lemonade-server.log";
+                auto file_sink = std::make_shared<AixLog::SinkFile>(filter, log_file, RuntimeConfig::LOG_FORMAT);
+                AixLog::Log::init({console_sink, file_sink});
+            }
+#endif
         } else if (key == "global_timeout") {
             long timeout = config_->global_timeout();
             LOG(INFO, "Server") << "Global timeout changed to: " << timeout << "s" << std::endl;

@@ -3,6 +3,7 @@
 #include <atomic>
 #include <lemon/cli_parser.h>
 #include <lemon/server.h>
+#include <lemon/system_info.h>
 #include <lemon/version.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/aixlog.hpp>
@@ -62,9 +63,13 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
         AixLog::Log::init({console_sink});
 #else
-        std::string log_file = utils::get_runtime_dir() + "/lemonade-server.log";
-        auto file_sink = std::make_shared<AixLog::SinkFile>(filter, log_file, RuntimeConfig::LOG_FORMAT);
-        AixLog::Log::init({console_sink, file_sink});
+        if (SystemInfo::is_running_under_systemd()) {
+            AixLog::Log::init({console_sink});
+        } else {
+            std::string log_file = utils::get_runtime_dir() + "/lemonade-server.log";
+            auto file_sink = std::make_shared<AixLog::SinkFile>(filter, log_file, RuntimeConfig::LOG_FORMAT);
+            AixLog::Log::init({console_sink, file_sink});
+        }
 #endif
 
         // Start the server
