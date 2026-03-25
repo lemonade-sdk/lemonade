@@ -1,3 +1,4 @@
+#include "lemon/utils/aixlog.hpp"
 #include "lemon_cli/lemonade_client.h"
 #include <lemon/recipe_options.h>
 #include <lemon/version.h>
@@ -648,12 +649,14 @@ static bool fetch_models_from_endpoint(lemonade::LemonadeClient& client, bool sh
 
         return true;
     } catch (const std::exception& e) {
-        std::cerr << "Error: Failed to query /api/v1/models: " << e.what() << std::endl;
+        LOG(ERROR, "AgentLauncher") << "Error: Failed to query /api/v1/models: " << e.what() << std::endl;
         return false;
     }
 }
 
-static bool prompt_model_selection(lemonade::LemonadeClient& client, std::string& model_out, bool show_all) {
+static bool prompt_model_selection(lemonade::LemonadeClient& client,
+                                   std::string& model_out,
+                                   bool show_all) {
     std::vector<lemonade::ModelInfo> models;
     if (!fetch_models_from_endpoint(client, false, models)) {
         return false;
@@ -663,7 +666,7 @@ static bool prompt_model_selection(lemonade::LemonadeClient& client, std::string
     }
 
     if (models.empty()) {
-        std::cerr << "No models available on server. Try 'lemonade list' or 'lemonade pull <MODEL>'." << std::endl;
+        LOG(ERROR, "ModelSelector") << "No models available on server. Try 'lemonade list' or 'lemonade pull <MODEL>'." << std::endl;
         return false;
     }
 
@@ -671,21 +674,22 @@ static bool prompt_model_selection(lemonade::LemonadeClient& client, std::string
     for (size_t i = 0; i < models.size(); ++i) {
         const auto& model = models[i];
 
-        // show_all determines whether to display all models or only those with recipe "llamacpp"
         if (model.recipe != "llamacpp" && !show_all) {
             continue;
         }
 
         std::cout << "  " << (i + 1) << ") " << model.id
-                  << " [" << (model.downloaded ? "downloaded" : "not-downloaded") << "]"
-                  << " (" << (model.recipe.empty() ? "-" : model.recipe) << ")"
-                  << std::endl;
+                << " [" << (model.downloaded ? "downloaded" : "not-downloaded") << "]"
+                << " (" << (model.recipe.empty() ? "-" : model.recipe) << ")"
+                << std::endl;
+
     }
+
     std::cout << "Enter number: " << std::flush;
 
     std::string input;
     if (!std::getline(std::cin, input)) {
-        std::cerr << "Error: Failed to read model selection." << std::endl;
+        LOG(ERROR, "ModelSelector") << "Error: Failed to read model selection." << std::endl;
         return false;
     }
 
@@ -694,17 +698,18 @@ static bool prompt_model_selection(lemonade::LemonadeClient& client, std::string
     try {
         selected = std::stoi(input, &parsed_chars);
     } catch (const std::exception&) {
-        std::cerr << "Error: Invalid selection." << std::endl;
+        LOG(ERROR, "ModelSelector") << "Error: Invalid selection." << std::endl;
         return false;
     }
 
     if (parsed_chars != input.size() || selected < 1 || static_cast<size_t>(selected) > models.size()) {
-        std::cerr << "Error: Selection out of range." << std::endl;
+        LOG(ERROR, "ModelSelector") << "Error: Selection out of range." << std::endl;
         return false;
     }
 
     model_out = models[static_cast<size_t>(selected - 1)].id;
-    std::cout << "Selected model: " << model_out << std::endl;
+
+    LOG(INFO, "ModelSelector") << "Selected model: " << model_out << std::endl;
     return true;
 }
 
@@ -714,7 +719,7 @@ static bool resolve_model_if_missing(lemonade::LemonadeClient& client, CliConfig
         return true;
     }
 
-    std::cout << "No model specified for '" << command_name << "'." << std::endl;
+    LOG(INFO, "ModelSelector") << "No model specified for '" << command_name << "'." << std::endl;
     return prompt_model_selection(client, config.model, show_all);
 }
 
@@ -779,8 +784,10 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         return 1;
     }
 
-    bool should_import_recipe = config.use_recipe;
-    if (!config.use_recipe) {
+    bool should_import_recipe = false;
+    if (config.use_recipe) {
+        std::cout << "--use-recipe set: skipping recipe import and using selected/provided model." << std::endl;
+    } else {
         should_import_recipe = prompt_yes_no("Do you want to import and use a recipe for launch?", false);
     }
 
@@ -803,7 +810,7 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
     if (!lemon_tray::build_agent_config(config.agent, config.host, config.port, config.model,
                                          config.api_key,
                                          agent_config, config_error)) {
-        std::cerr << "Failed to build agent config: " << config_error << std::endl;
+        LOG(ERROR, "AgentBuilder") << "Failed to build agent config: " << config_error << std::endl;
         return 1;
     }
 
@@ -816,9 +823,9 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
     // Find agent binary
     const std::string agent_binary = lemon_tray::find_agent_binary(agent_config);
     if (agent_binary.empty()) {
-        std::cerr << "Agent binary not found for " << config.agent << std::endl;
+        LOG(ERROR, "AgentBuilder") << "Agent binary not found for " << config.agent << std::endl;
         if (!agent_config.install_instructions.empty()) {
-            std::cerr << agent_config.install_instructions << std::endl;
+            LOG(ERROR, "AgentBuilder") << agent_config.install_instructions << std::endl;
         }
         return 1;
     }
@@ -856,7 +863,7 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
             false,
             agent_config.env_vars);
     } catch (const std::exception& e) {
-        std::cerr << "Error: Failed to launch agent process: " << e.what() << std::endl;
+        LOG(ERROR, "AgentLauncher") << "Error: Failed to launch agent process: " << e.what() << std::endl;
         return 1;
     }
 
@@ -1216,9 +1223,9 @@ int main(int argc, char* argv[]) {
         ->required()
         ->type_name("AGENT")
         ->check(CLI::IsMember(SUPPORTED_AGENTS));
-    launch_cmd->add_option("--model", config.model, "Model name to load")->type_name("MODEL");
+    launch_cmd->add_option("--model,-m", config.model, "Model name to load")->type_name("MODEL");
     launch_cmd->add_flag("--use-recipe", config.use_recipe,
-        "Import a recipe from the lemonade-sdk/recipes repository before launch");
+        "Skip recipe import prompts and launch with the selected/provided model");
     launch_cmd->add_option("--repo-dir", config.repo_dir,
         "Remote recipe directory to query when --use-recipe is enabled")->type_name("DIR");
     launch_cmd->add_option("--recipe-file", config.recipe_file,
