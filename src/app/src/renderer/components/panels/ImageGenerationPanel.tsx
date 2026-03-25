@@ -606,7 +606,8 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
             <button
               type="button"
               className="image-reference-dropzone"
-              onClick={() => !isBusy && fileInputRef.current?.click()}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isBusy}
             >
               <ImageUploadIcon />
               <span>Upload reference image</span>

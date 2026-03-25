@@ -313,15 +313,23 @@ json SDServer::image_edits(const json& request) {
 }
 
 json SDServer::image_variations(const json& request) {
-    // Use sd-server's /v1/images/edits endpoint for variations.
-    // Note: OpenAI variations API does NOT accept a prompt parameter.
-    // The endpoint expects multipart/form-data (like the OpenAI API).
+    // The official OpenAI variations API does not take a prompt parameter,
+    // but sd-server's /v1/images/edits implementation requires one. We therefore
+    // send a synthetic "variation" prompt that embeds inference parameters so
+    // the subprocess behaves consistently with our recipe_options defaults.
 
-    // Embed inference params in prompt (same pattern as image_edits/image_generations)
-    // so the subprocess uses recipe_options defaults instead of its own compiled-in values.
+    // Use request values if present, fall back to recipe_options defaults.
     json extra_args;
-    extra_args["steps"] = static_cast<int>(recipe_options_.get_option("steps"));
-    extra_args["cfg_scale"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
+    if (request.contains("steps")) {
+        extra_args["steps"] = request["steps"].get<int>();
+    } else {
+        extra_args["steps"] = static_cast<int>(recipe_options_.get_option("steps"));
+    }
+    if (request.contains("cfg_scale")) {
+        extra_args["cfg_scale"] = request["cfg_scale"].get<float>();
+    } else {
+        extra_args["cfg_scale"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
+    }
 
     std::string prompt = "variation <sd_cpp_extra_args>" + extra_args.dump() + "</sd_cpp_extra_args>";
 
