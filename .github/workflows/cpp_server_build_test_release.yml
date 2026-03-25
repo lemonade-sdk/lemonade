@@ -1239,16 +1239,15 @@ jobs:
   # API KEY TESTS - Separate job with LEMONADE_API_KEY env var
   # ========================================================================
 
-  test-cli-apikey:
-    name: Test API Key (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    needs:
-      - build-lemonade-server-installer
-      - build-lemonade-deb
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+  test-cli-apikey-linux:
+    name: Test API Key (ubuntu-latest)
+    runs-on: ubuntu-latest
+    needs: build-lemonade-deb
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     env:
       LEMONADE_CI_MODE: "True"
       LEMONADE_API_KEY: "test-api-key-12345"
@@ -1258,34 +1257,98 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ---- Linux Setup ----
-      - name: Download .deb package
-        if: runner.os == 'Linux'
-        uses: actions/download-artifact@v4
-        with:
-          name: lemonade-deb
-          path: .
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $(pwd)
+
+      - name: Install pip and test dependencies
+        shell: bash
+        run: |
+          set -e
+          if ! command -v pip3 &> /dev/null; then
+            apt-get update
+            apt-get install -y python3-pip python3-venv
+          fi
+          python3 -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r test/requirements.txt
 
       - name: Install Lemonade (.deb)
-        if: runner.os == 'Linux'
+        uses: ./.github/actions/install-lemonade-deb
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+
+      - name: Verify API key enforcement
         shell: bash
         run: |
-          DEB_FILE="lemonade-server_${{ env.LEMONADE_VERSION }}_amd64.deb"
-          sudo apt-get update
-          sudo apt install ./"$DEB_FILE"
-          lemonade-server --version
+          set -e
+          PASS=0
+          FAIL=0
 
-      - name: Set environment (Linux)
-        if: runner.os == 'Linux'
+          # 1. No API key → must get 401
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/api/v1/health 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" = "401" ]; then
+            echo "PASS: No API key → $HTTP_CODE"
+            PASS=$((PASS+1))
+          else
+            echo "FAIL: No API key → $HTTP_CODE (expected 401)"
+            FAIL=$((FAIL+1))
+          fi
+
+          # 2. Wrong API key → must get 401
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer wrong-key" http://127.0.0.1:8000/api/v1/health 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" = "401" ]; then
+            echo "PASS: Wrong API key → $HTTP_CODE"
+            PASS=$((PASS+1))
+          else
+            echo "FAIL: Wrong API key → $HTTP_CODE (expected 401)"
+            FAIL=$((FAIL+1))
+          fi
+
+          # 3. Correct API key → must get 200
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $LEMONADE_API_KEY" http://127.0.0.1:8000/api/v1/health 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "PASS: Correct API key → $HTTP_CODE"
+            PASS=$((PASS+1))
+          else
+            echo "FAIL: Correct API key → $HTTP_CODE (expected 200)"
+            FAIL=$((FAIL+1))
+          fi
+
+          echo ""
+          echo "Results: $PASS passed, $FAIL failed"
+          if [ "$FAIL" -gt 0 ]; then
+            echo "ERROR: API key enforcement tests failed"
+            exit 1
+          fi
+
+      - name: Run CLI tests with API key
         shell: bash
         run: |
-          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
-          echo "VENV_PYTHON=.venv/bin/python" >> $GITHUB_ENV
-          echo "SERVER_BINARY=lemonade-server" >> $GITHUB_ENV
+          set -e
+          # CLI commands should work because LEMONADE_API_KEY is in the env
+          # and the CLI client reads it automatically
+          .venv/bin/python test/server_cli.py --server-binary lemonade-server
 
-      # ---- Windows Setup ----
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-apikey-ubuntu-latest
+
+  test-cli-apikey:
+    name: Test API Key (windows-latest)
+    runs-on: windows-latest
+    needs:
+      - build-lemonade-server-installer
+    env:
+      LEMONADE_CI_MODE: "True"
+      LEMONADE_API_KEY: "test-api-key-12345"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Setup (Windows)
-        if: runner.os == 'Windows'
         shell: powershell
         run: |
           $cwd = (Get-Item .).FullName
@@ -1293,45 +1356,22 @@ jobs:
           echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
 
       - name: Install Lemonade Server (Windows)
-        if: runner.os == 'Windows'
         uses: ./.github/actions/install-lemonade-server-msi
         with:
           install-path: ${{ env.LEMONADE_INSTALL_PATH }}
 
       - name: Set paths (Windows)
-        if: runner.os == 'Windows'
         shell: powershell
         run: |
           echo "VENV_PYTHON=.venv/Scripts/python.exe" >> $Env:GITHUB_ENV
           echo "SERVER_BINARY=$Env:LEMONADE_INSTALL_PATH\bin\lemonade-server.exe" >> $Env:GITHUB_ENV
 
-      # ---- Common Setup ----
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
         with:
           venv-name: '.venv'
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
-
-      - name: Inject API key into server (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          # The deb postinst starts lemonade-router via systemd, but the
-          # service doesn't have LEMONADE_API_KEY. Inject it via the
-          # conf.d EnvironmentFile mechanism and restart.
-          sudo mkdir -p /etc/lemonade/conf.d
-          echo "LEMONADE_API_KEY=$LEMONADE_API_KEY" | sudo tee /etc/lemonade/conf.d/ci-apikey.conf
-          sudo systemctl restart lemonade-server
-          # Wait for server to come back up
-          for i in $(seq 1 30); do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $LEMONADE_API_KEY" http://localhost:8000/api/v1/health 2>/dev/null || echo "000")
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "Server restarted with API key enforcement"
-              break
-            fi
-            sleep 2
-          done
 
       - name: Verify API key enforcement
         shell: bash
@@ -1383,15 +1423,13 @@ jobs:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           set -e
-          # CLI commands should work because LEMONADE_API_KEY is in the env
-          # and the CLI client reads it automatically
           $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY"
 
       - name: Capture and upload server logs
         if: always()
         uses: ./.github/actions/capture-server-logs
         with:
-          artifact-name: server-logs-apikey-${{ matrix.os }}
+          artifact-name: server-logs-apikey-windows-latest
 
   # ========================================================================
   # RELEASE JOB - Add artifacts to GitHub release
