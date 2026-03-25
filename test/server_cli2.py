@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -48,7 +49,7 @@ _config = {
 
 def get_cli_binary():
     """Get the CLI binary path (same as server binary but called 'lemonade')."""
-    server_binary = _config["server_binary"]
+    server_binary = _config["server_binary"] or get_default_server_binary()
     # Replace 'lemonade-server' with 'lemonade' in the path
     return server_binary.replace("lemonade-server", "lemonade")
 
@@ -70,7 +71,7 @@ def parse_cli_args():
     return args
 
 
-def run_cli_command(args, timeout=60, check=False):
+def run_cli_command(args, timeout=60, check=False, env=None):
     """
     Run a CLI command and return the result.
 
@@ -78,6 +79,7 @@ def run_cli_command(args, timeout=60, check=False):
         args: List of command arguments (without the binary)
         timeout: Command timeout in seconds
         check: If True, raise CalledProcessError on non-zero exit
+        env: Optional environment override for subprocess
 
     Returns:
         subprocess.CompletedProcess result
@@ -92,6 +94,7 @@ def run_cli_command(args, timeout=60, check=False):
         timeout=timeout,
         encoding="utf-8",
         errors="replace",
+        env=env,
     )
 
     if result.stdout:
@@ -148,6 +151,59 @@ class PersistentServerCLIClientTests(unittest.TestCase):
             f"Command unexpectedly succeeded: {result.stdout}",
         )
         return result
+
+    def _write_fake_agent(self, directory, agent_name, capture_file):
+        """Create a tiny fake agent binary that captures argv and selected env vars."""
+        exe_path = os.path.join(directory, agent_name)
+        script = f"""#!/usr/bin/env python3
+import json
+import os
+import sys
+
+payload = {{
+    "argv": sys.argv[1:],
+    "env": {{
+        "ANTHROPIC_BASE_URL": os.environ.get("ANTHROPIC_BASE_URL", ""),
+        "ANTHROPIC_AUTH_TOKEN": os.environ.get("ANTHROPIC_AUTH_TOKEN", ""),
+        "LEMONADE_API_KEY": os.environ.get("LEMONADE_API_KEY", ""),
+        "OPENAI_BASE_URL": os.environ.get("OPENAI_BASE_URL", ""),
+        "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", ""),
+        "CLAUDE_CODE_SUBAGENT_MODEL": os.environ.get("CLAUDE_CODE_SUBAGENT_MODEL", ""),
+    }},
+}}
+
+with open({capture_file!r}, "w", encoding="utf-8") as f:
+    json.dump(payload, f)
+
+print("fake-agent-ok")
+sys.exit(0)
+"""
+        with open(exe_path, "w", encoding="utf-8") as f:
+            f.write(script)
+        os.chmod(exe_path, 0o755)
+        return exe_path
+
+    def _build_stubbed_agent_env(self, stub_dir):
+        """Build isolated env so PATH resolves fake agents and avoids first-run side effects."""
+        env = os.environ.copy()
+        env["PATH"] = stub_dir + os.pathsep + env.get("PATH", "")
+        env["HOME"] = stub_dir
+        env["XDG_CONFIG_HOME"] = os.path.join(stub_dir, ".config")
+        env["XDG_CACHE_HOME"] = os.path.join(stub_dir, ".cache")
+        env["XDG_DATA_HOME"] = os.path.join(stub_dir, ".local", "share")
+        return env
+
+    def _build_noop_opener_env(self, stub_dir):
+        """Build env with no-op URL opener binaries to avoid GUI popups in run tests."""
+        opener_script = "#!/usr/bin/env sh\nexit 0\n"
+        for name in ["xdg-open", "open"]:
+            opener_path = os.path.join(stub_dir, name)
+            with open(opener_path, "w", encoding="utf-8") as f:
+                f.write(opener_script)
+            os.chmod(opener_path, 0o755)
+
+        return self._build_stubbed_agent_env(stub_dir)
 
     # =============================================================================
     # Status Tests
@@ -522,6 +578,189 @@ class PersistentServerCLIClientTests(unittest.TestCase):
             timeout=TIMEOUT_DEFAULT,
         )
         print(f"Load with save-options exit code: {result.returncode}")
+
+    # =============================================================================
+    # Run Tests
+    # =============================================================================
+
+    def test_090_run_with_model(self):
+        """Test run command with explicit model."""
+        with tempfile.TemporaryDirectory(prefix="lemonade-open-stub-") as temp_dir:
+            env = self._build_noop_opener_env(temp_dir)
+            result = run_cli_command(
+                ["run", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+            self.assertEqual(result.returncode, 0)
+
+    def test_091_run_with_combined_options(self):
+        """Test run command with --ctx-size and --save-options together."""
+        with tempfile.TemporaryDirectory(prefix="lemonade-open-stub-") as temp_dir:
+            env = self._build_noop_opener_env(temp_dir)
+            result = run_cli_command(
+                ["run", ENDPOINT_TEST_MODEL, "--ctx-size", "2048", "--save-options"],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+            self.assertEqual(result.returncode, 0)
+
+    def test_092_run_with_host_port(self):
+        """Test run command using global --host/--port options."""
+        with tempfile.TemporaryDirectory(prefix="lemonade-open-stub-") as temp_dir:
+            env = self._build_noop_opener_env(temp_dir)
+            result = run_cli_command(
+                [
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    str(PORT),
+                    "run",
+                    ENDPOINT_TEST_MODEL,
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+            self.assertEqual(result.returncode, 0)
+
+    # =============================================================================
+    # Launch Tests
+    # =============================================================================
+
+    def test_100_launch_invalid_agent_rejected(self):
+        """Launch should reject unsupported agent names."""
+        result = self.assertCommandFails(
+            ["launch", "invalid-agent", "--model", ENDPOINT_TEST_MODEL],
+            timeout=TIMEOUT_DEFAULT,
+        )
+        output = result.stdout + result.stderr
+        self.assertIn("run with --help", output.lower())
+
+    def test_101_launch_claude_with_fake_binary_and_api_key(self):
+        """Launch should execute fake claude binary and wire expected auth/model env vars."""
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "claude_capture.json")
+            self._write_fake_agent(temp_dir, "claude", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "claude",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--api-key",
+                    "test-api-key",
+                    "--use-recipe",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertTrue(
+                os.path.exists(capture_path),
+                "Fake claude binary was not executed",
+            )
+
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            self.assertEqual(payload["env"]["ANTHROPIC_AUTH_TOKEN"], "test-api-key")
+            self.assertEqual(payload["env"]["LEMONADE_API_KEY"], "test-api-key")
+            self.assertEqual(
+                payload["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"],
+                ENDPOINT_TEST_MODEL,
+            )
+            self.assertEqual(
+                payload["env"]["CLAUDE_CODE_SUBAGENT_MODEL"],
+                ENDPOINT_TEST_MODEL,
+            )
+
+            output = result.stdout + result.stderr
+            self.assertIn("--use-recipe set: skipping recipe import", output)
+            self.assertIn("Launching claude", output)
+
+    def test_102_launch_codex_with_fake_binary(self):
+        """Launch should execute fake codex binary and pass expected argv/env."""
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "codex_capture.json")
+            self._write_fake_agent(temp_dir, "codex", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "codex",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--use-recipe",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertTrue(
+                os.path.exists(capture_path),
+                "Fake codex binary was not executed",
+            )
+
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            argv = payload["argv"]
+            self.assertIn("--oss", argv)
+            self.assertIn("-m", argv)
+            self.assertIn(ENDPOINT_TEST_MODEL, argv)
+            self.assertTrue(payload["env"]["OPENAI_BASE_URL"].endswith("/v1/"))
+            self.assertEqual(payload["env"]["OPENAI_API_KEY"], "lemonade")
+
+    def test_103_launch_use_recipe_with_repo_flags_is_deterministic(self):
+        """--use-recipe should skip import flow even when repo flags are present."""
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "claude_capture_repo_flags.json")
+            self._write_fake_agent(temp_dir, "claude", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "claude",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--use-recipe",
+                    "--repo-dir",
+                    "claude-code",
+                    "--recipe-file",
+                    "dummy.json",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertTrue(
+                os.path.exists(capture_path),
+                "Fake claude binary was not executed",
+            )
+            output = result.stdout + result.stderr
+            self.assertIn("--use-recipe set: skipping recipe import", output)
+
+    def test_104_launch_missing_binary_fails_fast(self):
+        """Without a stub and no real claude installed, launch should fail at binary lookup."""
+        if shutil.which("claude") is not None:
+            self.skipTest(
+                "Real claude binary installed; missing-binary behavior not deterministic"
+            )
+
+        result = run_cli_command(
+            ["launch", "claude", "--model", ENDPOINT_TEST_MODEL, "--use-recipe"],
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        output = result.stdout + result.stderr
+        self.assertIn("Agent binary not found", output)
 
     # =============================================================================
     # Unload Tests
