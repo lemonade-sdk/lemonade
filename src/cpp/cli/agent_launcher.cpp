@@ -1,4 +1,4 @@
-#include "lemon_tray/agent_launcher.h"
+#include "lemon_cli/agent_launcher.h"
 
 #include <lemon/utils/path_utils.h>
 

@@ -11,9 +11,7 @@ namespace backends {
 
 class KokoroServer : public WrappedServer, public ITextToSpeechServer {
 public:
-#ifndef LEMONADE_TRAY
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
-#endif
 
     inline static const BackendSpec SPEC = BackendSpec(
             "kokoro",
@@ -22,9 +20,7 @@ public:
     #else
             "koko"
     #endif
-#ifndef LEMONADE_TRAY
         , get_install_params
-#endif
     );
 
     explicit KokoroServer(const std::string& log_level,

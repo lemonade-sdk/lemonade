@@ -50,7 +50,7 @@ runs:
           $nugetUrl = "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe"
           $nugetPath = "$env:GITHUB_WORKSPACE\nuget.exe"
 
-          Invoke-WebRequest -Uri $nugetUrl -OutFile $nugetPath
+          Invoke-WebRequest -Uri $nugetUrl -OutFile $nugetPath -UseBasicParsing
 
           # Install Python via nuget
           & $nugetPath install python -Version $PYTHON_FULL -OutputDirectory "$env:GITHUB_WORKSPACE\.nuget-packages"
@@ -75,7 +75,7 @@ runs:
           & $PYTHON_EXE -m ensurepip --upgrade
           if ($LASTEXITCODE -ne 0) {
             Write-Host "ensurepip failed, trying get-pip.py..."
-            Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$PYTHON_DIR\get-pip.py"
+            Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$PYTHON_DIR\get-pip.py" -UseBasicParsing
             & $PYTHON_EXE "$PYTHON_DIR\get-pip.py"
           }
 

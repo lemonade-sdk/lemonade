@@ -6,7 +6,6 @@ with Lemonade's inference backends.
 
 Usage:
     python test_ollama.py
-    python test_ollama.py --server-per-test
     python test_ollama.py --server-binary /path/to/lemonade-server
 """
 
@@ -23,11 +22,11 @@ except ImportError:
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
-    parse_args,
 )
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
+    TOOL_CALLING_MODEL,
     VISION_MODEL,
     SD_MODEL,
     SAMPLE_TOOL,
@@ -45,7 +44,7 @@ class OllamaTests(ServerTestBase):
 
     @classmethod
     def setUpClass(cls):
-        """Set up class - start server and ensure test model is pulled."""
+        """Set up class - verify server is running."""
         super().setUpClass()
 
     def get_ollama_client(self):
@@ -641,7 +640,15 @@ class OllamaTests(ServerTestBase):
 
     def test_026_anthropic_messages_tool_calling(self):
         """Test Anthropic-compatible tool calling maps to tool_use blocks."""
-        self.ensure_model_pulled()
+        # Use a model with native tool-calling support in its chat template;
+        # the tiny test model (gemma-3) lacks tool markers so the llama.cpp
+        # autoparser ignores tools even with tool_choice required.
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={"model_name": TOOL_CALLING_MODEL, "stream": False},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
 
         anthropic_tool = {
             "name": SAMPLE_TOOL["function"]["name"],
@@ -650,7 +657,7 @@ class OllamaTests(ServerTestBase):
         }
 
         payload = {
-            "model": ENDPOINT_TEST_MODEL,
+            "model": TOOL_CALLING_MODEL,
             "messages": [
                 {
                     "role": "user",
@@ -685,5 +692,4 @@ class OllamaTests(ServerTestBase):
 
 
 if __name__ == "__main__":
-    parse_args()
     run_server_tests(OllamaTests, "OLLAMA API TESTS")

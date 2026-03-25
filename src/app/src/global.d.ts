@@ -52,6 +52,8 @@ declare global {
       getSystemStats?: () => Promise<{ cpu_percent: number | null; memory_gb: number; gpu_percent: number | null; vram_gb: number | null; npu_percent: number | null }>;
       getSystemInfo?: () => Promise<{ system: string; os: string; cpu: string; gpus: string[]; gtt_gb?: string; vram_gb?: string }>;
       getLocalMarketplaceUrl?: () => Promise<string | null>;
+      signalReady?: () => void;
+      onNavigate?: (callback: (data: { view?: string; model?: string }) => void) => void | (() => void);
     };
   }
 }

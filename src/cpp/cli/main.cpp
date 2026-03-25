@@ -1,7 +1,7 @@
 #include "lemon_cli/lemonade_client.h"
 #include <lemon/recipe_options.h>
 #include <lemon/version.h>
-#include <lemon_tray/agent_launcher.h>
+#include <lemon_cli/agent_launcher.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/network_beacon.h>
@@ -16,11 +16,14 @@
 #ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
+    #include <shellapi.h>
     typedef int socklen_t;
 #else
     #include <arpa/inet.h>
     #include <netinet/in.h>
     #include <sys/socket.h>
+    #include <sys/wait.h>
+    #include <fcntl.h>
     #include <unistd.h>
 #endif
 
@@ -67,6 +70,7 @@ struct CliConfig {
     bool downloaded = false;
     std::string agent;
     int scan_duration = 30;
+    bool json_output = false;
 };
 
 static bool validate_and_transform_model_json(nlohmann::json& model_data) {
@@ -128,16 +132,71 @@ static bool validate_and_transform_model_json(nlohmann::json& model_data) {
     return true;
 }
 
-static void open_url(const std::string& host, int port) {
-    std::string url = "http://" + host + ":" + std::to_string(port) + "/";
+// Open a URL via the OS without invoking a shell (avoids shell injection).
+// On Windows, ShellExecuteA is already shell-free.
+// On macOS/Linux, we fork+execvp the opener directly.
+#ifndef _WIN32
+static int exec_open_url(const char* opener, const std::string& url, bool wait) {
+    pid_t pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        // Child: redirect stdout/stderr to /dev/null
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) { dup2(devnull, STDOUT_FILENO); dup2(devnull, STDERR_FILENO); close(devnull); }
+        execlp(opener, opener, url.c_str(), nullptr);
+        _exit(127);  // execlp failed
+    }
+    if (wait) {
+        int status = 0;
+        waitpid(pid, &status, 0);
+        return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    }
+    return 0;  // fire-and-forget
+}
+#endif
+
+// Try to open a lemonade:// URL via the OS. Returns true if the OS reports success.
+static bool try_lemonade_protocol(const std::string& lemonade_url) {
+#ifdef _WIN32
+    // Check registry before calling ShellExecuteA — Windows shows a "Get an app"
+    // dialog for unregistered URI schemes and still returns > 32 (success).
+    HKEY hKey = nullptr;
+    if (RegOpenKeyExA(HKEY_CLASSES_ROOT, "lemonade", 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
+        return false;
+    }
+    RegCloseKey(hKey);
+    HINSTANCE result = ShellExecuteA(nullptr, "open", lemonade_url.c_str(),
+                                     nullptr, nullptr, SW_SHOWNORMAL);
+    return reinterpret_cast<intptr_t>(result) > 32;
+#elif defined(__APPLE__)
+    return exec_open_url("open", lemonade_url, true) == 0;
+#else
+    return exec_open_url("xdg-open", lemonade_url, true) == 0;
+#endif
+}
+
+static void open_url(const std::string& host, int port, const std::string& path = "/") {
+    // Map web path to lemonade:// route and try the desktop app first
+    std::string lemonade_url = "lemonade://open";
+    if (path == "/?logs=true") {
+        lemonade_url = "lemonade://open?view=logs";
+    }
+
+    if (try_lemonade_protocol(lemonade_url)) {
+        return;  // Desktop app handled it
+    }
+
+    // Fall back to web app in browser
+    std::string url = "http://" + host + ":" + std::to_string(port) + path;
     std::cout << "Opening URL: " << url << std::endl;
 
 #ifdef _WIN32
-    int result = system(("start \"" + url + "\"").c_str());
+    ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    int result = 0;
 #elif defined(__APPLE__)
-    int result = system(("open \"" + url + "\"").c_str());
+    int result = exec_open_url("open", url, false);
 #else
-    int result = system(("xdg-open \"" + url + "\" &").c_str());
+    int result = exec_open_url("xdg-open", url, false);
 #endif
 
     if (result != 0) {
@@ -341,6 +400,135 @@ static int handle_launch_command(const CliConfig& config) {
     return lemon::utils::ProcessManager::wait_for_exit(handle, -1);
 }
 
+// Attempt a quick liveness check against the given host:port
+static bool try_live_check(const std::string& host, int port, const std::string& api_key,
+                           int timeout_ms = 500) {
+    try {
+        lemonade::LemonadeClient client(host, port, api_key);
+        client.make_request("/live", "GET", "", "", timeout_ms, timeout_ms);
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+// RAII wrapper for a UDP socket bound to the beacon port, used by both
+// discover_local_server_port() and handle_scan_command().
+struct BeaconListener {
+#ifdef _WIN32
+    SOCKET fd = INVALID_SOCKET;
+    bool wsa_initialized = false;
+#else
+    int fd = -1;
+#endif
+    bool valid = false;
+
+    BeaconListener(int beacon_port, int recv_timeout_ms) {
+#ifdef _WIN32
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) return;
+        wsa_initialized = true;
+        fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (fd == INVALID_SOCKET) return;
+#else
+        fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (fd < 0) return;
+#endif
+
+        int enable_broadcast = 1;
+        setsockopt(fd, SOL_SOCKET, SO_BROADCAST, (char*)&enable_broadcast, sizeof(enable_broadcast));
+
+        int reuse_addr = 1;
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse_addr, sizeof(reuse_addr));
+
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = INADDR_ANY;
+        addr.sin_port = htons(beacon_port);
+
+        if (bind(fd, (sockaddr*)&addr, sizeof(addr)) < 0) return;
+
+        struct timeval timeout;
+        timeout.tv_sec = recv_timeout_ms / 1000;
+        timeout.tv_usec = (recv_timeout_ms % 1000) * 1000;
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
+
+        valid = true;
+    }
+
+    ~BeaconListener() {
+#ifdef _WIN32
+        if (fd != INVALID_SOCKET) closesocket(fd);
+        if (wsa_initialized) WSACleanup();
+#else
+        if (fd >= 0) close(fd);
+#endif
+    }
+
+    BeaconListener(const BeaconListener&) = delete;
+    BeaconListener& operator=(const BeaconListener&) = delete;
+};
+
+// Listen for a UDP beacon from localhost and return the server's HTTP port, or 0 if none found
+static int discover_local_server_port() {
+    BeaconListener listener(8000, 250);
+    if (!listener.valid) return 0;
+
+    auto start_time = std::chrono::steady_clock::now();
+
+    while (true) {
+        auto elapsed = std::chrono::steady_clock::now() - start_time;
+        if (std::chrono::duration_cast<std::chrono::seconds>(elapsed).count() >= 3) {
+            break;
+        }
+
+        char buffer[1024];
+        sockaddr_in client_addr{};
+        socklen_t addr_size = sizeof(client_addr);
+
+        int bytes_received = recvfrom(listener.fd, buffer, sizeof(buffer) - 1, 0,
+                                       (sockaddr*)&client_addr, &addr_size);
+
+        if (bytes_received <= 0) {
+            continue;
+        }
+
+        // Only accept beacons from localhost
+        if (client_addr.sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
+            continue;
+        }
+
+        buffer[bytes_received] = '\0';
+
+        try {
+            nlohmann::json beacon_data = nlohmann::json::parse(buffer);
+
+            if (beacon_data.contains("url")) {
+                std::string url = beacon_data["url"].get<std::string>();
+
+                // Extract port from URL like "http://127.0.0.1:PORT/"
+                size_t colon_pos = url.rfind(':');
+                if (colon_pos != std::string::npos) {
+                    size_t port_start = colon_pos + 1;
+                    size_t port_end = url.find('/', port_start);
+                    std::string port_str = (port_end != std::string::npos)
+                        ? url.substr(port_start, port_end - port_start)
+                        : url.substr(port_start);
+                    try {
+                        return std::stoi(port_str);
+                    } catch (...) {
+                        continue;
+                    }
+                }
+            }
+        } catch (const nlohmann::json::exception&) {
+            // Not a valid JSON beacon, ignore
+        }
+    }
+
+    return 0;
+}
+
 static int handle_scan_command(const CliConfig& config) {
     const int beacon_port = 8000;
     const int scan_duration_seconds = config.scan_duration;
@@ -348,57 +536,11 @@ static int handle_scan_command(const CliConfig& config) {
     std::cout << "Scanning for network beacons on port " << beacon_port << " for "
               << scan_duration_seconds << " seconds..." << std::endl;
 
-    // Create UDP socket for receiving beacons
-#ifdef _WIN32
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        std::cerr << "Error: WSAStartup failed" << std::endl;
+    BeaconListener listener(beacon_port, 1000);
+    if (!listener.valid) {
+        std::cerr << "Error: Could not bind to beacon port " << beacon_port << std::endl;
         return 1;
     }
-    SOCKET socket_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (socket_fd == INVALID_SOCKET) {
-        std::cerr << "Error: Could not create socket" << std::endl;
-        WSACleanup();
-        return 1;
-    }
-#else
-    int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (socket_fd < 0) {
-        std::cerr << "Error: Could not create socket" << std::endl;
-        return 1;
-    }
-#endif
-
-    // Set socket options for broadcast reception
-    int enable_broadcast = 1;
-    setsockopt(socket_fd, SOL_SOCKET, SO_BROADCAST, (char*)&enable_broadcast, sizeof(enable_broadcast));
-
-    // Allow multiple sockets to bind to the same port
-    int reuse_addr = 1;
-    setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse_addr, sizeof(reuse_addr));
-
-    // Bind to all interfaces on the beacon port
-    sockaddr_in server_addr{};
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(beacon_port);
-
-    if (bind(socket_fd, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        std::cerr << "Error: Could not bind to port " << beacon_port << std::endl;
-#ifdef _WIN32
-        closesocket(socket_fd);
-        WSACleanup();
-#else
-        close(socket_fd);
-#endif
-        return 1;
-    }
-
-    // Set timeout for recvfrom
-    struct timeval timeout;
-    timeout.tv_sec = 1;
-    timeout.tv_usec = 0;
-    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
 
     // Store discovered beacons (use URL as key to avoid duplicates)
     std::unordered_set<std::string> discovered_urls;
@@ -420,7 +562,7 @@ static int handle_scan_command(const CliConfig& config) {
         sockaddr_in client_addr{};
         socklen_t addr_size = sizeof(client_addr);
 
-        int bytes_received = recvfrom(socket_fd, buffer, sizeof(buffer) - 1, 0,
+        int bytes_received = recvfrom(listener.fd, buffer, sizeof(buffer) - 1, 0,
                                        (sockaddr*)&client_addr, &addr_size);
 
         if (bytes_received > 0) {
@@ -448,14 +590,6 @@ static int handle_scan_command(const CliConfig& config) {
             }
         }
     }
-
-    // Cleanup
-#ifdef _WIN32
-    closesocket(socket_fd);
-    WSACleanup();
-#else
-    close(socket_fd);
-#endif
 
     // Print summary
     std::cout << "\nScan complete. Found " << beacon_details.size() << " beacon(s):" << std::endl;
@@ -485,26 +619,33 @@ int main(int argc, char* argv[]) {
     app.fallthrough(true);
 
     // Global options (available to all subcommands)
-    app.add_option("--host", config.host, "Server host")->default_val(config.host)->type_name("HOST")->envname("LEMONADE_HOST");
-    app.add_option("--port", config.port, "Server port")->default_val(config.port)->type_name("PORT")->envname("LEMONADE_PORT");
+    auto* host_opt = app.add_option("--host", config.host, "Server host")->default_val(config.host)->type_name("HOST")->envname("LEMONADE_HOST");
+    auto* port_opt = app.add_option("--port", config.port, "Server port")->default_val(config.port)->type_name("PORT")->envname("LEMONADE_PORT");
     app.add_option("--api-key", config.api_key, "API key for authentication")
         ->default_val(config.api_key)
         ->type_name("KEY")
         ->envname("LEMONADE_API_KEY");
 
     // Subcommands
-    CLI::App* status_cmd = app.add_subcommand("status", "Check server status");
-    CLI::App* list_cmd = app.add_subcommand("list", "List available models");
-    CLI::App* pull_cmd = app.add_subcommand("pull", "Pull/download a model");
-    CLI::App* import_cmd = app.add_subcommand("import", "Import a model from JSON file");
-    CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model");
-    CLI::App* load_cmd = app.add_subcommand("load", "Load a model");
-    CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)");
-    CLI::App* run_cmd = app.add_subcommand("run", "Load a model and open the webapp in browser");
-    CLI::App* recipes_cmd = app.add_subcommand("recipes", "List available recipes and backends");
-    CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON");
-    CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model");
-    CLI::App* scan_cmd = app.add_subcommand("scan", "Scan for network beacons");
+    // Quick start commands
+    CLI::App* run_cmd = app.add_subcommand("run", "Load a model and open the webapp in browser")->group("Quick start");
+    CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model")->group("Quick start");
+
+    // Server commands
+    CLI::App* recipes_cmd = app.add_subcommand("recipes", "List available recipes and backends")->group("Server");
+    CLI::App* status_cmd = app.add_subcommand("status", "Check server status")->group("Server");
+    status_cmd->add_flag("--json", config.json_output, "Output status as JSON");
+    CLI::App* logs_cmd = app.add_subcommand("logs", "Open server logs in the web UI")->group("Server");
+    CLI::App* scan_cmd = app.add_subcommand("scan", "Scan for network beacons")->group("Server");
+
+    // Model commands
+    CLI::App* list_cmd = app.add_subcommand("list", "List available models")->group("Model management");
+    CLI::App* pull_cmd = app.add_subcommand("pull", "Pull/download a model")->group("Model management");
+    CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
+    CLI::App* load_cmd = app.add_subcommand("load", "Load a model")->group("Model management");
+    CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)")->group("Model management");
+    CLI::App* import_cmd = app.add_subcommand("import", "Import a model from JSON file")->group("Model management");
+    CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON")->group("Model management");
 
     // List options
     list_cmd->add_flag("--downloaded", config.downloaded, "Save model options for future loads");
@@ -563,12 +704,44 @@ int main(int argc, char* argv[]) {
     // Parse arguments
     CLI11_PARSE(app, argc, argv);
 
+    // Auto-discover local server via UDP beacon if the default connection fails
+    // Skip when: no command given, scan command, or user explicitly set --host/--port
+    bool has_command = !app.get_subcommands().empty();
+    bool explicit_target = (host_opt->count() > 0 || port_opt->count() > 0);
+    if (has_command && scan_cmd->count() == 0 && !explicit_target) {
+        // Localhost responds in <10ms; use short timeout. Remote hosts need more.
+        bool is_local = (config.host.empty() || config.host == "127.0.0.1" ||
+                         config.host == "localhost" || config.host == "0.0.0.0");
+        int live_timeout_ms = is_local ? 100 : 3000;
+
+        if (!try_live_check(config.host, config.port, config.api_key, live_timeout_ms)) {
+            int discovered_port = discover_local_server_port();
+            if (discovered_port > 0 && discovered_port != config.port) {
+                config.port = discovered_port;
+            }
+        }
+    }
+
     // Create client
     lemonade::LemonadeClient client(config.host, config.port, config.api_key);
 
     // Execute command
     if (status_cmd->count() > 0) {
-        return client.status();
+        if (config.json_output) {
+            // Verify the server is actually reachable before reporting its port.
+            // Without this check, we'd report the default port even when no server is running,
+            // which could cause callers (e.g. lemonade-server stop) to target the wrong process.
+            bool reachable = try_live_check(config.host, config.port, config.api_key, 500);
+            if (!reachable) {
+                std::cerr << "Server is not running" << std::endl;
+                return 1;
+            }
+            nlohmann::json out;
+            out["port"] = config.port;
+            std::cout << out.dump() << std::endl;
+            return 0;
+        }
+        return client.status(config.port);
     } else if (list_cmd->count() > 0) {
         return client.list_models(!config.downloaded);
     } else if (pull_cmd->count() > 0) {
@@ -589,6 +762,9 @@ int main(int argc, char* argv[]) {
         return handle_recipes_command(client, config);
     } else if (launch_cmd->count() > 0) {
         return handle_launch_command(config);
+    } else if (logs_cmd->count() > 0) {
+        open_url(config.host, config.port, "/?logs=true");
+        return 0;
     } else if (scan_cmd->count() > 0) {
         return handle_scan_command(config);
     } else {

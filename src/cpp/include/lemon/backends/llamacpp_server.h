@@ -9,9 +9,7 @@ namespace backends {
 
 class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer {
 public:
-#ifndef LEMONADE_TRAY
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
-#endif
 
     inline static const BackendSpec SPEC = BackendSpec(
             "llamacpp",
@@ -20,9 +18,7 @@ public:
     #else
             "llama-server"
     #endif
-#ifndef LEMONADE_TRAY
         , get_install_params
-#endif
     );
 
     LlamaCppServer(const std::string& log_level,

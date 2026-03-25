@@ -59,8 +59,13 @@ class LLMTests(ServerTestBase):
     features not supported by the current wrapped server.
     """
 
-    # Enable multi-model support (2 of each type)
+    # Enable multi-model support (2 of each type) — translated to /internal/set
     additional_server_args = ["--max-loaded-models", "2"]
+
+    @classmethod
+    def setUpClass(cls):
+        """Verify server and apply multi-model config."""
+        super().setUpClass()
 
     # =========================================================================
     # CHAT COMPLETIONS TESTS
@@ -127,33 +132,37 @@ class LLMTests(ServerTestBase):
         self.assertGreater(len(complete_response), 5, "Response should have content")
 
     @skip_if_unsupported("chat_completions_async")
-    async def test_003_chat_completions_streaming_async(self):
+    def test_003_chat_completions_streaming_async(self):
         """Test async streaming chat completion."""
-        client = self.get_async_openai_client()
-        model = self.get_test_model("llm")
 
-        stream = await client.chat.completions.create(
-            model=model,
-            messages=self.messages,
-            stream=True,
-            max_completion_tokens=10,
-        )
+        async def _run():
+            client = self.get_async_openai_client()
+            model = self.get_test_model("llm")
 
-        complete_response = ""
-        chunk_count = 0
-        async for chunk in stream:
-            if (
-                chunk.choices
-                and chunk.choices[0].delta
-                and chunk.choices[0].delta.content is not None
-            ):
-                complete_response += chunk.choices[0].delta.content
-                print(chunk.choices[0].delta.content, end="")
-                chunk_count += 1
+            stream = await client.chat.completions.create(
+                model=model,
+                messages=self.messages,
+                stream=True,
+                max_completion_tokens=10,
+            )
 
-        print()
-        self.assertGreater(chunk_count, 2)
-        self.assertGreater(len(complete_response), 5)
+            complete_response = ""
+            chunk_count = 0
+            async for chunk in stream:
+                if (
+                    chunk.choices
+                    and chunk.choices[0].delta
+                    and chunk.choices[0].delta.content is not None
+                ):
+                    complete_response += chunk.choices[0].delta.content
+                    print(chunk.choices[0].delta.content, end="")
+                    chunk_count += 1
+
+            print()
+            self.assertGreater(chunk_count, 2)
+            self.assertGreater(len(complete_response), 5)
+
+        asyncio.run(_run())
 
     # =========================================================================
     # COMPLETIONS TESTS
@@ -206,29 +215,33 @@ class LLMTests(ServerTestBase):
         self.assertGreater(len(complete_response), 5)
 
     @skip_if_unsupported("completions_async")
-    async def test_006_completions_streaming_async(self):
+    def test_006_completions_streaming_async(self):
         """Test async streaming completions endpoint."""
-        client = self.get_async_openai_client()
-        model = self.get_test_model("llm")
 
-        stream = await client.completions.create(
-            model=model,
-            prompt=TEST_PROMPT,
-            stream=True,
-            max_tokens=10,
-        )
+        async def _run():
+            client = self.get_async_openai_client()
+            model = self.get_test_model("llm")
 
-        complete_response = ""
-        chunk_count = 0
-        async for chunk in stream:
-            if chunk.choices and chunk.choices[0].text is not None:
-                complete_response += chunk.choices[0].text
-                print(chunk.choices[0].text, end="")
-                chunk_count += 1
+            stream = await client.completions.create(
+                model=model,
+                prompt=TEST_PROMPT,
+                stream=True,
+                max_tokens=10,
+            )
 
-        print()
-        self.assertGreater(chunk_count, 2)
-        self.assertGreater(len(complete_response), 5)
+            complete_response = ""
+            chunk_count = 0
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].text is not None:
+                    complete_response += chunk.choices[0].text
+                    print(chunk.choices[0].text, end="")
+                    chunk_count += 1
+
+            print()
+            self.assertGreater(chunk_count, 2)
+            self.assertGreater(len(complete_response), 5)
+
+        asyncio.run(_run())
 
     # =========================================================================
     # RESPONSES API TESTS

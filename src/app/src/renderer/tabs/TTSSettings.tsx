@@ -1,14 +1,14 @@
 import React from 'react';
-import { AppSettings } from '../utils/appSettings';
+import { AppSettings, DEFAULT_TTS_SETTINGS } from '../utils/appSettings';
+import Combobox from '../components/Combobox';
 
-interface  TTSSettingsProps {
+interface TTSSettingsProps {
   settings: AppSettings,
   onValueChangeFunc: (key: string | any, value: string | boolean) => void;
   onResetFunc: (key: any) => void
 }
 
 export const voiceOptions: string[] = [
-  '',
   'ash',
   'ballad',
   'coral',
@@ -24,7 +24,30 @@ export const voiceOptions: string[] = [
   'alloy'
 ];
 
-const TTSSettings: React.FC<TTSSettingsProps> = ({settings, onValueChangeFunc, onResetFunc}) => {
+const TTSSettings: React.FC<TTSSettingsProps> = ({ settings, onValueChangeFunc, onResetFunc }) => {
+  const [userVoice, setUserVoice] = React.useState<string>(settings.tts['userVoice'].value);
+  const [assistantVoice, setAssistantVoice] = React.useState<string>(settings.tts['assistantVoice'].value);
+
+  const updateUserVoice = (val: string): void => {
+    setUserVoice(val);
+    onValueChangeFunc('userVoice', val);
+  }
+
+  const updateAssistantVoice = (val: string): void => {
+    setAssistantVoice(val);
+    onValueChangeFunc('assistantVoice', val);
+  }
+
+  const resetUserVoice = (): void => {
+    onResetFunc('userVoice');
+    setUserVoice(DEFAULT_TTS_SETTINGS.userVoice.value);
+  }
+
+  const resetAssistantVoice = (): void => {
+    onResetFunc('assistantVoice');
+    setAssistantVoice(DEFAULT_TTS_SETTINGS.assistantVoice.value);
+  }
+
   return (
     <div className="settings-section-container">
       <div className={`settings-section ${settings.tts.model.useDefault ? "settings-section-default" : ""}`}>
@@ -39,43 +62,29 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({settings, onValueChangeFunc, o
         </div>
         <input type="text" value={settings.tts["model"].value} onChange={(e) => onValueChangeFunc('model', e.target.value)} className="settings-text-input" />
       </div>
-      <div className={`settings-section ${settings.tts.userVoice.useDefault ? "settings-section-default" : ""}`}>
+      <div className="settings-section">
         <div className="settings-label-row">
           <label className="settings-label">
             <span className="settings-label-text">User Voice</span>
             <span className="settings-description">Use the selected voice for TTS conversion of user messages.</span>
           </label>
-          <button type="button" className="settings-field-reset" onClick={() => onResetFunc('userVoice')} disabled={settings.tts.userVoice.useDefault}>
+          <button type="button" className="settings-field-reset" onClick={resetUserVoice} disabled={settings.tts.userVoice.useDefault}>
             Reset
           </button>
         </div>
-        <select className="form-input form-select" value={settings.tts['userVoice'].value} onChange={(e) => onValueChangeFunc('userVoice', e.target.value)}>
-          {
-            voiceOptions.map((voice: string, index: number) => {
-              const label = (voice === '') ? 'Select a voice...' : voice;
-              return <option key={index} value={voice} disabled={(voice === '')}>{label}</option>;
-            })
-          }
-        </select>
+        <Combobox defaultValue={userVoice} useDefault={settings.tts.userVoice.useDefault} onChangeFunc={updateUserVoice} optionsList={voiceOptions} placeholder='Select a voice...' />
       </div>
-      <div className={`settings-section ${settings.tts.assistantVoice.useDefault ? "settings-section-default" : ""}`}>
+      <div className="settings-section">
         <div className="settings-label-row">
           <label className="settings-label">
             <span className="settings-label-text">Assistant Voice</span>
             <span className="settings-description">Use the selected voice for TTS conversion of assistant messages.</span>
           </label>
-          <button type="button" className="settings-field-reset" onClick={() => onResetFunc('assistantVoice')} disabled={settings.tts.assistantVoice.useDefault}>
+          <button type="button" className="settings-field-reset" onClick={resetAssistantVoice} disabled={settings.tts.assistantVoice.useDefault}>
             Reset
           </button>
         </div>
-        <select className="form-input form-select" value={settings.tts['assistantVoice'].value} onChange={(e) => onValueChangeFunc('assistantVoice', e.target.value)}>
-          {
-            voiceOptions.map((voice: string, index: number) => {
-              const label = (voice === '') ? 'Select a voice...' : voice;
-              return <option key={index} value={voice} disabled={(voice === '')}>{label}</option>;
-            })
-          }
-        </select>
+        <Combobox defaultValue={assistantVoice} useDefault={settings.tts.assistantVoice.useDefault} onChangeFunc={updateAssistantVoice} optionsList={voiceOptions} placeholder='Select a voice...' />
       </div>
       <div className={`settings-section ${settings.tts.enableTTS.useDefault ? 'settings-section-default' : ''}`}>
         <div className="settings-label-row">

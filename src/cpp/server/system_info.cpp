@@ -3,6 +3,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/version_utils.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/process_manager.h"
 #include "lemon/backends/backend_utils.h"
 #include <filesystem>
 #include <fstream>
@@ -70,15 +71,26 @@ const std::vector<std::string> NVIDIA_DISCRETE_GPU_KEYWORDS = {
 
 // ROCm architecture mapping - maps specific gfx architectures to their family
 const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
-    // RDNA4 family (gfx120X)
-    {"gfx1200", "gfx120X"},
-    {"gfx1201", "gfx120X"},
-
+    // RDNA2 family (gfx103X)
+    {"gfx1030", "gfx103X"},
+    {"gfx1031", "gfx103X"},
+    {"gfx1032", "gfx103X"},
+    {"gfx1034", "gfx103X"},
+    // Note: gfx1033, gfx1035, gfx1036 are NOT included (not confirmed as supported)
+    
     // RDNA3 family (gfx110X)
     {"gfx1100", "gfx110X"},
     {"gfx1101", "gfx110X"},
     {"gfx1102", "gfx110X"},
     {"gfx1103", "gfx110X"},
+    
+    // RDNA3.5 iGPUs - explicit binary names (no family mapping)
+    {"gfx1150", "gfx1150"},  // Maps to exact binary name
+    {"gfx1151", "gfx1151"},  // Maps to exact binary name
+    
+    // RDNA4 family (gfx120X)
+    {"gfx1200", "gfx120X"},
+    {"gfx1201", "gfx120X"},
 };
 
 // ============================================================================
@@ -118,8 +130,8 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_dgpu", {}},      // all dGPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_igpu", {"gfx1150", "gfx1151"}},                      // STX Point/Halo iGPUs
-        {"amd_dgpu", {"gfx110X", "gfx120X"}},                      // RDNA3/RDNA4 dGPUs
+        {"amd_igpu", {"gfx1150", "gfx1151"}},                      // STX Point/Halo iGPUs (explicit binaries)
+        {"amd_dgpu", {"gfx103X", "gfx110X", "gfx120X"}},          // RDNA2/3/4 dGPUs (family binaries)
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
@@ -149,7 +161,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 #endif
             "gfx1151"
         }},
-        {"amd_dgpu", {"gfx110X", "gfx120X"}},
+        {"amd_dgpu", {"gfx103X", "gfx110X", "gfx120X"}},
     }},
 
     // stable-diffusion.cpp - CPU backend (Windows/Linux x86_64)
@@ -182,6 +194,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     // AMD iGPU/dGPU architectures (ROCm)
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
+    {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
     {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
 
@@ -1095,25 +1108,21 @@ static std::string read_version_file(const fs::path& version_file) {
 }
 
 std::string SystemInfo::get_system_llamacpp_version() {
+    std::string output;
     #ifdef _WIN32
-    FILE* pipe = _popen("llama-server --version 2>NUL", "r");
+    std::string command = "llama-server --version 2>NUL";
+    int rc = lemon::utils::ProcessManager::run_command(command, output);
     #else
     FILE* pipe = popen("llama-server --version 2>/dev/null", "r");
-    #endif
-
     if (!pipe) {
         return "unknown";
     }
 
     char buffer[256];
-    std::string output;
     if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output = buffer;
     }
 
-    #ifdef _WIN32
-    _pclose(pipe);
-    #else
     pclose(pipe);
     #endif
 
@@ -1136,11 +1145,12 @@ std::string SystemInfo::get_system_llamacpp_version() {
 }
 
 // Helper to identify ROCm architecture from GPU name
+// Returns empty string if the architecture is NOT in ROCM_ARCH_MAPPING (unsupported)
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
 
-    // linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
+    // Linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
     if (std::all_of(device_lower.begin(), device_lower.end(), ::isdigit)) {
         if (device_lower.length() >= 4) {
             std::string major = device_lower.substr(0, 2);
@@ -1154,12 +1164,13 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
             std::string arch = "gfx" + major + minor + revision;
 
             // Apply architecture family mapping
+            // If not in mapping, return empty string (unsupported)
             auto it = ROCM_ARCH_MAPPING.find(arch);
             if (it != ROCM_ARCH_MAPPING.end()) {
                 return it->second;
             }
 
-            return arch;
+            return "";  // Unmapped architecture = unsupported
         }
     }
 
@@ -1202,6 +1213,17 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         device_lower.find("7900") != std::string::npos ||
         device_lower.find("v710") != std::string::npos) {
         return "gfx110X";
+    }
+
+    // RDNA2 GPUs (gfx103X architecture)
+    // AMD Radeon RX 6800 XT, AMD Radeon RX 6800, AMD Radeon RX 6700 XT, 
+    // AMD Radeon RX 6700, AMD Radeon RX 6600 XT, AMD Radeon RX 6600, 
+    // AMD Radeon RX 6500 XT, AMD Radeon RX 6500
+    if (device_lower.find("6800") != std::string::npos ||
+        device_lower.find("6700") != std::string::npos ||
+        device_lower.find("6600") != std::string::npos ||
+        device_lower.find("6500") != std::string::npos) {
+        return "gfx103X";
     }
 
     return "";
@@ -1464,27 +1486,22 @@ std::string SystemInfo::get_flm_version() {
         return "unknown";
     }
 
+    std::string output;
     #ifdef _WIN32
     std::string command = "\"" + flm_path + "\" version --json 2>NUL";
-    FILE* pipe = _popen(command.c_str(), "r");
+    int rc = lemon::utils::ProcessManager::run_command(command, output);
     #else
     std::string command = "\"" + flm_path + "\" version --json 2>/dev/null";
     FILE* pipe = popen(command.c_str(), "r");
-    #endif
-
     if (!pipe) {
         return "unknown";
     }
 
     char buffer[256];
-    std::string output;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output += buffer;
     }
 
-    #ifdef _WIN32
-    _pclose(pipe);
-    #else
     pclose(pipe);
     #endif
 
@@ -1780,17 +1797,11 @@ std::string WindowsSystemInfo::get_npu_power_mode() {
     // Execute xrt-smi examine -r platform
     std::string command = "\"" + xrt_smi_path + "\" examine -r platform 2>NUL";
 
-    FILE* pipe = _popen(command.c_str(), "r");
-    if (!pipe) {
+    std::string result;
+    int rc = lemon::utils::ProcessManager::run_command(command, result);
+    if (rc != 0) {
         return "Unknown";
     }
-
-    char buffer[128];
-    std::string result;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
-    }
-    _pclose(pipe);
 
     // Parse output for "Mode" line
     std::istringstream iss(result);
@@ -1959,17 +1970,12 @@ std::string WindowsSystemInfo::get_max_clock_speed() {
 
 std::string WindowsSystemInfo::get_windows_power_setting() {
     // Execute powercfg /getactivescheme
-    FILE* pipe = _popen("powercfg /getactivescheme 2>NUL", "r");
-    if (!pipe) {
+    std::string result;
+    std::string command = "powercfg /getactivescheme 2>NUL";
+    int rc = lemon::utils::ProcessManager::run_command(command, result);
+    if (rc != 0) {
         return "Windows power setting not found (command failed)";
     }
-
-    char buffer[256];
-    std::string result;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
-    }
-    _pclose(pipe);
 
     // Extract power scheme name from parentheses
     // Output format: "Power Scheme GUID: ... (Power Scheme Name)"
@@ -2000,17 +2006,21 @@ double WindowsSystemInfo::get_gpu_vram_dxdiag(const std::string& gpu_name) {
         GetTempPathA(MAX_PATH, temp_dir);
         GetTempFileNameA(temp_dir, "dxd", 0, temp_path);
 
-        // Run dxdiag /t temp_path
-        std::string command = "dxdiag /t \"" + std::string(temp_path) + "\" 2>NUL";
-        int result = system(command.c_str());
-
-        if (result != 0) {
+        // Run dxdiag /t temp_path (use CreateProcess to avoid console window flash)
+        std::string command = "dxdiag /t \"" + std::string(temp_path) + "\"";
+        STARTUPINFOA si = {};
+        si.cb = sizeof(si);
+        PROCESS_INFORMATION pi = {};
+        if (!CreateProcessA(nullptr, const_cast<char*>(command.c_str()),
+                           nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+                           nullptr, nullptr, &si, &pi)) {
             DeleteFileA(temp_path);
             return 0.0;
         }
-
-        // Wait a bit for dxdiag to finish writing (it can take a few seconds)
-        Sleep(3000);
+        // Wait for dxdiag to finish (up to 10s)
+        WaitForSingleObject(pi.hProcess, 10000);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
 
         // Read the file
         std::ifstream file(temp_path);
@@ -2865,6 +2875,15 @@ bool SystemInfoCache::is_valid() const {
         return false;
     }
 
+#ifdef __linux__
+    // On Linux, cache is disabled by default (always re-detect hardware) unless
+    // LEMONADE_CACHE_DIR is explicitly set (for testing purposes)
+    const char* cache_dir_env = std::getenv("LEMONADE_CACHE_DIR");
+    if (!cache_dir_env || cache_dir_env[0] == '\0') {
+        return false;
+    }
+#endif
+
     // Check if cache file exists
     if (!fs::exists(cache_file_path_)) {
         return false;
@@ -2998,15 +3017,8 @@ json SystemInfoCache::get_system_info_with_cache() {
             if (!cached_data.empty()) {
                 system_info = cached_data;
             } else {
-                // Provide friendly message about why we're detecting hardware
-                if (cache_exists) {
-                    std::cout << "Collecting system info (Lemonade was updated)" << std::endl;
-
-                    // Perform version-specific cleanup (e.g., removing stale backend binaries)
+                if (cache_exists)
                     cache.perform_upgrade_cleanup();
-                } else {
-                    std::cout << "Collecting system info" << std::endl;
-                }
 
                 // Get system info (OS, Processor, Memory, OEM System, BIOS, etc.)
                 try {
