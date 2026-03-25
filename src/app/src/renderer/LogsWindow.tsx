@@ -173,7 +173,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
           });
         };
 
-        eventSource.onerror = (error) => {
+        eventSource.onerror = (error: Event) => {
           console.error('Log stream error:', error);
           setConnectionStatus('error');
           eventSource.close();
