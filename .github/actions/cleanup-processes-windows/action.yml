@@ -48,6 +48,7 @@ runs:
 
         # Kill lemonade processes (lemonade-server, lemond, lemonade-server-dev, etc.)
         Stop-ProcessByPattern -Pattern "lemonade" -Description "lemonade"
+        Stop-ProcessByPattern -Pattern "lemond" -Description "lemond"
 
         # Kill Python processes
         Stop-ProcessByPattern -Pattern "python" -Description "Python"
