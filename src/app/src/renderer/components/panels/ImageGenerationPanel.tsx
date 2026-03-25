@@ -15,7 +15,7 @@ type ImageMode = 'generate' | 'edit' | 'variations';
 const IMAGE_MODE_LABELS: Record<string, string> = {
   generate: 'Generate',
   edit: 'Edit',
-  // variations: 'Variations',  // omitted from dropdown; variations mode is entered via action button on generated images
+  // variations: 'Variations',  // omitted from dropdown
 };
 
 interface ImageSettings {
