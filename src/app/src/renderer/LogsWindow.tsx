@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { getAPIKey, getServerBaseUrl, onServerUrlChange, serverConfig } from './utils/serverConfig';
-import {EventSource} from 'eventsource';
+import { EventSource as EventSourcePolyfill } from 'eventsource';
 
 interface LogsWindowProps {
   isVisible: boolean;
@@ -10,6 +10,7 @@ interface LogsWindowProps {
 const BOTTOM_FOLLOW_THRESHOLD_PX = 60;
 
 const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
+  type LogEventSource = EventSource | EventSourcePolyfill;
   const [logs, setLogs] = useState<string[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error' | 'disconnected'>('connecting');
   const [autoScroll, setAutoScroll] = useState(true);
@@ -17,7 +18,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const logsContentRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
   const isProgrammaticScrollRef = useRef(false);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const eventSourceRef = useRef<LogEventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [serverUrl, setServerUrl] = useState<string>('');
   const [apiKey, setAPIKey] = useState<string>('');
@@ -120,17 +121,29 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
           eventSourceRef.current.close();
         }
 
-        const options = apiKey ? {
-            fetch: (input: string | URL | Request, init: RequestInit) =>
-              fetch(input, {
-                ...init,
-                headers: {
-                  ...init.headers,
-                  Authorization: `Bearer ${apiKey}`,
-                },
-            })} : {};
+        const streamUrl = `${serverUrl}/api/v1/logs/stream`;
+        const isWebApp = window.api?.isWebApp === true;
 
-        const eventSource = new EventSource(`${serverUrl}/api/v1/logs/stream`, options)
+        // The browser-served web app should use the native EventSource.
+        // The npm polyfill is for non-browser environments and is not
+        // constructable from the webpacked web bundle.
+        const eventSource = isWebApp
+          ? new window.EventSource(streamUrl)
+          : new EventSourcePolyfill(
+              streamUrl,
+              apiKey
+                ? {
+                    fetch: (input: string | URL | Request, init: RequestInit) =>
+                      fetch(input, {
+                        ...init,
+                        headers: {
+                          ...init.headers,
+                          Authorization: `Bearer ${apiKey}`,
+                        },
+                      }),
+                  }
+                : undefined,
+            );
         eventSourceRef.current = eventSource;
 
         eventSource.onopen = () => {
