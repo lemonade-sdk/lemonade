@@ -437,7 +437,7 @@ lemonade recipes --install flm:npu
 
 ## Options for launch
 
-The `launch` command launches an agent and triggers model loading asynchronously. It supports selecting/importing remote recipes during launch:
+The `launch` command launches an agent and triggers model loading asynchronously. By default, launch can prompt for optional recipe import before starting the agent:
 
 ```bash
 lemonade launch AGENT [--model MODEL_NAME] [options]
@@ -447,15 +447,16 @@ lemonade launch AGENT [--model MODEL_NAME] [options]
 |-----------------|-------------|----------|
 | `AGENT` | Agent name to launch. Supported agents: `claude`, `codex` | Yes |
 | `--model MODEL_NAME` | Model name to launch with. If omitted, you will be prompted to select one. | No |
-| `--use-recipe` | Import a recipe from `lemonade-sdk/recipes` before launch | No |
-| `--repo-dir DIR` | Remote recipes directory to use when importing a recipe | No |
-| `--recipe-file FILE` | Specific remote recipe JSON filename to import | No |
+| `--use-recipe` | Skip recipe import prompts and launch directly with the selected/provided model | No |
+| `--repo-dir DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
+| `--recipe-file FILE` | Remote recipe JSON filename used only if you choose recipe import at prompt | No |
 | `--ctx-size SIZE` | Context size for the model | `4096` |
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server (must not conflict with managed args) | `""` |
 
 **Notes:**
 - The model load request is asynchronous: launch starts the agent immediately while loading continues in the background.
+- If `--use-recipe` is passed, launch skips recipe import prompts.
 - If `--use-recipe` is not passed, launch prompts whether to import a recipe.
 - `--api-key` is propagated to the launched agent process.
 - Supported agents: `claude`, `codex`
@@ -475,11 +476,11 @@ lemonade launch codex --model Qwen3-0.6B-GGUF --llamacpp vulkan
 # Launch an agent with custom llama.cpp arguments
 lemonade launch claude --model Qwen3-0.6B-GGUF --ctx-size 4096 --llamacpp-args "--flash-attn on --no-mmap"
 
-# Launch and force recipe import flow
+# Launch and skip recipe import prompts
 lemonade launch claude --use-recipe
 
-# Launch with non-interactive recipe selection
-lemonade launch claude --use-recipe --repo-dir claude-code --recipe-file Qwen3.5-35B-A3B-NoThinking.json
+# Launch and allow optional prompt-driven recipe import using prefilled remote recipe flags
+lemonade launch claude --repo-dir claude-code --recipe-file Qwen3.5-35B-A3B-NoThinking.json
 ```
 
 ## Options for scan

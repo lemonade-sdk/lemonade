@@ -685,9 +685,9 @@ int main(int argc, char* argv[]) {
     launch_cmd->add_flag("--use-recipe", config.use_recipe,
         "Skip recipe import prompts and launch with the selected/provided model");
     launch_cmd->add_option("--repo-dir", config.repo_dir,
-        "Remote recipe directory to query when --use-recipe is enabled")->type_name("DIR");
+        "Remote recipe directory used only if you choose recipe import at prompt")->type_name("DIR");
     launch_cmd->add_option("--recipe-file", config.recipe_file,
-        "Recipe JSON filename to import when --use-recipe is enabled")->type_name("FILE");
+        "Recipe JSON filename used only if you choose recipe import at prompt")->type_name("FILE");
     lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
 
     // Scan options
