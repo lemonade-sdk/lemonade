@@ -94,8 +94,8 @@ void configure_claude_agent(const std::string& base_url,
         // Claude Code sends requests to /v1/messages relative to ANTHROPIC_BASE_URL.
         // Keep this as origin-only to avoid /v1/v1/messages.
         {"ANTHROPIC_BASE_URL", base_url},
-        {"ANTHROPIC_API_KEY", resolved_api_key},
         {"ANTHROPIC_AUTH_TOKEN", resolved_api_key},
+        // We want to keep this for agents that run workflows which query endpoints with auth
         {"LEMONADE_API_KEY", resolved_api_key},
         {"ANTHROPIC_DEFAULT_OPUS_MODEL", model},
         {"ANTHROPIC_DEFAULT_SONNET_MODEL", model},
