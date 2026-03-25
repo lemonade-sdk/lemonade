@@ -53,7 +53,7 @@ Build and include the full Electron desktop application.
 ```bash
 cd build
 cmake ../src/cpp
-ninja lemonade-router
+ninja lemond
 ```
 
 Result:
@@ -65,7 +65,7 @@ Result:
 ```bash
 cd build
 cmake -DBUILD_WEB_APP=OFF ../src/cpp
-ninja lemonade-router
+ninja lemond
 ```
 
 Result:
@@ -78,7 +78,7 @@ Result:
 ```bash
 cd build
 cmake -DBUILD_WEB_APP=ON -DBUILD_ELECTRON_APP=ON ../src/cpp
-ninja lemonade-router
+ninja lemond
 ninja electron-app  # Build desktop app separately
 ```
 

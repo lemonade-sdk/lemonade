@@ -2,7 +2,7 @@
 #include <lemon/recipe_options.h>
 #include <lemon/version.h>
 
-#define APP_NAME "lemonade-router"
+#define APP_NAME "lemond"
 #define APP_DESC APP_NAME " - Lightweight LLM server"
 
 namespace lemon {

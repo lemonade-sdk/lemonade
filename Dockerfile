@@ -59,7 +59,7 @@ RUN add-apt-repository -y ppa:amd-team/xrt
 WORKDIR /opt/lemonade
 
 # Copy built executables and resources from builder
-COPY --from=builder /app/build/lemonade-router ./lemonade-router
+COPY --from=builder /app/build/lemond ./lemond
 COPY --from=builder /app/build/lemonade-server ./lemonade-server
 COPY --from=builder /app/build/resources ./resources
 
@@ -71,7 +71,7 @@ RUN FLM_VERSION=$(jq -r '.flm.npu' ./resources/backend_versions.json) && \
     rm fastflowlm.deb
 
 # Make executables executable
-RUN chmod +x ./lemonade-router ./lemonade-server
+RUN chmod +x ./lemond ./lemonade-server
 
 # Create necessary directories
 RUN mkdir -p /opt/lemonade/llama/cpu \

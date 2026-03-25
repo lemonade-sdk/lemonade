@@ -275,7 +275,7 @@ class ServerTestBase(unittest.TestCase):
             raise RuntimeError(
                 "Server is not running on port %d. "
                 "Start the server before running tests "
-                "(e.g., install the package or run lemonade-router manually)." % PORT
+                "(e.g., install the package or run lemond manually)." % PORT
             )
         print("Server is reachable on port %d" % PORT)
 

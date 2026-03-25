@@ -250,7 +250,7 @@ When loading a model, settings are resolved in this order (highest to lowest pri
 1. Values explicitly passed in the `/api/v1/load` request
 2. Per-model values from `recipe_options.json`
 3. Values set via environment variables or server startup arguments (see [Server Configuration](./configuration.md))
-4. Default hardcoded values in `lemonade-router`
+4. Default hardcoded values in `lemond`
 
 For full details, see the [load endpoint documentation](./server_spec.md#post-apiv1load).
 
