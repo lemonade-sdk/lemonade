@@ -46,7 +46,7 @@ bool fetch_models_from_endpoint(lemonade::LemonadeClient& client,
 
         return true;
     } catch (const std::exception& e) {
-        LOG(ERROR, "AgentLauncher") << "Error: Failed to query /api/v1/models: " << e.what() << std::endl;
+        LOG(ERROR, "ModelSelector") << "Error: Failed to query /api/v1/models: " << e.what() << std::endl;
         return false;
     }
 }
@@ -67,13 +67,23 @@ bool prompt_model_selection(lemonade::LemonadeClient& client,
         return false;
     }
 
-    std::cout << "Select a model:" << std::endl;
-    for (size_t i = 0; i < models.size(); ++i) {
-        const auto& model = models[i];
-
-        if (model.recipe != "llamacpp" && !show_all) {
+    std::vector<const lemonade::ModelInfo*> display_models;
+    display_models.reserve(models.size());
+    for (const auto& model : models) {
+        if (!show_all && model.recipe != "llamacpp") {
             continue;
         }
+        display_models.push_back(&model);
+    }
+
+    if (display_models.empty()) {
+        LOG(ERROR, "ModelSelector") << "No models available for the current filter." << std::endl;
+        return false;
+    }
+
+    std::cout << "Select a model:" << std::endl;
+    for (size_t i = 0; i < display_models.size(); ++i) {
+        const auto& model = *display_models[i];
 
         std::cout << "  " << (i + 1) << ") " << model.id
                   << " [" << (model.downloaded ? "downloaded" : "not-downloaded") << "]"
@@ -98,12 +108,12 @@ bool prompt_model_selection(lemonade::LemonadeClient& client,
         return false;
     }
 
-    if (parsed_chars != input.size() || selected < 1 || static_cast<size_t>(selected) > models.size()) {
+    if (parsed_chars != input.size() || selected < 1 || static_cast<size_t>(selected) > display_models.size()) {
         LOG(ERROR, "ModelSelector") << "Error: Selection out of range." << std::endl;
         return false;
     }
 
-    model_out = models[static_cast<size_t>(selected - 1)].id;
+    model_out = display_models[static_cast<size_t>(selected - 1)]->id;
     std::cout << "Selected model: " << model_out << std::endl;
     return true;
 }

@@ -733,6 +733,45 @@ sys.exit(0)
             self.assertTrue(payload["env"]["OPENAI_BASE_URL"].endswith("/v1/"))
             self.assertEqual(payload["env"]["OPENAI_API_KEY"], "lemonade")
 
+    def test_102b_launch_claude_defaults_and_host_normalization(self):
+        """Claude launch should default auth token and normalize wildcard host to localhost."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "claude_capture_defaults.json")
+            self._write_fake_agent(temp_dir, "claude", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                [
+                    "--host",
+                    "0.0.0.0",
+                    "launch",
+                    "claude",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--use-recipe",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertTrue(
+                os.path.exists(capture_path),
+                "Fake claude binary was not executed",
+            )
+
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            self.assertEqual(payload["env"]["ANTHROPIC_AUTH_TOKEN"], "lemonade")
+            self.assertEqual(payload["env"]["LEMONADE_API_KEY"], "lemonade")
+            self.assertEqual(
+                payload["env"]["ANTHROPIC_BASE_URL"], f"http://localhost:{PORT}"
+            )
+
     def test_103_launch_use_recipe_with_repo_flags_is_deterministic(self):
         """--use-recipe should skip import flow even when repo flags are present."""
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
