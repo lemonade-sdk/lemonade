@@ -259,14 +259,14 @@ class FlmStatusTests(unittest.TestCase):
         cls.server_version = get_server_version(cls.server_binary)
         print(f"[SETUP] Using server version: {cls.server_version}")
 
-        # Derive lemonade-router path from the server binary
+        # Derive lemond path from the server binary
         server_dir = os.path.dirname(cls.server_binary)
         if IS_WINDOWS:
-            cls.router_binary = os.path.join(server_dir, "lemonade-router.exe")
+            cls.router_binary = os.path.join(server_dir, "lemond.exe")
         else:
-            cls.router_binary = os.path.join(server_dir, "lemonade-router")
+            cls.router_binary = os.path.join(server_dir, "lemond")
         if not os.path.exists(cls.router_binary):
-            cls.router_binary = shutil.which("lemonade-router") or cls.router_binary
+            cls.router_binary = shutil.which("lemond") or cls.router_binary
         print(f"[SETUP] Using router binary: {cls.router_binary}")
 
         # Read required FLM version from backend_versions.json
@@ -296,7 +296,7 @@ class FlmStatusTests(unittest.TestCase):
     def _server(self, hardware, flm_dir=None):
         """Start router directly with mock hardware + optional PATH-based FLM mocking.
 
-        Starts lemonade-router directly (not via lemonade-server serve) to avoid
+        Starts lemond directly (not via lemonade-server serve) to avoid
         the fork/exec indirection that can leave orphaned router processes between
         test methods. With ~20 test methods each starting a fresh server, the
         lemonade-server serve approach (fork + execv) risks the previous test's

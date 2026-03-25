@@ -317,7 +317,7 @@ jobs:
           echo "Running setup.sh to configure build environment..."
           bash setup.sh
 
-          echo "Building lemonade-router and lemonade-server for Fedora..."
+          echo "Building lemond and lemonade-server for Fedora..."
           cmake --build --preset default
 
           RPM_FILE="lemonade-server-${LEMONADE_VERSION}.x86_64.rpm"
@@ -408,10 +408,10 @@ jobs:
           echo "Installing binaries locally (no signing)..."
 
           # Copy binaries to /usr/local/bin
-          sudo cp build/lemonade-router /usr/local/bin/
+          sudo cp build/lemond /usr/local/bin/
           sudo cp build/lemonade-server /usr/local/bin/
           sudo cp build/lemonade /usr/local/bin/
-          sudo chmod 755 /usr/local/bin/lemonade-router
+          sudo chmod 755 /usr/local/bin/lemond
           sudo chmod 755 /usr/local/bin/lemonade-server
           sudo chmod 755 /usr/local/bin/lemonade
 
@@ -428,7 +428,7 @@ jobs:
           # Verify installation
           echo "Verifying installation..."
           /usr/local/bin/lemonade-server --version
-          /usr/local/bin/lemonade-router --version
+          /usr/local/bin/lemond --version
           /usr/local/bin/lemonade --version
 
           echo "Local installation complete!"
@@ -885,10 +885,10 @@ jobs:
 
           test -f /etc/lemonade/lemonade.conf
           test -f /opt/bin/lemonade-server
-          test -f /opt/bin/lemonade-router
+          test -f /opt/bin/lemond
 
           /opt/bin/lemonade-server --version
-          /opt/bin/lemonade-router --version
+          /opt/bin/lemond --version
 
   test-dmg-inference:
     name: Test .dmg - llamacpp (metal)
