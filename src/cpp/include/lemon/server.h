@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <httplib.h>
+#include "runtime_config.h"
 #include "router.h"
 #include "model_manager.h"
 #include "backend_manager.h"
@@ -51,6 +52,16 @@ private:
     void setup_http_logger(httplib::Server &web_server);
     void log_request(const httplib::Request& req);
     httplib::Server::HandlerResponse authenticate_request(const httplib::Request& req, httplib::Response& res);
+
+    // Setup HTTP servers (create httplib::Server instances, routes, CORS, thread pool)
+    void setup_http_servers();
+
+    // Unified config endpoints
+    void handle_config_set(const httplib::Request& req, httplib::Response& res);
+    void handle_config_get(const httplib::Request& req, httplib::Response& res);
+
+    // Side-effect callback for RuntimeConfig::set()
+    void apply_config_side_effects(const std::vector<std::string>& changed_keys);
 
     // Endpoint handlers
     void handle_health(const httplib::Request& req, httplib::Response& res);
@@ -125,12 +136,9 @@ private:
     double get_vram_usage();
     double get_npu_utilization();
 
-    int port_;
-    std::string host_;
-    std::string log_level_;
-    json default_options_;
+    std::shared_ptr<RuntimeConfig> config_;
+    std::atomic<int> port_;  // Atomic cache for lock-free reads from listener threads
     std::string log_file_path_;
-    bool no_broadcast_;
 
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;
@@ -147,6 +155,7 @@ private:
 #endif
 
     bool running_;
+    std::atomic<bool> rebind_requested_{false};
 
     std::string api_key_;
     NetworkBeacon udp_beacon_;

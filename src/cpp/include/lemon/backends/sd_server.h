@@ -13,9 +13,7 @@ namespace backends {
 
 class SDServer : public WrappedServer, public IImageServer {
 public:
-#ifndef LEMONADE_TRAY
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
-#endif
 
     inline static const BackendSpec SPEC = BackendSpec(
             "sd-cpp",
@@ -24,9 +22,7 @@ public:
     #else
             "sd-server"
     #endif
-#ifndef LEMONADE_TRAY
         , get_install_params
-#endif
     );
 
     explicit SDServer(const std::string& log_level,

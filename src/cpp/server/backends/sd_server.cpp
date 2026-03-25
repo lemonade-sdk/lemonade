@@ -252,7 +252,7 @@ json SDServer::image_generations(const json& request) {
     LOG(DEBUG, "SDServer") << "Forwarding request to sd-server: "
                   << sd_request.dump(2) << std::endl;
 
-    // Image generation can take 20+ minutes for large models — use global timeout
+    // Image generation can take 20+ minutes for large models -- use global timeout
     return forward_request("/v1/images/generations", sd_request, utils::HttpClient::get_default_timeout());
 }
 

@@ -18,6 +18,7 @@ RUN if [ -n "$UBUNTU_PPA" ]; then \
 COPY contrib /contrib
 RUN apt update && apt install -y \
     build-essential \
+    curl \
     dpkg-dev \
     git \
     python3-pip \

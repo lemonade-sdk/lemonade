@@ -12,8 +12,7 @@ Tests the lemonade CLI client commands (HTTP client for Lemonade Server):
 - unload
 - delete
 
-This test file focuses on the CLI client functionality with a persistent server.
-The server starts automatically at the beginning of tests and stops at the end.
+Expects a running server (started by the installer or manually).
 
 Usage:
     python server_cli2.py
@@ -24,14 +23,12 @@ import argparse
 import json
 import os
 import platform
-import socket
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 
-from utils.server_base import _stop_server_via_systemd
+from utils.server_base import wait_for_server
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     PORT,
@@ -47,60 +44,6 @@ from utils.test_models import (
 _config = {
     "server_binary": None,
 }
-
-
-def is_server_running(port=PORT):
-    """Check if the server is running on the given port."""
-    try:
-        conn = socket.create_connection(("localhost", port), timeout=2)
-        conn.close()
-        return True
-    except (socket.error, socket.timeout):
-        return False
-
-
-def wait_for_server_start(port=PORT, timeout=60):
-    """Wait for server to start."""
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        if is_server_running(port):
-            return True
-        time.sleep(1)
-    return False
-
-
-def wait_for_server_stop(port=PORT, timeout=30):
-    """Wait for server to stop."""
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        if not is_server_running(port):
-            return True
-        time.sleep(1)
-    return False
-
-
-def stop_server():
-    """Stop the server using systemctl on Linux, or CLI as fallback."""
-    # Try systemd first on Linux
-    if _stop_server_via_systemd():
-        wait_for_server_stop()
-        return
-
-    # Try server stop command as fallback (lemonade-server has stop command)
-    try:
-        result = subprocess.run(
-            [_config["server_binary"], "stop"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.stdout:
-            print(f"stdout: {result.stdout}")
-        if result.stderr:
-            print(f"stderr: {result.stderr}")
-        wait_for_server_stop()
-    except Exception as e:
-        print(f"Warning: Failed to stop server: {e}")
 
 
 def get_cli_binary():
@@ -168,49 +111,23 @@ class PersistentServerCLIClientTests(unittest.TestCase):
     """
     CLI client tests that run with a persistent server.
 
-    The server starts once at class setup and stops at teardown.
+    Expects a running server (started by the installer or manually).
     Tests run in order and may depend on previous test state.
     """
 
     @classmethod
     def setUpClass(cls):
-        """Start the server for all tests."""
+        """Verify server is running."""
         super().setUpClass()
-        print("\n=== Starting persistent server for CLI client tests ===")
-
-        # Stop any existing server
-        stop_server()
-
-        # Start server in background
-        cmd = [_config["server_binary"], "serve"]
-        # Add --no-tray on Windows or in CI environments (no display server in containers)
-        if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
-            cmd.append("--no-tray")
-
-        cls._server_process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-
-        # Wait for server to start
-        if not wait_for_server_start():
-            cls._server_process.terminate()
-            raise RuntimeError("Failed to start server for CLI client tests")
-
-        print("Server started successfully")
-        time.sleep(3)  # Additional wait for full initialization
-
-    @classmethod
-    def tearDownClass(cls):
-        """Stop the server after all tests."""
-        print("\n=== Stopping persistent server ===")
-        stop_server()
-        if hasattr(cls, "_server_process") and cls._server_process:
-            cls._server_process.terminate()
-            cls._server_process.wait(timeout=10)
-        super().tearDownClass()
+        print("\n=== Verifying server is reachable for CLI client tests ===")
+        try:
+            wait_for_server(timeout=30)
+        except TimeoutError:
+            raise RuntimeError(
+                "Server is not running on port %d. "
+                "Start the server before running tests." % PORT
+            )
+        print("Server is reachable")
 
     def assertCommandSucceeds(self, args, timeout=60):
         """Assert that a CLI command succeeds (exit code 0)."""
@@ -614,12 +531,7 @@ class PersistentServerCLIClientTests(unittest.TestCase):
 
 
 def run_cli_client_tests():
-    """
-    Run CLI client tests based on command line arguments.
-
-    IMPORTANT: This function ensures the server is ALWAYS stopped before exiting,
-    regardless of whether tests passed or failed.
-    """
+    """Run CLI client tests based on command line arguments."""
     args = parse_cli_args()
 
     print(f"\n{'=' * 70}")
@@ -628,18 +540,12 @@ def run_cli_client_tests():
     print(f"CLI binary: {get_cli_binary()}")
     print(f"{'=' * 70}\n")
 
-    result = None
-    try:
-        # Create and run test suite
-        loader = unittest.TestLoader()
-        suite = loader.loadTestsFromTestCase(PersistentServerCLIClientTests)
+    # Create and run test suite
+    loader = unittest.TestLoader()
+    suite = loader.loadTestsFromTestCase(PersistentServerCLIClientTests)
 
-        runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
-        result = runner.run(suite)
-    finally:
-        # ALWAYS stop the server before exiting, regardless of test outcome
-        print("\n=== Final cleanup: ensuring server is stopped ===")
-        stop_server()
+    runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
+    result = runner.run(suite)
 
     sys.exit(0 if (result and result.wasSuccessful()) else 1)
 

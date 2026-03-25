@@ -1,5 +1,6 @@
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/json_utils.h>
+#include <lemon/utils/process_manager.h>
 #include <filesystem>
 #include <vector>
 #include <string>
@@ -417,8 +418,6 @@ std::string get_downloaded_bin_dir() {
 }
 
 bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
-    FILE* pipe;
-
     std::string flm_exe = flm_path.empty() ? find_flm_executable() : flm_path;
     if (flm_exe.empty()) {
         error_message = "FLM executable not found";
@@ -430,27 +429,23 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
     }
 
     std::string command = "\"" + flm_exe + "\" validate --json";
+    std::string output;
+    int exit_code;
 #ifdef _WIN32
-    pipe = _popen(command.c_str(), "r");
+    exit_code = ProcessManager::run_command(command, output);
 #else
-    pipe = popen(command.c_str(), "r");
-#endif
-
+    FILE* pipe = popen(command.c_str(), "r");
     if (!pipe) {
         error_message = "Failed to execute " + flm_exe;
         return false;
     }
 
     char buffer[1024];
-    std::string output;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output += buffer;
     }
 
-#ifdef _WIN32
-    int exit_code = _pclose(pipe);
-#else
-    int exit_code = pclose(pipe);
+    exit_code = pclose(pipe);
     if (exit_code != -1) {
         exit_code = WEXITSTATUS(exit_code);
     }

@@ -36,9 +36,11 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <errno.h>
+#ifdef __linux__
+#include <sys/prctl.h>  // PR_SET_PDEATHSIG — kill child when parent dies
+#endif
 #ifdef HAVE_LIBCAP
 #include <sys/capability.h>
-#include <sys/prctl.h>
 #endif
 #endif
 
@@ -403,6 +405,14 @@ ProcessHandle ProcessManager::start_process(
 
     if (pid == 0) {
         // Child process
+#ifdef __linux__
+        // Ensure this child is killed when the parent process dies.
+        // This is the Linux equivalent of the Windows Job Object and
+        // prevents orphaned backend processes (llama-server, etc.)
+        // when lemonade-router is killed or crashes.
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+#endif
+
         if (!working_dir.empty()) {
             chdir(working_dir.c_str());
         }
@@ -861,6 +871,9 @@ int ProcessManager::run_process_with_output(
 
     if (pid == 0) {
         // Child process
+#ifdef __linux__
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+#endif
         close(stdout_pipe[0]);  // Close read end
 
         // Redirect stdout and stderr to pipe
@@ -1067,6 +1080,75 @@ int ProcessManager::find_free_port(int start_port) {
 #endif
 
     return -1;  // No free port found
+}
+
+int ProcessManager::run_command(const std::string& command, std::string& output, int timeout_seconds) {
+    output.clear();
+
+#ifdef _WIN32
+    // Windows: use CreateProcess + pipe to avoid console window flash.
+    // This is a drop-in replacement for _popen() that works in SUBSYSTEM:WINDOWS apps.
+    HANDLE stdout_read = nullptr;
+    HANDLE stdout_write = nullptr;
+
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = nullptr;
+
+    if (!CreatePipe(&stdout_read, &stdout_write, &sa, 0)) {
+        return -1;
+    }
+    SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = INVALID_HANDLE_VALUE;
+    si.hStdOutput = stdout_write;
+    si.hStdError = stdout_write;
+
+    PROCESS_INFORMATION pi = {};
+    // Wrap in cmd /c so shell features (redirection, pipes) work
+    std::string cmdline = "cmd /c " + command;
+    BOOL success = CreateProcessA(
+        nullptr, const_cast<char*>(cmdline.c_str()),
+        nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
+        nullptr, nullptr, &si, &pi);
+
+    CloseHandle(stdout_write);
+
+    if (!success) {
+        CloseHandle(stdout_read);
+        return -1;
+    }
+
+    // Read all output
+    char buf[4096];
+    DWORD bytes_read;
+    while (ReadFile(stdout_read, buf, sizeof(buf), &bytes_read, nullptr) && bytes_read > 0) {
+        output.append(buf, bytes_read);
+    }
+    CloseHandle(stdout_read);
+
+    WaitForSingleObject(pi.hProcess, timeout_seconds > 0 ? timeout_seconds * 1000 : INFINITE);
+    DWORD exit_code = 1;
+    GetExitCodeProcess(pi.hProcess, &exit_code);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    return static_cast<int>(exit_code);
+#else
+    // Unix: popen is fine — no console window issue
+    FILE* pipe = popen(command.c_str(), "r");
+    if (!pipe) return -1;
+
+    char buf[4096];
+    while (fgets(buf, sizeof(buf), pipe)) {
+        output += buf;
+    }
+    return pclose(pipe);
+#endif
 }
 
 } // namespace utils

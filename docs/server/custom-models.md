@@ -2,9 +2,9 @@
 
 This guide explains how to manually register custom models in Lemonade Server using the JSON configuration files. This is useful for adding any HuggingFace model that isn't in the built-in model list.
 
-> **Tip:** The easiest way to add a custom model is using the [`lemonade-server pull` CLI command](./lemonade-server-cli.md#options-for-pull) or the [`/api/v1/pull` endpoint](./server_spec.md#post-apiv1pull), which automate the registration and download process. For example:
+> **Tip:** The easiest way to add a custom model is using the [`lemonade pull` CLI command](../lemonade-cli.md#options-for-pull) or the [`/api/v1/pull` endpoint](./server_spec.md#post-apiv1pull), which automate the registration and download process. For example:
 > ```bash
-> lemonade-server pull user.MyModel --checkpoint "org/repo:file.gguf" --recipe llamacpp
+> lemonade pull user.MyModel --checkpoint main "org/repo:file.gguf" --recipe llamacpp
 > ```
 > This guide covers the underlying JSON files for users who need manual control.
 
@@ -205,7 +205,7 @@ The `kokoro` recipe (text-to-speech) has no configurable options in `recipe_opti
 
 Then load the model:
 ```bash
-lemonade-server run user.Qwen2.5-Coder-1.5B-Instruct
+lemonade run user.Qwen2.5-Coder-1.5B-Instruct
 ```
 
 ### Example 2: Adding a vision model with mmproj
@@ -237,10 +237,10 @@ lemonade-server run user.Qwen2.5-Coder-1.5B-Instruct
 
 The model will automatically be available as `user.My-Embedding-Model`. To mark it as an embedding model, use the pull CLI instead:
 ```bash
-lemonade-server pull user.My-Embedding-Model \
-    --checkpoint "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S" \
+lemonade pull user.My-Embedding-Model \
+    --checkpoint main "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S" \
     --recipe llamacpp \
-    --embedding
+    --label embeddings
 ```
 
 ## Settings Priority
@@ -249,13 +249,13 @@ When loading a model, settings are resolved in this order (highest to lowest pri
 
 1. Values explicitly passed in the `/api/v1/load` request
 2. Per-model values from `recipe_options.json`
-3. Values set via `lemonade-server` CLI arguments or environment variables
+3. Values set via environment variables or server startup arguments (see [Server Configuration](./configuration.md))
 4. Default hardcoded values in `lemonade-router`
 
 For full details, see the [load endpoint documentation](./server_spec.md#post-apiv1load).
 
 ## See Also
 
-- [CLI pull command](./lemonade-server-cli.md#options-for-pull) — register and download models from the command line
+- [CLI pull command](../lemonade-cli.md#options-for-pull) — register and download models from the command line
 - [`/api/v1/pull` endpoint](./server_spec.md#post-apiv1pull) — register and download models via API
 - [Server Integration Guide](./server_integration.md#installing-additional-models) — overview of model management options

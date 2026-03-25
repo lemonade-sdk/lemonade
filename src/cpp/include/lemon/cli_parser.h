@@ -22,44 +22,14 @@ struct ServerConfig {
     int max_loaded_models = 1;
 };
 
-struct TrayConfig {
-    std::string command;  // No default - must be explicitly specified
-    // Default to headless mode on Linux when not built as the tray GUI application
-#if defined(__linux__) && !defined(__ANDROID__) && !defined(LEMONADE_TRAY_GUI)
-    bool no_tray = true;
-#else
-    bool no_tray = false;
-#endif
-
-    std::string model;
-
-    // Launch command options
-    std::string launch_agent = "";  // "claude" or "codex"
-    std::string launch_model = "";
-    std::string launch_llamacpp_args = "";
-    bool launch_use_recipe = false;
-    bool launch_port_specified = false;
-
-    // Run options
-    bool save_options = false;
-
-    // Pull options
-    std::string checkpoint = "";
-    std::string recipe = "";
-    std::string mmproj = "";
-    bool is_reasoning = false;
-    bool is_vision = false;
-    bool is_embedding = false;
-    bool is_reranking = false;
-
-    // Backend management options (for recipes command)
-    std::string install_backend = "";    // "recipe:backend" format
-    std::string uninstall_backend = "";  // "recipe:backend" format
-};
-
 class CLIParser {
 public:
     CLIParser();
+
+    // Add a flag before parsing (for caller-specific flags like --silent)
+    CLI::Option* add_flag(const std::string& name, bool& value, const std::string& desc) {
+        return app_.add_flag(name, value, desc);
+    }
 
     // Parse command line arguments
     // Returns: 0 if should continue, exit code (may be 0) if should exit
@@ -67,10 +37,7 @@ public:
 
     // Get server configuration
     ServerConfig get_config() const { return config_; }
-#ifdef LEMONADE_TRAY
-    // Get tray configuration
-    TrayConfig get_tray_config() const { return tray_config_; }
-#endif
+
     // Check if we should continue (false means exit cleanly, e.g., after --help)
     bool should_continue() const { return should_continue_; }
 
@@ -79,10 +46,6 @@ public:
 private:
     CLI::App app_;
     ServerConfig config_;
-#ifdef LEMONADE_TRAY
-    TrayConfig tray_config_;
-    CLI::Option* launch_port_option_ = nullptr;
-#endif
     bool should_continue_ = true;
     int exit_code_ = 0;
 };

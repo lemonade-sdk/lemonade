@@ -207,7 +207,7 @@ function renderDownload() {
 
     if (distro === 'ubuntu') {
       // Ubuntu: Show structured server + frontend installation
-      const appImageFile = `Lemonade-${version}-x86_64.AppImage`;
+      const appImageFile = `lemonade-app-${version}-x86_64.AppImage`;
       const appImageUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${appImageFile}`;
 
       if (downloadArea) {
@@ -323,7 +323,7 @@ function renderDownload() {
     } else if (distro === 'fedora') {
       // Fedora: Show structured server + frontend installation
       const rpmFile = `lemonade-server-${version}.x86_64.rpm`;
-      const appImageFile = `Lemonade-${version}-x86_64.AppImage`;
+      const appImageFile = `lemonade-app-${version}-x86_64.AppImage`;
       const downloadUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${rpmFile}`;
       const appImageUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${appImageFile}`;
 

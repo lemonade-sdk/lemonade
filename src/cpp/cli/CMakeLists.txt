@@ -10,7 +10,7 @@ set(COMMON_SOURCES
     ../server/utils/process_manager.cpp
     ../server/utils/path_utils.cpp
     ../server/utils/json_utils.cpp
-    ../tray/agent_launcher.cpp
+    agent_launcher.cpp
 )
 
 # ============================================================

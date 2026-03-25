@@ -74,4 +74,21 @@ contextBridge.exposeInMainWorld('api', {
   getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
   getLocalMarketplaceUrl: () => ipcRenderer.invoke('get-local-marketplace-url'),
+  signalReady: () => ipcRenderer.send('renderer-ready'),
+  onNavigate: (callback) => {
+    if (typeof callback !== 'function') {
+      return undefined;
+    }
+
+    const channel = 'navigate';
+    const handler = (_event, data) => {
+      callback(data);
+    };
+
+    ipcRenderer.on(channel, handler);
+
+    return () => {
+      ipcRenderer.removeListener(channel, handler);
+    };
+  },
 });

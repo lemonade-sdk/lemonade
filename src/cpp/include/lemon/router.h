@@ -10,6 +10,7 @@
 #include "wrapped_server.h"
 #include "model_manager.h"
 #include "backend_manager.h"
+#include "runtime_config.h"
 
 namespace lemon {
 
@@ -17,10 +18,8 @@ using json = nlohmann::json;
 
 class Router {
 public:
-    Router(const json& default_options,
-           const std::string& log_level,
+    Router(RuntimeConfig* config,
            ModelManager* model_manager,
-           int max_loaded_models,
            BackendManager* backend_manager);
 
     ~Router();
@@ -92,14 +91,10 @@ private:
     // Multi-model support: Manage multiple WrappedServers
     std::vector<std::unique_ptr<WrappedServer>> loaded_servers_;
 
-    // Configuration
-    json default_options_;
-    std::string log_level_;
+    // Configuration (non-owning pointer; same lifetime as Server)
+    RuntimeConfig* config_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
     BackendManager* backend_manager_;  // Non-owning pointer to BackendManager
-
-    // Multi-model limit (applies to each type slot)
-    int max_loaded_models_;
 
     // Concurrency control for load operations
     mutable std::mutex load_mutex_;              // Protects loading state and loaded_servers_

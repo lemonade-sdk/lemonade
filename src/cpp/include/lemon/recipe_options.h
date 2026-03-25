@@ -19,6 +19,7 @@ public:
 
     static void add_cli_options(CLI::App& app, json& storage);
     static std::vector<std::string> to_cli_options(const json& raw_options);
+    static std::vector<std::string> known_keys();
 private:
     json options_ = json::object();
     std::string recipe_ = "";
