@@ -50,7 +50,7 @@ if [ -n "$CURRENT_UID" ] && [ "$CURRENT_UID" -ne 0 ]; then
 fi
 
 # Kill any lingering lemonade processes to ensure clean startup
-killall lemonade-router 2>/dev/null || true
+killall lemond 2>/dev/null || true
 killall lemonade-tray 2>/dev/null || true
 killall lemonade-server 2>/dev/null || true
 sleep 1
@@ -61,15 +61,15 @@ sleep 1
 echo "Ensuring binaries are updated..."
 
 # Force update binaries (in case installer didn't overwrite running ones)
-LEMONADE_ROUTER="${INSTALL_ROOT}/usr/local/bin/lemonade-router"
+LEMOND_BIN="${INSTALL_ROOT}/usr/local/bin/lemond"
 LEMONADE_SERVER="${INSTALL_ROOT}/usr/local/bin/lemonade-server"
 LEMONADE_CLI="${INSTALL_ROOT}/usr/local/bin/lemonade"
 
 # If binaries exist, touch them to ensure timestamps are updated
 # This helps with caching issues
-if [ -f "$LEMONADE_ROUTER" ]; then
-    touch "$LEMONADE_ROUTER"
-    echo "Updated lemonade-router timestamp"
+if [ -f "$LEMOND_BIN" ]; then
+    touch "$LEMOND_BIN"
+    echo "Updated lemond timestamp"
 fi
 
 if [ -f "$LEMONADE_SERVER" ]; then

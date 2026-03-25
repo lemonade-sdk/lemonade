@@ -86,7 +86,7 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          Write-Host "Building lemonade-router and lemonade-server..." -ForegroundColor Cyan
+          Write-Host "Building lemond and lemonade-server..." -ForegroundColor Cyan
           if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
           cmake --preset windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
