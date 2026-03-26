@@ -1,7 +1,7 @@
 """
-Tests for the 'system' LlamaCpp backend and LEMONADE_LLAMACPP_PREFER_SYSTEM.
+Tests for the 'system' LlamaCpp backend and llamacpp.prefer_system config.
 
-Each test needs a fresh server with different PATH/env vars, so this file
+Each test needs a fresh server with different PATH/config, so this file
 manages its own server lifecycle independently of ServerTestBase.
 
 Usage:
@@ -179,6 +179,37 @@ def _stop_server():
         print(f"Warning: Failed to stop server: {e}")
 
 
+def _get_home_dir():
+    """Get the lemonade home directory (where config.json lives)."""
+    return os.environ.get("LEMONADE_HOME", os.path.expanduser("~/.cache/lemonade"))
+
+
+def _set_config(updates):
+    """Write config updates to config.json before server start.
+
+    Reads the existing config.json (if any), merges updates, and writes back.
+    For nested keys like llamacpp.prefer_system, pass {"llamacpp": {"prefer_system": True}}.
+    """
+    home_dir = _get_home_dir()
+    os.makedirs(home_dir, exist_ok=True)
+    config_path = os.path.join(home_dir, "config.json")
+
+    config = {}
+    if os.path.exists(config_path):
+        with open(config_path) as f:
+            config = json.load(f)
+
+    # Deep merge updates into config
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(config.get(key), dict):
+            config[key].update(value)
+        else:
+            config[key] = value
+
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+
+
 def _start_server(wrapped_server=None, backend=None):
     """Start the server and wait for it to be ready."""
     server_binary = get_server_binary()
@@ -260,8 +291,8 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
     def setUp(self):
         print(f"\n=== Starting test: {self._testMethodName} ===")
         _stop_server()
-        # Reset environment variables for each test
-        os.environ.pop("LEMONADE_LLAMACPP_PREFER_SYSTEM", None)
+        # Reset config for each test (disable prefer_system by default)
+        _set_config({"llamacpp": {"prefer_system": False}})
         os.environ.pop("MOCK_LLAMA_REQUEST_PATH", None)
         os.environ["PATH"] = self.original_path  # Ensure PATH is clean before each test
         self._write_llama_server(
@@ -344,7 +375,7 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         and llama-server is in PATH.
         """
         self._add_dummy_llama_server_to_path()
-        os.environ["LEMONADE_LLAMACPP_PREFER_SYSTEM"] = "true"
+        _set_config({"llamacpp": {"prefer_system": True}})
         _start_server()
 
         response = requests.get(f"http://localhost:{PORT}/api/v1/system-info")
@@ -367,7 +398,7 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         but llama-server is NOT in PATH.
         """
         self._remove_dummy_llama_server_from_path()  # Ensure it's not in PATH
-        os.environ["LEMONADE_LLAMACPP_PREFER_SYSTEM"] = "true"
+        _set_config({"llamacpp": {"prefer_system": True}})
         _start_server()
 
         response = requests.get(f"http://localhost:{PORT}/api/v1/system-info")
@@ -394,7 +425,7 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         """
         self._add_dummy_llama_server_to_path()
         # Test with unset (default behavior) - system should NOT be default (it's disabled by default)
-        os.environ.pop("LEMONADE_LLAMACPP_PREFER_SYSTEM", None)
+        _set_config({"llamacpp": {"prefer_system": False}})
         _start_server()
 
         response = requests.get(f"http://localhost:{PORT}/api/v1/system-info")
@@ -411,7 +442,7 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         _stop_server()
 
         # Test with false - system backend should be explicitly skipped (same as default)
-        os.environ["LEMONADE_LLAMACPP_PREFER_SYSTEM"] = "false"
+        _set_config({"llamacpp": {"prefer_system": False}})
         _start_server()
 
         response = requests.get(f"http://localhost:{PORT}/api/v1/system-info")

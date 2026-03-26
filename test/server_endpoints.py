@@ -43,10 +43,9 @@ from utils.test_models import (
 def get_recipe_options_path():
     """Get the path to recipe_options.json file."""
     # Default location is ~/.cache/lemonade/recipe_options.json
-    cache_dir = os.environ.get(
-        "LEMONADE_CACHE_DIR", os.path.expanduser("~/.cache/lemonade")
-    )
-    return os.path.join(cache_dir, "recipe_options.json")
+    # The lemonade home dir can be overridden via LEMONADE_HOME for testing
+    home_dir = os.environ.get("LEMONADE_HOME", os.path.expanduser("~/.cache/lemonade"))
+    return os.path.join(home_dir, "recipe_options.json")
 
 
 class EndpointTests(ServerTestBase):

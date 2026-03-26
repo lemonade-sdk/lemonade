@@ -10,9 +10,12 @@
 
 #include "lemon_tray/tray_ui.h"
 #include <lemon/cli_parser.h>
+#include <lemon/config_file.h>
+#include <lemon/runtime_config.h>
 #include <lemon/server.h>
 #include <lemon/single_instance.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/path_utils.h>
 #include <lemon/version.h>
 
 #include <atomic>
@@ -132,7 +135,34 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     if (!parser.should_continue()) {
         return parser.get_exit_code();
     }
-    auto config = parser.get_config();
+    auto cli_config = parser.get_config();
+
+    // Set lemonade home dir
+    lemon::utils::set_home_dir(cli_config.home_dir);
+
+    // Auto-migrate and load config.json
+    lemon::ConfigFile::migrate(cli_config.home_dir);
+    auto config_json = lemon::ConfigFile::load(cli_config.home_dir);
+
+    // CLI overrides (persist to config.json)
+    bool cli_overrides = false;
+    if (cli_config.port != -1) {
+        config_json["port"] = cli_config.port;
+        cli_overrides = true;
+    }
+    if (!cli_config.host.empty()) {
+        config_json["host"] = cli_config.host;
+        cli_overrides = true;
+    }
+    if (cli_overrides) {
+        lemon::ConfigFile::save(cli_config.home_dir, config_json);
+    }
+
+    auto runtime_config = std::make_shared<lemon::RuntimeConfig>(config_json);
+    lemon::RuntimeConfig::set_global(runtime_config.get());
+
+    // Set models dir
+    lemon::utils::set_models_dir(runtime_config->models_dir());
 
     // Initialize logging to file (SUBSYSTEM:WINDOWS has no console).
     // The server's /api/v1/logs/stream endpoint tails this same file.
@@ -141,7 +171,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         GetTempPathA(MAX_PATH, temp_path);
         std::string log_file = std::string(temp_path) + "lemonade-server.log";
         auto file_sink = std::make_shared<AixLog::SinkFile>(
-            AixLog::Filter(AixLog::to_severity(config.log_level)),
+            AixLog::Filter(AixLog::to_severity(runtime_config->log_level())),
             log_file,
             lemon::RuntimeConfig::LOG_FORMAT);
         AixLog::Log::init({file_sink});
@@ -151,13 +181,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
 
-    // Start server on background thread (capture config by value — thread outlives the stack frame)
-    std::thread server_thread([config]() {
+    // Start server on background thread
+    std::string home_dir = cli_config.home_dir;
+    std::thread server_thread([runtime_config, home_dir]() {
         try {
-            lemon::Server server(config.port, config.host, config.log_level,
-                                config.recipe_options, config.max_loaded_models,
-                                config.extra_models_dir, config.no_broadcast,
-                                config.global_timeout);
+            lemon::Server server(runtime_config, home_dir);
             server.run();
         } catch (const std::exception& e) {
             MessageBoxA(NULL, e.what(), "Lemonade Server Error", MB_OK | MB_ICONERROR);
@@ -166,7 +194,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     server_thread.detach();
 
     // Wait for server to be ready
-    if (!wait_for_server(config.host, config.port, 15)) {
+    if (!wait_for_server(runtime_config->host(), runtime_config->port(), 15)) {
         MessageBoxA(NULL,
             "Lemonade Server failed to start within 15 seconds.",
             "Lemonade Server Error", MB_OK | MB_ICONERROR);
@@ -180,7 +208,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     // thread; we just need to block until shutdown.
     bool headless = false;
     try {
-        lemon_tray::TrayUI tray(config.port, config.host, silent);
+        lemon_tray::TrayUI tray(runtime_config->port(), runtime_config->host(), silent);
         if (tray.initialize()) {
             tray.run();  // Blocks until quit
         } else {

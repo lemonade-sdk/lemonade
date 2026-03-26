@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/config_file.h"
 #include "lemon/ollama_api.h"
 #include <cstring>
 #include "lemon/utils/json_utils.h"
@@ -126,17 +127,13 @@ static const json MIME_TYPES = {
     {"pcm",  "audio/l16;rate=24000;endianness=little-endian"}
 };
 
-Server::Server(int port, const std::string& host, const std::string& log_level,
-               const json& default_options, int max_loaded_models,
-               const std::string& extra_models_dir, bool no_broadcast,
-               long global_timeout)
-    : config_(std::make_shared<RuntimeConfig>(port, host, log_level, extra_models_dir,
-                                               no_broadcast, global_timeout,
-                                               max_loaded_models, default_options)),
-      port_(port), running_(false), udp_beacon_() {
+Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& home_dir)
+    : config_(config),
+      home_dir_(home_dir),
+      port_(config->port()), running_(false), udp_beacon_() {
 
     // Set global HttpClient timeout
-    utils::HttpClient::set_default_timeout(global_timeout);
+    utils::HttpClient::set_default_timeout(config->global_timeout());
 
     // Detect log file path for the SSE streaming endpoint.
     // This server only READS from the file — something else writes it
@@ -169,7 +166,7 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     model_manager_ = std::make_unique<ModelManager>();
 
     // Set extra models directory for GGUF discovery
-    model_manager_->set_extra_models_dir(extra_models_dir);
+    model_manager_->set_extra_models_dir(config_->extra_models_dir());
 
     backend_manager_ = std::make_unique<BackendManager>();
 
@@ -3410,6 +3407,15 @@ void Server::handle_config_set(const httplib::Request& req, httplib::Response& r
         auto result = config_->set(body, [this](const std::vector<std::string>& keys) {
             apply_config_side_effects(keys);
         });
+
+        // Persist changes to config.json
+        if (!home_dir_.empty()) {
+            try {
+                ConfigFile::save(home_dir_, config_->snapshot());
+            } catch (const std::exception& e) {
+                LOG(WARNING, "Server") << "Failed to persist config.json: " << e.what() << std::endl;
+            }
+        }
 
         res.set_content(result.dump(), "application/json");
     } catch (const nlohmann::json::parse_error& e) {

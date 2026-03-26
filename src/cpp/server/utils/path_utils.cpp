@@ -23,6 +23,21 @@ namespace fs = std::filesystem;
 
 namespace lemon::utils {
 
+// ---------------------------------------------------------------------------
+// Lemonade home dir and models dir (set once at startup)
+// ---------------------------------------------------------------------------
+
+static std::string g_home_dir;
+static std::string g_models_dir;
+
+void set_home_dir(const std::string& dir) {
+    g_home_dir = dir;
+}
+
+void set_models_dir(const std::string& dir) {
+    g_models_dir = dir;
+}
+
 #ifdef _WIN32
 static std::wstring utf8_to_wstring(const std::string& str) {
     if (str.empty()) return std::wstring();
@@ -276,43 +291,31 @@ bool is_ggml_hip_plugin_available() {
 }
 
 std::string get_cache_dir() {
-    std::string cache_dir_env = get_environment_variable_utf8("LEMONADE_CACHE_DIR");
-    if (!cache_dir_env.empty()) {
-        std::string cache_dir = cache_dir_env;
-#ifdef __APPLE__
-        // Ensure directory exists on macOS
-        fs::path cache_path = path_from_utf8(cache_dir);
-        if (!fs::exists(cache_path)) {
-            fs::create_directories(cache_path);
-        }
-#endif
-        return cache_dir;
+    // If set_home_dir() was called at startup, use that
+    if (!g_home_dir.empty()) {
+        return g_home_dir;
     }
 
+    // Fallback to platform-specific defaults (for backward compat / CLI client)
 #ifdef _WIN32
     std::string userprofile = get_environment_variable_utf8("USERPROFILE");
     if (!userprofile.empty()) {
         return userprofile + "\\.cache\\lemonade";
     }
 #elif defined(__APPLE__)
-    // Check if we are running as root (UID 0)
     if (geteuid() != 0) {
-        // --- NORMAL USER MODE ---
         std::string home = get_environment_variable_utf8("HOME");
         if (!home.empty()) {
             std::string cache_dir = home + "/.cache/lemonade";
-            // Ensure directory exists
             fs::path cache_path = path_from_utf8(cache_dir);
             if (!fs::exists(cache_path)) {
                 fs::create_directories(cache_path);
             }
             return cache_dir;
         }
-        // Fallback if HOME is missing but we aren't root
         struct passwd* pw = getpwuid(getuid());
         if (pw) {
             std::string cache_dir = std::string(pw->pw_dir) + "/.cache/lemonade";
-            // Ensure directory exists
             fs::path cache_path = path_from_utf8(cache_dir);
             if (!fs::exists(cache_path)) {
                 fs::create_directories(cache_path);
@@ -321,42 +324,25 @@ std::string get_cache_dir() {
         }
     }
 
-    // --- SYSTEM SERVICE / ROOT MODE ---
-    // If we are root (or getting HOME failed), use a shared system location.
-    // /Users/Shared is okay, but /Library/Application Support is the standard macOS system path.
-    std::string cache_dir = "/Library/Application Support/lemonade/.cache";
-    // Ensure directory exists
-    fs::path cache_path = path_from_utf8(cache_dir);
-    if (!fs::exists(cache_path)) {
-        fs::create_directories(cache_path);
+    {
+        std::string cache_dir = "/Library/Application Support/lemonade/.cache";
+        fs::path cache_path = path_from_utf8(cache_dir);
+        if (!fs::exists(cache_path)) {
+            fs::create_directories(cache_path);
+        }
+        return cache_dir;
     }
-    return cache_dir;
-
 #else
-    // Linux and other Unix systems
     std::string home = get_environment_variable_utf8("HOME");
     if (!home.empty()) {
         return home + "/.cache/lemonade";
     }
-    #endif
+#endif
 
     return ".cache/lemonade";
 }
 
-std::string get_hf_cache_dir() {
-    // Check HF_HUB_CACHE first (highest priority)
-    std::string hf_hub_cache_env = get_environment_variable_utf8("HF_HUB_CACHE");
-    if (!hf_hub_cache_env.empty()) {
-        return hf_hub_cache_env;
-    }
-
-    // Check HF_HOME second (append /hub)
-    std::string hf_home_env = get_environment_variable_utf8("HF_HOME");
-    if (!hf_home_env.empty()) {
-        return hf_home_env + "/hub";
-    }
-
-    // Default platform-specific paths
+std::string default_hf_cache_dir() {
 #ifdef _WIN32
     std::string userprofile = get_environment_variable_utf8("USERPROFILE");
     if (!userprofile.empty()) {
@@ -370,6 +356,13 @@ std::string get_hf_cache_dir() {
     }
     return "/tmp/.cache/huggingface/hub";
 #endif
+}
+
+std::string get_hf_cache_dir() {
+    if (!g_models_dir.empty()) {
+        return g_models_dir;
+    }
+    return default_hf_cache_dir();
 }
 
 std::string get_runtime_dir() {

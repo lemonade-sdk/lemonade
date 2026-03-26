@@ -356,11 +356,16 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_supported": {
             "llamacpp": ["vulkan", "cpu"],
             "sd-cpp": ["cpu"],
-            "whispercpp": ["cpu", "vulkan"],  # whispercpp CPU + Vulkan supported on Linux
+            "whispercpp": [
+                "cpu",
+                "vulkan",
+            ],  # whispercpp CPU + Vulkan supported on Linux
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],
-            "whispercpp": ["npu"],  # NPU is Windows-only; CPU and Vulkan supported on Linux
+            "whispercpp": [
+                "npu"
+            ],  # NPU is Windows-only; CPU and Vulkan supported on Linux
             "sd-cpp": ["rocm"],
             "flm": ["npu"],
             "ryzenai-llm": ["npu"],
@@ -399,11 +404,16 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_supported": {
             "llamacpp": ["vulkan", "rocm", "cpu"],
             "sd-cpp": ["cpu", "rocm"],
-            "whispercpp": ["cpu", "vulkan"],  # whispercpp CPU + Vulkan supported on Linux
+            "whispercpp": [
+                "cpu",
+                "vulkan",
+            ],  # whispercpp CPU + Vulkan supported on Linux
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
-            "whispercpp": ["npu"],  # NPU is Windows-only; CPU and Vulkan supported on Linux
+            "whispercpp": [
+                "npu"
+            ],  # NPU is Windows-only; CPU and Vulkan supported on Linux
             "flm": ["npu"],  # Windows NPU only
             "ryzenai-llm": ["npu"],
         },
@@ -441,11 +451,16 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_supported": {
             "llamacpp": ["vulkan", "cpu"],
             "sd-cpp": ["cpu"],
-            "whispercpp": ["cpu", "vulkan"],  # whispercpp CPU + Vulkan supported on Linux
+            "whispercpp": [
+                "cpu",
+                "vulkan",
+            ],  # whispercpp CPU + Vulkan supported on Linux
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],  # rocm not supported on RDNA2
-            "whispercpp": ["npu"],  # NPU is Windows-only; CPU and Vulkan supported on Linux
+            "whispercpp": [
+                "npu"
+            ],  # NPU is Windows-only; CPU and Vulkan supported on Linux
             "sd-cpp": ["rocm"],
             "flm": ["npu"],
             "ryzenai-llm": ["npu"],
@@ -538,7 +553,7 @@ class SystemInfoMockTests(unittest.TestCase):
         Run a single test with a mock hardware configuration.
 
         Creates a temporary cache directory with the mock hardware_info.json,
-        starts the server with LEMONADE_CACHE_DIR pointing to it, and validates
+        starts the server with a home dir pointing to it, and validates
         the /system-info response matches expected recipe support.
         """
         config = MOCK_HARDWARE_CONFIGS[config_name]
@@ -563,15 +578,24 @@ class SystemInfoMockTests(unittest.TestCase):
                 json.dump(cache_data, f, indent=2)
             print(f"Created mock hardware_info.json (version={self.server_version})")
 
-            # Prepare environment with mock cache directory
-            env = os.environ.copy()
-            env["LEMONADE_CACHE_DIR"] = temp_cache_dir
-            # Note: Do NOT set LEMONADE_CI_MODE=1 here as it invalidates the cache!
+            # Write config.json with debug log level
+            config_file = os.path.join(temp_cache_dir, "config.json")
+            with open(config_file, "w") as f:
+                json.dump({"log_level": "debug"}, f)
 
-            # Start server with mock cache
-            cmd = [self.server_binary, "serve", "--no-tray", "--log-level", "debug"]
+            # Start server with mock home dir
+            # Find lemond binary next to the server_binary (lemonade-server)
+            server_dir = os.path.dirname(self.server_binary)
+            lemond_binary = os.path.join(server_dir, "lemond")
+            if not os.path.exists(lemond_binary):
+                # Fall back to legacy shim
+                lemond_binary = self.server_binary
+                cmd = [lemond_binary, "serve", "--no-tray", "--log-level", "debug"]
+            else:
+                cmd = [lemond_binary, temp_cache_dir]
             print(f"Starting server: {' '.join(cmd)}")
 
+            env = os.environ.copy()
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,

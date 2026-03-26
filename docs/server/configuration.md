@@ -2,147 +2,214 @@
 
 ## Overview
 
-Lemonade Server starts automatically with the OS after installation. This page covers customizing server behavior via environment variables and configuration files.
+Lemonade Server starts automatically with the OS after installation. Configuration is managed through a single `config.json` file stored in the lemonade home directory.
 
-## Configuration Methods
+## config.json
 
-### Linux: Configuration Files
+All settings are in `config.json`, located in the lemonade home directory:
 
-The systemd service reads configuration files in this order:
+- **Linux (systemd):** `/var/lib/lemonade/config.json`
+- **Windows:** `%USERPROFILE%\.cache\lemonade\config.json`
+- **macOS:** `~/.cache/lemonade/config.json`
 
-1. `/etc/lemonade/lemonade.conf` — base settings
-2. `/etc/lemonade/conf.d/*.conf` — optional overrides, loaded in alphabetical order
+If `config.json` doesn't exist, it's created automatically with default values on first run.
 
-For most users, editing the base file is sufficient:
+### Example config.json
 
-```bash
-sudo nano /etc/lemonade/lemonade.conf
+```json
+{
+  "port": 8000,
+  "host": "localhost",
+  "log_level": "info",
+  "global_timeout": 300,
+  "max_loaded_models": 1,
+  "no_broadcast": false,
+  "extra_models_dir": "",
+  "models_dir": "~/.cache/huggingface/hub",
+  "ctx_size": 4096,
+  "offline": false,
+  "disable_model_filtering": false,
+  "enable_dgpu_gtt": false,
+  "llamacpp": {
+    "backend": "auto",
+    "args": "",
+    "prefer_system": false,
+    "rocm_bin": "builtin",
+    "vulkan_bin": "builtin",
+    "cpu_bin": "builtin"
+  },
+  "whispercpp": {
+    "backend": "auto",
+    "args": "",
+    "cpu_bin": "builtin",
+    "npu_bin": "builtin"
+  },
+  "sdcpp": {
+    "backend": "auto",
+    "steps": 20,
+    "cfg_scale": 7.0,
+    "width": 512,
+    "height": 512,
+    "cpu_bin": "builtin",
+    "rocm_bin": "builtin",
+    "vulkan_bin": "builtin"
+  },
+  "flm": {
+    "args": "",
+    "linux_beta": false
+  },
+  "ryzenai": {
+    "server_bin": "builtin"
+  },
+  "kokoro": {
+    "cpu_bin": "builtin"
+  }
+}
 ```
 
-For advanced setups, you can add drop-in files under `conf.d/` to keep local overrides separate from the package-provided base config (e.g., `50-local.conf` for general overrides, `zz-secrets.conf` for `LEMONADE_API_KEY`).
+### Settings Reference
 
-After making changes, restart the service:
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `port` | int | 8000 | Port number for the HTTP server |
+| `host` | string | "localhost" | Address to bind for connections |
+| `log_level` | string | "info" | Logging level (trace, debug, info, warning, error, fatal, none) |
+| `global_timeout` | int | 300 | Timeout in seconds for HTTP, inference, and readiness checks |
+| `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
+| `no_broadcast` | bool | false | Disable UDP broadcasting for server discovery |
+| `extra_models_dir` | string | "" | Secondary directory to scan for GGUF model files |
+| `models_dir` | string | (platform default) | Directory for cached model files |
+| `ctx_size` | int | 4096 | Default context size for LLM models |
+| `offline` | bool | false | Skip model downloads |
+| `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
+| `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
+
+### Backend Configuration
+
+Backend-specific settings are nested under their backend name:
+
+**llamacpp** — LLM inference via llama.cpp:
+| Key | Default | Description |
+|-----|---------|-------------|
+| `backend` | "auto" | Backend to use: "auto", "vulkan", "rocm", or "cpu" |
+| `args` | "" | Custom arguments to pass to llama-server |
+| `prefer_system` | false | Prefer system-installed llama.cpp over bundled |
+| `*_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
+
+**whispercpp** — Audio transcription:
+| Key | Default | Description |
+|-----|---------|-------------|
+| `backend` | "auto" | Backend to use: "auto", "cpu", "npu" (Windows), "vulkan" (Linux) |
+| `args` | "" | Custom arguments to pass to whisper-server |
+| `*_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
+
+**sdcpp** — Image generation:
+| Key | Default | Description |
+|-----|---------|-------------|
+| `backend` | "auto" | Backend to use: "auto", "cpu", "rocm", "vulkan" |
+| `steps` | 20 | Number of inference steps |
+| `cfg_scale` | 7.0 | Classifier-free guidance scale |
+| `width` | 512 | Image width in pixels |
+| `height` | 512 | Image height in pixels |
+| `*_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
+
+**flm** — FastFlowLM NPU inference:
+| Key | Default | Description |
+|-----|---------|-------------|
+| `args` | "" | Custom arguments to pass to flm serve |
+| `linux_beta` | false | Enable Linux beta support |
+
+**ryzenai** — RyzenAI NPU inference:
+| Key | Default | Description |
+|-----|---------|-------------|
+| `server_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
+
+**kokoro** — Text-to-speech:
+| Key | Default | Description |
+|-----|---------|-------------|
+| `cpu_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
+
+## Editing Configuration
+
+### Option 1: Edit config.json directly
 
 ```bash
+# Linux
+sudo nano /var/lib/lemonade/config.json
 sudo systemctl restart lemonade-server
+
+# Windows — edit in your preferred text editor:
+# %USERPROFILE%\.cache\lemonade\config.json
+# Then quit and relaunch from the Start Menu
 ```
 
-### Windows: User Environment Variables
+### Option 2: Runtime API
 
-Set environment variables via **System Properties > Environment Variables**, or from the command line:
-
-```cmd
-setx LEMONADE_PORT 8080
-setx LEMONADE_LOG_LEVEL debug
-```
-
-After making changes, quit from the tray icon, then relaunch from the Start Menu.
-
-### macOS: Environment Variables
-
-Set environment variables in your shell profile or launchd plist. After making changes, restart from the tray icon or via `launchctl`.
-
-## Environment Variables
-
-These settings are recognized by Lemonade Server regardless of launch method:
-
-| Environment Variable               | Description                                                                                                                                             |
-|------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `LEMONADE_HOST`                    | Host address for where to listen for connections                                                                                                        |
-| `LEMONADE_PORT`                    | Port number to run the server on                                                                                                                        |
-| `LEMONADE_LOG_LEVEL`               | Logging level                                                                                                                                           |
-| `LEMONADE_LLAMACPP`                | Default LlamaCpp backend (`vulkan`, `rocm`, or `cpu`)                                                                                                   |
-| `LEMONADE_WHISPERCPP`              | Default WhisperCpp backend: `npu` or `cpu` on Windows; `cpu` or `vulkan` on Linux                                                                       |
-| `LEMONADE_CTX_SIZE`                | Default context size for models                                                                                                                         |
-| `LEMONADE_LLAMACPP_ARGS`           | Custom arguments to pass to llama-server                                                                                                                |
-| `LEMONADE_WHISPERCPP_ARGS`         | Custom arguments to pass to whisper-server (for example `--convert`)                                                                                    |
-| `LEMONADE_FLM_ARGS`                | Custom arguments to pass to FLM server                                                                                                                  |
-| `LEMONADE_EXTRA_MODELS_DIR`        | Secondary directory to scan for GGUF model files                                                                                                        |
-| `LEMONADE_MAX_LOADED_MODELS`       | Maximum number of models to keep loaded per type slot (LLMs, audio, image, etc.). Use `-1` for unlimited, or a positive integer. Default: `1`           |
-| `LEMONADE_DISABLE_MODEL_FILTERING` | Set to `1` to disable hardware-based model filtering (e.g., RAM amount, NPU availability) and show all models regardless of system capabilities         |
-| `LEMONADE_ENABLE_DGPU_GTT`         | Set to `1` to include GTT for hardware-based model filtering |
-| `LEMONADE_GLOBAL_TIMEOUT`          | Global default timeout for HTTP requests, inference, and readiness checks in seconds |
-
-## Custom Backend Binaries
-
-You can provide your own `llama-server`, `whisper-server`, or `ryzenai-server` binary by setting the full path via the following environment variables:
-
-| Environment Variable | Description |
-|---------------------|-------------|
-| `LEMONADE_LLAMACPP_ROCM_BIN` | Path to custom `llama-server` binary for ROCm backend |
-| `LEMONADE_LLAMACPP_VULKAN_BIN` | Path to custom `llama-server` binary for Vulkan backend |
-| `LEMONADE_LLAMACPP_CPU_BIN` | Path to custom `llama-server` binary for CPU backend |
-| `LEMONADE_WHISPERCPP_CPU_BIN` | Path to custom `whisper-server` binary for CPU backend |
-| `LEMONADE_WHISPERCPP_NPU_BIN` | Path to custom `whisper-server` binary for NPU backend |
-| `LEMONADE_RYZENAI_SERVER_BIN` | Path to custom `ryzenai-server` binary for NPU/Hybrid models |
-
-**Note:** These environment variables do not override the `--llamacpp` option. They allow you to specify an alternative binary for specific backends while still using the standard backend selection mechanism.
-
-**Examples:**
-
-On Windows:
-
-```cmd
-setx LEMONADE_LLAMACPP_VULKAN_BIN "C:\path\to\my\llama-server.exe"
-```
-
-On Linux (in `/etc/lemonade/lemonade.conf`):
+Changes can be applied at runtime via the `/internal/set` endpoint (loopback only):
 
 ```bash
-LEMONADE_LLAMACPP_VULKAN_BIN=/path/to/my/llama-server
+# Change a top-level setting
+curl -X POST localhost:8000/internal/set \
+  -H "Content-Type: application/json" \
+  -d '{"log_level": "debug"}'
+
+# Change a backend setting
+curl -X POST localhost:8000/internal/set \
+  -H "Content-Type: application/json" \
+  -d '{"llamacpp": {"backend": "vulkan"}}'
+
+# Read current config
+curl localhost:8000/internal/config
 ```
+
+Changes made via `/internal/set` are persisted to config.json immediately.
+
+### Option 3: CLI overrides
+
+`lemond` accepts `--port` and `--host` as CLI arguments. These override config.json and are persisted:
+
+```bash
+lemond --port 9000 --host 0.0.0.0
+```
+
+## lemond CLI
+
+```
+lemond [home_dir] [--port PORT] [--host HOST]
+```
+
+- **home_dir** — Path to the lemonade home directory containing config.json and model data. Optional; defaults to platform-specific location.
+- **--port** — Port to serve on (overrides config.json, persisted)
+- **--host** — Address to bind (overrides config.json, persisted)
 
 ## API Key and Security
 
-If you expose your server over a network you can use the `LEMONADE_API_KEY` environment variable to set an API key (use a random long string) that will be required to execute any request. The API key will be expected as HTTP Bearer authentication, which is compatible with the OpenAI API.
+The `LEMONADE_API_KEY` environment variable sets an API key for authentication. On Linux with systemd, set it in `/etc/lemonade/conf.d/zz-secrets.conf`:
 
-**IMPORTANT**: If you need to access Lemonade Server over the internet, do not expose it directly! You will also need to setup an HTTPS reverse proxy (such as nginx) and expose that instead, otherwise all communication will be in plaintext!
-
-## Timeout Configuration
-
-Lemonade uses a unified timeout strategy controlled by the `LEMONADE_GLOBAL_TIMEOUT` environment variable. This value ensures stability across different operations:
-
-| Timeout Name | Default | Description |
-|--------------|---------|-------------|
-| **Global HTTP Timeout** | 300s | Sets the base timeout for all `curl` operations, including model downloads and management tasks. |
-| **Inference Timeout** | 300s | Applied specifically to inference requests (chat, completion) to backends. For very long generations, increasing the timeout may be necessary. |
-| **Readiness Timeout** | 300s* | Maximum time the router waits for a backend server to become healthy after starting it. *Note: If not explicitly set, backends may use up to 600s for initial setup. |
+```bash
+LEMONADE_API_KEY=your-secret-key
+```
 
 ## Remote Server Connection
 
 To make Lemonade Server accessible from other machines on your network, set the host to `0.0.0.0`:
 
-**Linux** (in `/etc/lemonade/lemonade.conf`):
-
 ```bash
-LEMONADE_HOST=0.0.0.0
+# Via config.json
+{"host": "0.0.0.0"}
+
+# Or via CLI
+lemond --host 0.0.0.0
+
+# Or via runtime API
+curl -X POST localhost:8000/internal/set -d '{"host":"0.0.0.0"}'
 ```
 
-Then restart:
+> **Note:** Using `host: "0.0.0.0"` allows connections from any machine on the network. Only do this on trusted networks. Set `LEMONADE_API_KEY` to manage access.
 
-```bash
-sudo systemctl restart lemonade-server
-```
+## Migration from Environment Variables
 
-**Windows:**
-
-```cmd
-setx LEMONADE_HOST 0.0.0.0
-```
-
-Then quit from the tray icon, then relaunch from the Start Menu.
-
-> **Note:** Using `LEMONADE_HOST=0.0.0.0` allows connections from other machines on the network. Only do this on trusted networks. Set `LEMONADE_API_KEY` (see above) to manage access on your network.
-
-For developers running `lemond` directly: `lemond --host 0.0.0.0`
-
-## Restarting the Server
-
-After changing configuration, you need to restart the server for changes to take effect:
-
-- **Linux:** `sudo systemctl restart lemonade-server`
-- **Windows:** Quit from the tray icon, then relaunch from the Start Menu
-- **macOS:** Restart from the tray icon or via `launchctl`
+If upgrading from a version that used environment variables, config.json is automatically generated from your existing env vars and `/etc/lemonade/lemonade.conf` on first run. A migration notice is logged.
 
 ## Next Steps
 

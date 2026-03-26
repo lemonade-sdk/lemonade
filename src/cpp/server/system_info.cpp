@@ -1,4 +1,5 @@
 #include "lemon/system_info.h"
+#include "lemon/runtime_config.h"
 #include "lemon/version.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/version_utils.h"
@@ -77,17 +78,17 @@ const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
     {"gfx1032", "gfx103X"},
     {"gfx1034", "gfx103X"},
     // Note: gfx1033, gfx1035, gfx1036 are NOT included (not confirmed as supported)
-    
+
     // RDNA3 family (gfx110X)
     {"gfx1100", "gfx110X"},
     {"gfx1101", "gfx110X"},
     {"gfx1102", "gfx110X"},
     {"gfx1103", "gfx110X"},
-    
+
     // RDNA3.5 iGPUs - explicit binary names (no family mapping)
     {"gfx1150", "gfx1150"},  // Maps to exact binary name
     {"gfx1151", "gfx1151"},  // Maps to exact binary name
-    
+
     // RDNA4 family (gfx120X)
     {"gfx1200", "gfx120X"},
     {"gfx1201", "gfx120X"},
@@ -742,12 +743,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
     // Check if user prefers system llamacpp backend (off by default)
     bool prefer_llamacpp_system = false;
-    const char* prefer_system_env = std::getenv("LEMONADE_LLAMACPP_PREFER_SYSTEM");
-    if (prefer_system_env) {
-        std::string pref_val(prefer_system_env);
-        if (pref_val == "true" || pref_val == "1") {
-            prefer_llamacpp_system = true;
-        }
+    if (auto* cfg = RuntimeConfig::global()) {
+        prefer_llamacpp_system = cfg->backend_bool("llamacpp", "prefer_system");
     }
 
     // Build recipes from the definition table
@@ -1216,8 +1213,8 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     }
 
     // RDNA2 GPUs (gfx103X architecture)
-    // AMD Radeon RX 6800 XT, AMD Radeon RX 6800, AMD Radeon RX 6700 XT, 
-    // AMD Radeon RX 6700, AMD Radeon RX 6600 XT, AMD Radeon RX 6600, 
+    // AMD Radeon RX 6800 XT, AMD Radeon RX 6800, AMD Radeon RX 6700 XT,
+    // AMD Radeon RX 6700, AMD Radeon RX 6600 XT, AMD Radeon RX 6600,
     // AMD Radeon RX 6500 XT, AMD Radeon RX 6500
     if (device_lower.find("6800") != std::string::npos ||
         device_lower.find("6700") != std::string::npos ||
@@ -2875,14 +2872,7 @@ bool SystemInfoCache::is_valid() const {
         return false;
     }
 
-#ifdef __linux__
-    // On Linux, cache is disabled by default (always re-detect hardware) unless
-    // LEMONADE_CACHE_DIR is explicitly set (for testing purposes)
-    const char* cache_dir_env = std::getenv("LEMONADE_CACHE_DIR");
-    if (!cache_dir_env || cache_dir_env[0] == '\0') {
-        return false;
-    }
-#endif
+    // Hardware cache is always enabled when a home dir is configured
 
     // Check if cache file exists
     if (!fs::exists(cache_file_path_)) {

@@ -10,7 +10,7 @@ Lemonade is a local LLM server (v10.0.0) providing GPU and NPU acceleration for 
 
 ### Executables
 
-- **lemond** — Pure HTTP server. Handles REST API, routes requests to backends, manages model loading/unloading. No CLI.
+- **lemond** — Pure HTTP server. Handles REST API, routes requests to backends, manages model loading/unloading. Configured via `config.json` in the lemonade home directory. CLI args: `[home_dir] [--port PORT] [--host HOST]`.
 - **lemonade** — CLI client (`src/cpp/cli/`). Commands: `list`, `pull`, `delete`, `run`, `status`, `logs`, `launch`, `recipes`, `scan`. Communicates with router via HTTP. Discovers running server via UDP beacon.
 - **LemonadeServer.exe** (Windows) — SUBSYSTEM:WINDOWS GUI app that embeds `lemond` and shows a system tray icon. Auto-starts via Windows startup folder.
 - **lemonade-tray** (macOS/Linux) — Lightweight tray client that connects to a running `lemond`. Platform code in `src/cpp/tray/platform/`.
@@ -172,6 +172,7 @@ Test utilities in `test/utils/` with `server_base.py` as the base class. Test de
 | `src/cpp/server/ollama_api.cpp` | Ollama API compatibility |
 | `src/cpp/include/lemon/websocket_server.h` | WebSocket Realtime API server |
 | `src/cpp/include/lemon/model_types.h` | Model type and device type enums |
+| `src/cpp/include/lemon/config_file.h` | config.json load/save/migrate |
 | `src/cpp/include/lemon/recipe_options.h` | Per-recipe JSON configuration |
 | `src/cpp/tray/tray_app.cpp` | Tray application UI and logic |
 | `src/app/src/renderer/ModelManager.tsx` | Model management UI |

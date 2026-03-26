@@ -72,10 +72,11 @@
        - llamacpp: `%LOCALAPPDATA%\llama.cpp` (e.g., `C:\Users\You\AppData\Local\llama.cpp`)
    - **Linux:** `~/.cache/llama.cpp`
 
-   Set the `LEMONADE_EXTRA_MODELS_DIR` environment variable to point to your models directory:
+   Set `extra_models_dir` in `config.json` (see [Server Configuration](./server/configuration.md) for file location):
 
-   - **Windows:** `setx LEMONADE_EXTRA_MODELS_DIR "%LOCALAPPDATA%\llama.cpp"`
-   - **Linux:** Add `LEMONADE_EXTRA_MODELS_DIR=/home/you/.cache/llama.cpp` to `/etc/lemonade/lemonade.conf`
+   ```json
+   {"extra_models_dir": "/home/you/.cache/llama.cpp"}
+   ```
 
    Then restart the server for the change to take effect.
 
@@ -112,9 +113,9 @@
    - Use a pull request to add the model to the built-in `server_models.json` file.
    - Request support by opening a [GitHub issue](https://github.com/lemonade-sdk/lemonade/issues).
 
-   If you are sure that a model should be listed, but you aren't seeing it, you can set the `LEMONADE_DISABLE_MODEL_FILTERING` environment variable to show all models supported by Lemonade on any PC configuration. But please note, this can show models that definitely won't work on your system.
+   If you are sure that a model should be listed, but you aren't seeing it, you can set `"disable_model_filtering": true` in `config.json` to show all models supported by Lemonade on any PC configuration. But please note, this can show models that definitely won't work on your system.
 
-   Alternatively if you are attempting to use GTT on your dGPU then you can set the `LEMONADE_ENABLE_DGPU_GTT` environment variable to filter using the combined memory pool. Please note ROCM does not support splitting memory across multiple pools, vulkan is likely required for this usecase.
+   Alternatively if you are attempting to use GTT on your dGPU then you can set `"enable_dgpu_gtt": true` in `config.json` to filter using the combined memory pool. Please note ROCM does not support splitting memory across multiple pools, vulkan is likely required for this usecase.
 
 ### 5. **Is there a script or tool to convert models to Ryzen AI NPU format?**
 
@@ -222,9 +223,7 @@
    Lemonade supports running the server on one machine while using the app from another machine on the same network.
 
    **Quick setup:**
-   1. On the server machine, enable network access by setting `LEMONADE_HOST=0.0.0.0`:
-      - **Windows:** `setx LEMONADE_HOST 0.0.0.0` then quit from the tray icon and relaunch from the Start Menu
-      - **Linux:** Add `LEMONADE_HOST=0.0.0.0` to `/etc/lemonade/lemonade.conf`, then `sudo systemctl restart lemonade-server`
+   1. On the server machine, enable network access by setting `host` to `0.0.0.0` in `config.json` (see [Server Configuration](./server/configuration.md)), then restart the server.
    2. On the client machine, launch the app and configure the endpoint through the UI:
       ```bash
       lemonade-app

@@ -23,21 +23,23 @@ There are a few things to note on this integration:
 
 Since OpenHands runs inside Docker containers, the containers must be able to access the Lemonade Server. The simplest way to enable this is by setting the host to `0.0.0.0`, which is accessible from within Docker. Additionally, OpenHands [recommends](https://docs.all-hands.dev/usage/llms/local-llms) using a context length of at least 32,768 tokens.
 
-**Windows:**
-```cmd
-setx LEMONADE_HOST 0.0.0.0
-setx LEMONADE_CTX_SIZE 32768
-```
-Then quit from the tray icon and relaunch from the Start Menu.
+Edit `config.json` in the lemonade home directory (see [Server Configuration](../configuration.md) for location):
 
-**Linux** (in `/etc/lemonade/lemonade.conf`):
+```json
+{
+  "host": "0.0.0.0",
+  "ctx_size": 32768
+}
+```
+
+Or via the runtime API:
 ```bash
-LEMONADE_HOST=0.0.0.0
-LEMONADE_CTX_SIZE=32768
+curl -X POST localhost:8000/internal/set \
+  -H "Content-Type: application/json" \
+  -d '{"host":"0.0.0.0","ctx_size":32768}'
 ```
-Then `sudo systemctl restart lemonade-server`.
 
-For full details, see [Server Configuration](../configuration.md).
+Then restart the server for `host` changes to take effect.
 
 ### Installing OpenHands
 
