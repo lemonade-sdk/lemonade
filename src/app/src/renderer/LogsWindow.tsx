@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { getAPIKey, getServerBaseUrl, onServerUrlChange, serverConfig } from './utils/serverConfig';
-import { EventSource as EventSourcePolyfill } from 'eventsource';
+import {EventSource} from 'eventsource';
 
 interface LogsWindowProps {
   isVisible: boolean;
@@ -17,7 +17,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const logsContentRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
   const isProgrammaticScrollRef = useRef(false);
-  const eventSourceRef = useRef<EventSourcePolyfill | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [serverUrl, setServerUrl] = useState<string>('');
   const [apiKey, setAPIKey] = useState<string>('');
@@ -120,23 +120,17 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
           eventSourceRef.current.close();
         }
 
-        const streamUrl = `${serverUrl}/api/v1/logs/stream`;
+        const options = apiKey ? {
+            fetch: (input: string | URL | Request, init: RequestInit) =>
+              fetch(input, {
+                ...init,
+                headers: {
+                  ...init.headers,
+                  Authorization: `Bearer ${apiKey}`,
+                },
+            })} : {};
 
-        const eventSource = new EventSourcePolyfill(
-          streamUrl,
-          apiKey
-            ? {
-                fetch: (input: string | URL | Request, init: RequestInit) =>
-                  fetch(input, {
-                    ...init,
-                    headers: {
-                      ...init.headers,
-                      Authorization: `Bearer ${apiKey}`,
-                    },
-                  }),
-              }
-            : undefined,
-        );
+        const eventSource = new EventSource(`${serverUrl}/api/v1/logs/stream`, options)
         eventSourceRef.current = eventSource;
 
         eventSource.onopen = () => {
@@ -166,7 +160,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
           });
         };
 
-        eventSource.onerror = (error: Event) => {
+        eventSource.onerror = (error) => {
           console.error('Log stream error:', error);
           setConnectionStatus('error');
           eventSource.close();
