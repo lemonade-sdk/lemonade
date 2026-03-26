@@ -170,6 +170,11 @@ bool RuntimeConfig::enable_dgpu_gtt() const {
     return config_["enable_dgpu_gtt"].get<bool>();
 }
 
+std::string RuntimeConfig::rocm_channel() const {
+    std::shared_lock lock(mutex_);
+    return config_["rocm_channel"].get<std::string>();
+}
+
 json RuntimeConfig::backend_config(const std::string& backend_name) const {
     std::shared_lock lock(mutex_);
     if (config_.contains(backend_name) && config_[backend_name].is_object()) {
@@ -334,6 +339,14 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
         if (value.get<int>() < 1) {
             throw std::invalid_argument("'config_version' must be >= 1");
+        }
+    } else if (key == "rocm_channel") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'rocm_channel' must be a string");
+        }
+        std::string channel = value.get<std::string>();
+        if (channel != "preview" && channel != "stable" && channel != "nightly") {
+            throw std::invalid_argument("'rocm_channel' must be either 'preview', 'stable', or 'nightly'");
         }
     } else if (is_backend_name(key)) {
         if (!value.is_object()) {

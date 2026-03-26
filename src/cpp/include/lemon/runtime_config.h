@@ -35,6 +35,7 @@ public:
     bool offline() const;
     bool disable_model_filtering() const;
     bool enable_dgpu_gtt() const;
+    std::string rocm_channel() const;
 
     // Backend settings (nested)
     json backend_config(const std::string& backend_name) const;
