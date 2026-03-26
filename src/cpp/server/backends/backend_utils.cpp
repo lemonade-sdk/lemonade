@@ -125,11 +125,36 @@ namespace lemon::backends {
         return (filename.size() > 7) && (filename.substr(filename.size() - 7) == ".tar.gz");
     }
 
+    static bool is_deb(const std::string& filename) {
+        return (filename.size() > 4) && (filename.substr(filename.size() - 4) == ".deb");
+    }
+
+    bool BackendUtils::extract_deb(const std::string& deb_path, const std::string& dest_dir, const std::string& backend_name) {
+#if defined(__linux__)
+        ensure_directory(dest_dir);
+        LOG(DEBUG, backend_name) << "Extracting .deb to " << dest_dir << std::endl;
+        std::string command = "dpkg-deb -x \"" + deb_path + "\" \"" + dest_dir + "\"";
+        int result = system(command.c_str());
+        if (result != 0) {
+            LOG(ERROR, backend_name) << "dpkg-deb extraction failed with code: " << result << std::endl;
+            return false;
+        }
+        return true;
+#else
+        LOG(ERROR, backend_name) << ".deb extraction is only supported on Linux" << std::endl;
+        return false;
+#endif
+    }
+
     // Helper to extract archive files based on extension
     bool BackendUtils::extract_archive(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name) {
         // Check if it's a tar.gz file
         if (is_tarball(archive_path)) {
             return extract_tarball(archive_path, dest_dir, backend_name);
+        }
+        // Check if it's a .deb file
+        if (is_deb(archive_path)) {
+            return extract_deb(archive_path, dest_dir, backend_name);
         }
         // Default to ZIP extraction
         return extract_zip(archive_path, dest_dir, backend_name);
@@ -189,6 +214,12 @@ namespace lemon::backends {
 
         if (!exe_path.empty()) {
             return exe_path;
+        }
+
+        // Fall back to PATH (supports system-wide installs, e.g. FLM via .deb on Linux)
+        std::string path_exe = utils::find_executable_in_path(spec.binary);
+        if (!path_exe.empty()) {
+            return path_exe;
         }
 
         // If not found, throw error with helpful message

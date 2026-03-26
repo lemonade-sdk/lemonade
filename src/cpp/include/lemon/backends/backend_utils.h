@@ -23,7 +23,7 @@ namespace lemon::backends {
         const std::string binary;
 
         using InstallParamsFn = InstallParams(*)(const std::string& backend, const std::string& version);
-        InstallParamsFn install_params_fn;  // nullptr for FLM (special installer)
+        InstallParamsFn install_params_fn;
 
         BackendSpec(std::string r, std::string b, InstallParamsFn fn = nullptr)
             : recipe(std::move(r)), binary(std::move(b)), install_params_fn(fn) {}
@@ -57,7 +57,12 @@ namespace lemon::backends {
         static bool extract_tarball(const std::string& tarball_path, const std::string& dest_dir, const std::string& backend_name);
 
         /**
-        * Detect if archive is tar or zip
+        * Extract .deb files (Linux only, uses dpkg-deb)
+        */
+        static bool extract_deb(const std::string& deb_path, const std::string& dest_dir, const std::string& backend_name);
+
+        /**
+        * Detect if archive is tar, zip, or deb
         * @param tarball_path Path to the archive file
         * @param dest_dir Destination directory to extract to
         * @return true if extraction was successful, false otherwise

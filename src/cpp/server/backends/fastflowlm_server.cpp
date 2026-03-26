@@ -32,12 +32,16 @@ InstallParams FastFlowLMServer::get_install_params(const std::string& backend, c
     InstallParams params;
     params.repo = "FastFlowLM/FastFlowLM";
     // Version in backend_versions.json has 'v' prefix (e.g. "v0.9.37"),
-    // but the release filename uses bare version (e.g. "fastflowlm-windows-0.9.37.zip")
+    // but the release filename uses bare version (e.g. "0.9.37")
     std::string bare_version = version;
     if (!bare_version.empty() && bare_version[0] == 'v') {
         bare_version = bare_version.substr(1);
     }
+#ifdef _WIN32
     params.filename = "fastflowlm-windows-" + bare_version + ".zip";
+#elif defined(__linux__)
+    params.filename = "fastflowlm_" + bare_version + "_ubuntu24.04_amd64.deb";
+#endif
     return params;
 }
 
