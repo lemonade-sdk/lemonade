@@ -3503,15 +3503,18 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         // Get fresh state before any checks
         SystemInfoCache::invalidate_recipes();
 
-        // Check if this backend requires manual setup (e.g. FLM on Linux).
-        // If so, return the action URL instead of attempting installation.
+        // Check if this backend is unsupported and requires manual setup.
+        // Only block auto-install for truly unsupported backends (e.g. FLM on Linux).
+        // For "action_required" or "update_required" states, proceed with install
+        // since zip-based backends can be auto-installed to resolve the issue.
         json system_info = SystemInfoCache::get_system_info_with_cache();
         if (system_info.contains("recipes") &&
             system_info["recipes"].contains(recipe) &&
             system_info["recipes"][recipe].contains("backends") &&
             system_info["recipes"][recipe]["backends"].contains(backend)) {
+            std::string state = system_info["recipes"][recipe]["backends"][backend].value("state", "");
             std::string action = system_info["recipes"][recipe]["backends"][backend].value("action", "");
-            if (action.find(".html") != std::string::npos) {
+            if (state == "unsupported" && action.find(".html") != std::string::npos) {
                 auto url_pos = action.find("https://");
                 if (url_pos != std::string::npos) {
                     nlohmann::json response = {
