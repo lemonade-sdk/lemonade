@@ -1315,7 +1315,7 @@ static std::string identify_npu_arch_linux() {
                 if (device_str == "0x17f0") {
                     if (revision_str == "0x10" ||
                         revision_str == "0x11" ||
-                        revision_str == "0x12")
+                        revision_str == "0x20")
                         return "XDNA2";
                 }
             }
