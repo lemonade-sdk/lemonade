@@ -131,6 +131,11 @@ namespace lemon::backends {
 
     bool BackendUtils::extract_deb(const std::string& deb_path, const std::string& dest_dir, const std::string& backend_name) {
 #if defined(__linux__)
+        // Validate paths to prevent command injection
+        if (!utils::is_safe_executable_path(deb_path) || !utils::is_safe_executable_path(dest_dir)) {
+            LOG(ERROR, backend_name) << "Invalid characters in path" << std::endl;
+            return false;
+        }
         ensure_directory(dest_dir);
         LOG(DEBUG, backend_name) << "Extracting .deb to " << dest_dir << std::endl;
         std::string command = "dpkg-deb -x \"" + deb_path + "\" \"" + dest_dir + "\"";
