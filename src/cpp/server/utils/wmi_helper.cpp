@@ -155,6 +155,19 @@ std::string wstring_to_string(const std::wstring& wstr) {
     return strTo;
 }
 
+std::string acp_to_utf8(const std::string& acp_str) {
+    if (acp_str.empty()) return std::string();
+
+    // ACP (system locale code page) -> Wide string
+    int wide_size = MultiByteToWideChar(CP_ACP, 0, acp_str.c_str(), (int)acp_str.size(), NULL, 0);
+    if (wide_size == 0) return acp_str;
+    std::wstring wstr(wide_size, 0);
+    MultiByteToWideChar(CP_ACP, 0, acp_str.c_str(), (int)acp_str.size(), &wstr[0], wide_size);
+
+    // Wide string -> UTF-8
+    return wstring_to_string(wstr);
+}
+
 std::string get_property_string(IWbemClassObject* pObj, const std::wstring& prop_name) {
     VARIANT vtProp;
     VariantInit(&vtProp);

@@ -1,0 +1,61 @@
+name: Publish Containers
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Nightly at 2 AM UTC
+  workflow_dispatch:
+
+jobs:
+  build-container:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - ubuntu_version: "24.04"
+            ubuntu_ppa: "ppa:lemonade-team/bleeding-edge"
+          - ubuntu_version: "25.10"
+            ubuntu_ppa: "ppa:lemonade-team/bleeding-edge"
+          - ubuntu_version: "26.04"
+            ubuntu_ppa: ""
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/lemonade-sdk/lemonade/build-environment
+          tags: |
+            type=raw,value=ubuntu${{ matrix.ubuntu_version }}
+            type=raw,value=latest,enable=${{ matrix.ubuntu_version == '26.04' }}
+            type=raw,value=nightly,enable=${{ matrix.ubuntu_version == '26.04' }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: .ubuntu/Dockerfile
+          build-args: |
+            BASE_IMAGE=ubuntu:${{ matrix.ubuntu_version }}
+            UBUNTU_PPA=${{ matrix.ubuntu_ppa }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

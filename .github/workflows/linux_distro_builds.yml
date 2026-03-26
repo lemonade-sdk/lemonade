@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-linux:
     name: Build on ${{ matrix.distro }}
@@ -60,15 +64,15 @@ jobs:
         run: |
           set -e
 
-          echo "Building lemonade-router and lemonade-server on ${{ matrix.distro }}..."
+          echo "Building lemond and lemonade-server on ${{ matrix.distro }}..."
 
           # Build
           echo "Building binaries..."
           cmake --build --preset default
 
           # Verify binaries exist
-          if [ ! -f "build/lemonade-router" ]; then
-              echo "ERROR: lemonade-router not found!"
+          if [ ! -f "build/lemond" ]; then
+              echo "ERROR: lemond not found!"
               echo "Build directory contents:"
               ls -lh build/
               exit 1
@@ -82,10 +86,10 @@ jobs:
           fi
 
           echo "Binaries found successfully"
-          ls -lh build/lemonade-router build/lemonade-server
+          ls -lh build/lemond build/lemonade-server
 
           echo "Verifying binary executability..."
-          ./build/lemonade-router --version
+          ./build/lemond --version
           ./build/lemonade-server --version
 
           echo "${{ matrix.distro }} build successful!"
@@ -95,8 +99,8 @@ jobs:
           echo "Checking library dependencies..."
           cd build
 
-          echo "=== lemonade-router dependencies ==="
-          ldd lemonade-router
+          echo "=== lemond dependencies ==="
+          ldd lemond
 
           echo ""
           echo "=== lemonade-server dependencies ==="
@@ -120,6 +124,25 @@ jobs:
           pip install -r test/requirements.txt
 
           echo "Python environment setup complete!"
+
+      - name: Start server
+        env:
+          LEMONADE_CI_MODE: "True"
+        run: |
+          echo "Starting lemond in background..."
+          ./build/lemond --port 8000 --log-level debug > /tmp/lemonade-server.log 2>&1 &
+
+          echo "Waiting for server to be ready..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
+              echo "Server is running and healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "ERROR: Server did not start"
+          cat /tmp/lemonade-server.log 2>/dev/null || true
+          exit 1
 
       - name: Run CLI tests
         env:
@@ -150,3 +173,9 @@ jobs:
           python test/server_endpoints.py --server-binary "$SERVER_BINARY"
 
           echo "Endpoint tests PASSED!"
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-distro-${{ matrix.distro }}

@@ -7,6 +7,7 @@
 #define NOMINMAX
 #include <winsock2.h>
 #include <windows.h>
+#include <processenv.h>
 #pragma comment(lib, "ws2_32.lib")
 #endif
 
@@ -16,6 +17,7 @@
 #include <thread>
 #include <chrono>
 #include <string>
+#include <cstring>
 #include <algorithm>
 #include <cctype>
 #include <lemon/utils/aixlog.hpp>
@@ -34,6 +36,12 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <errno.h>
+#ifdef __linux__
+#include <sys/prctl.h>  // PR_SET_PDEATHSIG — kill child when parent dies
+#endif
+#ifdef HAVE_LIBCAP
+#include <sys/capability.h>
+#endif
 #endif
 
 namespace lemon {
@@ -66,6 +74,44 @@ static void log_process_line(const std::string& line) {
         LOG(INFO, "Process") << line << std::endl;
     }
 }
+
+#ifdef HAVE_LIBCAP
+// Helper function to preserve capabilities across exec()
+// This allows child processes to inherit CAP_SYS_RESOURCE and other capabilities
+// from the parent process when available
+static void preserve_capabilities_for_exec() {
+    // Get the current process capabilities
+    cap_t caps = cap_get_proc();
+    if (!caps) {
+        // If we can't get capabilities, just proceed without them
+        // This is not a fatal error - the process will run with default permissions
+        return;
+    }
+
+    // Check if we have any effective capabilities worth preserving
+    cap_flag_value_t has_sys_resource = CAP_CLEAR;
+    cap_get_flag(caps, CAP_SYS_RESOURCE, CAP_EFFECTIVE, &has_sys_resource);
+
+    // Only proceed if we actually have CAP_SYS_RESOURCE or other useful caps
+    if (has_sys_resource == CAP_SET) {
+        // Set the capability as inheritable so it survives exec()
+        cap_value_t cap_list[] = {CAP_SYS_RESOURCE};
+
+        // Mark CAP_SYS_RESOURCE as inheritable
+        if (cap_set_flag(caps, CAP_INHERITABLE, 1, cap_list, CAP_SET) == 0) {
+            // Apply the modified capability set
+            if (cap_set_proc(caps) == 0) {
+                // Enable ambient capabilities (requires Linux 4.3+)
+                // This ensures the capability is both inherited and effective in the child
+                // Ignore errors as ambient caps might not be supported on older kernels
+                prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_SYS_RESOURCE, 0, 0);
+            }
+        }
+    }
+
+    cap_free(caps);
+}
+#endif
 
 #ifdef _WIN32
 // Helper function to escape arguments for Windows command line
@@ -124,6 +170,63 @@ static DWORD WINAPI output_filter_thread(LPVOID param) {
 
     CloseHandle(pipe);
     return 0;
+}
+
+static std::string lowercase_ascii(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+static std::vector<char> build_windows_environment_block(
+    const std::vector<std::pair<std::string, std::string>>& env_vars) {
+    std::vector<std::string> merged_entries;
+
+    LPWCH environment = GetEnvironmentStringsW();
+    if (environment) {
+        for (const wchar_t* entry = environment; *entry != L'\0';
+             entry += std::wcslen(entry) + 1) {
+            int size_needed = WideCharToMultiByte(CP_UTF8, 0, entry, -1, nullptr, 0, nullptr, nullptr);
+            if (size_needed > 0) {
+                std::string narrow(size_needed - 1, '\0');
+                WideCharToMultiByte(CP_UTF8, 0, entry, -1, &narrow[0], size_needed, nullptr, nullptr);
+                merged_entries.emplace_back(std::move(narrow));
+            }
+        }
+        FreeEnvironmentStringsW(environment);
+    }
+
+    for (const auto& env : env_vars) {
+        const std::string key_lower = lowercase_ascii(env.first);
+        const std::string new_entry = env.first + "=" + env.second;
+
+        bool replaced = false;
+        for (auto& existing : merged_entries) {
+            size_t equals = existing.find('=');
+            if (equals == std::string::npos) {
+                continue;
+            }
+
+            std::string existing_key = lowercase_ascii(existing.substr(0, equals));
+            if (existing_key == key_lower) {
+                existing = new_entry;
+                replaced = true;
+                break;
+            }
+        }
+
+        if (!replaced) {
+            merged_entries.push_back(new_entry);
+        }
+    }
+
+    std::vector<char> block;
+    for (const auto& entry : merged_entries) {
+        block.insert(block.end(), entry.begin(), entry.end());
+        block.push_back('\0');
+    }
+    block.push_back('\0');
+    return block;
 }
 #endif
 
@@ -205,6 +308,11 @@ ProcessHandle ProcessManager::start_process(
         }
     }
 
+    std::vector<char> environment_block;
+    if (!env_vars.empty()) {
+        environment_block = build_windows_environment_block(env_vars);
+    }
+
     BOOL success = CreateProcessA(
         nullptr,
         const_cast<char*>(cmdline.c_str()),
@@ -212,7 +320,7 @@ ProcessHandle ProcessManager::start_process(
         nullptr,
         TRUE,  // Inherit handles
         (inherit_output && !filter_health_logs) ? 0 : CREATE_NO_WINDOW,
-        nullptr,
+        environment_block.empty() ? nullptr : environment_block.data(),
         working_dir.empty() ? nullptr : working_dir.c_str(),
         &si,
         &pi
@@ -297,6 +405,14 @@ ProcessHandle ProcessManager::start_process(
 
     if (pid == 0) {
         // Child process
+#ifdef __linux__
+        // Ensure this child is killed when the parent process dies.
+        // This is the Linux equivalent of the Windows Job Object and
+        // prevents orphaned backend processes (llama-server, etc.)
+        // when lemond is killed or crashes.
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+#endif
+
         if (!working_dir.empty()) {
             chdir(working_dir.c_str());
         }
@@ -323,6 +439,12 @@ ProcessHandle ProcessManager::start_process(
                 close(dev_null);
             }
         }
+
+#ifdef HAVE_LIBCAP
+        // Preserve capabilities (e.g., CAP_SYS_RESOURCE) across exec
+        // This allows the child process to inherit capabilities from the parent
+        preserve_capabilities_for_exec();
+#endif
 
         // Prepare argv
         std::vector<char*> argv_ptrs;
@@ -749,6 +871,9 @@ int ProcessManager::run_process_with_output(
 
     if (pid == 0) {
         // Child process
+#ifdef __linux__
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+#endif
         close(stdout_pipe[0]);  // Close read end
 
         // Redirect stdout and stderr to pipe
@@ -759,6 +884,11 @@ int ProcessManager::run_process_with_output(
         if (!working_dir.empty()) {
             chdir(working_dir.c_str());
         }
+
+#ifdef HAVE_LIBCAP
+        // Preserve capabilities (e.g., CAP_SYS_RESOURCE) across exec
+        preserve_capabilities_for_exec();
+#endif
 
         // Prepare argv
         std::vector<char*> argv_ptrs;
@@ -950,6 +1080,75 @@ int ProcessManager::find_free_port(int start_port) {
 #endif
 
     return -1;  // No free port found
+}
+
+int ProcessManager::run_command(const std::string& command, std::string& output, int timeout_seconds) {
+    output.clear();
+
+#ifdef _WIN32
+    // Windows: use CreateProcess + pipe to avoid console window flash.
+    // This is a drop-in replacement for _popen() that works in SUBSYSTEM:WINDOWS apps.
+    HANDLE stdout_read = nullptr;
+    HANDLE stdout_write = nullptr;
+
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = nullptr;
+
+    if (!CreatePipe(&stdout_read, &stdout_write, &sa, 0)) {
+        return -1;
+    }
+    SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = INVALID_HANDLE_VALUE;
+    si.hStdOutput = stdout_write;
+    si.hStdError = stdout_write;
+
+    PROCESS_INFORMATION pi = {};
+    // Wrap in cmd /c so shell features (redirection, pipes) work
+    std::string cmdline = "cmd /c " + command;
+    BOOL success = CreateProcessA(
+        nullptr, const_cast<char*>(cmdline.c_str()),
+        nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
+        nullptr, nullptr, &si, &pi);
+
+    CloseHandle(stdout_write);
+
+    if (!success) {
+        CloseHandle(stdout_read);
+        return -1;
+    }
+
+    // Read all output
+    char buf[4096];
+    DWORD bytes_read;
+    while (ReadFile(stdout_read, buf, sizeof(buf), &bytes_read, nullptr) && bytes_read > 0) {
+        output.append(buf, bytes_read);
+    }
+    CloseHandle(stdout_read);
+
+    WaitForSingleObject(pi.hProcess, timeout_seconds > 0 ? timeout_seconds * 1000 : INFINITE);
+    DWORD exit_code = 1;
+    GetExitCodeProcess(pi.hProcess, &exit_code);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    return static_cast<int>(exit_code);
+#else
+    // Unix: popen is fine — no console window issue
+    FILE* pipe = popen(command.c_str(), "r");
+    if (!pipe) return -1;
+
+    char buf[4096];
+    while (fgets(buf, sizeof(buf), pipe)) {
+        output += buf;
+    }
+    return pclose(pipe);
+#endif
 }
 
 } // namespace utils

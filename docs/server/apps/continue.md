@@ -29,21 +29,17 @@ For best results, a code-tuned model with at least 20B parameters is required. T
 ### Configuring Lemonade Server with Continue
 
 1. **Install Models Locally**
-    - Use the Model Manager or [lemonade-server CLI](https://lemonade-server.ai/docs/server/lemonade-server-cli/) to download your desired model, for example:
+    - Use the Model Manager or [`lemonade` CLI](https://lemonade-server.ai/docs/lemonade-cli/) to download your desired model, for example:
 
       ```bash
-      lemonade-server pull <model-name>
+      lemonade pull <model-name>
       ```
       _Example downloading Qwen3-Coder:_
       ```bash
-      lemonade-server pull Qwen3-Coder-30B-A3B-Instruct-GGUF
+      lemonade pull Qwen3-Coder-30B-A3B-Instruct-GGUF
       ```
 
-2. **Start Lemonade Server**: Ensure Lemonade Server is running at `http://localhost:8000`. You can start it from the Lemon tray icon or by running:
-
-    ```bash
-    lemonade-server serve
-    ```
+2. **Start Lemonade Server**: Ensure Lemonade Server is running at `http://localhost:8000`. The server starts automatically after installation. You can verify with `lemonade status`.
 
 3. **Verify Model is Loaded**: Use the Model Manager or tray icon to confirm your model is loaded and ready. Continue will automatically detect Lemonade Server running on localhost.
 
@@ -102,12 +98,13 @@ In this example, we'll use Plan mode to have the LLM analyze your code and provi
 
 **To use Plan mode with large files, increase Lemonade Server's context size:**
 
-1. **Stop Lemonade Server**: Use the tray icon to "Quit Lemonade" or close any running Lemonade Server processes.
-2. **Restart with higher context size**: Open a terminal and run:
+1. **Load the model with a higher context size**: Open a terminal and run:
 
     ```bash
-    lemonade-server serve --ctx-size 8192
+    lemonade load <model-name> --ctx-size 8192
     ```
+
+    For persistent changes, see [Server Configuration](../configuration.md#environment-variables).
 
 3. **Use Plan mode in VS Code**: Select the "Plan" option in Continue, enter your prompt and press Alt+Enter to include the currently active file as context.
 
@@ -128,11 +125,11 @@ Here, we can see that the agent edited the code in `main.py` to improve the game
 ### Setup & Configuration
 
 - **Install Lemonade Server**: Follow the [setup guide](https://lemonade-server.ai/docs/server/) to install and configure Lemonade Server before you begin development.
-- **Download Models Locally**: Use `lemonade-server pull <model-name>` to install models you want to use. Refer to the [supported models list](https://lemonade-server.ai/models.html) for available options.
+- **Download Models Locally**: Use `lemonade pull <model-name>` to install models you want to use. Refer to the [supported models list](https://lemonade-server.ai/models.html) for available options.
 - **Pre-load Models**: Start Lemonade Server and load your models before coding sessions. This can easily be done using the Lemon tray icon and `Load`.
-- **Increase Context Size for Agent Mode**: For large code changes with GGUF models, start Lemonade Server with a higher context size:
+- **Increase Context Size for Agent Mode**: For large code changes with GGUF models, load the model with a higher context size:
     ```bash
-    lemonade-server serve --ctx-size 8192
+    lemonade load <model-name> --ctx-size 8192
     ```
 - **Customize Scoping**: See [Continue Customization](https://docs.continue.dev/customization/overview) for tips on effective model configuration and scoping.
 
@@ -153,7 +150,7 @@ Here, we can see that the agent edited the code in `main.py` to improve the game
   - Make sure Lemonade Server is running and the model is loaded locally.
   - Double-check the [supported models list](https://lemonade-server.ai/models.html) and install any missing models with:
       ```bash
-      lemonade-server pull <model-name>
+      lemonade pull <model-name>
       ```
 
 **Slow response times**

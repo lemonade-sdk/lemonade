@@ -55,24 +55,6 @@ runs:
 
         echo "Binaries at: $BIN_PATH"
 
-    - name: Stop services before verification
-      shell: bash
-      run: |
-        echo "Stopping any services started by postflight script..."
-        sudo launchctl bootout system/com.lemonade.server 2>/dev/null || true
-        sudo launchctl bootout system/com.lemonade.tray 2>/dev/null || true
-        sleep 2
-
-        # Clean up PID and lock files left behind by killed processes
-        echo "Cleaning up stale PID and lock files..."
-        sudo rm -f /tmp/lemonade-router.pid
-        sudo rm -f /tmp/lemonade_Router.lock
-        sudo rm -f /tmp/lemonade_Server.lock
-        sudo rm -f /tmp/lemonade_Tray.lock
-        sudo rm -f /tmp/lemonade*.pid /tmp/lemonade*.lock
-
-        echo "Services stopped and cleaned up."
-
     - name: Verify installation
       shell: bash
       run: |
@@ -89,11 +71,45 @@ runs:
             exit 1
         fi
 
-        if [ -x "$BIN_PATH/lemonade-router" ]; then
-            echo "Found: lemonade-router"
-            "$BIN_PATH/lemonade-router" --version
+        if [ -x "$BIN_PATH/lemond" ]; then
+            echo "Found: lemond"
+            "$BIN_PATH/lemond" --version
         else
-            echo "WARNING: lemonade-router not found at $BIN_PATH"
+            echo "WARNING: lemond not found at $BIN_PATH"
         fi
 
         echo "Installation verification complete!"
+
+    - name: Wait for server to be ready
+      shell: bash
+      run: |
+        BIN_PATH="${{ steps.install.outputs.bin-path }}"
+        LOG_FILE="/tmp/lemonade-server.log"
+
+        # The .pkg postflight script starts the server via launchd.
+        # Give it a few seconds to come up before checking.
+        echo "Waiting for server to be ready..."
+        for i in $(seq 1 15); do
+          if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
+            echo "Server is running and healthy (started by launchd)"
+            exit 0
+          fi
+          sleep 2
+        done
+
+        # Launchd may not work reliably in CI (no GUI session, restricted
+        # sandbox). Fall back to starting the server manually.
+        echo "Server not reachable after 30s — starting manually..."
+        "$BIN_PATH/lemonade-server" serve --no-tray > "$LOG_FILE" 2>&1 &
+
+        for i in $(seq 1 15); do
+          if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
+            echo "Server is running and healthy (started manually)"
+            exit 0
+          fi
+          echo "Waiting for server... ($i/15)"
+          sleep 2
+        done
+        echo "ERROR: Server did not start within 60 seconds"
+        cat "$LOG_FILE" 2>/dev/null || true
+        exit 1

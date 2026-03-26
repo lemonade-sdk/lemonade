@@ -20,6 +20,8 @@ struct DownloadProgress {
     int total_files = 0;        // Total number of files to download
     size_t bytes_downloaded = 0; // Bytes downloaded for current file
     size_t bytes_total = 0;     // Total bytes for current file
+    size_t total_download_size = 0; // Total bytes across ALL files in this download
+    size_t bytes_previously_downloaded = 0; // Bytes already on disk (resume offset or skipped file)
     int percent = 0;            // Overall percentage (0-100)
     bool complete = false;      // True when all downloads finished
     std::string error;          // Error message if failed
@@ -69,6 +71,9 @@ struct ModelInfo {
 class ModelManager {
 public:
     ModelManager();
+
+    // Invalidate the models cache (e.g. after backend install/uninstall)
+    void invalidate_models_cache();
 
     // Get all supported models from server_models.json
     std::map<std::string, ModelInfo> get_supported_models();
@@ -123,8 +128,8 @@ public:
     // Get list of installed FLM models (for caching)
     std::vector<std::string> get_flm_installed_models();
 
-    // Refresh FLM model download status from 'flm list' (call after FLM install/upgrade)
-    void refresh_flm_download_status();
+    // Get list of all available FLM models from 'flm list --json'
+    std::vector<ModelInfo> get_flm_available_models();
 
     // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;

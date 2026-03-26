@@ -9,7 +9,6 @@ Usage:
     python server_whisper.py --wrapped-server whispercpp --backend npu
     python server_whisper.py --wrapped-server whispercpp --backend vulkan
     python server_whisper.py --wrapped-server flm
-    python server_whisper.py --server-per-test
     python server_whisper.py --server-binary /path/to/lemonade-server
 
     # Backward compatible (defaults to whispercpp):
@@ -73,7 +72,7 @@ class WhisperTests(ServerTestBase):
 
     @classmethod
     def setUpClass(cls):
-        """Download test audio file once for all tests."""
+        """Verify server and download test audio file once for all tests."""
         super().setUpClass()
 
         # Download test audio file to temp directory
@@ -91,13 +90,13 @@ class WhisperTests(ServerTestBase):
     @classmethod
     def tearDownClass(cls):
         """Cleanup test audio file."""
-        super().tearDownClass()
         if cls._test_audio_path and os.path.exists(cls._test_audio_path):
             try:
                 os.remove(cls._test_audio_path)
                 print(f"[INFO] Cleaned up test audio file")
             except Exception:
                 pass  # Ignore cleanup errors
+        super().tearDownClass()
 
     def test_001_transcription_basic(self):
         """Test basic audio transcription with Whisper."""

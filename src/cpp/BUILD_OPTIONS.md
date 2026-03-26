@@ -1,5 +1,32 @@
 # Lemonade Build Options
 
+## Linux Tray Configuration
+
+### Build Options
+
+#### `REQUIRE_LINUX_TRAY` (Default: **OFF** / auto-detect)
+Enable system tray support on Linux via AppIndicator3 (GTK3 not required when using the GLib variant).
+
+- When **OFF** (default): Tray support is auto-detected at configure time. If AppIndicator3 libraries are found, `lemonade-tray` is built as a separate executable. `lemonade-server` on Linux is always headless regardless. If dependencies are missing, only `lemonade-server` is built (headless mode).
+- When **ON**: Tray support is required — the build will fail if the dependencies are not found.
+
+Optional runtime dependencies (for tray support):
+- One of (preferred first):
+  - `ayatana-appindicator-glib-devel` (recommended, GTK-free — only GLib/GIO required)
+  - `ayatana-appindicator3-devel` + `gtk3-devel` (Ayatana GTK3 variant)
+  - `libappindicator-gtk3-devel` + `gtk3-devel` (upstream libappindicator3)
+- `libnotify-devel` (optional, enables desktop notifications)
+
+```bash
+# Auto-detect (default): tray enabled if deps are found
+cmake ../src/cpp
+
+# Explicitly require tray support (fail if deps missing)
+cmake -DREQUIRE_LINUX_TRAY=ON ../src/cpp
+```
+
+---
+
 ## React App Build Configuration
 
 The CMake build system allows you to control whether the React web app and/or Electron desktop app are built and included in the server.
@@ -26,7 +53,7 @@ Build and include the full Electron desktop application.
 ```bash
 cd build
 cmake ../src/cpp
-ninja lemonade-router
+ninja lemond
 ```
 
 Result:
@@ -38,7 +65,7 @@ Result:
 ```bash
 cd build
 cmake -DBUILD_WEB_APP=OFF ../src/cpp
-ninja lemonade-router
+ninja lemond
 ```
 
 Result:
@@ -51,7 +78,7 @@ Result:
 ```bash
 cd build
 cmake -DBUILD_WEB_APP=ON -DBUILD_ELECTRON_APP=ON ../src/cpp
-ninja lemonade-router
+ninja lemond
 ninja electron-app  # Build desktop app separately
 ```
 

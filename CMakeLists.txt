@@ -1,11 +1,11 @@
-cmake_minimum_required(VERSION 3.10...3.28)
+cmake_minimum_required(VERSION 3.12...3.28)
 
 # Use static runtime library on Windows to avoid DLL dependencies
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 9.4.2)
+project(lemon_cpp VERSION 10.0.1)
 
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -26,6 +26,13 @@ endif()
 
 # Include GNUInstallDirs for standard installation directories
 include(GNUInstallDirs)
+     # Install man pages
+     install(FILES
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-server.1
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemond.1
+          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade.1
+          DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
+     )
 # ============================================================
 # Electron source paths (used by both runtime and installers)
 # ============================================================
@@ -33,14 +40,13 @@ get_filename_component(ELECTRON_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/app" ABS
 set(ELECTRON_APP_BUILD_DIR "${CMAKE_BINARY_DIR}/app")
 if(WIN32)
     set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/win-unpacked")
-    set(ELECTRON_EXE_NAME "Lemonade.exe")
+    set(ELECTRON_EXE_NAME "lemonade-app.exe")
 elseif(APPLE)
     set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/mac-arm64")
-    set(ELECTRON_EXE_NAME "Lemonade.app")
+    set(ELECTRON_EXE_NAME "lemonade-app.app")
 else()
     set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/linux-unpacked")
-    # Electron builder uses lowercase product name on Linux
-    set(ELECTRON_EXE_NAME "lemonade")
+    set(ELECTRON_EXE_NAME "lemonade-app")
 endif()
 
 # ============================================================
@@ -48,6 +54,10 @@ endif()
 # ============================================================
 get_filename_component(WEB_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/web-app" ABSOLUTE)
 set(WEB_APP_BUILD_DIR "${CMAKE_BINARY_DIR}/resources/web-app")
+
+# When ON, use system-provided Node.js modules (for example, webpack and distro-packaged JS deps)
+# instead of installing project-local dependencies with npm for web-app builds.
+option(USE_SYSTEM_NODEJS_MODULES "Use system-installed Node.js modules for building the Web app" OFF)
 
 # C++ Standard
 set(CMAKE_CXX_STANDARD 17)
@@ -58,8 +68,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(MIN_NLOHMANN_JSON_VERSION "3.11.3")
 set(MIN_CLI11_VERSION "2.4.2")
 set(MIN_CURL_VERSION "8.5.0")
-set(MIN_ZSTD_VERSION "1.5.7")
+set(MIN_ZSTD_VERSION "1.5.5")
+set(DOWNLOAD_ZSTD_VERSION "1.5.7")
 set(MIN_HTTPLIB_VERSION "0.26.0")
+set(MIN_LWS_VERSION "4.3.3")
 
 find_package(PkgConfig QUIET)
 
@@ -69,6 +81,7 @@ if(PkgConfig_FOUND)
     pkg_check_modules(CURL QUIET libcurl>=${MIN_CURL_VERSION})
     pkg_check_modules(ZSTD QUIET libzstd>=${MIN_ZSTD_VERSION})
     pkg_check_modules(HTTPLIB QUIET cpp-httplib>=${MIN_HTTPLIB_VERSION})
+    pkg_check_modules(LWS QUIET libwebsockets>=${MIN_LWS_VERSION})
 endif()
 find_path(CLI11_INCLUDE_DIRS "CLI/CLI.hpp")
 find_path(HTTPLIB_INCLUDE_DIRS "httplib.h")
@@ -92,12 +105,14 @@ set(USE_SYSTEM_CURL ${CURL_FOUND})
 set(USE_SYSTEM_ZSTD ${ZSTD_FOUND})
 set(USE_SYSTEM_CLI11 ${CLI11_INCLUDE_DIRS})
 set(USE_SYSTEM_HTTPLIB ${HTTPLIB_FOUND})
+set(USE_SYSTEM_LWS ${LWS_FOUND})
 
 # On macOS, always statically link dependencies to avoid Homebrew dylib issues
 if(APPLE)
     set(USE_SYSTEM_ZSTD OFF)
     set(USE_SYSTEM_CURL OFF)
     set(USE_SYSTEM_HTTPLIB OFF)
+    set(USE_SYSTEM_LWS OFF)
 endif()
 
 if(USE_SYSTEM_JSON)
@@ -138,6 +153,16 @@ else()
     message(STATUS "System cpp-httplib not found or version < ${MIN_HTTPLIB_VERSION}, will use FetchContent")
 endif()
 
+if(USE_SYSTEM_LWS)
+    if(LWS_VERSION)
+        message(STATUS "Using system libwebsockets (version ${LWS_VERSION}, >= ${MIN_LWS_VERSION})")
+    else()
+        message(STATUS "Using system libwebsockets (>= ${MIN_LWS_VERSION})")
+    endif()
+else()
+    message(STATUS "System libwebsockets not found or version < ${MIN_LWS_VERSION}, will use FetchContent")
+endif()
+
 # ============================================================
 # Common dependency configurations
 # ============================================================
@@ -148,7 +173,7 @@ set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "")  # Build static libraries
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # Fetch missing dependencies
-if(NOT USE_SYSTEM_JSON OR NOT USE_SYSTEM_CURL OR NOT USE_SYSTEM_ZSTD OR NOT USE_SYSTEM_CLI11 OR NOT USE_SYSTEM_HTTPLIB)
+if(NOT USE_SYSTEM_JSON OR NOT USE_SYSTEM_CURL OR NOT USE_SYSTEM_ZSTD OR NOT USE_SYSTEM_CLI11 OR NOT USE_SYSTEM_HTTPLIB OR NOT USE_SYSTEM_LWS)
     include(FetchContent)
 endif()
 
@@ -212,7 +237,7 @@ endif()
 if(NOT USE_SYSTEM_ZSTD)
     FetchContent_Declare(zstd
         GIT_REPOSITORY https://github.com/facebook/zstd.git
-        GIT_TAG v${MIN_ZSTD_VERSION}
+        GIT_TAG v${DOWNLOAD_ZSTD_VERSION}
         SOURCE_SUBDIR build/cmake
         EXCLUDE_FROM_ALL
     )
@@ -282,23 +307,43 @@ if(NOT USE_SYSTEM_HTTPLIB)
     endif()
 endif()
 
-# === IXWebSocket (for WebSocket support: Windows and Linux) ===
-if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(MIN_IXWEBSOCKET_VERSION "11.4.4")
-    FetchContent_Declare(ixwebsocket
-        GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
-        GIT_TAG v${MIN_IXWEBSOCKET_VERSION}
+# === libwebsockets (for WebSocket support) ===
+if(NOT USE_SYSTEM_LWS)
+    # Workaround: libwebsockets v4.3.3 uses cmake_minimum_required(VERSION 2.8.12)
+    # which CMake 4.x rejects. Allow older policy versions for subdirectory builds.
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.27")
+        cmake_policy(SET CMP0148 OLD)
+    endif()
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+    FetchContent_Declare(libwebsockets
+        GIT_REPOSITORY https://github.com/warmcat/libwebsockets.git
+        GIT_TAG v${MIN_LWS_VERSION}
     )
-    # Disable TLS and ZLIB for simpler setup (localhost only, no compression needed)
-    set(USE_TLS OFF CACHE INTERNAL "")
-    set(USE_OPEN_SSL OFF CACHE INTERNAL "")
-    set(USE_MBED_TLS OFF CACHE INTERNAL "")
-    set(USE_ZLIB OFF CACHE INTERNAL "")
-    set(IXWEBSOCKET_INSTALL OFF CACHE INTERNAL "")
-    FetchContent_MakeAvailable(ixwebsocket)
-    message(STATUS "IXWebSocket will be fetched (v${MIN_IXWEBSOCKET_VERSION})")
+    # Build as static library, disable features we don't need
+    set(LWS_WITH_SHARED OFF CACHE BOOL "" FORCE)
+    set(LWS_WITHOUT_TESTAPPS ON CACHE BOOL "" FORCE)
+    set(LWS_WITHOUT_TEST_SERVER ON CACHE BOOL "" FORCE)
+    set(LWS_WITHOUT_TEST_PING ON CACHE BOOL "" FORCE)
+    set(LWS_WITHOUT_TEST_CLIENT ON CACHE BOOL "" FORCE)
+    set(LWS_WITH_MINIMAL_EXAMPLES OFF CACHE BOOL "" FORCE)
+    # Disable TLS for now (can be enabled later for WSS/network access)
+    set(LWS_WITH_SSL OFF CACHE BOOL "" FORCE)
+    set(LWS_WITH_ZLIB OFF CACHE BOOL "" FORCE)
+    set(LWS_WITH_ZIP_FOPS OFF CACHE BOOL "" FORCE)
+    # Disable -Werror for libwebsockets — newer GCC/Clang triggers warnings in upstream code
+    # First populate to get the source
+    FetchContent_Populate(libwebsockets)
+    # Patch the CMakeLists.txt files to remove -Werror
+    file(READ "${libwebsockets_SOURCE_DIR}/CMakeLists.txt" LWS_CMAKE_MAIN)
+    string(REPLACE "-Werror" "" LWS_CMAKE_MAIN "${LWS_CMAKE_MAIN}")
+    file(WRITE "${libwebsockets_SOURCE_DIR}/CMakeLists.txt" "${LWS_CMAKE_MAIN}")
+    file(READ "${libwebsockets_SOURCE_DIR}/lib/CMakeLists.txt" LWS_CMAKE_LIB)
+    string(REPLACE "-Werror" "" LWS_CMAKE_LIB "${LWS_CMAKE_LIB}")
+    file(WRITE "${libwebsockets_SOURCE_DIR}/lib/CMakeLists.txt" "${LWS_CMAKE_LIB}")
+    # Now add the subdirectory
+    add_subdirectory(${libwebsockets_SOURCE_DIR} ${libwebsockets_BINARY_DIR})
+    message(STATUS "libwebsockets will be fetched (v${MIN_LWS_VERSION})")
 endif()
-
 
 # Use brotli for compression on macOS
 if(APPLE)
@@ -309,10 +354,10 @@ endif()
 
 
 # ============================================================
-# Application: lemonade-router
+# Application: lemond
 # ============================================================
 
-set(EXECUTABLE_NAME "lemonade-router")
+set(EXECUTABLE_NAME "lemond")
 
 
 # ============================================================
@@ -399,132 +444,79 @@ if(WIN32)
         set(WIX_WEBAPP_FRAGMENT "${CMAKE_CURRENT_BINARY_DIR}/installer/WebAppFragment.wxs")
         file(TO_NATIVE_PATH "${WIX_WEBAPP_FRAGMENT}" WIX_WEBAPP_FRAGMENT_NATIVE)
 
-        # Minimal installer (server only, optionally with web-app if built)
-        if(Python3_FOUND)
-            add_custom_target(wix_installer_minimal
-                COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (server only)..."
-                # Generate web-app fragment if web-app directory exists
-                COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
-                    --source "${WEB_APP_BUILD_DIR}"
-                    --output "${WIX_WEBAPP_FRAGMENT}"
-                    --component-group "WebAppComponents"
-                    --root-id "WebAppDir"
-                    --path-variable "WebAppSourceDir"
-                    || ${CMAKE_COMMAND} -E echo "Web-app fragment generation skipped (web-app not built)"
-                COMMAND ${WIX_EXECUTABLE} build
-                    -arch x64
-                    -ext WixToolset.UI.wixext
-                    -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
-                    -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
-                    -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
-                    -d IncludeElectron=0
-                    -d IncludeWebApp=1
-                    -d WebAppSourceDir="${WIX_WEBAPP_SOURCE_NATIVE}"
-                    -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
-                    "${WIX_PRODUCT_WXS_NATIVE}"
-                    "${WIX_WEBAPP_FRAGMENT_NATIVE}"
-                    || ${WIX_EXECUTABLE} build
-                        -arch x64
-                        -ext WixToolset.UI.wixext
-                        -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
-                        -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
-                        -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
-                        -d IncludeElectron=0
-                        -d IncludeWebApp=0
-                        -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
-                        "${WIX_PRODUCT_WXS_NATIVE}"
-                COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
-                DEPENDS ${EXECUTABLE_NAME}
-                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                COMMENT "Building WiX MSI installer (server only)"
-            )
-        else()
-            add_custom_target(wix_installer_minimal
-                COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (server only, no web-app)..."
-                COMMAND ${WIX_EXECUTABLE} build
-                    -arch x64
-                    -ext WixToolset.UI.wixext
-                    -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
-                    -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
-                    -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
-                    -d IncludeElectron=0
-                    -d IncludeWebApp=0
-                    -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
-                    "${WIX_PRODUCT_WXS_NATIVE}"
-                COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
-                DEPENDS ${EXECUTABLE_NAME}
-                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                COMMENT "Building WiX MSI installer (server only)"
-            )
+        # Both installers require Python3 for fragment generation and always include the web app
+        if(NOT Python3_FOUND)
+            message(FATAL_ERROR "Python 3 is required for WiX installer fragment generation. Install Python 3 and ensure it is in PATH.")
         endif()
+
+        # Minimal installer (server + web-app)
+        add_custom_target(wix_installer_minimal
+            COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (server + web-app)..."
+            # Generate web-app fragment
+            COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
+                --source "${WEB_APP_BUILD_DIR}"
+                --output "${WIX_WEBAPP_FRAGMENT}"
+                --component-group "WebAppComponents"
+                --root-id "WebAppDir"
+                --path-variable "WebAppSourceDir"
+            COMMAND ${WIX_EXECUTABLE} build
+                -arch x64
+                -ext WixToolset.UI.wixext
+                -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
+                -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
+                -d IncludeElectron=0
+                -d IncludeWebApp=1
+                -d WebAppSourceDir="${WIX_WEBAPP_SOURCE_NATIVE}"
+                -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
+                "${WIX_PRODUCT_WXS_NATIVE}"
+                "${WIX_WEBAPP_FRAGMENT_NATIVE}"
+            COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
+            DEPENDS ${EXECUTABLE_NAME}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            COMMENT "Building WiX MSI installer (server + web-app)"
+        )
 
         set(WIX_INSTALLER_TARGETS wix_installer_minimal)
-        # Add web-app dependency to minimal installer if target exists
-        if(TARGET web-app)
-            add_dependencies(wix_installer_minimal web-app)
-        endif()
 
-        if(Python3_FOUND)
-            add_custom_target(wix_installer_full
-                COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (with Electron app)..."
-                # Generate web-app fragment
-                COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
-                    --source "${WEB_APP_BUILD_DIR}"
-                    --output "${WIX_WEBAPP_FRAGMENT}"
-                    --component-group "WebAppComponents"
-                    --root-id "WebAppDir"
-                    --path-variable "WebAppSourceDir"
-                    || ${CMAKE_COMMAND} -E echo "Warning: Web-app fragment generation failed"
-                # Generate Electron app fragment
-                COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
-                    --source "${ELECTRON_APP_UNPACKED_DIR}"
-                    --output "${WIX_ELECTRON_FRAGMENT}"
-                    --component-group "ElectronAppComponents"
-                    --root-id "ElectronAppDir"
-                    --path-variable "ElectronSourceDir"
-                COMMAND ${WIX_EXECUTABLE} build
-                    -arch x64
-                    -ext WixToolset.UI.wixext
-                    -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
-                    -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
-                    -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
-                    -d IncludeElectron=1
-                    -d IncludeWebApp=1
-                    -d ElectronSourceDir="${WIX_ELECTRON_SOURCE_NATIVE}"
-                    -d WebAppSourceDir="${WIX_WEBAPP_SOURCE_NATIVE}"
-                    -out "${WIX_FULL_OUTPUT_NATIVE}"
-                    "${WIX_PRODUCT_WXS_NATIVE}"
-                    "${WIX_ELECTRON_FRAGMENT_NATIVE}"
-                    "${WIX_WEBAPP_FRAGMENT_NATIVE}"
-                    || ${WIX_EXECUTABLE} build
-                        -arch x64
-                        -ext WixToolset.UI.wixext
-                        -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
-                        -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
-                        -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
-                        -d IncludeElectron=1
-                        -d IncludeWebApp=0
-                        -d ElectronSourceDir="${WIX_ELECTRON_SOURCE_NATIVE}"
-                        -out "${WIX_FULL_OUTPUT_NATIVE}"
-                        "${WIX_PRODUCT_WXS_NATIVE}"
-                        "${WIX_ELECTRON_FRAGMENT_NATIVE}"
-                COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade.msi"
-                DEPENDS ${EXECUTABLE_NAME}
-                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                COMMENT "Building WiX MSI installer (with Electron app)"
-            )
+        # Full installer (server + Electron app + web-app)
+        add_custom_target(wix_installer_full
+            COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (with Electron app)..."
+            # Generate web-app fragment
+            COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
+                --source "${WEB_APP_BUILD_DIR}"
+                --output "${WIX_WEBAPP_FRAGMENT}"
+                --component-group "WebAppComponents"
+                --root-id "WebAppDir"
+                --path-variable "WebAppSourceDir"
+            # Generate Electron app fragment
+            COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
+                --source "${ELECTRON_APP_UNPACKED_DIR}"
+                --output "${WIX_ELECTRON_FRAGMENT}"
+                --component-group "ElectronAppComponents"
+                --root-id "ElectronAppDir"
+                --path-variable "ElectronSourceDir"
+            COMMAND ${WIX_EXECUTABLE} build
+                -arch x64
+                -ext WixToolset.UI.wixext
+                -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                -d CppSourceDir="${WIX_CPP_SOURCE_DIR_NATIVE}"
+                -d BuildDir="${WIX_BUILD_DIR_NATIVE}"
+                -d IncludeElectron=1
+                -d IncludeWebApp=1
+                -d ElectronSourceDir="${WIX_ELECTRON_SOURCE_NATIVE}"
+                -d WebAppSourceDir="${WIX_WEBAPP_SOURCE_NATIVE}"
+                -out "${WIX_FULL_OUTPUT_NATIVE}"
+                "${WIX_PRODUCT_WXS_NATIVE}"
+                "${WIX_ELECTRON_FRAGMENT_NATIVE}"
+                "${WIX_WEBAPP_FRAGMENT_NATIVE}"
+            COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade.msi"
+            DEPENDS ${EXECUTABLE_NAME}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            COMMENT "Building WiX MSI installer (with Electron app)"
+        )
 
-            if(TARGET electron-app)
-                add_dependencies(wix_installer_full electron-app)
-            endif()
-            if(TARGET web-app)
-                add_dependencies(wix_installer_full web-app)
-            endif()
-
-            list(APPEND WIX_INSTALLER_TARGETS wix_installer_full)
-        else()
-            message(STATUS "Python 3 interpreter not found. Skipping the Electron-enabled MSI target 'wix_installer_full'.")
-        endif()
+        list(APPEND WIX_INSTALLER_TARGETS wix_installer_full)
 
         add_custom_target(wix_installers
             DEPENDS ${WIX_INSTALLER_TARGETS}
@@ -546,9 +538,10 @@ include_directories(
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-# Source files
-set(SOURCES
-    src/cpp/server/main.cpp
+# ============================================================
+# Server core sources (everything except entry points)
+# ============================================================
+set(SOURCES_CORE
     src/cpp/server/server.cpp
     src/cpp/server/router.cpp
     src/cpp/server/cli_parser.cpp
@@ -557,6 +550,7 @@ set(SOURCES
     src/cpp/server/streaming_proxy.cpp
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
+    src/cpp/server/runtime_config.cpp
     src/cpp/server/utils/http_client.cpp
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
@@ -574,25 +568,30 @@ set(SOURCES
     src/cpp/server/backend_manager.cpp
     src/cpp/server/ollama_api.cpp
     src/cpp/server/anthropic_api.cpp
-    $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/streaming_audio_buffer.cpp>
-    $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/vad.cpp>
-    $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/realtime_session.cpp>
-    $<$<OR:$<PLATFORM_ID:Windows>,$<PLATFORM_ID:Linux>>:src/cpp/server/websocket_server.cpp>
+    src/cpp/server/streaming_audio_buffer.cpp
+    src/cpp/server/vad.cpp
+    src/cpp/server/realtime_session.cpp
+    src/cpp/server/websocket_server.cpp
 )
 
-# Add platform-specific source files
+# Add platform-specific source files to core
 if(APPLE)
-    list(APPEND SOURCES src/cpp/server/macos_system_info.mm)
+    list(APPEND SOURCES_CORE src/cpp/server/macos_system_info.mm)
     set_source_files_properties(src/cpp/server/macos_system_info.mm PROPERTIES LANGUAGE OBJCXX)
 endif()
 
-# Add version resource file on Windows
-if(WIN32)
-    list(APPEND SOURCES src/cpp/server/version.rc)
-endif()
+# ============================================================
+# Server core OBJECT library (shared by lemond and Lemonade.exe)
+# ============================================================
+add_library(lemonade-server-core OBJECT ${SOURCES_CORE})
 
-# Create executable
-add_executable(${EXECUTABLE_NAME} ${SOURCES})
+# ============================================================
+# lemond executable
+# ============================================================
+add_executable(${EXECUTABLE_NAME} src/cpp/server/main.cpp)
+if(WIN32)
+    target_sources(${EXECUTABLE_NAME} PRIVATE src/cpp/server/version.rc)
+endif()
 
 
 # ============================================================
@@ -617,61 +616,62 @@ endif()
 
 
 # ============================================================
-# Linking
+# Server core dependencies (PUBLIC — inherited by consumers)
 # ============================================================
 
-# Common linking
-if(USE_SYSTEM_JSON)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE nlohmann_json::nlohmann_json)
-else()
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE nlohmann_json::nlohmann_json)
-endif()
+target_link_libraries(lemonade-server-core PUBLIC nlohmann_json::nlohmann_json)
 
 if(USE_SYSTEM_HTTPLIB)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE cpp-httplib)
+    target_link_libraries(lemonade-server-core PUBLIC cpp-httplib)
 else()
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE httplib::httplib)
+    target_link_libraries(lemonade-server-core PUBLIC httplib::httplib)
 endif()
 
 if(USE_SYSTEM_CLI11)
-    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${CLI11_INCLUDE_DIRS})
+    target_include_directories(lemonade-server-core PUBLIC ${CLI11_INCLUDE_DIRS})
 else()
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE CLI11::CLI11)
+    target_link_libraries(lemonade-server-core PUBLIC CLI11::CLI11)
 endif()
 
 if(USE_SYSTEM_CURL)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${CURL_LIBRARIES})
-    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${CURL_INCLUDE_DIRS})
-    target_compile_options(${EXECUTABLE_NAME} PRIVATE ${CURL_CFLAGS_OTHER})
+    target_link_libraries(lemonade-server-core PUBLIC ${CURL_LIBRARIES})
+    target_include_directories(lemonade-server-core PUBLIC ${CURL_INCLUDE_DIRS})
+    target_compile_options(lemonade-server-core PUBLIC ${CURL_CFLAGS_OTHER})
 else()
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE libcurl)
+    target_link_libraries(lemonade-server-core PUBLIC libcurl)
 endif()
 
 if(USE_SYSTEM_ZSTD)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${ZSTD_LIBRARIES})
-    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${ZSTD_INCLUDE_DIRS})
-    target_link_directories(${EXECUTABLE_NAME} PRIVATE ${ZSTD_LIBRARY_DIRS})
-    target_compile_options(${EXECUTABLE_NAME} PRIVATE ${ZSTD_CFLAGS_OTHER})
+    target_link_libraries(lemonade-server-core PUBLIC ${ZSTD_LIBRARIES})
+    target_include_directories(lemonade-server-core PUBLIC ${ZSTD_INCLUDE_DIRS})
+    target_link_directories(lemonade-server-core PUBLIC ${ZSTD_LIBRARY_DIRS})
+    target_compile_options(lemonade-server-core PUBLIC ${ZSTD_CFLAGS_OTHER})
 endif()
 
 if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
-    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${HTTPLIB_INCLUDE_DIRS})
+    target_include_directories(lemonade-server-core PUBLIC ${HTTPLIB_INCLUDE_DIRS})
 endif()
 
-# IXWebSocket for WebSocket support (Windows and Linux)
-if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ixwebsocket)
-    target_compile_definitions(${EXECUTABLE_NAME} PRIVATE LEMON_HAS_WEBSOCKET)
+# libwebsockets for WebSocket support
+if(USE_SYSTEM_LWS)
+    target_link_libraries(lemonade-server-core PUBLIC ${LWS_LIBRARIES})
+    target_include_directories(lemonade-server-core PUBLIC ${LWS_INCLUDE_DIRS})
+    target_link_directories(lemonade-server-core PUBLIC ${LWS_LIBRARY_DIRS})
+    target_compile_options(lemonade-server-core PUBLIC ${LWS_CFLAGS_OTHER})
+else()
+    target_link_libraries(lemonade-server-core PUBLIC websockets)
+    target_include_directories(lemonade-server-core PUBLIC ${libwebsockets_BINARY_DIR}/include ${libwebsockets_SOURCE_DIR}/include)
 endif()
+target_compile_definitions(lemonade-server-core PUBLIC LEMON_HAS_WEBSOCKET)
 
 # Enable ARC (Automatic Reference Counting) for macOS Objective-C++ files
 if(APPLE)
-    target_compile_options(${EXECUTABLE_NAME} PRIVATE -fobjc-arc)
+    target_compile_options(lemonade-server-core PUBLIC -fobjc-arc)
 endif()
 
 # Platform-specific linking
 if(WIN32)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE
+    target_link_libraries(lemonade-server-core PUBLIC
         ws2_32
         wsock32
         wbemuuid
@@ -679,14 +679,13 @@ if(WIN32)
         oleaut32
     )
 elseif(APPLE)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE
+    target_link_libraries(lemonade-server-core PUBLIC
         "-framework Metal"
         "-framework Foundation"
         "-framework CoreServices"
         "-lobjc"
     )
-    # Prevent linking to Homebrew OpenSSL on macOS, use Apple's built-in SSL
-    target_link_options(${EXECUTABLE_NAME} PRIVATE -Wl,-no_weak_imports)
+    target_link_options(lemonade-server-core PUBLIC -Wl,-no_weak_imports)
 elseif(UNIX)
     # Link systemd for journal support
     if(PkgConfig_FOUND)
@@ -694,14 +693,32 @@ elseif(UNIX)
         if(SYSTEMD_FOUND)
             set(LEMONADE_SYSTEMD_UNIT_NAME "lemonade-server.service" CACHE STRING
                 "Systemd unit name to match for journald log mode (overridable at runtime via LEMONADE_SYSTEMD_UNIT env var)")
-            target_include_directories(${EXECUTABLE_NAME} PRIVATE ${SYSTEMD_INCLUDE_DIRS})
-            target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${SYSTEMD_LIBRARIES})
-            target_compile_definitions(${EXECUTABLE_NAME} PRIVATE
+            target_include_directories(lemonade-server-core PUBLIC ${SYSTEMD_INCLUDE_DIRS})
+            target_link_libraries(lemonade-server-core PUBLIC ${SYSTEMD_LIBRARIES})
+            target_compile_definitions(lemonade-server-core PUBLIC
                 HAVE_SYSTEMD
                 LEMONADE_SYSTEMD_UNIT_NAME="${LEMONADE_SYSTEMD_UNIT_NAME}")
         endif()
     endif()
+
+    # Link libcap for capability management on Linux
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        if(PkgConfig_FOUND)
+            pkg_check_modules(LIBCAP QUIET libcap)
+            if(LIBCAP_FOUND)
+                target_include_directories(lemonade-server-core PUBLIC ${LIBCAP_INCLUDE_DIRS})
+                target_link_libraries(lemonade-server-core PUBLIC ${LIBCAP_LIBRARIES})
+                target_compile_definitions(lemonade-server-core PUBLIC HAVE_LIBCAP)
+                message(STATUS "libcap found - capability inheritance will be enabled")
+            else()
+                message(STATUS "libcap not found - capability inheritance will be disabled")
+            endif()
+        endif()
+    endif()
 endif()
+
+# lemond inherits all deps from lemonade-server-core
+target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 
 # ============================================================
 # Resources
@@ -774,10 +791,25 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
     endif()
 
     set(ELECTRON_BUILD_SOURCE_DIR "${CMAKE_BINARY_DIR}/app-src")
+    set(ELECTRON_APP_OUTPUT "${ELECTRON_APP_UNPACKED_DIR}/${ELECTRON_EXE_NAME}")
+
+    file(GLOB_RECURSE ELECTRON_APP_SOURCES
+        CONFIGURE_DEPENDS
+        "${ELECTRON_APP_SOURCE_DIR}/src/*"
+        "${ELECTRON_APP_SOURCE_DIR}/assets/*"
+        "${ELECTRON_APP_SOURCE_DIR}/*.json"
+        "${ELECTRON_APP_SOURCE_DIR}/*.js"
+        "${ELECTRON_APP_SOURCE_DIR}/*.ts"
+        "${ELECTRON_APP_SOURCE_DIR}/*.tsx"
+        "${ELECTRON_APP_SOURCE_DIR}/*.css"
+        "${ELECTRON_APP_SOURCE_DIR}/*.html"
+    )
+    list(FILTER ELECTRON_APP_SOURCES EXCLUDE REGEX "[/\\\\](node_modules|dist|dist-app)[/\\\\]")
 
     # Note: On Windows, NPM_COMMAND uses 'cmd /c' wrapper to handle npm.cmd batch file
     # Note: Avoid shell-special characters in echo messages (no parentheses, etc.)
-    add_custom_target(electron-app
+    add_custom_command(
+        OUTPUT "${ELECTRON_APP_OUTPUT}"
         COMMAND ${CMAKE_COMMAND} -E echo "Copying Electron app source to build directory..."
         COMMAND ${CMAKE_COMMAND} -E remove_directory "${ELECTRON_BUILD_SOURCE_DIR}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${ELECTRON_BUILD_SOURCE_DIR}"
@@ -786,8 +818,14 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
         COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci
         COMMAND ${CMAKE_COMMAND} -E echo "Building Electron app for current platform..."
         COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_BUILD_SOURCE_DIR}" ${NPM_COMMAND} run ${ELECTRON_BUILD_TARGET} -- --config.directories.output=${ELECTRON_APP_BUILD_DIR}
+        DEPENDS ${ELECTRON_APP_SOURCES}
         COMMENT "Building Electron app with npm"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        VERBATIM
+    )
+
+    add_custom_target(electron-app
+        DEPENDS "${ELECTRON_APP_OUTPUT}"
     )
 
     message(STATUS "Node.js found: ${NODE_EXECUTABLE}")
@@ -814,8 +852,22 @@ else()
     option(BUILD_WEB_APP "Build the Web app automatically" ON)
 endif()
 
+# Check if webpack is available for system-package mode
+if(USE_SYSTEM_NODEJS_MODULES)
+    find_program(WEBPACK_EXECUTABLE webpack)
+    if(WEBPACK_EXECUTABLE)
+        message(STATUS "Using system webpack: ${WEBPACK_EXECUTABLE}")
+        set(CAN_BUILD_WEB_APP TRUE)
+    endif()
+else()
+    # Non-system mode requires npm for dependency install + build
+    if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
+        set(CAN_BUILD_WEB_APP TRUE)
+    endif()
+endif()
+
 # Custom target to build the Web app with proper dependency tracking
-if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
+if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
     # Create a stamp file to track build state
     set(WEB_APP_STAMP "${CMAKE_CURRENT_BINARY_DIR}/web-app.stamp")
     set(WEB_APP_BUILD_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/web-app-src")
@@ -839,10 +891,12 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
             -DWEB_APP_BUILD_SOURCE_DIR=${WEB_APP_BUILD_SOURCE_DIR}
             -DWEB_APP_BUILD_DIR=${WEB_APP_BUILD_DIR}
             -DNPM_EXECUTABLE=${NPM_EXECUTABLE}
+            -DWEBPACK_EXECUTABLE=${WEBPACK_EXECUTABLE}
+            -DUSE_SYSTEM_NODEJS_MODULES=${USE_SYSTEM_NODEJS_MODULES}
             -DWEB_APP_STAMP=${WEB_APP_STAMP}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/src/web-app/BuildWebApp.cmake
         DEPENDS ${WEB_APP_SOURCES}
-        COMMENT "Building Web app with npm"
+        COMMENT "Building Web app"
     )
 
     # Add custom target that depends on the stamp file
@@ -899,23 +953,38 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
         endif()
     endif()
 else()
-    if(NOT NODE_EXECUTABLE OR NOT NPM_EXECUTABLE)
-        message(STATUS "Node.js or npm not found - Web app build target disabled")
+    if(NOT CAN_BUILD_WEB_APP)
+        if(USE_SYSTEM_NODEJS_MODULES)
+            message(STATUS "Web app build disabled - webpack not found (install webpack package)")
+        else()
+            message(STATUS "Web app build disabled - Node.js or npm not found")
+        endif()
     else()
         message(STATUS "Web app automatic build disabled (enable with -DBUILD_WEB_APP=ON)")
     endif()
 endif()
 
-# Add manual web-app target for platforms where automatic build is disabled
-if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND NOT BUILD_WEB_APP)
+# Add manual web-app target for platforms where automatic build is disabled.
+# Reuse the shared build script so WiX/MSBuild gets output under ${WEB_APP_BUILD_DIR}.
+if(CAN_BUILD_WEB_APP AND NOT BUILD_WEB_APP)
+    set(WEB_APP_BUILD_SOURCE_DIR_MANUAL "${CMAKE_CURRENT_BINARY_DIR}/web-app-manual-src")
+    set(WEB_APP_MANUAL_STAMP "${CMAKE_CURRENT_BINARY_DIR}/web-app-manual.stamp")
+
     add_custom_target(web-app
-        COMMAND ${CMAKE_COMMAND} -E echo "Building Web app..."
-        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} install
-        COMMAND ${CMAKE_COMMAND} -E chdir "${WEB_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} run build
-        COMMENT "Building Web app with npm"
-        WORKING_DIRECTORY "${WEB_APP_SOURCE_DIR}"
+        COMMAND ${CMAKE_COMMAND}
+            -DWEB_APP_SOURCE_DIR=${WEB_APP_SOURCE_DIR}
+            -DWEB_APP_BUILD_SOURCE_DIR=${WEB_APP_BUILD_SOURCE_DIR_MANUAL}
+            -DWEB_APP_BUILD_DIR=${WEB_APP_BUILD_DIR}
+            -DNPM_EXECUTABLE=${NPM_EXECUTABLE}
+            -DWEBPACK_EXECUTABLE=${WEBPACK_EXECUTABLE}
+            -DUSE_SYSTEM_NODEJS_MODULES=${USE_SYSTEM_NODEJS_MODULES}
+            -DWEB_APP_STAMP=${WEB_APP_MANUAL_STAMP}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/src/web-app/BuildWebApp.cmake
+        COMMENT "Building Web app"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
         VERBATIM
     )
+
     message(STATUS "Web app can be built manually with: cmake --build . --target web-app")
 endif()
 
@@ -972,26 +1041,72 @@ endif()
 # Add tray application subdirectory
 add_subdirectory(src/cpp/tray)
 
+# Add CLI application subdirectory
+add_subdirectory(src/cpp/cli)
+
+# Add legacy shim (backwards-compatible lemonade-server)
+add_subdirectory(src/cpp/legacy-cli)
+
+# Wire WiX installer targets to the binaries and frontend artifacts they package.
+# Doing this after the subdirectories are added ensures MSBuild gets real project refs.
+if(WIN32 AND WIX_EXECUTABLE)
+    set(WIX_PACKAGED_TARGETS)
+
+    if(TARGET LemonadeServer)
+        list(APPEND WIX_PACKAGED_TARGETS LemonadeServer)
+    endif()
+    if(TARGET lemonade)
+        list(APPEND WIX_PACKAGED_TARGETS lemonade)
+    endif()
+    if(TARGET lemonade-server)
+        list(APPEND WIX_PACKAGED_TARGETS lemonade-server)
+    endif()
+    if(TARGET ${EXECUTABLE_NAME})
+        list(APPEND WIX_PACKAGED_TARGETS ${EXECUTABLE_NAME})
+    endif()
+
+    if(TARGET wix_installer_minimal)
+        if(TARGET web-app)
+            add_dependencies(wix_installer_minimal web-app)
+        endif()
+        if(WIX_PACKAGED_TARGETS)
+            add_dependencies(wix_installer_minimal ${WIX_PACKAGED_TARGETS})
+        endif()
+    endif()
+
+    if(TARGET wix_installer_full)
+        if(TARGET electron-app)
+            add_dependencies(wix_installer_full electron-app)
+        endif()
+        if(TARGET web-app)
+            add_dependencies(wix_installer_full web-app)
+        endif()
+        if(WIX_PACKAGED_TARGETS)
+            add_dependencies(wix_installer_full ${WIX_PACKAGED_TARGETS})
+        endif()
+    endif()
+endif()
+
 if(APPLE)
     # SIGNING LOGIC (Release Only)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         message(STATUS "Release Build: Configuring Hardened Runtime Signing for Router")
 
-        # Sign 'lemonade-router'
+        # Sign 'lemond'
         add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E echo "--- Signing ${EXECUTABLE_NAME} ---"
             COMMAND codesign --force --options runtime --timestamp --entitlements "${ENTITLEMENTS_PATH}" --sign "${SIGNING_IDENTITY}" -v $<TARGET_FILE:${EXECUTABLE_NAME}>
             COMMENT "Signing ${EXECUTABLE_NAME} with Hardened Runtime"
             VERBATIM
         )
-        # Note: 'lemonade-server' signs itself in tray/CMakeLists.txt
+        # Note: 'lemonade-server' is signed at install time below (line ~1110)
     endif()
 
     # Prepare Electron App
-    set(ELECTRON_BUILD_COPY "${CMAKE_BINARY_DIR}/Lemonade.app")
+    set(ELECTRON_BUILD_COPY "${CMAKE_BINARY_DIR}/lemonade-app.app")
     add_custom_target(prepare_electron_app
         COMMAND ${CMAKE_COMMAND} -E remove_directory "${ELECTRON_BUILD_COPY}"
-        COMMAND cp -R "${ELECTRON_APP_BUILD_DIR}/mac-arm64/Lemonade.app" "${CMAKE_BINARY_DIR}/" || cp -R "${ELECTRON_APP_BUILD_DIR}/mac/Lemonade.app" "${CMAKE_BINARY_DIR}/" || cp -R "${ELECTRON_APP_BUILD_DIR}/Lemonade.app" "${CMAKE_BINARY_DIR}/" || echo "Warning: Could not find Lemonade.app in ${ELECTRON_APP_BUILD_DIR}"
+        COMMAND cp -R "${ELECTRON_APP_BUILD_DIR}/mac-arm64/lemonade-app.app" "${CMAKE_BINARY_DIR}/" || cp -R "${ELECTRON_APP_BUILD_DIR}/mac/lemonade-app.app" "${CMAKE_BINARY_DIR}/" || cp -R "${ELECTRON_APP_BUILD_DIR}/lemonade-app.app" "${CMAKE_BINARY_DIR}/" || echo "Warning: Could not find lemonade-app.app in ${ELECTRON_APP_BUILD_DIR}"
         COMMENT "Copying Electron App..."
         DEPENDS electron-app
     )
@@ -1020,12 +1135,29 @@ if(APPLE)
         " COMPONENT Runtime)
     endif()
 
-    # Tray/Server -> /usr/local/bin
-    # (Since tray/CMakeLists.txt skips install on Apple, we must do it here)
+    # Tray client -> /usr/local/bin
+    if(TARGET lemonade-tray)
+        install(TARGETS lemonade-tray RUNTIME DESTINATION "bin" COMPONENT Runtime)
+
+        # Sign the tray binary after installation (Release builds only)
+        if(CMAKE_BUILD_TYPE STREQUAL "Release")
+            install(CODE "
+                execute_process(
+                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/lemonade-tray\"
+                    RESULT_VARIABLE SIGN_RESULT
+                )
+                if(NOT SIGN_RESULT EQUAL 0)
+                    message(FATAL_ERROR \"Failed to sign lemonade-tray\")
+                endif()
+            " COMPONENT Runtime)
+        endif()
+    endif()
+
+    # Legacy shim -> /usr/local/bin
     if(TARGET lemonade-server)
         install(TARGETS lemonade-server RUNTIME DESTINATION "bin" COMPONENT Runtime)
 
-        # Sign the server binary after installation (Release builds only)
+        # Sign the legacy shim after installation (Release builds only)
         if(CMAKE_BUILD_TYPE STREQUAL "Release")
             install(CODE "
                 execute_process(
@@ -1034,6 +1166,24 @@ if(APPLE)
                 )
                 if(NOT SIGN_RESULT EQUAL 0)
                     message(FATAL_ERROR \"Failed to sign lemonade-server\")
+                endif()
+            " COMPONENT Runtime)
+        endif()
+    endif()
+
+    # CLI -> /usr/local/bin
+    if(TARGET lemonade)
+        install(TARGETS lemonade RUNTIME DESTINATION "bin" COMPONENT Runtime)
+
+        # Sign the CLI binary after installation (Release builds only)
+        if(CMAKE_BUILD_TYPE STREQUAL "Release")
+            install(CODE "
+                execute_process(
+                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/lemonade\"
+                    RESULT_VARIABLE SIGN_RESULT
+                )
+                if(NOT SIGN_RESULT EQUAL 0)
+                    message(FATAL_ERROR \"Failed to sign lemonade\")
                 endif()
             " COMPONENT Runtime)
         endif()
@@ -1111,29 +1261,15 @@ if(APPLE)
 endif()
 
 # ============================================================
-# CPack Configuration for .deb Package (Linux only)
+# CPack Configuration (Linux only)
 # ============================================================
 if(UNIX AND NOT APPLE)
-    set(CPACK_GENERATOR "DEB")
     set(CPACK_SET_DESTDIR ON)
     set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
     set(CPACK_PACKAGE_VENDOR "Lemonade")
     set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lemonade Local LLM Server")
     set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server with support for multiple backends including llama.cpp, FastFlowLM, and RyzenAI.")
-
-    # Debian-specific settings
-    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Lemonade Team <lemonade@amd.com>")
-    set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
-    set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
-    set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
-
-    # Installation paths - use ~/.local for user install (no sudo needed)
-    # Set via environment: cmake -DCPACK_PACKAGING_INSTALL_PREFIX=$HOME/.local ..
-    # Default to /opt to match the install prefix used by the project.
-    if(NOT DEFINED CPACK_PACKAGING_INSTALL_PREFIX)
-        set(CPACK_PACKAGING_INSTALL_PREFIX "/opt")
-    endif()
 
     # Only install our executables (not curl/development files)
     # Note: lemonade-server installation is handled in tray/CMakeLists.txt
@@ -1153,10 +1289,48 @@ if(UNIX AND NOT APPLE)
         PATTERN "*.sh" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
     )
 
-    # Configure systemd service file with correct paths
+    function(lemon_extract_source_default filepath pattern out_var)
+        file(READ "${filepath}" lemon_source_default_content)
+        string(REGEX MATCH "${pattern}" lemon_source_default_match "${lemon_source_default_content}")
+        if(NOT lemon_source_default_match)
+            message(FATAL_ERROR "Failed to extract ${out_var} from ${filepath}")
+        endif()
+        set(${out_var} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+    endfunction()
+
+    set(LEMON_CLI_PARSER_HEADER "${CMAKE_SOURCE_DIR}/src/cpp/include/lemon/cli_parser.h")
+    set(LEMON_RECIPE_OPTIONS_CPP "${CMAKE_SOURCE_DIR}/src/cpp/server/recipe_options.cpp")
+
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "int port = ([0-9]+);" LEMONADE_DEFAULT_PORT)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "std::string host = \"([^\"]*)\";" LEMONADE_DEFAULT_HOST)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "std::string log_level = \"([^\"]*)\";" LEMONADE_DEFAULT_LOG_LEVEL)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "std::string extra_models_dir = \"([^\"]*)\";" LEMONADE_DEFAULT_EXTRA_MODELS_DIR)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "bool no_broadcast = (true|false);" LEMONADE_DEFAULT_NO_BROADCAST_BOOL)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "long global_timeout = ([0-9]+);" LEMONADE_DEFAULT_GLOBAL_TIMEOUT)
+    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "int max_loaded_models = ([0-9-]+);" LEMONADE_DEFAULT_MAX_LOADED_MODELS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"ctx_size\", ([0-9]+)" LEMONADE_DEFAULT_CTX_SIZE)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"llamacpp_args\", \"([^\"]*)\"" LEMONADE_DEFAULT_LLAMACPP_ARGS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"flm_args\", \"([^\"]*)\"" LEMONADE_DEFAULT_FLM_ARGS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"steps\", ([0-9]+)" LEMONADE_DEFAULT_STEPS)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"cfg_scale\", ([0-9.]+)" LEMONADE_DEFAULT_CFG_SCALE)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"width\", ([0-9]+)" LEMONADE_DEFAULT_WIDTH)
+    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"height\", ([0-9]+)" LEMONADE_DEFAULT_HEIGHT)
+
+    if(LEMONADE_DEFAULT_NO_BROADCAST_BOOL STREQUAL "true")
+        set(LEMONADE_DEFAULT_NO_BROADCAST 1)
+    else()
+        set(LEMONADE_DEFAULT_NO_BROADCAST 0)
+    endif()
+
+    # Configure systemd service file and config files with current source defaults
     configure_file(
         ${CMAKE_SOURCE_DIR}/data/lemonade-server.service.in
         ${CMAKE_BINARY_DIR}/lemonade-server.service
+        @ONLY
+    )
+    configure_file(
+        ${CMAKE_SOURCE_DIR}/data/lemonade.conf.in
+        ${CMAKE_BINARY_DIR}/lemonade.conf
         @ONLY
     )
 
@@ -1176,13 +1350,14 @@ if(UNIX AND NOT APPLE)
             )
         ")
     endif()
-    install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.conf
+    install(FILES ${CMAKE_BINARY_DIR}/lemonade.conf
         DESTINATION /etc/lemonade
         PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE WORLD_READ
     )
 
     install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
-        DESTINATION /etc/lemonade
+        DESTINATION /etc/lemonade/conf.d
+        RENAME zz-secrets.conf
         PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE
     )
 
@@ -1256,9 +1431,6 @@ if(UNIX AND NOT APPLE)
 
         # Full package name
         set(CPACK_PACKAGE_NAME "lemonade-server")
-
-        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libsecret-1-0, libasound2t64, fonts-katex")
-        set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
 
         # Install Electron app
         install(DIRECTORY "${ELECTRON_APP_UNPACKED_DIR}/"
@@ -1337,12 +1509,7 @@ if(UNIX AND NOT APPLE)
 
     else()
         set(CPACK_PACKAGE_NAME "lemonade-server")
-        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, fonts-katex")
-        set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "chromium-browser | google-chrome-stable | chromium")
-        set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
     endif()
-    # Control scripts for debian package
-    set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postinst;${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/prerm;${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/postrm")
 
     # RPM specific variables defined within
     include(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/CPackRPM.cmake)

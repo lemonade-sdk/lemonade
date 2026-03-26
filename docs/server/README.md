@@ -17,7 +17,8 @@ Once you've installed, we recommend checking out these resources:
 |---------------|-------------|
 | [Supported Applications](./apps/README.md) | Explore applications that work out-of-the-box with Lemonade Server. |
 | [Lemonade Server Concepts](./concepts.md) | Background knowledge about local LLM servers and the OpenAI standard. |
-| [`lemonade-server` CLI Guide](./lemonade-server-cli.md) | Learn how to manage the server process and install new models using the command-line interface. |
+| [`lemonade` CLI Guide](../lemonade-cli.md) | Manage models and interact with the server from the command line. |
+| [Server Configuration](./configuration.md) | Customize environment variables, backend binaries, and server behavior. |
 | [Models List](https://lemonade-server.ai/models.html) | Browse a curated set of LLMs available for serving. |
 | [Server Spec](./server_spec.md) | Review all supported OpenAI-compatible and Lemonade-specific API endpoints. |
 | [Integration Guide](./server_integration.md) | Step-by-step instructions for integrating Lemonade Server into your own applications. |

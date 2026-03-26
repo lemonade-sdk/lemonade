@@ -73,10 +73,12 @@ nav:
       - OpenHands: server/apps/open-hands.md
       - Open WebUI: server/apps/open-webui.md
       - Wut: server/apps/wut.md
-  - Lemonade Server CLI Guide: server/lemonade-server-cli.md
+  - Lemonade CLI Guide: lemonade-cli.md
+  - Server Configuration: server/configuration.md
   - Understanding local LLM servers: server/concepts.md
   - Server Spec: server/server_spec.md
   - Integration Guide: server/server_integration.md
+  - Custom Model Configuration: server/custom-models.md
   - FAQ Guide: faq.md
   - Contribution Guide: contribute.md
 

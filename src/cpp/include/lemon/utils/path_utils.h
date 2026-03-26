@@ -20,6 +20,14 @@ std::string get_executable_dir();
 std::string get_resource_path(const std::string& relative_path);
 
 /**
+ * Validate that a path is safe to embed in a shell command.
+ * Rejects paths containing shell metacharacters that could enable command injection.
+ * Only allows: alphanumeric, path separators, dots, hyphens, underscores,
+ * spaces, colons (drive letters), tildes (short names), and parentheses.
+ */
+bool is_safe_executable_path(const std::string& path);
+
+/**
  * Find the FLM executable (flm.exe on Windows, flm on Unix).
  * Uses SearchPathA on Windows (same API as CreateProcessA) to search PATH,
  * then falls back to the default installation directory.
@@ -68,6 +76,12 @@ bool is_ggml_hip_plugin_available();
  * Get the cache directory
  */
 std::string get_cache_dir();
+
+/**
+ * Get the Hugging Face cache directory.
+ * Checks HF_HUB_CACHE, then HF_HOME/hub, then platform defaults.
+ */
+std::string get_hf_cache_dir();
 
 /**
  * Returns a per-user runtime directory for lemonade's PID/lock/log files.

@@ -1,0 +1,62 @@
+# This file is generated at build time from current source defaults.
+# Put local overrides in /etc/lemonade/conf.d/*.conf so they stay separate from
+# the package-provided file.
+
+# Server-wide defaults when unset
+#LEMONADE_HOST=@LEMONADE_DEFAULT_HOST@
+#LEMONADE_PORT=@LEMONADE_DEFAULT_PORT@
+#LEMONADE_LOG_LEVEL=@LEMONADE_DEFAULT_LOG_LEVEL@
+#LEMONADE_GLOBAL_TIMEOUT=@LEMONADE_DEFAULT_GLOBAL_TIMEOUT@
+#LEMONADE_NO_BROADCAST=@LEMONADE_DEFAULT_NO_BROADCAST@
+
+# Model discovery and filtering defaults when unset
+#LEMONADE_EXTRA_MODELS_DIR=@LEMONADE_DEFAULT_EXTRA_MODELS_DIR@
+#LEMONADE_MAX_LOADED_MODELS=@LEMONADE_DEFAULT_MAX_LOADED_MODELS@
+#LEMONADE_DISABLE_MODEL_FILTERING=0
+#LEMONADE_ENABLE_DGPU_GTT=0
+
+# Shared LLM recipe defaults when unset
+# Used by llamacpp, flm, and ryzenai-llm.
+#LEMONADE_CTX_SIZE=@LEMONADE_DEFAULT_CTX_SIZE@
+
+# Llama.cpp defaults
+# Backend selection defaults to the first supported backend detected on this system.
+#LEMONADE_LLAMACPP=
+#LEMONADE_LLAMACPP_ARGS=@LEMONADE_DEFAULT_LLAMACPP_ARGS@
+#LEMONADE_LLAMACPP_PREFER_SYSTEM=0
+# Path overrides default to auto-detect when unset.
+#LEMONADE_LLAMACPP_ROCM_BIN=
+#LEMONADE_LLAMACPP_VULKAN_BIN=
+#LEMONADE_LLAMACPP_CPU_BIN=
+
+# FastFlowLM defaults
+#LEMONADE_FLM_ARGS=@LEMONADE_DEFAULT_FLM_ARGS@
+#LEMONADE_FLM_LINUX_BETA=0
+
+# Whisper.cpp defaults
+# Backend selection defaults to the first supported backend detected on this system.
+#LEMONADE_WHISPERCPP=
+#LEMONADE_WHISPERCPP_ARGS=
+# Path overrides default to auto-detect when unset.
+#LEMONADE_WHISPERCPP_CPU_BIN=
+#LEMONADE_WHISPERCPP_NPU_BIN=
+
+# SD.cpp defaults
+# Backend selection defaults to the first supported backend detected on this system.
+#LEMONADE_SDCPP=
+#LEMONADE_STEPS=@LEMONADE_DEFAULT_STEPS@
+#LEMONADE_CFG_SCALE=@LEMONADE_DEFAULT_CFG_SCALE@
+#LEMONADE_WIDTH=@LEMONADE_DEFAULT_WIDTH@
+#LEMONADE_HEIGHT=@LEMONADE_DEFAULT_HEIGHT@
+# Path overrides default to auto-detect when unset.
+#LEMONADE_SDCPP_CPU_BIN=
+#LEMONADE_SDCPP_ROCM_BIN=
+#LEMONADE_SDCPP_VULKAN_BIN=
+
+# Ryzen AI defaults
+# Path overrides default to auto-detect when unset.
+#LEMONADE_RYZENAI_SERVER_BIN=
+
+# Kokoro defaults
+# Path overrides default to auto-detect when unset.
+#LEMONADE_KOKORO_CPU_BIN=

@@ -13,6 +13,7 @@ export interface DownloadItem {
   status: 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled' | 'deleting';
   error?: string;
   startTime: number;
+  bytesResumed: number;  // Bytes already on disk at session start (for accurate speed)
   abortController?: AbortController;
   downloadType?: 'model' | 'backend';
 }
@@ -86,7 +87,9 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   const calculateSpeed = (download: DownloadItem): number => {
     const elapsedSeconds = (Date.now() - download.startTime) / 1000;
     if (elapsedSeconds === 0) return 0;
-    return download.bytesDownloaded / elapsedSeconds;
+    // Only count bytes downloaded in this session, not bytes already on disk from a prior run
+    const sessionBytes = download.bytesDownloaded - (download.bytesResumed || 0);
+    return Math.max(0, sessionBytes) / elapsedSeconds;
   };
 
   const calculateETA = (download: DownloadItem): string => {

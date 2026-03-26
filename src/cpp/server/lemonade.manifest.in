@@ -6,7 +6,7 @@
     name="AMD.LemonadeServer"
     type="win32"
   />
-  <description>lemonade-router.exe</description>
+  <description>lemond.exe</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges>

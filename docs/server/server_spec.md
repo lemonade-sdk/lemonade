@@ -29,6 +29,9 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/audio/speech` - Text to speech (text -> audio)
 - WS `/realtime` - Realtime Audio Transcription (streaming audio -> text, OpenAI SDK compatible)
 - POST `/api/v1/images/generations` - Image Generation (prompt -> image)
+- POST `/api/v1/images/edits` - Image Editing (image + prompt -> edited image)
+- POST `/api/v1/images/variations` - Image Variations (image -> varied image)
+- POST `/api/v1/images/upscale` - Image Upscaling (image + ESRGAN model -> upscaled image)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
 
@@ -64,11 +67,7 @@ The additional endpoints are:
 
 Lemonade supports the [Ollama API](https://github.com/ollama/ollama/blob/main/docs/api.md), allowing applications built for Ollama to work with Lemonade without modification.
 
-To enable auto-detection by Ollama-integrated apps, launch the server on the Ollama default port:
-
-```bash
-lemonade-server serve --port 11434
-```
+To enable auto-detection by Ollama-integrated apps, configure the server to use the Ollama default port. See [Server Configuration](./configuration.md#environment-variables) for how to change the port.
 
 | Endpoint | Status | Notes |
 |----------|--------|-------|
@@ -102,21 +101,14 @@ Lemonade Server supports loading multiple models simultaneously, allowing you to
 
 ### Configuration
 
-Use the `--max-loaded-models` option to specify how many models to keep loaded per type slot:
-
-```bash
-# Allow up to 5 models of each type (5 LLMs, 5 embedding, 5 reranking, 5 audio, 5 image)
-lemonade-server serve --max-loaded-models 5
-
-# Unlimited models (no LRU eviction)
-lemonade-server serve --max-loaded-models -1
-```
+Configure via the `LEMONADE_MAX_LOADED_MODELS` environment variable. See [Server Configuration](./configuration.md#environment-variables).
 
 **Default:** `1` (one model of each type). Use `-1` for unlimited.
 
 ### Model Types
 
 Models are categorized into these types:
+
 - **LLM** - Chat and completion models (default type)
 - **Embedding** - Models for generating text embeddings (identified by the `embeddings` label)
 - **Reranking** - Models for document reranking (identified by the `reranking` label)
@@ -127,7 +119,11 @@ Each type has its own independent LRU cache, all sharing the same slot limit set
 
 ### Device Constraints
 
-- **NPU Exclusivity:** Only one model can use the NPU at a time. Loading a new NPU model will evict any existing NPU model regardless of type or limits.
+- **NPU Exclusivity:** `flm`, `ryzenai-llm`, and `whispercpp` are mutually exclusive on the NPU.
+    - Loading a model from one of these backends will automatically evict all NPU models from the other backends.
+    - `flm` supports loading 1 ASR model, 1 LLM, and 1 embedding model on the NPU at the same time.
+    - `ryzenai-llm` supports loading exactly 1 LLM, which uses the entire NPU.
+    - `whispercpp` supports loading exactly 1 ASR model at a time, which uses the entire NPU.
 - **CPU/GPU:** No inherent limits beyond available RAM. Multiple models can coexist on CPU or GPU.
 
 ### Eviction Policy
@@ -145,18 +141,14 @@ Each model can be loaded with custom settings (context size, llamacpp backend, l
 
 **Setting Priority Order:**
 1. Values passed explicitly in `/api/v1/load` request (highest priority)
-2. Values from `lemonade-server` CLI arguments or environment variables
-3. Hardcoded defaults in `lemonade-router` (lowest priority)
+2. Values from environment variables or server startup arguments (see [Server Configuration](./configuration.md))
+3. Hardcoded defaults in `lemond` (lowest priority)
 
 ## Start the HTTP Server
 
 > **NOTE:** This server is intended for use on local systems only. Do not expose the server port to the open internet.
 
-See the [Lemonade Server getting started instructions](./README.md).
-
-```bash
-lemonade-server serve
-```
+Lemonade Server starts automatically with the OS after installation. See the [Getting Started instructions](./README.md). For server configuration options, see [Server Configuration](./configuration.md).
 
 ## OpenAI-Compatible Endpoints
 
@@ -808,6 +800,250 @@ Image Generation API. You provide a text prompt and receive a generated image. T
           }'
     ```
 
+### `POST /api/v1/images/edits` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Image Editing API. You provide a source image and a text prompt describing the desired change, and receive an edited image. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend.
+
+> **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Use editing-capable models such as `Flux-2-Klein-4B` or `SD-Turbo`.
+>
+> **Performance:** CPU inference takes several minutes per image. GPU (ROCm) is significantly faster.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `model` | Yes | The Stable Diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` | Yes | The source image file to edit (PNG). Sent as a file in multipart/form-data. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `prompt` | Yes | A text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `mask` | No | An optional mask image (PNG). White areas indicate regions to edit; black areas are preserved. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `size` | No | The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `n` | No | Number of images to generate. Allowed range: `1`–`10`. Default: `1`. Values outside this range are rejected with `400 Bad Request`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `steps` | No | Number of inference steps. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `cfg_scale` | No | Classifier-free guidance scale. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `seed` | No | Random seed for reproducibility. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `user` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `background` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `quality` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `input_fidelity` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `output_compression` | No | OpenAI API compatibility field. Accepted; silently ignored by the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+
+#### Example request
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/images/edits \
+      -F "model=Flux-2-Klein-4B" \
+      -F "prompt=Add a red barn and mountains in the background, photorealistic" \
+      -F "size=512x512" \
+      -F "n=1" \
+      -F "response_format=b64_json" \
+      -F "image=@/path/to/source_image.png"
+    ```
+
+=== "Python (OpenAI client)"
+
+    ```python
+    from openai import OpenAI
+    client = OpenAI(base_url="http://localhost:8000/api/v1", api_key="not-needed")
+    with open("source_image.png", "rb") as image_file:
+        response = client.images.edit(
+            model="Flux-2-Klein-4B",
+            image=image_file,
+            prompt="Add a red barn and mountains in the background, photorealistic",
+            size="512x512",
+        )
+    import base64
+    image_data = base64.b64decode(response.data[0].b64_json)
+    open("edited_image.png", "wb").write(image_data)
+    ```
+
+---
+
+### `POST /api/v1/images/variations` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Image Variations API. You provide a source image and receive a variation of it. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend.
+
+> **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Unlike `/images/edits`, a `prompt` parameter is not supported and will be ignored — the model generates a variation based solely on the input image.
+>
+> **Performance:** CPU inference takes several minutes per image. GPU (ROCm) is significantly faster.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `model` | Yes | The Stable Diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` | Yes | The source image file (PNG). Sent as a file in multipart/form-data. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `size` | No | The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `n` | No | Number of variations to generate. Integer between 1 and 10 inclusive. Default: `1`. Values outside this range result in a 400 Bad Request error. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `user` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+
+#### Example request
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/images/variations \
+      -F "model=Flux-2-Klein-4B" \
+      -F "size=512x512" \
+      -F "n=1" \
+      -F "response_format=b64_json" \
+      -F "image=@/path/to/source_image.png"
+    ```
+
+=== "Python (OpenAI client)"
+
+    ```python
+    from openai import OpenAI
+    client = OpenAI(base_url="http://localhost:8000/api/v1", api_key="not-needed")
+    with open("source_image.png", "rb") as image_file:
+        response = client.images.create_variation(
+            model="Flux-2-Klein-4B",
+            image=image_file,
+            size="512x512",
+            n=1,
+        )
+    import base64
+    image_data = base64.b64decode(response.data[0].b64_json)
+    open("variation.png", "wb").write(image_data)
+    ```
+
+---
+
+### `POST /api/v1/images/upscale` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model name, and receive a 4x upscaled image. This API uses the `sd-cli` binary from [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) to perform super-resolution.
+
+> **Note:** Available upscale models are `RealESRGAN-x4plus` (general-purpose, 64 MB) and `RealESRGAN-x4plus-anime` (optimized for anime-style art, 17 MB). Both produce a 4x resolution increase (e.g., 256x256 → 1024x1024).
+>
+> **Note:** Unlike `/images/edits` and `/images/variations`, this endpoint accepts a JSON body (not multipart/form-data). The image must be provided as a base64-encoded string.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `image` | Yes | Base64-encoded PNG image to upscale. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The ESRGAN model to use (e.g., `RealESRGAN-x4plus`, `RealESRGAN-x4plus-anime`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+#### Example request
+
+A typical workflow is to generate an image first, then upscale it:
+
+=== "Bash"
+
+    ```bash
+    # Step 1: Generate an image and save the base64 response
+    RESPONSE=$(curl -s -X POST http://localhost:8000/api/v1/images/generations \
+      -H "Content-Type: application/json" \
+      -d '{
+            "model": "SD-Turbo",
+            "prompt": "A serene mountain landscape at sunset",
+            "size": "512x512",
+            "steps": 4,
+            "response_format": "b64_json"
+          }')
+
+    # Step 2: Build the upscale JSON payload and pipe it to curl via stdin
+    # (base64 images are too large for command-line interpolation)
+    echo "$RESPONSE" | python3 -c "
+    import sys, json
+    b64 = json.load(sys.stdin)['data'][0]['b64_json']
+    print(json.dumps({'image': b64, 'model': 'RealESRGAN-x4plus'}))
+    " | curl -X POST http://localhost:8000/api/v1/images/upscale \
+      -H "Content-Type: application/json" \
+      -d @-
+    ```
+
+=== "PowerShell"
+
+    ```powershell
+    # Step 1: Generate an image
+    $genResponse = Invoke-WebRequest `
+      -Uri "http://localhost:8000/api/v1/images/generations" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+        "model": "SD-Turbo",
+        "prompt": "A serene mountain landscape at sunset",
+        "size": "512x512",
+        "steps": 4,
+        "response_format": "b64_json"
+      }'
+
+    # Step 2: Extract the base64 image
+    $imageB64 = ($genResponse.Content | ConvertFrom-Json).data[0].b64_json
+
+    # Step 3: Upscale the image with Real-ESRGAN
+    $body = @{ image = $imageB64; model = "RealESRGAN-x4plus" } | ConvertTo-Json
+    Invoke-WebRequest `
+      -Uri "http://localhost:8000/api/v1/images/upscale" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body $body
+    ```
+
+=== "Python (requests)"
+
+    ```python
+    import requests
+    import base64
+
+    BASE_URL = "http://localhost:8000/api/v1"
+
+    # Step 1: Generate an image
+    gen_response = requests.post(f"{BASE_URL}/images/generations", json={
+        "model": "SD-Turbo",
+        "prompt": "A serene mountain landscape at sunset",
+        "size": "512x512",
+        "steps": 4,
+        "response_format": "b64_json",
+    })
+    image_b64 = gen_response.json()["data"][0]["b64_json"]
+
+    # Step 2: Upscale the image with Real-ESRGAN (512x512 -> 2048x2048)
+    upscale_response = requests.post(f"{BASE_URL}/images/upscale", json={
+        "image": image_b64,
+        "model": "RealESRGAN-x4plus",
+    })
+
+    # Step 3: Save the upscaled image to a file
+    upscaled_b64 = upscale_response.json()["data"][0]["b64_json"]
+    with open("upscaled.png", "wb") as f:
+        f.write(base64.b64decode(upscaled_b64))
+    ```
+
+#### Response format
+
+```json
+{
+  "created": 1742927481,
+  "data": [
+    {
+      "b64_json": "<base64-encoded upscaled PNG>"
+    }
+  ]
+}
+```
+
+**Field Descriptions:**
+
+- `created` - Unix timestamp of when the upscaled image was generated
+- `data` - Array containing the upscaled image
+  - `b64_json` - Base64-encoded PNG of the upscaled image
+
+#### Error responses
+
+| Status Code | Condition | Example |
+|-------------|-----------|---------|
+| 400 | Missing `image` field | `{"error": {"message": "Missing 'image' field (base64 encoded)", "type": "invalid_request_error"}}` |
+| 400 | Missing `model` field | `{"error": {"message": "Missing 'model' field", "type": "invalid_request_error"}}` |
+| 404 | Unknown model name | `{"error": {"message": "Upscale model not found: bad-model", "type": "invalid_request_error"}}` |
+| 500 | Upscale failed | `{"error": {"message": "ESRGAN upscale failed", "type": "server_error"}}` |
+
+---
+
 ### `POST /api/v1/audio/speech` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Speech Generation API. You provide a text input and receive an audio file. This API uses [Kokoros](https://github.com/lucasjinreal/Kokoros) as the backend.
@@ -1149,6 +1385,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
 | `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`, `--jinja`, `--mmproj`, `--embeddings`, `--reranking`. |
 | `whispercpp_backend` | No | whispercpp | WhisperCpp backend: `npu` or `cpu` on Windows; `cpu` or `vulkan` on Linux. Default is `npu` if supported. |
+| `whispercpp_args` | No | whispercpp | Custom arguments to pass to whisper-server. The following are NOT allowed: `-m`, `--model`, `--port`. Example: `--convert`. |
 | `steps` | No | sd-cpp | Number of inference steps for image generation. Default: 20. |
 | `cfg_scale` | No | sd-cpp | Classifier-free guidance scale for image generation. Default: 7.0. |
 | `width` | No | sd-cpp | Image width in pixels. Default: 512. |
@@ -1159,8 +1396,8 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 When loading a model, settings are applied in this priority order:
 1. Values explicitly passed in the `load` request (highest priority)
 2. Per-model values configurable in `recipe_options.json` (see below for details)
-3. Values set via `lemonade-server` CLI arguments or environment variables
-4. Default hardcoded values in `lemonade-router` (lowest priority)
+3. Values from environment variables or server startup arguments (see [Server Configuration](./configuration.md))
+4. Default hardcoded values in `lemond` (lowest priority)
 
 #### Per-model options
 
@@ -1177,7 +1414,8 @@ You can configure recipe-specific options on a per-model basis. Lemonade manages
     "llamacpp_backend": "rocm"
   },
   "whisper-large-v3-turbo-q8_0.bin": {
-    "whispercpp_backend": "npu"
+    "whispercpp_backend": "npu",
+    "whispercpp_args": "--convert"
   }
 }
 ```
@@ -1223,14 +1461,15 @@ curl -X POST http://localhost:8000/api/v1/load \
   }'
 ```
 
-Load a Whisper model with NPU backend:
+Load a Whisper model with NPU backend and conversion enabled:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/load \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "whisper-large-v3-turbo-q8_0.bin",
-    "whispercpp_backend": "npu"
+    "whispercpp_backend": "npu",
+    "whispercpp_args": "--convert"
   }'
 ```
 
@@ -1381,7 +1620,7 @@ curl http://localhost:8000/api/v1/health
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
-  - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`)
+  - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
 - `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `--max-loaded-models`):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
@@ -1485,7 +1724,7 @@ curl "http://localhost:8000/api/v1/system-info"
           "devices": ["amd_igpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade-server recipes --install llamacpp:rocm"
+          "action": "lemonade recipes --install llamacpp:rocm"
         },
         "metal": {
           "devices": [],
@@ -1497,7 +1736,7 @@ curl "http://localhost:8000/api/v1/system-info"
           "devices": ["cpu"],
           "state": "update_required",
           "message": "Backend update is required before use.",
-          "action": "lemonade-server recipes --install llamacpp:cpu"
+          "action": "lemonade recipes --install llamacpp:cpu"
         }
       }
     },
@@ -1508,7 +1747,7 @@ curl "http://localhost:8000/api/v1/system-info"
           "devices": ["cpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade-server recipes --install whispercpp:default"
+          "action": "lemonade recipes --install whispercpp:default"
         }
       }
     },
@@ -1519,7 +1758,7 @@ curl "http://localhost:8000/api/v1/system-info"
           "devices": ["cpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade-server recipes --install sd-cpp:default"
+          "action": "lemonade recipes --install sd-cpp:default"
         }
       }
     },
@@ -1651,13 +1890,9 @@ In case of an error, returns an `error` field with details.
 
 # Debugging
 
-To help debug the Lemonade server, you can use the `--log-level` parameter to control the verbosity of logging information. The server supports multiple logging levels that provide increasing amounts of detail about server operations.
+To control logging verbosity, set the `LEMONADE_LOG_LEVEL` environment variable (see [Server Configuration](./configuration.md#environment-variables)).
 
-```
-lemonade-server serve --log-level [level]
-```
-
-Where `[level]` can be one of:
+Available levels:
 
 - **critical**: Only critical errors that prevent server operation.
 - **error**: Error conditions that might allow continued operation.
@@ -1669,7 +1904,7 @@ Where `[level]` can be one of:
 # GGUF Support
 
 The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows and Ubuntu Linux are supported. Details:
-- Lemonade Server wraps `llama-server` with support for the `lemonade-server` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
+- Lemonade Server wraps `llama-server` with support for the `lemonade` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
   - The `chat/completions`, `completions`, `embeddings`, and `reranking` endpoints are supported.
   - The `embeddings` endpoint requires embedding-specific models (e.g., nomic-embed-text models).
   - The `reranking` endpoint requires reranker-specific models (e.g., bge-reranker models).
@@ -1697,7 +1932,7 @@ To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by nav
 Similar to the [llama-server support](#gguf-support), Lemonade can also route OpenAI API requests to a FastFlowLM `flm serve` backend.
 
 The `flm serve` backend works with Lemonade's suggested `*-FLM` models, as well as any model mentioned in `flm list`. Windows is the only supported operating system. Details:
-- Lemonade Server wraps `flm serve` with support for the `lemonade-server` CLI, client web app, and all Lemonade custom endpoints (e.g., `pull`, `load`, etc.).
+- Lemonade Server wraps `flm serve` with support for the `lemonade` CLI, client web app, and all Lemonade custom endpoints (e.g., `pull`, `load`, etc.).
   - OpenAI API endpoints supported: `models`, `chat/completions` (streaming), and `embeddings`.
   - The `embeddings` endpoint requires embedding-specific models supported by FLM.
 - A single Lemonade Server process can seamlessly switch between FLM, OGA, and GGUF models.
