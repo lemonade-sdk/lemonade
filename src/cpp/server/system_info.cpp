@@ -1509,15 +1509,8 @@ std::string SystemInfo::get_flm_version() {
     #endif
 
     // Parse JSON output: { "version": "0.9.34" }
-    // FLM may print non-JSON lines (e.g. "[FLM] Using models directory: ...")
-    // before the JSON object, so extract just the JSON portion.
     try {
-        std::string json_str = output;
-        size_t brace_pos = output.find('{');
-        if (brace_pos != std::string::npos) {
-            json_str = output.substr(brace_pos);
-        }
-        json j = JsonUtils::parse(json_str);
+        json j = JsonUtils::parse(output);
         if (j.contains("version") && j["version"].is_string()) {
             std::string version = j["version"].get<std::string>();
             // If the version doesn't start with 'v', prepend it

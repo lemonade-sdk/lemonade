@@ -457,14 +457,7 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
 
     try {
         if (!output.empty()) {
-            // FLM may print non-JSON lines before the JSON object,
-            // so extract just the JSON portion.
-            std::string json_str = output;
-            size_t brace_pos = output.find('{');
-            if (brace_pos != std::string::npos) {
-                json_str = output.substr(brace_pos);
-            }
-            json j = JsonUtils::parse(json_str);
+            json j = JsonUtils::parse(output);
             if (j.is_object()) {
                 // Check for overall status
                 bool validation_ok = false;
