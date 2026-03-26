@@ -859,24 +859,35 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
             if (def.backend == "system" && !available) {
                 message = install_error;
-            } else if (!missing_devices.empty()) {
-                // Device type not present - include required family if specified
-                const auto& [device_type, required_families] = missing_devices[0];
-                if (!required_families.empty()) {
-                    // Show specific family requirement (e.g., "Requires XDNA2 NPU")
+            } else if (!missing_devices.empty() || !wrong_family.empty()) {
+                // Get the first unsupported device (prefer wrong family over missing,
+                // since wrong family means we detected the device but it's not supported)
+                const auto& [device_type, required_families] = !wrong_family.empty()
+                    ? wrong_family[0]
+                    : missing_devices[0];
+
+                // For AMD GPUs, include the detected family in the message
+                if (device_type == "amd_dgpu" || device_type == "amd_igpu") {
+                    // Find the detected GPU family for this device type
+                    std::string detected_family;
+                    for (const auto& detected : detected_devices) {
+                        if (detected.type == device_type && !detected.family.empty()) {
+                            detected_family = detected.family;
+                            break;
+                        }
+                    }
+
+                    if (!detected_family.empty()) {
+                        message = "Unsupported GPU: " + detected_family;
+                    } else {
+                        message = "Unsupported GPU";
+                    }
+                } else if (!required_families.empty()) {
+                    // Show specific family requirement for other devices (e.g., "Requires XDNA2 NPU")
                     message = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
                 } else {
                     // No specific family required (e.g., "Requires CPU")
                     message = "Requires " + get_device_type_name(device_type);
-                }
-            } else if (!wrong_family.empty()) {
-                // Device present but wrong family - show required families
-                const auto& [device_type, required_families] = wrong_family[0];
-                if (!required_families.empty()) {
-                    // Use first required family name for concise message
-                    message = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
-                } else {
-                    message = "Incompatible " + get_device_type_name(device_type);
                 }
             } else {
                 message = "No compatible device";
@@ -1145,7 +1156,7 @@ std::string SystemInfo::get_system_llamacpp_version() {
 }
 
 // Helper to identify ROCm architecture from GPU name
-// Returns empty string if the architecture is NOT in ROCM_ARCH_MAPPING (unsupported)
+// Returns the detected architecture even if not in ROCM_ARCH_MAPPING
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
@@ -1163,14 +1174,14 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
 
             std::string arch = "gfx" + major + minor + revision;
 
-            // Apply architecture family mapping
-            // If not in mapping, return empty string (unsupported)
+            // Apply architecture family mapping if available
+            // Otherwise return the detected arch for unsupported GPUs
             auto it = ROCM_ARCH_MAPPING.find(arch);
             if (it != ROCM_ARCH_MAPPING.end()) {
                 return it->second;
             }
 
-            return "";  // Unmapped architecture = unsupported
+            return arch;  // Return the detected arch even if unsupported
         }
     }
 
