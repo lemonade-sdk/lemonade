@@ -216,7 +216,15 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                 timeout_seconds
             );
         } else {
-            StreamingProxy::forward_byte_stream(url, request_body, sink, timeout_seconds);
+            StreamingProxy::forward_byte_stream(url, request_body, sink,
+                [this](const StreamingProxy::TelemetryData& telemetry) {
+                    telemetry_.input_tokens = telemetry.input_tokens;
+                    telemetry_.output_tokens = telemetry.output_tokens;
+                    telemetry_.time_to_first_token = telemetry.time_to_first_token;
+                    telemetry_.tokens_per_second = telemetry.tokens_per_second;
+                },
+                timeout_seconds
+            );
         }
     } catch (const std::exception& e) {
         // Log the error but don't crash the server
