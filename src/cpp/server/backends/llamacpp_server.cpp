@@ -381,7 +381,18 @@ json LlamaCppServer::responses(const json& request) {
 }
 
 json LlamaCppServer::anthropic_messages(const json& request) {
-    return forward_request("/v1/messages", request);
+    const auto raw = forward_request_raw("/v1/messages", request);
+    if (raw.status_code == 200) {
+        return json::parse(raw.body);
+    }
+
+    return {
+        {"_lemonade_raw_backend", {
+            {"status_code", raw.status_code},
+            {"content_type", raw.content_type},
+            {"body", raw.body}
+        }}
+    };
 }
 
 void LlamaCppServer::anthropic_messages_stream(const std::string& request_body, httplib::DataSink& sink) {
@@ -390,7 +401,18 @@ void LlamaCppServer::anthropic_messages_stream(const std::string& request_body, 
 }
 
 json LlamaCppServer::anthropic_count_tokens(const json& request) {
-    return forward_request("/v1/messages/count_tokens", request);
+    const auto raw = forward_request_raw("/v1/messages/count_tokens", request);
+    if (raw.status_code == 200) {
+        return json::parse(raw.body);
+    }
+
+    return {
+        {"_lemonade_raw_backend", {
+            {"status_code", raw.status_code},
+            {"content_type", raw.content_type},
+            {"body", raw.body}
+        }}
+    };
 }
 
 } // namespace backends

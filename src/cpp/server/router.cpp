@@ -785,7 +785,13 @@ void Router::anthropic_messages_stream(const std::string& request_body, httplib:
     execute_streaming(request_body, sink, [&](WrappedServer* server) {
         auto anthropic_server = dynamic_cast<IAnthropicServer*>(server);
         if (!anthropic_server) {
-            throw UnsupportedOperationException("Anthropic messages", device_type_to_string(server->get_device_type()));
+            const std::string payload =
+                "event: error\n"
+                "data: {\"type\":\"error\",\"error\":{\"type\":\"unsupported_operation\","
+                "\"message\":\"Anthropic messages is not supported on this backend\"}}\n\n";
+            sink.write(payload.c_str(), payload.size());
+            sink.done();
+            return;
         }
         anthropic_server->anthropic_messages_stream(request_body, sink);
     });

@@ -111,6 +111,74 @@ bool prepend_no_think_to_last_user_message(json& request_json) {
     return false;
 }
 
+void log_and_store_telemetry(Router* router, int input_tokens, int output_tokens,
+                             double ttft_seconds, double tps) {
+    LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
+    LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
+    LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
+    if (ttft_seconds > 0.0) {
+        LOG(INFO, "Telemetry") << "TTFT (s):      " << std::fixed << std::setprecision(2)
+                                 << ttft_seconds << std::endl;
+    }
+    if (tps > 0.0) {
+        LOG(INFO, "Telemetry") << "TPS:           " << std::fixed << std::setprecision(2)
+                                 << tps << std::endl;
+    }
+    LOG(INFO, "Telemetry") << "=================" << std::endl;
+
+    router->update_telemetry(input_tokens, output_tokens, ttft_seconds, tps);
+    if (input_tokens > 0) {
+        router->update_prompt_tokens(input_tokens);
+    }
+}
+
+void log_and_store_telemetry_from_response(Router* router, const json& response) {
+    if (response.contains("timings") && response["timings"].is_object()) {
+        const auto& timings = response["timings"];
+        const int input_tokens = timings.value("prompt_n", 0);
+        const int output_tokens = timings.value("predicted_n", 0);
+        const double ttft_seconds = timings.contains("prompt_ms")
+            ? timings["prompt_ms"].get<double>() / 1000.0
+            : 0.0;
+        const double tps = timings.value("predicted_per_second", 0.0);
+        log_and_store_telemetry(router, input_tokens, output_tokens, ttft_seconds, tps);
+        return;
+    }
+
+    if (response.contains("usage") && response["usage"].is_object()) {
+        const auto& usage = response["usage"];
+        int input_tokens = usage.value("prompt_tokens", 0);
+        int output_tokens = usage.value("completion_tokens", 0);
+        if (input_tokens == 0) {
+            input_tokens = usage.value("input_tokens", 0);
+        }
+        if (output_tokens == 0) {
+            output_tokens = usage.value("output_tokens", 0);
+        }
+        const double ttft_seconds = usage.value("prefill_duration_ttft", 0.0);
+        const double tps = usage.value("decoding_speed_tps", 0.0);
+        log_and_store_telemetry(router, input_tokens, output_tokens, ttft_seconds, tps);
+    }
+}
+
+void log_and_store_telemetry_from_router_stats(Router* router) {
+    const auto stats = router->get_stats();
+    if (stats.contains("error")) {
+        return;
+    }
+
+    const int input_tokens = stats.value("input_tokens", 0);
+    const int output_tokens = stats.value("output_tokens", 0);
+    const double ttft_seconds = stats.value("time_to_first_token", 0.0);
+    const double tps = stats.value("tokens_per_second", 0.0);
+
+    if (input_tokens == 0 && output_tokens == 0 && ttft_seconds == 0.0 && tps == 0.0) {
+        return;
+    }
+
+    log_and_store_telemetry(router, input_tokens, output_tokens, ttft_seconds, tps);
+}
+
 } // namespace
 
 
@@ -1399,6 +1467,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 
                         // Use unified Router path for streaming
                         router_->chat_completion_stream(request_body, sink);
+                        log_and_store_telemetry_from_router_stats(router_.get());
 
                         return false;
                     }
@@ -1580,6 +1649,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 
                         // Use unified Router path for streaming
                         router_->completion_stream(request_body, sink);
+                        log_and_store_telemetry_from_router_stats(router_.get());
 
                         return false;
                     }
@@ -2524,6 +2594,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
 
                         // Use unified Router path for streaming
                         router_->responses_stream(request_body, sink);
+                        log_and_store_telemetry_from_router_stats(router_.get());
 
                         return false;
                     }
@@ -2540,6 +2611,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
 
             LOG(INFO, "Server") << "200 OK" << std::endl;
             res.set_content(response.dump(), "application/json");
+            log_and_store_telemetry_from_response(router_.get(), response);
         }
 
     } catch (const std::exception& e) {

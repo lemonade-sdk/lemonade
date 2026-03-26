@@ -109,6 +109,42 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
     }
 }
 
+WrappedServer::RawBackendResponse WrappedServer::forward_request_raw(const std::string& endpoint,
+                                                                     const json& request,
+                                                                     long timeout_seconds) {
+    RawBackendResponse raw;
+
+    if (!is_process_running()) {
+        raw.status_code = 503;
+        raw.content_type = "application/json";
+        raw.body = ErrorResponse::from_exception(ModelNotLoadedException(server_name_)).dump();
+        return raw;
+    }
+
+    std::string url = get_base_url() + endpoint;
+    std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
+
+    try {
+        auto response = utils::HttpClient::post(url, request.dump(), headers, timeout_seconds);
+        raw.status_code = response.status_code;
+        raw.content_type = "application/json";
+        auto content_type_it = response.headers.find("Content-Type");
+        if (content_type_it == response.headers.end()) {
+            content_type_it = response.headers.find("content-type");
+        }
+        if (content_type_it != response.headers.end() && !content_type_it->second.empty()) {
+            raw.content_type = content_type_it->second;
+        }
+        raw.body = response.body;
+    } catch (const std::exception& e) {
+        raw.status_code = 500;
+        raw.content_type = "application/json";
+        raw.body = ErrorResponse::from_exception(NetworkException(e.what())).dump();
+    }
+
+    return raw;
+}
+
 json WrappedServer::forward_multipart_request(const std::string& endpoint,
                                                const std::vector<utils::MultipartField>& fields,
                                                long timeout_seconds) {
