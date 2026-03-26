@@ -87,7 +87,15 @@ def run_cli_command(args, timeout=60, check=False, env=None):
     Returns:
         subprocess.CompletedProcess result
     """
-    cmd = [get_cli_binary()] + args
+    cli_binary = get_cli_binary()
+    if os.path.isabs(cli_binary):
+        resolved_cli_binary = cli_binary
+    elif os.path.sep in cli_binary or (os.path.altsep and os.path.altsep in cli_binary):
+        resolved_cli_binary = os.path.abspath(cli_binary)
+    else:
+        resolved_cli_binary = shutil.which(cli_binary) or cli_binary
+
+    cmd = [resolved_cli_binary] + args
     print(f"Running: {' '.join(cmd)}")
 
     result = subprocess.run(
