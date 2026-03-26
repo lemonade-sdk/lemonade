@@ -1,14 +1,15 @@
 #ifdef __APPLE__
 
 #include "lemon_tray/platform/macos_tray.h"
+
 #include <iostream>
+#include <lemon/utils/aixlog.hpp>
 #include <memory>
 #include <string>
-#include <lemon/utils/aixlog.hpp>
 
 // macOS imports for system tray
-#import <Cocoa/Cocoa.h>
 #import <AppKit/AppKit.h>
+#import <Cocoa/Cocoa.h>
 #import <UserNotifications/UserNotifications.h>
 
 // -----------------------------------------------------------------------------

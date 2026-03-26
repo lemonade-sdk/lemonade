@@ -28,7 +28,7 @@ docker run -d \
   -v lemonade-recipe:/root/.cache/lemonade \
   -e LEMONADE_LLAMACPP_BACKEND=cpu \
   ghcr.io/lemonade-sdk/lemonade-server:v9.1.3 \
-  ./lemonade-router --host 0.0.0.0 --port 5000
+  ./lemond --host 0.0.0.0 --port 5000
 ```
 
 > This will run the server on port 5000 inside the container, mapped to port 4000 on your host.
@@ -217,12 +217,12 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /opt/lemonade
 
 # Copy built executables and resources from builder
-COPY --from=builder /app/build/lemonade-router ./lemonade-router
+COPY --from=builder /app/build/lemond ./lemond
 COPY --from=builder /app/build/lemonade-server ./lemonade-server
 COPY --from=builder /app/build/resources ./resources
 
 # Make executables executable
-RUN chmod +x ./lemonade-router ./lemonade-server
+RUN chmod +x ./lemond ./lemonade-server
 
 # Create necessary directories
 RUN mkdir -p /opt/lemonade/llama/cpu \
@@ -237,7 +237,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/live || exit 1
 
 # Default command: start server in headless mode
-CMD ["./lemonade-router", "--host", "0.0.0.0"]
+CMD ["./lemond", "--host", "0.0.0.0"]
 ```
 
 ### 2. Build the Docker Image
@@ -279,7 +279,7 @@ docker-compose build
 
 This will:
 
-- Compile Lemonade C++ (lemonade-server and lemonade-router)
+- Compile Lemonade C++ (lemonade-server and lemond)
 - Prepare a runtime image with all dependencies
 
 ### 3. Run the Container

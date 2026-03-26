@@ -15,12 +15,12 @@ BEGIN
         BLOCK "040904E4"
         BEGIN
             VALUE "CompanyName", "AMD"
-            VALUE "FileDescription", "lemonade-router.exe"
+            VALUE "FileDescription", "lemond.exe"
             VALUE "FileVersion", LEMON_VERSION_RC_STRING
             VALUE "InternalName", "lemonade"
             VALUE "LegalCopyright", "Copyright (C) 2024 AMD"
-            VALUE "OriginalFilename", "lemonade-router.exe"
-            VALUE "ProductName", "lemonade-router.exe"
+            VALUE "OriginalFilename", "lemond.exe"
+            VALUE "ProductName", "lemond.exe"
             VALUE "ProductVersion", LEMON_VERSION_RC_STRING
             VALUE "Comments", "Local AI model serving with hardware acceleration"
         END

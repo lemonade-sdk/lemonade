@@ -64,15 +64,15 @@ jobs:
         run: |
           set -e
 
-          echo "Building lemonade-router and lemonade-server on ${{ matrix.distro }}..."
+          echo "Building lemond and lemonade-server on ${{ matrix.distro }}..."
 
           # Build
           echo "Building binaries..."
           cmake --build --preset default
 
           # Verify binaries exist
-          if [ ! -f "build/lemonade-router" ]; then
-              echo "ERROR: lemonade-router not found!"
+          if [ ! -f "build/lemond" ]; then
+              echo "ERROR: lemond not found!"
               echo "Build directory contents:"
               ls -lh build/
               exit 1
@@ -86,10 +86,10 @@ jobs:
           fi
 
           echo "Binaries found successfully"
-          ls -lh build/lemonade-router build/lemonade-server
+          ls -lh build/lemond build/lemonade-server
 
           echo "Verifying binary executability..."
-          ./build/lemonade-router --version
+          ./build/lemond --version
           ./build/lemonade-server --version
 
           echo "${{ matrix.distro }} build successful!"
@@ -99,8 +99,8 @@ jobs:
           echo "Checking library dependencies..."
           cd build
 
-          echo "=== lemonade-router dependencies ==="
-          ldd lemonade-router
+          echo "=== lemond dependencies ==="
+          ldd lemond
 
           echo ""
           echo "=== lemonade-server dependencies ==="
@@ -129,8 +129,8 @@ jobs:
         env:
           LEMONADE_CI_MODE: "True"
         run: |
-          echo "Starting lemonade-router in background..."
-          ./build/lemonade-router --port 8000 --log-level debug > /tmp/lemonade-server.log 2>&1 &
+          echo "Starting lemond in background..."
+          ./build/lemond --port 8000 --log-level debug > /tmp/lemonade-server.log 2>&1 &
 
           echo "Waiting for server to be ready..."
           for i in $(seq 1 30); do

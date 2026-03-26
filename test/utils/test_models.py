@@ -122,6 +122,9 @@ VISION_MODEL = "Gemma-3-4b-it-GGUF"
 # Stable Diffusion test configuration
 SD_MODEL = "SD-Turbo"
 
+# ESRGAN upscale model test configuration
+ESRGAN_MODEL = "RealESRGAN-x4plus"
+
 # Text-to-Speech test configuration
 TTS_MODEL = "kokoro-v1"
 

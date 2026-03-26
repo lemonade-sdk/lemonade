@@ -498,6 +498,13 @@ bool Router::is_model_loaded(const std::string& model_name) const {
     return find_server_by_model_name(model_name) != nullptr;
 }
 
+RecipeOptions Router::get_model_recipe_options(const std::string& model_name) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto* server = find_server_by_model_name(model_name);
+    if (server) return server->get_recipe_options();
+    return RecipeOptions();
+}
+
 ModelType Router::get_model_type(const std::string& model_name) const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = model_name.empty()

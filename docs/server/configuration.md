@@ -134,7 +134,7 @@ Then quit from the tray icon, then relaunch from the Start Menu.
 
 > **Note:** Using `LEMONADE_HOST=0.0.0.0` allows connections from other machines on the network. Only do this on trusted networks. Set `LEMONADE_API_KEY` (see above) to manage access on your network.
 
-For developers running `lemonade-router` directly: `lemonade-router --host 0.0.0.0`
+For developers running `lemond` directly: `lemond --host 0.0.0.0`
 
 ## Restarting the Server
 
