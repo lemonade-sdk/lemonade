@@ -1,7 +1,11 @@
 #include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
 #include <algorithm>
+#include <filesystem>
 #include <mutex>
 #include <stdexcept>
+
+namespace fs = std::filesystem;
 
 namespace lemon {
 
@@ -26,6 +30,61 @@ static const std::vector<std::string> s_backend_names = {
 
 static bool is_backend_name(const std::string& key) {
     return std::find(s_backend_names.begin(), s_backend_names.end(), key) != s_backend_names.end();
+}
+
+// Backends that have a selectable "backend" key
+static const std::vector<std::string> s_selectable_backends = {
+    "llamacpp", "whispercpp", "sdcpp"
+};
+
+static bool has_backend_selection(const std::string& config_section) {
+    return std::find(s_selectable_backends.begin(), s_selectable_backends.end(),
+                     config_section) != s_selectable_backends.end();
+}
+
+std::string RuntimeConfig::config_section_to_recipe(const std::string& config_section) {
+    if (config_section == "sdcpp") return "sd-cpp";
+    return config_section;
+}
+
+std::string RuntimeConfig::recipe_to_config_section(const std::string& recipe) {
+    if (recipe == "sd-cpp") return "sdcpp";
+    return recipe;
+}
+
+void RuntimeConfig::validate_backend_choice(const std::string& config_section,
+                                             const std::string& value) {
+    if (value == "auto") return;
+
+    if (!has_backend_selection(config_section)) {
+        throw std::invalid_argument(
+            "'" + config_section + "' does not have a selectable backend");
+    }
+
+    std::string recipe = config_section_to_recipe(config_section);
+    auto result = SystemInfo::get_supported_backends(recipe);
+
+    if (std::find(result.backends.begin(), result.backends.end(), value)
+        == result.backends.end()) {
+        std::string allowed = "auto";
+        for (const auto& b : result.backends) {
+            allowed += ", " + b;
+        }
+        throw std::invalid_argument(
+            "'" + config_section + ".backend' must be one of: " + allowed);
+    }
+}
+
+void RuntimeConfig::validate_bin_path(const std::string& config_section,
+                                       const std::string& key,
+                                       const std::string& value) {
+    if (value.empty() || value == "builtin") return;
+
+    if (!fs::exists(value)) {
+        throw std::invalid_argument(
+            "'" + config_section + "." + key + "' path does not exist: " + value
+            + ". Set to \"builtin\" to use the default binary.");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -275,12 +334,22 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
 
 void RuntimeConfig::validate_backend(const std::string& backend, const std::string& key,
                                       const json& value) const {
-    // String keys: backend, args, *_bin, server_bin
-    if (key == "backend" || key == "args" ||
-        key.find("_bin") != std::string::npos) {
+    if (key == "backend") {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
         }
+        validate_backend_choice(backend, value.get<std::string>());
+    }
+    else if (key == "args") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
+        }
+    }
+    else if (key.find("_bin") != std::string::npos) {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
+        }
+        validate_bin_path(backend, key, value.get<std::string>());
     }
     // Boolean keys: prefer_system, linux_beta
     else if (key == "prefer_system" || key == "linux_beta") {
@@ -288,16 +357,22 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
             throw std::invalid_argument("'" + backend + "." + key + "' must be a boolean");
         }
     }
-    // Numeric keys: steps, width, height, ctx_size
+    // Numeric keys: steps, width, height
     else if (key == "steps" || key == "width" || key == "height") {
         if (!value.is_number_integer()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be an integer");
+        }
+        if (value.get<int>() <= 0) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be positive");
         }
     }
     // Float keys: cfg_scale
     else if (key == "cfg_scale") {
         if (!value.is_number()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a number");
+        }
+        if (value.get<double>() <= 0.0) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be positive");
         }
     }
     else {

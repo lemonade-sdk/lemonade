@@ -380,7 +380,7 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
 }
 
 static std::string get_install_command(const std::string& recipe, const std::string& backend) {
-    return "lemonade-server recipes --install " + recipe + ":" + backend;
+    return "lemonade recipes --install " + recipe + ":" + backend;
 }
 
 static std::string get_expected_backend_version(const std::string& recipe, const std::string& backend) {
@@ -1973,6 +1973,10 @@ std::string WindowsSystemInfo::get_windows_power_setting() {
     if (rc != 0) {
         return "Windows power setting not found (command failed)";
     }
+
+    // Command output is in the system ANSI code page; convert to UTF-8
+    // so the string is safe for nlohmann::json::dump().
+    result = wmi::acp_to_utf8(result);
 
     // Extract power scheme name from parentheses
     // Output format: "Power Scheme GUID: ... (Power Scheme Name)"

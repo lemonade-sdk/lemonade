@@ -67,6 +67,26 @@ public:
     static constexpr const char* LOG_FORMAT =
         "%Y-%m-%d %H:%M:%S.#ms [#severity] (#tag_func) #message";
 
+    // --- Public helpers ---
+
+    /// Map config section name to recipe name (e.g. "sdcpp" -> "sd-cpp").
+    static std::string config_section_to_recipe(const std::string& config_section);
+
+    /// Map recipe name to config section name (e.g. "sd-cpp" -> "sdcpp").
+    static std::string recipe_to_config_section(const std::string& recipe);
+
+    /// Validate that `value` is a valid backend choice for the given config section.
+    /// Must be "auto" or a backend supported on this system (via SystemInfo).
+    /// Throws std::invalid_argument if invalid.
+    static void validate_backend_choice(const std::string& config_section,
+                                        const std::string& value);
+
+    /// Validate that a *_bin config value is "builtin" or an existing file path.
+    /// Throws std::invalid_argument if the path does not exist.
+    static void validate_bin_path(const std::string& config_section,
+                                  const std::string& key,
+                                  const std::string& value);
+
 private:
     // Validate a single key/value pair. Throws std::invalid_argument on failure.
     void validate(const std::string& key, const json& value) const;

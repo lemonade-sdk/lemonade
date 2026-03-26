@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useModels } from '../../hooks/useModels';
 import { Modality } from '../../hooks/useInferenceState';
 import { ModelsData } from '../../utils/modelData';
 import { serverFetch } from '../../utils/serverConfig';
+import { pullModel } from '../../utils/backendInstaller';
 import { adjustTextareaHeight } from '../../utils/textareaUtils';
 import InferenceControls from '../InferenceControls';
 import ModelSelector from '../ModelSelector';
@@ -14,6 +15,7 @@ interface ImageSettings {
   width: number;
   height: number;
   seed: number;
+  upscaleModel: string;
 }
 
 const DEFAULT_IMAGE_SETTINGS: ImageSettings = {
@@ -22,7 +24,18 @@ const DEFAULT_IMAGE_SETTINGS: ImageSettings = {
   width: 512,
   height: 512,
   seed: -1,
+  upscaleModel: '',
 };
+
+interface ImageHistoryItem {
+  prompt: string;
+  imageData: string;
+  originalImageData?: string;
+  timestamp: number;
+  generateMs?: number;
+  upscaleMs?: number;
+  isUpscaling?: boolean;
+}
 
 interface ImageGenerationPanelProps {
   isBusy: boolean;
@@ -39,29 +52,42 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
 }) => {
   const { selectedModel, modelsData } = useModels();
   const [imagePrompt, setImagePrompt] = useState('');
-  const [imageHistory, setImageHistory] = useState<Array<{
-    prompt: string;
-    imageData: string;
-    timestamp: number;
-  }>>([]);
+  const [imageHistory, setImageHistory] = useState<ImageHistoryItem[]>([]);
   const [imageSettings, setImageSettings] = useState<ImageSettings>(DEFAULT_IMAGE_SETTINGS);
+  const [generationStage, setGenerationStage] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load model-specific image defaults when the selected model changes
   useEffect(() => {
     const modelInfo = modelsData[selectedModel];
     const defaults = modelInfo?.image_defaults;
-    setImageSettings({
+    setImageSettings(prev => ({
       steps: defaults?.steps ?? DEFAULT_IMAGE_SETTINGS.steps,
       cfgScale: defaults?.cfg_scale ?? DEFAULT_IMAGE_SETTINGS.cfgScale,
       width: defaults?.width ?? DEFAULT_IMAGE_SETTINGS.width,
       height: defaults?.height ?? DEFAULT_IMAGE_SETTINGS.height,
       seed: -1,
-    });
+      upscaleModel: prev.upscaleModel,
+    }));
   }, [selectedModel, modelsData]);
 
-  // Auto-scroll to bottom when new images are generated
+  const handleUpscaleChange = async (upscaleModel: string) => {
+    setImageSettings(prev => ({ ...prev, upscaleModel }));
+    if (upscaleModel) {
+      try {
+        const res = await serverFetch(`/models/${upscaleModel}`);
+        const info = await res.json();
+        if (!info.downloaded) {
+          await pullModel(upscaleModel, { showInDownloadManager: true });
+        }
+      } catch (error: any) {
+        console.error('Failed to download upscale model:', error);
+        showError(`Failed to download upscale model: ${error.message || 'Unknown error'}`);
+        setImageSettings(prev => ({ ...prev, upscaleModel: '' }));
+      }
+    }
+  };
+
   useEffect(() => {
     if (imageHistory.length > 0) {
       requestAnimationFrame(() => {
@@ -82,6 +108,7 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
 
     const currentPrompt = imagePrompt;
     setImagePrompt('');
+    setGenerationStage('generating');
 
     try {
       const requestBody: Record<string, unknown> = {
@@ -97,32 +124,79 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
         requestBody.seed = imageSettings.seed;
       }
 
-      const response = await serverFetch('/images/generations', {
+      const genStart = Date.now();
+      const genResponse = await serverFetch('/images/generations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+      if (!genResponse.ok) {
+        const errorData = await genResponse.json();
+        throw new Error(errorData.error?.message || `HTTP error! status: ${genResponse.status}`);
       }
 
-      const data = await response.json();
+      const genData = await genResponse.json();
+      const generateMs = Date.now() - genStart;
 
-      if (data.data && data.data[0] && data.data[0].b64_json) {
-        setImageHistory(prev => [...prev, {
-          prompt: currentPrompt,
-          imageData: data.data[0].b64_json,
-          timestamp: Date.now(),
-        }]);
-      } else {
+      if (!genData.data?.[0]?.b64_json) {
         throw new Error('Unexpected response format');
+      }
+
+      const generatedImage = genData.data[0].b64_json;
+
+      // Show the generated image immediately
+      const historyItem: ImageHistoryItem = {
+        prompt: currentPrompt,
+        imageData: generatedImage,
+        timestamp: Date.now(),
+        generateMs,
+        isUpscaling: !!imageSettings.upscaleModel,
+      };
+      setImageHistory(prev => [...prev, historyItem]);
+
+      // Upscale as a second step if enabled
+      if (imageSettings.upscaleModel) {
+        setGenerationStage('upscaling');
+        const upscaleStart = Date.now();
+
+        const upscaleResponse = await serverFetch('/images/upscale', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: imageSettings.upscaleModel,
+            image: generatedImage,
+          }),
+        });
+
+        if (!upscaleResponse.ok) {
+          const errorData = await upscaleResponse.json();
+          throw new Error(errorData.error?.message || 'Upscale failed');
+        }
+
+        const upscaleData = await upscaleResponse.json();
+        const upscaleMs = Date.now() - upscaleStart;
+
+        if (upscaleData.data?.[0]?.b64_json) {
+          setImageHistory(prev => prev.map((item, i) =>
+            i === prev.length - 1
+              ? { ...item, originalImageData: generatedImage, imageData: upscaleData.data[0].b64_json, upscaleMs, isUpscaling: false }
+              : item
+          ));
+        } else {
+          setImageHistory(prev => prev.map((item, i) =>
+            i === prev.length - 1 ? { ...item, isUpscaling: false } : item
+          ));
+        }
       }
     } catch (error: any) {
       console.error('Failed to generate image:', error);
       showError(`Failed to generate image: ${error.message || 'Unknown error'}`);
     } finally {
+      setImageHistory(prev => prev.map(item =>
+        item.isUpscaling ? { ...item, isUpscaling: false } : item
+      ));
+      setGenerationStage(null);
       reset();
     }
   };
@@ -138,6 +212,11 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
     document.body.removeChild(link);
   };
 
+  const formatTime = (ms: number) => {
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  };
+
   return (
     <>
       <div className="chat-messages">
@@ -148,29 +227,73 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
             <div className="image-prompt-display">
               <span className="prompt-label">Prompt:</span>
               <span className="prompt-text">{item.prompt}</span>
+              {(item.generateMs || item.upscaleMs) && (
+                <span className="image-timing">
+                  {item.generateMs ? `Generated in ${formatTime(item.generateMs)}` : ''}
+                  {item.generateMs && item.upscaleMs ? ' | ' : ''}
+                  {item.upscaleMs ? `Upscaled in ${formatTime(item.upscaleMs)}` : ''}
+                </span>
+              )}
             </div>
-            <div className="generated-image-container">
-              <img
-                src={`data:image/png;base64,${item.imageData}`}
-                alt={item.prompt}
-                className="generated-image"
-              />
-              <button
-                className="save-image-button"
-                onClick={() => saveGeneratedImage(item.imageData, item.prompt)}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                  <polyline points="7 10 12 15 17 10"/>
-                  <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                Save Image
-              </button>
+            <div className={`generated-images-row${(item.originalImageData || item.isUpscaling) ? ' side-by-side' : ''}`}>
+              <div className="generated-image-column">
+                {(item.originalImageData || item.isUpscaling) && <div className="image-label">Original</div>}
+                <div className="image-wrapper">
+                  <img
+                    src={`data:image/png;base64,${item.originalImageData || item.imageData}`}
+                    alt={`${item.prompt}${item.originalImageData ? ' (original)' : ''}`}
+                    className="generated-image"
+                  />
+                  <button
+                    className="save-image-button"
+                    onClick={() => saveGeneratedImage(item.originalImageData || item.imageData, item.prompt + (item.originalImageData ? '_original' : ''))}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="7 10 12 15 17 10"/>
+                      <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    {item.originalImageData ? 'Save Original' : 'Save Image'}
+                  </button>
+                </div>
+              </div>
+              {item.isUpscaling && (
+                <div className="generated-image-column">
+                  <div className="image-label">Upscaled (4x)</div>
+                  <div className="upscale-placeholder">
+                    <div className="generating-spinner"></div>
+                    <span>Upscaling...</span>
+                  </div>
+                </div>
+              )}
+              {item.originalImageData && !item.isUpscaling && (
+                <div className="generated-image-column">
+                  <div className="image-label">Upscaled (4x)</div>
+                  <div className="image-wrapper">
+                    <img
+                      src={`data:image/png;base64,${item.imageData}`}
+                      alt={item.prompt}
+                      className="generated-image"
+                    />
+                    <button
+                      className="save-image-button"
+                      onClick={() => saveGeneratedImage(item.imageData, item.prompt)}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      Save Upscaled
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}
 
-        {isBusy && activeModality === 'image' && (
+        {isBusy && activeModality === 'image' && generationStage === 'generating' && (
           <div className="image-generating-indicator">
             <div className="generating-spinner"></div>
             <span>Generating image...</span>
@@ -218,6 +341,19 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
           <input type="number" min="-1" value={imageSettings.seed}
             onChange={(e) => setImageSettings(prev => ({ ...prev, seed: parseInt(e.target.value) || -1 }))}
             disabled={isBusy} placeholder="-1 = random" />
+        </div>
+        <div className="image-setting">
+          <label>Upscale</label>
+          <select value={imageSettings.upscaleModel}
+            onChange={(e) => handleUpscaleChange(e.target.value)}
+            disabled={isBusy}>
+            <option value="">Off</option>
+            {Object.entries(modelsData)
+              .filter(([_, info]) => info.labels?.includes('esrgan'))
+              .map(([name]) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+          </select>
         </div>
       </div>
 

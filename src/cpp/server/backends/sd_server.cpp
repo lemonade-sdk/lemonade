@@ -1,6 +1,7 @@
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/json_utils.h"
@@ -9,6 +10,8 @@
 #include <httplib.h>
 #include <iostream>
 #include <filesystem>
+#include <fstream>
+#include <chrono>
 #include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
@@ -79,6 +82,8 @@ void SDServer::load(const std::string& model_name,
     LOG(DEBUG, "SDServer") << "Per-model settings: " << options.to_log_string() << std::endl;
 
     std::string backend = options.get_option("sd-cpp_backend");
+
+    RuntimeConfig::validate_backend_choice("sdcpp", backend);
 
     // Install sd-server if needed
     backend_manager_->install_backend(SPEC.recipe, backend);
@@ -336,6 +341,72 @@ json SDServer::image_variations(const json& request) {
                   << std::endl;
 
     return forward_multipart_request("/v1/images/edits", fields, utils::HttpClient::get_default_timeout());
+}
+
+std::string SDServer::upscale_via_cli(
+    const std::string& b64_image,
+    const std::string& upscale_model_path,
+    const std::string& cli_exe_path,
+    const std::vector<std::pair<std::string, std::string>>& env_vars,
+    bool debug) {
+
+    if (!fs::exists(cli_exe_path)) {
+        LOG(ERROR, "SDServer") << "sd-cli binary not found at: "
+            << cli_exe_path << std::endl;
+        return "";
+    }
+
+    std::string raw = JsonUtils::base64_decode(b64_image);
+
+    auto unique_id = std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    fs::path temp_dir = fs::temp_directory_path() / "lemonade_upscale";
+    fs::create_directories(temp_dir);
+    fs::path input_path = temp_dir / ("input_" + unique_id + ".png");
+    fs::path output_path = temp_dir / ("output_" + unique_id + ".png");
+
+    struct TempFileGuard {
+        fs::path path;
+        ~TempFileGuard() { std::error_code ec; fs::remove(path, ec); }
+    };
+    TempFileGuard input_guard{input_path};
+    TempFileGuard output_guard{output_path};
+
+    {
+        std::ofstream out(input_path, std::ios::binary);
+        out.write(raw.data(), raw.size());
+    }
+
+    std::vector<std::string> cli_args = {
+        "-M", "upscale",
+        "--upscale-model", upscale_model_path,
+        "-i", input_path.string(),
+        "-o", output_path.string()
+    };
+
+    // inherit_output = true so subprocess stderr/stdout is visible in server
+    // logs for debugging failed upscale operations
+    auto proc = ProcessManager::start_process(
+        cli_exe_path, cli_args, "", true, false, env_vars);
+
+    int exit_code = ProcessManager::wait_for_exit(proc, 300);
+
+    std::string result;
+    if (exit_code == 0 && fs::exists(output_path)) {
+        std::ifstream in(output_path, std::ios::binary);
+        std::string upscaled_data(
+            (std::istreambuf_iterator<char>(in)),
+            std::istreambuf_iterator<char>());
+        result = JsonUtils::base64_encode(upscaled_data);
+        LOG(INFO, "SDServer") << "ESRGAN upscale complete ("
+            << raw.size() << " -> " << upscaled_data.size() << " bytes)" << std::endl;
+    } else {
+        LOG(WARNING, "SDServer") << "ESRGAN upscale failed (exit code: "
+            << exit_code << ", model: " << upscale_model_path
+            << ", cli: " << cli_exe_path << ")" << std::endl;
+    }
+
+    return result;
 }
 
 } // namespace backends

@@ -148,15 +148,7 @@ namespace lemon::backends {
         auto* cfg = lemon::RuntimeConfig::global();
         if (!cfg) return "";
 
-        // Map recipe name to config section name
-        // recipe "llamacpp" -> config section "llamacpp"
-        // recipe "sd-cpp" -> config section "sdcpp"
-        // recipe "whispercpp" -> config section "whispercpp"
-        // recipe "ryzenai" -> config section "ryzenai"
-        // recipe "kokoro" -> config section "kokoro"
-        std::string section = recipe;
-        // Normalize: remove hyphens (sd-cpp -> sdcpp)
-        section.erase(std::remove(section.begin(), section.end(), '-'), section.end());
+        std::string section = RuntimeConfig::recipe_to_config_section(recipe);
 
         // Build the config key: e.g. "vulkan_bin", "cpu_bin", "server_bin"
         std::string bin_key = backend.empty() ? "server_bin" : (backend + "_bin");
@@ -168,7 +160,8 @@ namespace lemon::backends {
             return "";
         }
 
-        return fs::exists(bin_value) ? bin_value : "";
+        RuntimeConfig::validate_bin_path(section, bin_key, bin_value);
+        return bin_value;
     }
 
     std::string BackendUtils::find_executable_in_install_dir(const std::string& install_dir, const std::string& binary_name) {
