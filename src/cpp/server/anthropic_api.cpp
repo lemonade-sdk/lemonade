@@ -99,6 +99,7 @@ void update_telemetry_from_anthropic_usage_if_present(Router* router, const json
     router->update_prompt_tokens(input_tokens);
 }
 
+
 }  // namespace
 
 void OllamaApi::register_anthropic_routes(httplib::Server& server, const std::shared_ptr<OllamaApi>& self) {

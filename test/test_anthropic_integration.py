@@ -271,6 +271,92 @@ class AnthropicIntegrationTests(ServerTestBase):
         self.assertGreater(data.get("input_tokens", 0), 0)
         self.assertGreater(data.get("output_tokens", 0), 0)
 
+    def test_010_streaming_messages_updates_stats_telemetry(self):
+        """Streaming Anthropic messages should update /v1/stats telemetry."""
+        self.ensure_model_pulled()
+
+        # Reset runtime state so we validate telemetry from this request only.
+        unload = requests.post(
+            f"{self.base_url}/unload",
+            json={},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertIn(unload.status_code, [200, 404])
+
+        load = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load.status_code, 200)
+
+        response = requests.post(
+            f"{ANTHROPIC_BASE_URL}/v1/messages",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "max_tokens": 24,
+                "stream": True,
+                "messages": [{"role": "user", "content": "Say hello"}],
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+            stream=True,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Drain stream to completion so telemetry can be finalized.
+        for _ in response.iter_lines():
+            pass
+
+        stats = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(stats.status_code, 200)
+        data = stats.json()
+        self.assertGreater(data.get("input_tokens", 0), 0)
+        self.assertGreater(data.get("output_tokens", 0), 0)
+        self.assertGreater(data.get("time_to_first_token", 0.0), 0.0)
+        self.assertGreater(data.get("tokens_per_second", 0.0), 0.0)
+
+    def test_011_streaming_responses_updates_stats_telemetry(self):
+        """Streaming Responses API should update /v1/stats telemetry."""
+        self.ensure_model_pulled()
+
+        unload = requests.post(
+            f"{self.base_url}/unload",
+            json={},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertIn(unload.status_code, [200, 404])
+
+        load = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load.status_code, 200)
+
+        response = requests.post(
+            f"{self.base_url}/responses",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "input": [{"role": "user", "content": "Say hello"}],
+                "max_output_tokens": 24,
+                "stream": True,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+            stream=True,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        for _ in response.iter_lines():
+            pass
+
+        stats = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(stats.status_code, 200)
+        data = stats.json()
+        self.assertGreater(data.get("input_tokens", 0), 0)
+        self.assertGreater(data.get("output_tokens", 0), 0)
+        self.assertGreater(data.get("time_to_first_token", 0.0), 0.0)
+        self.assertGreater(data.get("tokens_per_second", 0.0), 0.0)
+
 
 if __name__ == "__main__":
     parse_args(modality="llm")
