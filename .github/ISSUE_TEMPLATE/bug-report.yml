@@ -17,6 +17,7 @@ body:
         - Linux/Ubuntu
         - Linux/Fedora
         - Linux/Arch
+        - Linux/Other (please specify)
         - macOS
     validations:
       required: true
