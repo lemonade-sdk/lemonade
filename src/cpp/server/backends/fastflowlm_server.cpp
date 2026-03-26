@@ -31,7 +31,13 @@ FastFlowLMServer::~FastFlowLMServer() {
 InstallParams FastFlowLMServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
     params.repo = "FastFlowLM/FastFlowLM";
-    params.filename = "flm-setup.zip";
+    // Version in backend_versions.json has 'v' prefix (e.g. "v0.9.37"),
+    // but the release filename uses bare version (e.g. "fastflowlm-windows-0.9.37.zip")
+    std::string bare_version = version;
+    if (!bare_version.empty() && bare_version[0] == 'v') {
+        bare_version = bare_version.substr(1);
+    }
+    params.filename = "fastflowlm-windows-" + bare_version + ".zip";
     return params;
 }
 
