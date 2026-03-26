@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "💬 Community Discord"
+    url: https://discord.gg/5xXzkMu8Zk
+    about: Join our Discord community for questions, discussions, and support.
+  - name: "📧 Email Us"
+    url: mailto:lemonade@amd.com
+    about: Reach the Lemonade team directly via email.

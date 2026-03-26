@@ -1,0 +1,47 @@
+name: "Feature Request"
+description: Suggest a new feature or improvement for Lemonade
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea for how to make Lemonade better? We'd love to hear it!
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Feature Description
+      description: A clear and concise description of the feature you'd like.
+      placeholder: "Describe the feature..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case / Motivation
+      description: Why is this feature important? What problem does it solve or what workflow does it improve?
+      placeholder: "I need this because..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform Relevance
+      description: Which platforms would benefit from this feature?
+      options:
+        - All platforms
+        - Windows only
+        - Linux only
+        - macOS only
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context, mockups, or references here.
+    validations:
+      required: false
