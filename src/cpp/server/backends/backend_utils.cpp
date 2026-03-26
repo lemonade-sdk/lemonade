@@ -308,7 +308,7 @@ namespace lemon::backends {
             fs::path cache_dir = fs::temp_directory_path();
             fs::create_directories(cache_dir);
             std::string zip_name = backend == "" ? spec.recipe : spec.recipe + "_" + backend;
-            std::string zip_ext = is_tarball(filename) ? ".tar.gz" : ".zip";
+            std::string zip_ext = is_tarball(filename) ? ".tar.gz" : is_deb(filename) ? ".deb" : ".zip";
             std::string zip_path = (cache_dir / (zip_name + "_" + expected_version + zip_ext)).string();
 
             LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;
