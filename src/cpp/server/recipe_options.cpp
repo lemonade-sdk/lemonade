@@ -1,6 +1,7 @@
 #include <lemon/recipe_options.h>
 #include <lemon/system_info.h>
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <map>
 #ifdef LEMONADE_CLI
 #include <CLI/CLI.hpp>

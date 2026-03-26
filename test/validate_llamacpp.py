@@ -238,8 +238,14 @@ def main():
     parser.add_argument(
         "--backend",
         required=True,
-        choices=["vulkan", "rocm", "cpu", "metal"],
-        help="Backend to test (vulkan, rocm, cpu, metal)",
+        choices=[
+            "vulkan",
+            "rocm",
+            "cpu",
+            "metal",
+            "system",
+        ],
+        help="Backend to test (vulkan, rocm, cpu, metal, system)",
     )
     parser.add_argument(
         "--port",

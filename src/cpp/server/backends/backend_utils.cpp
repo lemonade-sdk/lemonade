@@ -150,8 +150,14 @@ namespace lemon::backends {
 
         std::string section = RuntimeConfig::recipe_to_config_section(recipe);
 
+        // Normalize backend name for config lookup: "rocm-preview"/"rocm-stable" -> "rocm"
+        std::string config_backend = backend;
+        if (recipe == "llamacpp" && (backend == "rocm-preview" || backend == "rocm-stable")) {
+            config_backend = "rocm";
+        }
+
         // Build the config key: e.g. "vulkan_bin", "cpu_bin", "server_bin"
-        std::string bin_key = backend.empty() ? "server_bin" : (backend + "_bin");
+        std::string bin_key = config_backend.empty() ? "server_bin" : (config_backend + "_bin");
 
         std::string bin_value = cfg->backend_string(section, bin_key);
 
@@ -187,13 +193,23 @@ namespace lemon::backends {
             throw std::runtime_error(spec.binary + " not found in PATH");
         }
 
-        std::string exe_path = find_external_backend_binary(spec.recipe, backend);
+        // Resolve "rocm" to actual channel for llamacpp
+        std::string resolved_backend = backend;
+        if (spec.recipe == "llamacpp" && backend == "rocm") {
+            std::string channel = "preview";  // default to preview
+            if (auto* cfg = RuntimeConfig::global()) {
+                channel = cfg->rocm_channel();
+            }
+            resolved_backend = "rocm-" + channel;
+        }
+
+        std::string exe_path = find_external_backend_binary(spec.recipe, resolved_backend);
 
         if (!exe_path.empty()) {
             return exe_path;
         }
 
-        std::string install_dir = get_install_directory(spec.recipe, backend);
+        std::string install_dir = get_install_directory(spec.recipe, resolved_backend);
         exe_path = find_executable_in_install_dir(install_dir, spec.binary);
 
         if (!exe_path.empty()) {
@@ -217,6 +233,16 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
+        std::string resolved_backend = backend;
+        if (recipe == "llamacpp" && backend == "rocm") {
+            // Map "rocm" to the appropriate channel based on config
+            std::string channel = "preview";  // default to preview for now
+            if (auto* cfg = RuntimeConfig::global()) {
+                channel = cfg->rocm_channel();
+            }
+            resolved_backend = "rocm-" + channel;
+        }
+
         std::string config_path = utils::get_resource_path("resources/backend_versions.json");
 
         json config = utils::JsonUtils::load_from_file(config_path);
@@ -226,13 +252,13 @@ namespace lemon::backends {
         }
 
         const auto& recipe_config = config[recipe];
-        const std::string backend_id = recipe + ":" + backend;
+        const std::string backend_id = recipe + ":" + resolved_backend;
 
-        if (!recipe_config.contains(backend) || !recipe_config[backend].is_string()) {
+        if (!recipe_config.contains(resolved_backend) || !recipe_config[resolved_backend].is_string()) {
             throw std::runtime_error("backend_versions.json is missing version for backend: " + backend_id);
         }
 
-        std::string version = recipe_config[backend].get<std::string>();
+        std::string version = recipe_config[resolved_backend].get<std::string>();
         return version;
     }
 

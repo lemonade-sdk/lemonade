@@ -32,6 +32,7 @@ namespace backends {
 static const int EMBEDDING_CTX_SIZE = 8192;
 static const int EMBEDDING_BATCH_SIZE = 8192;
 static const int EMBEDDING_UBATCH_SIZE = 8192;
+static const char* ROCM_STABLE_RUNTIME_DIR = "rocm-stable-runtime";
 
 // Helper to push reserved flags and their aliases
 static void push_reserved(std::set<std::string>& reserved,
@@ -89,19 +90,37 @@ static void push_overridable_arg(std::vector<std::string>& args,
     }
 }
 
+static std::string resolve_llamacpp_backend(const std::string& backend) {
+    if (backend == "rocm") {
+        // Map "rocm" to the appropriate channel based on config
+        std::string channel = "preview";  // default to preview for now
+        if (auto* cfg = RuntimeConfig::global()) {
+            channel = cfg->rocm_channel();
+        }
+        return "rocm-" + channel;
+    }
+    return backend;
+}
+
+static bool is_llamacpp_rocm_backend(const std::string& backend) {
+    return backend == "rocm-stable" || backend == "rocm-preview";
+}
+
 InstallParams LlamaCppServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
 
-    if (backend == "system") {
+    const std::string resolved_backend = resolve_llamacpp_backend(backend);
+
+    if (resolved_backend == "system") {
         return params; // Return empty params for system backend
     }
 
-    if (backend == "rocm") {
+    if (resolved_backend == "rocm-preview") {
         params.repo = "lemonade-sdk/llamacpp-rocm";
         std::string target_arch = SystemInfo::get_rocm_arch();
         if (target_arch.empty()) {
             throw std::runtime_error(
-                SystemInfo::get_unsupported_backend_error("llamacpp", "rocm")
+                SystemInfo::get_unsupported_backend_error("llamacpp", "rocm-preview")
             );
         }
 #ifdef _WIN32
@@ -111,14 +130,23 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #else
         throw std::runtime_error("ROCm llamacpp only supported on Windows and Linux");
 #endif
-    } else if (backend == "metal") {
+    } else if (resolved_backend == "rocm-stable") {
+        params.repo = "ggml-org/llama.cpp";
+#ifdef _WIN32
+        params.filename = "llama-" + version + "-bin-win-hip-radeon-x64.zip";
+#elif defined(__linux__)
+        params.filename = "llama-" + version + "-bin-ubuntu-rocm-7.2-x64.tar.gz";
+#else
+        throw std::runtime_error("ROCm stable llamacpp is currently supported on Windows and Linux only");
+#endif
+    } else if (resolved_backend == "metal") {
         params.repo = "ggml-org/llama.cpp";
 #ifdef __APPLE__
         params.filename = "llama-" + version + "-bin-macos-arm64.tar.gz";
 #else
         throw std::runtime_error("Metal llamacpp only supported on macOS");
 #endif
-    } else if (backend == "cpu") {
+    } else if (resolved_backend == "cpu") {
         params.repo = "ggml-org/llama.cpp";
 #ifdef _WIN32
         params.filename = "llama-" + version + "-bin-win-cpu-x64.zip";
@@ -159,10 +187,11 @@ void LlamaCppServer::load(const std::string& model_name,
     LOG(DEBUG, "LlamaCpp") << "Per-model settings: " << options.to_log_string() << std::endl;
 
     int ctx_size = options.get_option("ctx_size");
-    std::string llamacpp_backend = options.get_option("llamacpp_backend");
+    std::string llamacpp_backend_option = options.get_option("llamacpp_backend");
+    std::string llamacpp_backend = resolve_llamacpp_backend(llamacpp_backend_option);
     std::string llamacpp_args = options.get_option("llamacpp_args");
 
-    RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend);
+    RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend_option);
 
     bool use_gpu = (llamacpp_backend != "cpu");
 
@@ -220,7 +249,7 @@ void LlamaCppServer::load(const std::string& model_name,
     push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
 
     // Enable context shift for vulkan/rocm (not supported on Metal)
-    if (llamacpp_backend == "vulkan" || llamacpp_backend == "rocm") {
+    if (llamacpp_backend == "vulkan" || is_llamacpp_rocm_backend(llamacpp_backend)) {
         push_overridable_arg(args, llamacpp_args, "--context-shift");
         push_overridable_arg(args, llamacpp_args, "--keep", "16");
     } else {
@@ -277,10 +306,17 @@ void LlamaCppServer::load(const std::string& model_name,
     // For ROCm on Linux, set LD_LIBRARY_PATH to include the ROCm library directory
     std::vector<std::pair<std::string, std::string>> env_vars;
 #ifndef _WIN32
-    if (llamacpp_backend == "rocm") {
+    if (is_llamacpp_rocm_backend(llamacpp_backend)) {
         // Get the directory containing the executable (where ROCm .so files are)
         fs::path exe_dir = fs::path(executable).parent_path();
         std::string lib_path = exe_dir.string();
+
+        if (llamacpp_backend == "rocm-stable") {
+            std::string runtime_dir = BackendUtils::get_install_directory(ROCM_STABLE_RUNTIME_DIR, "");
+            if (fs::exists(runtime_dir)) {
+                lib_path = runtime_dir + ":" + lib_path;
+            }
+        }
 
         // Preserve existing LD_LIBRARY_PATH if it exists
         const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
@@ -294,7 +330,19 @@ void LlamaCppServer::load(const std::string& model_name,
 #else
     // For ROCm on Windows with gfx1151, set OCL_SET_SVMSIZE
     // This is a patch to enable loading larger models
-    if (llamacpp_backend == "rocm") {
+    if (is_llamacpp_rocm_backend(llamacpp_backend)) {
+        if (llamacpp_backend == "rocm-stable") {
+            std::string runtime_dir = BackendUtils::get_install_directory(ROCM_STABLE_RUNTIME_DIR, "");
+            if (fs::exists(runtime_dir)) {
+                std::string new_path = runtime_dir;
+                const char* existing_path = std::getenv("PATH");
+                if (existing_path && strlen(existing_path) > 0) {
+                    new_path += ";" + std::string(existing_path);
+                }
+                env_vars.push_back({"PATH", new_path});
+            }
+        }
+
         std::string arch = lemon::SystemInfo::get_rocm_arch();
         if (arch == "gfx1151") {
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});

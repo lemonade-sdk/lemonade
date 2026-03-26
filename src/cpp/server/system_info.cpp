@@ -118,7 +118,7 @@ struct RecipeBackendDef {
 //
 // Empty family set {} means "all families of that device type"
 static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
-    // llamacpp with multiple backends (order = preference: system > metal > vulkan > rocm > cpu)
+    // llamacpp with multiple backends (order = preference)
     {"llamacpp", "system", {"linux"}, {
         {"cpu", {"x86_64"}}, // Placeholder, actual check is PATH-based
     }},
@@ -300,8 +300,10 @@ static bool device_matches_constraint(const std::string& device_family,
 
 // Generic installation check
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
+    bool is_llamacpp_rocm_backend = recipe == "llamacpp" && backend == "rocm";
+
     // Special handling for ROCm backends on gfx1151 (Strix Halo) if kernel CWSR fix is missing
-    if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
+    if ((recipe == "sd-cpp" && backend == "rocm") || is_llamacpp_rocm_backend) {
         if (needs_gfx1151_cwsr_fix()) {
             error_message = "Linux kernel missing support";
             return false;
@@ -742,7 +744,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
         detected_devices.push_back({"metal", "Apple Metal", "metal", true});
     }
 
-    // Check if user prefers system llamacpp backend (off by default)
+    // Default to preferring system llamacpp on Linux AMD systems.
+    // This can be overridden with LEMONADE_LLAMACPP_PREFER_SYSTEM=true/false.
     bool prefer_llamacpp_system = false;
     if (auto* cfg = RuntimeConfig::global()) {
         prefer_llamacpp_system = cfg->backend_bool("llamacpp", "prefer_system");
@@ -936,8 +939,11 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 backend["state"] = "installable";
                 backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
 
-                // Special action for ROCm backend on llamacpp/sd-cpp if CWSR fix is missing
-                if ((def.recipe == "llamacpp" || def.recipe == "sd-cpp") && def.backend == "rocm"
+                bool is_rocm_backend = (def.recipe == "sd-cpp" && def.backend == "rocm") ||
+                    (def.recipe == "llamacpp" && def.backend == "rocm");
+
+                // Special action for ROCm backends on llamacpp/sd-cpp if CWSR fix is missing
+                if (is_rocm_backend
                     && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
                     backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
                 } else {
