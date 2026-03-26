@@ -185,6 +185,92 @@ class AnthropicIntegrationTests(ServerTestBase):
         self.assertIn("error", body)
         self.assertEqual(body["error"].get("type"), "invalid_request_error")
 
+    def test_006_backend_error_passthrough_messages(self):
+        """Backend-origin Anthropic errors should not be wrapped as backend_error."""
+        self.ensure_model_pulled()
+
+        payload = {
+            "model": ENDPOINT_TEST_MODEL,
+            "max_tokens": 16,
+            "messages": [{"role": "invalid_role", "content": "Hi"}],
+        }
+
+        response = requests.post(
+            f"{ANTHROPIC_BASE_URL}/v1/messages",
+            json=payload,
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        self.assertGreaterEqual(response.status_code, 400)
+        body = response.json()
+        self.assertIn("error", body)
+        self.assertIsInstance(body["error"], dict)
+        self.assertNotEqual(body["error"].get("type"), "backend_error")
+
+    def test_007_backend_error_passthrough_count_tokens(self):
+        """count_tokens backend-origin errors should preserve Anthropic schema."""
+        self.ensure_model_pulled()
+
+        payload = {
+            "model": ENDPOINT_TEST_MODEL,
+            "messages": [{"role": "invalid_role", "content": "Hi"}],
+        }
+
+        response = requests.post(
+            f"{ANTHROPIC_BASE_URL}/v1/messages/count_tokens",
+            json=payload,
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        self.assertGreaterEqual(response.status_code, 400)
+        body = response.json()
+        self.assertIn("error", body)
+        self.assertIsInstance(body["error"], dict)
+        self.assertNotEqual(body["error"].get("type"), "backend_error")
+
+    def test_008_messages_updates_stats_telemetry(self):
+        """Non-streaming Anthropic messages should update /v1/stats telemetry."""
+        self.ensure_model_pulled()
+
+        response = requests.post(
+            f"{ANTHROPIC_BASE_URL}/v1/messages",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "max_tokens": 24,
+                "messages": [{"role": "user", "content": "Say hello"}],
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        stats = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(stats.status_code, 200)
+        data = stats.json()
+        self.assertGreater(data.get("input_tokens", 0), 0)
+        self.assertGreater(data.get("output_tokens", 0), 0)
+
+    def test_009_responses_updates_stats_telemetry(self):
+        """Non-streaming Responses API should update /v1/stats telemetry."""
+        self.ensure_model_pulled()
+
+        response = requests.post(
+            f"{self.base_url}/responses",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "input": [{"role": "user", "content": "Say hello"}],
+                "max_output_tokens": 24,
+                "stream": False,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        stats = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(stats.status_code, 200)
+        data = stats.json()
+        self.assertGreater(data.get("input_tokens", 0), 0)
+        self.assertGreater(data.get("output_tokens", 0), 0)
+
 
 if __name__ == "__main__":
     parse_args(modality="llm")

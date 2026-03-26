@@ -1,5 +1,6 @@
 #include "lemon/ollama_api.h"
 #include <iostream>
+#include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
 
@@ -65,6 +66,39 @@ bool validate_messages_request(const json& request_json, httplib::Response& res)
     return true;
 }
 
+bool apply_raw_backend_passthrough_if_present(const json& response, httplib::Response& res) {
+    if (!response.contains("_lemonade_raw_backend") || !response["_lemonade_raw_backend"].is_object()) {
+        return false;
+    }
+
+    const auto& raw = response["_lemonade_raw_backend"];
+    const int status = raw.value("status_code", 500);
+    const std::string content_type = raw.value("content_type", "application/json");
+    const std::string body = raw.value("body", "{}");
+
+    res.status = status;
+    res.set_content(body, content_type.c_str());
+    return true;
+}
+
+void update_telemetry_from_anthropic_usage_if_present(Router* router, const json& response) {
+    if (!response.contains("usage") || !response["usage"].is_object()) {
+        return;
+    }
+
+    const auto& usage = response["usage"];
+    const int input_tokens = usage.value("input_tokens", 0);
+    const int output_tokens = usage.value("output_tokens", 0);
+
+    LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
+    LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
+    LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
+    LOG(INFO, "Telemetry") << "=================" << std::endl;
+
+    router->update_telemetry(input_tokens, output_tokens, 0.0, 0.0);
+    router->update_prompt_tokens(input_tokens);
+}
+
 }  // namespace
 
 void OllamaApi::register_anthropic_routes(httplib::Server& server, const std::shared_ptr<OllamaApi>& self) {
@@ -119,6 +153,12 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
         }
 
         auto response = router_->anthropic_messages(request_json);
+        if (apply_raw_backend_passthrough_if_present(response, res)) {
+            return;
+        }
+
+        update_telemetry_from_anthropic_usage_if_present(router_, response);
+
         const int status = infer_status_from_error(response);
         if (status != 200) {
             res.status = status;
@@ -152,6 +192,10 @@ void OllamaApi::handle_anthropic_count_tokens(const httplib::Request& req, httpl
         }
 
         auto response = router_->anthropic_count_tokens(request_json);
+        if (apply_raw_backend_passthrough_if_present(response, res)) {
+            return;
+        }
+
         const int status = infer_status_from_error(response);
         if (status != 200) {
             res.status = status;

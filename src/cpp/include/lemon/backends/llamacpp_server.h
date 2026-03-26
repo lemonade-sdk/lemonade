@@ -7,7 +7,6 @@
 namespace lemon {
 namespace backends {
 
-<<<<<<< HEAD
 class LlamaCppServer : public WrappedServer,
                        public IEmbeddingsServer,
                        public IRerankingServer,
