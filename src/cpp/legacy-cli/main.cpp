@@ -329,9 +329,9 @@ static int do_serve(const fs::path& dir, const std::vector<std::string>& args) {
 
 #else
     // Windows: spawn lemond as a child process
-    std::string cmd_line = server.string();
+    std::string cmd_line = "\"" + server.string() + "\"";
     for (const auto& a : lemond_args) {
-        cmd_line += " " + a;
+        cmd_line += " \"" + a + "\"";
     }
 
     STARTUPINFOA si = {};

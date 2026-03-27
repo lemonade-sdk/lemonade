@@ -69,6 +69,13 @@ int main(int argc, char** argv) {
         }
         if (cli_overrides) {
             ConfigFile::save(cli_config.home_dir, config_json);
+            // Log which values were persisted so the user knows config.json changed
+            if (cli_config.port != -1) {
+                std::cout << "Persisted port=" << cli_config.port << " to config.json" << std::endl;
+            }
+            if (!cli_config.host.empty()) {
+                std::cout << "Persisted host=" << cli_config.host << " to config.json" << std::endl;
+            }
         }
 
         auto config = std::make_shared<RuntimeConfig>(config_json);

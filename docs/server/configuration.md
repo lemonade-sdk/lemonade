@@ -26,7 +26,7 @@ If `config.json` doesn't exist, it's created automatically with default values o
   "max_loaded_models": 1,
   "no_broadcast": false,
   "extra_models_dir": "",
-  "models_dir": "~/.cache/huggingface/hub",
+  "models_dir": "auto",
   "ctx_size": 4096,
   "offline": false,
   "disable_model_filtering": false,
@@ -79,7 +79,7 @@ If `config.json` doesn't exist, it's created automatically with default values o
 | `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
 | `no_broadcast` | bool | false | Disable UDP broadcasting for server discovery |
 | `extra_models_dir` | string | "" | Secondary directory to scan for GGUF model files |
-| `models_dir` | string | (platform default) | Directory for cached model files |
+| `models_dir` | string | "auto" | Directory for cached model files. "auto" follows HF_HUB_CACHE / HF_HOME / platform default |
 | `ctx_size` | int | 4096 | Default context size for LLM models |
 | `offline` | bool | false | Skip model downloads |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
@@ -210,7 +210,13 @@ curl -X POST localhost:8000/internal/set -d '{"host":"0.0.0.0"}'
 
 ## Migration from Environment Variables
 
-If upgrading from a version that used environment variables, config.json is automatically generated from your existing env vars and `/etc/lemonade/lemonade.conf` on first run. A migration notice is logged.
+If upgrading from a version that used environment variables, you must migrate manually using `lemonade config set`. For example, if you previously had `LEMONADE_PORT=9000` and `LEMONADE_LLAMACPP=rocm`, run:
+
+```bash
+lemonade config set port=9000 llamacpp-backend=rocm
+```
+
+Run `lemonade config` to view all current settings and their `config set` key names.
 
 ## Next Steps
 

@@ -83,16 +83,19 @@ json ConfigFile::load(const std::string& home_dir) {
         return defaults;
     }
 
+    // Clean up stale temp file from a previous interrupted save
+    {
+        std::unique_lock lock(file_mutex_);
+        std::error_code ec;
+        fs::remove(fs::path(config_path).concat(".tmp"), ec);
+    }
+
     // Read and parse config under shared lock
     bool corrupt = false;
     std::string parse_error_msg;
     json loaded;
     {
         std::shared_lock lock(file_mutex_);
-
-        // Clean up stale temp file from a previous interrupted save
-        std::error_code ec;
-        fs::remove(fs::path(config_path).concat(".tmp"), ec);
 
         std::ifstream file(config_path);
         if (!file.is_open()) {

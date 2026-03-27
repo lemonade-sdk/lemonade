@@ -24,7 +24,8 @@ namespace fs = std::filesystem;
 namespace lemon::utils {
 
 // ---------------------------------------------------------------------------
-// Lemonade home dir and models dir (set once at startup)
+// Lemonade home dir and models dir — set once at startup before any
+// concurrent access, then read-only from that point on.
 // ---------------------------------------------------------------------------
 
 static std::string g_home_dir;

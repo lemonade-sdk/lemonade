@@ -1,6 +1,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <filesystem>
 #include <mutex>
@@ -14,15 +15,15 @@ const std::vector<std::string> RuntimeConfig::valid_log_levels_ = {
     "trace", "debug", "info", "warning", "error", "fatal", "none"
 };
 
-// Global instance pointer (set once at startup)
-static RuntimeConfig* s_global_instance = nullptr;
+// Global instance pointer (set once at startup, read from any thread after)
+static std::atomic<RuntimeConfig*> s_global_instance{nullptr};
 
 void RuntimeConfig::set_global(RuntimeConfig* instance) {
-    s_global_instance = instance;
+    s_global_instance.store(instance, std::memory_order_release);
 }
 
 RuntimeConfig* RuntimeConfig::global() {
-    return s_global_instance;
+    return s_global_instance.load(std::memory_order_acquire);
 }
 
 static const std::vector<std::string> s_backend_names = {
