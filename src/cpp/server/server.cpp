@@ -1234,7 +1234,8 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
                 int list_rc = utils::ProcessManager::run_command(list_cmd, list_output);
                 list_diag = ", flm_exe=" + flm_exe +
                            ", list_rc=" + std::to_string(list_rc) +
-                           ", list_len=" + std::to_string(list_output.size());
+                           ", list_len=" + std::to_string(list_output.size()) +
+                           ", list_out=" + list_output.substr(0, 150);
             } else {
                 list_diag = ", flm_exe=NOT_FOUND";
             }

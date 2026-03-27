@@ -345,9 +345,18 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
     if (spec) {
         std::string version_file = BackendUtils::get_installed_version_file(*spec, backend);
         if (version_file.empty()) {
+            // FLM may be installed as a system package (no version.txt) - query it directly
+            if (recipe == "flm") {
+                return SystemInfo::get_flm_version();
+            }
             return "unknown";
         }
-        return read_version_file(version_file);
+        std::string version = read_version_file(version_file);
+        // If version.txt doesn't exist on disk, fall back to querying FLM directly
+        if (recipe == "flm" && (version.empty() || version == "unknown")) {
+            return SystemInfo::get_flm_version();
+        }
+        return version;
     }
     return "";
 }
