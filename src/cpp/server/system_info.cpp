@@ -305,21 +305,6 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
             return false;
         }
     }
-    // FLM needs additional NPU driver validation beyond just having the binary
-    if (recipe == "flm") {
-        try {
-            std::string flm_path = BackendUtils::get_backend_binary_path(
-                *try_get_spec_for_recipe("flm"), backend);
-            if (!utils::run_flm_validate(flm_path, error_message)) {
-                return false;
-            }
-            return true;
-        } catch (...) {
-            error_message = "FLM is not installed";
-            return false;
-        }
-    }
-
     auto* spec = try_get_spec_for_recipe(recipe);
     if (spec) {
         try {
@@ -870,90 +855,36 @@ json SystemInfo::build_recipes_info(const json& devices) {
             backend["message"] = message;
             backend["action"] = "";
         } else if (!available) {
-            // FLM uses 5-state model: installable, update_required, action_required
-            // (version checking is inside is_recipe_installed() for FLM)
-            if (def.recipe == "flm") {
-                // Determine FLM sub-state from the error message
-                bool is_not_installed = install_error.find("not installed") != std::string::npos;
-                bool is_version_mismatch = install_error.find("requires") != std::string::npos;
+            backend["state"] = "installable";
+            backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
 
-                if (is_not_installed) {
-                    backend["state"] = "installable";
-                } else if (is_version_mismatch) {
-                    backend["state"] = "update_required";
-                } else {
-                    backend["state"] = "action_required";
-                }
-                backend["message"] = install_error;
-
-                // Include version for update_required and action_required
-                if (!is_not_installed) {
-                    std::string installed_version = get_recipe_version(def.recipe, def.backend);
-                    if (!installed_version.empty() && installed_version != "unknown") {
-                        backend["version"] = installed_version;
-                    }
-                }
-
-                // Platform-specific action: action_required uses driver help URL on Windows,
-                // all other states use the install command. Linux always uses the docs URL.
-#ifdef __linux__
-                backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html?mode=troubleshoot";
-#elif defined(_WIN32)
-                if (!is_not_installed && !is_version_mismatch) {
-                    backend["action"] = "Visit https://lemonade-server.ai/driver_install.html";
-                } else {
-                    backend["action"] = get_install_command(def.recipe, def.backend);
-                }
-#else
-                backend["action"] = is_not_installed || is_version_mismatch
-                    ? get_install_command(def.recipe, def.backend) : "";
-#endif
+            // Special action for ROCm backend on llamacpp/sd-cpp if CWSR fix is missing
+            if ((def.recipe == "llamacpp" || def.recipe == "sd-cpp") && def.backend == "rocm"
+                && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
+                backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
             } else {
-                backend["state"] = "installable";
-                backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
-
-                // Special action for ROCm backend on llamacpp/sd-cpp if CWSR fix is missing
-                if ((def.recipe == "llamacpp" || def.recipe == "sd-cpp") && def.backend == "rocm"
-                    && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
-                    backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
-                } else {
-                    backend["action"] = get_install_command(def.recipe, def.backend);
-                }
+                backend["action"] = get_install_command(def.recipe, def.backend);
             }
         } else {
-            // FLM: version check already done in is_recipe_installed(), so skip generic version check
-            if (def.recipe == "flm") {
-                std::string installed_version = get_recipe_version(def.recipe, def.backend);
-                if (!installed_version.empty() && installed_version != "unknown") {
-                    backend["version"] = installed_version;
-                }
+            std::string installed_version = get_recipe_version(def.recipe, def.backend);
+            std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
+
+            if (!installed_version.empty() && installed_version != "unknown") {
+                backend["version"] = installed_version;
+            }
+
+            bool version_known = !installed_version.empty() && installed_version != "unknown";
+            bool has_expected = !expected_version.empty();
+            bool needs_update = has_expected && (!version_known || installed_version != expected_version);
+
+            if (needs_update) {
+                backend["state"] = "update_required";
+                backend["message"] = "Backend update is required before use.";
+                backend["action"] = get_install_command(def.recipe, def.backend);
+            } else {
                 backend["state"] = "installed";
                 backend["message"] = "";
                 backend["action"] = "";
-#ifdef __linux__
-                backend["can_uninstall"] = false;
-#endif
-            } else {
-                std::string installed_version = get_recipe_version(def.recipe, def.backend);
-                std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
-
-                if (!installed_version.empty() && installed_version != "unknown") {
-                    backend["version"] = installed_version;
-                }
-
-                bool version_known = !installed_version.empty() && installed_version != "unknown";
-                bool has_expected = !expected_version.empty();
-                bool needs_update = has_expected && (!version_known || installed_version != expected_version);
-
-                if (needs_update) {
-                    backend["state"] = "update_required";
-                    backend["message"] = "Backend update is required before use.";
-                    backend["action"] = get_install_command(def.recipe, def.backend);
-                } else {
-                    backend["state"] = "installed";
-                    backend["message"] = "";
-                    backend["action"] = "";
-                }
             }
         }
 
