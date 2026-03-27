@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { getAPIKey, getServerBaseUrl, onServerUrlChange, serverConfig } from './utils/serverConfig';
-import {EventSource} from 'eventsource';
 
 interface LogsWindowProps {
   isVisible: boolean;
   height?: number;
+}
+
+interface LogStreamConnection {
+  close: () => void;
 }
 
 const BOTTOM_FOLLOW_THRESHOLD_PX = 60;
@@ -17,7 +20,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const logsContentRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
   const isProgrammaticScrollRef = useRef(false);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const eventSourceRef = useRef<LogStreamConnection | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [serverUrl, setServerUrl] = useState<string>('');
   const [apiKey, setAPIKey] = useState<string>('');
@@ -112,6 +115,25 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
     }
 
     const connectToLogStream = () => {
+      const appendLogLine = (logLine: string) => {
+        // Skip heartbeat messages
+        if (logLine.trim() === '' || logLine === 'heartbeat') {
+          return;
+        }
+
+        // Keep follow mode sticky when user is effectively at bottom.
+        const shouldFollowNextLine = autoScrollRef.current || isNearBottom();
+        if (shouldFollowNextLine && !autoScrollRef.current) {
+          setAutoScroll(true);
+        }
+
+        setLogs((prevLogs) => {
+          // Keep last 1000 lines to prevent memory issues
+          const newLogs = [...prevLogs, logLine];
+          return newLogs.length > 1000 ? newLogs.slice(-1000) : newLogs;
+        });
+      };
+
       try {
         setConnectionStatus('connecting');
 
@@ -120,57 +142,109 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
           eventSourceRef.current.close();
         }
 
-        const options = apiKey ? {
-            fetch: (input: string | URL | Request, init: RequestInit) =>
-              fetch(input, {
-                ...init,
-                headers: {
-                  ...init.headers,
-                  Authorization: `Bearer ${apiKey}`,
-                },
-            })} : {};
+        const streamUrl = `${serverUrl}/api/v1/logs/stream`;
 
-        const eventSource = new EventSource(`${serverUrl}/api/v1/logs/stream`, options)
-        eventSourceRef.current = eventSource;
+        if (!apiKey) {
+          const eventSource = new window.EventSource(streamUrl);
+          eventSourceRef.current = eventSource;
 
-        eventSource.onopen = () => {
-          console.log('Log stream connected to:', serverUrl);
-          setConnectionStatus('connected');
+          eventSource.onopen = () => {
+            console.log('Log stream connected to:', serverUrl);
+            setConnectionStatus('connected');
+          };
+
+          eventSource.onmessage = (event) => {
+            // SSE sends data as "data: <log line>"
+            appendLogLine(event.data);
+          };
+
+          eventSource.onerror = (error) => {
+            console.error('Log stream error:', error);
+            setConnectionStatus('error');
+            eventSource.close();
+
+            // Reconnect after 5 seconds
+            reconnectTimeoutRef.current = setTimeout(() => {
+              console.log('Attempting to reconnect to log stream...');
+              connectToLogStream();
+            }, 5000);
+          };
+          return;
+        }
+
+        const abortController = new AbortController();
+        eventSourceRef.current = {
+          close: () => abortController.abort(),
         };
 
-        eventSource.onmessage = (event) => {
-          // SSE sends data as "data: <log line>"
-          const logLine = event.data;
+        const connectWithFetch = async () => {
+          try {
+            const response = await fetch(streamUrl, {
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+              },
+              signal: abortController.signal,
+            });
 
-          // Skip heartbeat messages
-          if (logLine.trim() === '' || logLine === 'heartbeat') {
-            return;
+            if (!response.ok || !response.body) {
+              throw new Error(`Log stream request failed with status ${response.status}`);
+            }
+
+            console.log('Log stream connected to:', serverUrl);
+            setConnectionStatus('connected');
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) {
+                break;
+              }
+
+              buffer += decoder.decode(value, { stream: true });
+
+              let delimiterIndex = buffer.indexOf('\n\n');
+              while (delimiterIndex !== -1) {
+                const rawEvent = buffer.slice(0, delimiterIndex).replace(/\r/g, '');
+                buffer = buffer.slice(delimiterIndex + 2);
+
+                const eventLines = rawEvent.split('\n');
+                const dataLines: string[] = [];
+
+                for (const line of eventLines) {
+                  if (line.startsWith('data:')) {
+                    dataLines.push(line.slice(5).trimStart());
+                  }
+                }
+
+                if (dataLines.length > 0) {
+                  appendLogLine(dataLines.join('\n'));
+                }
+
+                delimiterIndex = buffer.indexOf('\n\n');
+              }
+            }
+
+            if (!abortController.signal.aborted) {
+              throw new Error('Log stream connection closed');
+            }
+          } catch (error) {
+            if (abortController.signal.aborted) {
+              return;
+            }
+
+            console.error('Log stream error:', error);
+            setConnectionStatus('error');
+            reconnectTimeoutRef.current = setTimeout(() => {
+              console.log('Attempting to reconnect to log stream...');
+              connectToLogStream();
+            }, 5000);
           }
-
-          // Keep follow mode sticky when user is effectively at bottom.
-          const shouldFollowNextLine = autoScrollRef.current || isNearBottom();
-          if (shouldFollowNextLine && !autoScrollRef.current) {
-            setAutoScroll(true);
-          }
-
-          setLogs((prevLogs) => {
-            // Keep last 1000 lines to prevent memory issues
-            const newLogs = [...prevLogs, logLine];
-            return newLogs.length > 1000 ? newLogs.slice(-1000) : newLogs;
-          });
         };
 
-        eventSource.onerror = (error) => {
-          console.error('Log stream error:', error);
-          setConnectionStatus('error');
-          eventSource.close();
-
-          // Reconnect after 5 seconds
-          reconnectTimeoutRef.current = setTimeout(() => {
-            console.log('Attempting to reconnect to log stream...');
-            connectToLogStream();
-          }, 5000);
-        };
+        void connectWithFetch();
       } catch (error) {
         console.error('Failed to connect to log stream:', error);
         setConnectionStatus('error');
