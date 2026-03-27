@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include <string>
+#include <vector>
 
 namespace lemon_cli {
 
@@ -24,5 +25,14 @@ int import_remote_recipe(lemonade::LemonadeClient& client,
                          bool yes,
                          std::string* imported_model_out,
                          bool allow_skip);
+
+// List recipe directories under lemonade-sdk/recipes.
+bool list_remote_recipe_directories(std::vector<std::string>& recipe_dirs_out,
+                                    std::string& error_out);
+
+// List JSON recipe files under lemonade-sdk/recipes/<repo_dir>.
+bool list_remote_recipe_files(const std::string& repo_dir,
+                              std::vector<std::string>& recipe_files_out,
+                              std::string& error_out);
 
 } // namespace lemon_cli

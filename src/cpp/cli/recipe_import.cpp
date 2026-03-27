@@ -2,6 +2,7 @@
 
 #include "lemon/utils/http_client.h"
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -236,6 +237,59 @@ int import_model_from_json_file(lemonade::LemonadeClient& client,
     }
 
     return client.pull_model(model_data);
+}
+
+bool list_remote_recipe_files(const std::string& repo_dir,
+                              std::vector<std::string>& recipe_files_out,
+                              std::string& error_out) {
+    recipe_files_out.clear();
+
+    if (repo_dir.empty()) {
+        error_out = "Recipe directory cannot be empty.";
+        return false;
+    }
+
+    nlohmann::json dir_entries;
+    if (!fetch_github_recipe_contents(repo_dir, dir_entries, error_out)) {
+        return false;
+    }
+
+    for (const auto& entry : dir_entries) {
+        if (!is_json_recipe_file(entry)) {
+            continue;
+        }
+        recipe_files_out.push_back(entry["name"].get<std::string>());
+    }
+
+    std::sort(recipe_files_out.begin(), recipe_files_out.end());
+    return true;
+}
+
+bool list_remote_recipe_directories(std::vector<std::string>& recipe_dirs_out,
+                                    std::string& error_out) {
+    recipe_dirs_out.clear();
+
+    nlohmann::json top_entries;
+    if (!fetch_github_recipe_contents("", top_entries, error_out)) {
+        return false;
+    }
+
+    for (const auto& entry : top_entries) {
+        if (!entry.is_object()) {
+            continue;
+        }
+        if (!entry.contains("type") || !entry["type"].is_string() ||
+            entry["type"].get<std::string>() != "dir") {
+            continue;
+        }
+        if (!entry.contains("name") || !entry["name"].is_string()) {
+            continue;
+        }
+        recipe_dirs_out.push_back(entry["name"].get<std::string>());
+    }
+
+    std::sort(recipe_dirs_out.begin(), recipe_dirs_out.end());
+    return true;
 }
 
 int import_remote_recipe(lemonade::LemonadeClient& client,

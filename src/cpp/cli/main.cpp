@@ -323,12 +323,15 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         return 1;
     }
 
+    const bool model_was_missing = config.model.empty();
     if (!lemon_cli::resolve_model_if_missing(client, config.model, "launch", true, config.agent)) {
         return 1;
     }
 
     bool should_import_recipe = false;
-    if (config.use_recipe) {
+    if (model_was_missing) {
+        // Interactive model resolution for launch already handled recipe selection/import choices.
+    } else if (config.use_recipe) {
         std::cout << "--use-recipe set: skipping recipe import and using selected/provided model." << std::endl;
     } else {
         should_import_recipe = lemon_cli::prompt_yes_no("Do you want to import and use a recipe for launch?", false);
