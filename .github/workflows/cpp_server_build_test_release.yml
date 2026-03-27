@@ -129,144 +129,63 @@ jobs:
           Write-Host "Using WiX from: $wixExe" -ForegroundColor Green
           & $wixExe --version
 
-      - name: Build C++ Server with CMake
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          Write-Host "Building lemond and lemonade-server..." -ForegroundColor Cyan
-
-          # Create build directory
-          if (Test-Path "build") {
-              Remove-Item -Recurse -Force "build"
-          }
-
-          # Configure with preset
-          cmake --preset windows
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          # Build
-          cmake --build build --config Release
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          # Verify binaries exist
-          if (-not (Test-Path "build\Release\lemond.exe")) {
-              Write-Host "ERROR: lemond.exe not found!" -ForegroundColor Red
-              exit 1
-          }
-
-          if (-not (Test-Path "build\Release\lemonade-server.exe")) {
-              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
-              exit 1
-          }
-
-          if (-not (Test-Path "build\Release\LemonadeServer.exe")) {
-              Write-Host "ERROR: LemonadeServer.exe not found!" -ForegroundColor Red
-              exit 1
-          }
-
-          Write-Host "C++ build successful!" -ForegroundColor Green
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Build Electron App
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: fetchcontent-windows-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            fetchcontent-windows-
+
+      - name: Configure CMake
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "Building Electron app via CMake target..." -ForegroundColor Cyan
-
-          # Build using CMake electron-app target (single source of truth)
-          cmake --build --preset windows --target electron-app
-          if ($LASTEXITCODE -ne 0) {
-              Write-Host "ERROR: Electron app build failed!" -ForegroundColor Red
-              exit $LASTEXITCODE
+          # Clean build directory (but preserve cached _deps)
+          if (Test-Path "build") {
+              Get-ChildItem -Path "build" -Exclude "_deps" | Remove-Item -Recurse -Force
           }
 
-          # Verify the build output exists
-          if (-not (Test-Path "build\app\win-unpacked\lemonade-app.exe")) {
-              Write-Host "ERROR: Electron app executable not found!" -ForegroundColor Red
-              exit 1
-          }
-
-          Write-Host "Electron app build successful!" -ForegroundColor Green
-
-      - name: Build Web App
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          Write-Host "Building Web app..." -ForegroundColor Cyan
-
-          cd src\web-app
-
-          # Install dependencies
-          Write-Host "Installing npm dependencies..." -ForegroundColor Yellow
-          npm install
-          if ($LASTEXITCODE -ne 0) {
-              Write-Host "ERROR: npm install failed!" -ForegroundColor Red
-              exit $LASTEXITCODE
-          }
-
-          # Build the Web app
-          Write-Host "Building Web app..." -ForegroundColor Yellow
-          npm run build
-          if ($LASTEXITCODE -ne 0) {
-              Write-Host "ERROR: Web app build failed!" -ForegroundColor Red
-              exit $LASTEXITCODE
-          }
-
-          # Verify the build output exists
-          if (-not (Test-Path "dist\renderer\index.html")) {
-              Write-Host "ERROR: Web app build output not found!" -ForegroundColor Red
-              exit 1
-          }
-
-          Write-Host "Web app build successful!" -ForegroundColor Green
-
-          # Copy web app output to the location expected by CMake/WiX installer
-          Write-Host "Copying web app to build\resources\web-app..." -ForegroundColor Yellow
-          $targetDir = "..\..\build\resources\web-app"
-          if (-not (Test-Path "..\..\build\resources")) {
-              New-Item -ItemType Directory -Force -Path "..\..\build\resources" | Out-Null
-          }
-          if (Test-Path $targetDir) {
-              Remove-Item -Recurse -Force $targetDir
-          }
-          Copy-Item -Path "dist\renderer" -Destination $targetDir -Recurse -Force
-
-          # Verify the copy succeeded
-          if (-not (Test-Path "..\..\build\resources\web-app\index.html")) {
-              Write-Host "ERROR: Failed to copy web app to build directory!" -ForegroundColor Red
-              exit 1
-          }
-
-          Write-Host "Web app copied to build directory successfully!" -ForegroundColor Green
-
-      - name: Build the Lemonade Server Installer
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          Write-Host "Building WiX MSI installers via CMake..." -ForegroundColor Cyan
-          cmake --build build --config Release --target wix_installers
+          cmake --preset windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          # Verify installers were created
-          if (-not (Test-Path "lemonade-server-minimal.msi")) {
-              Write-Host "ERROR: Minimal installer not created!" -ForegroundColor Red
-              exit 1
+      - name: Build installers
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Write-Host "Building C++ server, Electron app, web app, and MSI installers..." -ForegroundColor Cyan
+
+          # Single build command: wix_installers depends on all C++ targets,
+          # electron-app, and web-app via CMake dependency graph
+          cmake --build --preset windows --target wix_installers
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # Verify outputs
+          $failures = @()
+          @(
+              "build\Release\lemond.exe",
+              "build\Release\lemonade-server.exe",
+              "build\Release\LemonadeServer.exe",
+              "build\app\win-unpacked\lemonade-app.exe",
+              "build\resources\web-app\index.html",
+              "lemonade-server-minimal.msi",
+              "lemonade.msi"
+          ) | ForEach-Object {
+              if (-not (Test-Path $_)) {
+                  Write-Host "ERROR: $_ not found!" -ForegroundColor Red
+                  $failures += $_
+              }
           }
 
-          if (-not (Test-Path "lemonade.msi")) {
-              Write-Host "ERROR: Full installer not created!" -ForegroundColor Red
-              exit 1
-          }
-
-          Write-Host "Installers created successfully!" -ForegroundColor Green
+          if ($failures.Count -gt 0) { exit 1 }
+          Write-Host "Build and packaging successful!" -ForegroundColor Green
 
       - name: Upload Lemonade Server Installers
         id: upload-unsigned-msi
