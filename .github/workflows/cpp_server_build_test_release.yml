@@ -170,7 +170,7 @@ jobs:
           # Verify outputs
           $failures = @()
           @(
-              "build\Release\lemonade-router.exe",
+              "build\Release\lemond.exe",
               "build\Release\lemonade-server.exe",
               "build\Release\LemonadeServer.exe",
               "build\app\win-unpacked\lemonade-app.exe",
