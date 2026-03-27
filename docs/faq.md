@@ -166,11 +166,9 @@
 
 ### 1. **Does LLM inference with the NPU only work on Windows?**
 
-   Yes, today, NPU and hybrid inference is currently supported only on Windows.
-
-   To request NPU support on Linux, file an issue with either:
-     - Ryzen AI SW: https://github.com/amd/ryzenai-sw
-     - FastFlowLM: https://github.com/FastFlowLM/FastFlowLM
+   Today, NPU-only inference on Linux is available via FastFlowLM, see the guide [here](https://lemonade-server.ai/flm_npu_linux.html).
+   
+   At the moment, Ryzen AI SW's implementation of NPU and hybrid inference is currently supported only on Windows.
 
 ### 2. **I loaded a hybrid model, but the NPU is barely active. Is that expected?**
 
