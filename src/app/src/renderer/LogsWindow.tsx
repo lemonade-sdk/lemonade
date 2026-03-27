@@ -25,6 +25,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const [serverUrl, setServerUrl] = useState<string>('');
   const [apiKey, setAPIKey] = useState<string>('');
   const [isInitialized, setIsInitialized] = useState(false);
+  const [reconnectSignal, setReconnectSignal] = useState(0);
 
   const isNearBottom = () => {
     const logsContent = logsContentRef.current;
@@ -269,7 +270,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
         reconnectTimeoutRef.current = null;
       }
     };
-  }, [isVisible, serverUrl, apiKey, isInitialized]);
+  }, [isVisible, serverUrl, apiKey, isInitialized, reconnectSignal]);
 
   const handleClearLogs = () => {
     setLogs([]);
@@ -278,6 +279,13 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const handleScrollToBottom = () => {
     setAutoScroll(true);
     scrollToBottom();
+  };
+
+  const handleRefreshConnection = () => {
+    setServerUrl(getServerBaseUrl());
+    setAPIKey(getAPIKey());
+    setConnectionStatus('connecting');
+    setReconnectSignal((prev) => prev + 1);
   };
 
   if (!isVisible) return null;
@@ -298,6 +306,9 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
               ↓ Jump to Bottom
             </button>
           )}
+          <button className="logs-control-btn" onClick={handleRefreshConnection} title="Refresh credentials and reconnect">
+            Refresh
+          </button>
           <button className="logs-control-btn" onClick={handleClearLogs} title="Clear logs">
             Clear
           </button>
