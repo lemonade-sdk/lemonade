@@ -67,7 +67,7 @@ jobs:
         run: |
           set -e
 
-          echo "Building lemond and lemonade-server on ${{ matrix.distro }}..."
+          echo "Building lemond and lemonade on ${{ matrix.distro }}..."
 
           # Build
           echo "Building binaries..."
@@ -81,19 +81,19 @@ jobs:
               exit 1
           fi
 
-          if [ ! -f "build/lemonade-server" ]; then
-              echo "ERROR: lemonade-server not found!"
+          if [ ! -f "build/lemonade" ]; then
+              echo "ERROR: lemonade not found!"
               echo "Build directory contents:"
               ls -lh build/
               exit 1
           fi
 
           echo "Binaries found successfully"
-          ls -lh build/lemond build/lemonade-server
+          ls -lh build/lemond build/lemonade
 
           echo "Verifying binary executability..."
           ./build/lemond --version
-          ./build/lemonade-server --version
+          ./build/lemonade --version
 
           echo "${{ matrix.distro }} build successful!"
 
@@ -106,8 +106,8 @@ jobs:
           ldd lemond
 
           echo ""
-          echo "=== lemonade-server dependencies ==="
-          ldd lemonade-server
+          echo "=== lemonade dependencies ==="
+          ldd lemonade
 
           echo ""
           echo "All dependencies resolved successfully on ${{ matrix.distro }}!"
@@ -155,7 +155,7 @@ jobs:
           set -e
 
           . .venv/bin/activate
-          SERVER_BINARY="$(pwd)/build/lemonade-server"
+          SERVER_BINARY="$(pwd)/build/lemonade"
 
           echo "Running CLI tests..."
           python test/server_cli.py --server-binary "$SERVER_BINARY"
@@ -170,7 +170,7 @@ jobs:
           set -e
 
           . .venv/bin/activate
-          SERVER_BINARY="$(pwd)/build/lemonade-server"
+          SERVER_BINARY="$(pwd)/build/lemonade"
 
           echo "Running endpoint tests..."
           python test/server_endpoints.py --server-binary "$SERVER_BINARY"
