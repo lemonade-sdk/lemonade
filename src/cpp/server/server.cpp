@@ -2,6 +2,7 @@
 #include "lemon/ollama_api.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/fastflowlm_server.h"
 #include <cstring>
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -1203,7 +1204,7 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 
         message += "Use 'lemonade-server list' or GET /api/v1/models?show_all=true to see all available models.";
 
-        // Add FLM hint for -FLM model names when FLM is not ready
+        // Add FLM diagnostic info for -FLM model names
         if (requested_model.size() > 4 &&
             requested_model.substr(requested_model.size() - 4) == "-FLM") {
             auto flm_status = SystemInfoCache::get_flm_status();
@@ -1211,6 +1212,20 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
                 message += " The FLM backend is not ready: " + flm_status.message + ".";
                 if (!flm_status.action.empty()) {
                     message += " " + flm_status.action + ".";
+                }
+            } else {
+                // FLM is ready but model not found - add diagnostic info
+                try {
+                    std::string flm_path = backends::BackendUtils::get_backend_binary_path(
+                        backends::FastFlowLMServer::SPEC, "npu");
+                    std::string diag_output;
+                    std::string diag_cmd = "\"" + flm_path + "\" list --json";
+                    int diag_rc = utils::ProcessManager::run_command(diag_cmd, diag_output);
+                    message += " [FLM debug: binary=" + flm_path +
+                               ", list_rc=" + std::to_string(diag_rc) +
+                               ", list_len=" + std::to_string(diag_output.size()) + "]";
+                } catch (const std::exception& e) {
+                    message += " [FLM debug: binary_error=" + std::string(e.what()) + "]";
                 }
             }
         }
