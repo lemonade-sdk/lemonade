@@ -1393,88 +1393,76 @@ void ModelManager::register_user_model(const std::string& model_name,
     add_model_to_cache("user." + clean_name);
 }
 
-// Helper function to get FLM installed models by calling 'flm list --filter installed --quiet'
-// Uses the improved FLM CLI methodology with --filter and --quiet flags
+// Read model_list.json from the FLM install directory.
+// This file is bundled in the FLM zip/deb and contains the full model catalog.
+static json get_flm_model_list_json() {
+    // Find FLM binary path, then look for model_list.json next to it
+    std::string flm_path = utils::find_flm_executable();
+    if (flm_path.empty()) {
+        return json();
+    }
+    fs::path model_list_path = fs::path(flm_path).parent_path() / "model_list.json";
+    if (!fs::exists(model_list_path)) {
+        return json();
+    }
+    try {
+        return utils::JsonUtils::load_from_file(model_list_path.string());
+    } catch (...) {
+        return json();
+    }
+}
+
 std::vector<std::string> ModelManager::get_flm_installed_models() {
     std::vector<std::string> installed_models;
 
-    // Find the flm executable using shared utility
-    std::string flm_path = utils::find_flm_executable();
-    if (flm_path.empty() || !utils::is_safe_executable_path(flm_path)) {
-        return installed_models; // FLM not installed or path unsafe
-    }
-
-    // Run 'flm list --filter installed --quiet --json' to get only installed models
-    // Use the full path to flm.exe to avoid PATH issues
-#ifdef _WIN32
-    std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>NUL";
-    FILE* pipe = _popen(command.c_str(), "r");
-#else
-    std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>/dev/null";
-    FILE* pipe = popen(command.c_str(), "r");
-#endif
-
-    if (!pipe) {
+    // Read model_list.json from the FLM install directory to find the models
+    // directory, then check which model directories exist on disk.
+    // This avoids executing flm.exe which can fail in subprocess environments.
+    auto model_list = get_flm_model_list_json();
+    if (model_list.empty()) {
         return installed_models;
     }
 
-    char buffer[256];
-    std::string output;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-
+    // Determine models directory: FLM_MODEL_PATH env var, or default location
+    std::string models_base;
+    const char* flm_model_path = std::getenv("FLM_MODEL_PATH");
+    if (flm_model_path && flm_model_path[0] != '\0') {
+        models_base = std::string(flm_model_path);
+    } else {
 #ifdef _WIN32
-    _pclose(pipe);
+        const char* userprofile = std::getenv("USERPROFILE");
+        if (userprofile) {
+            models_base = std::string(userprofile) + "\\Documents\\flm";
+        }
 #else
-    pclose(pipe);
+        const char* home = std::getenv("HOME");
+        if (home) {
+            models_base = std::string(home) + "/.config/flm";
+        }
 #endif
-
-    // Parse output: { "models": [ { "name": "modelname:tag", ... }, ... ] }
-    try {
-        std::string json_str = output;
-        size_t brace_pos = output.find('{');
-        if (brace_pos != std::string::npos) {
-            json_str = output.substr(brace_pos);
-        }
-        json j = JsonUtils::parse(json_str);
-        if (j.contains("models") && j["models"].is_array()) {
-            for (const auto& model : j["models"]) {
-                if (model.contains("name") && model["name"].is_string()) {
-                    installed_models.push_back(model["name"].get<std::string>());
-                }
-            }
-            return installed_models;
-        }
-    } catch (...) {
-        // Fallback to legacy parsing if JSON parsing fails
     }
 
-    // Legacy parsing - cleaner format without emojis
-    // Expected format:
-    //   Models:
-    //     - modelname:tag
-    //     - another:model
-    std::istringstream stream(output);
-    std::string line;
-    while (std::getline(stream, line)) {
-        // Trim whitespace
-        line.erase(0, line.find_first_not_of(" \t\r\n"));
-        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+    if (models_base.empty()) {
+        return installed_models;
+    }
 
-        // Skip the "Models:" header line or empty lines
-        if (line == "Models:" || line.empty()) {
-            continue;
-        }
+    // model_list.json has "model_path" (relative subdir, typically "models")
+    std::string model_subdir = "models";
+    if (model_list.contains("model_path") && model_list["model_path"].is_string()) {
+        model_subdir = model_list["model_path"].get<std::string>();
+    }
+    fs::path models_dir = fs::path(models_base) / model_subdir;
 
-        // Parse model checkpoint (format: "  - modelname:tag")
-        if (line.find("- ") == 0) {
-            std::string checkpoint = line.substr(2);
-            // Trim any remaining whitespace
-            checkpoint.erase(0, checkpoint.find_first_not_of(" \t"));
-            checkpoint.erase(checkpoint.find_last_not_of(" \t") + 1);
-            if (!checkpoint.empty()) {
-                installed_models.push_back(checkpoint);
+    // Check which models exist on disk
+    if (model_list.contains("models") && model_list["models"].is_object()) {
+        for (const auto& [family, sizes] : model_list["models"].items()) {
+            if (!sizes.is_object()) continue;
+            for (const auto& [size, info] : sizes.items()) {
+                if (!info.contains("name") || !info["name"].is_string()) continue;
+                std::string dir_name = info["name"].get<std::string>();
+                if (fs::exists(models_dir / dir_name)) {
+                    installed_models.push_back(family + ":" + size);
+                }
             }
         }
     }
@@ -1485,83 +1473,48 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
 std::vector<ModelInfo> ModelManager::get_flm_available_models() {
     std::vector<ModelInfo> flm_models;
 
-    // Find the flm executable using shared utility
-    std::string flm_path = utils::find_flm_executable();
-    if (flm_path.empty() || !utils::is_safe_executable_path(flm_path)) {
-        return flm_models; // FLM not installed or path unsafe
-    }
-
-    // Run 'flm list --json' to get all available models
-#ifdef _WIN32
-    std::string command = "\"" + flm_path + "\" list --json 2>NUL";
-    FILE* pipe = _popen(command.c_str(), "r");
-#else
-    std::string command = "\"" + flm_path + "\" list --json 2>/dev/null";
-    FILE* pipe = popen(command.c_str(), "r");
-#endif
-
-    if (!pipe) {
+    // Read model_list.json from the FLM install directory instead of
+    // executing 'flm list --json'. This avoids _popen which fails in
+    // subprocess environments (e.g. tray launching router on CI).
+    auto model_list = get_flm_model_list_json();
+    if (model_list.empty()) {
         return flm_models;
     }
 
-    char buffer[256];
-    std::string output;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-
-#ifdef _WIN32
-    _pclose(pipe);
-#else
-    pclose(pipe);
-#endif
-
-    // Parse output: { "models": [ { "name": "modelname:tag", "footprint": 1.23, ... }, ... ] }
     try {
-        std::string json_str = output;
-        size_t brace_pos = output.find('{');
-        if (brace_pos != std::string::npos) {
-            json_str = output.substr(brace_pos);
-        }
-        json j = JsonUtils::parse(json_str);
-        if (j.contains("models") && j["models"].is_array()) {
-            for (const auto& m : j["models"]) {
-                if (m.contains("name") && m["name"].is_string()) {
-                    std::string checkpoint = m["name"].get<std::string>();
+        if (model_list.contains("models") && model_list["models"].is_object()) {
+            for (const auto& [family, sizes] : model_list["models"].items()) {
+                if (!sizes.is_object()) continue;
+                for (const auto& [size, info] : sizes.items()) {
+                    std::string checkpoint = family + ":" + size;
 
                     // Format display name: replace : with -, append -FLM
-                    // e.g., "llama3.2:1b" -> "llama3.2-1b-FLM"
                     std::string display_name = checkpoint;
-                    // Replace : with -
                     std::replace(display_name.begin(), display_name.end(), ':', '-');
-
                     std::string model_name = display_name + "-FLM";
 
-                    ModelInfo info;
-                    info.model_name = model_name;
-                    info.checkpoints["main"] = checkpoint;
-                    info.recipe = "flm";
-                    info.suggested = true; // All official FLM models are suggested
+                    ModelInfo mi;
+                    mi.model_name = model_name;
+                    mi.checkpoints["main"] = checkpoint;
+                    mi.recipe = "flm";
+                    mi.suggested = true;
 
-                    // Size in GB (footprint field contains disk size in GB)
-                    if (m.contains("footprint") && m["footprint"].is_number()) {
-                        info.size = m["footprint"].get<double>();
+                    if (info.contains("footprint") && info["footprint"].is_number()) {
+                        mi.size = info["footprint"].get<double>();
                     }
 
-                    // Labels from FLM metadata
-                    if (m.contains("label") && m["label"].is_array()) {
-                        for (const auto& l : m["label"]) {
+                    if (info.contains("label") && info["label"].is_array()) {
+                        for (const auto& l : info["label"]) {
                             if (l.is_string()) {
-                                info.labels.push_back(l.get<std::string>());
+                                mi.labels.push_back(l.get<std::string>());
                             }
                         }
                     }
 
-                    // Populate type and device fields (multi-model support)
-                    info.type = get_model_type_from_labels(info.labels);
-                    info.device = get_device_type_from_recipe(info.recipe);
+                    mi.type = get_model_type_from_labels(mi.labels);
+                    mi.device = get_device_type_from_recipe(mi.recipe);
 
-                    flm_models.push_back(info);
+                    flm_models.push_back(mi);
                 }
             }
         }

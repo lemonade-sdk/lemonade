@@ -25,6 +25,7 @@
 #else
     #include <unistd.h>
     #include <sys/stat.h>
+    #include <sys/wait.h>
 #endif
 
 using json = nlohmann::json;
@@ -135,15 +136,25 @@ namespace lemon::backends {
 
     bool BackendUtils::extract_deb(const std::string& deb_path, const std::string& dest_dir, const std::string& backend_name) {
 #if defined(__linux__)
-        // Validate paths to prevent command injection
-        if (!utils::is_safe_executable_path(deb_path) || !utils::is_safe_executable_path(dest_dir)) {
-            LOG(ERROR, backend_name) << "Invalid characters in path" << std::endl;
-            return false;
-        }
         ensure_directory(dest_dir);
         LOG(DEBUG, backend_name) << "Extracting .deb to " << dest_dir << std::endl;
-        std::string command = "dpkg-deb -x \"" + deb_path + "\" \"" + dest_dir + "\"";
-        int result = system(command.c_str());
+
+        // Use fork/exec instead of system() to avoid shell injection.
+        // Arguments are passed directly to dpkg-deb, not through a shell.
+        pid_t pid = fork();
+        if (pid == -1) {
+            LOG(ERROR, backend_name) << "fork() failed: " << strerror(errno) << std::endl;
+            return false;
+        }
+        if (pid == 0) {
+            // Child process
+            execlp("dpkg-deb", "dpkg-deb", "-x", deb_path.c_str(), dest_dir.c_str(), nullptr);
+            _exit(127);  // exec failed
+        }
+        // Parent: wait for child
+        int status = 0;
+        waitpid(pid, &status, 0);
+        int result = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
         if (result != 0) {
             LOG(ERROR, backend_name) << "dpkg-deb extraction failed with code: " << result << std::endl;
             return false;
