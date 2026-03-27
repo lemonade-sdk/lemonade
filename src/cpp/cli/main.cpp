@@ -286,7 +286,7 @@ static int handle_recipes_command(lemonade::LemonadeClient& client, const CliCon
 }
 
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
-    if (!lemon_cli::resolve_model_if_missing(client, config.model, "launch", false, config.agent)) {
+    if (!lemon_cli::resolve_model_if_missing(client, config.model, "launch", true, config.agent)) {
         return 1;
     }
 
