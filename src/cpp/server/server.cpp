@@ -1213,21 +1213,21 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
                 if (!flm_status.action.empty()) {
                     message += " " + flm_status.action + ".";
                 }
-            } else {
-                // FLM is ready but model not found - add diagnostic info
-                try {
-                    std::string flm_path = backends::BackendUtils::get_backend_binary_path(
-                        backends::FastFlowLMServer::SPEC, "npu");
-                    std::string diag_output;
-                    std::string diag_cmd = "\"" + flm_path + "\" list --json";
-                    int diag_rc = utils::ProcessManager::run_command(diag_cmd, diag_output);
-                    message += " [FLM debug: binary=" + flm_path +
-                               ", list_rc=" + std::to_string(diag_rc) +
-                               ", list_len=" + std::to_string(diag_output.size()) + "]";
-                } catch (const std::exception& e) {
-                    message += " [FLM debug: binary_error=" + std::string(e.what()) + "]";
-                }
             }
+            // Always show install directory diagnostic
+            std::string install_dir = backends::BackendUtils::get_install_directory("flm", "npu");
+            bool dir_exists = std::filesystem::exists(install_dir);
+            std::string files_in_dir;
+            if (dir_exists) {
+                int count = 0;
+                for (const auto& e : std::filesystem::directory_iterator(install_dir)) {
+                    if (count++ < 5) files_in_dir += e.path().filename().string() + " ";
+                }
+                files_in_dir += "(" + std::to_string(count) + " total)";
+            }
+            message += " [FLM debug: install_dir=" + install_dir +
+                       ", exists=" + (dir_exists ? "true" : "false") +
+                       ", files=" + files_in_dir + "]";
         }
 
         error_response["error"] = {
