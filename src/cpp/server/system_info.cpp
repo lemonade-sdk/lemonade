@@ -324,19 +324,6 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
 #endif
             }
 
-            // FLM: validate NPU driver if the binary is found in PATH
-            // (system-wide install via .deb or legacy installer).
-            // For zip-based installs, version is tracked via version.txt
-            // just like llamacpp — no need to execute the binary here.
-            if (recipe == "flm") {
-                std::string flm_path = utils::find_flm_executable();
-                if (!flm_path.empty()) {
-                    if (!utils::run_flm_validate(flm_path, error_message)) {
-                        return false;
-                    }
-                }
-            }
-
             return true;
         } catch (...) {
             return false;
