@@ -343,6 +343,9 @@ const [searchQuery, setSearchQuery] = useState('');
   const getFilteredModels = () => {
     let filtered = suggestedModels;
 
+    // Hide ESRGAN upscaler models (managed via the Image Generation panel)
+    filtered = filtered.filter(model => !model.info?.labels?.includes('esrgan'));
+
     // Filter by downloaded status
     if (showDownloadedOnly) {
       filtered = filtered.filter(model => modelsData[model.name]?.downloaded);
@@ -1104,6 +1107,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const renderActionButtonsContent = (modelName: string) => {
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
+    const isEsrgan = modelsData[modelName]?.labels?.includes('esrgan');
     return (
       <>
         {!isDownloaded && (
@@ -1119,7 +1123,12 @@ const [searchQuery, setSearchQuery] = useState('');
             </svg>
           </button>
         )}
-        {isDownloaded && !isLoaded && !isLoading && (
+        {isDownloaded && !isLoaded && !isLoading && isEsrgan && (
+          <>
+            {renderDeleteButton(modelName)}
+          </>
+        )}
+        {isDownloaded && !isLoaded && !isLoading && !isEsrgan && (
           <>
             <button
               className="model-action-btn load-btn"
