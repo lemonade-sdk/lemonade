@@ -3612,7 +3612,6 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
         } else if (key == "log_level") {
             std::string level = config_->log_level();
             LOG(INFO, "Server") << "Log level changed to: " << level << std::endl;
-            // Re-initialize logging with the new severity filter
             auto sink = std::make_shared<AixLog::SinkCout>(
                 AixLog::Filter(AixLog::to_severity(level)),
                 RuntimeConfig::LOG_FORMAT);
@@ -3637,7 +3636,6 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
             LOG(INFO, "Server") << "Extra models dir changed to: " << dir << std::endl;
             model_manager_->set_extra_models_dir(dir);
         }
-        // Recipe option keys (ctx_size, llamacpp_backend, etc.) need no side effects
     }
 }
 

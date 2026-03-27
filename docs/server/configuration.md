@@ -18,6 +18,7 @@ If `config.json` doesn't exist, it's created automatically with default values o
 
 ```json
 {
+  "config_version": 1,
   "port": 8000,
   "host": "localhost",
   "log_level": "info",

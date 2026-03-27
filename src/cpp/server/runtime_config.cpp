@@ -87,18 +87,10 @@ void RuntimeConfig::validate_bin_path(const std::string& config_section,
     }
 }
 
-// ---------------------------------------------------------------------------
-// Constructor
-// ---------------------------------------------------------------------------
-
 RuntimeConfig::RuntimeConfig(const json& config)
     : config_(config) {
     // Config is expected to already have defaults merged in (by ConfigFile::load).
 }
-
-// ---------------------------------------------------------------------------
-// Top-level getters
-// ---------------------------------------------------------------------------
 
 int RuntimeConfig::port() const {
     std::shared_lock lock(mutex_);
@@ -160,10 +152,6 @@ bool RuntimeConfig::enable_dgpu_gtt() const {
     return config_["enable_dgpu_gtt"].get<bool>();
 }
 
-// ---------------------------------------------------------------------------
-// Backend getters
-// ---------------------------------------------------------------------------
-
 json RuntimeConfig::backend_config(const std::string& backend_name) const {
     std::shared_lock lock(mutex_);
     if (config_.contains(backend_name) && config_[backend_name].is_object()) {
@@ -208,10 +196,6 @@ double RuntimeConfig::backend_double(const std::string& backend,
     return 0.0;
 }
 
-// ---------------------------------------------------------------------------
-// recipe_options() -- flat view for RecipeOptions/backends
-// ---------------------------------------------------------------------------
-
 json RuntimeConfig::recipe_options() const {
     std::shared_lock lock(mutex_);
     json result = json::object();
@@ -223,22 +207,18 @@ json RuntimeConfig::recipe_options() const {
         return val;
     };
 
-    // Map nested config to flat keys that RecipeOptions expects
-    // llamacpp
     if (config_.contains("llamacpp")) {
         const auto& lc = config_["llamacpp"];
         if (lc.contains("backend")) result["llamacpp_backend"] = resolve_auto(lc["backend"]);
         if (lc.contains("args")) result["llamacpp_args"] = lc["args"];
     }
 
-    // whispercpp
     if (config_.contains("whispercpp")) {
         const auto& wc = config_["whispercpp"];
         if (wc.contains("backend")) result["whispercpp_backend"] = resolve_auto(wc["backend"]);
         if (wc.contains("args")) result["whispercpp_args"] = wc["args"];
     }
 
-    // sdcpp
     if (config_.contains("sdcpp")) {
         const auto& sd = config_["sdcpp"];
         if (sd.contains("backend")) result["sd-cpp_backend"] = resolve_auto(sd["backend"]);
@@ -248,21 +228,15 @@ json RuntimeConfig::recipe_options() const {
         if (sd.contains("height")) result["height"] = sd["height"];
     }
 
-    // flm
     if (config_.contains("flm")) {
         const auto& flm = config_["flm"];
         if (flm.contains("args")) result["flm_args"] = flm["args"];
     }
 
-    // Shared top-level
     if (config_.contains("ctx_size")) result["ctx_size"] = config_["ctx_size"];
 
     return result;
 }
-
-// ---------------------------------------------------------------------------
-// Validation
-// ---------------------------------------------------------------------------
 
 void RuntimeConfig::validate(const std::string& key, const json& value) const {
     if (key == "port") {
@@ -319,6 +293,13 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (value.get<int>() <= 0) {
             throw std::invalid_argument("'ctx_size' must be positive");
         }
+    } else if (key == "config_version") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'config_version' must be an integer");
+        }
+        if (value.get<int>() < 1) {
+            throw std::invalid_argument("'config_version' must be >= 1");
+        }
     } else if (is_backend_name(key)) {
         if (!value.is_object()) {
             throw std::invalid_argument("'" + key + "' must be an object");
@@ -351,13 +332,11 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
         }
         validate_bin_path(backend, key, value.get<std::string>());
     }
-    // Boolean keys: prefer_system, linux_beta
     else if (key == "prefer_system" || key == "linux_beta") {
         if (!value.is_boolean()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a boolean");
         }
     }
-    // Numeric keys: steps, width, height
     else if (key == "steps" || key == "width" || key == "height") {
         if (!value.is_number_integer()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be an integer");
@@ -366,7 +345,6 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
             throw std::invalid_argument("'" + backend + "." + key + "' must be positive");
         }
     }
-    // Float keys: cfg_scale
     else if (key == "cfg_scale") {
         if (!value.is_number()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a number");
@@ -379,10 +357,6 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
         throw std::invalid_argument("Unknown key: '" + backend + "." + key + "'");
     }
 }
-
-// ---------------------------------------------------------------------------
-// Unified setter
-// ---------------------------------------------------------------------------
 
 void RuntimeConfig::apply_changes(const json& changes, std::vector<std::string>& changed_keys) {
     for (auto& [key, value] : changes.items()) {
@@ -441,10 +415,6 @@ json RuntimeConfig::set(const json& changes, ConfigSideEffectCallback side_effec
 
     return {{"status", "success"}, {"updated", updated}};
 }
-
-// ---------------------------------------------------------------------------
-// Snapshot
-// ---------------------------------------------------------------------------
 
 json RuntimeConfig::snapshot() const {
     std::shared_lock lock(mutex_);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <nlohmann/json.hpp>
 
@@ -41,7 +42,7 @@ private:
     /// Get platform-specific default models directory.
     static std::string default_models_dir();
 
-    static std::mutex save_mutex_;
+    static std::shared_mutex file_mutex_;
 };
 
 } // namespace lemon

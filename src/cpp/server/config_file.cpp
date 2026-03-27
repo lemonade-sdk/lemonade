@@ -18,22 +18,15 @@ namespace fs = std::filesystem;
 
 namespace lemon {
 
-std::mutex ConfigFile::save_mutex_;
-
-// ---------------------------------------------------------------------------
-// Platform-specific default models directory
-// ---------------------------------------------------------------------------
+std::shared_mutex ConfigFile::file_mutex_;
 
 std::string ConfigFile::default_models_dir() {
     return utils::default_hf_cache_dir();
 }
 
-// ---------------------------------------------------------------------------
-// Defaults
-// ---------------------------------------------------------------------------
-
 json ConfigFile::get_defaults() {
     return {
+        {"config_version", 1},
         {"port", 8000},
         {"host", "localhost"},
         {"log_level", "info"},
@@ -83,10 +76,6 @@ json ConfigFile::get_defaults() {
     };
 }
 
-// ---------------------------------------------------------------------------
-// Load
-// ---------------------------------------------------------------------------
-
 json ConfigFile::load(const std::string& home_dir) {
     json defaults = get_defaults();
     fs::path config_path = utils::path_from_utf8(home_dir) / "config.json";
@@ -100,32 +89,55 @@ json ConfigFile::load(const std::string& home_dir) {
         return defaults;
     }
 
-    std::ifstream file(config_path);
-    if (!file.is_open()) {
-        std::cerr << "Warning: Could not open " << config_path.string()
-                  << ", using defaults" << std::endl;
-        return defaults;
-    }
-
+    // Read and parse config under shared lock
+    bool corrupt = false;
+    std::string parse_error_msg;
     json loaded;
-    try {
-        loaded = json::parse(file);
-    } catch (const json::parse_error& e) {
+    {
+        std::shared_lock lock(file_mutex_);
+
+        // Clean up stale temp file from a previous interrupted save
+        std::error_code ec;
+        fs::remove(fs::path(config_path).concat(".tmp"), ec);
+
+        std::ifstream file(config_path);
+        if (!file.is_open()) {
+            std::cerr << "Warning: Could not open " << config_path.string()
+                      << ", using defaults" << std::endl;
+            return defaults;
+        }
+
+        try {
+            loaded = json::parse(file);
+        } catch (const json::parse_error& e) {
+            corrupt = true;
+            parse_error_msg = e.what();
+        }
+    } // shared lock released
+
+    if (corrupt) {
         std::cerr << "Warning: Failed to parse " << config_path.string()
-                  << ": " << e.what() << ", using defaults" << std::endl;
+                  << ": " << parse_error_msg << std::endl;
+
+        // Back up the corrupt file so the user can inspect it
+        fs::path backup = config_path;
+        backup += ".corrupted";
+        std::error_code ec;
+        fs::rename(config_path, backup, ec);
+        if (!ec) {
+            std::cerr << "  Renamed to " << backup.string() << std::endl;
+        }
+
+        std::cerr << "  Using defaults." << std::endl;
+        save(home_dir, defaults);
         return defaults;
     }
 
-    // Deep-merge loaded values over defaults (loaded wins)
     return utils::JsonUtils::merge(defaults, loaded);
 }
 
-// ---------------------------------------------------------------------------
-// Save (atomic write)
-// ---------------------------------------------------------------------------
-
 void ConfigFile::save(const std::string& home_dir, const json& config) {
-    std::lock_guard<std::mutex> lock(save_mutex_);
+    std::unique_lock lock(file_mutex_);
 
     fs::path home_path = utils::path_from_utf8(home_dir);
     if (!fs::exists(home_path)) {
@@ -135,7 +147,6 @@ void ConfigFile::save(const std::string& home_dir, const json& config) {
     fs::path config_path = home_path / "config.json";
     fs::path temp_path = home_path / "config.json.tmp";
 
-    // Write to temp file
     {
         std::ofstream file(temp_path);
         if (!file.is_open()) {
@@ -144,7 +155,6 @@ void ConfigFile::save(const std::string& home_dir, const json& config) {
         file << config.dump(2) << std::endl;
     }
 
-    // Atomic rename
     std::error_code ec;
     fs::rename(temp_path, config_path, ec);
     if (ec) {
@@ -160,12 +170,7 @@ void ConfigFile::save(const std::string& home_dir, const json& config) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Env var to config key mapping
-// ---------------------------------------------------------------------------
-
 std::pair<std::string, std::string> ConfigFile::env_to_config_key(const std::string& env_name) {
-    // Top-level settings
     if (env_name == "LEMONADE_PORT") return {"port", ""};
     if (env_name == "LEMONADE_HOST") return {"host", ""};
     if (env_name == "LEMONADE_LOG_LEVEL") return {"log_level", ""};
@@ -178,7 +183,6 @@ std::pair<std::string, std::string> ConfigFile::env_to_config_key(const std::str
     if (env_name == "LEMONADE_DISABLE_MODEL_FILTERING") return {"disable_model_filtering", ""};
     if (env_name == "LEMONADE_ENABLE_DGPU_GTT") return {"enable_dgpu_gtt", ""};
 
-    // llamacpp
     if (env_name == "LEMONADE_LLAMACPP") return {"llamacpp", "backend"};
     if (env_name == "LEMONADE_LLAMACPP_ARGS") return {"llamacpp", "args"};
     if (env_name == "LEMONADE_LLAMACPP_PREFER_SYSTEM") return {"llamacpp", "prefer_system"};
@@ -186,13 +190,11 @@ std::pair<std::string, std::string> ConfigFile::env_to_config_key(const std::str
     if (env_name == "LEMONADE_LLAMACPP_VULKAN_BIN") return {"llamacpp", "vulkan_bin"};
     if (env_name == "LEMONADE_LLAMACPP_CPU_BIN") return {"llamacpp", "cpu_bin"};
 
-    // whispercpp
     if (env_name == "LEMONADE_WHISPERCPP") return {"whispercpp", "backend"};
     if (env_name == "LEMONADE_WHISPERCPP_ARGS") return {"whispercpp", "args"};
     if (env_name == "LEMONADE_WHISPERCPP_CPU_BIN") return {"whispercpp", "cpu_bin"};
     if (env_name == "LEMONADE_WHISPERCPP_NPU_BIN") return {"whispercpp", "npu_bin"};
 
-    // sdcpp
     if (env_name == "LEMONADE_SDCPP") return {"sdcpp", "backend"};
     if (env_name == "LEMONADE_STEPS") return {"sdcpp", "steps"};
     if (env_name == "LEMONADE_CFG_SCALE") return {"sdcpp", "cfg_scale"};
@@ -202,22 +204,15 @@ std::pair<std::string, std::string> ConfigFile::env_to_config_key(const std::str
     if (env_name == "LEMONADE_SDCPP_ROCM_BIN") return {"sdcpp", "rocm_bin"};
     if (env_name == "LEMONADE_SDCPP_VULKAN_BIN") return {"sdcpp", "vulkan_bin"};
 
-    // flm
     if (env_name == "LEMONADE_FLM_ARGS") return {"flm", "args"};
     if (env_name == "LEMONADE_FLM_LINUX_BETA") return {"flm", "linux_beta"};
 
-    // ryzenai
     if (env_name == "LEMONADE_RYZENAI_SERVER_BIN") return {"ryzenai", "server_bin"};
 
-    // kokoro
     if (env_name == "LEMONADE_KOKORO_CPU_BIN") return {"kokoro", "cpu_bin"};
 
     return {"", ""};
 }
-
-// ---------------------------------------------------------------------------
-// Read conf file (KEY=VALUE format)
-// ---------------------------------------------------------------------------
 
 json ConfigFile::read_conf_file(const std::string& path) {
     json result = json::object();
@@ -255,10 +250,6 @@ json ConfigFile::read_conf_file(const std::string& path) {
     return result;
 }
 
-// ---------------------------------------------------------------------------
-// Migrate
-// ---------------------------------------------------------------------------
-
 /// Try to parse a string value as the appropriate JSON type for a given config key.
 static json parse_env_value(const std::string& value, const std::string& top_key,
                             const std::string& nested_key, const json& defaults) {
@@ -277,7 +268,8 @@ static json parse_env_value(const std::string& value, const std::string& top_key
     // Boolean: "1", "true", "yes" -> true; "0", "false", "no" -> false
     if (default_val.is_boolean()) {
         std::string lower = value;
-        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
         return (lower == "1" || lower == "true" || lower == "yes");
     }
 
@@ -305,7 +297,6 @@ void ConfigFile::migrate(const std::string& home_dir) {
     json migrated = json::object();
     std::vector<std::string> migrated_sources;
 
-    // Collect all known env var names
     static const std::vector<std::string> env_names = {
         "LEMONADE_PORT", "LEMONADE_HOST", "LEMONADE_LOG_LEVEL",
         "LEMONADE_GLOBAL_TIMEOUT", "LEMONADE_MAX_LOADED_MODELS",
@@ -378,9 +369,7 @@ void ConfigFile::migrate(const std::string& home_dir) {
         std::cerr << std::endl;
     }
 
-    // config.json will be created by load() with defaults; migrated values will
-    // be applied on top. We don't save here -- load() handles creation.
-    // Instead, if we have migrated values, merge them into defaults and save.
+    // If we migrated values, merge them into defaults and save config.json
     if (!migrated.empty()) {
         json config = utils::JsonUtils::merge(defaults, migrated);
 

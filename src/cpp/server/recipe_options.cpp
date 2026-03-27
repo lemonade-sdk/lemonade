@@ -12,10 +12,10 @@ using json = nlohmann::json;
 
 static const json DEFAULTS = {
     {"ctx_size", 4096},
-    {"llamacpp_backend", ""},  // Will be overridden dynamically
+    {"llamacpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
     {"llamacpp_args", ""},
-    {"sd-cpp_backend", ""},  // sd.cpp backend selection (cpu or rocm)
-    {"whispercpp_backend", ""},
+    {"sd-cpp_backend", ""},   // "" means auto-detect (mapped from "auto" in config.json)
+    {"whispercpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
     {"whispercpp_args", ""},
     // Image generation defaults (for sd-cpp recipe)
     {"steps", 20},

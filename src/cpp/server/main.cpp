@@ -44,7 +44,6 @@ void signal_handler(int signal) {
 
 int main(int argc, char** argv) {
     try {
-        // 1. Parse CLI: home_dir (positional), --port, --host
         CLIParser parser;
         parser.parse(argc, argv);
 
@@ -54,16 +53,11 @@ int main(int argc, char** argv) {
 
         auto cli_config = parser.get_config();
 
-        // 2. Set lemonade home dir so get_cache_dir() works
         utils::set_home_dir(cli_config.home_dir);
-
-        // 3. Auto-migrate from env vars / conf files if config.json doesn't exist
         ConfigFile::migrate(cli_config.home_dir);
-
-        // 4. Load config.json (creates with defaults if missing)
         json config_json = ConfigFile::load(cli_config.home_dir);
 
-        // 5-6. CLI --port and --host override config.json and persist
+        // CLI --port/--host override config.json and persist
         bool cli_overrides = false;
         if (cli_config.port != -1) {
             config_json["port"] = cli_config.port;
@@ -77,20 +71,16 @@ int main(int argc, char** argv) {
             ConfigFile::save(cli_config.home_dir, config_json);
         }
 
-        // 7. Construct RuntimeConfig from merged config
         auto config = std::make_shared<RuntimeConfig>(config_json);
         RuntimeConfig::set_global(config.get());
 
-        // 8. Initialize logging
         auto sink = std::make_shared<AixLog::SinkCout>(
             AixLog::Filter(AixLog::to_severity(config->log_level())),
             RuntimeConfig::LOG_FORMAT);
         AixLog::Log::init({sink});
 
-        // 9. Set models dir for get_hf_cache_dir()
         utils::set_models_dir(config->models_dir());
 
-        // Start the server
         LOG(INFO) << "Starting Lemonade Server..." << std::endl;
         LOG(INFO) << "  Version: " << LEMON_VERSION_STRING << std::endl;
         LOG(INFO) << "  Home dir: " << cli_config.home_dir << std::endl;
@@ -101,17 +91,13 @@ int main(int argc, char** argv) {
             LOG(INFO) << "  Extra models dir: " << config->extra_models_dir() << std::endl;
         }
 
-        // 10. Construct and run server
         Server server(config, cli_config.home_dir);
 
-        // Register signal handler for Ctrl+C
         g_server_instance = &server;
         std::signal(SIGINT, signal_handler);
         std::signal(SIGTERM, signal_handler);
 
         server.run();
-
-        // Clean up
         g_server_instance = nullptr;
 
         return 0;
