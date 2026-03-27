@@ -34,6 +34,9 @@ jobs:
           - distro: Fedora
             image: fedora:latest
             python: python3
+          - distro: openSUSE
+            image: opensuse/tumbleweed:latest
+            python: python3
 
     steps:
       - name: Checkout code
