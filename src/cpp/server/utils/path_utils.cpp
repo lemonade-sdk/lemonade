@@ -173,9 +173,27 @@ bool is_safe_executable_path(const std::string& path) {
 }
 
 std::string find_flm_executable() {
+    // First check the standard Lemonade install directory
+    std::string install_dir = get_downloaded_bin_dir() + "/flm/npu";
+#ifdef _WIN32
+    std::string binary_name = "flm.exe";
+#else
+    std::string binary_name = "flm";
+#endif
+    if (fs::exists(install_dir)) {
+        for (const auto& entry : fs::recursive_directory_iterator(install_dir)) {
+            if (entry.is_regular_file() && entry.path().filename().string() == binary_name) {
+                std::string path = entry.path().string();
+                if (is_safe_executable_path(path)) {
+                    return path;
+                }
+            }
+        }
+    }
+
+    // Fall back to system PATH
 #ifdef _WIN32
     // Refresh PATH from Windows registry to pick up any changes since process started
-    // This is important because users may install FLM after starting lemonade-server
     HKEY hKey;
     if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
                       "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
@@ -185,7 +203,6 @@ std::string find_flm_executable() {
         if (RegQueryValueExA(hKey, "PATH", nullptr, nullptr,
                             reinterpret_cast<LPBYTE>(buffer), &bufferSize) == ERROR_SUCCESS) {
             std::string system_path = buffer;
-            // Combine with current process PATH (system PATH takes priority for FLM lookup)
             const char* current_path = std::getenv("PATH");
             if (current_path) {
                 system_path = system_path + ";" + std::string(current_path);
@@ -195,8 +212,6 @@ std::string find_flm_executable() {
         RegCloseKey(hKey);
     }
 
-    // Use SearchPathA which is the same API that CreateProcessA uses internally
-    // This ensures we find the exact same executable that will be launched
     char found_path[MAX_PATH];
     DWORD result = SearchPathA(
         nullptr,      // Use system PATH

@@ -305,6 +305,21 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
             return false;
         }
     }
+    // FLM needs additional NPU driver validation beyond just having the binary
+    if (recipe == "flm") {
+        try {
+            std::string flm_path = BackendUtils::get_backend_binary_path(
+                *try_get_spec_for_recipe("flm"), backend);
+            if (!utils::run_flm_validate(flm_path, error_message)) {
+                return false;
+            }
+            return true;
+        } catch (...) {
+            error_message = "FLM is not installed";
+            return false;
+        }
+    }
+
     auto* spec = try_get_spec_for_recipe(recipe);
     if (spec) {
         try {
@@ -330,33 +345,6 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
             return false;
         }
     }
-    if (recipe == "flm") {
-        // 1. Is flm binary present?
-        std::string flm_path = utils::find_flm_executable();
-        if (flm_path.empty()) {
-            error_message = "FLM is not installed";
-            return false;
-        }
-        // 2. Is version >= required?
-        std::string version = SystemInfo::get_flm_version();
-        std::string required = get_expected_backend_version("flm", "npu");
-        if (!required.empty()) {
-            if (version == "unknown") {
-                // Can't determine version (FLM too old for --json flag) → treat as outdated
-                error_message = "FLM version unknown, requires " + required;
-                return false;
-            }
-            if (utils::Version::parse(version) < utils::Version::parse(required)) {
-                error_message = "FLM " + version + " installed, requires " + required;
-                return false;
-            }
-        }
-        // 3. Does flm validate pass?
-        if (!utils::run_flm_validate(flm_path, error_message)) {
-            return false;
-        }
-        return true;
-    }
     return false;
 }
 
@@ -371,9 +359,6 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
             return "unknown";
         }
         return read_version_file(version_file);
-    }
-    if (recipe == "flm") {
-        return SystemInfo::get_flm_version();
     }
     return "";
 }

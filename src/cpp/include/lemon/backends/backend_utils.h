@@ -57,6 +57,14 @@ namespace lemon::backends {
         static bool extract_tarball(const std::string& tarball_path, const std::string& dest_dir, const std::string& backend_name);
 
         /**
+        * Extract .deb package files (Linux only)
+        * @param deb_path Path to the .deb file
+        * @param dest_dir Destination directory to extract to
+        * @return true if extraction was successful, false otherwise
+        */
+        static bool extract_deb(const std::string& deb_path, const std::string& dest_dir, const std::string& backend_name);
+
+        /**
         * Detect if archive is tar or zip
         * @param tarball_path Path to the archive file
         * @param dest_dir Destination directory to extract to
