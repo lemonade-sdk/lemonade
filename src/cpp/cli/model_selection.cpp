@@ -11,6 +11,31 @@
 namespace lemon_cli {
 namespace {
 
+bool prompt_number(const std::string& prompt, int& selected_out) {
+    std::cout << prompt << std::flush;
+
+    std::string input;
+    if (!std::getline(std::cin, input)) {
+        LOG(ERROR, "ModelSelector") << "Error: Failed to read selection." << std::endl;
+        return false;
+    }
+
+    size_t parsed_chars = 0;
+    try {
+        selected_out = std::stoi(input, &parsed_chars);
+    } catch (const std::exception&) {
+        LOG(ERROR, "ModelSelector") << "Error: Invalid selection." << std::endl;
+        return false;
+    }
+
+    if (parsed_chars != input.size()) {
+        LOG(ERROR, "ModelSelector") << "Error: Invalid selection." << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 bool fetch_models_from_endpoint(lemonade::LemonadeClient& client,
                                 bool show_all,
                                 std::vector<lemonade::ModelInfo>& models_out) {
@@ -37,6 +62,9 @@ bool fetch_models_from_endpoint(lemonade::LemonadeClient& client,
             }
             if (model_item.contains("downloaded") && model_item["downloaded"].is_boolean()) {
                 info.downloaded = model_item["downloaded"].get<bool>();
+            }
+            if (model_item.contains("suggested") && model_item["suggested"].is_boolean()) {
+                info.suggested = model_item["suggested"].get<bool>();
             }
 
             if (!info.id.empty()) {
@@ -91,24 +119,12 @@ bool prompt_model_selection(lemonade::LemonadeClient& client,
                   << std::endl;
     }
 
-    std::cout << "Enter number: " << std::flush;
-
-    std::string input;
-    if (!std::getline(std::cin, input)) {
-        LOG(ERROR, "ModelSelector") << "Error: Failed to read model selection." << std::endl;
-        return false;
-    }
-
-    size_t parsed_chars = 0;
     int selected = 0;
-    try {
-        selected = std::stoi(input, &parsed_chars);
-    } catch (const std::exception&) {
-        LOG(ERROR, "ModelSelector") << "Error: Invalid selection." << std::endl;
+    if (!prompt_number("Enter number: ", selected)) {
         return false;
     }
 
-    if (parsed_chars != input.size() || selected < 1 || static_cast<size_t>(selected) > display_models.size()) {
+    if (selected < 1 || static_cast<size_t>(selected) > display_models.size()) {
         LOG(ERROR, "ModelSelector") << "Error: Selection out of range." << std::endl;
         return false;
     }
@@ -123,12 +139,68 @@ bool prompt_model_selection(lemonade::LemonadeClient& client,
 bool resolve_model_if_missing(lemonade::LemonadeClient& client,
                               std::string& model_out,
                               const std::string& command_name,
-                              bool show_all) {
+                              bool show_all,
+                              const std::string& agent_name) {
     if (!model_out.empty()) {
         return true;
     }
 
     std::cout << "No model specified for '" << command_name << "'." << std::endl;
+
+    if (command_name == "launch") {
+        std::vector<lemonade::ModelInfo> downloaded_models;
+        if (!fetch_models_from_endpoint(client, false, downloaded_models)) {
+            return false;
+        }
+
+        std::vector<const lemonade::ModelInfo*> suggested_models;
+        suggested_models.reserve(downloaded_models.size());
+        for (const auto& model : downloaded_models) {
+            if (model.suggested) {
+                suggested_models.push_back(&model);
+            }
+        }
+
+        std::string agent_name_display = agent_name;
+        if (!agent_name_display.empty()) {
+            agent_name_display[0] = static_cast<char>(
+                std::toupper(static_cast<unsigned char>(agent_name_display[0])));
+        }
+        if (!agent_name_display.empty()) {
+            std::cout << "Select a suggested model + recipe to use with "
+                      << agent_name_display << ":" << std::endl;
+        } else {
+            std::cout << "Select a suggested model + recipe to use:" << std::endl;
+        }
+
+        for (size_t i = 0; i < suggested_models.size(); ++i) {
+            const auto& model = *suggested_models[i];
+            std::cout << "  " << (i + 1) << ") " << model.id
+                      << " (" << (model.recipe.empty() ? "-" : model.recipe) << ")"
+                      << std::endl;
+        }
+
+        const int choose_any = static_cast<int>(suggested_models.size()) + 1;
+        std::cout << "  " << choose_any << ") Choose any model" << std::endl;
+
+        int selected = 0;
+        if (!prompt_number("Enter number: ", selected)) {
+            return false;
+        }
+
+        if (selected == choose_any) {
+            return prompt_model_selection(client, model_out, show_all);
+        }
+        if (selected < 1 || static_cast<size_t>(selected) > suggested_models.size()) {
+            LOG(ERROR, "ModelSelector") << "Error: Selection out of range." << std::endl;
+            return false;
+        }
+
+        model_out = suggested_models[static_cast<size_t>(selected - 1)]->id;
+        std::cout << "Selected model: " << model_out << std::endl;
+        return true;
+    }
+
     return prompt_model_selection(client, model_out, show_all);
 }
 

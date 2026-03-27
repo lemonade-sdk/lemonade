@@ -286,7 +286,7 @@ static int handle_recipes_command(lemonade::LemonadeClient& client, const CliCon
 }
 
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
-    if (!lemon_cli::resolve_model_if_missing(client, config.model, "launch", false)) {
+    if (!lemon_cli::resolve_model_if_missing(client, config.model, "launch", false, config.agent)) {
         return 1;
     }
 
@@ -736,6 +736,25 @@ int main(int argc, char* argv[]) {
         return client.status(config.port);
     } else if (list_cmd->count() > 0) {
         return client.list_models(!config.downloaded);
+    } else if (pull_cmd->count() > 0) {
+        return handle_pull_command(client, config);
+    } else if (import_cmd->count() > 0) {
+        return handle_import_command(client, config);
+    } else if (delete_cmd->count() > 0) {
+        return client.delete_model(config.model);
+    } else if (run_cmd->count() > 0) {
+        return handle_run_command(client, config);
+    } else if (load_cmd->count() > 0) {
+        return handle_load_command(client, config);
+    } else if (unload_cmd->count() > 0) {
+        return client.unload_model(config.model);
+    } else if (export_cmd->count() > 0) {
+        return handle_export_command(client, config);
+    } else if (recipes_cmd->count() > 0) {
+        return handle_recipes_command(client, config);
+    } else if (launch_cmd->count() > 0) {
+        return handle_launch_command(client, config);
+(!config.downloaded);
     } else if (pull_cmd->count() > 0) {
         return handle_pull_command(client, config);
     } else if (import_cmd->count() > 0) {

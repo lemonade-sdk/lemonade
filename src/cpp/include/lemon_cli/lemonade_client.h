@@ -33,6 +33,7 @@ struct ModelInfo {
     std::string checkpoint;
     std::string recipe;
     bool downloaded = false;
+    bool suggested = false;
     std::string download_url;
     std::string description;
 };
