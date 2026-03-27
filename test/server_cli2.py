@@ -74,7 +74,7 @@ def parse_cli_args():
     return args
 
 
-def run_cli_command(args, timeout=60, check=False, env=None):
+def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
     """
     Run a CLI command and return the result.
 
@@ -83,6 +83,7 @@ def run_cli_command(args, timeout=60, check=False, env=None):
         timeout: Command timeout in seconds
         check: If True, raise CalledProcessError on non-zero exit
         env: Optional environment override for subprocess
+        input_text: Optional stdin text for interactive prompts
 
     Returns:
         subprocess.CompletedProcess result
@@ -102,6 +103,7 @@ def run_cli_command(args, timeout=60, check=False, env=None):
         cmd,
         capture_output=True,
         text=True,
+        input=input_text,
         timeout=timeout,
         encoding="utf-8",
         errors="replace",
@@ -645,6 +647,38 @@ sys.exit(0)
     # =============================================================================
     # parser-only tests: run on all OSes
     # process-execution tests: run on non-Windows only with shebang-based fake binaries
+
+    def test_099_launch_without_agent_prompts_selection(self):
+        """Launch without an agent argument should present agent choices and continue."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "claude_capture_agent_prompt.json")
+            self._write_fake_agent(temp_dir, "claude", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--use-recipe",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+                input_text="1\n",
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertTrue(
+                os.path.exists(capture_path),
+                "Fake claude binary was not executed",
+            )
+
+            output = result.stdout + result.stderr
+            self.assertIn("Select an agent to launch", output)
+            self.assertIn("Selected agent: claude", output)
 
     def test_100_launch_invalid_agent_rejected(self):
         """Launch should reject unsupported agent names."""

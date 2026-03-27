@@ -51,6 +51,39 @@ static const std::vector<std::string> SUPPORTED_AGENTS = {
     "codex"
 };
 
+static bool prompt_agent_selection(std::string& agent_out) {
+    std::cout << "Select an agent to launch:" << std::endl;
+    for (size_t i = 0; i < SUPPORTED_AGENTS.size(); ++i) {
+        std::cout << "  " << (i + 1) << ") " << SUPPORTED_AGENTS[i] << std::endl;
+    }
+
+    std::cout << "Enter number: " << std::flush;
+
+    std::string input;
+    if (!std::getline(std::cin, input)) {
+        std::cerr << "Error: Failed to read agent selection." << std::endl;
+        return false;
+    }
+
+    size_t parsed_chars = 0;
+    int selected = 0;
+    try {
+        selected = std::stoi(input, &parsed_chars);
+    } catch (const std::exception&) {
+        std::cerr << "Error: Invalid selection." << std::endl;
+        return false;
+    }
+
+    if (parsed_chars != input.size() || selected < 1 || static_cast<size_t>(selected) > SUPPORTED_AGENTS.size()) {
+        std::cerr << "Error: Selection out of range." << std::endl;
+        return false;
+    }
+
+    agent_out = SUPPORTED_AGENTS[static_cast<size_t>(selected - 1)];
+    std::cout << "Selected agent: " << agent_out << std::endl;
+    return true;
+}
+
 // Configuration structure for CLI options
 struct CliConfig {
     std::string host = "127.0.0.1";
@@ -286,6 +319,10 @@ static int handle_recipes_command(lemonade::LemonadeClient& client, const CliCon
 }
 
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
+    if (config.agent.empty() && !prompt_agent_selection(config.agent)) {
+        return 1;
+    }
+
     if (!lemon_cli::resolve_model_if_missing(client, config.model, "launch", true, config.agent)) {
         return 1;
     }
@@ -678,7 +715,6 @@ int main(int argc, char* argv[]) {
 
     // Launch options
     launch_cmd->add_option("agent", config.agent, "Agent name to launch")
-        ->required()
         ->type_name("AGENT")
         ->check(CLI::IsMember(SUPPORTED_AGENTS));
     launch_cmd->add_option("--model,-m", config.model, "Model name to load")->type_name("MODEL");
