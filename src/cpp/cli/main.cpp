@@ -530,16 +530,6 @@ static int discover_local_server_port() {
     return 0;
 }
 
-static std::string underscore_to_hyphen(std::string s) {
-    std::replace(s.begin(), s.end(), '_', '-');
-    return s;
-}
-
-static std::string hyphen_to_underscore(std::string s) {
-    std::replace(s.begin(), s.end(), '-', '_');
-    return s;
-}
-
 static std::string json_value_to_string(const nlohmann::json& val) {
     if (val.is_string()) return val.get<std::string>();
     if (val.is_boolean()) return val.get<bool>() ? "true" : "false";
@@ -552,7 +542,11 @@ static std::string json_value_to_string(const nlohmann::json& val) {
     return val.dump();
 }
 
-// Check if every character in a string satisfies a predicate (with optional leading '-')
+static std::string normalize_key(std::string s) {
+    std::replace(s.begin(), s.end(), '-', '_');
+    return s;
+}
+
 static bool is_strict_numeric(const std::string& s, bool allow_dot) {
     if (s.empty()) return false;
     size_t start = (s[0] == '-') ? 1 : 0;
@@ -579,16 +573,6 @@ static nlohmann::json parse_typed_value(const std::string& value) {
     return value;
 }
 
-// Determine whether a CLI key (hyphenated) is a top-level config key by
-// checking the server's actual config structure, rather than a hardcoded list.
-static bool is_top_level_config_key(const std::string& cli_key,
-                                    const nlohmann::json& server_config) {
-    std::string json_key = hyphen_to_underscore(cli_key);
-    if (!server_config.contains(json_key)) return false;
-    // Nested sections are JSON objects; top-level keys are scalars
-    return !server_config[json_key].is_object();
-}
-
 static int handle_config_view(lemonade::LemonadeClient& client) {
     try {
         std::string response = client.make_request("/internal/config");
@@ -605,9 +589,8 @@ static int handle_config_view(lemonade::LemonadeClient& client) {
             if (val.is_object()) {
                 nested_keys.push_back(key);
             } else {
-                std::string dk = underscore_to_hyphen(key);
-                max_width = std::max(max_width, dk.size());
-                general.push_back({dk, json_value_to_string(val)});
+                max_width = std::max(max_width, key.size());
+                general.push_back({key, json_value_to_string(val)});
             }
         }
         if (!general.empty()) {
@@ -615,10 +598,9 @@ static int handle_config_view(lemonade::LemonadeClient& client) {
         }
 
         for (const auto& section_key : nested_keys) {
-            std::string section_display = underscore_to_hyphen(section_key);
             std::vector<Row> rows;
             for (auto& [field, val] : config[section_key].items()) {
-                std::string dk = section_display + "-" + underscore_to_hyphen(field);
+                std::string dk = section_key + "." + field;
                 max_width = std::max(max_width, dk.size());
                 rows.push_back({dk, json_value_to_string(val)});
             }
@@ -642,7 +624,7 @@ static int handle_config_view(lemonade::LemonadeClient& client) {
         }
 
         std::cout << std::endl;
-        std::cout << "To change a value:  lemonade config set port=9000 llamacpp-backend=rocm"
+        std::cout << "To change a value:  lemonade config set port=9000 llamacpp.backend=rocm"
                   << std::endl;
 
         return 0;
@@ -654,17 +636,6 @@ static int handle_config_view(lemonade::LemonadeClient& client) {
 
 static int handle_config_set(lemonade::LemonadeClient& client,
                              const std::vector<std::string>& raw_args) {
-    // Fetch current config to determine which keys are top-level vs nested,
-    // so we don't need a hardcoded list that can drift from the server.
-    nlohmann::json server_config;
-    try {
-        std::string response = client.make_request("/internal/config");
-        server_config = nlohmann::json::parse(response);
-    } catch (const std::exception& e) {
-        std::cerr << "Error fetching current config: " << e.what() << std::endl;
-        return 1;
-    }
-
     nlohmann::json updates = nlohmann::json::object();
 
     for (const auto& arg : raw_args) {
@@ -676,26 +647,24 @@ static int handle_config_set(lemonade::LemonadeClient& client,
         std::string key = arg.substr(0, eq_pos);
         std::string value = arg.substr(eq_pos + 1);
 
-        if (is_top_level_config_key(key, server_config) ||
-            key.find('-') == std::string::npos) {
-            updates[hyphen_to_underscore(key)] = parse_typed_value(value);
-        } else {
-            // Nested: split on first hyphen, e.g. "llamacpp-backend" → llamacpp.backend
-            size_t sep = key.find('-');
-            std::string section = hyphen_to_underscore(key.substr(0, sep));
-            std::string field = hyphen_to_underscore(key.substr(sep + 1));
+        size_t dot_pos = key.find('.');
+        if (dot_pos != std::string::npos) {
+            std::string section = key.substr(0, dot_pos);
+            std::string field = normalize_key(key.substr(dot_pos + 1));
 
             if (!updates.contains(section)) {
                 updates[section] = nlohmann::json::object();
             }
             updates[section][field] = parse_typed_value(value);
+        } else {
+            updates[normalize_key(key)] = parse_typed_value(value);
         }
     }
 
     if (updates.empty()) {
         std::cerr << "Error: no key-value pairs specified" << std::endl;
         std::cerr << "Usage: lemonade config set key=value [key=value ...]" << std::endl;
-        std::cerr << "Example: lemonade config set llamacpp-backend=rocm port=8123" << std::endl;
+        std::cerr << "Example: lemonade config set llamacpp.backend=rocm port=8123" << std::endl;
         return 1;
     }
 
@@ -828,7 +797,7 @@ int main(int argc, char* argv[]) {
     // Config commands
     CLI::App* config_cmd = app.add_subcommand("config", "View or modify server configuration")->group("Server");
     config_cmd->fallthrough(false);
-    CLI::App* config_set_cmd = config_cmd->add_subcommand("set", "Set configuration values (e.g., llamacpp-backend=rocm port=8123)");
+    CLI::App* config_set_cmd = config_cmd->add_subcommand("set", "Set configuration values (e.g., llamacpp.backend=rocm port=8123)");
     config_set_cmd->allow_extras(true);
     config_set_cmd->fallthrough(false);
 

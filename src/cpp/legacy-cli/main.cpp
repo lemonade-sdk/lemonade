@@ -145,7 +145,7 @@ static void exec_program(const fs::path &exe_path, const std::vector<std::string
 /// Map old CLI args to lemond args and lemonade config set args.
 /// Returns a pair: (lemond_args, config_set_args)
 /// config_set_args use key=value format for `lemonade config set`, e.g.:
-///   {"log-level=debug", "llamacpp-backend=vulkan"}
+///   {"log_level=debug", "llamacpp.backend=vulkan"}
 static std::pair<std::vector<std::string>, std::vector<std::string>>
 parse_serve_args(const std::vector<std::string>& args) {
     std::vector<std::string> lemond_args;
@@ -162,22 +162,22 @@ parse_serve_args(const std::vector<std::string>& args) {
         if (arg == "--port") { lemond_args.push_back(arg); lemond_args.push_back(next()); }
         else if (arg == "--host") { lemond_args.push_back(arg); lemond_args.push_back(next()); }
         // Args that become `lemonade config set key=value` pairs
-        else if (arg == "--log-level") { config_set_args.push_back("log-level=" + next()); }
-        else if (arg == "--extra-models-dir") { config_set_args.push_back("extra-models-dir=" + next()); }
-        else if (arg == "--no-broadcast") { config_set_args.push_back("no-broadcast=true"); }
-        else if (arg == "--global-timeout") { config_set_args.push_back("global-timeout=" + next()); }
-        else if (arg == "--max-loaded-models") { config_set_args.push_back("max-loaded-models=" + next()); }
-        else if (arg == "--ctx-size") { config_set_args.push_back("ctx-size=" + next()); }
-        else if (arg == "--llamacpp") { config_set_args.push_back("llamacpp-backend=" + next()); }
-        else if (arg == "--llamacpp-args") { config_set_args.push_back("llamacpp-args=" + next()); }
-        else if (arg == "--whispercpp") { config_set_args.push_back("whispercpp-backend=" + next()); }
-        else if (arg == "--whispercpp-args") { config_set_args.push_back("whispercpp-args=" + next()); }
-        else if (arg == "--sdcpp") { config_set_args.push_back("sdcpp-backend=" + next()); }
-        else if (arg == "--steps") { config_set_args.push_back("sdcpp-steps=" + next()); }
-        else if (arg == "--cfg-scale") { config_set_args.push_back("sdcpp-cfg-scale=" + next()); }
-        else if (arg == "--width") { config_set_args.push_back("sdcpp-width=" + next()); }
-        else if (arg == "--height") { config_set_args.push_back("sdcpp-height=" + next()); }
-        else if (arg == "--flm-args") { config_set_args.push_back("flm-args=" + next()); }
+        else if (arg == "--log-level") { config_set_args.push_back("log_level=" + next()); }
+        else if (arg == "--extra-models-dir") { config_set_args.push_back("extra_models_dir=" + next()); }
+        else if (arg == "--no-broadcast") { config_set_args.push_back("no_broadcast=true"); }
+        else if (arg == "--global-timeout") { config_set_args.push_back("global_timeout=" + next()); }
+        else if (arg == "--max-loaded-models") { config_set_args.push_back("max_loaded_models=" + next()); }
+        else if (arg == "--ctx-size") { config_set_args.push_back("ctx_size=" + next()); }
+        else if (arg == "--llamacpp") { config_set_args.push_back("llamacpp.backend=" + next()); }
+        else if (arg == "--llamacpp-args") { config_set_args.push_back("llamacpp.args=" + next()); }
+        else if (arg == "--whispercpp") { config_set_args.push_back("whispercpp.backend=" + next()); }
+        else if (arg == "--whispercpp-args") { config_set_args.push_back("whispercpp.args=" + next()); }
+        else if (arg == "--sdcpp") { config_set_args.push_back("sdcpp.backend=" + next()); }
+        else if (arg == "--steps") { config_set_args.push_back("sdcpp.steps=" + next()); }
+        else if (arg == "--cfg-scale") { config_set_args.push_back("sdcpp.cfg_scale=" + next()); }
+        else if (arg == "--width") { config_set_args.push_back("sdcpp.width=" + next()); }
+        else if (arg == "--height") { config_set_args.push_back("sdcpp.height=" + next()); }
+        else if (arg == "--flm-args") { config_set_args.push_back("flm.args=" + next()); }
         else if (arg == "--no-tray") {
             // Ignored (no longer applicable)
         }

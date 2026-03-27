@@ -213,8 +213,10 @@ curl -X POST localhost:8000/internal/set -d '{"host":"0.0.0.0"}'
 If upgrading from a version that used environment variables, you must migrate manually using `lemonade config set`. For example, if you previously had `LEMONADE_PORT=9000` and `LEMONADE_LLAMACPP=rocm`, run:
 
 ```bash
-lemonade config set port=9000 llamacpp-backend=rocm
+lemonade config set port=9000 llamacpp.backend=rocm
 ```
+
+Nested backend settings use dot notation: `section.key=value` (e.g., `sdcpp.steps=30`, `whispercpp.backend=cpu`). Top-level settings use their JSON key name directly (e.g., `port=8000`, `log_level=debug`).
 
 Run `lemonade config` to view all current settings and their `config set` key names.
 
