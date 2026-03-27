@@ -1,7 +1,7 @@
 """
 CLI command tests for Lemonade Server.
 
-Tests the lemonade-server CLI commands directly (not HTTP API):
+Tests the lemonade CLI commands directly (not HTTP API):
 - version
 - list
 - pull
@@ -16,7 +16,7 @@ Expects a running server (started by the installer or manually).
 
 Usage:
     python server_cli.py
-    python server_cli.py --server-binary /path/to/lemonade-server
+    python server_cli.py --server-binary /path/to/lemonade
 """
 
 import argparse
@@ -49,12 +49,12 @@ _config = {
 
 def parse_cli_args():
     """Parse command line arguments for CLI tests."""
-    parser = argparse.ArgumentParser(description="Test lemonade-server CLI")
+    parser = argparse.ArgumentParser(description="Test lemonade CLI")
     parser.add_argument(
         "--server-binary",
         type=str,
         default=get_default_server_binary(),
-        help="Path to lemonade-server binary (default: CMake build output)",
+        help="Path to lemonade CLI binary (default: CMake build output)",
     )
 
     args, unknown = parser.parse_known_args()
@@ -369,6 +369,26 @@ class PersistentServerCLITests(CLITestBase):
         except Exception as e:
             self.fail(f"Failed to set host to 0.0.0.0: {e}")
 
+        # Wait for server to finish rebinding. Use 127.0.0.1 explicitly
+        # because 0.0.0.0 only binds IPv4, and "localhost" may resolve to
+        # ::1 (IPv6) in some environments (e.g. Fedora containers).
+        for i in range(30):
+            try:
+                response = requests.get(
+                    f"http://127.0.0.1:{PORT}/api/v1/health",
+                    headers=_auth_headers(),
+                    timeout=2,
+                )
+                if response.status_code == 200:
+                    break
+            except requests.ConnectionError:
+                pass
+            time.sleep(1)
+        else:
+            self.fail(
+                "Server did not become reachable on 127.0.0.1 after rebind to 0.0.0.0"
+            )
+
         # Verify the server still responds (status command should work)
         result = self.assertCommandSucceeds(["status"])
         output = result.stdout.lower() + result.stderr.lower()
@@ -377,17 +397,23 @@ class PersistentServerCLITests(CLITestBase):
             f"Status should indicate server is running on 0.0.0.0: {result.stdout}",
         )
 
-        # Verify via health endpoint too
+        # Verify via health endpoint too (use 127.0.0.1 for same IPv4 reason)
         response = requests.get(
-            f"http://localhost:{PORT}/api/v1/health",
+            f"http://127.0.0.1:{PORT}/api/v1/health",
             headers=_auth_headers(),
             timeout=10,
         )
         self.assertEqual(response.status_code, 200)
 
-        # Restore host back to localhost
+        # Restore host back to localhost. Use 127.0.0.1 directly since
+        # the server is currently bound to 0.0.0.0 (IPv4 only).
         try:
-            set_server_config({"host": "localhost"})
+            requests.post(
+                f"http://127.0.0.1:{PORT}/internal/set",
+                json={"host": "localhost"},
+                headers=_auth_headers(),
+                timeout=10,
+            )
             print("[OK] Restored host to localhost")
         except Exception as e:
             # Best-effort restore — don't fail the test
