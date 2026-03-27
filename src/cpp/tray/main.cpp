@@ -140,8 +140,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     // Set lemonade home dir
     lemon::utils::set_home_dir(cli_config.home_dir);
 
-    // Auto-migrate and load config.json
-    lemon::ConfigFile::migrate(cli_config.home_dir);
+    // Load config.json
     auto config_json = lemon::ConfigFile::load(cli_config.home_dir);
 
     // CLI overrides (persist to config.json)

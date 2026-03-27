@@ -54,7 +54,6 @@ int main(int argc, char** argv) {
         auto cli_config = parser.get_config();
 
         utils::set_home_dir(cli_config.home_dir);
-        ConfigFile::migrate(cli_config.home_dir);
         json config_json = ConfigFile::load(cli_config.home_dir);
 
         // CLI --port/--host override config.json and persist

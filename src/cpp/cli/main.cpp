@@ -827,9 +827,7 @@ int main(int argc, char* argv[]) {
 
     // Config commands
     CLI::App* config_cmd = app.add_subcommand("config", "View or modify server configuration")->group("Server");
-    config_cmd->require_subcommand(1);
     config_cmd->fallthrough(false);
-    CLI::App* config_view_cmd = config_cmd->add_subcommand("view", "Display the current server configuration");
     CLI::App* config_set_cmd = config_cmd->add_subcommand("set", "Set configuration values (e.g., llamacpp-backend=rocm port=8123)");
     config_set_cmd->allow_extras(true);
     config_set_cmd->fallthrough(false);
@@ -964,12 +962,10 @@ int main(int argc, char* argv[]) {
     } else if (scan_cmd->count() > 0) {
         return handle_scan_command(config);
     } else if (config_cmd->count() > 0) {
-        if (config_view_cmd->count() > 0) {
-            return handle_config_view(client);
-        } else if (config_set_cmd->count() > 0) {
+        if (config_set_cmd->count() > 0) {
             return handle_config_set(client, config_set_cmd->remaining());
         }
-        return 1;
+        return handle_config_view(client);
     } else {
         std::cerr << "Error: No command specified" << std::endl;
         std::cerr << app.help() << std::endl;

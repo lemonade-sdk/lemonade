@@ -25,20 +25,7 @@ public:
     /// Thread-safe.
     static void save(const std::string& home_dir, const json& config);
 
-    /// Auto-migrate from env vars and /etc/lemonade/lemonade.conf if config.json
-    /// doesn't exist. Creates config.json with migrated values merged over defaults.
-    /// Logs a notice about what was migrated.
-    static void migrate(const std::string& home_dir);
-
 private:
-    /// Read a KEY=VALUE style conf file and return env var mappings found.
-    static json read_conf_file(const std::string& path);
-
-    /// Map a LEMONADE_* env var name to its config.json path.
-    /// Returns a pair of (top-level key, nested key or "").
-    /// Returns ("", "") for unknown/unmapped env vars.
-    static std::pair<std::string, std::string> env_to_config_key(const std::string& env_name);
-
     /// Get platform-specific default models directory.
     static std::string default_models_dir();
 
