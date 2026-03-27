@@ -1,6 +1,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <mutex>
 #include <stdexcept>
@@ -90,6 +91,13 @@ void RuntimeConfig::validate_bin_path(const std::string& config_section,
 RuntimeConfig::RuntimeConfig(const json& config)
     : config_(config) {
     // Config is expected to already have defaults merged in (by ConfigFile::load).
+
+    // In CI mode, override log level to debug for easier diagnostics
+    const char* ci_mode = std::getenv("LEMONADE_CI_MODE");
+    if (ci_mode && (std::string(ci_mode) == "1" || std::string(ci_mode) == "true" ||
+                    std::string(ci_mode) == "True" || std::string(ci_mode) == "TRUE")) {
+        config_["log_level"] = "debug";
+    }
 }
 
 int RuntimeConfig::port() const {

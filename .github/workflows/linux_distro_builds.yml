@@ -133,7 +133,7 @@ jobs:
           LEMONADE_CI_MODE: "True"
         run: |
           echo "Starting lemond in background..."
-          ./build/lemond --port 8000 --log-level debug > /tmp/lemonade-server.log 2>&1 &
+          ./build/lemond --port 8000 > /tmp/lemonade-server.log 2>&1 &
 
           echo "Waiting for server to be ready..."
           for i in $(seq 1 30); do

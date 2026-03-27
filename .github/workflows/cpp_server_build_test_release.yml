@@ -543,14 +543,6 @@ jobs:
           cat /tmp/lemonade-server.log 2>/dev/null || true
           exit 1
 
-      - name: Set debug logging (unsigned path)
-        if: steps.check_signing.outputs.has_signing != 'true'
-        shell: bash
-        run: |
-          curl -sf -X POST http://localhost:8000/internal/set \
-            -H 'Content-Type: application/json' \
-            -d '{"log_level":"debug"}' || echo "Warning: Failed to set debug logging"
-
       - name: Setup Python and virtual environment (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
         uses: ./.github/actions/setup-venv
@@ -769,17 +761,6 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      - name: Set debug logging
-        shell: powershell
-        run: |
-          try {
-            Invoke-WebRequest -Uri "http://localhost:8000/internal/set" -Method POST `
-              -ContentType "application/json" -Body '{"log_level":"debug"}' -UseBasicParsing -ErrorAction Stop | Out-Null
-            Write-Host "Debug logging enabled"
-          } catch {
-            Write-Host "Warning: Failed to set debug logging: $_"
-          }
-
       - name: Install FLM backend for FLM wrapped-server tests
         if: ${{ runner.os == 'Windows' && contains(matrix.extra_args, '--wrapped-server flm') }}
         shell: PowerShell
@@ -897,12 +878,6 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      - name: Set debug logging
-        run: |
-          curl -sf -X POST http://localhost:8000/internal/set \
-            -H 'Content-Type: application/json' \
-            -d '{"log_level":"debug"}' || echo "Warning: Failed to set debug logging"
-
       - name: Run tests
         env:
           HF_HOME: ${{ env.HF_HOME }}
@@ -999,12 +974,6 @@ jobs:
           venv-name: '.venv'
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
-
-      - name: Set debug logging
-        run: |
-          curl -sf -X POST http://localhost:8000/internal/set \
-            -H 'Content-Type: application/json' \
-            -d '{"log_level":"debug"}' || echo "Warning: Failed to set debug logging"
 
       - name: Test llamacpp (metal)
         env:
@@ -1182,14 +1151,6 @@ jobs:
           requirements-file: 'test/requirements.txt'
 
       # ---- Run Tests ----
-      - name: Set debug logging
-        if: ${{ !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
-        shell: bash
-        run: |
-          curl -sf -X POST http://localhost:8000/internal/set \
-            -H 'Content-Type: application/json' \
-            -d '{"log_level":"debug"}' || echo "Warning: Failed to set debug logging"
-
       - name: Run ${{ matrix.test_type }} tests
         if: ${{ !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash

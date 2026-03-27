@@ -235,9 +235,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     // processes like llama-server) before sending the response, then
     // stops the HTTP listener and exits on a detached thread.
     {
-        std::string connect_host = (config.host.empty() || config.host == "0.0.0.0" || config.host == "localhost")
-            ? "127.0.0.1" : config.host;
-        httplib::Client cli(connect_host, config.port);
+        std::string connect_host = (runtime_config->host().empty() || runtime_config->host() == "0.0.0.0" || runtime_config->host() == "localhost")
+            ? "127.0.0.1" : runtime_config->host();
+        httplib::Client cli(connect_host, runtime_config->port());
         cli.set_connection_timeout(2);
         cli.set_read_timeout(30);  // Allow time for model unload (up to 5s per model)
         cli.Post("/internal/shutdown", "", "application/json");
