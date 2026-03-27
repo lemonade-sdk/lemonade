@@ -115,6 +115,7 @@ private:
     void handle_image_generations(const httplib::Request& req, httplib::Response& res);
     void handle_image_edits(const httplib::Request& req, httplib::Response& res);
     void handle_image_variations(const httplib::Request& req, httplib::Response& res);
+    void handle_image_upscale(const httplib::Request& req, httplib::Response& res);
 
     // Shared helpers for image multipart handlers
     // Return true on success; on failure set res status/body and return false.

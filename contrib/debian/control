@@ -15,6 +15,7 @@ Build-Depends:
  libcurl4-openssl-dev,
  libjs-katex,
  libssl-dev,
+ libsystemd-dev,
  libwebsockets-dev,
  libzstd-dev,
  ninja-build,

@@ -16,7 +16,7 @@ runs:
         # Check common log locations
         $candidates = @(
           "$env:TEMP\lemonade-server.log",
-          "$env:TEMP\lemonade-router.log",
+          "$env:TEMP\lemond.log",
           "$env:LOCALAPPDATA\lemonade_server\lemonade-server.log"
         )
 
@@ -60,7 +60,7 @@ runs:
           for candidate in \
             "${LEMON_RUNTIME_DIR}/lemonade-server.log" \
             /tmp/lemonade-server.log \
-            /tmp/lemonade-router.log; do
+            /tmp/lemond.log; do
             if [ -f "$candidate" ]; then
               echo "=== Last 200 lines of $candidate ==="
               tail -200 "$candidate"

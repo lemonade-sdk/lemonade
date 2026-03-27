@@ -47,7 +47,7 @@ maybe_sudo() {
 }
 
 # Detect OS
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+if [[ "$OSTYPE" == "linux"* ]]; then
     OS="linux"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
     OS="macos"
@@ -74,6 +74,8 @@ if ! command_exists pre-commit; then
         missing_packages+=("pre-commit")
     elif [ "$OS" = "linux" ] && command_exists dnf; then
         missing_packages+=("pre-commit")
+    elif [ "$OS" = "linux" ] && command_exists zypper; then
+        missing_packages+=("python313-pre-commit")
     elif [ "$OS" = "macos" ] && command_exists brew; then
         missing_packages+=("pre-commit")
     elif command_exists pip || command_exists pip3; then
@@ -109,6 +111,8 @@ if [ ${#missing_tools[@]} -gt 0 ]; then
             missing_packages+=("git" "cmake" "ninja" "base-devel")
         elif command_exists dnf; then
             missing_packages+=("git" "cmake" "ninja-build" "gcc" "gcc-c++" "make")
+        elif command_exists zypper; then
+            missing_packages+=("git" "cmake" "ninja" "gcc" "gcc-c++" "make")
         fi
     elif [ "$OS" = "macos" ]; then
         missing_packages+=("git" "cmake" "ninja")
@@ -175,6 +179,19 @@ if command_exists pkg-config; then
                         libwebsockets) missing_packages+=("libwebsockets-devel") ;;
                     esac
                 done
+            elif command_exists zypper; then
+                # Map pkg-config names to zypper packages
+                for lib in "${missing_libs[@]}"; do
+                    case "$lib" in
+                        libcurl) missing_packages+=("libcurl-devel") ;;
+                        openssl) missing_packages+=("libopenssl-devel") ;;
+                        zlib) missing_packages+=("zlib-devel") ;;
+                        libsystemd) missing_packages+=("systemd-devel") ;;
+                        libdrm) missing_packages+=("libdrm-devel") ;;
+                        libcap) missing_packages+=("libcap-devel") ;;
+                        libwebsockets) missing_packages+=("libwebsockets-devel") ;;
+                    esac
+                done
             fi
         elif [ "$OS" = "macos" ]; then
             # macOS typically has these via Xcode Command Line Tools
@@ -197,6 +214,8 @@ else
             missing_packages+=("pkgconf" "curl" "openssl" "zlib" "systemd" "libdrm" "libcap")
         elif command_exists dnf; then
             missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel")
+        elif command_exists zypper; then
+            missing_packages+=("pkg-config" "libcurl-devel" "libopenssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel")
         fi
     elif [ "$OS" = "macos" ]; then
         missing_packages+=("pkg-config" "curl" "openssl" "zlib" "libdrm")
@@ -227,6 +246,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
             missing_tray_packages+=("libayatana-appindicator")
         elif command_exists dnf; then
             missing_tray_packages+=("libayatana-appindicator-gtk3-devel")
+        elif command_exists zypper; then
+            missing_tray_packages+=("libayatana-appindicator3-devel")
         fi
     fi
 
@@ -243,6 +264,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
                 missing_tray_packages+=("libdbusmenu-glib")
             elif command_exists dnf; then
                 missing_tray_packages+=("dbusmenu-glib-devel")
+            elif command_exists zypper; then
+                missing_tray_packages+=("libdbusmenu-glib-devel")
             fi
         fi
     fi
@@ -259,6 +282,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
                 missing_tray_packages+=("gtk3")
             elif command_exists dnf; then
                 missing_tray_packages+=("gtk3-devel")
+            elif command_exists zypper; then
+                missing_tray_packages+=("gtk3-devel")
             fi
         fi
     fi
@@ -272,6 +297,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
         elif command_exists pacman; then
             missing_tray_packages+=("libnotify")
         elif command_exists dnf; then
+            missing_tray_packages+=("libnotify-devel")
+        elif command_exists zypper; then
             missing_tray_packages+=("libnotify-devel")
         fi
     fi
@@ -291,6 +318,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
             tray_install_cmd="sudo pacman -S --needed --noconfirm ${missing_tray_packages[*]}"
         elif command_exists dnf; then
             tray_install_cmd="sudo dnf install -y ${missing_tray_packages[*]}"
+        elif command_exists zypper; then
+            tray_install_cmd="sudo zypper install -y ${missing_tray_packages[*]}"
         fi
 
         if [ -n "$tray_install_cmd" ]; then
@@ -312,6 +341,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
                     maybe_sudo pacman -S --needed --noconfirm "${missing_tray_packages[@]}"
                 elif command_exists dnf; then
                     maybe_sudo dnf install -y "${missing_tray_packages[@]}"
+                elif command_exists zypper; then
+                    maybe_sudo zypper install -y "${missing_tray_packages[@]}"
                 fi
                 print_success "Optional tray dependencies installed"
             else
@@ -330,7 +361,7 @@ print_info "Checking Node.js and npm installation..."
 if ! command_exists node; then
     print_warning "Node.js not found"
     if [ "$OS" = "linux" ]; then
-        if command_exists apt || command_exists pacman || command_exists dnf; then
+        if command_exists apt || command_exists pacman || command_exists dnf || command_exists zypper; then
             missing_packages+=("nodejs" "npm")
         fi
     elif [ "$OS" = "macos" ]; then
@@ -394,6 +425,12 @@ if [ ${#missing_packages[@]} -gt 0 ]; then
             else
                 install_cmd="sudo dnf install -y ${missing_packages[*]}"
             fi
+        elif command_exists zypper; then
+            if is_root; then
+                install_cmd="zypper install -y ${missing_packages[*]}"
+            else
+                install_cmd="sudo zypper install -y ${missing_packages[*]}"
+            fi
         fi
     elif [ "$OS" = "macos" ]; then
         install_cmd="brew install ${missing_packages[*]}"
@@ -436,6 +473,8 @@ if [ ${#missing_packages[@]} -gt 0 ]; then
             maybe_sudo pacman -Syu --needed --noconfirm ${missing_packages[@]}
         elif command_exists dnf; then
             maybe_sudo dnf install -y ${missing_packages[@]}
+        elif command_exists zypper; then
+            maybe_sudo zypper install -y ${missing_packages[@]}
         fi
     elif [ "$OS" = "macos" ]; then
         brew install ${missing_packages[@]}

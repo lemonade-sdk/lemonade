@@ -8,7 +8,7 @@ Usage:
 
 This script:
 1. Reads server_models.json to find models with recipe "llamacpp" and label "hot"
-2. Installs the llamacpp backend via `lemonade-server recipes --install llamacpp:<backend>`
+2. Installs the llamacpp backend via `lemonade recipes --install llamacpp:<backend>`
 3. For each hot model, sends a chat/completions request and queries /stats
 4. Outputs a JSON results file for CI consumption
 """
@@ -90,7 +90,7 @@ def wait_for_server(base_url, timeout=SERVER_STARTUP_TIMEOUT):
 
 
 def install_backend(server_binary, backend):
-    """Run lemonade-server recipes --install llamacpp:<backend>."""
+    """Run lemonade recipes --install llamacpp:<backend>."""
     cmd = [server_binary, "recipes", "--install", f"llamacpp:{backend}"]
     print(f"Running: {' '.join(cmd)}", flush=True)
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
@@ -157,7 +157,7 @@ def collect_server_logs(output_dir):
     """
     os.makedirs(output_dir, exist_ok=True)
     temp_dir = tempfile.gettempdir()
-    patterns = ["lemonade*.log", "lemonade-router*.log", "lemonade-server*.log"]
+    patterns = ["lemonade*.log", "lemond*.log", "lemonade-server*.log"]
     copied = []
     for pattern in patterns:
         for log_file in glob.glob(os.path.join(temp_dir, pattern)):

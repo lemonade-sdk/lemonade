@@ -1,0 +1,130 @@
+name: "🐛 Bug Report"
+description: Report a bug or unexpected behavior in Lemonade
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the details below so we can investigate.
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Which operating system are you using?
+      options:
+        - Windows
+        - Linux/Ubuntu
+        - Linux/Fedora
+        - Linux/Arch
+        - Linux/Other (please specify)
+        - macOS
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Lemonade Version
+      description: "Run `lemonade-server --version` or check the About dialog in the app."
+      placeholder: "e.g. 9.4.2"
+    validations:
+      required: true
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU / APU Model
+      description: "Which GPU or APU are you using? You can find this in `lemonade-server status` output."
+      placeholder: "e.g. AMD Radeon RX 7900 XTX, AMD Ryzen AI 9 HX 370"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Component
+      description: Which component is involved in this issue?
+      options:
+        - llama.cpp
+        - stable-diffusion.cpp
+        - whisper.cpp
+        - Kokoro TTS
+        - FastFlowLM / NPU
+        - RyzenAI
+        - Desktop App / UI
+        - Other / Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: "Describe what went wrong..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Step-by-step instructions to reproduce the issue.
+      placeholder: |
+        1. Start lemonade-server with `lemonade-server serve`
+        2. Load model X with `lemonade-server run <model>`
+        3. Send a request to ...
+        4. See error ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs Actual Behavior
+      description: What did you expect to happen, and what actually happened?
+      placeholder: |
+        Expected: ...
+        Actual: ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log Output
+      description: |
+        Please reproduce the issue with debug logging enabled and paste the relevant log output below.
+
+        **How to collect logs:**
+        1. Start (or restart) the server with debug logging:
+           ```
+           lemonade-server serve --log-level debug
+           ```
+        2. Reproduce the issue.
+        3. Copy the relevant log output and paste it below, or attach the log file.
+
+        **Log file locations:**
+        - **Windows:** `%LOCALAPPDATA%\lemonade\logs\`
+        - **Linux/macOS:** `~/.local/share/lemonade/logs/` or run `lemonade-server logs`
+
+        **Additional diagnostic commands (run these and paste the output):**
+        - `lemonade-server status` — shows server info, loaded models, and GPU details
+        - `lemonade-server recipes` — shows installed backends and driver status
+
+        **Platform-specific tips:**
+        - **Windows:** Check Event Viewer (Application log) if the server crashes silently.
+        - **Linux:** If using systemd, check `journalctl -u lemonade-server` for service logs.
+        - **macOS:** Check Console.app or run `log show --predicate 'process == "lemonade-server"' --last 5m`
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or related issues here.
+    validations:
+      required: false

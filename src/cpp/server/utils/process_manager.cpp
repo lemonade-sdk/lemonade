@@ -409,7 +409,7 @@ ProcessHandle ProcessManager::start_process(
         // Ensure this child is killed when the parent process dies.
         // This is the Linux equivalent of the Windows Job Object and
         // prevents orphaned backend processes (llama-server, etc.)
-        // when lemonade-router is killed or crashes.
+        // when lemond is killed or crashes.
         prctl(PR_SET_PDEATHSIG, SIGTERM);
 #endif
 
