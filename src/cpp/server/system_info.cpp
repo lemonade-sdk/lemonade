@@ -327,6 +327,10 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
 
             return true;
         } catch (...) {
+            // FLM can also be installed as a system package (in PATH)
+            if (recipe == "flm" && !utils::find_flm_executable().empty()) {
+                return true;
+            }
             return false;
         }
     }

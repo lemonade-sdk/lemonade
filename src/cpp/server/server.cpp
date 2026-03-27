@@ -1214,7 +1214,7 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
                     message += " " + flm_status.action + ".";
                 }
             }
-            // Always show install directory diagnostic
+            // Always show diagnostic: install dir state + flm list result
             std::string install_dir = backends::BackendUtils::get_install_directory("flm", "npu");
             bool dir_exists = std::filesystem::exists(install_dir);
             std::string files_in_dir;
@@ -1225,9 +1225,22 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
                 }
                 files_in_dir += "(" + std::to_string(count) + " total)";
             }
+            // Also try running flm list --json to see if it works
+            std::string flm_exe = utils::find_flm_executable();
+            std::string list_diag;
+            if (!flm_exe.empty()) {
+                std::string list_output;
+                std::string list_cmd = "\"" + flm_exe + "\" list --json";
+                int list_rc = utils::ProcessManager::run_command(list_cmd, list_output);
+                list_diag = ", flm_exe=" + flm_exe +
+                           ", list_rc=" + std::to_string(list_rc) +
+                           ", list_len=" + std::to_string(list_output.size());
+            } else {
+                list_diag = ", flm_exe=NOT_FOUND";
+            }
             message += " [FLM debug: install_dir=" + install_dir +
                        ", exists=" + (dir_exists ? "true" : "false") +
-                       ", files=" + files_in_dir + "]";
+                       ", files=" + files_in_dir + list_diag + "]";
         }
 
         error_response["error"] = {
