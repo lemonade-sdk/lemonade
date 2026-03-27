@@ -296,6 +296,12 @@ std::string get_cache_dir() {
         return g_home_dir;
     }
 
+    // Check LEMONADE_CACHE_DIR environment variable
+    std::string env_cache_dir = get_environment_variable_utf8("LEMONADE_CACHE_DIR");
+    if (!env_cache_dir.empty()) {
+        return env_cache_dir;
+    }
+
     // Fallback to platform-specific defaults (for backward compat / CLI client)
 #ifdef _WIN32
     std::string userprofile = get_environment_variable_utf8("USERPROFILE");
@@ -358,11 +364,31 @@ std::string default_hf_cache_dir() {
 #endif
 }
 
-std::string get_hf_cache_dir() {
-    if (!g_models_dir.empty()) {
-        return g_models_dir;
+std::string resolve_hf_cache_dir() {
+    // Follow the HuggingFace spec for cache directory resolution:
+    // 1. HF_HUB_CACHE — direct path to the hub cache
+    // 2. HF_HOME — base HF directory; cache is at $HF_HOME/hub
+    // 3. Platform-specific default (~/.cache/huggingface/hub)
+    std::string hf_hub_cache = get_environment_variable_utf8("HF_HUB_CACHE");
+    if (!hf_hub_cache.empty()) {
+        return hf_hub_cache;
+    }
+    std::string hf_home = get_environment_variable_utf8("HF_HOME");
+    if (!hf_home.empty()) {
+#ifdef _WIN32
+        return hf_home + "\\hub";
+#else
+        return hf_home + "/hub";
+#endif
     }
     return default_hf_cache_dir();
+}
+
+std::string get_hf_cache_dir() {
+    if (!g_models_dir.empty() && g_models_dir != "auto") {
+        return g_models_dir;
+    }
+    return resolve_hf_cache_dir();
 }
 
 std::string get_runtime_dir() {

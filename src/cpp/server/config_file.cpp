@@ -15,7 +15,7 @@ namespace lemon {
 std::shared_mutex ConfigFile::file_mutex_;
 
 std::string ConfigFile::default_models_dir() {
-    return utils::default_hf_cache_dir();
+    return "auto";
 }
 
 json ConfigFile::get_defaults() {
