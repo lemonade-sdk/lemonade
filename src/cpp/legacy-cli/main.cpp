@@ -4,7 +4,6 @@
 #include <lemon/version.h>
 
 #include <httplib.h>
-#include <nlohmann/json.hpp>
 
 #include <chrono>
 #include <cstdlib>
@@ -29,7 +28,6 @@
 #endif
 
 namespace fs = std::filesystem;
-using json = nlohmann::json;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -144,12 +142,14 @@ static void exec_program(const fs::path &exe_path, const std::vector<std::string
 // Serve command: parse old args, spawn lemond, configure via /internal/set
 // ---------------------------------------------------------------------------
 
-/// Map old CLI args to config.json nested JSON.
-/// Returns a pair: (lemond_args, config_updates)
-static std::pair<std::vector<std::string>, json>
+/// Map old CLI args to lemond args and lemonade config set args.
+/// Returns a pair: (lemond_args, config_set_args)
+/// config_set_args use key=value format for `lemonade config set`, e.g.:
+///   {"log-level=debug", "llamacpp-backend=vulkan"}
+static std::pair<std::vector<std::string>, std::vector<std::string>>
 parse_serve_args(const std::vector<std::string>& args) {
     std::vector<std::string> lemond_args;
-    json updates = json::object();
+    std::vector<std::string> config_set_args;
 
     for (size_t i = 1; i < args.size(); ++i) {
         const std::string& arg = args[i];
@@ -161,53 +161,23 @@ parse_serve_args(const std::vector<std::string>& args) {
         // Args that pass through to lemond
         if (arg == "--port") { lemond_args.push_back(arg); lemond_args.push_back(next()); }
         else if (arg == "--host") { lemond_args.push_back(arg); lemond_args.push_back(next()); }
-        // Args that become /internal/set calls
-        else if (arg == "--log-level") { updates["log_level"] = next(); }
-        else if (arg == "--extra-models-dir") { updates["extra_models_dir"] = next(); }
-        else if (arg == "--no-broadcast") { updates["no_broadcast"] = true; }
-        else if (arg == "--global-timeout") { updates["global_timeout"] = std::stoi(next()); }
-        else if (arg == "--max-loaded-models") { updates["max_loaded_models"] = std::stoi(next()); }
-        else if (arg == "--ctx-size") { updates["ctx_size"] = std::stoi(next()); }
-        else if (arg == "--llamacpp") {
-            if (!updates.contains("llamacpp")) updates["llamacpp"] = json::object();
-            updates["llamacpp"]["backend"] = next();
-        }
-        else if (arg == "--llamacpp-args") {
-            if (!updates.contains("llamacpp")) updates["llamacpp"] = json::object();
-            updates["llamacpp"]["args"] = next();
-        }
-        else if (arg == "--whispercpp") {
-            if (!updates.contains("whispercpp")) updates["whispercpp"] = json::object();
-            updates["whispercpp"]["backend"] = next();
-        }
-        else if (arg == "--whispercpp-args") {
-            if (!updates.contains("whispercpp")) updates["whispercpp"] = json::object();
-            updates["whispercpp"]["args"] = next();
-        }
-        else if (arg == "--sdcpp") {
-            if (!updates.contains("sdcpp")) updates["sdcpp"] = json::object();
-            updates["sdcpp"]["backend"] = next();
-        }
-        else if (arg == "--steps") {
-            if (!updates.contains("sdcpp")) updates["sdcpp"] = json::object();
-            updates["sdcpp"]["steps"] = std::stoi(next());
-        }
-        else if (arg == "--cfg-scale") {
-            if (!updates.contains("sdcpp")) updates["sdcpp"] = json::object();
-            updates["sdcpp"]["cfg_scale"] = std::stod(next());
-        }
-        else if (arg == "--width") {
-            if (!updates.contains("sdcpp")) updates["sdcpp"] = json::object();
-            updates["sdcpp"]["width"] = std::stoi(next());
-        }
-        else if (arg == "--height") {
-            if (!updates.contains("sdcpp")) updates["sdcpp"] = json::object();
-            updates["sdcpp"]["height"] = std::stoi(next());
-        }
-        else if (arg == "--flm-args") {
-            if (!updates.contains("flm")) updates["flm"] = json::object();
-            updates["flm"]["args"] = next();
-        }
+        // Args that become `lemonade config set key=value` pairs
+        else if (arg == "--log-level") { config_set_args.push_back("log-level=" + next()); }
+        else if (arg == "--extra-models-dir") { config_set_args.push_back("extra-models-dir=" + next()); }
+        else if (arg == "--no-broadcast") { config_set_args.push_back("no-broadcast=true"); }
+        else if (arg == "--global-timeout") { config_set_args.push_back("global-timeout=" + next()); }
+        else if (arg == "--max-loaded-models") { config_set_args.push_back("max-loaded-models=" + next()); }
+        else if (arg == "--ctx-size") { config_set_args.push_back("ctx-size=" + next()); }
+        else if (arg == "--llamacpp") { config_set_args.push_back("llamacpp-backend=" + next()); }
+        else if (arg == "--llamacpp-args") { config_set_args.push_back("llamacpp-args=" + next()); }
+        else if (arg == "--whispercpp") { config_set_args.push_back("whispercpp-backend=" + next()); }
+        else if (arg == "--whispercpp-args") { config_set_args.push_back("whispercpp-args=" + next()); }
+        else if (arg == "--sdcpp") { config_set_args.push_back("sdcpp-backend=" + next()); }
+        else if (arg == "--steps") { config_set_args.push_back("sdcpp-steps=" + next()); }
+        else if (arg == "--cfg-scale") { config_set_args.push_back("sdcpp-cfg-scale=" + next()); }
+        else if (arg == "--width") { config_set_args.push_back("sdcpp-width=" + next()); }
+        else if (arg == "--height") { config_set_args.push_back("sdcpp-height=" + next()); }
+        else if (arg == "--flm-args") { config_set_args.push_back("flm-args=" + next()); }
         else if (arg == "--no-tray") {
             // Ignored (no longer applicable)
         }
@@ -217,7 +187,7 @@ parse_serve_args(const std::vector<std::string>& args) {
         }
     }
 
-    return {lemond_args, updates};
+    return {lemond_args, config_set_args};
 }
 
 /// Wait for lemond to become healthy, up to timeout_seconds.
@@ -242,31 +212,55 @@ static bool wait_for_health(const std::string& host, int port, int timeout_secon
     }
 }
 
-/// Apply config updates via /internal/set
-static bool apply_config(const std::string& host, int port, const json& updates) {
-    httplib::Client client(host, port);
-    client.set_connection_timeout(5);
-    client.set_read_timeout(5);
+/// Apply config updates via `lemonade config set`
+static bool apply_config(const fs::path& dir, const std::string& host, int port,
+                         const std::vector<std::string>& config_set_args) {
+    fs::path cli = sibling_exe(dir, "lemonade");
+    std::vector<std::string> full_args;
+    full_args.push_back("--host");
+    full_args.push_back(host);
+    full_args.push_back("--port");
+    full_args.push_back(std::to_string(port));
+    full_args.push_back("config");
+    full_args.push_back("set");
+    full_args.insert(full_args.end(), config_set_args.begin(), config_set_args.end());
 
-    auto res = client.Post("/internal/set", updates.dump(), "application/json");
-    if (res && res->status >= 200 && res->status < 300) {
-        return true;
+    // Build command line and run as a child process
+    std::vector<const char*> argv;
+    std::string exe_str = cli.string();
+    argv.push_back(exe_str.c_str());
+    for (const auto& a : full_args) {
+        argv.push_back(a.c_str());
     }
+    argv.push_back(nullptr);
 
-    std::cerr << "error: failed to apply configuration via /internal/set";
-    if (res) {
-        std::cerr << " (HTTP " << res->status << ")";
+#ifdef _WIN32
+    intptr_t rc = _spawnvp(_P_WAIT, exe_str.c_str(),
+                           const_cast<char* const*>(argv.data()));
+    return rc == 0;
+#else
+    pid_t pid = fork();
+    if (pid < 0) {
+        std::cerr << "error: fork failed: " << strerror(errno) << std::endl;
+        return false;
     }
-    std::cerr << std::endl;
-    return false;
+    if (pid == 0) {
+        execvp(exe_str.c_str(), const_cast<char* const*>(argv.data()));
+        std::cerr << "error: failed to exec '" << exe_str << "': " << strerror(errno) << std::endl;
+        _exit(127);
+    }
+    int status;
+    waitpid(pid, &status, 0);
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+#endif
 }
 
 /// Serve command: spawn lemond, wait for health, apply config updates, then wait.
 static int do_serve(const fs::path& dir, const std::vector<std::string>& args) {
-    auto [lemond_args, config_updates] = parse_serve_args(args);
+    auto [lemond_args, config_set_args] = parse_serve_args(args);
 
     // If there are no config updates, just exec lemond directly (simpler)
-    if (config_updates.empty()) {
+    if (config_set_args.empty()) {
 #ifdef _WIN32
         fs::path server = sibling_exe(dir, "LemonadeServer");
 #else
@@ -323,9 +317,9 @@ static int do_serve(const fs::path& dir, const std::vector<std::string>& args) {
         return 1;
     }
 
-    // Apply config updates
-    if (!config_updates.empty()) {
-        apply_config(health_host, port, config_updates);
+    // Apply config updates via lemonade config set
+    if (!config_set_args.empty()) {
+        apply_config(dir, health_host, port, config_set_args);
     }
 
     // Wait for child to exit (forward signals)
@@ -359,9 +353,9 @@ static int do_serve(const fs::path& dir, const std::vector<std::string>& args) {
         return 1;
     }
 
-    // Apply config updates
-    if (!config_updates.empty()) {
-        apply_config(health_host, port, config_updates);
+    // Apply config updates via lemonade config set
+    if (!config_set_args.empty()) {
+        apply_config(dir, health_host, port, config_set_args);
     }
 
     // Wait for child to exit
