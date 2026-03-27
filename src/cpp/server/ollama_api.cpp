@@ -301,9 +301,36 @@ json OllamaApi::convert_ollama_to_openai_chat(const json& ollama_request) {
                 openai_msg["content"] = msg.value("content", "");
             }
 
-            // Forward tool_calls if present
+            // Forward tool_calls if present, with two normalisations required
+            // by llama.cpp's strict OpenAI-spec validation:
+            //   1. Inject "type":"function" — Ollama clients omit this field.
+            //   2. Skip tool calls whose arguments are not valid JSON — these
+            //      are streaming artifacts (e.g. arguments="{") that an Ollama
+            //      client may persist to history mid-stream; forwarding them
+            //      causes func_args_not_string() to throw a parse error 500.
             if (msg.contains("tool_calls")) {
-                openai_msg["tool_calls"] = msg["tool_calls"];
+                json tool_calls = json::array();
+                for (auto tc : msg["tool_calls"]) {
+                    if (!tc.contains("type")) {
+                        tc["type"] = "function";
+                    }
+                    // Validate arguments JSON if present
+                    if (tc.contains("function") && tc["function"].contains("arguments")) {
+                        const auto& args = tc["function"]["arguments"];
+                        if (args.is_string()) {
+                            try {
+                                json::parse(args.get<std::string>());
+                            } catch (const std::exception&) {
+                                // Skip this tool call — arguments are not valid JSON
+                                continue;
+                            }
+                        }
+                    }
+                    tool_calls.push_back(tc);
+                }
+                if (!tool_calls.empty()) {
+                    openai_msg["tool_calls"] = tool_calls;
+                }
             }
 
             messages.push_back(openai_msg);
