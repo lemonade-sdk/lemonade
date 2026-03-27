@@ -3,7 +3,9 @@
 #include <atomic>
 #include <lemon/cli_parser.h>
 #include <lemon/server.h>
+#include <lemon/system_info.h>
 #include <lemon/version.h>
+#include <lemon/utils/path_utils.h>
 #include <lemon/utils/aixlog.hpp>
 
 #ifndef _WIN32
@@ -54,9 +56,21 @@ int main(int argc, char** argv) {
         // Get server configuration
         auto config = parser.get_config();
 
-        // Initialize logging
-        auto sink = std::make_shared<AixLog::SinkCout>(AixLog::Filter(AixLog::to_severity(config.log_level)), RuntimeConfig::LOG_FORMAT);
-        AixLog::Log::init({sink});
+        // Direct router runs should keep console logs while also writing a file
+        // that the SSE log-stream endpoint can tail.
+        auto filter = AixLog::Filter(AixLog::to_severity(config.log_level));
+        auto console_sink = std::make_shared<AixLog::SinkCout>(filter, RuntimeConfig::LOG_FORMAT);
+#ifdef _WIN32
+        AixLog::Log::init({console_sink});
+#else
+        if (SystemInfo::is_running_under_systemd()) {
+            AixLog::Log::init({console_sink});
+        } else {
+            std::string log_file = utils::get_runtime_dir() + "/lemonade-server.log";
+            auto file_sink = std::make_shared<AixLog::SinkFile>(filter, log_file, RuntimeConfig::LOG_FORMAT);
+            AixLog::Log::init({console_sink, file_sink});
+        }
+#endif
 
         // Start the server
         LOG(INFO) << "Starting Lemonade Server..." << std::endl;
