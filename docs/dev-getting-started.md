@@ -143,7 +143,14 @@ If not found, the "Open app" menu option is hidden but everything else works.
 
 ### Building an AppImage (Linux Only)
 
-To create a standalone AppImage package that can run on any Linux distribution:
+AppImage builds are opt-in. Enable the option at configure time and then build:
+
+```bash
+cmake --preset default -DBUILD_APPIMAGE=ON
+cmake --build --preset default --target appimage
+```
+
+Alternatively, if you've already configured without the flag, you can still trigger a one-off build using the manual target:
 
 ```bash
 cmake --build --preset default --target appimage

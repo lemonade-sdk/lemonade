@@ -1518,29 +1518,51 @@ if(UNIX AND NOT APPLE)
     # ============================================================
     # AppImage Build Target (Linux only)
     # ============================================================
+    option(BUILD_APPIMAGE "Build the AppImage automatically" OFF)
+
     if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
         # Set the build directory and source directory for AppImage
         set(APPIMAGE_BUILD_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/app-appimage-src")
         set(APPIMAGE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/app-appimage")
 
-        add_custom_target(appimage
-            COMMAND ${CMAKE_COMMAND} -E echo "Copying Electron app source to AppImage build directory..."
-            COMMAND ${CMAKE_COMMAND} -E remove_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
-            COMMAND ${CMAKE_COMMAND} -E copy_directory "${ELECTRON_APP_SOURCE_DIR}" "${APPIMAGE_BUILD_SOURCE_DIR}"
-            COMMAND ${CMAKE_COMMAND} -E echo "Setting version to ${PROJECT_VERSION}..."
-            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} version ${PROJECT_VERSION} --no-git-tag-version --allow-same-version
-            COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for AppImage build..."
-            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci
-            COMMAND ${CMAKE_COMMAND} -E echo "Building AppImage with electron-builder..."
-            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} run build:renderer:prod
-            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_EXECUTABLE} exec -- electron-builder --linux AppImage --config.directories.output=${APPIMAGE_BUILD_DIR}
-            COMMAND ${CMAKE_COMMAND} -E echo "AppImage build complete. Output in ${APPIMAGE_BUILD_DIR}"
-            COMMENT "Building Electron app as AppImage"
-            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-        )
-
-        message(STATUS "AppImage build target available: cmake --build . --target appimage")
+        if(BUILD_APPIMAGE)
+            add_custom_target(appimage ALL
+                COMMAND ${CMAKE_COMMAND} -E echo "Copying Electron app source to AppImage build directory..."
+                COMMAND ${CMAKE_COMMAND} -E remove_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E copy_directory "${ELECTRON_APP_SOURCE_DIR}" "${APPIMAGE_BUILD_SOURCE_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E echo "Setting version to ${PROJECT_VERSION}..."
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} version ${PROJECT_VERSION} --no-git-tag-version --allow-same-version
+                COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for AppImage build..."
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci
+                COMMAND ${CMAKE_COMMAND} -E echo "Building AppImage with electron-builder..."
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} run build:renderer:prod
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_EXECUTABLE} exec -- electron-builder --linux AppImage --config.directories.output=${APPIMAGE_BUILD_DIR}
+                COMMAND ${CMAKE_COMMAND} -E echo "AppImage build complete. Output in ${APPIMAGE_BUILD_DIR}"
+                COMMENT "Building Electron app as AppImage"
+                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+            )
+            message(STATUS "AppImage will be built automatically (disable with -DBUILD_APPIMAGE=OFF)")
+        else()
+            add_custom_target(appimage
+                COMMAND ${CMAKE_COMMAND} -E echo "Copying Electron app source to AppImage build directory..."
+                COMMAND ${CMAKE_COMMAND} -E remove_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E copy_directory "${ELECTRON_APP_SOURCE_DIR}" "${APPIMAGE_BUILD_SOURCE_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E echo "Setting version to ${PROJECT_VERSION}..."
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} version ${PROJECT_VERSION} --no-git-tag-version --allow-same-version
+                COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for AppImage build..."
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci
+                COMMAND ${CMAKE_COMMAND} -E echo "Building AppImage with electron-builder..."
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} run build:renderer:prod
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_EXECUTABLE} exec -- electron-builder --linux AppImage --config.directories.output=${APPIMAGE_BUILD_DIR}
+                COMMAND ${CMAKE_COMMAND} -E echo "AppImage build complete. Output in ${APPIMAGE_BUILD_DIR}"
+                COMMENT "Building Electron app as AppImage"
+                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+            )
+            message(STATUS "AppImage automatic build disabled (enable with -DBUILD_APPIMAGE=ON)")
+            message(STATUS "AppImage can be built manually with: cmake --build . --target appimage")
+        endif()
     else()
         message(STATUS "Node.js or npm not found - AppImage build target disabled")
     endif()
