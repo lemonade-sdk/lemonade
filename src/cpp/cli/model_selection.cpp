@@ -487,7 +487,6 @@ bool resolve_model_if_missing(lemonade::LemonadeClient& client,
     }
 
     if (command_name == "run") {
-        const bool for_launch = (command_name == "launch");
         std::vector<lemonade::ModelInfo> downloaded_models;
         if (!fetch_models_from_endpoint(client, false, downloaded_models)) {
             return false;
@@ -496,27 +495,12 @@ bool resolve_model_if_missing(lemonade::LemonadeClient& client,
         std::vector<const lemonade::ModelInfo*> suggested_downloaded_models;
         suggested_downloaded_models.reserve(downloaded_models.size());
         for (const auto& model : downloaded_models) {
-            if ((for_launch && is_recommended_for_launch(model)) ||
-                (!for_launch && is_recommended_for_run(model))) {
+            if (is_recommended_for_run(model)) {
                 suggested_downloaded_models.push_back(&model);
             }
         }
 
-        if (for_launch) {
-            std::string agent_name_display = agent_name;
-            if (!agent_name_display.empty()) {
-                agent_name_display[0] = static_cast<char>(
-                    std::toupper(static_cast<unsigned char>(agent_name_display[0])));
-            }
-            if (!agent_name_display.empty()) {
-                std::cout << "Select a suggested model + recipe to use with "
-                          << agent_name_display << ":" << std::endl;
-            } else {
-                std::cout << "Select a suggested model + recipe to use:" << std::endl;
-            }
-        } else {
-            std::cout << "Select a suggested hot model to run:" << std::endl;
-        }
+        std::cout << "Select a suggested hot model to run:" << std::endl;
 
         std::cout << "  0) Browse recommended models (download may be required)" << std::endl;
 
@@ -541,7 +525,7 @@ bool resolve_model_if_missing(lemonade::LemonadeClient& client,
         }
 
         if (selected == 0) {
-            return prompt_recommended_catalog(client, model_out, for_launch);
+            return prompt_recommended_catalog(client, model_out, false);
         }
         if (selected == choose_any) {
             return prompt_model_selection(client, model_out, show_all);

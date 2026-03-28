@@ -793,25 +793,6 @@ int main(int argc, char* argv[]) {
         return handle_recipes_command(client, config);
     } else if (launch_cmd->count() > 0) {
         return handle_launch_command(client, config);
-(!config.downloaded);
-    } else if (pull_cmd->count() > 0) {
-        return handle_pull_command(client, config);
-    } else if (import_cmd->count() > 0) {
-        return handle_import_command(client, config);
-    } else if (delete_cmd->count() > 0) {
-        return client.delete_model(config.model);
-    } else if (run_cmd->count() > 0) {
-        return handle_run_command(client, config);
-    } else if (load_cmd->count() > 0) {
-        return handle_load_command(client, config);
-    } else if (unload_cmd->count() > 0) {
-        return client.unload_model(config.model);
-    } else if (export_cmd->count() > 0) {
-        return handle_export_command(client, config);
-    } else if (recipes_cmd->count() > 0) {
-        return handle_recipes_command(client, config);
-    } else if (launch_cmd->count() > 0) {
-        return handle_launch_command(client, config);
     } else if (logs_cmd->count() > 0) {
         open_url(config.host, config.port, "/?logs=true");
         return 0;
