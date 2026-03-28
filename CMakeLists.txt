@@ -182,6 +182,7 @@ if(APPLE)
     FetchContent_Declare(brotli
         GIT_REPOSITORY https://github.com/google/brotli.git
         GIT_TAG v1.1.0
+        GIT_SHALLOW TRUE
         EXCLUDE_FROM_ALL
     )
 endif()
@@ -191,6 +192,7 @@ if(NOT USE_SYSTEM_JSON)
     FetchContent_Declare(json
         GIT_REPOSITORY https://github.com/nlohmann/json.git
         GIT_TAG v${MIN_NLOHMANN_JSON_VERSION}
+        GIT_SHALLOW TRUE
     )
     set(JSON_BuildTests OFF CACHE INTERNAL "")
     set(JSON_Install OFF CACHE INTERNAL "")
@@ -202,6 +204,7 @@ if(NOT USE_SYSTEM_CLI11)
     FetchContent_Declare(CLI11
         GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
         GIT_TAG v${MIN_CLI11_VERSION}
+        GIT_SHALLOW TRUE
     )
     set(CLI11_BUILD_TESTS OFF CACHE INTERNAL "")
     set(CLI11_BUILD_EXAMPLES OFF CACHE INTERNAL "")
@@ -214,6 +217,7 @@ if(NOT USE_SYSTEM_CURL)
     FetchContent_Declare(curl
         GIT_REPOSITORY https://github.com/curl/curl.git
         GIT_TAG curl-${CURL_TAG_VERSION}
+        GIT_SHALLOW TRUE
         EXCLUDE_FROM_ALL
     )
     set(BUILD_STATIC_LIBS ON CACHE INTERNAL "")
@@ -238,6 +242,7 @@ if(NOT USE_SYSTEM_ZSTD)
     FetchContent_Declare(zstd
         GIT_REPOSITORY https://github.com/facebook/zstd.git
         GIT_TAG v${DOWNLOAD_ZSTD_VERSION}
+        GIT_SHALLOW TRUE
         SOURCE_SUBDIR build/cmake
         EXCLUDE_FROM_ALL
     )
@@ -291,6 +296,7 @@ if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
         GIT_TAG v${MIN_HTTPLIB_VERSION}
+        GIT_SHALLOW TRUE
     )
     set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
     set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE INTERNAL "")
@@ -318,6 +324,7 @@ if(NOT USE_SYSTEM_LWS)
     FetchContent_Declare(libwebsockets
         GIT_REPOSITORY https://github.com/warmcat/libwebsockets.git
         GIT_TAG v${MIN_LWS_VERSION}
+        GIT_SHALLOW TRUE
     )
     # Build as static library, disable features we don't need
     set(LWS_WITH_SHARED OFF CACHE BOOL "" FORCE)
