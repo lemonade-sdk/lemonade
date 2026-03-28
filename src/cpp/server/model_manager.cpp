@@ -210,6 +210,25 @@ static GGUFFiles identify_gguf_models(
                 }
             }
 
+            // If no exact folder match, try folders ending with -{variant}/ or _{variant}/
+            // This handles repos where the folder is prefixed with the model name,
+            // e.g. "Qwen3-Coder-Next-Q4_K_M/" instead of just "Q4_K_M/"
+            if (sharded_files.empty()) {
+                std::string suffix_dash = "-" + variant + "/";
+                std::string suffix_underscore = "_" + variant + "/";
+                for (const auto& f : repo_files) {
+                    if (!ends_with_ignore_case(f, ".gguf")) continue;
+                    size_t slash_pos = f.find('/');
+                    if (slash_pos != std::string::npos) {
+                        std::string folder = f.substr(0, slash_pos + 1);
+                        if (ends_with_ignore_case(folder, suffix_dash) ||
+                            ends_with_ignore_case(folder, suffix_underscore)) {
+                            sharded_files.push_back(f);
+                        }
+                    }
+                }
+            }
+
             if (sharded_files.empty()) {
                 throw std::runtime_error(
                     "No .gguf files found for variant " + variant + ". " + hint
