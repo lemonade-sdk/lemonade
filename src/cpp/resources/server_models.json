@@ -1191,7 +1191,8 @@
         "recipe": "sd-cpp",
         "suggested": true,
         "labels": [
-            "image"
+            "image",
+            "edit"
         ],
         "size": 16.0,
         "image_defaults": {
@@ -1210,7 +1211,8 @@
         "recipe": "sd-cpp",
         "suggested": true,
         "labels": [
-            "image"
+            "image",
+            "edit"
         ],
         "size": 18.0,
         "image_defaults": {
