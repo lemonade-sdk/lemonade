@@ -246,6 +246,50 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
     };
   }, [lifetimeStats, lifetimeSummary.totalTokens]);
 
+  const renderRangeControls = () => (
+    bucketMode === 'day' ? (
+      <div className="stats-controls">
+        <div className="stats-chip-group">
+          {DAY_RANGE_PRESETS.map((preset) => (
+            <button
+              key={preset.key}
+              type="button"
+              className={`stats-chip ${dayRangePreset === preset.key ? 'active' : ''}`}
+              onClick={() => setDayRangePreset(preset.key)}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+        {dayRangePreset === '90d' && (
+          <label className="stats-inline-control">
+            <span>Days</span>
+            <input
+              type="number"
+              min="1"
+              max="3650"
+              value={customDayCount}
+              onChange={(event) => setCustomDayCount(clampDayCount(event.target.value))}
+            />
+          </label>
+        )}
+      </div>
+    ) : (
+      <div className="stats-controls">
+        <label className="stats-inline-control">
+          <span>Day</span>
+          <input
+            type="date"
+            value={selectedDay}
+            min={availableDays[0] ?? ''}
+            max={availableDays[availableDays.length - 1] ?? ''}
+            onChange={(event) => setSelectedDay(event.target.value)}
+          />
+        </label>
+      </div>
+    )
+  );
+
   return (
     <div className="stats-panel">
       <div className="stats-hero">
@@ -335,47 +379,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
           </div>
         </div>
 
-        {bucketMode === 'day' ? (
-          <div className="stats-controls">
-            <div className="stats-chip-group">
-              {DAY_RANGE_PRESETS.map((preset) => (
-                <button
-                  key={preset.key}
-                  type="button"
-                  className={`stats-chip ${dayRangePreset === preset.key ? 'active' : ''}`}
-                  onClick={() => setDayRangePreset(preset.key)}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-            {dayRangePreset === '90d' && (
-              <label className="stats-inline-control">
-                <span>Days</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="3650"
-                  value={customDayCount}
-                  onChange={(event) => setCustomDayCount(clampDayCount(event.target.value))}
-                />
-              </label>
-            )}
-          </div>
-        ) : (
-          <div className="stats-controls">
-            <label className="stats-inline-control">
-              <span>Day</span>
-              <input
-                type="date"
-                value={selectedDay}
-                min={availableDays[0] ?? ''}
-                max={availableDays[availableDays.length - 1] ?? ''}
-                onChange={(event) => setSelectedDay(event.target.value)}
-              />
-            </label>
-          </div>
-        )}
+        {renderRangeControls()}
 
         <ChartSection
           points={chartPoints}
@@ -481,7 +485,8 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
         }}>
           <div className="stats-overlay-card" onMouseDown={(event) => event.stopPropagation()}>
             <div className="stats-overlay-header">
-              <div>
+              <div className="stats-overlay-header-main">
+                <div>
                 <div className="stats-chart-title">
                   {bucketMode === 'day' ? 'Expanded daily token flow' : 'Expanded hourly token flow'}
                 </div>
@@ -489,6 +494,23 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
                   {bucketMode === 'day'
                     ? describeDayRange(dayRangePreset, customDayCount)
                     : `24-hour view for ${formatDateHeading(selectedDay)}`}
+                </div>
+                </div>
+                <div className="stats-bucket-toggle overlay">
+                  <button
+                    type="button"
+                    className={bucketMode === 'day' ? 'active' : ''}
+                    onClick={() => setBucketMode('day')}
+                  >
+                    Per day
+                  </button>
+                  <button
+                    type="button"
+                    className={bucketMode === 'hour' ? 'active' : ''}
+                    onClick={() => setBucketMode('hour')}
+                  >
+                    Per hour
+                  </button>
                 </div>
               </div>
               <button
@@ -500,6 +522,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
                 <XIcon size={16} strokeWidth={2.2} />
               </button>
             </div>
+            {renderRangeControls()}
             <ChartSection
               points={chartPoints}
               mode={bucketMode}
@@ -532,6 +555,7 @@ const ChartSection: React.FC<ChartSectionProps> = ({
   onExpand,
 }) => {
   const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
+  const shouldShowSeriesMarkers = points.length <= 3;
   const chartGeometry = useMemo(() => {
     const width = 920;
     const height = expanded ? 430 : 260;
@@ -546,12 +570,54 @@ const ChartSection: React.FC<ChartSectionProps> = ({
       if (points.length <= 1) {
         return width / 2;
       }
+      if (points.length === 2) {
+        return width * (index === 0 ? 0.32 : 0.68);
+      }
       return paddingX + (index / (points.length - 1)) * innerWidth;
+    };
+
+    const hoverBandForIndex = (index: number) => {
+      if (points.length <= 1) {
+        return {
+          x: paddingX,
+          width: width - paddingX * 2,
+        };
+      }
+
+      const currentX = xForIndex(index);
+      const prevX = index > 0 ? xForIndex(index - 1) : currentX - (xForIndex(index + 1) - currentX);
+      const nextX = index < points.length - 1 ? xForIndex(index + 1) : currentX + (currentX - xForIndex(index - 1));
+      const left = index === 0 ? paddingX : (prevX + currentX) / 2;
+      const right = index === points.length - 1 ? width - paddingX : (currentX + nextX) / 2;
+
+      return {
+        x: left,
+        width: Math.max(12, right - left),
+      };
     };
 
     const yForValue = (value: number) => {
       const normalized = value / maxTokens;
       return paddingTop + innerHeight - normalized * innerHeight;
+    };
+
+    const hoverZoneForPoint = (point: UsagePoint) => {
+      if (point.totalTokens <= 0) {
+        return null;
+      }
+
+      const ys = [
+        yForValue(point.inputTokens),
+        yForValue(point.outputTokens),
+        yForValue(point.totalTokens),
+      ];
+      const top = Math.max(paddingTop, Math.min(...ys) - 18);
+      const bottom = Math.min(height - paddingBottom, Math.max(...ys) + 18);
+
+      return {
+        y: top,
+        height: Math.max(28, bottom - top),
+      };
     };
 
     const buildPath = (values: number[]) => values.map((value, index) => {
@@ -560,12 +626,8 @@ const ChartSection: React.FC<ChartSectionProps> = ({
       return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
     }).join(' ');
 
-    const totalPath = buildPath(points.map((point) => point.totalTokens));
     const inputPath = buildPath(points.map((point) => point.inputTokens));
     const outputPath = buildPath(points.map((point) => point.outputTokens));
-    const areaPath = points.length > 0
-      ? `${totalPath} L ${xForIndex(points.length - 1).toFixed(2)} ${(height - paddingBottom).toFixed(2)} L ${xForIndex(0).toFixed(2)} ${(height - paddingBottom).toFixed(2)} Z`
-      : '';
 
     const gridLines = 4;
     const yTicks = Array.from({ length: gridLines + 1 }, (_, index) => {
@@ -579,11 +641,11 @@ const ChartSection: React.FC<ChartSectionProps> = ({
       height,
       paddingX,
       paddingBottom,
-      totalPath,
       inputPath,
       outputPath,
-      areaPath,
       xForIndex,
+      hoverBandForIndex,
+      hoverZoneForPoint,
       yTicks,
       yForValue,
     };
@@ -633,25 +695,54 @@ const ChartSection: React.FC<ChartSectionProps> = ({
                 </g>
               ))}
 
-              {chartGeometry.areaPath && (
-                <path
-                  className="stats-area-path"
-                  d={chartGeometry.areaPath}
-                  fill={`url(#${expanded ? 'stats-area-gradient-large' : 'stats-area-gradient'})`}
+              {points.map((point, index) => (
+                <line
+                  key={`x-grid-${point.bucket}`}
+                  className={`stats-grid-line vertical ${shouldShowXAxisLabel(mode, index, points.length) ? 'major' : ''}`}
+                  x1={chartGeometry.xForIndex(index)}
+                  y1={chartGeometry.yTicks[0].y}
+                  x2={chartGeometry.xForIndex(index)}
+                  y2={chartGeometry.height - chartGeometry.paddingBottom}
                 />
-              )}
+              ))}
+
               <path className="stats-line input" d={chartGeometry.inputPath} />
               <path className="stats-line output" d={chartGeometry.outputPath} />
 
               {points.map((point, index) => (
                 <g key={point.bucket}>
+                  {chartGeometry.hoverZoneForPoint(point) && (
+                    <rect
+                      className="stats-hover-band"
+                      x={chartGeometry.hoverBandForIndex(index).x}
+                      y={chartGeometry.hoverZoneForPoint(point)!.y}
+                      width={chartGeometry.hoverBandForIndex(index).width}
+                      height={chartGeometry.hoverZoneForPoint(point)!.height}
+                      onMouseEnter={() => setHoveredPointIndex(index)}
+                      onMouseLeave={() => setHoveredPointIndex((current) => (current === index ? null : current))}
+                    />
+                  )}
+                  {shouldShowSeriesMarkers && (
+                    <>
+                      <circle
+                        className="stats-series-point input"
+                        cx={chartGeometry.xForIndex(index)}
+                        cy={chartGeometry.yForValue(point.inputTokens)}
+                        r={expanded ? 4.2 : 3.4}
+                      />
+                      <circle
+                        className="stats-series-point output"
+                        cx={chartGeometry.xForIndex(index)}
+                        cy={chartGeometry.yForValue(point.outputTokens)}
+                        r={expanded ? 4.2 : 3.4}
+                      />
+                    </>
+                  )}
                   <circle
                     className="stats-point-hitbox"
                     cx={chartGeometry.xForIndex(index)}
                     cy={chartGeometry.yForValue(point.totalTokens)}
                     r={expanded ? 11 : 9}
-                    onMouseEnter={() => setHoveredPointIndex(index)}
-                    onMouseLeave={() => setHoveredPointIndex((current) => (current === index ? null : current))}
                   />
                   {shouldShowXAxisLabel(mode, index, points.length) && (
                     <text
@@ -667,19 +758,29 @@ const ChartSection: React.FC<ChartSectionProps> = ({
               ))}
             </svg>
             {hoveredPointIndex !== null && points[hoveredPointIndex] && (
-              <div
-                className={`stats-hover-card ${expanded ? 'expanded' : ''} ${chartGeometry.yForValue(points[hoveredPointIndex].totalTokens) < 92 ? 'below' : ''}`}
-                style={{
-                  left: `${(chartGeometry.xForIndex(hoveredPointIndex) / chartGeometry.width) * 100}%`,
-                  top: `${(chartGeometry.yForValue(points[hoveredPointIndex].totalTokens) / chartGeometry.height) * 100}%`,
-                }}
-              >
-                <div className="stats-hover-title">{points[hoveredPointIndex].bucket}</div>
-                <div className="stats-hover-row"><span>Total</span><strong>{formatNumber(points[hoveredPointIndex].totalTokens)}</strong></div>
-                <div className="stats-hover-row"><span>Input</span><strong>{formatNumber(points[hoveredPointIndex].inputTokens)}</strong></div>
-                <div className="stats-hover-row"><span>Output</span><strong>{formatNumber(points[hoveredPointIndex].outputTokens)}</strong></div>
-                <div className="stats-hover-row"><span>Requests</span><strong>{formatNumber(points[hoveredPointIndex].requests)}</strong></div>
-              </div>
+              (() => {
+                const hoveredPoint = points[hoveredPointIndex];
+                const xPercent = (chartGeometry.xForIndex(hoveredPointIndex) / chartGeometry.width) * 100;
+                const yPercent = (chartGeometry.yForValue(hoveredPoint.totalTokens) / chartGeometry.height) * 100;
+                const horizontalClass = xPercent > 82 ? 'align-right' : xPercent < 18 ? 'align-left' : '';
+                const verticalClass = chartGeometry.yForValue(hoveredPoint.totalTokens) < 92 ? 'below' : '';
+
+                return (
+                  <div
+                    className={`stats-hover-card ${expanded ? 'expanded' : ''} ${horizontalClass} ${verticalClass}`}
+                    style={{
+                      left: `${xPercent}%`,
+                      top: `${yPercent}%`,
+                    }}
+                  >
+                    <div className="stats-hover-title">{hoveredPoint.bucket}</div>
+                    <div className="stats-hover-row total"><span><i className="stats-hover-swatch total" />Total</span><strong>{formatNumber(hoveredPoint.totalTokens)}</strong></div>
+                    <div className="stats-hover-row input"><span><i className="stats-hover-swatch input" />Input</span><strong>{formatNumber(hoveredPoint.inputTokens)}</strong></div>
+                    <div className="stats-hover-row output"><span><i className="stats-hover-swatch output" />Output</span><strong>{formatNumber(hoveredPoint.outputTokens)}</strong></div>
+                    <div className="stats-hover-row requests"><span>Requests</span><strong>{formatNumber(hoveredPoint.requests)}</strong></div>
+                  </div>
+                );
+              })()
             )}
           </>
         )}
