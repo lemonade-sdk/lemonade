@@ -51,7 +51,7 @@ const AppContent: React.FC = () => {
             setIsChatVisible(settings.layout.isChatVisible ?? DEFAULT_LAYOUT_SETTINGS.isChatVisible);
             setIsModelManagerVisible(settings.layout.isModelManagerVisible ?? DEFAULT_LAYOUT_SETTINGS.isModelManagerVisible);
             const savedView = settings.layout.leftPanelView;
-            if (savedView === 'models' || savedView === 'marketplace' || savedView === 'backends' || savedView === 'settings') {
+            if (savedView === 'models' || savedView === 'marketplace' || savedView === 'backends' || savedView === 'stats' || savedView === 'settings') {
               setLeftPanelView(savedView);
             }
             setIsLogsVisible(settings.layout.isLogsVisible ?? DEFAULT_LAYOUT_SETTINGS.isLogsVisible);

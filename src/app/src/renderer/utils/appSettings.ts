@@ -22,7 +22,7 @@ export interface LayoutSettings {
   theme: 'dark' | 'light';
   isChatVisible: boolean;
   isModelManagerVisible: boolean;
-  leftPanelView: 'models' | 'marketplace' | 'backends' | 'settings';
+  leftPanelView: 'models' | 'marketplace' | 'backends' | 'stats' | 'settings';
   isLogsVisible: boolean;
   modelManagerWidth: number;
   chatWidth: number;
@@ -243,7 +243,7 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
     if (typeof rawLayout.isModelManagerVisible === 'boolean') {
       defaults.layout.isModelManagerVisible = rawLayout.isModelManagerVisible;
     }
-    if (rawLayout.leftPanelView === 'models' || rawLayout.leftPanelView === 'marketplace' || rawLayout.leftPanelView === 'backends' || rawLayout.leftPanelView === 'settings') {
+    if (rawLayout.leftPanelView === 'models' || rawLayout.leftPanelView === 'marketplace' || rawLayout.leftPanelView === 'backends' || rawLayout.leftPanelView === 'stats' || rawLayout.leftPanelView === 'settings') {
       defaults.layout.leftPanelView = rawLayout.leftPanelView;
     }
     if (typeof rawLayout.isLogsVisible === 'boolean') {
