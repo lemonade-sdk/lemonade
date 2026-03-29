@@ -132,6 +132,7 @@ private:
 
     mutable std::mutex stats_mutex_;
     LifetimeUsageStats lifetime_usage_stats_;
+    Telemetry last_completed_telemetry_;
     std::string usage_stats_path_;
 
     // Helper methods for multi-model management
