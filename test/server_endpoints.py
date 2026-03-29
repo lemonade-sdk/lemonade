@@ -794,9 +794,13 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(response.status_code, 200)
 
         data = response.json()
-        # Stats fields per server_spec.md (may not all be present if no inference done)
-        # Just verify it returns valid JSON
         self.assertIsInstance(data, dict)
+        self.assertIn("lifetime", data)
+        self.assertIsInstance(data["lifetime"], dict)
+        self.assertIn("input_tokens", data["lifetime"])
+        self.assertIn("output_tokens", data["lifetime"])
+        self.assertIn("by_day", data["lifetime"])
+        self.assertIn("by_hour", data["lifetime"])
 
         print(f"[OK] /stats endpoint returned: {list(data.keys())}")
 
