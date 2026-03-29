@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Boxes, ChevronRight, Cpu, Settings, SlidersHorizontal, Store, XIcon } from './components/Icons';
+import { Boxes, ChartNoAxesCombined, ChevronRight, Cpu, Settings, SlidersHorizontal, Store, XIcon } from './components/Icons';
 import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -14,6 +14,7 @@ import ModelOptionsModal from "./ModelOptionsModal";
 import { RecipeOptions, recipeOptionsToApi } from "./recipes/recipeOptions";
 import SettingsPanel from './SettingsPanel';
 import BackendManager from './BackendManager';
+import StatsPanel from './StatsPanel';
 import ConnectedBackendRow from './components/ConnectedBackendRow';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
@@ -191,7 +192,7 @@ interface ModelJSON {
   image_defaults?: []
 }
 
-export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'settings';
+export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'stats' | 'settings';
 
 
 const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContentVisibilityChange, width = 280, currentView, onViewChange }) => {
@@ -1037,7 +1038,9 @@ const [searchQuery, setSearchQuery] = useState('');
       ? 'Backend Manager'
       : currentView === 'marketplace'
         ? 'Marketplace'
-        : 'Settings';
+        : currentView === 'stats'
+          ? 'Statistics'
+          : 'Settings';
 
   const searchPlaceholder = currentView === 'models'
     ? 'Search models...'
@@ -1045,7 +1048,9 @@ const [searchQuery, setSearchQuery] = useState('');
       ? 'Filter backends...'
       : currentView === 'marketplace'
         ? 'Filter marketplace...'
-        : 'Filter settings...';
+        : currentView === 'stats'
+          ? 'Filter dates...'
+          : 'Filter settings...';
   const showInlineFilterButton = currentView === 'models' || currentView === 'marketplace';
 
   const getModelStatus = (modelName: string) => {
@@ -1371,6 +1376,9 @@ const [searchQuery, setSearchQuery] = useState('');
           <button className={`left-panel-mode-btn ${currentView === 'marketplace' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('marketplace')} title="Marketplace" aria-label="Marketplace">
             <Store size={14} strokeWidth={1.9} />
           </button>
+          <button className={`left-panel-mode-btn ${currentView === 'stats' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('stats')} title="Statistics" aria-label="Statistics">
+            <ChartNoAxesCombined size={14} strokeWidth={1.9} />
+          </button>
           <div className="left-panel-mode-rail-spacer" />
           <button className={`left-panel-mode-btn ${currentView === 'settings' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('settings')} title="Settings" aria-label="Settings">
             <Settings size={14} strokeWidth={1.9} />
@@ -1623,6 +1631,7 @@ const [searchQuery, setSearchQuery] = useState('');
                 showSuccess={showSuccess}
               />
             )}
+            {currentView === 'stats' && <StatsPanel searchQuery={searchQuery} />}
             {currentView === 'settings' && <SettingsPanel isVisible={true} searchQuery={searchQuery} />}
           </div>
 
