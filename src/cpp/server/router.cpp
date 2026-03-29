@@ -776,6 +776,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
         {
             std::lock_guard<std::mutex> stats_lock(stats_mutex_);
             Telemetry telemetry = server->get_telemetry();
+            last_completed_telemetry_ = telemetry;
             record_usage_locked(telemetry.input_tokens, telemetry.output_tokens, std::time(nullptr));
         }
         server->set_busy(false);
@@ -886,11 +887,10 @@ json Router::image_variations(const json& request) {
 }
 
 json Router::get_stats() const {
-    std::lock_guard<std::mutex> lock(load_mutex_);
-    json stats = Telemetry().to_json();
-    WrappedServer* server = get_most_recent_server();
-    if (server) {
-        stats = server->get_telemetry().to_json();
+    json stats;
+    {
+        std::lock_guard<std::mutex> stats_lock(stats_mutex_);
+        stats = last_completed_telemetry_.to_json();
     }
     stats["lifetime"] = get_lifetime_usage_stats();
     return stats;
@@ -905,6 +905,10 @@ void Router::update_telemetry(int input_tokens, int output_tokens,
                              time_to_first_token, tokens_per_second);
     }
     std::lock_guard<std::mutex> stats_lock(stats_mutex_);
+    last_completed_telemetry_.input_tokens = input_tokens;
+    last_completed_telemetry_.output_tokens = output_tokens;
+    last_completed_telemetry_.time_to_first_token = time_to_first_token;
+    last_completed_telemetry_.tokens_per_second = tokens_per_second;
     record_usage_locked(input_tokens, output_tokens, std::time(nullptr));
 }
 
@@ -914,6 +918,8 @@ void Router::update_prompt_tokens(int prompt_tokens) {
     if (server) {
         server->set_prompt_tokens(prompt_tokens);
     }
+    std::lock_guard<std::mutex> stats_lock(stats_mutex_);
+    last_completed_telemetry_.prompt_tokens = prompt_tokens;
 }
 
 void Router::chat_completion_stream(const std::string& request_body, httplib::DataSink& sink) {
