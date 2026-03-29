@@ -1,16 +1,18 @@
 #pragma once
 
-#include <string>
+#include <condition_variable>
+#include <ctime>
+#include <map>
 #include <memory>
 #include <mutex>
-#include <condition_variable>
+#include <string>
 #include <vector>
-#include <nlohmann/json.hpp>
 #include <httplib.h>
-#include "wrapped_server.h"
-#include "model_manager.h"
+#include <nlohmann/json.hpp>
 #include "backend_manager.h"
+#include "model_manager.h"
 #include "runtime_config.h"
+#include "wrapped_server.h"
 
 namespace lemon {
 
@@ -95,6 +97,30 @@ public:
     void update_prompt_tokens(int prompt_tokens);
 
 private:
+    struct UsageBucket {
+        uint64_t requests = 0;
+        uint64_t input_tokens = 0;
+        uint64_t output_tokens = 0;
+
+        json to_json() const {
+            return {
+                {"requests", requests},
+                {"input_tokens", input_tokens},
+                {"output_tokens", output_tokens}
+            };
+        }
+    };
+
+    struct LifetimeUsageStats {
+        uint64_t requests = 0;
+        uint64_t input_tokens = 0;
+        uint64_t output_tokens = 0;
+        std::string started_at;
+        std::string updated_at;
+        std::map<std::string, UsageBucket> by_day;
+        std::map<std::string, UsageBucket> by_hour;
+    };
+
     // Multi-model support: Manage multiple WrappedServers
     std::vector<std::unique_ptr<WrappedServer>> loaded_servers_;
 
@@ -107,6 +133,10 @@ private:
     mutable std::mutex load_mutex_;              // Protects loading state and loaded_servers_
     bool is_loading_ = false;                    // True when a load operation is in progress
     std::condition_variable load_cv_;            // Signals when load completes
+
+    mutable std::mutex stats_mutex_;
+    LifetimeUsageStats lifetime_usage_stats_;
+    std::string usage_stats_path_;
 
     // Helper methods for multi-model management
     WrappedServer* find_server_by_model_name(const std::string& model_name) const;
@@ -130,6 +160,16 @@ private:
     // Generic streaming wrapper
     template<typename Func>
     void execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func);
+
+    static std::tm get_local_time(std::time_t time_value);
+    static std::string format_timestamp(std::time_t time_value);
+    static std::string format_day_bucket(std::time_t time_value);
+    static std::string format_hour_bucket(std::time_t time_value);
+    static json usage_buckets_to_json(const std::map<std::string, UsageBucket>& buckets);
+    void load_usage_stats();
+    void persist_usage_stats_locked() const;
+    void record_usage_locked(int input_tokens, int output_tokens, std::time_t recorded_at);
+    json get_lifetime_usage_stats() const;
 };
 
 } // namespace lemon

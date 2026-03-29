@@ -954,6 +954,12 @@ class EndpointTests(ServerTestBase):
         # Stats fields per docs/api/lemonade.md (may not all be present if no inference done)
         # Just verify it returns valid JSON
         self.assertIsInstance(data, dict)
+        self.assertIn("lifetime", data)
+        self.assertIsInstance(data["lifetime"], dict)
+        self.assertIn("input_tokens", data["lifetime"])
+        self.assertIn("output_tokens", data["lifetime"])
+        self.assertIn("by_day", data["lifetime"])
+        self.assertIn("by_hour", data["lifetime"])
 
         print(f"[OK] /stats endpoint returned: {list(data.keys())}")
 
