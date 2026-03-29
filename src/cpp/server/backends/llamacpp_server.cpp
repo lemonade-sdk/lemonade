@@ -231,6 +231,10 @@ void LlamaCppServer::load(const std::string& model_name,
     // Disable llamacpp webui by default
     push_overridable_arg(args, llamacpp_args, "--no-webui");
 
+    // Use 4 parallel slots and disable unified KV cache
+    push_overridable_arg(args, llamacpp_args, "-np", "4");
+    push_overridable_arg(args, llamacpp_args, "--no-kv-unified");
+
     // Disable mmap on iGPU
     if (SystemInfo::get_has_igpu()) {
         push_overridable_arg(args, llamacpp_args, "--no-mmap");
