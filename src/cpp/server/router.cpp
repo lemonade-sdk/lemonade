@@ -1,21 +1,29 @@
 #include "lemon/router.h"
-#include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/fastflowlm_server.h"
-#include "lemon/backends/ryzenaiserver.h"
-#include "lemon/backends/whisper_server.h"
 #include "lemon/backends/kokoro_server.h"
+#include "lemon/backends/llamacpp_server.h"
+#include "lemon/backends/ryzenaiserver.h"
 #include "lemon/backends/sd_server.h"
-#include "lemon/server_capabilities.h"
+#include "lemon/backends/whisper_server.h"
 #include "lemon/error_types.h"
 #include "lemon/recipe_options.h"
-#include <iostream>
+#include "lemon/server_capabilities.h"
+#include "lemon/utils/path_utils.h"
 #include <algorithm>
+#include <ctime>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
+namespace fs = std::filesystem;
 
 Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManager* backend_manager)
-    : config_(config), model_manager_(model_manager), backend_manager_(backend_manager) {
+    : config_(config), model_manager_(model_manager), backend_manager_(backend_manager),
+      usage_stats_path_(utils::get_cache_dir() + "/token_usage_stats.json") {
 
     int max = config_->max_loaded_models();
     if (max == -1) {
@@ -23,11 +31,176 @@ Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManage
     } else {
     LOG(DEBUG, "Router") << "Max loaded models per type: " << max << std::endl;
     }
+
+    load_usage_stats();
 }
 
 Router::~Router() {
     LOG(DEBUG, "Router") << "Destructor: unloading all models" << std::endl;
     unload_model("");  // Unload all
+}
+
+std::tm Router::get_local_time(std::time_t time_value) {
+    std::tm tm_value{};
+#ifdef _WIN32
+    localtime_s(&tm_value, &time_value);
+#else
+    localtime_r(&time_value, &tm_value);
+#endif
+    return tm_value;
+}
+
+std::string Router::format_timestamp(std::time_t time_value) {
+    std::tm tm_value = get_local_time(time_value);
+    std::ostringstream oss;
+    oss << std::put_time(&tm_value, "%Y-%m-%dT%H:%M:%S");
+    return oss.str();
+}
+
+std::string Router::format_day_bucket(std::time_t time_value) {
+    std::tm tm_value = get_local_time(time_value);
+    std::ostringstream oss;
+    oss << std::put_time(&tm_value, "%Y-%m-%d");
+    return oss.str();
+}
+
+std::string Router::format_hour_bucket(std::time_t time_value) {
+    std::tm tm_value = get_local_time(time_value);
+    std::ostringstream oss;
+    oss << std::put_time(&tm_value, "%Y-%m-%dT%H:00:00");
+    return oss.str();
+}
+
+json Router::usage_buckets_to_json(const std::map<std::string, UsageBucket>& buckets) {
+    json result = json::object();
+    for (const auto& [bucket, usage] : buckets) {
+        result[bucket] = usage.to_json();
+    }
+    return result;
+}
+
+void Router::load_usage_stats() {
+    std::lock_guard<std::mutex> stats_lock(stats_mutex_);
+
+    const std::time_t now = std::time(nullptr);
+    lifetime_usage_stats_.started_at = format_timestamp(now);
+    lifetime_usage_stats_.updated_at = lifetime_usage_stats_.started_at;
+
+    try {
+        fs::path stats_path = utils::path_from_utf8(usage_stats_path_);
+        fs::create_directories(stats_path.parent_path());
+
+        if (!fs::exists(stats_path)) {
+            persist_usage_stats_locked();
+            return;
+        }
+
+        std::ifstream file(stats_path);
+        if (!file) {
+            LOG(WARNING, "Router") << "Failed to open usage stats file: " << usage_stats_path_ << std::endl;
+            return;
+        }
+
+        json persisted = json::parse(file, nullptr, false);
+        if (persisted.is_discarded() || !persisted.is_object()) {
+            LOG(WARNING, "Router") << "Ignoring invalid usage stats file: " << usage_stats_path_ << std::endl;
+            return;
+        }
+
+        lifetime_usage_stats_.requests = persisted.value("requests", 0ULL);
+        lifetime_usage_stats_.input_tokens = persisted.value("input_tokens", 0ULL);
+        lifetime_usage_stats_.output_tokens = persisted.value("output_tokens", 0ULL);
+        lifetime_usage_stats_.started_at = persisted.value("started_at", lifetime_usage_stats_.started_at);
+        lifetime_usage_stats_.updated_at = persisted.value("updated_at", lifetime_usage_stats_.updated_at);
+
+        if (persisted.contains("by_day") && persisted["by_day"].is_object()) {
+            for (const auto& [bucket, value] : persisted["by_day"].items()) {
+                lifetime_usage_stats_.by_day[bucket] = {
+                    value.value("requests", 0ULL),
+                    value.value("input_tokens", 0ULL),
+                    value.value("output_tokens", 0ULL)
+                };
+            }
+        }
+
+        if (persisted.contains("by_hour") && persisted["by_hour"].is_object()) {
+            for (const auto& [bucket, value] : persisted["by_hour"].items()) {
+                lifetime_usage_stats_.by_hour[bucket] = {
+                    value.value("requests", 0ULL),
+                    value.value("input_tokens", 0ULL),
+                    value.value("output_tokens", 0ULL)
+                };
+            }
+        }
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Router") << "Failed to load usage stats: " << e.what() << std::endl;
+    }
+}
+
+void Router::persist_usage_stats_locked() const {
+    try {
+        fs::path stats_path = utils::path_from_utf8(usage_stats_path_);
+        fs::create_directories(stats_path.parent_path());
+
+        json persisted = {
+            {"requests", lifetime_usage_stats_.requests},
+            {"input_tokens", lifetime_usage_stats_.input_tokens},
+            {"output_tokens", lifetime_usage_stats_.output_tokens},
+            {"started_at", lifetime_usage_stats_.started_at},
+            {"updated_at", lifetime_usage_stats_.updated_at},
+            {"by_day", usage_buckets_to_json(lifetime_usage_stats_.by_day)},
+            {"by_hour", usage_buckets_to_json(lifetime_usage_stats_.by_hour)}
+        };
+
+        std::ofstream file(stats_path);
+        if (!file) {
+            LOG(WARNING, "Router") << "Failed to persist usage stats to: " << usage_stats_path_ << std::endl;
+            return;
+        }
+
+        file << persisted.dump(2);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Router") << "Failed to persist usage stats: " << e.what() << std::endl;
+    }
+}
+
+void Router::record_usage_locked(int input_tokens, int output_tokens, std::time_t recorded_at) {
+    if (input_tokens <= 0 && output_tokens <= 0) {
+        return;
+    }
+
+    UsageBucket& day_bucket = lifetime_usage_stats_.by_day[format_day_bucket(recorded_at)];
+    UsageBucket& hour_bucket = lifetime_usage_stats_.by_hour[format_hour_bucket(recorded_at)];
+
+    lifetime_usage_stats_.requests++;
+    lifetime_usage_stats_.input_tokens += static_cast<uint64_t>(std::max(input_tokens, 0));
+    lifetime_usage_stats_.output_tokens += static_cast<uint64_t>(std::max(output_tokens, 0));
+    lifetime_usage_stats_.updated_at = format_timestamp(recorded_at);
+
+    day_bucket.requests++;
+    day_bucket.input_tokens += static_cast<uint64_t>(std::max(input_tokens, 0));
+    day_bucket.output_tokens += static_cast<uint64_t>(std::max(output_tokens, 0));
+
+    hour_bucket.requests++;
+    hour_bucket.input_tokens += static_cast<uint64_t>(std::max(input_tokens, 0));
+    hour_bucket.output_tokens += static_cast<uint64_t>(std::max(output_tokens, 0));
+
+    persist_usage_stats_locked();
+}
+
+json Router::get_lifetime_usage_stats() const {
+    std::lock_guard<std::mutex> stats_lock(stats_mutex_);
+    return {
+        {"requests", lifetime_usage_stats_.requests},
+        {"input_tokens", lifetime_usage_stats_.input_tokens},
+        {"output_tokens", lifetime_usage_stats_.output_tokens},
+        {"started_at", lifetime_usage_stats_.started_at},
+        {"updated_at", lifetime_usage_stats_.updated_at},
+        {"bucket_timezone", "server_local_time"},
+        {"persistence_path", usage_stats_path_},
+        {"by_day", usage_buckets_to_json(lifetime_usage_stats_.by_day)},
+        {"by_hour", usage_buckets_to_json(lifetime_usage_stats_.by_hour)}
+    };
 }
 
 WrappedServer* Router::find_server_by_model_name(const std::string& model_name) const {
@@ -593,12 +766,18 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             return;
         }
 
+        server->reset_telemetry();
         server->set_busy(true);
         server->update_access_time();
     }
 
     try {
         streaming_func(server);
+        {
+            std::lock_guard<std::mutex> stats_lock(stats_mutex_);
+            Telemetry telemetry = server->get_telemetry();
+            record_usage_locked(telemetry.input_tokens, telemetry.output_tokens, std::time(nullptr));
+        }
         server->set_busy(false);
     } catch (...) {
         server->set_busy(false);
@@ -708,11 +887,13 @@ json Router::image_variations(const json& request) {
 
 json Router::get_stats() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
+    json stats = Telemetry().to_json();
     WrappedServer* server = get_most_recent_server();
-    if (!server) {
-        return ErrorResponse::from_exception(ModelNotLoadedException());
+    if (server) {
+        stats = server->get_telemetry().to_json();
     }
-    return server->get_telemetry().to_json();
+    stats["lifetime"] = get_lifetime_usage_stats();
+    return stats;
 }
 
 void Router::update_telemetry(int input_tokens, int output_tokens,
@@ -723,6 +904,8 @@ void Router::update_telemetry(int input_tokens, int output_tokens,
         server->set_telemetry(input_tokens, output_tokens,
                              time_to_first_token, tokens_per_second);
     }
+    std::lock_guard<std::mutex> stats_lock(stats_mutex_);
+    record_usage_locked(input_tokens, output_tokens, std::time(nullptr));
 }
 
 void Router::update_prompt_tokens(int prompt_tokens) {
