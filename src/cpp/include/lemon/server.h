@@ -10,6 +10,7 @@
 #include <memory>
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include <httplib.h>
 #include "runtime_config.h"
 #include "router.h"
@@ -27,6 +28,7 @@ public:
     Server(int port,
            const std::string& host,
            const std::string& log_level,
+           int websocket_port,
            const json& default_options,
            int max_loaded_models,
            const std::string& extra_models_dir,
@@ -83,10 +85,7 @@ private:
     void handle_system_stats(const httplib::Request& req, httplib::Response& res);
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
-    void handle_logs_stream(const httplib::Request& req, httplib::Response& res);
-#ifdef HAVE_SYSTEMD
-    void handle_logs_stream_journald(const httplib::Request& req, httplib::Response& res);
-#endif
+    void handle_logs_stream_ticket(const httplib::Request& req, httplib::Response& res);
 
     // Backend management endpoint handlers
     void handle_install(const httplib::Request& req, httplib::Response& res);
@@ -139,7 +138,6 @@ private:
 
     std::shared_ptr<RuntimeConfig> config_;
     std::atomic<int> port_;  // Atomic cache for lock-free reads from listener threads
-    std::string log_file_path_;
 
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;

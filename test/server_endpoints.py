@@ -92,6 +92,7 @@ class EndpointTests(ServerTestBase):
             "completions",
             "embeddings",
             "models",
+            "logs/stream/ticket",
             "responses",
             "pull",
             "delete",
@@ -148,6 +149,7 @@ class EndpointTests(ServerTestBase):
         self.assertIn("all_models_loaded", data)
         self.assertIsInstance(data["all_models_loaded"], list)
         self.assertIn("max_models", data)
+        self.assertIn("log_streaming", data)
 
         # max_models should have llm, embedding, reranking keys
         max_models = data["max_models"]
@@ -155,9 +157,19 @@ class EndpointTests(ServerTestBase):
         self.assertIn("embedding", max_models)
         self.assertIn("reranking", max_models)
 
+        self.assertFalse(data["log_streaming"].get("sse", True))
+        self.assertTrue(data["log_streaming"].get("websocket", False))
+        self.assertIn("ticket_endpoint", data["log_streaming"])
+
         print(
             f"[OK] /health endpoint response: status={data['status']}, models_loaded={len(data['all_models_loaded'])}"
         )
+
+    def test_002b_logs_sse_route_removed(self):
+        """Test the legacy SSE log stream endpoint is no longer exposed."""
+        response = requests.get(f"{self.base_url}/logs/stream", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 404)
+        print("[OK] Legacy SSE log route removed")
 
     def test_003_models_list(self):
         """Test listing available models via /models endpoint."""

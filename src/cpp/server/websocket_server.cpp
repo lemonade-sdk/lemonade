@@ -1,96 +1,131 @@
 #include "lemon/websocket_server.h"
+
 #include "lemon/router.h"
 #include "lemon/utils/process_manager.h"
-#include <iostream>
-#include <sstream>
-#include <cstring>
+
+#include <chrono>
 #include <cstdio>
+#include <cstring>
+#include <random>
+#include <sstream>
+#include <utility>
+
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
 
-// libwebsockets protocol definition.
-// Our WebSocket protocol is listed first so that connections without a
-// Sec-WebSocket-Protocol header are routed here by default.
+namespace {
+
 static struct lws_protocols protocols[] = {
-    { "lemonade-realtime", WebSocketServer::ws_callback,
-      sizeof(PerSessionData), 65536, 0, nullptr, 0 },
+    {"lemonade-realtime", WebSocketServer::ws_callback, sizeof(PerSessionData), 65536, 0, nullptr, 0},
     LWS_PROTOCOL_LIST_TERM
 };
 
-WebSocketServer::WebSocketServer(Router* router)
-    : port_(utils::ProcessManager::find_free_port(9000))
-    , router_(router)
-    , session_manager_(std::make_unique<RealtimeSessionManager>(router)) {
-    LOG(INFO, "WebSocket") << "Allocated port: " << port_ << std::endl;
+std::string random_ticket() {
+    static std::random_device rd;
+    static std::mt19937_64 gen(rd());
+    static std::uniform_int_distribution<uint64_t> dist;
+
+    std::ostringstream stream;
+    stream << std::hex << dist(gen) << dist(gen);
+    return stream.str();
+}
+
+} // namespace
+
+WebSocketServer::WebSocketServer(Router* router, const std::string& host, int requested_port)
+    : port_(requested_port > 0 ? requested_port : utils::ProcessManager::find_free_port(9000)),
+      host_(host),
+      router_(router),
+      session_manager_(std::make_unique<RealtimeSessionManager>(router)) {
+    LOG(INFO, "WebSocket") << "Configured port: " << port_ << std::endl;
 }
 
 WebSocketServer::~WebSocketServer() {
     stop();
 }
 
-int WebSocketServer::ws_callback(struct lws* wsi, enum lws_callback_reasons reason,
-                                  void* user, void* in, size_t len) {
-    // Get the WebSocketServer instance from context user data
+int WebSocketServer::ws_callback(struct lws* wsi,
+                                 enum lws_callback_reasons reason,
+                                 void* user,
+                                 void* in,
+                                 size_t len) {
     struct lws_context* ctx = lws_get_context(wsi);
-    if (!ctx) return 0;
+    if (!ctx) {
+        return 0;
+    }
+
     auto* server = static_cast<WebSocketServer*>(lws_context_user(ctx));
-    if (!server) return 0;
+    if (!server) {
+        return 0;
+    }
 
     auto* pss = static_cast<PerSessionData*>(user);
 
     switch (reason) {
-        case LWS_CALLBACK_ESTABLISHED: {
-            // Generate connection ID from socket fd (POD-safe char array)
-            snprintf(pss->connection_id, sizeof(pss->connection_id),
-                     "%d", (int)lws_get_socket_fd(wsi));
+        case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION: {
+            const std::string path = get_request_path(wsi);
+            const auto kind = classify_path(path);
+            if (kind == ConnectionKind::invalid) {
+                return 1;
+            }
 
-            char ip[128] = {0};
-            lws_get_peer_simple(wsi, ip, sizeof(ip));
-            LOG(INFO, "WebSocket") << "New connection from: " << ip
-                      << " (id: " << pss->connection_id << ")" << std::endl;
-
-            server->handle_connection(pss->connection_id, wsi);
-            break;
-        }
-
-        case LWS_CALLBACK_CLOSED: {
-            LOG(INFO, "WebSocket") << "Connection closed: "
-                      << pss->connection_id << std::endl;
-            server->handle_close(pss->connection_id);
-            break;
-        }
-
-        case LWS_CALLBACK_RECEIVE: {
-            if (in && len > 0) {
-                std::string conn_id(pss->connection_id);
-                // libwebsockets may deliver a single WebSocket frame across
-                // multiple RECEIVE callbacks.  Accumulate fragments and only
-                // dispatch when the complete message has arrived.
-                {
-                    std::lock_guard<std::mutex> lock(server->connections_mutex_);
-                    server->receive_buffers_[conn_id].append(
-                        static_cast<const char*>(in), len);
-                }
-
-                if (lws_remaining_packet_payload(wsi) == 0 &&
-                    lws_is_final_fragment(wsi)) {
-                    std::string complete_msg;
-                    {
-                        std::lock_guard<std::mutex> lock(server->connections_mutex_);
-                        complete_msg = std::move(server->receive_buffers_[conn_id]);
-                        server->receive_buffers_[conn_id].clear();
-                    }
-                    server->handle_message(conn_id, complete_msg);
+            if (kind == ConnectionKind::logs) {
+                if (!get_url_arg(wsi, "ticket")) {
+                    return 1;
                 }
             }
             break;
         }
 
-        case LWS_CALLBACK_SERVER_WRITEABLE: {
-            server->handle_writable(pss->connection_id, wsi);
+        case LWS_CALLBACK_ESTABLISHED: {
+            std::snprintf(pss->connection_id, sizeof(pss->connection_id), "%d", static_cast<int>(lws_get_socket_fd(wsi)));
+
+            char ip[128] = {0};
+            lws_get_peer_simple(wsi, ip, sizeof(ip));
+            LOG(INFO, "WebSocket") << "New connection from: " << ip
+                                   << " (id: " << pss->connection_id << ")" << std::endl;
+
+            server->handle_connection(pss->connection_id, wsi);
             break;
         }
+
+        case LWS_CALLBACK_CLOSED:
+            server->handle_close(pss->connection_id);
+            break;
+
+        case LWS_CALLBACK_RECEIVE: {
+            if (!in || len == 0) {
+                break;
+            }
+
+            std::string conn_id(pss->connection_id);
+
+            {
+                std::lock_guard<std::mutex> lock(server->connections_mutex_);
+                auto state_it = server->connection_states_.find(conn_id);
+                if (state_it == server->connection_states_.end() ||
+                    state_it->second.kind != ConnectionKind::realtime) {
+                    break;
+                }
+                server->receive_buffers_[conn_id].append(static_cast<const char*>(in), len);
+            }
+
+            if (lws_remaining_packet_payload(wsi) == 0 && lws_is_final_fragment(wsi)) {
+                std::string complete_msg;
+                {
+                    std::lock_guard<std::mutex> lock(server->connections_mutex_);
+                    complete_msg = std::move(server->receive_buffers_[conn_id]);
+                    server->receive_buffers_[conn_id].clear();
+                }
+                server->handle_message(conn_id, complete_msg);
+            }
+            break;
+        }
+
+        case LWS_CALLBACK_SERVER_WRITEABLE:
+            server->handle_writable(pss->connection_id, wsi);
+            break;
 
         default:
             break;
@@ -101,28 +136,33 @@ int WebSocketServer::ws_callback(struct lws* wsi, enum lws_callback_reasons reas
 
 bool WebSocketServer::start() {
     if (running_.load()) {
-        return true;  // Already running
+        return true;
     }
 
     struct lws_context_creation_info info;
-    memset(&info, 0, sizeof(info));
+    std::memset(&info, 0, sizeof(info));
 
     info.port = port_;
     info.protocols = protocols;
-    info.user = this;  // Store 'this' so static callback can access instance
+    info.user = this;
 
-    // Suppress libwebsockets internal logging (we use our own)
+    if (!host_.empty() && host_ != "0.0.0.0") {
+        if (host_ == "localhost") {
+            info.iface = "127.0.0.1";
+        } else {
+            info.iface = host_.c_str();
+        }
+    }
+
     lws_set_log_level(LLL_ERR | LLL_WARN, nullptr);
 
     context_ = lws_create_context(&info);
     if (!context_) {
-        LOG(ERROR, "WebSocket") << "Failed to create lws context on port " << port_ << std::endl;
+        LOG(ERROR, "WebSocket") << "Failed to create context on port " << port_ << std::endl;
         return false;
     }
 
     running_.store(true);
-
-    // Run the service loop in a background thread
     service_thread_ = std::thread(&WebSocketServer::service_loop, this);
 
     LOG(INFO, "WebSocket") << "Server started on port " << port_ << std::endl;
@@ -136,29 +176,32 @@ void WebSocketServer::stop() {
 
     running_.store(false);
 
-    // Wake up the service thread so it exits the loop
     if (context_) {
         lws_cancel_service(context_);
     }
 
-    // Wait for service thread to finish
     if (service_thread_.joinable()) {
         service_thread_.join();
     }
 
-    // Close all sessions
     {
         std::lock_guard<std::mutex> lock(connections_mutex_);
-        for (auto& [conn_id, session_id] : connection_sessions_) {
-            session_manager_->close_session(session_id);
+        for (const auto& [_, state] : connection_states_) {
+            if (!state.realtime_session_id.empty()) {
+                session_manager_->close_session(state.realtime_session_id);
+            }
+            if (!state.log_subscriber_id.empty()) {
+                LogStreamHub::instance().remove_subscriber(state.log_subscriber_id);
+            }
         }
-        connection_sessions_.clear();
+
+        connection_states_.clear();
         connection_websockets_.clear();
         message_queues_.clear();
         receive_buffers_.clear();
+        log_tickets_.clear();
     }
 
-    // Destroy context after sessions are cleaned up
     if (context_) {
         lws_context_destroy(context_);
         context_ = nullptr;
@@ -167,137 +210,206 @@ void WebSocketServer::stop() {
     LOG(INFO, "WebSocket") << "Server stopped" << std::endl;
 }
 
+json WebSocketServer::mint_log_ticket(std::optional<uint64_t> after_seq) {
+    std::lock_guard<std::mutex> lock(connections_mutex_);
+    cleanup_expired_tickets_locked();
+
+    std::string ticket = random_ticket();
+    log_tickets_[ticket] = {
+        after_seq,
+        std::chrono::steady_clock::now() + std::chrono::seconds(30),
+    };
+
+    return {
+        {"ticket", ticket},
+        {"expires_at", static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch() + std::chrono::seconds(30)).count())},
+        {"after_seq", after_seq.has_value() ? json(*after_seq) : json(nullptr)},
+        {"path", "/logs/stream"},
+        {"websocket_port", port_},
+    };
+}
+
 void WebSocketServer::service_loop() {
     while (running_.load()) {
-        lws_service(context_, 50);  // 50ms timeout to check running_ flag
+        lws_service(context_, 50);
+        schedule_pending_writes();
     }
 }
 
 void WebSocketServer::handle_connection(const std::string& connection_id, struct lws* wsi) {
-    // Extract URI and query params from the WebSocket handshake
-    char uri_buf[256] = {0};
-    char query_buf[512] = {0};
-    lws_hdr_copy(wsi, uri_buf, sizeof(uri_buf), WSI_TOKEN_GET_URI);
-    int query_len = lws_hdr_copy(wsi, query_buf, sizeof(query_buf), WSI_TOKEN_HTTP_URI_ARGS);
+    const std::string path = get_request_path(wsi);
+    const auto kind = classify_path(path);
+    const auto params = extract_params(wsi, kind);
 
-    std::string url = std::string(uri_buf);
-    if (query_len > 0) {
-        url += "?" + std::string(query_buf);
-    }
-
-    // Parse query parameters (OpenAI SDK passes ?model=X)
-    auto params = parse_query_params(url);
-
-    // Build initial session config from URL params
-    json initial_config = json::object();
-
-    // Get model from URL (OpenAI SDK compatible)
-    if (params.count("model")) {
-        initial_config["model"] = params["model"];
-        LOG(INFO, "WebSocket") << "Model from URL: " << params["model"] << std::endl;
-    }
-
-    // Store WebSocket pointer for this connection
     {
         std::lock_guard<std::mutex> lock(connections_mutex_);
         connection_websockets_[connection_id] = wsi;
+        connection_states_[connection_id] = {};
+        connection_states_[connection_id].kind = kind;
     }
 
-    // Create session with callback to send messages
-    std::string conn_id_copy = connection_id;
-    auto send_callback = [this, conn_id_copy](const json& msg) {
-        send_json(conn_id_copy, msg);
-    };
+    switch (kind) {
+        case ConnectionKind::realtime:
+            handle_realtime_connection(connection_id, wsi, params);
+            break;
+        case ConnectionKind::logs: {
+            const auto ticket_it = params.find("ticket");
+            if (ticket_it == params.end()) {
+                send_json(connection_id, {
+                    {"type", "error"},
+                    {"error", {{"message", "Missing log stream ticket"}, {"type", "invalid_request_error"}}},
+                });
+                return;
+            }
 
-    std::string session_id = session_manager_->create_session(send_callback, initial_config);
+            auto ticket = consume_log_ticket(ticket_it->second);
+            if (!ticket.has_value()) {
+                send_json(connection_id, {
+                    {"type", "error"},
+                    {"error", {{"message", "Invalid or expired log stream ticket"}, {"type", "invalid_request_error"}}},
+                });
+                return;
+            }
 
-    {
-        std::lock_guard<std::mutex> lock(connections_mutex_);
-        connection_sessions_[connection_id] = session_id;
+            handle_log_connection(connection_id, wsi, *ticket);
+            break;
+        }
+        case ConnectionKind::invalid:
+            send_json(connection_id, {
+                {"type", "error"},
+                {"error", {{"message", "Unsupported websocket path"}, {"type", "invalid_request_error"}}},
+            });
+            break;
     }
 }
 
-void WebSocketServer::handle_message(const std::string& connection_id, const std::string& msg) {
-    // Get session ID for this connection
-    std::string session_id;
-    {
-        std::lock_guard<std::mutex> lock(connections_mutex_);
-        auto it = connection_sessions_.find(connection_id);
-        if (it == connection_sessions_.end()) {
-            LOG(ERROR, "WebSocket") << "Message from unknown connection" << std::endl;
-            return;
-        }
-        session_id = it->second;
+void WebSocketServer::handle_realtime_connection(
+    const std::string& connection_id,
+    struct lws*,
+    const std::unordered_map<std::string, std::string>& params) {
+    json initial_config = json::object();
+    if (params.count("model")) {
+        initial_config["model"] = params.at("model");
     }
 
-    // Parse JSON message
+    auto send_callback = [this, connection_id](const json& msg) {
+        send_json(connection_id, msg);
+    };
+
+    const std::string session_id = session_manager_->create_session(send_callback, initial_config);
+
+    std::lock_guard<std::mutex> lock(connections_mutex_);
+    auto& state = connection_states_[connection_id];
+    state.kind = ConnectionKind::realtime;
+    state.realtime_session_id = session_id;
+}
+
+void WebSocketServer::handle_log_connection(const std::string& connection_id,
+                                            struct lws*,
+                                            std::optional<uint64_t> after_seq) {
+    const auto snapshot_entries = LogStreamHub::instance().snapshot(after_seq);
+    const std::string subscriber_id = LogStreamHub::instance().add_subscriber(
+        [this, connection_id](const LogStreamEntry& entry) {
+            send_json(connection_id, {
+                {"type", "logs.entry"},
+                {"entry", entry.to_json()},
+            });
+        });
+
+    {
+        std::lock_guard<std::mutex> lock(connections_mutex_);
+        auto& state = connection_states_[connection_id];
+        state.kind = ConnectionKind::logs;
+        state.log_subscriber_id = subscriber_id;
+    }
+
+    json entries_json = json::array();
+    for (const auto& entry : snapshot_entries) {
+        entries_json.push_back(entry.to_json());
+    }
+
+    send_json(connection_id, {
+        {"type", "logs.snapshot"},
+        {"entries", entries_json},
+    });
+}
+
+void WebSocketServer::handle_message(const std::string& connection_id, const std::string& msg) {
+    std::string session_id;
+
+    {
+        std::lock_guard<std::mutex> lock(connections_mutex_);
+        auto it = connection_states_.find(connection_id);
+        if (it == connection_states_.end()) {
+            return;
+        }
+
+        if (it->second.kind != ConnectionKind::realtime) {
+            send_json(connection_id, {
+                {"type", "error"},
+                {"error", {{"message", "Log stream sockets are receive-only"}, {"type", "invalid_request_error"}}},
+            });
+            return;
+        }
+
+        session_id = it->second.realtime_session_id;
+    }
+
     json request;
     try {
         request = json::parse(msg);
     } catch (const json::parse_error& e) {
-        json error_msg = {
+        send_json(connection_id, {
             {"type", "error"},
-            {"error", {
-                {"message", "Invalid JSON: " + std::string(e.what())},
-                {"type", "invalid_request_error"}
-            }}
-        };
-        send_json(connection_id, error_msg);
+            {"error", {{"message", "Invalid JSON: " + std::string(e.what())}, {"type", "invalid_request_error"}}},
+        });
         return;
     }
 
-    // Get message type
-    std::string msg_type = request.value("type", "");
+    const std::string msg_type = request.value("type", "");
 
     if (msg_type == "session.update") {
-        // Update session configuration
-        json session_config = request.value("session", json::object());
-        session_manager_->update_session(session_id, session_config);
-    }
-    else if (msg_type == "input_audio_buffer.append") {
-        // Append audio data
-        std::string audio = request.value("audio", "");
+        session_manager_->update_session(session_id, request.value("session", json::object()));
+    } else if (msg_type == "input_audio_buffer.append") {
+        const std::string audio = request.value("audio", "");
         if (!audio.empty()) {
             session_manager_->append_audio(session_id, audio);
         }
-    }
-    else if (msg_type == "input_audio_buffer.commit") {
-        // Commit audio buffer (force transcription)
+    } else if (msg_type == "input_audio_buffer.commit") {
         session_manager_->commit_audio(session_id);
-    }
-    else if (msg_type == "input_audio_buffer.clear") {
-        // Clear audio buffer
+    } else if (msg_type == "input_audio_buffer.clear") {
         session_manager_->clear_audio(session_id);
-    }
-    else {
-        // Unknown message type
-        json error_msg = {
+    } else {
+        send_json(connection_id, {
             {"type", "error"},
-            {"error", {
-                {"message", "Unknown message type: " + msg_type},
-                {"type", "invalid_request_error"}
-            }}
-        };
-        send_json(connection_id, error_msg);
+            {"error", {{"message", "Unknown message type: " + msg_type}, {"type", "invalid_request_error"}}},
+        });
     }
 }
 
 void WebSocketServer::handle_close(const std::string& connection_id) {
-    std::string session_id;
+    ConnectionState state;
+
     {
         std::lock_guard<std::mutex> lock(connections_mutex_);
-        auto it = connection_sessions_.find(connection_id);
-        if (it != connection_sessions_.end()) {
-            session_id = it->second;
-            connection_sessions_.erase(it);
+        auto state_it = connection_states_.find(connection_id);
+        if (state_it != connection_states_.end()) {
+            state = state_it->second;
+            connection_states_.erase(state_it);
         }
+
         connection_websockets_.erase(connection_id);
         message_queues_.erase(connection_id);
         receive_buffers_.erase(connection_id);
     }
 
-    if (!session_id.empty()) {
-        session_manager_->close_session(session_id);
+    if (!state.realtime_session_id.empty()) {
+        session_manager_->close_session(state.realtime_session_id);
+    }
+    if (!state.log_subscriber_id.empty()) {
+        LogStreamHub::instance().remove_subscriber(state.log_subscriber_id);
     }
 }
 
@@ -316,9 +428,8 @@ void WebSocketServer::handle_writable(const std::string& connection_id, struct l
         has_more = !it->second.empty();
     }
 
-    // Allocate buffer with LWS_PRE padding
     std::vector<unsigned char> buf(LWS_PRE + msg.size());
-    memcpy(&buf[LWS_PRE], msg.data(), msg.size());
+    std::memcpy(&buf[LWS_PRE], msg.data(), msg.size());
 
     int written = lws_write(wsi, &buf[LWS_PRE], msg.size(), LWS_WRITE_TEXT);
     if (written < static_cast<int>(msg.size())) {
@@ -326,57 +437,117 @@ void WebSocketServer::handle_writable(const std::string& connection_id, struct l
         return;
     }
 
-    // If there are more messages queued, request another writable callback
     if (has_more) {
         lws_callback_on_writable(wsi);
     }
 }
 
-std::unordered_map<std::string, std::string> WebSocketServer::parse_query_params(const std::string& url) {
-    std::unordered_map<std::string, std::string> params;
-
-    // Find query string start
-    size_t query_start = url.find('?');
-    if (query_start == std::string::npos) {
-        return params;
+std::optional<std::string> WebSocketServer::get_url_arg(struct lws* wsi, const char* name) {
+    char buffer[512] = {0};
+    const int value_len = lws_get_urlarg_by_name_safe(wsi, name, buffer, sizeof(buffer));
+    if (value_len < 0) {
+        return std::nullopt;
     }
 
-    std::string query = url.substr(query_start + 1);
+    return std::string(buffer, static_cast<size_t>(value_len));
+}
 
-    // Parse key=value pairs
-    std::istringstream stream(query);
-    std::string pair;
+std::unordered_map<std::string, std::string> WebSocketServer::extract_params(
+    struct lws* wsi,
+    ConnectionKind kind) {
+    std::unordered_map<std::string, std::string> params;
 
-    while (std::getline(stream, pair, '&')) {
-        size_t eq_pos = pair.find('=');
-        if (eq_pos != std::string::npos) {
-            std::string key = pair.substr(0, eq_pos);
-            std::string value = pair.substr(eq_pos + 1);
-            params[key] = value;
+    if (kind == ConnectionKind::realtime) {
+        if (auto model = get_url_arg(wsi, "model")) {
+            params["model"] = *model;
+        }
+    } else if (kind == ConnectionKind::logs) {
+        if (auto ticket = get_url_arg(wsi, "ticket")) {
+            params["ticket"] = *ticket;
         }
     }
 
     return params;
 }
 
+std::string WebSocketServer::get_request_path(struct lws* wsi) {
+    char uri_buf[256] = {0};
+
+    lws_hdr_copy(wsi, uri_buf, sizeof(uri_buf), WSI_TOKEN_GET_URI);
+    return std::string(uri_buf);
+}
+
+WebSocketServer::ConnectionKind WebSocketServer::classify_path(const std::string& path) {
+    if (path == "/realtime") {
+        return ConnectionKind::realtime;
+    }
+    if (path == "/logs/stream") {
+        return ConnectionKind::logs;
+    }
+    return ConnectionKind::invalid;
+}
+
 void WebSocketServer::send_json(const std::string& connection_id, const json& msg) {
+    std::string payload;
     try {
+        payload = msg.dump(-1, ' ', false, json::error_handler_t::replace);
+
         std::lock_guard<std::mutex> lock(connections_mutex_);
         auto it = connection_websockets_.find(connection_id);
         if (it != connection_websockets_.end() && it->second != nullptr) {
-            // Queue the message for deferred writing
-            message_queues_[connection_id].push(msg.dump());
-            // Request a writable callback for this connection
-            lws_callback_on_writable(it->second);
+            message_queues_[connection_id].push(std::move(payload));
+            writable_dispatch_pending_.store(true);
         }
     } catch (const std::exception& e) {
-        LOG(ERROR, "WebSocket") << "Error sending message to " << connection_id
-                  << ": " << e.what() << std::endl;
+        std::fprintf(stderr, "WebSocket send_json failed for %s: %s\n",
+                     connection_id.c_str(), e.what());
     }
 
-    // Wake up the service thread to process the writable callback
     if (context_) {
         lws_cancel_service(context_);
+    }
+}
+
+void WebSocketServer::schedule_pending_writes() {
+    if (!writable_dispatch_pending_.exchange(false)) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(connections_mutex_);
+    for (const auto& [connection_id, wsi] : connection_websockets_) {
+        if (wsi == nullptr) {
+            continue;
+        }
+
+        auto queue_it = message_queues_.find(connection_id);
+        if (queue_it != message_queues_.end() && !queue_it->second.empty()) {
+            lws_callback_on_writable(wsi);
+        }
+    }
+}
+
+std::optional<std::optional<uint64_t>> WebSocketServer::consume_log_ticket(const std::string& ticket) {
+    std::lock_guard<std::mutex> lock(connections_mutex_);
+    cleanup_expired_tickets_locked();
+
+    auto it = log_tickets_.find(ticket);
+    if (it == log_tickets_.end()) {
+        return std::nullopt;
+    }
+
+    auto after_seq = it->second.after_seq;
+    log_tickets_.erase(it);
+    return after_seq;
+}
+
+void WebSocketServer::cleanup_expired_tickets_locked() {
+    const auto now = std::chrono::steady_clock::now();
+    for (auto it = log_tickets_.begin(); it != log_tickets_.end();) {
+        if (it->second.expires_at <= now) {
+            it = log_tickets_.erase(it);
+        } else {
+            ++it;
+        }
     }
 }
 

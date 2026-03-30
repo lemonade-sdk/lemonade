@@ -17,6 +17,7 @@ static bool is_recipe_key(const std::string& key) {
 
 RuntimeConfig::RuntimeConfig(int port,
                              const std::string& host,
+                             int websocket_port,
                              const std::string& log_level,
                              const std::string& extra_models_dir,
                              bool no_broadcast,
@@ -26,6 +27,7 @@ RuntimeConfig::RuntimeConfig(int port,
     : config_({
         {"port", port},
         {"host", host},
+        {"websocket_port", websocket_port},
         {"log_level", log_level},
         {"extra_models_dir", extra_models_dir},
         {"no_broadcast", no_broadcast},
@@ -48,6 +50,11 @@ int RuntimeConfig::port() const {
 std::string RuntimeConfig::host() const {
     std::shared_lock lock(mutex_);
     return config_["host"].get<std::string>();
+}
+
+int RuntimeConfig::websocket_port() const {
+    std::shared_lock lock(mutex_);
+    return config_["websocket_port"].get<int>();
 }
 
 std::string RuntimeConfig::log_level() const {
@@ -100,6 +107,14 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
     } else if (key == "host") {
         if (!value.is_string()) {
             throw std::invalid_argument("'host' must be a string");
+        }
+    } else if (key == "websocket_port") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'websocket_port' must be an integer");
+        }
+        int p = value.get<int>();
+        if (p < 0 || p > 65535) {
+            throw std::invalid_argument("'websocket_port' must be between 0 and 65535");
         }
     } else if (key == "log_level") {
         if (!value.is_string()) {

@@ -12,6 +12,7 @@ using json = nlohmann::json;
 struct ServerConfig {
     int port = 8000;
     std::string host = "localhost";
+    int websocket_port = 0;
     std::string log_level = "info";
     json recipe_options = json::object();
     std::string extra_models_dir = "";  // Secondary directory for GGUF model discovery
