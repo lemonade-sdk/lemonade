@@ -24,7 +24,7 @@ import unittest
 import requests
 
 PORT = 12120
-BASE = f"http://127.0.0.1:{PORT}"
+BASE = f"http://localhost:{PORT}"
 HEALTH = f"{BASE}/v1/health"
 CONFIG = f"{BASE}/internal/config"
 
@@ -61,7 +61,7 @@ def start_server(env_overrides=None, extra_args=None):
     home_dir = tempfile.mkdtemp(prefix="lemon_test_")
     env["LEMONADE_CACHE_DIR"] = home_dir
     env["LEMONADE_PORT"] = str(PORT)
-    env["LEMONADE_HOST"] = "127.0.0.1"
+    env["LEMONADE_HOST"] = "localhost"
     env["LEMONADE_NO_BROADCAST"] = "1"
     if env_overrides:
         env.update(env_overrides)
@@ -110,7 +110,7 @@ class TestConfigEnvVars(unittest.TestCase):
     def setUpClass(cls):
         cls.env = {
             "LEMONADE_PORT": str(PORT),
-            "LEMONADE_HOST": "127.0.0.1",
+            "LEMONADE_HOST": "localhost",
             "LEMONADE_LOG_LEVEL": "debug",
             "LEMONADE_EXTRA_MODELS_DIR": "/tmp/lemon_extra_models_test",
             "LEMONADE_GLOBAL_TIMEOUT": "999",
@@ -142,7 +142,7 @@ class TestConfigEnvVars(unittest.TestCase):
         self.assertEqual(self.snapshot["port"], PORT)
 
     def test_host(self):
-        self.assertEqual(self.snapshot["host"], "127.0.0.1")
+        self.assertEqual(self.snapshot["host"], "localhost")
 
     def test_log_level(self):
         self.assertEqual(self.snapshot["log_level"], "debug")
