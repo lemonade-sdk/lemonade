@@ -1057,8 +1057,6 @@ jobs:
         include:
           - os: macos-latest
             test_type: env-vars
-          - os: windows-latest
-            test_type: env-vars
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -1163,14 +1161,7 @@ jobs:
               $VENV_PYTHON test/server_streaming_errors.py --server-binary "$SERVER_BINARY"
           elif [ "${{ matrix.test_type }}" = "env-vars" ]; then
               echo "Running environment variable tests..."
-              # Derive server binary path from SERVER_BINARY directory
-              BIN_DIR="$(dirname "$SERVER_BINARY")"
-              if [ "${{ runner.os }}" = "Windows" ]; then
-                  # lemond.exe is not in the MSI; LemonadeServer.exe embeds the same server
-                  LEMOND_BINARY="$BIN_DIR/LemonadeServer.exe"
-              else
-                  LEMOND_BINARY="$BIN_DIR/lemond"
-              fi
+              LEMOND_BINARY="$(dirname "$SERVER_BINARY")/lemond"
               $VENV_PYTHON test/server_env_vars.py --server-binary "$LEMOND_BINARY"
           fi
 

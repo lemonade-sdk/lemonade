@@ -28,6 +28,8 @@ BASE = f"http://localhost:{PORT}"
 HEALTH = f"{BASE}/v1/health"
 CONFIG = f"{BASE}/internal/config"
 
+IS_MACOS = platform.system() == "Darwin"
+
 
 def get_default_binary():
     test_dir = os.path.dirname(os.path.abspath(__file__))
@@ -117,12 +119,17 @@ class TestConfigEnvVars(unittest.TestCase):
             "LEMONADE_MAX_LOADED_MODELS": "3",
             # Recipe-option env vars
             "LEMONADE_CTX_SIZE": "2048",
-            "LEMONADE_LLAMACPP": "cpu",
-            "LEMONADE_LLAMACPP_ARGS": "--flash-attn on",
-            "LEMONADE_WHISPERCPP": "cpu",
-            "LEMONADE_WHISPERCPP_ARGS": "--convert",
-            "LEMONADE_FLM_ARGS": "--socket 20",
         }
+        if not IS_MACOS:
+            cls.env.update(
+                {
+                    "LEMONADE_LLAMACPP": "cpu",
+                    "LEMONADE_LLAMACPP_ARGS": "--flash-attn on",
+                    "LEMONADE_WHISPERCPP": "cpu",
+                    "LEMONADE_WHISPERCPP_ARGS": "--convert",
+                    "LEMONADE_FLM_ARGS": "--socket 20",
+                }
+            )
         cls.proc, cls.home_dir = start_server(cls.env)
         if not wait_for_server(HEALTH):
             out = cls.proc.stdout.read().decode() if cls.proc.stdout else ""
@@ -167,18 +174,23 @@ class TestConfigEnvVars(unittest.TestCase):
     def test_ctx_size(self):
         self.assertEqual(self.snapshot["ctx_size"], 2048)
 
+    @unittest.skipIf(IS_MACOS, "llamacpp backend selection not applicable on macOS")
     def test_llamacpp_backend(self):
         self.assertEqual(self.snapshot["llamacpp_backend"], "cpu")
 
+    @unittest.skipIf(IS_MACOS, "llamacpp args not applicable on macOS")
     def test_llamacpp_args(self):
         self.assertEqual(self.snapshot["llamacpp_args"], "--flash-attn on")
 
+    @unittest.skipIf(IS_MACOS, "whispercpp backend selection not applicable on macOS")
     def test_whispercpp_backend(self):
         self.assertEqual(self.snapshot["whispercpp_backend"], "cpu")
 
+    @unittest.skipIf(IS_MACOS, "whispercpp args not applicable on macOS")
     def test_whispercpp_args(self):
         self.assertEqual(self.snapshot["whispercpp_args"], "--convert")
 
+    @unittest.skipIf(IS_MACOS, "FLM is NPU-only, not available on macOS")
     def test_flm_args(self):
         self.assertEqual(self.snapshot["flm_args"], "--socket 20")
 
