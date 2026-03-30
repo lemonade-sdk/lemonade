@@ -33,11 +33,27 @@ IS_MACOS = platform.system() == "Darwin"
 _lemond_binary = get_default_lemond_binary()
 
 
+def shutdown_existing_server():
+    """Shut down any pre-existing server on the test port (e.g. deb-installed in CI)."""
+    try:
+        requests.post(f"{BASE}/internal/shutdown", timeout=5)
+    except Exception:
+        return  # nothing was listening
+    # Wait for port to be fully released before starting a new server
+    for _ in range(20):
+        try:
+            requests.get(f"{BASE}/live", timeout=0.5)
+            time.sleep(0.25)
+        except Exception:
+            break
+
+
 def start_server(env_overrides=None):
     """Start lemond with given env overrides in an isolated temp home dir.
 
     Returns (subprocess.Popen, home_dir).
     """
+    shutdown_existing_server()
     env = os.environ.copy()
     # Isolate from any existing lemonade env vars
     for k in list(env.keys()):
@@ -117,7 +133,7 @@ class TestConfigEnvVars(unittest.TestCase):
                 }
             )
         cls.proc, cls.home_dir = start_server(cls.env)
-        wait_for_server()
+        wait_for_server(port=PORT)
         cls.snapshot = get_config()
 
     @classmethod
@@ -190,7 +206,7 @@ class TestApiKeyEnvVar(unittest.TestCase):
     def setUpClass(cls):
         cls.proc, cls.home_dir = start_server({"LEMONADE_API_KEY": cls.API_KEY})
         # /live is unauthenticated, use it to detect readiness
-        wait_for_server()
+        wait_for_server(port=PORT)
 
     @classmethod
     def tearDownClass(cls):
@@ -243,7 +259,7 @@ class TestDefaults(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.proc, cls.home_dir = start_server()
-        wait_for_server()
+        wait_for_server(port=PORT)
         cls.snapshot = get_config()
 
     @classmethod
