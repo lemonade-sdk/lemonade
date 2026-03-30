@@ -2,7 +2,6 @@
 #include "lemon/ollama_api.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/backend_utils.h"
-#include "lemon/backends/fastflowlm_server.h"
 #include <cstring>
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -1204,7 +1203,7 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 
         message += "Use 'lemonade-server list' or GET /api/v1/models?show_all=true to see all available models.";
 
-        // Add FLM diagnostic info for -FLM model names
+        // Add FLM hint for -FLM model names when FLM is not ready
         if (requested_model.size() > 4 &&
             requested_model.substr(requested_model.size() - 4) == "-FLM") {
             auto flm_status = SystemInfoCache::get_flm_status();
@@ -1214,34 +1213,6 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
                     message += " " + flm_status.action + ".";
                 }
             }
-            // Always show diagnostic: install dir state + flm list result
-            std::string install_dir = backends::BackendUtils::get_install_directory("flm", "npu");
-            bool dir_exists = std::filesystem::exists(install_dir);
-            std::string files_in_dir;
-            if (dir_exists) {
-                int count = 0;
-                for (const auto& e : std::filesystem::directory_iterator(install_dir)) {
-                    if (count++ < 5) files_in_dir += e.path().filename().string() + " ";
-                }
-                files_in_dir += "(" + std::to_string(count) + " total)";
-            }
-            // Also try running flm list --json to see if it works
-            std::string flm_exe = utils::find_flm_executable();
-            std::string list_diag;
-            if (!flm_exe.empty()) {
-                std::string list_output;
-                std::string list_cmd = "\"" + flm_exe + "\" list --json";
-                int list_rc = utils::ProcessManager::run_command(list_cmd, list_output);
-                list_diag = ", flm_exe=" + flm_exe +
-                           ", list_rc=" + std::to_string(list_rc) +
-                           ", list_len=" + std::to_string(list_output.size()) +
-                           ", list_out=" + list_output.substr(0, 150);
-            } else {
-                list_diag = ", flm_exe=NOT_FOUND";
-            }
-            message += " [FLM debug: install_dir=" + install_dir +
-                       ", exists=" + (dir_exists ? "true" : "false") +
-                       ", files=" + files_in_dir + list_diag + "]";
         }
 
         error_response["error"] = {
