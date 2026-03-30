@@ -674,7 +674,7 @@ class SystemInfoMockTests(unittest.TestCase):
                         print(f"  [OK] {recipe}/{backend}: state=unsupported")
 
             finally:
-                # Stop the server by sending shutdown request, then terminate
+                # Stop the server and wait for port to be released
                 try:
                     requests.post(
                         f"http://localhost:{PORT}/internal/shutdown",
@@ -682,11 +682,17 @@ class SystemInfoMockTests(unittest.TestCase):
                     )
                 except Exception:
                     pass
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
+                process.kill()
+                process.wait()
+                # Wait for port to be fully released
+                import time
+
+                for _ in range(20):
+                    try:
+                        requests.get(f"http://localhost:{PORT}/live", timeout=0.5)
+                        time.sleep(0.25)
+                    except Exception:
+                        break
 
         finally:
             # Cleanup temp directory
