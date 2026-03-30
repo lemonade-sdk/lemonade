@@ -147,7 +147,6 @@ void configure_codex_agent(const std::string& base_url,
     add_windows_npm_fallbacks(config.fallback_paths, "codex");
 
     config.env_vars = {
-        {"OPENAI_BASE_URL", base_url + "/v1/"},
         {"OPENAI_API_KEY", resolved_api_key},
         {"LEMONADE_API_KEY", resolved_api_key}
     };
