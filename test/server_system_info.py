@@ -34,7 +34,7 @@ try:
 except ImportError as e:
     raise ImportError("You must `pip install requests` to run this test", e)
 
-from utils.test_models import PORT, TIMEOUT_DEFAULT
+from utils.test_models import PORT, TIMEOUT_DEFAULT, get_default_lemond_binary
 from utils.server_base import wait_for_server
 
 # Detect current platform for skipping incompatible tests
@@ -43,22 +43,6 @@ IS_MACOS = sys.platform == "darwin"
 IS_LINUX = sys.platform.startswith("linux")
 IS_X86_64 = platform.machine().lower() in ("x86_64", "amd64")
 IS_ARM64 = platform.machine().lower() in ("arm64", "aarch64")
-
-
-def get_default_lemond_binary():
-    """Get the default lemond binary path from the CMake build directory."""
-    this_file = os.path.abspath(__file__)
-    test_dir = os.path.dirname(this_file)
-    workspace_root = os.path.dirname(test_dir)
-
-    if platform.system() == "Windows":
-        release_path = os.path.join(workspace_root, "build", "Release", "lemond.exe")
-        debug_path = os.path.join(workspace_root, "build", "Debug", "lemond.exe")
-        if os.path.exists(release_path):
-            return release_path
-        return debug_path
-    else:
-        return os.path.join(workspace_root, "build", "lemond")
 
 
 def get_server_version(lemond_binary: str) -> str:

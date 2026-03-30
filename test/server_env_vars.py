@@ -1,20 +1,18 @@
 """
 Environment variable tests for lemond.
 
-Verifies that every environment variable documented in docs/server/configuration.md
-is picked up by lemond and reflected in the runtime config or server behavior.
+Verifies that legacy LEMONADE_* environment variables are picked up by lemond
+(migrated into config.json on first startup) and reflected in the runtime config.
 
 Usage:
     # Build lemond first, then:
     python test/server_env_vars.py
-    python test/server_env_vars.py --server-binary /path/to/lemond
+    python test/server_env_vars.py --lemond-binary /path/to/lemond
 """
 
 import argparse
-import json
 import os
 import platform
-import signal
 import subprocess
 import sys
 import tempfile
@@ -23,38 +21,23 @@ import unittest
 
 import requests
 
-PORT = 12120
+from utils.test_models import PORT, TIMEOUT_DEFAULT, get_default_lemond_binary
+from utils.server_base import wait_for_server
+
 BASE = f"http://localhost:{PORT}"
 HEALTH = f"{BASE}/v1/health"
 CONFIG = f"{BASE}/internal/config"
 
 IS_MACOS = platform.system() == "Darwin"
 
-
-def get_default_binary():
-    test_dir = os.path.dirname(os.path.abspath(__file__))
-    root = os.path.dirname(test_dir)
-    return os.path.join(root, "build", "lemond")
+_lemond_binary = get_default_lemond_binary()
 
 
-_binary = get_default_binary()
+def start_server(env_overrides=None):
+    """Start lemond with given env overrides in an isolated temp home dir.
 
-
-def wait_for_server(url, timeout=15):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            r = requests.get(url, timeout=2)
-            if r.status_code == 200:
-                return True
-        except requests.ConnectionError:
-            pass
-        time.sleep(0.3)
-    return False
-
-
-def start_server(env_overrides=None, extra_args=None):
-    """Start lemond with given env overrides. Returns subprocess.Popen."""
+    Returns (subprocess.Popen, home_dir).
+    """
     env = os.environ.copy()
     # Isolate from any existing lemonade env vars
     for k in list(env.keys()):
@@ -68,34 +51,37 @@ def start_server(env_overrides=None, extra_args=None):
     if env_overrides:
         env.update(env_overrides)
 
-    cmd = [_binary]
-    if extra_args:
-        cmd.extend(extra_args)
-
     proc = subprocess.Popen(
-        cmd,
+        [_lemond_binary],
         env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     return proc, home_dir
 
 
 def stop_server(proc):
-    if proc.poll() is None:
-        if platform.system() == "Windows":
-            proc.terminate()
-        else:
-            proc.send_signal(signal.SIGTERM)
+    """Stop lemond via /internal/shutdown and wait for port release."""
+    try:
+        requests.post(
+            f"{BASE}/internal/shutdown",
+            timeout=5,
+        )
+    except Exception:
+        pass
+    proc.kill()
+    proc.wait()
+    # Wait for port to be fully released
+    for _ in range(20):
         try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
+            requests.get(f"{BASE}/live", timeout=0.5)
+            time.sleep(0.25)
+        except Exception:
+            break
 
 
 def get_config():
-    return requests.get(CONFIG, timeout=5).json()
+    return requests.get(CONFIG, timeout=TIMEOUT_DEFAULT).json()
 
 
 # ---------------------------------------------------------------------------
@@ -131,13 +117,7 @@ class TestConfigEnvVars(unittest.TestCase):
                 }
             )
         cls.proc, cls.home_dir = start_server(cls.env)
-        if not wait_for_server(HEALTH):
-            out = cls.proc.stdout.read().decode() if cls.proc.stdout else ""
-            err = cls.proc.stderr.read().decode() if cls.proc.stderr else ""
-            stop_server(cls.proc)
-            raise RuntimeError(
-                f"Server failed to start.\nstdout:\n{out}\nstderr:\n{err}"
-            )
+        wait_for_server()
         cls.snapshot = get_config()
 
     @classmethod
@@ -166,7 +146,7 @@ class TestConfigEnvVars(unittest.TestCase):
         self.assertEqual(self.snapshot["max_loaded_models"], 3)
 
     def test_max_loaded_models_in_health(self):
-        health = requests.get(HEALTH, timeout=5).json()
+        health = requests.get(HEALTH, timeout=TIMEOUT_DEFAULT).json()
         # All type slots should reflect max_loaded_models=3
         for slot, val in health["max_models"].items():
             self.assertEqual(val, 3, f"max_models.{slot} should be 3")
@@ -209,13 +189,8 @@ class TestApiKeyEnvVar(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.proc, cls.home_dir = start_server({"LEMONADE_API_KEY": cls.API_KEY})
-        if not wait_for_server(f"{BASE}/live"):
-            out = cls.proc.stdout.read().decode() if cls.proc.stdout else ""
-            err = cls.proc.stderr.read().decode() if cls.proc.stderr else ""
-            stop_server(cls.proc)
-            raise RuntimeError(
-                f"Server failed to start.\nstdout:\n{out}\nstderr:\n{err}"
-            )
+        # /live is unauthenticated, use it to detect readiness
+        wait_for_server()
 
     @classmethod
     def tearDownClass(cls):
@@ -223,14 +198,14 @@ class TestApiKeyEnvVar(unittest.TestCase):
             stop_server(cls.proc)
 
     def test_no_key_rejected(self):
-        r = requests.get(f"{BASE}/v1/health", timeout=5)
+        r = requests.get(f"{BASE}/v1/health", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(r.status_code, 401)
 
     def test_wrong_key_rejected(self):
         r = requests.get(
             f"{BASE}/v1/health",
             headers={"Authorization": "Bearer wrong-key"},
-            timeout=5,
+            timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(r.status_code, 401)
 
@@ -238,19 +213,19 @@ class TestApiKeyEnvVar(unittest.TestCase):
         r = requests.get(
             f"{BASE}/v1/health",
             headers={"Authorization": f"Bearer {self.API_KEY}"},
-            timeout=5,
+            timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(r.status_code, 200)
 
     def test_internal_config_also_requires_key(self):
-        r = requests.get(CONFIG, timeout=5)
+        r = requests.get(CONFIG, timeout=TIMEOUT_DEFAULT)
         self.assertEqual(r.status_code, 401)
 
     def test_internal_config_with_key(self):
         r = requests.get(
             CONFIG,
             headers={"Authorization": f"Bearer {self.API_KEY}"},
-            timeout=5,
+            timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(r.status_code, 200)
 
@@ -268,13 +243,7 @@ class TestDefaults(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.proc, cls.home_dir = start_server()
-        if not wait_for_server(HEALTH):
-            out = cls.proc.stdout.read().decode() if cls.proc.stdout else ""
-            err = cls.proc.stderr.read().decode() if cls.proc.stderr else ""
-            stop_server(cls.proc)
-            raise RuntimeError(
-                f"Server failed to start.\nstdout:\n{out}\nstderr:\n{err}"
-            )
+        wait_for_server()
         cls.snapshot = get_config()
 
     @classmethod
@@ -300,9 +269,13 @@ class TestDefaults(unittest.TestCase):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--server-binary", type=str, default=get_default_binary())
+    parser.add_argument(
+        "--lemond-binary",
+        type=str,
+        default=get_default_lemond_binary(),
+    )
     args, remaining = parser.parse_known_args()
-    _binary = args.server_binary
+    _lemond_binary = args.lemond_binary
 
     # Pass remaining args to unittest
     unittest.main(argv=[sys.argv[0]] + remaining, verbosity=2)

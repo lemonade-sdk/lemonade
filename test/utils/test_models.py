@@ -10,9 +10,30 @@ import os
 import platform
 
 
+def _workspace_root():
+    """Return the workspace root directory."""
+    this_file = os.path.abspath(__file__)
+    utils_dir = os.path.dirname(this_file)
+    test_dir = os.path.dirname(utils_dir)
+    return os.path.dirname(test_dir)
+
+
+def _default_build_binary(name):
+    """Return the default path for a build binary, handling multi-config generators."""
+    root = _workspace_root()
+    if platform.system() == "Windows":
+        release_path = os.path.join(root, "build", "Release", f"{name}.exe")
+        debug_path = os.path.join(root, "build", "Debug", f"{name}.exe")
+        if os.path.exists(release_path):
+            return release_path
+        return debug_path
+    else:
+        return os.path.join(root, "build", name)
+
+
 def get_default_server_binary():
     """
-    Get the default server binary path from the CMake build directory.
+    Get the default lemonade-server binary path from the CMake build directory.
 
     This is the single source of truth for the default server binary path.
     All test files should import this function rather than computing the path themselves.
@@ -20,26 +41,19 @@ def get_default_server_binary():
     Returns:
         Path to lemonade-server binary in the build directory.
     """
-    # Get the workspace root (test/utils/test_models.py -> workspace root)
-    this_file = os.path.abspath(__file__)
-    utils_dir = os.path.dirname(this_file)
-    test_dir = os.path.dirname(utils_dir)
-    workspace_root = os.path.dirname(test_dir)
+    return _default_build_binary("lemonade-server")
 
-    if platform.system() == "Windows":
-        # Visual Studio is a multi-config generator; prefer Release, fall back to Debug
-        release_path = os.path.join(
-            workspace_root, "build", "Release", "lemonade-server.exe"
-        )
-        debug_path = os.path.join(
-            workspace_root, "build", "Debug", "lemonade-server.exe"
-        )
-        if os.path.exists(release_path):
-            return release_path
-        return debug_path
-    else:
-        # Ninja/Make are single-config generators; output is directly in build/
-        return os.path.join(workspace_root, "build", "lemonade-server")
+
+def get_default_lemond_binary():
+    """
+    Get the default lemond binary path from the CMake build directory.
+
+    Used by tests that start lemond directly (env var tests, system-info mock tests).
+
+    Returns:
+        Path to lemond binary in the build directory.
+    """
+    return _default_build_binary("lemond")
 
 
 # Default port for lemonade server

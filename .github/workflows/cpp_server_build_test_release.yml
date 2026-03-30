@@ -536,7 +536,7 @@ jobs:
         run: |
           set -e
           echo "Running environment variable tests..."
-          .venv/bin/python test/server_env_vars.py --server-binary /usr/local/bin/lemond
+          .venv/bin/python test/server_env_vars.py --lemond-binary /usr/local/bin/lemond
           echo "Environment variable tests PASSED!"
 
       - name: Cleanup keychain
@@ -1006,7 +1006,7 @@ jobs:
               $VENV_PYTHON test/server_streaming_errors.py --server-binary "$SERVER_BINARY"
           elif [ "${{ matrix.test_type }}" = "env-vars" ]; then
               echo "Running environment variable tests..."
-              $VENV_PYTHON test/server_env_vars.py --server-binary ./deb-extract/usr/bin/lemond
+              $VENV_PYTHON test/server_env_vars.py --lemond-binary ./deb-extract/usr/bin/lemond
           fi
 
           echo "${{ matrix.test_type }} tests PASSED!"
@@ -1123,7 +1123,7 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "env-vars" ]; then
               echo "Running environment variable tests..."
               LEMOND_BINARY="$(dirname "$SERVER_BINARY")/lemond"
-              $VENV_PYTHON test/server_env_vars.py --server-binary "$LEMOND_BINARY"
+              $VENV_PYTHON test/server_env_vars.py --lemond-binary "$LEMOND_BINARY"
           fi
 
           echo "${{ matrix.test_type }} tests PASSED!"
