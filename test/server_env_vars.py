@@ -176,23 +176,23 @@ class TestConfigEnvVars(unittest.TestCase):
 
     @unittest.skipIf(IS_MACOS, "llamacpp backend selection not applicable on macOS")
     def test_llamacpp_backend(self):
-        self.assertEqual(self.snapshot["llamacpp_backend"], "cpu")
+        self.assertEqual(self.snapshot["llamacpp"]["backend"], "cpu")
 
     @unittest.skipIf(IS_MACOS, "llamacpp args not applicable on macOS")
     def test_llamacpp_args(self):
-        self.assertEqual(self.snapshot["llamacpp_args"], "--flash-attn on")
+        self.assertEqual(self.snapshot["llamacpp"]["args"], "--flash-attn on")
 
     @unittest.skipIf(IS_MACOS, "whispercpp backend selection not applicable on macOS")
     def test_whispercpp_backend(self):
-        self.assertEqual(self.snapshot["whispercpp_backend"], "cpu")
+        self.assertEqual(self.snapshot["whispercpp"]["backend"], "cpu")
 
     @unittest.skipIf(IS_MACOS, "whispercpp args not applicable on macOS")
     def test_whispercpp_args(self):
-        self.assertEqual(self.snapshot["whispercpp_args"], "--convert")
+        self.assertEqual(self.snapshot["whispercpp"]["args"], "--convert")
 
     @unittest.skipIf(IS_MACOS, "FLM is NPU-only, not available on macOS")
     def test_flm_args(self):
-        self.assertEqual(self.snapshot["flm_args"], "--socket 20")
+        self.assertEqual(self.snapshot["flm"]["args"], "--socket 20")
 
 
 # ---------------------------------------------------------------------------
@@ -292,8 +292,7 @@ class TestDefaults(unittest.TestCase):
         self.assertEqual(self.snapshot["max_loaded_models"], 1)
 
     def test_default_ctx_size(self):
-        # ctx_size is a recipe option; absent from snapshot means default (4096)
-        self.assertNotIn("ctx_size", self.snapshot)
+        self.assertEqual(self.snapshot["ctx_size"], 4096)
 
     def test_default_extra_models_dir(self):
         self.assertEqual(self.snapshot["extra_models_dir"], "")

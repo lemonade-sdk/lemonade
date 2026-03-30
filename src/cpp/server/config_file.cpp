@@ -2,11 +2,13 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -79,8 +81,9 @@ json ConfigFile::load(const std::string& home_dir) {
         if (!fs::exists(home_path)) {
             fs::create_directories(home_path);
         }
-        save(home_dir, defaults);
-        return defaults;
+        json config = migrate_from_env(defaults);
+        save(home_dir, config);
+        return config;
     }
 
     // Clean up stale temp file from a previous interrupted save
@@ -165,6 +168,117 @@ void ConfigFile::save(const std::string& home_dir, const json& config) {
         }
         fs::remove(temp_path);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Environment-variable migration
+// ---------------------------------------------------------------------------
+
+struct EnvMapping {
+    const char* env_name;
+    const char* top_key;
+    const char* nested_key; // nullptr for top-level keys
+};
+
+static const EnvMapping env_mappings[] = {
+    // Top-level settings
+    {"LEMONADE_PORT",                    "port",                     nullptr},
+    {"LEMONADE_HOST",                    "host",                     nullptr},
+    {"LEMONADE_LOG_LEVEL",               "log_level",                nullptr},
+    {"LEMONADE_GLOBAL_TIMEOUT",          "global_timeout",           nullptr},
+    {"LEMONADE_MAX_LOADED_MODELS",       "max_loaded_models",        nullptr},
+    {"LEMONADE_NO_BROADCAST",            "no_broadcast",             nullptr},
+    {"LEMONADE_EXTRA_MODELS_DIR",        "extra_models_dir",         nullptr},
+    {"LEMONADE_CTX_SIZE",                "ctx_size",                 nullptr},
+    {"LEMONADE_OFFLINE",                 "offline",                  nullptr},
+    {"LEMONADE_DISABLE_MODEL_FILTERING", "disable_model_filtering",  nullptr},
+    {"LEMONADE_ENABLE_DGPU_GTT",         "enable_dgpu_gtt",          nullptr},
+    // llamacpp
+    {"LEMONADE_LLAMACPP",                "llamacpp",  "backend"},
+    {"LEMONADE_LLAMACPP_ARGS",           "llamacpp",  "args"},
+    {"LEMONADE_LLAMACPP_PREFER_SYSTEM",  "llamacpp",  "prefer_system"},
+    {"LEMONADE_LLAMACPP_ROCM_BIN",       "llamacpp",  "rocm_bin"},
+    {"LEMONADE_LLAMACPP_VULKAN_BIN",     "llamacpp",  "vulkan_bin"},
+    {"LEMONADE_LLAMACPP_CPU_BIN",        "llamacpp",  "cpu_bin"},
+    // whispercpp
+    {"LEMONADE_WHISPERCPP",              "whispercpp", "backend"},
+    {"LEMONADE_WHISPERCPP_ARGS",         "whispercpp", "args"},
+    {"LEMONADE_WHISPERCPP_CPU_BIN",      "whispercpp", "cpu_bin"},
+    {"LEMONADE_WHISPERCPP_NPU_BIN",      "whispercpp", "npu_bin"},
+    // sdcpp
+    {"LEMONADE_SDCPP",                   "sdcpp", "backend"},
+    {"LEMONADE_STEPS",                   "sdcpp", "steps"},
+    {"LEMONADE_CFG_SCALE",               "sdcpp", "cfg_scale"},
+    {"LEMONADE_WIDTH",                   "sdcpp", "width"},
+    {"LEMONADE_HEIGHT",                  "sdcpp", "height"},
+    {"LEMONADE_SDCPP_CPU_BIN",           "sdcpp", "cpu_bin"},
+    {"LEMONADE_SDCPP_ROCM_BIN",          "sdcpp", "rocm_bin"},
+    {"LEMONADE_SDCPP_VULKAN_BIN",        "sdcpp", "vulkan_bin"},
+    // flm
+    {"LEMONADE_FLM_ARGS",               "flm", "args"},
+    {"LEMONADE_FLM_LINUX_BETA",          "flm", "linux_beta"},
+    // ryzenai
+    {"LEMONADE_RYZENAI_SERVER_BIN",      "ryzenai", "server_bin"},
+    // kokoro
+    {"LEMONADE_KOKORO_CPU_BIN",          "kokoro", "cpu_bin"},
+};
+
+/// Parse a string value to match the JSON type of the corresponding default.
+static json parse_env_value(const std::string& value, const json& default_val) {
+    if (default_val.is_boolean()) {
+        std::string lower = value;
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        return (lower == "1" || lower == "true" || lower == "yes");
+    }
+    if (default_val.is_number_integer()) {
+        try { return std::stoi(value); } catch (...) { return default_val; }
+    }
+    if (default_val.is_number_float()) {
+        try { return std::stod(value); } catch (...) { return default_val; }
+    }
+    return value;
+}
+
+json ConfigFile::migrate_from_env(const json& defaults) {
+    json overlay = json::object();
+    std::vector<std::string> migrated;
+
+    for (const auto& m : env_mappings) {
+        std::string val = utils::get_environment_variable_utf8(m.env_name);
+        if (val.empty()) continue;
+
+        // Look up the default to determine the expected type
+        json default_val;
+        if (m.nested_key == nullptr) {
+            if (defaults.contains(m.top_key)) default_val = defaults[m.top_key];
+        } else {
+            if (defaults.contains(m.top_key) && defaults[m.top_key].contains(m.nested_key))
+                default_val = defaults[m.top_key][m.nested_key];
+        }
+
+        json parsed = parse_env_value(val, default_val);
+
+        if (m.nested_key == nullptr) {
+            overlay[m.top_key] = parsed;
+        } else {
+            if (!overlay.contains(m.top_key)) overlay[m.top_key] = json::object();
+            overlay[m.top_key][m.nested_key] = parsed;
+        }
+
+        migrated.push_back(m.env_name);
+    }
+
+    if (!migrated.empty()) {
+        std::cerr << "Migrated config.json from environment variables: ";
+        for (size_t i = 0; i < migrated.size(); ++i) {
+            if (i > 0) std::cerr << ", ";
+            std::cerr << migrated[i];
+        }
+        std::cerr << std::endl;
+    }
+
+    return utils::JsonUtils::merge(defaults, overlay);
 }
 
 } // namespace lemon
