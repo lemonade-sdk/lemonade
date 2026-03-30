@@ -16,6 +16,12 @@
 #include <algorithm>
 #include <lemon/utils/aixlog.hpp>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/wait.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace lemon {
@@ -120,29 +126,35 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
     // Run flm pull command (with debug output if enabled)
     auto handle = utils::ProcessManager::start_process(flm_path, args, "", is_debug());
 
-    // Check if process exited immediately (e.g., model already cached)
-    if (!utils::ProcessManager::is_running(handle)) {
-        int exit_code = utils::ProcessManager::get_exit_code(handle);
-        if (exit_code != 0) {
-            LOG(ERROR, "FastFlowLM") << "FLM pull failed with exit code: " << exit_code << std::endl;
-            throw std::runtime_error("FLM pull failed with exit code: " + std::to_string(exit_code));
-        }
-        LOG(INFO, "FastFlowLM") << "Model pull completed immediately (already cached)" << std::endl;
-        return checkpoint;
-    }
-
-    // Wait for process to complete
+    // Wait for process to complete (handles both fast exits and long downloads)
+    // NOTE: On Linux, is_running() reaps the process via waitpid(), making the
+    // exit code unavailable to get_exit_code(). Use WaitForSingleObject/waitpid
+    // directly instead of the is_running/get_exit_code combo.
     int timeout_seconds = 300; // 5 minutes
     LOG(INFO, "FastFlowLM") << "Waiting for model download to complete..." << std::endl;
     bool completed = false;
+    int exit_code = -1;
+
+#ifdef _WIN32
+    DWORD wait_result = WaitForSingleObject(handle.handle, timeout_seconds * 1000);
+    if (wait_result == WAIT_OBJECT_0) {
+        DWORD win_exit_code;
+        GetExitCodeProcess(handle.handle, &win_exit_code);
+        exit_code = static_cast<int>(win_exit_code);
+        completed = true;
+    }
+#else
     for (int i = 0; i < timeout_seconds * 10; ++i) {
-        if (!utils::ProcessManager::is_running(handle)) {
-            int exit_code = utils::ProcessManager::get_exit_code(handle);
-            if (exit_code != 0) {
-                LOG(ERROR, "FastFlowLM") << "FLM pull failed with exit code: " << exit_code << std::endl;
-                throw std::runtime_error("FLM pull failed with exit code: " + std::to_string(exit_code));
-            }
+        int status;
+        pid_t result = waitpid(handle.pid, &status, WNOHANG);
+        if (result > 0) {
+            exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
             completed = true;
+            break;
+        } else if (result < 0) {
+            // Process doesn't exist or error
+            completed = true;
+            exit_code = -1;
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -152,10 +164,16 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
             LOG(INFO, "FastFlowLM") << "Still downloading... (" << (i/10) << "s elapsed)" << std::endl;
         }
     }
+#endif
 
     if (!completed) {
         utils::ProcessManager::stop_process(handle);
         throw std::runtime_error("FLM pull timed out after " + std::to_string(timeout_seconds) + " seconds");
+    }
+
+    if (exit_code != 0) {
+        LOG(ERROR, "FastFlowLM") << "FLM pull failed with exit code: " << exit_code << std::endl;
+        throw std::runtime_error("FLM pull failed with exit code: " + std::to_string(exit_code));
     }
 
     LOG(INFO, "FastFlowLM") << "Model pull completed successfully" << std::endl;
