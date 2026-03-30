@@ -769,9 +769,14 @@ sys.exit(0)
                 payload = json.load(f)
 
             argv = payload["argv"]
-            self.assertIn("--oss", argv)
+            self.assertIn("-c", argv)
             self.assertIn("-m", argv)
             self.assertIn(ENDPOINT_TEST_MODEL, argv)
+            self.assertTrue(
+                any(arg.startswith("model_providers.lemonade=") for arg in argv),
+                "Expected injected Lemonade model provider config in codex args",
+            )
+            self.assertIn('model_provider="lemonade"', argv)
             self.assertTrue(payload["env"]["OPENAI_BASE_URL"].endswith("/v1/"))
             self.assertEqual(payload["env"]["OPENAI_API_KEY"], "lemonade")
 

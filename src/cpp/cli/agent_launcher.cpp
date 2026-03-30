@@ -150,12 +150,24 @@ void configure_codex_agent(const std::string& base_url,
         {"OPENAI_API_KEY", resolved_api_key},
         {"LEMONADE_API_KEY", resolved_api_key}
     };
+
+    const std::string responses_base_url = base_url + "/v1";
+    const std::string provider_name = "lemonade";
+    const std::string provider_config =
+        "model_providers." + provider_name + "={ name='Lemonade', base_url='" + responses_base_url +
+        "', wire_api='responses', env_key='OPENAI_API_KEY', requires_openai_auth=false, supports_websockets=false }";
+
     config.extra_args = {
-        "--oss",
+        "-c",
+        provider_config,
+        "-c",
+        "model_provider=\"" + provider_name + "\"",
+        "-c",
+        "show_raw_agent_reasoning=true",
+        "-c",
+        "web_search=\"disabled\"",
         "-m",
-        model,
-        "--config",
-        "web_search=\"disabled\""
+        model
     };
     config.install_instructions = "Install Codex CLI and ensure 'codex' is on PATH.";
 }
