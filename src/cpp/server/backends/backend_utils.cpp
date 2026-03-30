@@ -167,8 +167,10 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_install_directory(const std::string& dir_name, const std::string& backend) {
-        fs::path ret = (fs::path(utils::get_downloaded_bin_dir()) / dir_name);
-        return ((backend != "") ? (ret / backend) : ret).string();
+        // Use fs::path throughout to ensure consistent native separators
+        fs::path ret = fs::path(utils::get_downloaded_bin_dir()) / dir_name;
+        if (!backend.empty()) ret /= backend;
+        return ret.make_preferred().string();
     }
 
     std::string BackendUtils::find_external_backend_binary(const std::string& recipe, const std::string& backend) {

@@ -174,7 +174,7 @@ bool is_safe_executable_path(const std::string& path) {
 
 std::string find_flm_executable() {
     // First check the standard Lemonade install directory
-    std::string install_dir = get_downloaded_bin_dir() + "/flm/npu";
+    std::string install_dir = (fs::path(get_downloaded_bin_dir()) / "flm" / "npu").make_preferred().string();
 #ifdef _WIN32
     std::string binary_name = "flm.exe";
 #else
@@ -421,7 +421,8 @@ std::string get_runtime_dir() {
 std::string get_downloaded_bin_dir() {
     // Use cache directory on all platforms for consistent multi-user support
     // This is important for All Users installs on Windows where Program Files is read-only
-    std::string bin_dir = get_cache_dir() + "/bin";
+    // Use fs::path to ensure native path separators (avoids cmd.exe issues on Windows)
+    std::string bin_dir = (fs::path(get_cache_dir()) / "bin").make_preferred().string();
 
     // Ensure directory exists
     fs::path bin_path = path_from_utf8(bin_dir);
