@@ -6293,9 +6293,6 @@ input::-webkit-calendar-picker-indicator {
 }
 
 .save-image-button {
-    position: absolute;
-    bottom: 8px;
-    right: 8px;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -6406,6 +6403,47 @@ input::-webkit-calendar-picker-indicator {
 .image-setting input[type="number"]::-webkit-inner-spin-button {
     -webkit-appearance: none;
     margin: 0;
+}
+
+/* Image Action Buttons (below generated images) */
+.image-action-buttons {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+/* Image Reference Upload */
+.image-reference-preview {
+    position: relative;
+    display: inline-block;
+    padding-bottom: 8px;
+}
+
+.image-reference-thumb {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid #333;
+}
+
+.image-reference-dropzone {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    border: 1px dashed #444;
+    border-radius: 8px;
+    color: #888;
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+    margin-bottom: 8px;
+}
+
+.image-reference-dropzone:hover {
+    border-color: #666;
+    color: #ccc;
 }
 
 /* ========================================
@@ -6500,190 +6538,6 @@ input::-webkit-calendar-picker-indicator {
     border-radius: 4px;
     color: #f44336;
     font-size: 13px;
-}
-
-/* Image Generation */
-.image-generation-item {
-    margin-bottom: 24px;
-    padding: 16px;
-    background: #1a1a1a;
-    border-radius: 12px;
-    border: 1px solid #333;
-}
-
-.image-prompt-display {
-    margin-bottom: 12px;
-    color: #888;
-    font-size: 14px;
-}
-
-.prompt-label {
-    font-weight: 600;
-    margin-right: 8px;
-    color: #666;
-}
-
-.prompt-text {
-    color: #aaa;
-}
-
-.generated-images-row {
-    display: flex;
-    gap: 16px;
-}
-
-.generated-images-row.side-by-side {
-    flex-direction: row;
-    align-items: stretch;
-}
-
-.generated-images-row.side-by-side .generated-image-column {
-    flex: 1;
-    min-width: 0;
-}
-
-.generated-image-column {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-}
-
-.image-wrapper {
-    position: relative;
-    display: inline-block;
-    line-height: 0;
-}
-
-.image-label {
-    font-size: 11px;
-    font-weight: 600;
-    color: #888;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 4px;
-}
-
-.generated-image {
-    max-width: 100%;
-    max-height: 512px;
-    border-radius: 8px;
-    display: block;
-}
-
-.save-image-button {
-    position: absolute;
-    bottom: 8px;
-    right: 8px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    background: rgba(0, 0, 0, 0.75);
-    color: #fff;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    padding: 5px 8px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 11px;
-    transition: background 0.2s;
-    white-space: nowrap;
-}
-
-.save-image-button:hover {
-    background: rgba(0, 0, 0, 0.9);
-}
-
-.upscale-placeholder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    flex: 1;
-    align-self: stretch;
-    min-height: 200px;
-    background: #111;
-    border: 1px dashed #444;
-    border-radius: 8px;
-    color: #888;
-    font-size: 13px;
-}
-
-.image-generating-indicator {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 20px;
-    color: #888;
-}
-
-.generating-spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid #333;
-    border-top-color: #888;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-/* Image Settings Panel */
-.image-settings-panel {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 16px;
-    padding: 12px 16px;
-    background: #0f0f0f;
-    border-bottom: 1px solid #333;
-}
-
-.image-setting {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.image-setting label {
-    font-size: 11px;
-    color: #888;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.image-setting input,
-.image-setting select {
-    background: #1a1a1a;
-    border: 1px solid #333;
-    border-radius: 4px;
-    color: #fff;
-    padding: 6px 8px;
-    font-size: 13px;
-    width: 80px;
-}
-
-.image-setting input:focus,
-.image-setting select:focus {
-    outline: none;
-    border-color: #555;
-}
-
-.image-setting input:disabled,
-.image-setting select:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.image-setting input[type="number"] {
-    -moz-appearance: textfield;
-}
-
-.image-setting input[type="number"]::-webkit-outer-spin-button,
-.image-setting input[type="number"]::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
 }
 
 /* Status Bar Styles */
