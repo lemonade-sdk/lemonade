@@ -535,6 +535,18 @@ jobs:
           .venv/bin/python test/server_streaming_errors.py --server-binary /usr/local/bin/lemonade-server
           echo "Streaming error tests PASSED!"
 
+      - name: Run environment variable tests (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+        run: |
+          set -e
+          echo "Running environment variable tests..."
+          .venv/bin/python test/server_env_vars.py --server-binary /usr/local/bin/lemond
+          echo "Environment variable tests PASSED!"
+
       - name: Cleanup keychain
         if: always() && steps.check_signing.outputs.has_signing == 'true'
         shell: bash
@@ -955,7 +967,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test_type: [cli, endpoints, system-info, ollama, llamacpp-system, streaming-errors]
+        test_type: [cli, endpoints, system-info, ollama, llamacpp-system, streaming-errors, env-vars]
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -1024,6 +1036,9 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "streaming-errors" ]; then
               echo "Running streaming error termination tests..."
               $VENV_PYTHON test/server_streaming_errors.py --server-binary "$SERVER_BINARY"
+          elif [ "${{ matrix.test_type }}" = "env-vars" ]; then
+              echo "Running environment variable tests..."
+              $VENV_PYTHON test/server_env_vars.py --server-binary ./deb-extract/usr/bin/lemond
           fi
 
           echo "${{ matrix.test_type }} tests PASSED!"
@@ -1039,6 +1054,9 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest]
         test_type: [cli, endpoints, ollama, llamacpp-system, streaming-errors]
+        include:
+          - os: macos-latest
+            test_type: env-vars
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -1141,6 +1159,10 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "streaming-errors" ]; then
               echo "Running streaming error termination tests..."
               $VENV_PYTHON test/server_streaming_errors.py --server-binary "$SERVER_BINARY"
+          elif [ "${{ matrix.test_type }}" = "env-vars" ]; then
+              echo "Running environment variable tests..."
+              LEMOND_BINARY="$(dirname "$SERVER_BINARY")/lemond"
+              $VENV_PYTHON test/server_env_vars.py --server-binary "$LEMOND_BINARY"
           fi
 
           echo "${{ matrix.test_type }} tests PASSED!"
