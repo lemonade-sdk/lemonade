@@ -23,7 +23,7 @@ namespace lemon::backends {
         const std::string binary;
 
         using InstallParamsFn = InstallParams(*)(const std::string& backend, const std::string& version);
-        InstallParamsFn install_params_fn;  // nullptr for FLM (special installer)
+        InstallParamsFn install_params_fn;  // nullptr for backends with no auto-install
 
         BackendSpec(std::string r, std::string b, InstallParamsFn fn = nullptr)
             : recipe(std::move(r)), binary(std::move(b)), install_params_fn(fn) {}

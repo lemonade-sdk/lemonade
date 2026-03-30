@@ -120,16 +120,21 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
     // Run flm pull command (with debug output if enabled)
     auto handle = utils::ProcessManager::start_process(flm_path, args, "", is_debug());
 
-    // Wait for download to complete
+    // Check if process exited immediately (e.g., model already cached)
     if (!utils::ProcessManager::is_running(handle)) {
         int exit_code = utils::ProcessManager::get_exit_code(handle);
-        LOG(ERROR, "FastFlowLM") << "FLM pull failed with exit code: " << exit_code << std::endl;
-        throw std::runtime_error("FLM pull failed");
+        if (exit_code != 0) {
+            LOG(ERROR, "FastFlowLM") << "FLM pull failed with exit code: " << exit_code << std::endl;
+            throw std::runtime_error("FLM pull failed with exit code: " + std::to_string(exit_code));
+        }
+        LOG(INFO, "FastFlowLM") << "Model pull completed immediately (already cached)" << std::endl;
+        return checkpoint;
     }
 
     // Wait for process to complete
     int timeout_seconds = 300; // 5 minutes
     LOG(INFO, "FastFlowLM") << "Waiting for model download to complete..." << std::endl;
+    bool completed = false;
     for (int i = 0; i < timeout_seconds * 10; ++i) {
         if (!utils::ProcessManager::is_running(handle)) {
             int exit_code = utils::ProcessManager::get_exit_code(handle);
@@ -137,6 +142,7 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
                 LOG(ERROR, "FastFlowLM") << "FLM pull failed with exit code: " << exit_code << std::endl;
                 throw std::runtime_error("FLM pull failed with exit code: " + std::to_string(exit_code));
             }
+            completed = true;
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -145,6 +151,11 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
         if (i % 50 == 0 && i > 0) {
             LOG(INFO, "FastFlowLM") << "Still downloading... (" << (i/10) << "s elapsed)" << std::endl;
         }
+    }
+
+    if (!completed) {
+        utils::ProcessManager::stop_process(handle);
+        throw std::runtime_error("FLM pull timed out after " + std::to_string(timeout_seconds) + " seconds");
     }
 
     LOG(INFO, "FastFlowLM") << "Model pull completed successfully" << std::endl;

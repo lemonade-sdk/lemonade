@@ -62,14 +62,7 @@ namespace lemon::backends {
 #endif
 
     static void ensure_directory(const std::string& dir) {
-#ifdef _WIN32
-        std::string cmd = "if not exist \"" + dir + "\" mkdir \"" + dir + "\" >nul 2>&1";
-        std::string unused;
-        lemon::utils::ProcessManager::run_command(cmd, unused);
-#else
-        std::string cmd = "mkdir -p \"" + dir + "\"";
-        system(cmd.c_str());
-#endif
+        fs::create_directories(dir);
     }
 
     bool BackendUtils::extract_zip(const std::string& zip_path, const std::string& dest_dir, const std::string& backend_name) {
