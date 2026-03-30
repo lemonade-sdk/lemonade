@@ -606,6 +606,7 @@ class SystemInfoMockTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
 
                 data = response.json()
+                print(f"Full /system-info response:\n{json.dumps(data, indent=2)}")
                 self.assertIn(
                     "recipes", data, "Response should contain 'recipes' section"
                 )
