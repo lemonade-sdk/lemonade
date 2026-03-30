@@ -143,6 +143,9 @@ void SDServer::load(const std::string& model_name,
         "-m",
         "--model",
         "--diffusion-model",
+        "--llm",
+        "--vae",
+        "-v",
         "--listen-port"
     };
 
