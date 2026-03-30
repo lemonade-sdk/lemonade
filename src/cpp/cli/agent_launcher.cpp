@@ -130,6 +130,7 @@ void configure_claude_agent(const std::string& base_url,
 void configure_codex_agent(const std::string& base_url,
                            const std::string& model,
                            const std::string& api_key,
+                           const AgentLaunchOptions& launch_options,
                            AgentConfig& config) {
     const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
 
@@ -152,23 +153,28 @@ void configure_codex_agent(const std::string& base_url,
     };
 
     const std::string responses_base_url = base_url + "/v1";
-    const std::string provider_name = "lemonade";
+    const std::string provider_name = launch_options.codex_model_provider.empty()
+        ? "lemonade"
+        : launch_options.codex_model_provider;
     const std::string provider_config =
         "model_providers." + provider_name + "={ name='Lemonade', base_url='" + responses_base_url +
         "', wire_api='responses', env_key='OPENAI_API_KEY', requires_openai_auth=false, supports_websockets=false }";
 
-    config.extra_args = {
-        "-c",
-        provider_config,
-        "-c",
-        "model_provider=\"" + provider_name + "\"",
-        "-c",
-        "show_raw_agent_reasoning=true",
-        "-c",
-        "web_search=\"disabled\"",
-        "-m",
-        model
-    };
+    config.extra_args = {};
+    if (!launch_options.codex_use_user_config) {
+        config.extra_args.push_back("-c");
+        config.extra_args.push_back(provider_config);
+    }
+
+    config.extra_args.push_back("-c");
+    config.extra_args.push_back("model_provider=\"" + provider_name + "\"");
+    config.extra_args.push_back("-c");
+    config.extra_args.push_back("show_raw_agent_reasoning=true");
+    config.extra_args.push_back("-c");
+    config.extra_args.push_back("web_search=\"disabled\"");
+    config.extra_args.push_back("-m");
+    config.extra_args.push_back(model);
+
     config.install_instructions = "Install Codex CLI and ensure 'codex' is on PATH.";
 }
 
@@ -179,6 +185,7 @@ bool build_agent_config(const std::string& agent,
                         int port,
                         const std::string& model,
                         const std::string& api_key,
+                        const AgentLaunchOptions& launch_options,
                         AgentConfig& config,
                         std::string& error_message) {
     const std::string base = build_server_base_url(host, port);
@@ -189,7 +196,7 @@ bool build_agent_config(const std::string& agent,
     }
 
     if (agent == "codex") {
-        configure_codex_agent(base, model, api_key, config);
+        configure_codex_agent(base, model, api_key, launch_options, config);
         return true;
     }
 

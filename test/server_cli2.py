@@ -224,6 +224,16 @@ sys.exit(0)
         env["PATH"] = stub_dir
         return env
 
+    def _write_codex_config(self, env, content):
+        """Write a codex config.toml under the configured XDG config root."""
+        config_home = env.get("XDG_CONFIG_HOME", "")
+        codex_dir = os.path.join(config_home, "codex")
+        os.makedirs(codex_dir, exist_ok=True)
+        config_path = os.path.join(codex_dir, "config.toml")
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return config_path
+
     # =============================================================================
     # Status Tests
     # =============================================================================
@@ -818,8 +828,151 @@ sys.exit(0)
                 payload["env"]["ANTHROPIC_BASE_URL"], f"http://localhost:{PORT}"
             )
 
-    def test_115_launch_with_model_and_directory_flags_is_deterministic(self):
-        """A provided model should skip import flow even when directory flags are present."""
+    def test_102c_launch_codex_use_user_config_default_provider(self):
+        """Codex launch --use-user-config should select provider without injecting provider config."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(
+                temp_dir, "codex_capture_user_config_default.json"
+            )
+            self._write_fake_agent(temp_dir, "codex", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+            self._write_codex_config(
+                env, '[model_providers.lemonade]\nname = "Lemonade"\n'
+            )
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "codex",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--use-recipe",
+                    "--use-user-config",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            argv = payload["argv"]
+            self.assertIn('model_provider="lemonade"', argv)
+            self.assertFalse(
+                any(arg.startswith("model_providers.lemonade=") for arg in argv)
+            )
+
+    def test_102d_launch_codex_use_user_config_custom_provider(self):
+        """Codex launch --use-user-config PROVIDER should target custom provider name."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(
+                temp_dir, "codex_capture_user_config_custom.json"
+            )
+            self._write_fake_agent(temp_dir, "codex", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+            self._write_codex_config(
+                env, '[model_providers.custom-provider]\nname = "Custom"\n'
+            )
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "codex",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--use-recipe",
+                    "--use-user-config",
+                    "custom-provider",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            argv = payload["argv"]
+            self.assertIn('model_provider="custom-provider"', argv)
+            self.assertFalse(
+                any(arg.startswith("model_providers.custom-provider=") for arg in argv)
+            )
+
+    def test_102e_launch_codex_use_user_config_missing_config_fails(self):
+        """Codex --use-user-config should fail early when no config.toml exists."""
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            env = self._build_missing_agent_env(temp_dir)
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "codex",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--use-recipe",
+                    "--use-user-config",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            output = result.stdout + result.stderr
+            self.assertIn("no Codex config.toml was found", output)
+
+    def test_102f_launch_codex_use_user_config_missing_provider_fails(self):
+        """Codex --use-user-config should fail when provider is missing from config.toml."""
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            env = self._build_missing_agent_env(temp_dir)
+            self._write_codex_config(env, '[model_providers.other]\nname = "Other"\n')
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "codex",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--use-recipe",
+                    "--use-user-config",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            output = result.stdout + result.stderr
+            self.assertIn("Codex provider 'lemonade' not found", output)
+
+    def test_102g_launch_claude_use_user_config_rejected(self):
+        """--use-user-config should be rejected for non-codex agents."""
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            env = self._build_missing_agent_env(temp_dir)
+            result = run_cli_command(
+                [
+                    "launch",
+                    "claude",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--use-recipe",
+                    "--use-user-config",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            output = result.stdout + result.stderr
+            self.assertIn("only supported for the codex agent", output)
+
+    def test_103_launch_use_recipe_with_repo_flags_is_deterministic(self):
+        """--use-recipe should skip import flow even when repo flags are present."""
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
             env = self._build_missing_agent_env(temp_dir)
 
