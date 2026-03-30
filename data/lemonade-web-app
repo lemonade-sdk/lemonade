@@ -16,7 +16,12 @@ if [ -f ~/.config/lemonade/lemonade.conf ]; then
     source ~/.config/lemonade/lemonade.conf
 fi
 
-URL="http://${LEMONADE_HOST}:${LEMONADE_PORT}/"
+# If listening on localhost always run on localhost for WMClass
+if [ "${LEMONADE_HOST}" = "0.0.0.0" ]; then
+    LEMONADE_HOST="localhost"
+fi
+
+URL="http://${LEMONADE_HOST}:${LEMONADE_PORT}/lemonade"
 
 # Prefer chromium based browsers otherwise xdg-open
 if [ "$(echo "${LEMONADE_PREFER_CHROMIUM:-true}" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
