@@ -16,7 +16,7 @@ LIMITATIONS:
 
 Usage:
     python server_system_info.py
-    python server_system_info.py --server-binary /path/to/lemonade-server
+    python server_system_info.py --lemond-binary /path/to/lemond
 """
 
 import json
@@ -26,7 +26,6 @@ import shutil
 import tempfile
 import unittest
 import subprocess
-import time
 import sys
 import argparse
 
@@ -35,7 +34,7 @@ try:
 except ImportError as e:
     raise ImportError("You must `pip install requests` to run this test", e)
 
-from utils.test_models import PORT, TIMEOUT_DEFAULT, get_default_server_binary
+from utils.test_models import PORT, TIMEOUT_DEFAULT
 from utils.server_base import wait_for_server
 
 # Detect current platform for skipping incompatible tests
@@ -46,21 +45,37 @@ IS_X86_64 = platform.machine().lower() in ("x86_64", "amd64")
 IS_ARM64 = platform.machine().lower() in ("arm64", "aarch64")
 
 
-def get_server_version(server_binary: str) -> str:
+def get_default_lemond_binary():
+    """Get the default lemond binary path from the CMake build directory."""
+    this_file = os.path.abspath(__file__)
+    test_dir = os.path.dirname(this_file)
+    workspace_root = os.path.dirname(test_dir)
+
+    if platform.system() == "Windows":
+        release_path = os.path.join(workspace_root, "build", "Release", "lemond.exe")
+        debug_path = os.path.join(workspace_root, "build", "Debug", "lemond.exe")
+        if os.path.exists(release_path):
+            return release_path
+        return debug_path
+    else:
+        return os.path.join(workspace_root, "build", "lemond")
+
+
+def get_server_version(lemond_binary: str) -> str:
     """
-    Get the lemonade server version by calling --version.
+    Get the lemond server version by calling --version.
 
     The cache uses the version to decide if hardware needs to be re-detected.
     If the mock version doesn't match, the server will re-detect real hardware.
     """
     try:
         result = subprocess.run(
-            [server_binary, "--version"],
+            [lemond_binary, "--version"],
             capture_output=True,
             text=True,
             timeout=10,
         )
-        # Output format: "lemonade-server version X.Y.Z"
+        # Output format: "lemond version X.Y.Z"
         output = result.stdout.strip()
         if "version" in output.lower():
             # Extract version number
@@ -469,21 +484,6 @@ MOCK_HARDWARE_CONFIGS = {
 }
 
 
-def stop_server(server_binary):
-    """Stop the lemonade server."""
-    try:
-        result = subprocess.run(
-            [server_binary, "stop"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        # Give server time to fully stop
-        time.sleep(2)
-    except Exception as e:
-        print(f"Warning: failed to stop server: {e}")
-
-
 class SystemInfoMockTests(unittest.TestCase):
     """Tests for /system-info with mock hardware configurations."""
 
@@ -494,20 +494,18 @@ class SystemInfoMockTests(unittest.TestCase):
             description="Test system-info with mock hardware"
         )
         parser.add_argument(
-            "--server-binary",
+            "--lemond-binary",
             type=str,
-            default=get_default_server_binary(),
-            help="Path to server binary",
+            default=get_default_lemond_binary(),
+            help="Path to lemond binary",
         )
         args, _ = parser.parse_known_args()
-        cls.server_binary = args.server_binary
+        cls.lemond_binary = args.lemond_binary
+        print(f"[SETUP] Using lemond binary: {cls.lemond_binary}")
 
         # Get the server version dynamically for cache compatibility
-        cls.server_version = get_server_version(cls.server_binary)
+        cls.server_version = get_server_version(cls.lemond_binary)
         print(f"[SETUP] Using server version: {cls.server_version}")
-
-        # Ensure any existing server is stopped
-        stop_server(cls.server_binary)
 
     def check_platform_requirements(self, config: dict, config_name: str) -> bool:
         """
@@ -583,16 +581,8 @@ class SystemInfoMockTests(unittest.TestCase):
             with open(config_file, "w") as f:
                 json.dump({"log_level": "debug"}, f)
 
-            # Start server with mock home dir
-            # Find lemond binary next to the server_binary (lemonade-server)
-            server_dir = os.path.dirname(self.server_binary)
-            lemond_binary = os.path.join(server_dir, "lemond")
-            if not os.path.exists(lemond_binary):
-                # Fall back to legacy shim
-                lemond_binary = self.server_binary
-                cmd = [lemond_binary, "serve", "--no-tray", "--log-level", "debug"]
-            else:
-                cmd = [lemond_binary, temp_cache_dir]
+            # Start lemond with the temp dir as its home directory
+            cmd = [self.lemond_binary, temp_cache_dir]
             print(f"Starting server: {' '.join(cmd)}")
 
             env = os.environ.copy()
@@ -673,8 +663,14 @@ class SystemInfoMockTests(unittest.TestCase):
                         print(f"  [OK] {recipe}/{backend}: state=unsupported")
 
             finally:
-                # Stop the server
-                stop_server(self.server_binary)
+                # Stop the server by sending shutdown request, then terminate
+                try:
+                    requests.post(
+                        f"http://localhost:{PORT}/internal/shutdown",
+                        timeout=5,
+                    )
+                except Exception:
+                    pass
                 process.terminate()
                 try:
                     process.wait(timeout=5)
