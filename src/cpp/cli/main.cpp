@@ -7,6 +7,7 @@
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/network_beacon.h>
+#include <lemon/utils/custom_args.h>
 #include <CLI/CLI.hpp>
 #include <iostream>
 #include <string>
@@ -112,6 +113,7 @@ struct CliConfig {
     bool json_output = false;
     bool codex_use_user_config = false;
     std::string codex_model_provider = "lemonade";
+    std::string agent_args;
 };
 
 static std::string expand_home_path(const std::string& path) {
@@ -513,6 +515,11 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         std::cout << "Launch auth: no API key provided; using default agent auth token." << std::endl;
     } else {
         std::cout << "Launch auth: API key provided and propagated to the launched agent." << std::endl;
+    }
+
+    if (!config.agent_args.empty()) {
+        std::vector<std::string> user_args = lemon::utils::parse_custom_args(config.agent_args);
+        agent_config.extra_args.insert(agent_config.extra_args.end(), user_args.begin(), user_args.end());
     }
 
     // Find agent binary
@@ -1063,6 +1070,10 @@ int main(int argc, char* argv[]) {
         ->type_name("PROVIDER")
         ->default_val(config.codex_model_provider)
         ->expected(0, 1);
+    launch_cmd->add_option("--agent-args", config.agent_args,
+        "Custom arguments to pass directly to the launched agent process")
+        ->type_name("ARGS")
+        ->default_val(config.agent_args);
     lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
 
     // Scan options

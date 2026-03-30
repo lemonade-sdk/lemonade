@@ -971,6 +971,40 @@ sys.exit(0)
             output = result.stdout + result.stderr
             self.assertIn("only supported for the codex agent", output)
 
+    def test_102h_launch_agent_args_passthrough(self):
+        """--agent-args should be tokenized and appended to agent argv."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "claude_capture_agent_args.json")
+            self._write_fake_agent(temp_dir, "claude", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "claude",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--use-recipe",
+                    "--agent-args",
+                    "--approval-mode never --custom 'a b'",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            argv = payload["argv"]
+            self.assertIn("--approval-mode", argv)
+            self.assertIn("never", argv)
+            self.assertIn("--custom", argv)
+            self.assertIn("a b", argv)
+
     def test_103_launch_use_recipe_with_repo_flags_is_deterministic(self):
         """--use-recipe should skip import flow even when repo flags are present."""
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
@@ -1064,6 +1098,14 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
             "Remote recipe JSON filename used only if you choose recipe import at prompt",
             help_output,
         )
+        self.assertIn(
+            "Use model provider from Codex config.toml",
+            help_output,
+        )
+        self.assertIn(
+            "Custom arguments to pass directly to the launched agent process",
+            help_output,
+        )
 
         docs_path = os.path.join(
             os.path.dirname(__file__), "..", "docs", "lemonade-cli.md"
@@ -1084,6 +1126,8 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
             "For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first",
             docs_text,
         )
+        self.assertIn("--use-user-config [PROVIDER]", docs_text)
+        self.assertIn("--agent-args ARGS", docs_text)
 
 
 def run_cli_client_tests():
