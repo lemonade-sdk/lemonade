@@ -507,6 +507,17 @@ class SystemInfoMockTests(unittest.TestCase):
         cls.server_version = get_server_version(cls.lemond_binary)
         print(f"[SETUP] Using server version: {cls.server_version}")
 
+        # Kill any existing server on the test port (e.g., left running by
+        # the deb install verification step in CI).
+        try:
+            requests.post(f"http://localhost:{PORT}/internal/shutdown", timeout=5)
+            import time
+
+            time.sleep(1)
+            print("[SETUP] Stopped pre-existing server on port")
+        except Exception:
+            pass
+
     def check_platform_requirements(self, config: dict, config_name: str) -> bool:
         """
         Check if the current platform meets the test requirements.
@@ -606,7 +617,6 @@ class SystemInfoMockTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
 
                 data = response.json()
-                print(f"Full /system-info response:\n{json.dumps(data, indent=2)}")
                 self.assertIn(
                     "recipes", data, "Response should contain 'recipes' section"
                 )
