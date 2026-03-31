@@ -169,7 +169,6 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
     std::string selected_recipe_dir;
     bool use_preferred_recipe_dir = false;
     std::string preferred_recipe_dir;
-    bool browsing_other_recipe_dirs = false;
     bool remote_dirs_loaded = false;
     std::vector<std::string> remote_recipe_dirs;
     std::string remote_dirs_error;
@@ -228,7 +227,7 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
                 preferred_recipe_dir.clear();
             }
 
-            if (use_preferred_recipe_dir && !browsing_other_recipe_dirs) {
+            if (use_preferred_recipe_dir) {
                 selected_recipe_dir = preferred_recipe_dir;
                 state = MenuState::RecipeFiles;
                 continue;
@@ -306,17 +305,10 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
                 std::cout << "  " << (i + 1) << ") " << recipe_files[i] << std::endl;
             }
 
-            int browse_other_choice = -1;
-            if (show_browse_other_option) {
-                browse_other_choice = static_cast<int>(recipe_files.size()) + 1;
-                std::cout << "  " << browse_other_choice << ") Browse other recipe directories"
-                          << std::endl;
-            }
-
             if (recipe_files.empty()) {
                 std::cout << "No recipe files found under '" << selected_recipe_dir << "'.";
                 if (show_browse_other_option) {
-                    std::cout << " Use the browse option to pick another directory.";
+                    std::cout << " Use option 0 to browse downloaded models.";
                 } else {
                     std::cout << " Use option 0 to pick another directory.";
                 }
@@ -334,11 +326,6 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
                 } else {
                     state = MenuState::RecipeDirectories;
                 }
-                continue;
-            }
-            if (show_browse_other_option && selected == browse_other_choice) {
-                browsing_other_recipe_dirs = true;
-                state = MenuState::RecipeDirectories;
                 continue;
             }
             if (selected < 1 || static_cast<size_t>(selected) > recipe_files.size()) {
@@ -415,7 +402,6 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
                 continue;
             }
             if (selected == back_to_recipe_dirs) {
-                browsing_other_recipe_dirs = false;
                 state = MenuState::RecipeDirectories;
                 continue;
             }
