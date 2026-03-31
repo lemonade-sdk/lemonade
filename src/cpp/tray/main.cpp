@@ -137,10 +137,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     }
     auto cli_config = parser.get_config();
 
-    // Set lemonade home dir
     lemon::utils::set_home_dir(cli_config.home_dir);
 
-    // Load config.json
     auto config_json = lemon::ConfigFile::load(cli_config.home_dir);
 
     // CLI overrides (persist to config.json)
@@ -160,7 +158,6 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     auto runtime_config = std::make_shared<lemon::RuntimeConfig>(config_json);
     lemon::RuntimeConfig::set_global(runtime_config.get());
 
-    // Set models dir
     lemon::utils::set_models_dir(runtime_config->models_dir());
 
     // Initialize logging to file (SUBSYSTEM:WINDOWS has no console).

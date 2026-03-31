@@ -67,17 +67,6 @@ int main(int argc, char** argv) {
             config_json["host"] = cli_config.host;
             cli_overrides = true;
         }
-        if (cli_overrides) {
-            ConfigFile::save(cli_config.home_dir, config_json);
-            // Log which values were persisted so the user knows config.json changed
-            if (cli_config.port != -1) {
-                std::cout << "Persisted port=" << cli_config.port << " to config.json" << std::endl;
-            }
-            if (!cli_config.host.empty()) {
-                std::cout << "Persisted host=" << cli_config.host << " to config.json" << std::endl;
-            }
-        }
-
         auto config = std::make_shared<RuntimeConfig>(config_json);
         RuntimeConfig::set_global(config.get());
 
@@ -96,6 +85,16 @@ int main(int argc, char** argv) {
             AixLog::Log::init({console_sink, file_sink});
         }
 #endif
+
+        if (cli_overrides) {
+            ConfigFile::save(cli_config.home_dir, config_json);
+            if (cli_config.port != -1) {
+                LOG(INFO) << "Persisted port=" << cli_config.port << " to config.json" << std::endl;
+            }
+            if (!cli_config.host.empty()) {
+                LOG(INFO) << "Persisted host=" << cli_config.host << " to config.json" << std::endl;
+            }
+        }
 
         utils::set_models_dir(config->models_dir());
 
