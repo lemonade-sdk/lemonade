@@ -195,6 +195,7 @@ lemonade import [JSON_FILE] [options]
 - Running `lemonade import` without `JSON_FILE` starts interactive recipe browsing from GitHub.
 - You can skip recipe import during prompts and continue.
 - In non-interactive mode, you must provide both `--directory` and `--recipe-file`.
+- `--recipe-file` is only used for remote recipe import (with `--directory`).
 
 **JSON File Format:**
 
@@ -457,7 +458,9 @@ lemonade launch AGENT [--model MODEL_NAME] [options]
 **Notes:**
 - The model load request is asynchronous: launch starts the agent immediately while loading continues in the background.
 - If `--use-recipe` is passed, launch skips recipe import prompts.
-- If `--use-recipe` is not passed, launch prompts whether to import a recipe.
+- If a model is already provided, launch skips recipe import prompts.
+- `--directory` and `--recipe-file` are only used for remote recipe import at prompt time.
+- For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first, then launch with the imported model id.
 - `--api-key` is propagated to the launched agent process.
 - Supported agents: `claude`, `codex`
 

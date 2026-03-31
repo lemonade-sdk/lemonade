@@ -906,7 +906,7 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
             help_output,
         )
         self.assertIn(
-            "Recipe JSON filename used only if you choose recipe import at prompt",
+            "Remote recipe JSON filename used only if you choose recipe import at prompt",
             help_output,
         )
 
@@ -924,6 +924,14 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
             "Import a recipe from `lemonade-sdk/recipes` before launch",
             docs_text,
         )
+        self.assertIn(
+            "`--recipe-file` is only used for remote recipe import",
+            docs_text,
+        )
+        self.assertIn(
+            "For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first",
+            docs_text,
+        )
 
 
 def run_cli_client_tests():
@@ -938,7 +946,9 @@ def run_cli_client_tests():
 
     # Create and run test suite
     loader = unittest.TestLoader()
-    suite = loader.loadTestsFromTestCase(PersistentServerCLIClientTests)
+    suite = unittest.TestSuite()
+    suite.addTests(loader.loadTestsFromTestCase(PersistentServerCLIClientTests))
+    suite.addTests(loader.loadTestsFromTestCase(CLIHelpDocsConsistencyTests))
 
     runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
     result = runner.run(suite)
