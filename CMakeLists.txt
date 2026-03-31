@@ -883,7 +883,7 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND CARGO_EXECUTABLE)
         COMMAND ${CMAKE_COMMAND} -E echo "    cd src/app && npm run dev"
         COMMAND ${CMAKE_COMMAND} -E echo "============================================================"
         COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for Tauri app..."
-        COMMAND ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} ci
+        COMMAND ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} ci --ignore-scripts
         COMMAND ${CMAKE_COMMAND} -E echo "Compiling Rust host and bundling renderer..."
         COMMAND ${TAURI_BUILD_COMMAND}
         COMMAND ${CMAKE_COMMAND} -E echo "Staging Tauri build output into ${TAURI_APP_UNPACKED_DIR}..."
