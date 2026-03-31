@@ -138,7 +138,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     // Initialize logging to file (SUBSYSTEM:WINDOWS has no console).
     // The shared log hub forwards these entries to the websocket log stream.
     {
-        configure_application_logging(config.log_level, false);
+        lemon::configure_application_logging(config.log_level, false);
     }
 
     // Initialize Winsock (required by httplib)
