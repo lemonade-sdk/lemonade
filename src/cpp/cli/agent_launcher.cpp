@@ -155,12 +155,13 @@ void configure_codex_agent(const std::string& base_url,
     const std::string provider_name = launch_options.codex_model_provider.empty()
         ? "lemonade"
         : launch_options.codex_model_provider;
-    const std::string provider_config =
-        "model_providers." + provider_name + "={ name='Lemonade', base_url='" + responses_base_url +
-        "', wire_api='responses', env_key='OPENAI_API_KEY', requires_openai_auth=false, supports_websockets=false }";
+
 
     config.extra_args = {};
     if (!launch_options.codex_use_user_config) {
+        const std::string provider_config =
+        "model_providers." + provider_name + "={ name='Lemonade', base_url='" + responses_base_url +
+        "', wire_api='responses', env_key='OPENAI_API_KEY', requires_openai_auth=false, supports_websockets=false }";
         config.extra_args.push_back("-c");
         config.extra_args.push_back(provider_config);
     }
@@ -171,6 +172,10 @@ void configure_codex_agent(const std::string& base_url,
     config.extra_args.push_back("show_raw_agent_reasoning=true");
     config.extra_args.push_back("-c");
     config.extra_args.push_back("web_search=\"disabled\"");
+    config.extra_args.push_back("-c");
+    config.extra_args.push_back("analytics.enabled=false");
+    config.extra_args.push_back("-c");
+    config.extra_args.push_back("feedback.enabled=false");
     config.extra_args.push_back("-m");
     config.extra_args.push_back(model);
 
