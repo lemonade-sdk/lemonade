@@ -341,7 +341,7 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
         }
         validate_bin_path(backend, key, value.get<std::string>());
     }
-    else if (key == "prefer_system" || key == "linux_beta") {
+    else if (key == "prefer_system") {
         if (!value.is_boolean()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a boolean");
         }

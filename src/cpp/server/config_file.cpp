@@ -61,7 +61,6 @@ json ConfigFile::get_defaults() {
         }},
         {"flm", {
             {"args", ""},
-            {"linux_beta", false}
         }},
         {"ryzenai", {
             {"server_bin", "builtin"}
@@ -216,7 +215,6 @@ static const EnvMapping env_mappings[] = {
     {"LEMONADE_SDCPP_VULKAN_BIN",        "sdcpp", "vulkan_bin"},
     // flm
     {"LEMONADE_FLM_ARGS",               "flm", "args"},
-    {"LEMONADE_FLM_LINUX_BETA",          "flm", "linux_beta"},
     // ryzenai
     {"LEMONADE_RYZENAI_SERVER_BIN",      "ryzenai", "server_bin"},
     // kokoro

@@ -10,7 +10,7 @@ All settings are in `config.json`, located in the lemonade home directory:
 
 - **Linux (systemd):** `/var/lib/lemonade/config.json`
 - **Windows:** `%USERPROFILE%\.cache\lemonade\config.json`
-- **macOS:** `~/.cache/lemonade/config.json`
+- **macOS:** `~/Library/Application Support/lemonade/config.json`
 
 If `config.json` doesn't exist, it's created automatically with default values on first run.
 
@@ -57,7 +57,6 @@ If `config.json` doesn't exist, it's created automatically with default values o
   },
   "flm": {
     "args": "",
-    "linux_beta": false
   },
   "ryzenai": {
     "server_bin": "builtin"
@@ -92,7 +91,7 @@ Backend-specific settings are nested under their backend name:
 **llamacpp** — LLM inference via llama.cpp:
 | Key | Default | Description |
 |-----|---------|-------------|
-| `backend` | "auto" | Backend to use: "auto", "vulkan", "rocm", or "cpu" |
+| `backend` | "auto" | Backend to use: "auto" means "choose for me" |
 | `args` | "" | Custom arguments to pass to llama-server |
 | `prefer_system` | false | Prefer system-installed llama.cpp over bundled |
 | `*_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
@@ -100,14 +99,14 @@ Backend-specific settings are nested under their backend name:
 **whispercpp** — Audio transcription:
 | Key | Default | Description |
 |-----|---------|-------------|
-| `backend` | "auto" | Backend to use: "auto", "cpu", "npu" (Windows), "vulkan" (Linux) |
+| `backend` | "auto" | Backend to use: "auto" means "choose for me" |
 | `args` | "" | Custom arguments to pass to whisper-server |
 | `*_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
 
 **sdcpp** — Image generation:
 | Key | Default | Description |
 |-----|---------|-------------|
-| `backend` | "auto" | Backend to use: "auto", "cpu", "rocm", "vulkan" |
+| `backend` | "auto" | Backend to use: "auto" means "choose for me" |
 | `steps` | 20 | Number of inference steps |
 | `cfg_scale` | 7.0 | Classifier-free guidance scale |
 | `width` | 512 | Image width in pixels |
@@ -118,7 +117,6 @@ Backend-specific settings are nested under their backend name:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `args` | "" | Custom arguments to pass to flm serve |
-| `linux_beta` | false | Enable Linux beta support |
 
 **ryzenai** — RyzenAI NPU inference:
 | Key | Default | Description |
