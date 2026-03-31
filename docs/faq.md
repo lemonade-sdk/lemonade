@@ -136,7 +136,7 @@
    curl http://localhost:8000/api/v1/stats
    ```
 
-   Or, set `LEMONADE_LOG_LEVEL=debug` and restart the server, or use `lemonade logs` to view logs.
+   Or, use `lemonade config set log_level=debug` to enable debug logging, or `lemonade logs` to view logs.
 
 ### 2. **How does Lemonade's performance compare to llama.cpp?**
 

@@ -191,11 +191,7 @@ lemond [home_dir] [--port PORT] [--host HOST]
 
 ## API Key and Security
 
-The `LEMONADE_API_KEY` environment variable sets an API key for authentication. On Linux with systemd, set it in `/etc/lemonade/conf.d/zz-secrets.conf`:
-
-```bash
-LEMONADE_API_KEY=your-secret-key
-```
+The `LEMONADE_API_KEY` environment variable sets an API key for authentication. On Linux with systemd, set it in the service environment (e.g., via a systemd override or drop-in file). On Windows, set it as a system environment variable.
 
 ## Remote Server Connection
 
