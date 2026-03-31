@@ -167,6 +167,9 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
 
     MenuState state = MenuState::RecipeDirectories;
     std::string selected_recipe_dir;
+    bool use_preferred_recipe_dir = false;
+    std::string preferred_recipe_dir;
+    bool browsing_other_recipe_dirs = false;
     bool remote_dirs_loaded = false;
     std::vector<std::string> remote_recipe_dirs;
     std::string remote_dirs_error;
@@ -213,9 +216,22 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
                               << agent_name_display << " was not found remotely."
                               << " Showing all available directories." << std::endl;
                     recipe_dirs = remote_recipe_dirs;
+                    use_preferred_recipe_dir = false;
+                    preferred_recipe_dir.clear();
+                } else {
+                    use_preferred_recipe_dir = (recipe_dirs.size() == 1);
+                    preferred_recipe_dir = recipe_dirs[0];
                 }
             } else {
                 recipe_dirs = remote_recipe_dirs;
+                use_preferred_recipe_dir = false;
+                preferred_recipe_dir.clear();
+            }
+
+            if (use_preferred_recipe_dir && !browsing_other_recipe_dirs) {
+                selected_recipe_dir = preferred_recipe_dir;
+                state = MenuState::RecipeFiles;
+                continue;
             }
 
             if (!agent_name_display.empty()) {
@@ -265,22 +281,46 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
             }
 
             if (!agent_name_display.empty()) {
-                std::cout << "Select a recipe from '" << selected_recipe_dir
-                          << "' to import and use with " << agent_name_display << ":"
-                          << std::endl;
+                if (use_preferred_recipe_dir && selected_recipe_dir == preferred_recipe_dir) {
+                    std::cout << "Select a recipe to import and use with "
+                              << agent_name_display << ":" << std::endl;
+                } else {
+                    std::cout << "Select a recipe from '" << selected_recipe_dir
+                              << "' to import and use with " << agent_name_display << ":"
+                              << std::endl;
+                }
             } else {
                 std::cout << "Select a recipe from '" << selected_recipe_dir
                           << "' to import and use:" << std::endl;
             }
 
-            std::cout << "  0) Back to recipe directories" << std::endl;
+            bool show_browse_other_option =
+                use_preferred_recipe_dir && selected_recipe_dir == preferred_recipe_dir;
+
+            if (show_browse_other_option) {
+                std::cout << "  0) Browse downloaded models" << std::endl;
+            } else {
+                std::cout << "  0) Back to recipe directories" << std::endl;
+            }
             for (size_t i = 0; i < recipe_files.size(); ++i) {
                 std::cout << "  " << (i + 1) << ") " << recipe_files[i] << std::endl;
             }
 
+            int browse_other_choice = -1;
+            if (show_browse_other_option) {
+                browse_other_choice = static_cast<int>(recipe_files.size()) + 1;
+                std::cout << "  " << browse_other_choice << ") Browse other recipe directories"
+                          << std::endl;
+            }
+
             if (recipe_files.empty()) {
-                std::cout << "No recipe files found under '" << selected_recipe_dir
-                          << "'. Use option 0 to pick another directory." << std::endl;
+                std::cout << "No recipe files found under '" << selected_recipe_dir << "'.";
+                if (show_browse_other_option) {
+                    std::cout << " Use the browse option to pick another directory.";
+                } else {
+                    std::cout << " Use option 0 to pick another directory.";
+                }
+                std::cout << std::endl;
             }
 
             int selected = 0;
@@ -289,6 +329,15 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
             }
 
             if (selected == 0) {
+                if (show_browse_other_option) {
+                    state = MenuState::DownloadedModels;
+                } else {
+                    state = MenuState::RecipeDirectories;
+                }
+                continue;
+            }
+            if (show_browse_other_option && selected == browse_other_choice) {
+                browsing_other_recipe_dirs = true;
                 state = MenuState::RecipeDirectories;
                 continue;
             }
@@ -345,7 +394,12 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
                           << std::endl;
             }
             const int back_to_recipe_dirs = static_cast<int>(downloaded_llamacpp_models.size()) + 1;
-            std::cout << "  " << back_to_recipe_dirs << ") Back to recipe directories" << std::endl;
+            if (use_preferred_recipe_dir) {
+                std::cout << "  " << back_to_recipe_dirs << ") Back to recipes" << std::endl;
+            } else {
+                std::cout << "  " << back_to_recipe_dirs << ") Back to recipe directories"
+                          << std::endl;
+            }
 
             if (downloaded_llamacpp_models.empty()) {
                 std::cout << "No downloaded llamacpp models found." << std::endl;
@@ -361,6 +415,7 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
                 continue;
             }
             if (selected == back_to_recipe_dirs) {
+                browsing_other_recipe_dirs = false;
                 state = MenuState::RecipeDirectories;
                 continue;
             }
