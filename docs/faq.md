@@ -65,20 +65,18 @@
 
    **Secondary: Extra Models Directory (GGUF)**
 
-   Lemonade Server can discover GGUF models from a secondary directory using the `--extra-models-dir` option, enabling compatibility with llama.cpp and LM Studio model caches. Suggested paths:
+   Lemonade Server can discover GGUF models from a secondary directory using the `extra_models_dir` option, enabling compatibility with llama.cpp and LM Studio model caches. Suggested paths:
 
    - **Windows:**
        - LM Studio: `C:\Users\You\.lmstudio\models`
        - llamacpp: `%LOCALAPPDATA%\llama.cpp` (e.g., `C:\Users\You\AppData\Local\llama.cpp`)
    - **Linux:** `~/.cache/llama.cpp`
 
-   Set `extra_models_dir` in `config.json` (see [Server Configuration](./server/configuration.md) for file location):
+   Set `extra_models_dir` (see [Server Configuration](./server/configuration.md)):
 
-   ```json
-   {"extra_models_dir": "/home/you/.cache/llama.cpp"}
+   ```bash
+   lemonade config set extra_models_dir="/home/you/.cache/llama.cpp"
    ```
-
-   Then restart the server for the change to take effect.
 
    Any `.gguf` files found in this directory (including subdirectories) will automatically appear in Lemonade's model list in the `custom` category.
 
@@ -113,9 +111,9 @@
    - Use a pull request to add the model to the built-in `server_models.json` file.
    - Request support by opening a [GitHub issue](https://github.com/lemonade-sdk/lemonade/issues).
 
-   If you are sure that a model should be listed, but you aren't seeing it, you can set `"disable_model_filtering": true` in `config.json` to show all models supported by Lemonade on any PC configuration. But please note, this can show models that definitely won't work on your system.
+   If you are sure that a model should be listed, but you aren't seeing it, you can `lemonade config set disable_model_filtering=true` in to show all models supported by Lemonade on any PC configuration. But please note, this can show models that definitely won't work on your system.
 
-   Alternatively if you are attempting to use GTT on your dGPU then you can set `"enable_dgpu_gtt": true` in `config.json` to filter using the combined memory pool. Please note ROCM does not support splitting memory across multiple pools, vulkan is likely required for this usecase.
+   Alternatively if you are attempting to use GTT on your dGPU then you can `lemonade config set enable_dgpu_gtt=true` to filter using the combined memory pool. Please note ROCM does not support splitting memory across multiple pools, vulkan is likely required for this usecase.
 
 ### 5. **Is there a script or tool to convert models to Ryzen AI NPU format?**
 
@@ -168,7 +166,7 @@
 ### 1. **Does LLM inference with the NPU only work on Windows?**
 
    Today, NPU-only inference on Linux is available via FastFlowLM, see the guide [here](https://lemonade-server.ai/flm_npu_linux.html).
-   
+
    At the moment, Ryzen AI SW's implementation of NPU and hybrid inference is currently supported only on Windows.
 
 ### 2. **I loaded a hybrid model, but the NPU is barely active. Is that expected?**
@@ -219,13 +217,6 @@
 ### 1. **How do I run Lemonade Server on one PC and access it from another?**
 
    Lemonade supports running the server on one machine while using the app from another machine on the same network.
-
-   **Quick setup:**
-   1. On the server machine, enable network access by setting `host` to `0.0.0.0` in `config.json` (see [Server Configuration](./server/configuration.md)), then restart the server.
-   2. On the client machine, launch the app and configure the endpoint through the UI:
-      ```bash
-      lemonade-app
-      ```
 
    For detailed instructions and security considerations, see [Remote Server Connection](./server/configuration.md#remote-server-connection).
 

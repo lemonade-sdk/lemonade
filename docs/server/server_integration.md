@@ -227,16 +227,7 @@ sudo journalctl -u lemonade-server -f
 
 **Configuration:**
 
-Edit `/var/lib/lemonade/config.json` to customize server behavior, then restart:
-
-```bash
-sudo nano /var/lib/lemonade/config.json
-sudo systemctl restart lemonade-server
-```
-
-For the full list of settings, see [Server Configuration](./configuration.md).
-
-This creates an override file that takes precedence over the original service file and persists across updates.
+See [Server Configuration](./configuration.md).
 
 
 ## macOS Installation (Beta)

@@ -132,45 +132,51 @@ Backend-specific settings are nested under their backend name:
 
 ## Editing Configuration
 
-### Option 1: Edit config.json directly
+### lemonade config (recommended)
+
+Use the `lemonade config` CLI to view and modify settings while the server is running. Changes are applied immediately and persisted to config.json.
+
+```bash
+# View all current settings
+lemonade config
+
+# Set one or more values
+lemonade config set key=value [key=value ...]
+```
+
+Top-level settings use their JSON key name directly. Nested backend settings use dot notation (`section.key=value`):
+
+```bash
+# Change the server port and log level
+lemonade config set port=9000 log_level=debug
+
+# Change a backend setting
+lemonade config set llamacpp.backend=rocm
+
+# Set multiple values at once
+lemonade config set port=9000 llamacpp.backend=rocm sdcpp.steps=30
+```
+
+### lemond CLI arguments (fallback)
+
+If the server cannot start (e.g., invalid port in config.json), `lemond` accepts `--port` and `--host` as CLI arguments to override config.json. These overrides are persisted so the server can start normally next time:
+
+```bash
+lemond --port 9000 --host 0.0.0.0
+```
+
+### Edit config.json manually (last resort)
+
+If the server won't start and CLI arguments aren't sufficient, you can edit config.json directly. Restart the server after making changes:
 
 ```bash
 # Linux
 sudo nano /var/lib/lemonade/config.json
 sudo systemctl restart lemonade-server
 
-# Windows — edit in your preferred text editor:
+# Windows — edit with your preferred text editor:
 # %USERPROFILE%\.cache\lemonade\config.json
 # Then quit and relaunch from the Start Menu
-```
-
-### Option 2: Runtime API
-
-Changes can be applied at runtime via the `/internal/set` endpoint (loopback only):
-
-```bash
-# Change a top-level setting
-curl -X POST localhost:8000/internal/set \
-  -H "Content-Type: application/json" \
-  -d '{"log_level": "debug"}'
-
-# Change a backend setting
-curl -X POST localhost:8000/internal/set \
-  -H "Content-Type: application/json" \
-  -d '{"llamacpp": {"backend": "vulkan"}}'
-
-# Read current config
-curl localhost:8000/internal/config
-```
-
-Changes made via `/internal/set` are persisted to config.json immediately.
-
-### Option 3: CLI overrides
-
-`lemond` accepts `--port` and `--host` as CLI arguments. These override config.json and are persisted:
-
-```bash
-lemond --port 9000 --host 0.0.0.0
 ```
 
 ## lemond CLI
@@ -180,8 +186,8 @@ lemond [home_dir] [--port PORT] [--host HOST]
 ```
 
 - **home_dir** — Path to the lemonade home directory containing config.json and model data. Optional; defaults to platform-specific location.
-- **--port** — Port to serve on (overrides config.json, persisted)
-- **--host** — Address to bind (overrides config.json, persisted)
+- **--port** — Port to serve on (overrides config.json, persisted). Use as a fallback if the server cannot start.
+- **--host** — Address to bind (overrides config.json, persisted). Use as a fallback if the server cannot start.
 
 ## API Key and Security
 
@@ -196,29 +202,10 @@ LEMONADE_API_KEY=your-secret-key
 To make Lemonade Server accessible from other machines on your network, set the host to `0.0.0.0`:
 
 ```bash
-# Via config.json
-{"host": "0.0.0.0"}
-
-# Or via CLI
-lemond --host 0.0.0.0
-
-# Or via runtime API
-curl -X POST localhost:8000/internal/set -d '{"host":"0.0.0.0"}'
+lemonade config set host=0.0.0.0
 ```
 
 > **Note:** Using `host: "0.0.0.0"` allows connections from any machine on the network. Only do this on trusted networks. Set `LEMONADE_API_KEY` to manage access.
-
-## Migration from Environment Variables
-
-If upgrading from a version that used environment variables, you must migrate manually using `lemonade config set`. For example, if you previously had `LEMONADE_PORT=9000` and `LEMONADE_LLAMACPP=rocm`, run:
-
-```bash
-lemonade config set port=9000 llamacpp.backend=rocm
-```
-
-Nested backend settings use dot notation: `section.key=value` (e.g., `sdcpp.steps=30`, `whispercpp.backend=cpu`). Top-level settings use their JSON key name directly (e.g., `port=8000`, `log_level=debug`).
-
-Run `lemonade config` to view all current settings and their `config set` key names.
 
 ## Next Steps
 

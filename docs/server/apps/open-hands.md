@@ -25,21 +25,9 @@ Since OpenHands runs inside Docker containers, the containers must be able to ac
 
 Edit `config.json` in the lemonade home directory (see [Server Configuration](../configuration.md) for location):
 
-```json
-{
-  "host": "0.0.0.0",
-  "ctx_size": 32768
-}
-```
-
-Or via the runtime API:
 ```bash
-curl -X POST localhost:8000/internal/set \
-  -H "Content-Type: application/json" \
-  -d '{"host":"0.0.0.0","ctx_size":32768}'
+lemonade config set ctx_size=32768
 ```
-
-Then restart the server for `host` changes to take effect.
 
 ### Installing OpenHands
 
