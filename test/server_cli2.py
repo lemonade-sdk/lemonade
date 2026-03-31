@@ -582,7 +582,7 @@ sys.exit(0)
     # Load Tests
     # =============================================================================
 
-    def test_060_load_with_ctx_size(self):
+    def test_070_load_with_ctx_size(self):
         """Test load command with --ctx-size option."""
         result = run_cli_command(
             ["load", ENDPOINT_TEST_MODEL, "--ctx-size", "8192"],
@@ -590,7 +590,7 @@ sys.exit(0)
         )
         print(f"Load with ctx-size exit code: {result.returncode}")
 
-    def test_061_load_with_save_options(self):
+    def test_071_load_with_save_options(self):
         """Test load command with --save-options flag."""
         result = run_cli_command(
             ["load", ENDPOINT_TEST_MODEL, "--save-options"],
@@ -602,7 +602,7 @@ sys.exit(0)
     # Run Tests
     # =============================================================================
 
-    def test_090_run_with_model(self):
+    def test_100_run_with_model(self):
         """Test run command with explicit model."""
         with tempfile.TemporaryDirectory(prefix="lemonade-open-stub-") as temp_dir:
             env = self._build_noop_opener_env(temp_dir)
@@ -613,7 +613,7 @@ sys.exit(0)
             )
             self.assertEqual(result.returncode, 0)
 
-    def test_091_run_with_combined_options(self):
+    def test_101_run_with_combined_options(self):
         """Test run command with --ctx-size and --save-options together."""
         with tempfile.TemporaryDirectory(prefix="lemonade-open-stub-") as temp_dir:
             env = self._build_noop_opener_env(temp_dir)
@@ -624,7 +624,7 @@ sys.exit(0)
             )
             self.assertEqual(result.returncode, 0)
 
-    def test_092_run_with_host_port(self):
+    def test_102_run_with_host_port(self):
         """Test run command using global --host/--port options."""
         with tempfile.TemporaryDirectory(prefix="lemonade-open-stub-") as temp_dir:
             env = self._build_noop_opener_env(temp_dir)
@@ -648,7 +648,7 @@ sys.exit(0)
     # parser-only tests: run on all OSes
     # process-execution tests: run on non-Windows only with shebang-based fake binaries
 
-    def test_099_launch_without_agent_prompts_selection(self):
+    def test_110_launch_without_agent_prompts_selection(self):
         """Launch without an agent argument should present agent choices and continue."""
         if IS_WINDOWS:
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
@@ -680,7 +680,7 @@ sys.exit(0)
             self.assertIn("Select an agent to launch", output)
             self.assertIn("Selected agent: claude", output)
 
-    def test_100_launch_invalid_agent_rejected(self):
+    def test_111_launch_invalid_agent_rejected(self):
         """Launch should reject unsupported agent names."""
         result = self.assertCommandFails(
             ["launch", "invalid-agent", "--model", ENDPOINT_TEST_MODEL],
@@ -689,7 +689,7 @@ sys.exit(0)
         output = result.stdout + result.stderr
         self.assertIn("run with --help", output.lower())
 
-    def test_101_launch_claude_with_fake_binary_and_api_key(self):
+    def test_112_launch_claude_with_fake_binary_and_api_key(self):
         """Launch should execute fake claude binary and wire expected auth/model env vars."""
         if IS_WINDOWS:
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
@@ -737,7 +737,7 @@ sys.exit(0)
             self.assertIn("--use-recipe set: skipping recipe import", output)
             self.assertIn("Launching claude", output)
 
-    def test_102_launch_codex_with_fake_binary(self):
+    def test_113_launch_codex_with_fake_binary(self):
         """Launch should execute fake codex binary and pass expected argv/env."""
         if IS_WINDOWS:
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
@@ -775,7 +775,7 @@ sys.exit(0)
             self.assertTrue(payload["env"]["OPENAI_BASE_URL"].endswith("/v1/"))
             self.assertEqual(payload["env"]["OPENAI_API_KEY"], "lemonade")
 
-    def test_102b_launch_claude_defaults_and_host_normalization(self):
+    def test_114_launch_claude_defaults_and_host_normalization(self):
         """Claude launch should default auth token and normalize wildcard host to localhost."""
         if IS_WINDOWS:
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
@@ -814,7 +814,7 @@ sys.exit(0)
                 payload["env"]["ANTHROPIC_BASE_URL"], f"http://localhost:{PORT}"
             )
 
-    def test_103_launch_use_recipe_with_directory_flags_is_deterministic(self):
+    def test_115_launch_use_recipe_with_directory_flags_is_deterministic(self):
         """--use-recipe should skip import flow even when directory flags are present."""
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
             env = self._build_missing_agent_env(temp_dir)
@@ -840,7 +840,7 @@ sys.exit(0)
             self.assertIn("--use-recipe set: skipping recipe import", output)
             self.assertIn("Agent binary not found", output)
 
-    def test_104_launch_missing_binary_fails_fast(self):
+    def test_116_launch_missing_binary_fails_fast(self):
         """Without a stub and no real claude installed, launch should fail at binary lookup."""
         if shutil.which("claude") is not None:
             self.skipTest(
@@ -859,7 +859,7 @@ sys.exit(0)
     # Unload Tests
     # =============================================================================
 
-    def test_070_unload_with_model(self):
+    def test_080_unload_with_model(self):
         """Test unload command with model name."""
         result = run_cli_command(
             ["unload", ENDPOINT_TEST_MODEL],
@@ -867,7 +867,7 @@ sys.exit(0)
         )
         print(f"Unload with model exit code: {result.returncode}")
 
-    def test_071_unload_without_model(self):
+    def test_081_unload_without_model(self):
         """Test unload command without model name (unloads all)."""
         result = run_cli_command(
             ["unload"],
@@ -879,7 +879,7 @@ sys.exit(0)
     # Delete Tests
     # =============================================================================
 
-    def test_080_delete_model(self):
+    def test_090_delete_model(self):
         """Test delete command with model name."""
         result = run_cli_command(
             ["delete", ENDPOINT_TEST_MODEL],
