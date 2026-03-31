@@ -5,6 +5,10 @@
 #include <filesystem>
 #include <cstdlib>
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace lemon_tray {
@@ -51,7 +55,15 @@ bool file_is_executable(const std::string& candidate) {
 
     std::error_code ec;
     fs::path p(candidate);
-    return fs::exists(p, ec) && fs::is_regular_file(p, ec);
+    if (!(fs::exists(p, ec) && fs::is_regular_file(p, ec))) {
+        return false;
+    }
+
+#ifdef _WIN32
+    return true;
+#else
+    return ::access(p.c_str(), X_OK) == 0;
+#endif
 }
 
 void add_windows_npm_fallbacks(std::vector<std::string>& fallback_paths,
