@@ -825,7 +825,7 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
         COMMAND ${CMAKE_COMMAND} -E make_directory "${ELECTRON_BUILD_SOURCE_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${ELECTRON_APP_SOURCE_DIR}" "${ELECTRON_BUILD_SOURCE_DIR}"
         COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies..."
-        COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci
+        COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci --ignore-scripts
         COMMAND ${CMAKE_COMMAND} -E echo "Building Electron app for current platform..."
         COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_BUILD_SOURCE_DIR}" ${NPM_COMMAND} run ${ELECTRON_BUILD_TARGET} -- --config.directories.output=${ELECTRON_APP_BUILD_DIR}
         DEPENDS ${ELECTRON_APP_SOURCES}
@@ -1508,7 +1508,7 @@ if(UNIX AND NOT APPLE)
                 COMMAND ${CMAKE_COMMAND} -E echo "Setting version to ${PROJECT_VERSION}..."
                 COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} version ${PROJECT_VERSION} --no-git-tag-version --allow-same-version
                 COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for AppImage build..."
-                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci --ignore-scripts
                 COMMAND ${CMAKE_COMMAND} -E echo "Building AppImage with electron-builder..."
                 COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} run build:renderer:prod
                 COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_EXECUTABLE} exec -- electron-builder --linux AppImage --config.directories.output=${APPIMAGE_BUILD_DIR}
@@ -1526,7 +1526,7 @@ if(UNIX AND NOT APPLE)
                 COMMAND ${CMAKE_COMMAND} -E echo "Setting version to ${PROJECT_VERSION}..."
                 COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} version ${PROJECT_VERSION} --no-git-tag-version --allow-same-version
                 COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for AppImage build..."
-                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci --ignore-scripts
                 COMMAND ${CMAKE_COMMAND} -E echo "Building AppImage with electron-builder..."
                 COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} run build:renderer:prod
                 COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_EXECUTABLE} exec -- electron-builder --linux AppImage --config.directories.output=${APPIMAGE_BUILD_DIR}
