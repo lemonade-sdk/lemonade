@@ -186,15 +186,15 @@ lemonade import [JSON_FILE] [options]
 | Option | Description | Required |
 |--------|-------------|----------|
 | `JSON_FILE` | Path to a JSON configuration file | No |
-| `--repo-dir DIR` | Remote recipes directory to query (e.g., `claude-code`) | No |
+| `--directory DIR` | Remote recipes directory to query (e.g., `coding-agents`) | No |
 | `--recipe-file FILE` | Specific recipe JSON filename from the selected directory | No |
-| `--skip-prompt` | Run non-interactively (requires `--repo-dir` and `--recipe-file` for remote import) | No |
+| `--skip-prompt` | Run non-interactively (requires `--directory` and `--recipe-file` for remote import) | No |
 | `--yes` | Alias for `--skip-prompt` | No |
 
 **Remote import notes:**
 - Running `lemonade import` without `JSON_FILE` starts interactive recipe browsing from GitHub.
 - You can skip recipe import during prompts and continue.
-- In non-interactive mode, you must provide both `--repo-dir` and `--recipe-file`.
+- In non-interactive mode, you must provide both `--directory` and `--recipe-file`.
 
 **JSON File Format:**
 
@@ -244,7 +244,7 @@ lemonade import model.json
 lemonade import
 
 # Non-interactive remote import
-lemonade import --repo-dir claude-code --recipe-file GLM-4.7-Flash-GGUF-NoThinking.json --yes
+lemonade import --directory coding-agents --recipe-file GLM-4.7-Flash-GGUF-NoThinking.json --yes
 ```
 
 `model-with-multiple-checkpoints.json`:
@@ -448,7 +448,7 @@ lemonade launch AGENT [--model MODEL_NAME] [options]
 | `AGENT` | Agent name to launch. Supported agents: `claude`, `codex` | Yes |
 | `--model MODEL_NAME` | Model name to launch with. If omitted, you will be prompted to select one. | No |
 | `--use-recipe` | Skip recipe import prompts and launch directly with the selected/provided model | No |
-| `--repo-dir DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
+| `--directory DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
 | `--recipe-file FILE` | Remote recipe JSON filename used only if you choose recipe import at prompt | No |
 | `--ctx-size SIZE` | Context size for the model | `4096` |
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
@@ -480,7 +480,7 @@ lemonade launch claude --model Qwen3-0.6B-GGUF --ctx-size 4096 --llamacpp-args "
 lemonade launch claude --use-recipe
 
 # Launch and allow optional prompt-driven recipe import using prefilled remote recipe flags
-lemonade launch claude --repo-dir claude-code --recipe-file Qwen3.5-35B-A3B-NoThinking.json
+lemonade launch claude --directory coding-agents --recipe-file Qwen3.5-35B-A3B-NoThinking.json
 ```
 
 ## Options for scan

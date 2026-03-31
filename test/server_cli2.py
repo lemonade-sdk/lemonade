@@ -552,23 +552,23 @@ sys.exit(0)
             f"Should show error about nonexistent file: {output}",
         )
 
-    def test_067_import_remote_noninteractive_requires_repo_dir(self):
-        """Remote import should fail in non-interactive mode without --repo-dir."""
+    def test_067_import_remote_noninteractive_requires_directory(self):
+        """Remote import should fail in non-interactive mode without --directory."""
         result = self.assertCommandFails(
             ["import", "--skip-prompt"],
             timeout=TIMEOUT_DEFAULT,
         )
         output = result.stdout + result.stderr
         self.assertIn(
-            "--repo-dir",
+            "--directory",
             output.lower(),
-            f"Should require --repo-dir in non-interactive mode: {output}",
+            f"Should require --directory in non-interactive mode: {output}",
         )
 
     def test_068_import_remote_noninteractive_requires_recipe_file(self):
         """Remote import should fail in non-interactive mode without --recipe-file."""
         result = self.assertCommandFails(
-            ["import", "--skip-prompt", "--repo-dir", "claude-code"],
+            ["import", "--skip-prompt", "--directory", "coding-agents"],
             timeout=TIMEOUT_DEFAULT,
         )
         output = result.stdout + result.stderr
@@ -814,8 +814,8 @@ sys.exit(0)
                 payload["env"]["ANTHROPIC_BASE_URL"], f"http://localhost:{PORT}"
             )
 
-    def test_103_launch_use_recipe_with_repo_flags_is_deterministic(self):
-        """--use-recipe should skip import flow even when repo flags are present."""
+    def test_103_launch_use_recipe_with_directory_flags_is_deterministic(self):
+        """--use-recipe should skip import flow even when directory flags are present."""
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
             env = self._build_missing_agent_env(temp_dir)
 
@@ -826,8 +826,8 @@ sys.exit(0)
                     "--model",
                     ENDPOINT_TEST_MODEL,
                     "--use-recipe",
-                    "--repo-dir",
-                    "claude-code",
+                    "--directory",
+                    "coding-agents",
                     "--recipe-file",
                     "dummy.json",
                 ],

@@ -303,7 +303,8 @@ int import_remote_recipe(lemonade::LemonadeClient& client,
     const bool non_interactive = skip_prompt || yes;
 
     if (non_interactive && selected_dir.empty()) {
-        std::cerr << "Error: Non-interactive mode requires --repo-dir." << std::endl;
+        std::cerr << "Error: Non-interactive mode requires --directory."
+                  << std::endl;
         return 1;
     }
     if (non_interactive && recipe_file.empty()) {

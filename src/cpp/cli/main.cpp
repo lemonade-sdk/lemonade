@@ -331,10 +331,17 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
     bool should_import_recipe = false;
     if (model_was_missing) {
         // Interactive model resolution for launch already handled recipe selection/import choices.
-    } else if (config.use_recipe) {
-        std::cout << "--use-recipe set: skipping recipe import and using selected/provided model." << std::endl;
     } else {
-        should_import_recipe = lemon_cli::prompt_yes_no("Do you want to import and use a recipe for launch?", false);
+        std::cout << "Model was provided explicitly; skipping recipe import prompts." << std::endl;
+    }
+
+    if (config.use_recipe) {
+        std::cout << "--use-recipe set: skipping recipe import and using selected/provided model." << std::endl;
+        should_import_recipe = false;
+    } else if (model_was_missing) {
+        // No-op: launch model resolution already handled recipe import path interactively.
+    } else {
+        should_import_recipe = false;
     }
 
     if (should_import_recipe) {
@@ -687,12 +694,12 @@ int main(int argc, char* argv[]) {
 
     // Import options
     import_cmd->add_option("json_file", config.model, "Path to JSON file")->type_name("JSON_FILE");
-    import_cmd->add_option("--repo-dir", config.repo_dir,
-        "Remote recipe directory to query (e.g., claude-code)")->type_name("DIR");
+    import_cmd->add_option("--directory", config.repo_dir,
+        "Remote recipe directory to query (e.g., coding-agents)")->type_name("DIR");
     import_cmd->add_option("--recipe-file", config.recipe_file,
-        "Recipe JSON filename to import from the selected remote directory")->type_name("FILE");
+        "Remote recipe JSON filename to import from the selected directory")->type_name("FILE");
     import_cmd->add_flag("--skip-prompt", config.skip_prompt,
-        "Run non-interactively (requires --repo-dir and --recipe-file for remote import)");
+        "Run non-interactively (requires --directory and --recipe-file for remote import)");
     import_cmd->add_flag("--yes", config.yes,
         "Alias for --skip-prompt to support non-interactive scripting");
 
@@ -723,10 +730,11 @@ int main(int argc, char* argv[]) {
     launch_cmd->add_option("--model,-m", config.model, "Model name to load")->type_name("MODEL");
     launch_cmd->add_flag("--use-recipe", config.use_recipe,
         "Skip recipe import prompts and launch with the selected/provided model");
-    launch_cmd->add_option("--repo-dir", config.repo_dir,
-        "Remote recipe directory used only if you choose recipe import at prompt")->type_name("DIR");
+    launch_cmd->add_option("--directory", config.repo_dir,
+        "Remote recipe directory used only if you choose recipe import at prompt")
+        ->type_name("DIR");
     launch_cmd->add_option("--recipe-file", config.recipe_file,
-        "Recipe JSON filename used only if you choose recipe import at prompt")->type_name("FILE");
+        "Remote recipe JSON filename used only if you choose recipe import at prompt")->type_name("FILE");
     lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
 
     // Scan options
