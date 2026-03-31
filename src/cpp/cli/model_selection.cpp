@@ -8,6 +8,7 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace lemon_cli {
@@ -97,7 +98,49 @@ bool is_recommended_for_launch(const lemonade::ModelInfo& model) {
 }
 
 bool is_recommended_for_run(const lemonade::ModelInfo& model) {
-    return has_label(model, "hot") || model.suggested;
+    return has_label(model, "hot");
+}
+
+std::string normalize_agent_key(const std::string& agent_name) {
+    std::string key;
+    key.reserve(agent_name.size());
+    for (char c : agent_name) {
+        key.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    return key;
+}
+
+std::vector<std::string> preferred_recipe_directories_for_agent(const std::string& agent_name) {
+    const std::string agent = normalize_agent_key(agent_name);
+    if (agent == "claude" || agent == "codex") {
+        return {"coding-agents"};
+    }
+    return {};
+}
+
+bool prompt_model_name_input(std::string& model_out) {
+    std::cout << "Type model name: " << std::flush;
+
+    std::string input;
+    if (!std::getline(std::cin, input)) {
+        LOG(ERROR, "ModelSelector") << "Error: Failed to read model name." << std::endl;
+        return false;
+    }
+
+    auto is_not_space = [](unsigned char c) {
+        return !std::isspace(c);
+    };
+
+    const auto begin = std::find_if(input.begin(), input.end(), is_not_space);
+    if (begin == input.end()) {
+        LOG(ERROR, "ModelSelector") << "Error: Model name cannot be empty." << std::endl;
+        return false;
+    }
+
+    const auto end = std::find_if(input.rbegin(), input.rend(), is_not_space).base();
+    model_out = std::string(begin, end);
+    std::cout << "Selected model: " << model_out << std::endl;
+    return true;
 }
 
 std::vector<const lemonade::ModelInfo*> filter_recommended_launch_models(
@@ -124,6 +167,9 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
 
     MenuState state = MenuState::RecipeDirectories;
     std::string selected_recipe_dir;
+    bool remote_dirs_loaded = false;
+    std::vector<std::string> remote_recipe_dirs;
+    std::string remote_dirs_error;
 
     std::string agent_name_display = agent_name;
     if (!agent_name_display.empty()) {
@@ -133,21 +179,43 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
 
     while (true) {
         if (state == MenuState::RecipeDirectories) {
-            std::vector<std::string> recipe_dirs;
-            std::string fetch_error;
-
-            if (!lemon_cli::list_remote_recipe_directories(recipe_dirs, fetch_error)) {
-                if (fetch_error.empty()) {
-                    fetch_error = "Unknown error";
+            if (!remote_dirs_loaded) {
+                if (!lemon_cli::list_remote_recipe_directories(remote_recipe_dirs, remote_dirs_error)) {
+                    if (remote_dirs_error.empty()) {
+                        remote_dirs_error = "Unknown error";
+                    }
                 }
+                remote_dirs_loaded = true;
             }
 
-            if (!fetch_error.empty()) {
+            if (!remote_dirs_error.empty()) {
                 std::cout << "Warning: Failed to fetch remote launch recipe directories: "
-                          << fetch_error << std::endl;
+                          << remote_dirs_error << std::endl;
                 std::cout << "Falling back to downloaded model browser." << std::endl;
                 state = MenuState::DownloadedModels;
                 continue;
+            }
+
+            std::vector<std::string> recipe_dirs;
+            const std::vector<std::string> preferred_dirs =
+                preferred_recipe_directories_for_agent(agent_name);
+            if (!preferred_dirs.empty()) {
+                std::unordered_set<std::string> remote_dir_set(remote_recipe_dirs.begin(),
+                                                               remote_recipe_dirs.end());
+                for (const auto& preferred_dir : preferred_dirs) {
+                    if (remote_dir_set.find(preferred_dir) != remote_dir_set.end()) {
+                        recipe_dirs.push_back(preferred_dir);
+                    }
+                }
+
+                if (recipe_dirs.empty()) {
+                    std::cout << "Warning: Preferred recipe directory for "
+                              << agent_name_display << " was not found remotely."
+                              << " Showing all available directories." << std::endl;
+                    recipe_dirs = remote_recipe_dirs;
+                }
+            } else {
+                recipe_dirs = remote_recipe_dirs;
             }
 
             if (!agent_name_display.empty()) {
@@ -314,26 +382,19 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
 
             std::vector<const lemonade::ModelInfo*> recommended_all =
                 filter_recommended_launch_models(all_models);
-            std::vector<const lemonade::ModelInfo*> recommended_not_downloaded;
-            recommended_not_downloaded.reserve(recommended_all.size());
-            for (const auto* model : recommended_all) {
-                if (model != nullptr && !model->downloaded) {
-                    recommended_not_downloaded.push_back(model);
-                }
-            }
 
             std::cout << "Browse recommended models (llamacpp + hot + tool-calling):" << std::endl;
             std::cout << "  0) Back to downloaded models" << std::endl;
-            for (size_t i = 0; i < recommended_not_downloaded.size(); ++i) {
-                const auto& model = *recommended_not_downloaded[i];
+            for (size_t i = 0; i < recommended_all.size(); ++i) {
+                const auto& model = *recommended_all[i];
                 std::cout << "  " << (i + 1) << ") " << model.id
-                          << " [not-downloaded]"
+                          << " [" << (model.downloaded ? "downloaded" : "not-downloaded") << "]"
                           << " (" << (model.recipe.empty() ? "-" : model.recipe) << ")"
                           << std::endl;
             }
 
-            if (recommended_not_downloaded.empty()) {
-                std::cout << "No not-downloaded recommended models available right now." << std::endl;
+            if (recommended_all.empty()) {
+                std::cout << "No recommended models available right now." << std::endl;
             }
 
             int selected = 0;
@@ -345,73 +406,16 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
                 state = MenuState::DownloadedModels;
                 continue;
             }
-            if (selected < 1 || static_cast<size_t>(selected) > recommended_not_downloaded.size()) {
+            if (selected < 1 || static_cast<size_t>(selected) > recommended_all.size()) {
                 LOG(ERROR, "ModelSelector") << "Error: Selection out of range." << std::endl;
                 return false;
             }
 
-            model_out = recommended_not_downloaded[static_cast<size_t>(selected - 1)]->id;
+            model_out = recommended_all[static_cast<size_t>(selected - 1)]->id;
             std::cout << "Selected model: " << model_out << std::endl;
             return true;
         }
     }
-}
-
-bool prompt_recommended_catalog(lemonade::LemonadeClient& client,
-                                std::string& model_out,
-                                bool for_launch) {
-    std::vector<lemonade::ModelInfo> all_models;
-    if (!fetch_models_from_endpoint(client, true, all_models)) {
-        return false;
-    }
-
-    std::vector<const lemonade::ModelInfo*> recommended_models;
-    recommended_models.reserve(all_models.size());
-    for (const auto& model : all_models) {
-        if ((for_launch && is_recommended_for_launch(model)) ||
-            (!for_launch && is_recommended_for_run(model))) {
-            if (!model.downloaded) {
-                recommended_models.push_back(&model);
-            }
-        }
-    }
-
-    if (recommended_models.empty()) {
-        LOG(ERROR, "ModelSelector")
-            << "No recommended models available. Try 'lemonade list' or 'lemonade pull <MODEL>'."
-            << std::endl;
-        return false;
-    }
-
-    if (for_launch) {
-        std::cout << "Browse recommended models (llamacpp + hot + tool-calling)."
-                  << " Models marked not-downloaded will be pulled automatically on load:" << std::endl;
-    } else {
-        std::cout << "Browse recommended hot models."
-                  << " Models marked not-downloaded will be pulled automatically on load:" << std::endl;
-    }
-
-    for (size_t i = 0; i < recommended_models.size(); ++i) {
-        const auto& model = *recommended_models[i];
-        std::cout << "  " << (i + 1) << ") " << model.id
-                  << " [not-downloaded]"
-                  << " (" << (model.recipe.empty() ? "-" : model.recipe) << ")"
-                  << std::endl;
-    }
-
-    int selected = 0;
-    if (!prompt_number("Enter number: ", selected)) {
-        return false;
-    }
-
-    if (selected < 1 || static_cast<size_t>(selected) > recommended_models.size()) {
-        LOG(ERROR, "ModelSelector") << "Error: Selection out of range." << std::endl;
-        return false;
-    }
-
-    model_out = recommended_models[static_cast<size_t>(selected - 1)]->id;
-    std::cout << "Selected model: " << model_out << std::endl;
-    return true;
 }
 
 bool prompt_model_selection(lemonade::LemonadeClient& client,
@@ -487,36 +491,39 @@ bool resolve_model_if_missing(lemonade::LemonadeClient& client,
     }
 
     if (command_name == "run") {
-        std::vector<lemonade::ModelInfo> downloaded_models;
-        if (!fetch_models_from_endpoint(client, false, downloaded_models)) {
+        std::vector<lemonade::ModelInfo> all_models;
+        if (!fetch_models_from_endpoint(client, true, all_models)) {
             return false;
         }
 
-        std::vector<const lemonade::ModelInfo*> suggested_downloaded_models;
-        suggested_downloaded_models.reserve(downloaded_models.size());
-        for (const auto& model : downloaded_models) {
+        std::vector<const lemonade::ModelInfo*> hot_models;
+        hot_models.reserve(all_models.size());
+        for (const auto& model : all_models) {
             if (is_recommended_for_run(model)) {
-                suggested_downloaded_models.push_back(&model);
+                hot_models.push_back(&model);
             }
         }
 
-        std::cout << "Select a suggested hot model to run:" << std::endl;
+        std::sort(hot_models.begin(), hot_models.end(), [](const lemonade::ModelInfo* lhs,
+                                                           const lemonade::ModelInfo* rhs) {
+            return lhs->id < rhs->id;
+        });
 
-        std::cout << "  0) Browse recommended models (download may be required)" << std::endl;
-
-        for (size_t i = 0; i < suggested_downloaded_models.size(); ++i) {
-            const auto& model = *suggested_downloaded_models[i];
-            std::cout << "  " << (i + 1) << ") " << model.id
-                      << " [downloaded]"
-                      << " (" << (model.recipe.empty() ? "-" : model.recipe) << ")"
-                      << std::endl;
+        if (hot_models.empty()) {
+            LOG(ERROR, "ModelSelector")
+                << "No hot models available. Try 'lemonade list' or 'lemonade pull <MODEL>'."
+                << std::endl;
+            return false;
         }
 
-        const int choose_any = static_cast<int>(suggested_downloaded_models.size()) + 1;
-        std::cout << "  " << choose_any << ") Choose any model" << std::endl;
-
-        if (suggested_downloaded_models.empty()) {
-            std::cout << "No downloaded suggested models found yet." << std::endl;
+        std::cout << "Select a hot model to run:" << std::endl;
+        std::cout << "  0) Type the name of any model" << std::endl;
+        for (size_t i = 0; i < hot_models.size(); ++i) {
+            const auto& model = *hot_models[i];
+            std::cout << "  " << (i + 1) << ") " << model.id
+                      << " [" << (model.downloaded ? "downloaded" : "not-downloaded") << "]"
+                      << " (" << (model.recipe.empty() ? "-" : model.recipe) << ")"
+                      << std::endl;
         }
 
         int selected = 0;
@@ -525,17 +532,14 @@ bool resolve_model_if_missing(lemonade::LemonadeClient& client,
         }
 
         if (selected == 0) {
-            return prompt_recommended_catalog(client, model_out, false);
+            return prompt_model_name_input(model_out);
         }
-        if (selected == choose_any) {
-            return prompt_model_selection(client, model_out, show_all);
-        }
-        if (selected < 1 || static_cast<size_t>(selected) > suggested_downloaded_models.size()) {
+        if (selected < 1 || static_cast<size_t>(selected) > hot_models.size()) {
             LOG(ERROR, "ModelSelector") << "Error: Selection out of range." << std::endl;
             return false;
         }
 
-        model_out = suggested_downloaded_models[static_cast<size_t>(selected - 1)]->id;
+        model_out = hot_models[static_cast<size_t>(selected - 1)]->id;
         std::cout << "Selected model: " << model_out << std::endl;
         return true;
     }
