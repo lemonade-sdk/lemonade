@@ -1,4 +1,4 @@
-import { serverFetch } from './serverConfig';
+import { getServerHost, serverFetch } from './serverConfig';
 
 export interface LogEntry {
   seq: number;
@@ -8,26 +8,11 @@ export interface LogEntry {
   line: string;
 }
 
-interface SnapshotMessage {
-  type: 'logs.snapshot';
-  entries: LogEntry[];
+export interface LogStreamHandle {
+  close: () => void;
 }
 
-interface EntryMessage {
-  type: 'logs.entry';
-  entry: LogEntry;
-}
-
-interface ErrorMessage {
-  type: 'error';
-  error?: {
-    message?: string;
-  };
-}
-
-type ServerMessage = SnapshotMessage | EntryMessage | ErrorMessage;
-
-export interface LogWebSocketCallbacks {
+export interface LogStreamCallbacks {
   onConnected?: () => void;
   onDisconnected?: () => void;
   onError?: (message: string) => void;
@@ -35,79 +20,54 @@ export interface LogWebSocketCallbacks {
   onEntry: (entry: LogEntry) => void;
 }
 
-export class LogWebSocketClient {
-  private socket: WebSocket;
-
-  private constructor(socket: WebSocket) {
-    this.socket = socket;
+export async function connectLogStream(
+  afterSeq: number | null,
+  callbacks: LogStreamCallbacks,
+): Promise<LogStreamHandle> {
+  // Get websocket port from health endpoint
+  const healthResponse = await serverFetch('/health');
+  if (!healthResponse.ok) {
+    throw new Error(`Failed to fetch health: ${healthResponse.status}`);
+  }
+  const health = await healthResponse.json();
+  const wsPort = health.websocket_port;
+  if (typeof wsPort !== 'number') {
+    throw new Error('Server did not advertise a websocket port');
   }
 
-  static async connect(
-    afterSeq: number | null,
-    callbacks: LogWebSocketCallbacks,
-  ): Promise<LogWebSocketClient> {
-    const response = await serverFetch('/logs/stream/ticket', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        after_seq: afterSeq,
-      }),
-    });
+  const wsUrl = `ws://${getServerHost()}:${wsPort}/logs/stream`;
+  const socket = new WebSocket(wsUrl);
 
-    if (!response.ok) {
-      throw new Error(`Failed to create log stream ticket: ${response.status}`);
-    }
+  socket.addEventListener('open', () => {
+    socket.send(JSON.stringify({
+      type: 'logs.subscribe',
+      after_seq: afterSeq,
+    }));
+    callbacks.onConnected?.();
+  });
 
-    const ticket = await response.json();
-    if (typeof ticket.ws_url !== 'string' || ticket.ws_url.length === 0) {
-      throw new Error('Server did not return a log websocket URL');
-    }
-
-    const socket = new WebSocket(ticket.ws_url);
-    const client = new LogWebSocketClient(socket);
-
-    socket.addEventListener('open', () => {
-      callbacks.onConnected?.();
-    });
-
-    socket.addEventListener('message', (event) => {
-      try {
-        const message = JSON.parse(event.data) as ServerMessage;
-
-        if (message.type === 'logs.snapshot') {
-          callbacks.onSnapshot(message.entries ?? []);
-          return;
-        }
-
-        if (message.type === 'logs.entry' && message.entry) {
-          callbacks.onEntry(message.entry);
-          return;
-        }
-
-        if (message.type === 'error') {
-          callbacks.onError?.(message.error?.message || 'Server error');
-        }
-      } catch (error) {
-        callbacks.onError?.(`Invalid log stream payload: ${String(error)}`);
+  socket.addEventListener('message', (event) => {
+    try {
+      const message = JSON.parse(event.data);
+      if (message.type === 'logs.snapshot') {
+        callbacks.onSnapshot(message.entries ?? []);
+      } else if (message.type === 'logs.entry' && message.entry) {
+        callbacks.onEntry(message.entry);
+      } else if (message.type === 'error') {
+        callbacks.onError?.(message.error?.message || 'Server error');
       }
-    });
+    } catch (error) {
+      callbacks.onError?.(`Invalid log stream payload: ${String(error)}`);
+    }
+  });
 
-    socket.addEventListener('error', () => {
-      callbacks.onError?.('WebSocket error');
-    });
+  socket.addEventListener('error', () => {
+    callbacks.onError?.('WebSocket error');
+  });
 
-    socket.addEventListener('close', () => {
-      callbacks.onDisconnected?.();
-    });
+  socket.addEventListener('close', () => {
+    callbacks.onDisconnected?.();
+  });
 
-    return client;
-  }
-
-  close() {
-    this.socket.close(1000, 'OK');
-  }
+  return { close: () => socket.close(1000, 'OK') };
 }
-
-export default LogWebSocketClient;

@@ -3,7 +3,6 @@
 #include <string>
 #include <memory>
 #include <atomic>
-#include <chrono>
 #include <thread>
 #include <unordered_map>
 #include <mutex>
@@ -66,8 +65,6 @@ public:
      */
     int get_port() const { return port_; }
 
-    json mint_log_ticket(std::optional<uint64_t> after_seq);
-
     // libwebsockets callback (public — referenced by file-scope protocols array)
     static int ws_callback(struct lws* wsi, enum lws_callback_reasons reason,
                            void* user, void* in, size_t len);
@@ -83,11 +80,6 @@ private:
         ConnectionKind kind = ConnectionKind::invalid;
         std::string realtime_session_id;
         std::string log_subscriber_id;
-    };
-
-    struct LogTicket {
-        std::optional<uint64_t> after_seq;
-        std::chrono::steady_clock::time_point expires_at;
     };
 
     int port_;
@@ -106,7 +98,6 @@ private:
     std::unordered_map<std::string, std::queue<std::string>> message_queues_;
     // Per-connection inbound reassembly buffers (libwebsockets may fragment frames)
     std::unordered_map<std::string, std::string> receive_buffers_;
-    std::unordered_map<std::string, LogTicket> log_tickets_;
     std::mutex connections_mutex_;
 
     // Handle new WebSocket connection
@@ -122,23 +113,16 @@ private:
     void handle_writable(const std::string& connection_id, struct lws* wsi);
 
     static std::optional<std::string> get_url_arg(struct lws* wsi, const char* name);
-    static std::unordered_map<std::string, std::string> extract_params(
-        struct lws* wsi,
-        ConnectionKind kind);
     static std::string get_request_path(struct lws* wsi);
     static ConnectionKind classify_path(const std::string& path);
 
     // Send JSON message to WebSocket by connection ID
     void send_json(const std::string& connection_id, const json& msg);
 
-    std::optional<std::optional<uint64_t>> consume_log_ticket(const std::string& ticket);
-    void cleanup_expired_tickets_locked();
-    void handle_log_connection(const std::string& connection_id,
-                               struct lws* wsi,
-                               std::optional<uint64_t> after_seq);
+    void handle_log_subscribe(const std::string& connection_id,
+                              std::optional<uint64_t> after_seq);
     void handle_realtime_connection(const std::string& connection_id,
-                                    struct lws* wsi,
-                                    const std::unordered_map<std::string, std::string>& params);
+                                    struct lws* wsi);
     void schedule_pending_writes();
 
     // Service loop run in background thread

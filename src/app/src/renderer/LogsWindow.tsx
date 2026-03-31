@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { getServerBaseUrl, onServerUrlChange, serverConfig } from './utils/serverConfig';
-import LogWebSocketClient, { LogEntry } from './utils/logWebSocketClient';
+import { connectLogStream, LogEntry, LogStreamHandle } from './utils/logWebSocketClient';
 
 interface LogsWindowProps {
   isVisible: boolean;
@@ -18,7 +18,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const autoScrollRef = useRef(true);
   const isProgrammaticScrollRef = useRef(false);
   const lastSeqRef = useRef<number | null>(null);
-  const socketRef = useRef<LogWebSocketClient | null>(null);
+  const socketRef = useRef<LogStreamHandle | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [serverUrl, setServerUrl] = useState<string>('');
   const [isInitialized, setIsInitialized] = useState(false);
@@ -98,25 +98,20 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
       return;
     }
 
-    const shouldFollowNextLine = autoScrollRef.current || isNearBottom();
-    if (shouldFollowNextLine && !autoScrollRef.current) {
+    if (!autoScrollRef.current && isNearBottom()) {
       setAutoScroll(true);
     }
 
     setLogs((prevLogs) => {
-      const nextLogs = [...prevLogs];
-      const seenSeq = new Set(prevLogs.map((entry) => entry.seq));
-
-      for (const entry of incomingEntries) {
-        if (!seenSeq.has(entry.seq)) {
-          nextLogs.push(entry);
-          seenSeq.add(entry.seq);
-          lastSeqRef.current = entry.seq;
-        }
+      const lastSeq = lastSeqRef.current ?? -1;
+      const newEntries = incomingEntries.filter((e) => e.seq > lastSeq);
+      if (newEntries.length === 0) {
+        return prevLogs;
       }
 
-      nextLogs.sort((a, b) => a.seq - b.seq);
-      return nextLogs.length > 1000 ? nextLogs.slice(-1000) : nextLogs;
+      lastSeqRef.current = newEntries[newEntries.length - 1].seq;
+      const combined = [...prevLogs, ...newEntries];
+      return combined.length > 1000 ? combined.slice(-1000) : combined;
     });
   };
 
@@ -143,7 +138,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
           socketRef.current = null;
         }
 
-        LogWebSocketClient.connect(lastSeqRef.current, {
+        connectLogStream(lastSeqRef.current, {
           onConnected: () => {
             console.log('Log stream connected to:', serverUrl);
             setConnectionStatus('connected');
@@ -169,8 +164,8 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
           onEntry: (entry) => {
             appendEntries([entry]);
           },
-        }).then((client) => {
-          socketRef.current = client;
+        }).then((handle) => {
+          socketRef.current = handle;
         }).catch((error) => {
           console.error('Failed to connect to log stream:', error);
           setConnectionStatus('error');

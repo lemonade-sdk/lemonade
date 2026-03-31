@@ -92,7 +92,6 @@ class EndpointTests(ServerTestBase):
             "completions",
             "embeddings",
             "models",
-            "logs/stream/ticket",
             "responses",
             "pull",
             "delete",
@@ -159,7 +158,7 @@ class EndpointTests(ServerTestBase):
 
         self.assertFalse(data["log_streaming"].get("sse", True))
         self.assertTrue(data["log_streaming"].get("websocket", False))
-        self.assertIn("ticket_endpoint", data["log_streaming"])
+        self.assertIn("path", data["log_streaming"])
 
         print(
             f"[OK] /health endpoint response: status={data['status']}, models_loaded={len(data['all_models_loaded'])}"

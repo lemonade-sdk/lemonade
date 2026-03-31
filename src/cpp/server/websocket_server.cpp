@@ -3,10 +3,8 @@
 #include "lemon/router.h"
 #include "lemon/utils/process_manager.h"
 
-#include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <random>
 #include <sstream>
 #include <utility>
 
@@ -20,16 +18,6 @@ static struct lws_protocols protocols[] = {
     {"lemonade-realtime", WebSocketServer::ws_callback, sizeof(PerSessionData), 65536, 0, nullptr, 0},
     LWS_PROTOCOL_LIST_TERM
 };
-
-std::string random_ticket() {
-    static std::random_device rd;
-    static std::mt19937_64 gen(rd());
-    static std::uniform_int_distribution<uint64_t> dist;
-
-    std::ostringstream stream;
-    stream << std::hex << dist(gen) << dist(gen);
-    return stream.str();
-}
 
 } // namespace
 
@@ -65,15 +53,8 @@ int WebSocketServer::ws_callback(struct lws* wsi,
     switch (reason) {
         case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION: {
             const std::string path = get_request_path(wsi);
-            const auto kind = classify_path(path);
-            if (kind == ConnectionKind::invalid) {
+            if (classify_path(path) == ConnectionKind::invalid) {
                 return 1;
-            }
-
-            if (kind == ConnectionKind::logs) {
-                if (!get_url_arg(wsi, "ticket")) {
-                    return 1;
-                }
             }
             break;
         }
@@ -104,8 +85,7 @@ int WebSocketServer::ws_callback(struct lws* wsi,
             {
                 std::lock_guard<std::mutex> lock(server->connections_mutex_);
                 auto state_it = server->connection_states_.find(conn_id);
-                if (state_it == server->connection_states_.end() ||
-                    state_it->second.kind != ConnectionKind::realtime) {
+                if (state_it == server->connection_states_.end()) {
                     break;
                 }
                 server->receive_buffers_[conn_id].append(static_cast<const char*>(in), len);
@@ -199,7 +179,6 @@ void WebSocketServer::stop() {
         connection_websockets_.clear();
         message_queues_.clear();
         receive_buffers_.clear();
-        log_tickets_.clear();
     }
 
     if (context_) {
@@ -208,27 +187,6 @@ void WebSocketServer::stop() {
     }
 
     LOG(INFO, "WebSocket") << "Server stopped" << std::endl;
-}
-
-json WebSocketServer::mint_log_ticket(std::optional<uint64_t> after_seq) {
-    std::lock_guard<std::mutex> lock(connections_mutex_);
-    cleanup_expired_tickets_locked();
-
-    std::string ticket = random_ticket();
-    log_tickets_[ticket] = {
-        after_seq,
-        std::chrono::steady_clock::now() + std::chrono::seconds(30),
-    };
-
-    return {
-        {"ticket", ticket},
-        {"expires_at", static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch() + std::chrono::seconds(30)).count())},
-        {"after_seq", after_seq.has_value() ? json(*after_seq) : json(nullptr)},
-        {"path", "/logs/stream"},
-        {"websocket_port", port_},
-    };
 }
 
 void WebSocketServer::service_loop() {
@@ -241,57 +199,25 @@ void WebSocketServer::service_loop() {
 void WebSocketServer::handle_connection(const std::string& connection_id, struct lws* wsi) {
     const std::string path = get_request_path(wsi);
     const auto kind = classify_path(path);
-    const auto params = extract_params(wsi, kind);
 
     {
         std::lock_guard<std::mutex> lock(connections_mutex_);
         connection_websockets_[connection_id] = wsi;
-        connection_states_[connection_id] = {};
-        connection_states_[connection_id].kind = kind;
+        connection_states_[connection_id] = {kind};
     }
 
-    switch (kind) {
-        case ConnectionKind::realtime:
-            handle_realtime_connection(connection_id, wsi, params);
-            break;
-        case ConnectionKind::logs: {
-            const auto ticket_it = params.find("ticket");
-            if (ticket_it == params.end()) {
-                send_json(connection_id, {
-                    {"type", "error"},
-                    {"error", {{"message", "Missing log stream ticket"}, {"type", "invalid_request_error"}}},
-                });
-                return;
-            }
-
-            auto ticket = consume_log_ticket(ticket_it->second);
-            if (!ticket.has_value()) {
-                send_json(connection_id, {
-                    {"type", "error"},
-                    {"error", {{"message", "Invalid or expired log stream ticket"}, {"type", "invalid_request_error"}}},
-                });
-                return;
-            }
-
-            handle_log_connection(connection_id, wsi, *ticket);
-            break;
-        }
-        case ConnectionKind::invalid:
-            send_json(connection_id, {
-                {"type", "error"},
-                {"error", {{"message", "Unsupported websocket path"}, {"type", "invalid_request_error"}}},
-            });
-            break;
+    if (kind == ConnectionKind::realtime) {
+        handle_realtime_connection(connection_id, wsi);
     }
+    // Logs connections wait for a "logs.subscribe" message before streaming.
 }
 
 void WebSocketServer::handle_realtime_connection(
     const std::string& connection_id,
-    struct lws*,
-    const std::unordered_map<std::string, std::string>& params) {
+    struct lws* wsi) {
     json initial_config = json::object();
-    if (params.count("model")) {
-        initial_config["model"] = params.at("model");
+    if (auto model = get_url_arg(wsi, "model")) {
+        initial_config["model"] = *model;
     }
 
     auto send_callback = [this, connection_id](const json& msg) {
@@ -301,14 +227,11 @@ void WebSocketServer::handle_realtime_connection(
     const std::string session_id = session_manager_->create_session(send_callback, initial_config);
 
     std::lock_guard<std::mutex> lock(connections_mutex_);
-    auto& state = connection_states_[connection_id];
-    state.kind = ConnectionKind::realtime;
-    state.realtime_session_id = session_id;
+    connection_states_[connection_id].realtime_session_id = session_id;
 }
 
-void WebSocketServer::handle_log_connection(const std::string& connection_id,
-                                            struct lws*,
-                                            std::optional<uint64_t> after_seq) {
+void WebSocketServer::handle_log_subscribe(const std::string& connection_id,
+                                           std::optional<uint64_t> after_seq) {
     const auto snapshot_entries = LogStreamHub::instance().snapshot(after_seq);
     const std::string subscriber_id = LogStreamHub::instance().add_subscriber(
         [this, connection_id](const LogStreamEntry& entry) {
@@ -337,6 +260,7 @@ void WebSocketServer::handle_log_connection(const std::string& connection_id,
 }
 
 void WebSocketServer::handle_message(const std::string& connection_id, const std::string& msg) {
+    ConnectionKind kind;
     std::string session_id;
 
     {
@@ -345,15 +269,7 @@ void WebSocketServer::handle_message(const std::string& connection_id, const std
         if (it == connection_states_.end()) {
             return;
         }
-
-        if (it->second.kind != ConnectionKind::realtime) {
-            send_json(connection_id, {
-                {"type", "error"},
-                {"error", {{"message", "Log stream sockets are receive-only"}, {"type", "invalid_request_error"}}},
-            });
-            return;
-        }
-
+        kind = it->second.kind;
         session_id = it->second.realtime_session_id;
     }
 
@@ -369,6 +285,22 @@ void WebSocketServer::handle_message(const std::string& connection_id, const std
     }
 
     const std::string msg_type = request.value("type", "");
+
+    if (kind == ConnectionKind::logs) {
+        if (msg_type == "logs.subscribe") {
+            std::optional<uint64_t> after_seq;
+            if (request.contains("after_seq") && !request["after_seq"].is_null()) {
+                after_seq = request["after_seq"].get<uint64_t>();
+            }
+            handle_log_subscribe(connection_id, after_seq);
+        } else {
+            send_json(connection_id, {
+                {"type", "error"},
+                {"error", {{"message", "Expected logs.subscribe message"}, {"type", "invalid_request_error"}}},
+            });
+        }
+        return;
+    }
 
     if (msg_type == "session.update") {
         session_manager_->update_session(session_id, request.value("session", json::object()));
@@ -452,24 +384,6 @@ std::optional<std::string> WebSocketServer::get_url_arg(struct lws* wsi, const c
     return std::string(buffer, static_cast<size_t>(value_len));
 }
 
-std::unordered_map<std::string, std::string> WebSocketServer::extract_params(
-    struct lws* wsi,
-    ConnectionKind kind) {
-    std::unordered_map<std::string, std::string> params;
-
-    if (kind == ConnectionKind::realtime) {
-        if (auto model = get_url_arg(wsi, "model")) {
-            params["model"] = *model;
-        }
-    } else if (kind == ConnectionKind::logs) {
-        if (auto ticket = get_url_arg(wsi, "ticket")) {
-            params["ticket"] = *ticket;
-        }
-    }
-
-    return params;
-}
-
 std::string WebSocketServer::get_request_path(struct lws* wsi) {
     char uri_buf[256] = {0};
 
@@ -522,31 +436,6 @@ void WebSocketServer::schedule_pending_writes() {
         auto queue_it = message_queues_.find(connection_id);
         if (queue_it != message_queues_.end() && !queue_it->second.empty()) {
             lws_callback_on_writable(wsi);
-        }
-    }
-}
-
-std::optional<std::optional<uint64_t>> WebSocketServer::consume_log_ticket(const std::string& ticket) {
-    std::lock_guard<std::mutex> lock(connections_mutex_);
-    cleanup_expired_tickets_locked();
-
-    auto it = log_tickets_.find(ticket);
-    if (it == log_tickets_.end()) {
-        return std::nullopt;
-    }
-
-    auto after_seq = it->second.after_seq;
-    log_tickets_.erase(it);
-    return after_seq;
-}
-
-void WebSocketServer::cleanup_expired_tickets_locked() {
-    const auto now = std::chrono::steady_clock::now();
-    for (auto it = log_tickets_.begin(); it != log_tickets_.end();) {
-        if (it->second.expires_at <= now) {
-            it = log_tickets_.erase(it);
-        } else {
-            ++it;
         }
     }
 }

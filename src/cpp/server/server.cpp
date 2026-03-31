@@ -112,61 +112,6 @@ bool prepend_no_think_to_last_user_message(json& request_json) {
     return false;
 }
 
-std::string forwarded_or_header(const httplib::Request& req,
-                                const std::string& forwarded_name,
-                                const std::string& header_name) {
-    auto forwarded = req.get_header_value(forwarded_name.c_str());
-    if (!forwarded.empty()) {
-        return forwarded;
-    }
-    return req.get_header_value(header_name.c_str());
-}
-
-std::string websocket_scheme_for_request(const httplib::Request& req) {
-    std::string proto = forwarded_or_header(req, "X-Forwarded-Proto", "Origin");
-    std::transform(proto.begin(), proto.end(), proto.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-
-    if (proto.rfind("https", 0) == 0) {
-        return "wss";
-    }
-    return "ws";
-}
-
-std::string websocket_host_for_request(const httplib::Request& req) {
-    std::string host = forwarded_or_header(req, "X-Forwarded-Host", "Host");
-    if (host.empty()) {
-        return "localhost";
-    }
-
-    auto comma = host.find(',');
-    if (comma != std::string::npos) {
-        host = host.substr(0, comma);
-    }
-
-    if (!host.empty() && host.front() == '[') {
-        auto end_bracket = host.find(']');
-        if (end_bracket != std::string::npos) {
-            return host.substr(0, end_bracket + 1);
-        }
-    }
-
-    auto colon = host.rfind(':');
-    if (colon != std::string::npos && host.find(':') == colon) {
-        return host.substr(0, colon);
-    }
-
-    return host;
-}
-
-std::string make_log_websocket_url(const httplib::Request& req, int websocket_port, const std::string& ticket) {
-    return websocket_scheme_for_request(req) + "://" +
-           websocket_host_for_request(req) + ":" +
-           std::to_string(websocket_port) +
-           "/logs/stream?ticket=" + ticket;
-}
-
 } // namespace
 
 
@@ -450,10 +395,6 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
         handle_log_level(req, res);
-    });
-
-    register_post("logs/stream/ticket", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_logs_stream_ticket(req, res);
     });
 
     // NOTE: /api/v1/halt endpoint removed - use SIGTERM signal instead (like Python server)
@@ -1345,7 +1286,7 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     response["log_streaming"] = {
         {"sse", false},
         {"websocket", true},
-        {"ticket_endpoint", "/api/v1/logs/stream/ticket"}
+        {"path", "/logs/stream"}
     };
 
 #ifdef LEMON_HAS_WEBSOCKET
@@ -3682,42 +3623,6 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
         }
         // Recipe option keys (ctx_size, llamacpp_backend, etc.) need no side effects
     }
-}
-
-void Server::handle_logs_stream_ticket(const httplib::Request& req, httplib::Response& res) {
-#ifndef LEMON_HAS_WEBSOCKET
-    res.status = 501;
-    res.set_content(R"({"error":"WebSocket support is not available in this build"})", "application/json");
-    return;
-#else
-    if (!websocket_server_ || !websocket_server_->is_running()) {
-        res.status = 503;
-        res.set_content(R"({"error":"WebSocket server is not running"})", "application/json");
-        return;
-    }
-
-    std::optional<uint64_t> after_seq;
-    if (!req.body.empty()) {
-        try {
-            auto request_json = json::parse(req.body);
-            if (request_json.contains("after_seq") && !request_json["after_seq"].is_null()) {
-                after_seq = request_json["after_seq"].get<uint64_t>();
-            }
-        } catch (const std::exception& e) {
-            res.status = 400;
-            res.set_content(json({{"error", "Invalid JSON body"}, {"details", e.what()}}).dump(),
-                            "application/json");
-            return;
-        }
-    }
-
-    json ticket = websocket_server_->mint_log_ticket(after_seq);
-    ticket["ws_url"] = make_log_websocket_url(
-        req,
-        websocket_server_->get_port(),
-        ticket["ticket"].get<std::string>());
-    res.set_content(ticket.dump(), "application/json");
-#endif
 }
 
 // ============================================================================
