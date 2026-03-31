@@ -61,6 +61,7 @@ WORKDIR /opt/lemonade
 # Copy built executables and resources from builder
 COPY --from=builder /app/build/lemond ./lemond
 COPY --from=builder /app/build/lemonade-server ./lemonade-server
+COPY --from=builder /app/build/lemonade ./lemonade
 COPY --from=builder /app/build/resources ./resources
 
 # Download and install FLM using version from backend_versions.json
