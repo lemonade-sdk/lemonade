@@ -6,11 +6,10 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
+#include "lemon/logging_config.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
-#ifdef LEMON_HAS_WEBSOCKET
 #include "lemon/websocket_server.h"
-#endif
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -45,11 +44,6 @@
     #include <unistd.h>
     #include <libdrm/drm.h>
     #include "lemon/amdxdna_accel.h"
-#endif
-
-#ifdef HAVE_SYSTEMD
-    #include <systemd/sd-journal.h>
-    #include <systemd/sd-login.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -129,44 +123,17 @@ static const json MIME_TYPES = {
 };
 
 Server::Server(int port, const std::string& host, const std::string& log_level,
+               int websocket_port,
                const json& default_options, int max_loaded_models,
                const std::string& extra_models_dir, bool no_broadcast,
                long global_timeout)
-    : config_(std::make_shared<RuntimeConfig>(port, host, log_level, extra_models_dir,
+    : config_(std::make_shared<RuntimeConfig>(port, host, websocket_port, log_level, extra_models_dir,
                                                no_broadcast, global_timeout,
                                                max_loaded_models, default_options)),
       port_(port), running_(false), udp_beacon_() {
 
     // Set global HttpClient timeout
     utils::HttpClient::set_default_timeout(global_timeout);
-
-    // Detect log file path for the SSE streaming endpoint.
-    // This server only READS from the file — something else writes it
-    // (Windows: AixLog file sink, Linux: systemd journal, macOS: launchd
-    // StandardOutPath, or tray ServerManager stdout redirect).
-#ifdef _WIN32
-    char temp_path[MAX_PATH];
-    GetTempPathA(MAX_PATH, temp_path);
-    log_file_path_ = std::string(temp_path) + "lemonade-server.log";
-#else
-    // Use systemd journal if running under systemd
-    if (SystemInfo::is_running_under_systemd()) {
-        log_file_path_ = "";  // Empty signals journald usage
-        LOG(INFO, "Server") << "Detected systemd environment - will use journald for log streaming" << std::endl;
-    } else {
-        // On macOS, the LaunchDaemon's stdout is redirected to
-        // /var/log/lemonade/lemonade-server.out.log by the plist.
-        // Check for that file first; fall back to the runtime dir
-        // log (used when launched by tray/ServerManager).
-        const std::string launchd_log = "/var/log/lemonade/lemonade-server.out.log";
-        const std::string runtime_log = utils::get_runtime_dir() + "/lemonade-server.log";
-        if (std::filesystem::exists(launchd_log)) {
-            log_file_path_ = launchd_log;
-        } else {
-            log_file_path_ = runtime_log;
-        }
-    }
-#endif
 
     model_manager_ = std::make_unique<ModelManager>();
 
@@ -186,10 +153,10 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
 
     setup_http_servers();
 
-#ifdef LEMON_HAS_WEBSOCKET
-    // Initialize WebSocket server (binds to OS-assigned port, exposed via /health)
-    websocket_server_ = std::make_unique<WebSocketServer>(router_.get());
-#endif
+    websocket_server_ = std::make_unique<WebSocketServer>(
+        router_.get(),
+        config_->host(),
+        config_->websocket_port());
 }
 
 void Server::setup_http_servers() {
@@ -424,11 +391,6 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
         handle_log_level(req, res);
-    });
-
-    // Log streaming endpoint (SSE)
-    register_get("logs/stream", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_logs_stream(req, res);
     });
 
     // NOTE: /api/v1/halt endpoint removed - use SIGTERM signal instead (like Python server)
@@ -998,16 +960,15 @@ void Server::run() {
 
     running_ = true;
 
-#ifdef LEMON_HAS_WEBSOCKET
     // Start WebSocket server for realtime transcription
     if (websocket_server_) {
         if (websocket_server_->start()) {
-            LOG(INFO, "Server") << "WebSocket server started on port " << (port_ + 100) << std::endl;
+            LOG(INFO, "Server") << "WebSocket server started on port "
+                                << websocket_server_->get_port() << std::endl;
         } else {
             LOG(WARNING, "Server") << "Failed to start WebSocket server" << std::endl;
         }
     }
-#endif
 
     while (true) {
         std::atomic<bool> listener_started(false);
@@ -1116,13 +1077,11 @@ void Server::stop() {
         http_server_->stop();
         running_ = false;
 
-#ifdef LEMON_HAS_WEBSOCKET
         // Stop WebSocket server
         if (websocket_server_) {
             LOG(INFO, "Server") << "Stopping WebSocket server..." << std::endl;
             websocket_server_->stop();
         }
-#endif
 
         // Explicitly clean up router (unload models, stop backend servers)
         if (router_) {
@@ -1316,18 +1275,10 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     // Add max model limits
     response["max_models"] = router_->get_max_model_limits();
 
-    // Add log streaming support information
-    response["log_streaming"] = {
-        {"sse", true},
-        {"websocket", false}  // WebSocket support not yet implemented
-    };
-
-#ifdef LEMON_HAS_WEBSOCKET
     // Add WebSocket server port for realtime API
     if (websocket_server_ && websocket_server_->is_running()) {
         response["websocket_port"] = websocket_server_->get_port();
     }
-#endif
 
     res.set_content(response.dump(), "application/json");
 }
@@ -3603,23 +3554,33 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
             udp_beacon_.stopBroadcasting();
             http_server_->stop();
             http_server_v6_->stop();
+            if (websocket_server_) {
+                websocket_server_->stop();
+                websocket_server_ = std::make_unique<WebSocketServer>(
+                    router_.get(),
+                    config_->host(),
+                    config_->websocket_port());
+                if (running_) {
+                    websocket_server_->start();
+                }
+            }
         } else if (key == "log_level") {
             std::string level = config_->log_level();
             LOG(INFO, "Server") << "Log level changed to: " << level << std::endl;
-            // Re-initialize logging with the new severity filter
-            auto filter = AixLog::Filter(AixLog::to_severity(level));
-            auto console_sink = std::make_shared<AixLog::SinkCout>(filter, RuntimeConfig::LOG_FORMAT);
-#ifdef _WIN32
-            AixLog::Log::init({console_sink});
-#else
-            if (SystemInfo::is_running_under_systemd()) {
-                AixLog::Log::init({console_sink});
-            } else {
-                std::string log_file = utils::get_runtime_dir() + "/lemonade-server.log";
-                auto file_sink = std::make_shared<AixLog::SinkFile>(filter, log_file, RuntimeConfig::LOG_FORMAT);
-                AixLog::Log::init({console_sink, file_sink});
+            reconfigure_application_logging(level);
+        } else if (key == "websocket_port") {
+            if (websocket_server_) {
+                LOG(INFO, "Server") << "Restarting WebSocket server on requested port "
+                                    << config_->websocket_port() << std::endl;
+                websocket_server_->stop();
+                websocket_server_ = std::make_unique<WebSocketServer>(
+                    router_.get(),
+                    config_->host(),
+                    config_->websocket_port());
+                if (running_) {
+                    websocket_server_->start();
+                }
             }
-#endif
         } else if (key == "global_timeout") {
             long timeout = config_->global_timeout();
             LOG(INFO, "Server") << "Global timeout changed to: " << timeout << "s" << std::endl;
@@ -3642,108 +3603,6 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
         }
         // Recipe option keys (ctx_size, llamacpp_backend, etc.) need no side effects
     }
-}
-
-void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& res) {
-#ifdef HAVE_SYSTEMD
-    if (log_file_path_.empty()) {
-        LOG(INFO, "Server") << "Starting log stream from systemd journal" << std::endl;
-        handle_logs_stream_journald(req, res);
-        return;
-    }
-#endif
-
-    // Check if log file exists
-    if (log_file_path_.empty() || !std::filesystem::exists(log_file_path_)) {
-        LOG(ERROR, "Server") << "Log file not found: " << log_file_path_ << std::endl;
-        res.status = 404;
-        nlohmann::json error = {
-            {"error", "Log file not found for log streaming."},
-            {"path", log_file_path_},
-            {"note", "No readable log source is available for streaming."}
-        };
-        res.set_content(error.dump(), "application/json");
-        return;
-    }
-
-    LOG(INFO, "Server") << "Starting log stream for: " << log_file_path_ << std::endl;
-
-    // Set SSE headers
-    res.set_header("Content-Type", "text/event-stream");
-    res.set_header("Cache-Control", "no-cache");
-    res.set_header("Connection", "keep-alive");
-    res.set_header("X-Accel-Buffering", "no");
-
-    // Use chunked streaming
-    res.set_chunked_content_provider(
-        "text/event-stream",
-        [this](size_t offset, httplib::DataSink& sink) {
-            // Thread-local state for this connection
-            static thread_local std::unique_ptr<std::ifstream> log_stream;
-            static thread_local std::streampos last_pos = 0;
-
-            if (offset == 0) {
-                // First call: open file and read from beginning
-                log_stream = std::make_unique<std::ifstream>(
-                    log_file_path_,
-                    std::ios::in
-                );
-
-                if (!log_stream->is_open()) {
-                    LOG(ERROR, "Server") << "Failed to open log file for streaming" << std::endl;
-                    return false;
-                }
-
-                // Start from beginning
-                log_stream->seekg(0, std::ios::beg);
-                last_pos = 0;
-
-                LOG(INFO, "Server") << "Log stream connection opened" << std::endl;
-            }
-
-            // Seek to last known position
-            log_stream->seekg(last_pos);
-
-            std::string line;
-            bool sent_data = false;
-            int lines_sent = 0;
-
-            // Read and send new lines
-            while (std::getline(*log_stream, line)) {
-                // Format as SSE: "data: <line>\n\n"
-                std::string sse_msg = "data: " + line + "\n\n";
-
-                if (!sink.write(sse_msg.c_str(), sse_msg.length())) {
-                    LOG(INFO, "Server") << "Log stream client disconnected" << std::endl;
-                    return false;  // Client disconnected
-                }
-
-                sent_data = true;
-                lines_sent++;
-
-                // CRITICAL: Update position after each successful line read
-                // Must do this BEFORE hitting EOF, because tellg() returns -1 at EOF!
-                last_pos = log_stream->tellg();
-            }
-
-            // Clear EOF and any other error flags so we can continue reading on next poll
-            log_stream->clear();
-
-            // Send heartbeat if no data (keeps connection alive)
-            if (!sent_data) {
-                const char* heartbeat = ": heartbeat\n\n";
-                if (!sink.write(heartbeat, strlen(heartbeat))) {
-                    LOG(INFO, "Server") << "Log stream client disconnected during heartbeat" << std::endl;
-                    return false;
-                }
-            }
-
-            // Sleep briefly before next poll
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-            return true;  // Keep streaming
-        }
-    );
 }
 
 // ============================================================================
@@ -3969,100 +3828,5 @@ void Server::enrich_recipes(json& recipes) {
         }
     }
 }
-
-#ifdef HAVE_SYSTEMD
-void Server::handle_logs_stream_journald(const httplib::Request& req, httplib::Response& res) {
-    LOG(INFO, "Server") << "Starting systemd journal stream for lemonade-server.service" << std::endl;
-
-    res.set_header("Content-Type", "text/event-stream");
-    res.set_header("Cache-Control", "no-cache");
-    res.set_header("Connection", "keep-alive");
-    res.set_header("X-Accel-Buffering", "no");
-
-    sd_journal* journal = nullptr;
-    int ret = sd_journal_open(&journal, SD_JOURNAL_LOCAL_ONLY);
-    if (ret < 0) {
-        LOG(ERROR, "Server") << "Failed to open systemd journal: " << strerror(-ret) << std::endl;
-        res.status = 500;
-        nlohmann::json error = {
-            {"error", "Failed to open systemd journal"},
-            {"details", strerror(-ret)}
-        };
-        res.set_content(error.dump(), "application/json");
-        return;
-    }
-
-    ret = sd_journal_add_match(journal, "_SYSTEMD_UNIT=lemonade-server.service", 0);
-    if (ret < 0) {
-        LOG(ERROR, "Server") << "Failed to add journal filter: " << strerror(-ret) << std::endl;
-        sd_journal_close(journal);
-        res.status = 500;
-        nlohmann::json error = {
-            {"error", "Failed to add journal filter"},
-            {"details", strerror(-ret)}
-        };
-        res.set_content(error.dump(), "application/json");
-        return;
-    }
-
-    // Position at tail, then go back to show recent history
-    sd_journal_seek_tail(journal);
-    for (int i = 0; i < 100; i++) {
-        ret = sd_journal_previous(journal);
-        if (ret <= 0) break;
-    }
-
-    LOG(INFO, "Server") << "Journal stream connection opened for lemonade-server.service" << std::endl;
-
-    res.set_chunked_content_provider(
-        "text/event-stream",
-        [journal](size_t offset, httplib::DataSink& sink) mutable {
-            bool sent_data = false;
-
-            while (sd_journal_next(journal) > 0) {
-                const void* data;
-                size_t length;
-
-                int ret = sd_journal_get_data(journal, "MESSAGE", &data, &length);
-                if (ret == 0 && length > 8) {
-                    const char* msg = static_cast<const char*>(data);
-                    std::string message(msg + 8, length - 8);
-                    std::string sse_msg = "data: " + message + "\n\n";
-
-                    if (!sink.write(sse_msg.c_str(), sse_msg.length())) {
-                        LOG(INFO, "Server") << "Journal stream client disconnected" << std::endl;
-                        return false;
-                    }
-                    sent_data = true;
-                }
-            }
-
-            if (!sent_data) {
-                const char* heartbeat = ": heartbeat\n\n";
-                if (!sink.write(heartbeat, strlen(heartbeat))) {
-                    LOG(INFO, "Server") << "Journal stream client disconnected during heartbeat" << std::endl;
-                    return false;
-                }
-            }
-
-            // Wait for new journal entries
-            if (offset > 0) {  // Skip wait on first call to send historical data immediately
-                int ret = sd_journal_wait(journal, 500000);  // 500ms
-                if (ret < 0) {
-                    LOG(ERROR, "Server") << "Journal wait error: " << strerror(-ret) << std::endl;
-                }
-            }
-
-            return true;
-        },
-        [journal](bool success) mutable {
-            LOG(INFO, "Server") << "Journal stream ended, closing journal handle" << std::endl;
-            if (journal) {
-                sd_journal_close(journal);
-            }
-        }
-    );
-}
-#endif
 
 } // namespace lemon

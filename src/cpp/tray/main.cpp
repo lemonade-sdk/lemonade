@@ -10,7 +10,7 @@
 
 #include "lemon_tray/tray_ui.h"
 #include <lemon/cli_parser.h>
-#include <lemon/server.h>
+#include <lemon/logging_config.h>
 #include <lemon/single_instance.h>
 #include <lemon/utils/aixlog.hpp>
 #include <lemon/version.h>
@@ -25,6 +25,7 @@
 
 #ifdef _WIN32
 // Windows embeds the server
+#include <lemon/server.h>
 #include <winsock2.h>
 #include <windows.h>
 
@@ -135,16 +136,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     auto config = parser.get_config();
 
     // Initialize logging to file (SUBSYSTEM:WINDOWS has no console).
-    // The server's /api/v1/logs/stream endpoint tails this same file.
+    // The shared log hub forwards these entries to the websocket log stream.
     {
-        char temp_path[MAX_PATH];
-        GetTempPathA(MAX_PATH, temp_path);
-        std::string log_file = std::string(temp_path) + "lemonade-server.log";
-        auto file_sink = std::make_shared<AixLog::SinkFile>(
-            AixLog::Filter(AixLog::to_severity(config.log_level)),
-            log_file,
-            lemon::RuntimeConfig::LOG_FORMAT);
-        AixLog::Log::init({file_sink});
+        lemon::configure_application_logging(config.log_level, lemon::LoggingMode::embedded_tray_server);
     }
 
     // Initialize Winsock (required by httplib)
@@ -155,6 +149,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     std::thread server_thread([config]() {
         try {
             lemon::Server server(config.port, config.host, config.log_level,
+                                config.websocket_port,
                                 config.recipe_options, config.max_loaded_models,
                                 config.extra_models_dir, config.no_broadcast,
                                 config.global_timeout);

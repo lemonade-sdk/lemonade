@@ -2,6 +2,7 @@
 #include <csignal>
 #include <atomic>
 #include <lemon/cli_parser.h>
+#include <lemon/logging_config.h>
 #include <lemon/server.h>
 #include <lemon/system_info.h>
 #include <lemon/version.h>
@@ -56,21 +57,9 @@ int main(int argc, char** argv) {
         // Get server configuration
         auto config = parser.get_config();
 
-        // Direct router runs should keep console logs while also writing a file
-        // that the SSE log-stream endpoint can tail.
-        auto filter = AixLog::Filter(AixLog::to_severity(config.log_level));
-        auto console_sink = std::make_shared<AixLog::SinkCout>(filter, RuntimeConfig::LOG_FORMAT);
-#ifdef _WIN32
-        AixLog::Log::init({console_sink});
-#else
-        if (SystemInfo::is_running_under_systemd()) {
-            AixLog::Log::init({console_sink});
-        } else {
-            std::string log_file = utils::get_runtime_dir() + "/lemonade-server.log";
-            auto file_sink = std::make_shared<AixLog::SinkFile>(filter, log_file, RuntimeConfig::LOG_FORMAT);
-            AixLog::Log::init({console_sink, file_sink});
-        }
-#endif
+        // Direct router runs should keep console logs while also feeding the
+        // shared log hub for websocket log streaming and retained history.
+        configure_application_logging(config.log_level, LoggingMode::direct_server);
 
         // Start the server
         LOG(INFO) << "Starting Lemonade Server..." << std::endl;
@@ -83,6 +72,7 @@ int main(int argc, char** argv) {
         }
 
         Server server(config.port, config.host, config.log_level,
+                    config.websocket_port,
                     config.recipe_options, config.max_loaded_models,
                     config.extra_models_dir, config.no_broadcast,
                     config.global_timeout);

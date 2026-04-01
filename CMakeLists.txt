@@ -558,6 +558,8 @@ set(SOURCES_CORE
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
     src/cpp/server/runtime_config.cpp
+    src/cpp/server/logging_config.cpp
+    src/cpp/server/log_stream.cpp
     src/cpp/server/utils/http_client.cpp
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
@@ -659,7 +661,7 @@ if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
     target_include_directories(lemonade-server-core PUBLIC ${HTTPLIB_INCLUDE_DIRS})
 endif()
 
-# libwebsockets for WebSocket support
+# libwebsockets for the realtime and log-stream WebSocket server
 if(USE_SYSTEM_LWS)
     target_link_libraries(lemonade-server-core PUBLIC ${LWS_LIBRARIES})
     target_include_directories(lemonade-server-core PUBLIC ${LWS_INCLUDE_DIRS})
@@ -669,7 +671,6 @@ else()
     target_link_libraries(lemonade-server-core PUBLIC websockets)
     target_include_directories(lemonade-server-core PUBLIC ${libwebsockets_BINARY_DIR}/include ${libwebsockets_SOURCE_DIR}/include)
 endif()
-target_compile_definitions(lemonade-server-core PUBLIC LEMON_HAS_WEBSOCKET)
 
 # Enable ARC (Automatic Reference Counting) for macOS Objective-C++ files
 if(APPLE)

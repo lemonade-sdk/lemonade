@@ -22,7 +22,6 @@ Build-Depends:
  nlohmann-json3-dev,
  node-buffer,
  node-css-loader,
- node-eventsource,
  node-highlight.js,
  node-html-webpack-plugin,
  node-markdown-it,

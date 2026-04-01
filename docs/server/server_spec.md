@@ -28,6 +28,7 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/audio/transcriptions` - Audio Transcription (audio file -> text)
 - POST `/api/v1/audio/speech` - Text to speech (text -> audio)
 - WS `/realtime` - Realtime Audio Transcription (streaming audio -> text, OpenAI SDK compatible)
+- WS `/logs/stream` - Log Streaming (subscribe -> snapshot + live log entries)
 - POST `/api/v1/images/generations` - Image Generation (prompt -> image)
 - POST `/api/v1/images/edits` - Image Editing (image + prompt -> edited image)
 - POST `/api/v1/images/variations` - Image Variations (image -> varied image)
@@ -761,6 +762,102 @@ python examples/realtime_transcription.py --model Whisper-Tiny
 - **Clear Buffer**: Use `input_audio_buffer.clear` to discard audio without transcribing.
 - **Chunking**: We are still tuning the chunking to balance latency vs. accuracy.
 
+
+### Log Streaming API (WebSocket) <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Stream server logs over WebSocket. Clients connect, send a subscribe message, and receive a snapshot of recent log history followed by live log entries as they occur.
+
+#### Connection
+
+The WebSocket server shares the same port as the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket). Discover the port via the [`/api/v1/health`](#get-apiv1health) endpoint (`websocket_port` field), then connect:
+
+```
+ws://localhost:<websocket_port>/logs/stream
+```
+
+After connecting, send a `logs.subscribe` message to start receiving logs.
+
+#### Client → Server Messages
+
+| Message Type | Description |
+|--------------|-------------|
+| `logs.subscribe` | Subscribe to log stream. Optional `after_seq` field to resume from a specific sequence number. |
+
+#### Server → Client Messages
+
+| Message Type | Description |
+|--------------|-------------|
+| `logs.snapshot` | Initial batch of retained log entries (up to 5000). Sent once after subscribing. |
+| `logs.entry` | A single live log entry. Sent as new log lines are emitted. |
+| `error` | Error message (e.g., invalid subscribe request). |
+
+#### Example: Subscribe to Logs
+
+Subscribe from the beginning (full backlog):
+
+```json
+{
+  "type": "logs.subscribe",
+  "after_seq": null
+}
+```
+
+Resume after a known sequence number (e.g., on reconnect):
+
+```json
+{
+  "type": "logs.subscribe",
+  "after_seq": 1042
+}
+```
+
+#### Example: Snapshot Response
+
+```json
+{
+  "type": "logs.snapshot",
+  "entries": [
+    {
+      "seq": 1,
+      "timestamp": "2025-03-30 14:22:01.123",
+      "severity": "Info",
+      "tag": "Server",
+      "line": "2025-03-30 14:22:01.123 [Info] (Server) Starting Lemonade Server..."
+    }
+  ]
+}
+```
+
+#### Example: Live Entry
+
+```json
+{
+  "type": "logs.entry",
+  "entry": {
+    "seq": 1043,
+    "timestamp": "2025-03-30 14:22:05.456",
+    "severity": "Info",
+    "tag": "Router",
+    "line": "2025-03-30 14:22:05.456 [Info] (Router) Model loaded successfully"
+  }
+}
+```
+
+#### Log Entry Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `seq` | integer | Monotonically increasing sequence number. Use for dedup and resume. |
+| `timestamp` | string | Formatted timestamp from the log system. |
+| `severity` | string | Log level: `Trace`, `Debug`, `Info`, `Warning`, `Error`, `Fatal`. |
+| `tag` | string | Log source tag (e.g., `Server`, `Router`, component name). |
+| `line` | string | The full formatted log line. |
+
+#### Integration Notes
+
+- **Reconnection**: Track the last `seq` received and pass it as `after_seq` on reconnect to avoid duplicate entries.
+- **Backlog**: The server retains up to 5000 recent log entries. The snapshot may be smaller if fewer entries exist.
+- **Platform availability**: WebSocket log streaming is available on all platforms (Windows, Linux, and macOS).
 
 
 ### `POST /api/v1/images/generations` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -1628,7 +1725,7 @@ curl http://localhost:8000/api/v1/health
   - `audio` - Maximum speech-to-text models
   - `image` - Maximum image models
   - `tts` - Maximum text-to-speech models
-- `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned.
+- `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`.
 
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 

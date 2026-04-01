@@ -18,6 +18,11 @@ static void add_serve_options(CLI::App* serve, ServerConfig& config) {
         ->type_name("HOST")
         ->default_val(config.host);
 
+    serve->add_option("--websocket-port", config.websocket_port, "Port for the shared WebSocket server (0 = auto)")
+        ->envname("LEMONADE_WEBSOCKET_PORT")
+        ->type_name("PORT")
+        ->default_val(config.websocket_port);
+
     serve->add_option("--log-level", config.log_level, "Log level for the server")
         ->envname("LEMONADE_LOG_LEVEL")
         ->type_name("LEVEL")

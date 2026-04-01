@@ -54,7 +54,7 @@ All core endpoints are registered under **4 path prefixes**:
 
 **Anthropic-compatible endpoint:** `POST /api/messages` — supports message completion, tool use, and SSE streaming.
 
-**WebSocket Realtime API** (Windows/Linux only): OpenAI-compatible Realtime protocol for real-time audio transcription. Binds to an OS-assigned port (9000+), exposed via the `websocket_port` field in the `/health` endpoint response.
+**WebSocket Realtime API**: OpenAI-compatible Realtime protocol for real-time audio transcription. Binds to an OS-assigned port (9000+), exposed via the `websocket_port` field in the `/health` endpoint response.
 
 **Internal endpoints:** `POST /internal/shutdown`
 
@@ -67,7 +67,7 @@ Optional API key auth via `LEMONADE_API_KEY` env var. CORS enabled on all routes
 
 ### Key Dependencies
 
-**C++ (FetchContent):** cpp-httplib, nlohmann/json, CLI11, libcurl, zstd, IXWebSocket (Windows/Linux), brotli (macOS). Platform SSL: Schannel (Windows), SecureTransport (macOS), OpenSSL (Linux).
+**C++ (FetchContent):** cpp-httplib, nlohmann/json, CLI11, libcurl, zstd, libwebsockets, brotli (macOS). Platform SSL: Schannel (Windows), SecureTransport (macOS), OpenSSL (Linux).
 
 **Electron:** React 19, TypeScript 5.3, Webpack 5, Electron 39, markdown-it, highlight.js, katex.
 
