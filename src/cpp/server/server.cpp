@@ -9,9 +9,7 @@
 #include "lemon/logging_config.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
-#ifdef LEMON_HAS_WEBSOCKET
 #include "lemon/websocket_server.h"
-#endif
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -155,12 +153,10 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
 
     setup_http_servers();
 
-#ifdef LEMON_HAS_WEBSOCKET
     websocket_server_ = std::make_unique<WebSocketServer>(
         router_.get(),
         config_->host(),
         config_->websocket_port());
-#endif
 }
 
 void Server::setup_http_servers() {
@@ -964,7 +960,6 @@ void Server::run() {
 
     running_ = true;
 
-#ifdef LEMON_HAS_WEBSOCKET
     // Start WebSocket server for realtime transcription
     if (websocket_server_) {
         if (websocket_server_->start()) {
@@ -974,7 +969,6 @@ void Server::run() {
             LOG(WARNING, "Server") << "Failed to start WebSocket server" << std::endl;
         }
     }
-#endif
 
     while (true) {
         std::atomic<bool> listener_started(false);
@@ -1083,13 +1077,11 @@ void Server::stop() {
         http_server_->stop();
         running_ = false;
 
-#ifdef LEMON_HAS_WEBSOCKET
         // Stop WebSocket server
         if (websocket_server_) {
             LOG(INFO, "Server") << "Stopping WebSocket server..." << std::endl;
             websocket_server_->stop();
         }
-#endif
 
         // Explicitly clean up router (unload models, stop backend servers)
         if (router_) {
@@ -1283,12 +1275,10 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     // Add max model limits
     response["max_models"] = router_->get_max_model_limits();
 
-#ifdef LEMON_HAS_WEBSOCKET
     // Add WebSocket server port for realtime API
     if (websocket_server_ && websocket_server_->is_running()) {
         response["websocket_port"] = websocket_server_->get_port();
     }
-#endif
 
     res.set_content(response.dump(), "application/json");
 }
@@ -3564,7 +3554,6 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
             udp_beacon_.stopBroadcasting();
             http_server_->stop();
             http_server_v6_->stop();
-#ifdef LEMON_HAS_WEBSOCKET
             if (websocket_server_) {
                 websocket_server_->stop();
                 websocket_server_ = std::make_unique<WebSocketServer>(
@@ -3575,13 +3564,11 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
                     websocket_server_->start();
                 }
             }
-#endif
         } else if (key == "log_level") {
             std::string level = config_->log_level();
             LOG(INFO, "Server") << "Log level changed to: " << level << std::endl;
             reconfigure_application_logging(level);
         } else if (key == "websocket_port") {
-#ifdef LEMON_HAS_WEBSOCKET
             if (websocket_server_) {
                 LOG(INFO, "Server") << "Restarting WebSocket server on requested port "
                                     << config_->websocket_port() << std::endl;
@@ -3594,7 +3581,6 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
                     websocket_server_->start();
                 }
             }
-#endif
         } else if (key == "global_timeout") {
             long timeout = config_->global_timeout();
             LOG(INFO, "Server") << "Global timeout changed to: " << timeout << "s" << std::endl;
