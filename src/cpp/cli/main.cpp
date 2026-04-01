@@ -819,7 +819,6 @@ int main(int argc, char* argv[]) {
 
     // Config commands
     CLI::App* config_cmd = app.add_subcommand("config", "View or modify server configuration")->group("Server");
-    config_cmd->fallthrough(false);
     CLI::App* config_set_cmd = config_cmd->add_subcommand("set", "Set configuration values (e.g., llamacpp.backend=rocm port=8123)");
     config_set_cmd->allow_extras(true);
     config_set_cmd->fallthrough(false);
