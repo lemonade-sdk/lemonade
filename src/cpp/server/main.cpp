@@ -54,6 +54,13 @@ int main(int argc, char** argv) {
 
         auto cli_config = parser.get_config();
 
+        // Initialize logging early with INFO so config loading messages are captured
+        {
+            auto early_filter = AixLog::Filter(AixLog::Severity::info);
+            auto early_sink = std::make_shared<AixLog::SinkCout>(early_filter, RuntimeConfig::LOG_FORMAT);
+            AixLog::Log::init({early_sink});
+        }
+
         utils::set_cache_dir(cli_config.cache_dir);
         json config_json = ConfigFile::load(cli_config.cache_dir);
 
@@ -70,8 +77,7 @@ int main(int argc, char** argv) {
         auto config = std::make_shared<RuntimeConfig>(config_json);
         RuntimeConfig::set_global(config.get());
 
-        // Direct router runs should keep console logs while also writing a file
-        // that the SSE log-stream endpoint can tail.
+        // Re-initialize logging with the configured log level and file sink
         auto filter = AixLog::Filter(AixLog::to_severity(config->log_level()));
         auto console_sink = std::make_shared<AixLog::SinkCout>(filter, RuntimeConfig::LOG_FORMAT);
 #ifdef _WIN32

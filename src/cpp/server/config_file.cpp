@@ -6,9 +6,10 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <sstream>
 #include <vector>
+
+#include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
 
@@ -73,8 +74,8 @@ json ConfigFile::load(const std::string& cache_dir) {
 
         std::ifstream file(config_path);
         if (!file.is_open()) {
-            std::cerr << "Warning: Could not open " << config_path.string()
-                      << ", using defaults" << std::endl;
+            LOG(WARNING) << "Could not open " << config_path.string()
+                        << ", using defaults" << std::endl;
             return defaults;
         }
 
@@ -87,8 +88,8 @@ json ConfigFile::load(const std::string& cache_dir) {
     } // shared lock released
 
     if (corrupt) {
-        std::cerr << "Warning: Failed to parse " << config_path.string()
-                  << ": " << parse_error_msg << std::endl;
+        LOG(WARNING) << "Failed to parse " << config_path.string()
+                     << ": " << parse_error_msg << std::endl;
 
         // Back up the corrupt file so the user can inspect it
         fs::path backup = config_path;
@@ -96,10 +97,10 @@ json ConfigFile::load(const std::string& cache_dir) {
         std::error_code ec;
         fs::rename(config_path, backup, ec);
         if (!ec) {
-            std::cerr << "  Renamed to " << backup.string() << std::endl;
+            LOG(WARNING) << "  Renamed to " << backup.string() << std::endl;
         }
 
-        std::cerr << "  Using defaults." << std::endl;
+        LOG(WARNING) << "  Using defaults." << std::endl;
         save(cache_dir, defaults);
         return defaults;
     }
@@ -241,12 +242,13 @@ json ConfigFile::migrate_from_env(const json& defaults) {
     }
 
     if (!migrated.empty()) {
-        std::cerr << "Migrated config.json from environment variables: ";
+        std::ostringstream oss;
         for (size_t i = 0; i < migrated.size(); ++i) {
-            if (i > 0) std::cerr << ", ";
-            std::cerr << migrated[i];
+            if (i > 0) oss << ", ";
+            oss << migrated[i];
         }
-        std::cerr << std::endl;
+        LOG(INFO) << "Migrated config.json from environment variables: "
+                  << oss.str() << std::endl;
     }
 
     return utils::JsonUtils::merge(defaults, overlay);
