@@ -178,6 +178,7 @@ static const EnvMapping env_mappings[] = {
     {"LEMONADE_WHISPERCPP_NPU_BIN",      "whispercpp", "npu_bin"},
     // sdcpp
     {"LEMONADE_SDCPP",                   "sdcpp", "backend"},
+    {"LEMONADE_SDCPP_ARGS",              "sdcpp", "args"},
     {"LEMONADE_STEPS",                   "sdcpp", "steps"},
     {"LEMONADE_CFG_SCALE",               "sdcpp", "cfg_scale"},
     {"LEMONADE_WIDTH",                   "sdcpp", "width"},

@@ -231,6 +231,7 @@ json RuntimeConfig::recipe_options() const {
     if (config_.contains("sdcpp")) {
         const auto& sd = config_["sdcpp"];
         if (sd.contains("backend")) result["sd-cpp_backend"] = resolve_auto(sd["backend"]);
+        if (sd.contains("args")) result["sdcpp_args"] = sd["args"];
         if (sd.contains("steps")) result["steps"] = sd["steps"];
         if (sd.contains("cfg_scale")) result["cfg_scale"] = sd["cfg_scale"];
         if (sd.contains("width")) result["width"] = sd["width"];

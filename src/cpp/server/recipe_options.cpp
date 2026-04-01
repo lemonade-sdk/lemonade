@@ -15,6 +15,7 @@ static const json DEFAULTS = {
     {"llamacpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
     {"llamacpp_args", ""},
     {"sd-cpp_backend", ""},   // "" means auto-detect (mapped from "auto" in config.json)
+    {"sdcpp_args", ""},
     {"whispercpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
     {"whispercpp_args", ""},
     // Image generation defaults (for sd-cpp recipe)
@@ -32,6 +33,7 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"llamacpp_backend", "--llamacpp"},
     {"llamacpp_args", "--llamacpp-args"},
     {"sd-cpp_backend", "--sdcpp"},
+    {"sdcpp_args", "--sdcpp-args"},
     {"whispercpp_backend", "--whispercpp"},
     {"whispercpp_args", "--whispercpp-args"},
     {"steps", "--steps"},
@@ -51,7 +53,7 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     } else if (recipe == "ryzenai-llm") {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
-        return {"sd-cpp_backend", "steps", "cfg_scale", "width", "height"};
+        return {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height"};
     } else {
         return {};
     }
@@ -181,6 +183,7 @@ static const json CLI_OPTIONS = {
     {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_LLAMACPP"}, {"help", "LlamaCpp backend to use"}}},
     {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_LLAMACPP_ARGS"}, {"help", "Custom arguments to pass to llama-server"}}},
     {"--sdcpp", {{"option_name", "sd-cpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_SDCPP"}, {"help", "SD.cpp backend to use"}}},
+    {"--sdcpp-args", {{"option_name", "sdcpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_SDCPP_ARGS"}, {"help", "Custom arguments to pass to sd-server (must not conflict with managed args)"}}},
     {"--whispercpp", {{"option_name", "whispercpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_WHISPERCPP"}, {"help", "WhisperCpp backend to use"}}},
     {"--whispercpp-args", {{"option_name", "whispercpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_WHISPERCPP_ARGS"}, {"help", "Custom arguments to pass to whisper-server"}}},
     {"--steps", {{"option_name", "steps"}, {"type_name", "N"}, {"envname", "LEMONADE_STEPS"}, {"help", "Number of inference steps for image generation"}}},

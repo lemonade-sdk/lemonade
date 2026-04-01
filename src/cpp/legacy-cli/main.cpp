@@ -173,6 +173,7 @@ parse_serve_args(const std::vector<std::string>& args) {
         else if (arg == "--whispercpp") { config_set_args.push_back("whispercpp.backend=" + next()); }
         else if (arg == "--whispercpp-args") { config_set_args.push_back("whispercpp.args=" + next()); }
         else if (arg == "--sdcpp") { config_set_args.push_back("sdcpp.backend=" + next()); }
+        else if (arg == "--sdcpp-args") { config_set_args.push_back("sdcpp.args=" + next()); }
         else if (arg == "--steps") { config_set_args.push_back("sdcpp.steps=" + next()); }
         else if (arg == "--cfg-scale") { config_set_args.push_back("sdcpp.cfg_scale=" + next()); }
         else if (arg == "--width") { config_set_args.push_back("sdcpp.width=" + next()); }

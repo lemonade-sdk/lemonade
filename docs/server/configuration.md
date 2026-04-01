@@ -47,6 +47,7 @@ If `config.json` doesn't exist, it's created automatically with default values o
   },
   "sdcpp": {
     "backend": "auto",
+    "args": "",
     "steps": 20,
     "cfg_scale": 7.0,
     "width": 512,
@@ -107,6 +108,7 @@ Backend-specific settings are nested under their backend name:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
+| `args` | "" | Custom arguments to pass to `sd-server` |
 | `steps` | 20 | Number of inference steps |
 | `cfg_scale` | 7.0 | Classifier-free guidance scale |
 | `width` | 512 | Image width in pixels |
