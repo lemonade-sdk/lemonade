@@ -648,7 +648,6 @@ jobs:
           test -f build/resources/server_models.json
           test -f build/resources/backend_versions.json
           test -f build/resources/defaults.json
-          test -d build/resources/static
           echo "Build outputs verified!"
 
           # Verify no unexpected dynamic dependencies
@@ -661,14 +660,13 @@ jobs:
           set -e
 
           ARCHIVE_DIR="lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64"
-          mkdir -p "${ARCHIVE_DIR}/resources/static"
+          mkdir -p "${ARCHIVE_DIR}/resources"
 
           cp build/lemond "${ARCHIVE_DIR}/"
           cp build/lemonade "${ARCHIVE_DIR}/"
           cp build/resources/server_models.json "${ARCHIVE_DIR}/resources/"
           cp build/resources/backend_versions.json "${ARCHIVE_DIR}/resources/"
           cp build/resources/defaults.json "${ARCHIVE_DIR}/resources/"
-          cp -r build/resources/static/* "${ARCHIVE_DIR}/resources/static/"
           chmod 755 "${ARCHIVE_DIR}/lemond" "${ARCHIVE_DIR}/lemonade"
 
           tar czf "${ARCHIVE_DIR}.tar.gz" "${ARCHIVE_DIR}"
@@ -758,8 +756,7 @@ jobs:
               "build\Release\lemonade.exe",
               "build\Release\resources\server_models.json",
               "build\Release\resources\backend_versions.json",
-              "build\Release\resources\defaults.json",
-              "build\Release\resources\static\index.html"
+              "build\Release\resources\defaults.json"
           ) | ForEach-Object {
               if (-not (Test-Path $_)) {
                   Write-Host "ERROR: $_ not found!" -ForegroundColor Red
@@ -776,14 +773,13 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           $archiveDir = "lemonade-embeddable-$($env:LEMONADE_VERSION)-windows-x64"
-          New-Item -ItemType Directory -Path "$archiveDir\resources\static" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$archiveDir\resources" -Force | Out-Null
 
           Copy-Item "build\Release\lemond.exe" "$archiveDir\"
           Copy-Item "build\Release\lemonade.exe" "$archiveDir\"
           Copy-Item "build\Release\resources\server_models.json" "$archiveDir\resources\"
           Copy-Item "build\Release\resources\backend_versions.json" "$archiveDir\resources\"
           Copy-Item "build\Release\resources\defaults.json" "$archiveDir\resources\"
-          Copy-Item "build\Release\resources\static\*" "$archiveDir\resources\static\" -Recurse
 
           Compress-Archive -Path "$archiveDir" -DestinationPath "$archiveDir.zip"
 
@@ -1098,8 +1094,6 @@ jobs:
           test -f "$DIR/resources/server_models.json"
           test -f "$DIR/resources/backend_versions.json"
           test -f "$DIR/resources/defaults.json"
-          test -f "$DIR/resources/static/index.html"
-          test -f "$DIR/resources/static/favicon.ico"
           echo "All expected files present"
 
           # Verify NO forbidden files
@@ -1190,9 +1184,7 @@ jobs:
               "$archiveDir\lemonade.exe",
               "$archiveDir\resources\server_models.json",
               "$archiveDir\resources\backend_versions.json",
-              "$archiveDir\resources\defaults.json",
-              "$archiveDir\resources\static\index.html",
-              "$archiveDir\resources\static\favicon.ico"
+              "$archiveDir\resources\defaults.json"
           )
           $failures = @()
           foreach ($f in $expected) {
