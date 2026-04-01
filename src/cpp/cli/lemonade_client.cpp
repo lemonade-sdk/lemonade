@@ -229,6 +229,18 @@ std::vector<ModelInfo> LemonadeClient::get_models(bool show_all) const {
                 info.downloaded = model_item["downloaded"].get<bool>();
             }
 
+            if (model_item.contains("suggested") && model_item["suggested"].is_boolean()) {
+                info.suggested = model_item["suggested"].get<bool>();
+            }
+
+            if (model_item.contains("labels") && model_item["labels"].is_array()) {
+                for (const auto& label : model_item["labels"]) {
+                    if (label.is_string()) {
+                        info.labels.push_back(label.get<std::string>());
+                    }
+                }
+            }
+
             if (!info.id.empty()) {
                 models.push_back(info);
             }
