@@ -1,6 +1,7 @@
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
+#include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/json_utils.h"
@@ -11,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <set>
 #include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
@@ -81,6 +83,7 @@ void SDServer::load(const std::string& model_name,
     LOG(DEBUG, "SDServer") << "Per-model settings: " << options.to_log_string() << std::endl;
 
     std::string backend = options.get_option("sd-cpp_backend");
+    std::string sdcpp_args = options.get_option("sdcpp_args");
 
     // Install sd-server if needed
     backend_manager_->install_backend(SPEC.recipe, backend);
@@ -134,6 +137,29 @@ void SDServer::load(const std::string& model_name,
 
     if (is_debug()) {
         args.push_back("-v");
+    }
+
+    std::set<std::string> reserved_flags = {
+        "-m",
+        "--model",
+        "--diffusion-model",
+        "--llm",
+        "--vae",
+        "-v",
+        "--listen-port"
+    };
+
+    if (!sdcpp_args.empty()) {
+        std::string validation_error = validate_custom_args(sdcpp_args, reserved_flags);
+        if (!validation_error.empty()) {
+            throw std::invalid_argument(
+                "Invalid custom sd-server arguments:\n" + validation_error
+            );
+        }
+
+        LOG(DEBUG, "SDServer") << "Adding custom arguments: " << sdcpp_args << std::endl;
+        std::vector<std::string> custom_args_vec = parse_custom_args(sdcpp_args);
+        args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
     }
 
     // Set up environment variables

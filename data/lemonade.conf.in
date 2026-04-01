@@ -44,6 +44,7 @@
 # SD.cpp defaults
 # Backend selection defaults to the first supported backend detected on this system.
 #LEMONADE_SDCPP=
+#LEMONADE_SDCPP_ARGS=
 #LEMONADE_STEPS=@LEMONADE_DEFAULT_STEPS@
 #LEMONADE_CFG_SCALE=@LEMONADE_DEFAULT_CFG_SCALE@
 #LEMONADE_WIDTH=@LEMONADE_DEFAULT_WIDTH@
