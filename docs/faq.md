@@ -65,19 +65,18 @@
 
    **Secondary: Extra Models Directory (GGUF)**
 
-   Lemonade Server can discover GGUF models from a secondary directory using the `--extra-models-dir` option, enabling compatibility with llama.cpp and LM Studio model caches. Suggested paths:
+   Lemonade Server can discover GGUF models from a secondary directory using the `extra_models_dir` option, enabling compatibility with llama.cpp and LM Studio model caches. Suggested paths:
 
    - **Windows:**
        - LM Studio: `C:\Users\You\.lmstudio\models`
        - llamacpp: `%LOCALAPPDATA%\llama.cpp` (e.g., `C:\Users\You\AppData\Local\llama.cpp`)
    - **Linux:** `~/.cache/llama.cpp`
 
-   Set the `LEMONADE_EXTRA_MODELS_DIR` environment variable to point to your models directory:
+   Set `extra_models_dir` (see [Server Configuration](./server/configuration.md)):
 
-   - **Windows:** `setx LEMONADE_EXTRA_MODELS_DIR "%LOCALAPPDATA%\llama.cpp"`
-   - **Linux:** Add `LEMONADE_EXTRA_MODELS_DIR=/home/you/.cache/llama.cpp` to `/etc/lemonade/lemonade.conf`
-
-   Then restart the server for the change to take effect.
+   ```bash
+   lemonade config set extra_models_dir="/home/you/.cache/llama.cpp"
+   ```
 
    Any `.gguf` files found in this directory (including subdirectories) will automatically appear in Lemonade's model list in the `custom` category.
 
@@ -112,9 +111,9 @@
    - Use a pull request to add the model to the built-in `server_models.json` file.
    - Request support by opening a [GitHub issue](https://github.com/lemonade-sdk/lemonade/issues).
 
-   If you are sure that a model should be listed, but you aren't seeing it, you can set the `LEMONADE_DISABLE_MODEL_FILTERING` environment variable to show all models supported by Lemonade on any PC configuration. But please note, this can show models that definitely won't work on your system.
+   If you are sure that a model should be listed, but you aren't seeing it, you can `lemonade config set disable_model_filtering=true` in to show all models supported by Lemonade on any PC configuration. But please note, this can show models that definitely won't work on your system.
 
-   Alternatively if you are attempting to use GTT on your dGPU then you can set the `LEMONADE_ENABLE_DGPU_GTT` environment variable to filter using the combined memory pool. Please note ROCM does not support splitting memory across multiple pools, vulkan is likely required for this usecase.
+   Alternatively if you are attempting to use GTT on your dGPU then you can `lemonade config set enable_dgpu_gtt=true` to filter using the combined memory pool. Please note ROCM does not support splitting memory across multiple pools, vulkan is likely required for this usecase.
 
 ### 5. **Is there a script or tool to convert models to Ryzen AI NPU format?**
 
@@ -137,7 +136,7 @@
    curl http://localhost:8000/api/v1/stats
    ```
 
-   Or, set `LEMONADE_LOG_LEVEL=debug` and restart the server, or use `lemonade logs` to view logs.
+   Or, use `lemonade config set log_level=debug` to enable debug logging, or `lemonade logs` to view logs.
 
 ### 2. **How does Lemonade's performance compare to llama.cpp?**
 
@@ -167,7 +166,7 @@
 ### 1. **Does LLM inference with the NPU only work on Windows?**
 
    Today, NPU-only inference on Linux is available via FastFlowLM, see the guide [here](https://lemonade-server.ai/flm_npu_linux.html).
-   
+
    At the moment, Ryzen AI SW's implementation of NPU and hybrid inference is currently supported only on Windows.
 
 ### 2. **I loaded a hybrid model, but the NPU is barely active. Is that expected?**
@@ -218,15 +217,6 @@
 ### 1. **How do I run Lemonade Server on one PC and access it from another?**
 
    Lemonade supports running the server on one machine while using the app from another machine on the same network.
-
-   **Quick setup:**
-   1. On the server machine, enable network access by setting `LEMONADE_HOST=0.0.0.0`:
-      - **Windows:** `setx LEMONADE_HOST 0.0.0.0` then quit from the tray icon and relaunch from the Start Menu
-      - **Linux:** Add `LEMONADE_HOST=0.0.0.0` to `/etc/lemonade/lemonade.conf`, then `sudo systemctl restart lemonade-server`
-   2. On the client machine, launch the app and configure the endpoint through the UI:
-      ```bash
-      lemonade-app
-      ```
 
    For detailed instructions and security considerations, see [Remote Server Connection](./server/configuration.md#remote-server-connection).
 

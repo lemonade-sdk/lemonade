@@ -2,9 +2,9 @@
 #include <csignal>
 #include <atomic>
 #include <lemon/cli_parser.h>
+#include <lemon/config_file.h>
 #include <lemon/logging_config.h>
 #include <lemon/server.h>
-#include <lemon/system_info.h>
 #include <lemon/version.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/aixlog.hpp>
@@ -46,45 +46,69 @@ void signal_handler(int signal) {
 int main(int argc, char** argv) {
     try {
         CLIParser parser;
-
         parser.parse(argc, argv);
 
-        // Check if we should continue (false for --help, --version, or errors)
         if (!parser.should_continue()) {
             return parser.get_exit_code();
         }
 
-        // Get server configuration
-        auto config = parser.get_config();
+        auto cli_config = parser.get_config();
 
-        // Direct router runs should keep console logs while also feeding the
-        // shared log hub for websocket log streaming and retained history.
-        configure_application_logging(config.log_level, LoggingMode::direct_server);
-
-        // Start the server
-        LOG(INFO) << "Starting Lemonade Server..." << std::endl;
-        LOG(INFO) << "  Version: " << LEMON_VERSION_STRING << std::endl;
-        LOG(INFO) << "  Port: " << config.port << std::endl;
-        LOG(INFO) << "  Host: " << config.host << std::endl;
-        LOG(INFO) << "  Log level: " << config.log_level << std::endl;
-        if (!config.extra_models_dir.empty()) {
-            LOG(INFO) << "  Extra models dir: " << config.extra_models_dir << std::endl;
+        // Initialize logging early with INFO so config loading messages are captured
+        {
+            auto early_filter = AixLog::Filter(AixLog::Severity::info);
+            auto early_sink = std::make_shared<AixLog::SinkCout>(early_filter, RuntimeConfig::LOG_FORMAT);
+            AixLog::Log::init({early_sink});
         }
 
-        Server server(config.port, config.host, config.log_level,
-                    config.websocket_port,
-                    config.recipe_options, config.max_loaded_models,
-                    config.extra_models_dir, config.no_broadcast,
-                    config.global_timeout);
+        utils::set_cache_dir(cli_config.cache_dir);
+        json config_json = ConfigFile::load(cli_config.cache_dir);
 
-        // Register signal handler for Ctrl+C
+        // CLI --port/--host override config.json and persist
+        bool cli_overrides = false;
+        if (cli_config.port != -1) {
+            config_json["port"] = cli_config.port;
+            cli_overrides = true;
+        }
+        if (!cli_config.host.empty()) {
+            config_json["host"] = cli_config.host;
+            cli_overrides = true;
+        }
+        auto config = std::make_shared<RuntimeConfig>(config_json);
+        RuntimeConfig::set_global(config.get());
+
+        // Initialize logging with the configured level — console + file + log hub
+        configure_application_logging(config->log_level(), LoggingMode::direct_server);
+
+        if (cli_overrides) {
+            ConfigFile::save(cli_config.cache_dir, config_json);
+            if (cli_config.port != -1) {
+                LOG(INFO) << "Persisted port=" << cli_config.port << " to config.json" << std::endl;
+            }
+            if (!cli_config.host.empty()) {
+                LOG(INFO) << "Persisted host=" << cli_config.host << " to config.json" << std::endl;
+            }
+        }
+
+        utils::set_models_dir(config->models_dir());
+
+        LOG(INFO) << "Starting Lemonade Server..." << std::endl;
+        LOG(INFO) << "  Version: " << LEMON_VERSION_STRING << std::endl;
+        LOG(INFO) << "  Cache dir: " << cli_config.cache_dir << std::endl;
+        LOG(INFO) << "  Port: " << config->port() << std::endl;
+        LOG(INFO) << "  Host: " << config->host() << std::endl;
+        LOG(INFO) << "  Log level: " << config->log_level() << std::endl;
+        if (!config->extra_models_dir().empty()) {
+            LOG(INFO) << "  Extra models dir: " << config->extra_models_dir() << std::endl;
+        }
+
+        Server server(config, cli_config.cache_dir);
+
         g_server_instance = &server;
         std::signal(SIGINT, signal_handler);
         std::signal(SIGTERM, signal_handler);
 
         server.run();
-
-        // Clean up
         g_server_instance = nullptr;
 
         return 0;

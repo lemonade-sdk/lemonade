@@ -1,6 +1,7 @@
 #include "lemon/backends/whisper_server.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
+#include "lemon/runtime_config.h"
 #include "lemon/audio_types.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
@@ -176,6 +177,8 @@ void WhisperServer::load(const std::string& model_name,
 
     std::string whispercpp_backend = options.get_option("whispercpp_backend");
     std::string whispercpp_args = options.get_option("whispercpp_args");
+
+    RuntimeConfig::validate_backend_choice("whispercpp", whispercpp_backend);
 
     backend_manager_->install_backend(SPEC.recipe, whispercpp_backend);
 

@@ -9,6 +9,7 @@ Build-Depends:
  dh-cmake-compat (= 1),
  dh-sequence-cmake,
  fonts-katex,
+ jq,
  libdrm-dev,
  libcli11-dev,
  libcpp-httplib-dev (>> 0.26),
@@ -59,7 +60,7 @@ Description: Local LLM serving with GPU and NPU acceleration server
 Package: lemonade-desktop
 Architecture: all
 Multi-Arch: foreign
-Depends: ${shlibs:Depends}, ${misc:Depends}, lemonade-server, xdg-utils
+Depends: ${shlibs:Depends}, ${misc:Depends}, jq, lemonade-server, xdg-utils
 Recommends: chromium | www-browser
 Description: Local LLM serving with GPU and NPU acceleration web application
  Lemonade helps users run local LLMs with the highest performance by

@@ -9,8 +9,6 @@
 //   Output binary: lemonade-tray
 
 #include "lemon_tray/tray_ui.h"
-#include <lemon/cli_parser.h>
-#include <lemon/logging_config.h>
 #include <lemon/single_instance.h>
 #include <lemon/utils/aixlog.hpp>
 #include <lemon/version.h>
@@ -25,7 +23,12 @@
 
 #ifdef _WIN32
 // Windows embeds the server
+#include <lemon/cli_parser.h>
+#include <lemon/config_file.h>
+#include <lemon/logging_config.h>
+#include <lemon/runtime_config.h>
 #include <lemon/server.h>
+#include <lemon/utils/path_utils.h>
 #include <winsock2.h>
 #include <windows.h>
 
@@ -133,26 +136,44 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     if (!parser.should_continue()) {
         return parser.get_exit_code();
     }
-    auto config = parser.get_config();
+    auto cli_config = parser.get_config();
 
-    // Initialize logging to file (SUBSYSTEM:WINDOWS has no console).
-    // The shared log hub forwards these entries to the websocket log stream.
-    {
-        lemon::configure_application_logging(config.log_level, lemon::LoggingMode::embedded_tray_server);
+    lemon::utils::set_cache_dir(cli_config.cache_dir);
+
+    auto config_json = lemon::ConfigFile::load(cli_config.cache_dir);
+
+    // CLI overrides (persist to config.json)
+    bool cli_overrides = false;
+    if (cli_config.port != -1) {
+        config_json["port"] = cli_config.port;
+        cli_overrides = true;
     }
+    if (!cli_config.host.empty()) {
+        config_json["host"] = cli_config.host;
+        cli_overrides = true;
+    }
+    if (cli_overrides) {
+        lemon::ConfigFile::save(cli_config.cache_dir, config_json);
+    }
+
+    auto runtime_config = std::make_shared<lemon::RuntimeConfig>(config_json);
+    lemon::RuntimeConfig::set_global(runtime_config.get());
+
+    lemon::utils::set_models_dir(runtime_config->models_dir());
+
+    // Initialize logging (file + log hub; SUBSYSTEM:WINDOWS has no console)
+    lemon::configure_application_logging(
+        runtime_config->log_level(), lemon::LoggingMode::embedded_tray_server);
 
     // Initialize Winsock (required by httplib)
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
 
-    // Start server on background thread (capture config by value — thread outlives the stack frame)
-    std::thread server_thread([config]() {
+    // Start server on background thread
+    std::string cache_dir = cli_config.cache_dir;
+    std::thread server_thread([runtime_config, cache_dir]() {
         try {
-            lemon::Server server(config.port, config.host, config.log_level,
-                                config.websocket_port,
-                                config.recipe_options, config.max_loaded_models,
-                                config.extra_models_dir, config.no_broadcast,
-                                config.global_timeout);
+            lemon::Server server(runtime_config, cache_dir);
             server.run();
         } catch (const std::exception& e) {
             MessageBoxA(NULL, e.what(), "Lemonade Server Error", MB_OK | MB_ICONERROR);
@@ -161,7 +182,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     server_thread.detach();
 
     // Wait for server to be ready
-    if (!wait_for_server(config.host, config.port, 15)) {
+    if (!wait_for_server(runtime_config->host(), runtime_config->port(), 15)) {
         MessageBoxA(NULL,
             "Lemonade Server failed to start within 15 seconds.",
             "Lemonade Server Error", MB_OK | MB_ICONERROR);
@@ -175,7 +196,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     // thread; we just need to block until shutdown.
     bool headless = false;
     try {
-        lemon_tray::TrayUI tray(config.port, config.host, silent);
+        lemon_tray::TrayUI tray(runtime_config->port(), runtime_config->host(), silent);
         if (tray.initialize()) {
             tray.run();  // Blocks until quit
         } else {
@@ -203,9 +224,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     // processes like llama-server) before sending the response, then
     // stops the HTTP listener and exits on a detached thread.
     {
-        std::string connect_host = (config.host.empty() || config.host == "0.0.0.0" || config.host == "localhost")
-            ? "127.0.0.1" : config.host;
-        httplib::Client cli(connect_host, config.port);
+        std::string connect_host = (runtime_config->host().empty() || runtime_config->host() == "0.0.0.0" || runtime_config->host() == "localhost")
+            ? "127.0.0.1" : runtime_config->host();
+        httplib::Client cli(connect_host, runtime_config->port());
         cli.set_connection_timeout(2);
         cli.set_read_timeout(30);  // Allow time for model unload (up to 5s per model)
         cli.Post("/internal/shutdown", "", "application/json");

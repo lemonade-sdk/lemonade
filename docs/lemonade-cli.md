@@ -318,6 +318,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--sdcpp BACKEND` | SD.cpp backend to use (`cpu` for CPU, `rocm` for AMD GPU) | Auto-detected |
+| `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
 | `--steps N` | Number of inference steps for image generation | `20` |
 | `--cfg-scale SCALE` | Classifier-free guidance scale for image generation | `7.0` |
 | `--width PX` | Image width in pixels | `512` |

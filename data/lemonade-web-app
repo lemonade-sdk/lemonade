@@ -2,26 +2,17 @@
 
 set -e
 
-LEMONADE_HOST="localhost"
-LEMONADE_PORT="8000"
+LEMONADE_PORT="${LEMONADE_PORT:-8000}"
 
-if [ -f /etc/lemonade/lemonade.conf ]; then
-    source /etc/lemonade/lemonade.conf
-fi
-for conf in /etc/lemonade/conf.d/*.conf; do
-    [ -f "$conf" ] || continue
-    source "$conf"
-done
-if [ -f ~/.config/lemonade/lemonade.conf ]; then
-    source ~/.config/lemonade/lemonade.conf
+# Discover the actual port from a running server
+if command -v lemonade &> /dev/null; then
+    DISCOVERED_PORT=$(lemonade status --json 2>/dev/null | jq -r '.port // empty')
+    if [ -n "$DISCOVERED_PORT" ]; then
+        LEMONADE_PORT="$DISCOVERED_PORT"
+    fi
 fi
 
-# If listening on localhost always run on localhost for WMClass
-if [ "${LEMONADE_HOST}" = "0.0.0.0" ]; then
-    LEMONADE_HOST="localhost"
-fi
-
-URL="http://${LEMONADE_HOST}:${LEMONADE_PORT}/lemonade"
+URL="http://localhost:${LEMONADE_PORT}/lemonade"
 
 # Prefer chromium based browsers otherwise xdg-open
 if [ "$(echo "${LEMONADE_PREFER_CHROMIUM:-true}" | tr '[:upper:]' '[:lower:]')" = "true" ]; then

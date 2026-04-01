@@ -200,11 +200,11 @@ def _build_runtime_config(additional_server_args=None):
 
     # Map --wrapped-server + --backend to the correct recipe option key
     if wrapped_server == "llamacpp" and backend:
-        config["llamacpp_backend"] = backend
+        config["llamacpp"] = {"backend": backend}
     elif wrapped_server == "sd-cpp" and backend:
-        config["sd-cpp_backend"] = backend
+        config["sdcpp"] = {"backend": backend}
     elif wrapped_server == "whispercpp" and backend:
-        config["whispercpp_backend"] = backend
+        config["whispercpp"] = {"backend": backend}
 
     # Parse additional_server_args for known flags
     additional = list(_config.get("additional_server_args", []))
@@ -218,13 +218,13 @@ def _build_runtime_config(additional_server_args=None):
             config["max_loaded_models"] = int(additional[i + 1])
             i += 2
         elif arg == "--llamacpp" and i + 1 < len(additional):
-            config["llamacpp_backend"] = additional[i + 1]
+            config["llamacpp"] = {"backend": additional[i + 1]}
             i += 2
         elif arg == "--sdcpp" and i + 1 < len(additional):
-            config["sd-cpp_backend"] = additional[i + 1]
+            config["sdcpp"] = {"backend": additional[i + 1]}
             i += 2
         elif arg == "--whispercpp" and i + 1 < len(additional):
-            config["whispercpp_backend"] = additional[i + 1]
+            config["whispercpp"] = {"backend": additional[i + 1]}
             i += 2
         elif arg == "--ctx-size" and i + 1 < len(additional):
             config["ctx_size"] = int(additional[i + 1])

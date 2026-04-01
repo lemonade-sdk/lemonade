@@ -1,4 +1,5 @@
 #include "lemon/backends/backend_utils.h"
+#include "lemon/runtime_config.h"
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/whisper_server.h"
 #include "lemon/backends/sd_server.h"
@@ -144,18 +145,23 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::find_external_backend_binary(const std::string& recipe, const std::string& backend) {
-        std::string upper = backend == "" ? recipe : (recipe + "_" + backend);
-        std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
-        // turn SD-CPP into SDCPP since '-' is not valid in ENV names
-        upper.erase(remove_if(upper.begin(), upper.end(), [](const char& c) { return c == '-'; }), upper.end());
-        std::string env = "LEMONADE_" + upper + "_BIN";
-        const char* backend_bin_env = std::getenv(env.c_str());
-        if (!backend_bin_env) {
+        auto* cfg = lemon::RuntimeConfig::global();
+        if (!cfg) return "";
+
+        std::string section = RuntimeConfig::recipe_to_config_section(recipe);
+
+        // Build the config key: e.g. "vulkan_bin", "cpu_bin", "server_bin"
+        std::string bin_key = backend.empty() ? "server_bin" : (backend + "_bin");
+
+        std::string bin_value = cfg->backend_string(section, bin_key);
+
+        // "builtin" or empty means use the built-in binary (not an external override)
+        if (bin_value.empty() || bin_value == "builtin") {
             return "";
         }
 
-        std::string backend_bin = std::string(backend_bin_env);
-        return fs::exists(backend_bin) ? backend_bin : "";
+        RuntimeConfig::validate_bin_path(section, bin_key, bin_value);
+        return bin_value;
     }
 
     std::string BackendUtils::find_executable_in_install_dir(const std::string& install_dir, const std::string& binary_name) {

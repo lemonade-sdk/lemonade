@@ -102,7 +102,7 @@ Lemonade Server supports loading multiple models simultaneously, allowing you to
 
 ### Configuration
 
-Configure via the `LEMONADE_MAX_LOADED_MODELS` environment variable. See [Server Configuration](./configuration.md#environment-variables).
+Configure via `lemonade config set max_loaded_models=N`. See [Server Configuration](./configuration.md).
 
 **Default:** `1` (one model of each type). Use `-1` for unlimited.
 
@@ -116,7 +116,7 @@ Models are categorized into these types:
 - **Audio** - Models for audio transcription using Whisper (identified by the `audio` label)
 - **Image** - Models for image generation (identified by the `image` label)
 
-Each type has its own independent LRU cache, all sharing the same slot limit set by `--max-loaded-models`.
+Each type has its own independent LRU cache, all sharing the same slot limit set by `max_loaded_models`.
 
 ### Device Constraints
 
@@ -1718,7 +1718,7 @@ curl http://localhost:8000/api/v1/health
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
-- `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `--max-loaded-models`):
+- `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](./configuration.md)):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
   - `reranking` - Maximum reranking models
@@ -1987,7 +1987,7 @@ In case of an error, returns an `error` field with details.
 
 # Debugging
 
-To control logging verbosity, set the `LEMONADE_LOG_LEVEL` environment variable (see [Server Configuration](./configuration.md#environment-variables)).
+To control logging verbosity, use `lemonade config set log_level=debug` (see [Server Configuration](./configuration.md)).
 
 Available levels:
 

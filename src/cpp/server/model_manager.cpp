@@ -1,4 +1,5 @@
 #include <lemon/model_manager.h>
+#include <lemon/runtime_config.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/http_client.h>
 #include <lemon/utils/process_manager.h>
@@ -12,6 +13,7 @@
 #include <sstream>
 #include <thread>
 #include <chrono>
+#include <set>
 #include <unordered_set>
 #include <iomanip>
 #include <lemon/utils/aixlog.hpp>
@@ -1230,11 +1232,14 @@ bool parse_TF_env_var(const char* env_var_name) {
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     const std::map<std::string, ModelInfo>& models) {
 
-    // Check if model filtering is disabled via environment variable
-    bool disable_filtering = parse_TF_env_var("LEMONADE_DISABLE_MODEL_FILTERING");
-
-    // Check if dGPUs should use GTT
-    bool enable_dgpu_gtt = parse_TF_env_var("LEMONADE_ENABLE_DGPU_GTT");
+    // Check if model filtering is disabled via config.json
+    bool disable_filtering = false;
+    bool enable_dgpu_gtt = false;
+    auto* cfg = lemon::RuntimeConfig::global();
+    if (cfg) {
+        disable_filtering = cfg->disable_model_filtering();
+        enable_dgpu_gtt = cfg->enable_dgpu_gtt();
+    }
 
     if (disable_filtering) {
         filtered_out_models_.clear();
@@ -1734,7 +1739,10 @@ void ModelManager::download_model(const std::string& model_name,
     }
 
     // Check if this recipe is supported on the current system
-    bool disable_filtering = parse_TF_env_var("LEMONADE_DISABLE_MODEL_FILTERING");
+    bool disable_filtering = false;
+    if (auto* cfg = RuntimeConfig::global()) {
+        disable_filtering = cfg->disable_model_filtering();
+    }
     std::string unsupported_reason = SystemInfo::check_recipe_supported(actual_recipe);
     if (!unsupported_reason.empty() && !disable_filtering) {
         throw std::runtime_error(
@@ -1750,10 +1758,11 @@ void ModelManager::download_model(const std::string& model_name,
     LOG(INFO, "ModelManager") << std::endl;
 
     // Check if offline mode
-    const char* offline_env = std::getenv("LEMONADE_OFFLINE");
-    if (offline_env && std::string(offline_env) == "1") {
-        LOG(INFO, "ModelManager") << "Offline mode enabled, skipping download" << std::endl;
-        return;
+    if (auto* cfg = RuntimeConfig::global()) {
+        if (cfg->offline()) {
+            LOG(INFO, "ModelManager") << "Offline mode enabled, skipping download" << std::endl;
+            return;
+        }
     }
 
     // CRITICAL: If do_not_upgrade=true AND model is already downloaded, skip entirely

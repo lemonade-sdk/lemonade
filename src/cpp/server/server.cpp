@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/config_file.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/backend_utils.h"
@@ -9,7 +10,6 @@
 #include "lemon/logging_config.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
-#include "lemon/websocket_server.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -122,23 +122,18 @@ static const json MIME_TYPES = {
     {"pcm",  "audio/l16;rate=24000;endianness=little-endian"}
 };
 
-Server::Server(int port, const std::string& host, const std::string& log_level,
-               int websocket_port,
-               const json& default_options, int max_loaded_models,
-               const std::string& extra_models_dir, bool no_broadcast,
-               long global_timeout)
-    : config_(std::make_shared<RuntimeConfig>(port, host, websocket_port, log_level, extra_models_dir,
-                                               no_broadcast, global_timeout,
-                                               max_loaded_models, default_options)),
-      port_(port), running_(false), udp_beacon_() {
+Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_dir)
+    : config_(config),
+      cache_dir_(cache_dir),
+      port_(config->port()), running_(false), udp_beacon_() {
 
     // Set global HttpClient timeout
-    utils::HttpClient::set_default_timeout(global_timeout);
+    utils::HttpClient::set_default_timeout(config->global_timeout());
 
     model_manager_ = std::make_unique<ModelManager>();
 
     // Set extra models directory for GGUF discovery
-    model_manager_->set_extra_models_dir(extra_models_dir);
+    model_manager_->set_extra_models_dir(config_->extra_models_dir());
 
     backend_manager_ = std::make_unique<BackendManager>();
 
@@ -153,6 +148,7 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
 
     setup_http_servers();
 
+    // Initialize WebSocket server for realtime API and log streaming
     websocket_server_ = std::make_unique<WebSocketServer>(
         router_.get(),
         config_->host(),
@@ -392,6 +388,7 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
         handle_log_level(req, res);
     });
+
 
     // NOTE: /api/v1/halt endpoint removed - use SIGTERM signal instead (like Python server)
     // The stop command now sends termination signal directly to the process
@@ -960,7 +957,7 @@ void Server::run() {
 
     running_ = true;
 
-    // Start WebSocket server for realtime transcription
+    // Start WebSocket server for realtime API and log streaming
     if (websocket_server_) {
         if (websocket_server_->start()) {
             LOG(INFO, "Server") << "WebSocket server started on port "
@@ -1275,7 +1272,7 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     // Add max model limits
     response["max_models"] = router_->get_max_model_limits();
 
-    // Add WebSocket server port for realtime API
+    // Add WebSocket server port for realtime API and log streaming
     if (websocket_server_ && websocket_server_->is_running()) {
         response["websocket_port"] = websocket_server_->get_port();
     }
@@ -3506,6 +3503,15 @@ void Server::handle_config_set(const httplib::Request& req, httplib::Response& r
             apply_config_side_effects(keys);
         });
 
+        // Persist changes to config.json
+        if (!cache_dir_.empty()) {
+            try {
+                ConfigFile::save(cache_dir_, config_->snapshot());
+            } catch (const std::exception& e) {
+                LOG(WARNING, "Server") << "Failed to persist config.json: " << e.what() << std::endl;
+            }
+        }
+
         res.set_content(result.dump(), "application/json");
     } catch (const nlohmann::json::parse_error& e) {
         res.status = 400;
@@ -3554,6 +3560,7 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
             udp_beacon_.stopBroadcasting();
             http_server_->stop();
             http_server_v6_->stop();
+            // Restart websocket server with new host
             if (websocket_server_) {
                 websocket_server_->stop();
                 websocket_server_ = std::make_unique<WebSocketServer>(
@@ -3564,10 +3571,6 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
                     websocket_server_->start();
                 }
             }
-        } else if (key == "log_level") {
-            std::string level = config_->log_level();
-            LOG(INFO, "Server") << "Log level changed to: " << level << std::endl;
-            reconfigure_application_logging(level);
         } else if (key == "websocket_port") {
             if (websocket_server_) {
                 LOG(INFO, "Server") << "Restarting WebSocket server on requested port "
@@ -3581,6 +3584,10 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
                     websocket_server_->start();
                 }
             }
+        } else if (key == "log_level") {
+            std::string level = config_->log_level();
+            LOG(INFO, "Server") << "Log level changed to: " << level << std::endl;
+            reconfigure_application_logging(level);
         } else if (key == "global_timeout") {
             long timeout = config_->global_timeout();
             LOG(INFO, "Server") << "Global timeout changed to: " << timeout << "s" << std::endl;
@@ -3601,7 +3608,6 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
             LOG(INFO, "Server") << "Extra models dir changed to: " << dir << std::endl;
             model_manager_->set_extra_models_dir(dir);
         }
-        // Recipe option keys (ctx_size, llamacpp_backend, etc.) need no side effects
     }
 }
 

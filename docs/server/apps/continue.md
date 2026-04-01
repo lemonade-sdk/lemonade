@@ -104,7 +104,7 @@ In this example, we'll use Plan mode to have the LLM analyze your code and provi
     lemonade load <model-name> --ctx-size 8192
     ```
 
-    For persistent changes, see [Server Configuration](../configuration.md#environment-variables).
+    For persistent changes, see [Server Configuration](../configuration.md).
 
 3. **Use Plan mode in VS Code**: Select the "Plan" option in Continue, enter your prompt and press Alt+Enter to include the currently active file as context.
 

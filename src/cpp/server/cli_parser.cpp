@@ -1,5 +1,5 @@
 #include <lemon/cli_parser.h>
-#include <lemon/recipe_options.h>
+#include <lemon/utils/path_utils.h>
 #include <lemon/version.h>
 
 #define APP_NAME "lemond"
@@ -7,71 +7,23 @@
 
 namespace lemon {
 
-static void add_serve_options(CLI::App* serve, ServerConfig& config) {
-    serve->add_option("--port", config.port, "Port number to serve on")
-        ->envname("LEMONADE_PORT")
-        ->type_name("PORT")
-        ->default_val(config.port);
-
-    serve->add_option("--host", config.host, "Address to bind for connections")
-        ->envname("LEMONADE_HOST")
-        ->type_name("HOST")
-        ->default_val(config.host);
-
-    serve->add_option("--websocket-port", config.websocket_port, "Port for the shared WebSocket server (0 = auto)")
-        ->envname("LEMONADE_WEBSOCKET_PORT")
-        ->type_name("PORT")
-        ->default_val(config.websocket_port);
-
-    serve->add_option("--log-level", config.log_level, "Log level for the server")
-        ->envname("LEMONADE_LOG_LEVEL")
-        ->type_name("LEVEL")
-        ->check(CLI::IsMember({"critical", "error", "warning", "info", "debug", "trace"}))
-        ->default_val(config.log_level);
-
-    serve->add_option("--extra-models-dir", config.extra_models_dir,
-                   "Experimental feature: secondary directory to scan for LLM GGUF model files")
-        ->envname("LEMONADE_EXTRA_MODELS_DIR")
-        ->type_name("PATH")
-        ->default_val(config.extra_models_dir);
-
-    serve->add_flag("--no-broadcast", config.no_broadcast,
-                   "Disable UDP broadcasting on private networks")
-        ->envname("LEMONADE_NO_BROADCAST")
-        ->expected(0, 1)
-        ->default_val(config.no_broadcast);
-
-    serve->add_option("--global-timeout", config.global_timeout,
-                   "Global timeout for HTTP requests, inference, and readiness checks in seconds")
-        ->envname("LEMONADE_GLOBAL_TIMEOUT")
-        ->type_name("SECONDS")
-        ->default_val(config.global_timeout);
-
-    // Multi-model support: Max loaded models per type slot
-    serve->add_option("--max-loaded-models", config.max_loaded_models,
-                   "Max models per type slot (LLMs, audio, image, etc.). Use -1 for unlimited.")
-        ->envname("LEMONADE_MAX_LOADED_MODELS")
-        ->type_name("N")
-        ->default_val(config.max_loaded_models)
-        ->check([](const std::string& val) -> std::string {
-            try {
-                int num = std::stoi(val);
-                if (num == -1 || num > 0) {
-                    return "";  // Valid: -1 (unlimited) or positive integer
-                }
-                return "Value must be a positive integer or -1 for unlimited (got " + val + ")";
-            } catch (...) {
-                return "Value must be a positive integer or -1 for unlimited (got '" + val + "')";
-            }
-        });
-    RecipeOptions::add_cli_options(*serve, config.recipe_options);
-}
-
 CLIParser::CLIParser()
     : app_(APP_DESC) {
 
     app_.set_version_flag("-v,--version", (APP_NAME " version " LEMON_VERSION_STRING));
-    add_serve_options(&app_, config_);
+
+    // Positional arg: lemonade cache directory (optional)
+    // Default to platform-specific cache dir when not specified
+    app_.add_option("cache_dir", config_.cache_dir,
+                    "Lemonade cache directory containing config.json and model data")
+        ->type_name("DIR")
+        ->default_val(utils::get_cache_dir());
+
+    app_.add_option("--port", config_.port, "Port number to serve on (overrides config.json)")
+        ->type_name("PORT");
+
+    app_.add_option("--host", config_.host, "Address to bind for connections (overrides config.json)")
+        ->type_name("HOST");
 }
 
 int CLIParser::parse(int argc, char** argv) {

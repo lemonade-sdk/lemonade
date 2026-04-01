@@ -706,19 +706,18 @@ The `lemond` executable is a pure HTTP server without any command-based interfac
 # Start server with default options
 ./lemond
 
-# Start server with custom options
-./lemond --port 8080 --ctx-size 8192 --log-level debug
+# Start server with custom port
+./lemond --port 8080
 
 # Available options:
+#   [cache_dir]              Path to lemonade cache directory (optional)
 #   --port PORT              Port number (default: 8000)
 #   --host HOST              Bind address (default: localhost)
-#   --ctx-size SIZE          Context size (default: 4096)
-#   --log-level LEVEL        Log level: critical, error, warning, info, debug, trace
-#   --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal
-#   --max-loaded-models N    Maximum models per type slot (default: 1)
 #   --version, -v            Show version
 #   --help, -h               Show help
 ```
+
+All other server settings are managed via `lemonade config set` (see [Server Configuration](./server/configuration.md)).
 
 ### lemonade (CLI Client)
 

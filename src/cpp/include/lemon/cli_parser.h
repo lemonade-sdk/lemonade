@@ -2,25 +2,13 @@
 
 #include <CLI/CLI.hpp>
 #include <string>
-#include <vector>
-#include <nlohmann/json.hpp>
 
 namespace lemon {
 
-using json = nlohmann::json;
-
 struct ServerConfig {
-    int port = 8000;
-    std::string host = "localhost";
-    int websocket_port = 0;
-    std::string log_level = "info";
-    json recipe_options = json::object();
-    std::string extra_models_dir = "";  // Secondary directory for GGUF model discovery
-    bool no_broadcast = false;  // Disable UDP broadcasting on private networks
-    long global_timeout = 300;    // Default global timeout in seconds
-
-    // Multi-model support: Max loaded models per type slot
-    int max_loaded_models = 1;
+    std::string cache_dir;     // Positional arg: lemonade cache dir (optional, platform default)
+    int port = -1;             // -1 = not specified on CLI, use config.json value
+    std::string host;          // Empty = not specified on CLI, use config.json value
 };
 
 class CLIParser {

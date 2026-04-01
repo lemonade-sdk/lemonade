@@ -17,9 +17,7 @@ Usage:
     python server_endpoints.py --server-binary /path/to/lemonade-server
 """
 
-import json
 import platform
-import os
 import requests
 from openai import NotFoundError
 
@@ -38,15 +36,6 @@ from utils.test_models import (
     USER_MODEL_TE_CHECKPOINT,
     USER_MODEL_VAE_CHECKPOINT,
 )
-
-
-def get_recipe_options_path():
-    """Get the path to recipe_options.json file."""
-    # Default location is ~/.cache/lemonade/recipe_options.json
-    cache_dir = os.environ.get(
-        "LEMONADE_CACHE_DIR", os.path.expanduser("~/.cache/lemonade")
-    )
-    return os.path.join(cache_dir, "recipe_options.json")
 
 
 class EndpointTests(ServerTestBase):
@@ -416,28 +405,20 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 200)
 
-        # Check recipe_options.json file
-        options_path = get_recipe_options_path()
-        if os.path.exists(options_path):
-            with open(options_path, "r") as f:
-                saved_options = json.load(f)
+        model_info_response = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(model_info_response.status_code, 200)
 
-            if ENDPOINT_TEST_MODEL in saved_options:
-                model_options = saved_options[ENDPOINT_TEST_MODEL]
-                self.assertEqual(
-                    model_options.get("ctx_size"),
-                    custom_ctx_size,
-                    f"Expected ctx_size={custom_ctx_size} in recipe_options.json",
-                )
-                print(
-                    f"[OK] Verified recipe_options.json contains ctx_size={custom_ctx_size}"
-                )
-            else:
-                print(
-                    f"[INFO] Model not found in recipe_options.json (may be expected)"
-                )
-        else:
-            print(f"[INFO] recipe_options.json not found at {options_path}")
+        model_info = model_info_response.json()
+        self.assertIn("recipe_options", model_info)
+        self.assertEqual(
+            model_info["recipe_options"].get("ctx_size"),
+            custom_ctx_size,
+            f"Expected saved ctx_size={custom_ctx_size} in model info recipe_options",
+        )
+        print(f"[OK] Verified saved ctx_size={custom_ctx_size} via model info")
 
     def test_012_load_uses_saved_options(self):
         """Test that load reads previously saved options from recipe_options.json."""

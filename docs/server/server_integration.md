@@ -73,7 +73,7 @@ If you want to install models on behalf of your users, the following tools are a
 
 - Adding new LLMs:
 
-  - The `user_models.json` file is similar to `server_models.json` (see above), but contains a user-specific registry that persists across lemonade updates. It is located at `$LEMONADE_CACHE_DIR/user_models.json`, which defaults to `~/.cache/lemonade/user_models.json`. For a full template and field reference, see the [Custom Model Configuration Guide](./custom-models.md).
+  - The `user_models.json` file is similar to `server_models.json` (see above), but contains a user-specific registry that persists across lemonade updates. For a full template and field reference, see the [Custom Model Configuration Guide](./custom-models.md).
   - [The `pull` endpoint in the server](./server_spec.md#post-apiv1pull) automates the process of registering models into `user_models.json` and downloading them.
   - The `lemonade pull` CLI command can also register and download new models, see [Options for pull](../lemonade-cli.md#options-for-pull).
 
@@ -227,16 +227,7 @@ sudo journalctl -u lemonade-server -f
 
 **Configuration:**
 
-Edit `/etc/lemonade/lemonade.conf` to customize server behavior (environment variables like `LEMONADE_PORT`, `LEMONADE_LOG_LEVEL`, etc.), then restart:
-
-```bash
-sudo nano /etc/lemonade/lemonade.conf
-sudo systemctl restart lemonade-server
-```
-
-For the full list of environment variables and advanced configuration options, see [Server Configuration](./configuration.md).
-
-This creates an override file that takes precedence over the original service file and persists across updates.
+See [Server Configuration](./configuration.md).
 
 
 ## macOS Installation (Beta)

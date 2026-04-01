@@ -2,6 +2,9 @@
 #include <lemon/system_info.h>
 #include <nlohmann/json.hpp>
 #include <map>
+#ifdef LEMONADE_CLI
+#include <CLI/CLI.hpp>
+#endif
 
 namespace lemon {
 
@@ -9,11 +12,11 @@ using json = nlohmann::json;
 
 static const json DEFAULTS = {
     {"ctx_size", 4096},
-    {"llamacpp_backend", ""},  // Will be overridden dynamically
+    {"llamacpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
     {"llamacpp_args", ""},
-    {"sd-cpp_backend", ""},  // sd.cpp backend selection (cpu or rocm)
+    {"sd-cpp_backend", ""},   // "" means auto-detect (mapped from "auto" in config.json)
     {"sdcpp_args", ""},
-    {"whispercpp_backend", ""},
+    {"whispercpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
     {"whispercpp_args", ""},
     // Image generation defaults (for sd-cpp recipe)
     {"steps", 20},
@@ -24,86 +27,20 @@ static const json DEFAULTS = {
     {"flm_args", ""}       // Custom arguments to pass to flm serve
 };
 
-// CLI_OPTIONS without allowed_values for inference engines (will be set dynamically)
-static const json CLI_OPTIONS = {
-    // LLM Options
-    {"--ctx-size", {
-        {"option_name", "ctx_size"},
-        {"type_name", "SIZE"},
-        {"envname", "LEMONADE_CTX_SIZE"},
-        {"help", "Context size for the model"}
-    }},
-    {"--llamacpp", {
-        {"option_name", "llamacpp_backend"},
-        {"type_name", "BACKEND"},
-        {"envname", "LEMONADE_LLAMACPP"},
-        {"help", "LlamaCpp backend to use"}
-    }},
-    {"--llamacpp-args", {
-        {"option_name", "llamacpp_args"},
-        {"type_name", "ARGS"},
-        {"envname", "LEMONADE_LLAMACPP_ARGS"},
-        {"help", "Custom arguments to pass to llama-server (must not conflict with managed args)"}
-    }},
-    // sd.cpp backend selection option
-    {"--sdcpp", {
-        {"option_name", "sd-cpp_backend"},
-        {"type_name", "BACKEND"},
-        {"allowed_values", {"cpu", "rocm"}},
-        {"envname", "LEMONADE_SDCPP"},
-        {"help", "SD.cpp backend to use (cpu for CPU, rocm for AMD GPU)"}
-    }},
-    {"--sdcpp-args", {
-        {"option_name", "sdcpp_args"},
-        {"type_name", "ARGS"},
-        {"envname", "LEMONADE_SDCPP_ARGS"},
-        {"help", "Custom arguments to pass to sd-server (must not conflict with managed args)"}
-    }},
-    // ASR options
-    {"--whispercpp", {
-        {"option_name", "whispercpp_backend"},
-        {"type_name", "BACKEND"},
-        {"envname", "LEMONADE_WHISPERCPP"},
-        {"help", "WhisperCpp backend to use"}
-    }},
-    {"--whispercpp-args", {
-        {"option_name", "whispercpp_args"},
-        {"type_name", "ARGS"},
-        {"envname", "LEMONADE_WHISPERCPP_ARGS"},
-        {"help", "Custom arguments to pass to whisper-server (must not conflict with managed args)"}
-    }},
-    // Image generation options (for sd-cpp recipe)
-    {"--steps", {
-        {"option_name", "steps"},
-        {"type_name", "N"},
-        {"envname", "LEMONADE_STEPS"},
-        {"help", "Number of inference steps for image generation"}
-    }},
-    {"--cfg-scale", {
-        {"option_name", "cfg_scale"},
-        {"type_name", "SCALE"},
-        {"envname", "LEMONADE_CFG_SCALE"},
-        {"help", "Classifier-free guidance scale for image generation"}
-    }},
-    {"--width", {
-        {"option_name", "width"},
-        {"type_name", "PX"},
-        {"envname", "LEMONADE_WIDTH"},
-        {"help", "Image width in pixels"}
-    }},
-    {"--height", {
-        {"option_name", "height"},
-        {"type_name", "PX"},
-        {"envname", "LEMONADE_HEIGHT"},
-        {"help", "Image height in pixels"}
-    }},
-    // FLM-specific options
-    {"--flm-args", {
-        {"option_name", "flm_args"},
-        {"type_name", "ARGS"},
-        {"envname", "LEMONADE_FLM_ARGS"},
-        {"help", "Custom arguments to pass to flm serve (e.g., \"--socket 20 --q-len 15\")"}
-    }},
+// Mapping from flat option names to CLI flags (used by to_cli_options)
+static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
+    {"ctx_size", "--ctx-size"},
+    {"llamacpp_backend", "--llamacpp"},
+    {"llamacpp_args", "--llamacpp-args"},
+    {"sd-cpp_backend", "--sdcpp"},
+    {"sdcpp_args", "--sdcpp-args"},
+    {"whispercpp_backend", "--whispercpp"},
+    {"whispercpp_args", "--whispercpp-args"},
+    {"steps", "--steps"},
+    {"cfg_scale", "--cfg-scale"},
+    {"width", "--width"},
+    {"height", "--height"},
+    {"flm_args", "--flm-args"}
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
@@ -124,7 +61,7 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
 
 static bool is_empty_option(json option) {
     return (option.is_number() && (option == -1)) ||
-           (option.is_string() && (option == ""));
+           (option.is_string() && (option == "" || option == "auto"));
 }
 
 static bool try_get_backend_options(const std::string& opt_name, SystemInfo::SupportedBackendsResult& result) {
@@ -144,51 +81,14 @@ static bool try_get_backend_options(const std::string& opt_name, SystemInfo::Sup
     return is_backend_option;
 }
 
-void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
-    for (auto& [key, opt] : CLI_OPTIONS.items()) {
-        const std::string opt_name = opt["option_name"];
-        CLI::Option* o;
-        json defval = DEFAULTS[opt_name];
-
-#ifndef LEMONADE_CLI
-        SystemInfo::SupportedBackendsResult backend_result;
-        if (try_get_backend_options(opt_name, backend_result)) {
-            std::string default_backend = backend_result.backends.empty() ? "" : backend_result.backends[0];
-            o = app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
-            o->default_val(default_backend);
-            o->check(CLI::IsMember(backend_result.backends));
-        } else if (defval.is_number_float()) {
-#else
-        if (defval.is_number_float()) {
-#endif
-            o = app.add_option_function<double>(key, [opt_name, &storage = storage](double val) { storage[opt_name] = val; }, opt["help"]);
-            o->default_val((double) defval);
-        } else if (defval.is_number_integer()) {
-            o = app.add_option_function<int>(key, [opt_name, &storage = storage](int val) { storage[opt_name] = val; }, opt["help"]);
-            o->default_val((int) defval);
-        } else {
-            o = app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
-            o->default_val(defval);
-        }
-
-        // Common settings for all options
-        o->envname(opt["envname"]);
-        o->type_name(opt["type_name"]);
-        if (opt.contains("allowed_values")) {
-            o->check(CLI::IsMember(opt["allowed_values"].get<std::vector<std::string>>()));
-        }
-    }
-}
-
 std::vector<std::string> RecipeOptions::to_cli_options(const json& raw_options) {
     std::vector<std::string> cli;
 
-    for (auto& [key, opt] : CLI_OPTIONS.items()) {
-        const std::string opt_name = opt["option_name"];
+    for (auto& [opt_name, cli_flag] : OPTION_TO_CLI_FLAG) {
         if (raw_options.contains(opt_name)) {
             auto val = raw_options[opt_name];
             if (!val.is_null() && val != "") {
-                cli.push_back(key);
+                cli.push_back(cli_flag);
                 if (val.is_number_float()) {
                     cli.push_back(std::to_string((double) val));
                 } else if (val.is_number_integer()) {
@@ -275,4 +175,45 @@ json RecipeOptions::get_option(const std::string& opt) const {
 #endif
     return DEFAULTS.contains(opt) ? DEFAULTS[opt] : json();
 }
+
+#ifdef LEMONADE_CLI
+// CLI_OPTIONS used only by the lemonade CLI client for add_cli_options
+static const json CLI_OPTIONS = {
+    {"--ctx-size", {{"option_name", "ctx_size"}, {"type_name", "SIZE"}, {"envname", "LEMONADE_CTX_SIZE"}, {"help", "Context size for the model"}}},
+    {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_LLAMACPP"}, {"help", "LlamaCpp backend to use"}}},
+    {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_LLAMACPP_ARGS"}, {"help", "Custom arguments to pass to llama-server"}}},
+    {"--sdcpp", {{"option_name", "sd-cpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_SDCPP"}, {"help", "SD.cpp backend to use"}}},
+    {"--sdcpp-args", {{"option_name", "sdcpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_SDCPP_ARGS"}, {"help", "Custom arguments to pass to sd-server (must not conflict with managed args)"}}},
+    {"--whispercpp", {{"option_name", "whispercpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_WHISPERCPP"}, {"help", "WhisperCpp backend to use"}}},
+    {"--whispercpp-args", {{"option_name", "whispercpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_WHISPERCPP_ARGS"}, {"help", "Custom arguments to pass to whisper-server"}}},
+    {"--steps", {{"option_name", "steps"}, {"type_name", "N"}, {"envname", "LEMONADE_STEPS"}, {"help", "Number of inference steps for image generation"}}},
+    {"--cfg-scale", {{"option_name", "cfg_scale"}, {"type_name", "SCALE"}, {"envname", "LEMONADE_CFG_SCALE"}, {"help", "Classifier-free guidance scale"}}},
+    {"--width", {{"option_name", "width"}, {"type_name", "PX"}, {"envname", "LEMONADE_WIDTH"}, {"help", "Image width in pixels"}}},
+    {"--height", {{"option_name", "height"}, {"type_name", "PX"}, {"envname", "LEMONADE_HEIGHT"}, {"help", "Image height in pixels"}}},
+    {"--flm-args", {{"option_name", "flm_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_FLM_ARGS"}, {"help", "Custom arguments to pass to flm serve"}}}
+};
+
+void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
+    for (auto& [key, opt] : CLI_OPTIONS.items()) {
+        const std::string opt_name = opt["option_name"];
+        CLI::Option* o;
+        json defval = DEFAULTS[opt_name];
+
+        if (defval.is_number_float()) {
+            o = app.add_option_function<double>(key, [opt_name, &storage = storage](double val) { storage[opt_name] = val; }, opt["help"]);
+            o->default_val((double) defval);
+        } else if (defval.is_number_integer()) {
+            o = app.add_option_function<int>(key, [opt_name, &storage = storage](int val) { storage[opt_name] = val; }, opt["help"]);
+            o->default_val((int) defval);
+        } else {
+            o = app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
+            o->default_val(defval);
+        }
+
+        o->envname(opt["envname"]);
+        o->type_name(opt["type_name"]);
+    }
+}
+#endif
+
 }
