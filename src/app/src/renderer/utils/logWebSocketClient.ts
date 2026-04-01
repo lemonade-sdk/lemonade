@@ -1,4 +1,4 @@
-import { getServerHost, serverFetch } from './serverConfig';
+import { getAPIKey, getServerHost, serverFetch } from './serverConfig';
 
 export interface LogEntry {
   seq: number;
@@ -35,7 +35,15 @@ export async function connectLogStream(
     throw new Error('Server did not advertise a websocket port');
   }
 
-  const wsUrl = `ws://${getServerHost()}:${wsPort}/logs/stream`;
+  const query = new URLSearchParams();
+  const apiKey = getAPIKey();
+  if (apiKey) {
+    query.set('api_key', apiKey);
+  }
+
+  const wsUrl = query.size > 0
+    ? `ws://${getServerHost()}:${wsPort}/logs/stream?${query.toString()}`
+    : `ws://${getServerHost()}:${wsPort}/logs/stream`;
   const socket = new WebSocket(wsUrl);
 
   socket.addEventListener('open', () => {

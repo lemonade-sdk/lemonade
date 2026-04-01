@@ -3,6 +3,7 @@
 #include "lemon/router.h"
 #include "lemon/utils/process_manager.h"
 
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <sstream>
@@ -24,6 +25,10 @@ static struct lws_protocols protocols[] = {
 WebSocketServer::WebSocketServer(Router* router, const std::string& host, int requested_port)
     : port_(requested_port > 0 ? requested_port : utils::ProcessManager::find_free_port(9000)),
       host_(host),
+      api_key_([]() {
+          const char* api_key_env = std::getenv("LEMONADE_API_KEY");
+          return api_key_env ? std::string(api_key_env) : std::string();
+      }()),
       router_(router),
       session_manager_(std::make_unique<RealtimeSessionManager>(router)) {
     LOG(INFO, "WebSocket") << "Configured port: " << port_ << std::endl;
@@ -54,6 +59,9 @@ int WebSocketServer::ws_callback(struct lws* wsi,
         case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION: {
             const std::string path = get_request_path(wsi);
             if (classify_path(path) == ConnectionKind::invalid) {
+                return 1;
+            }
+            if (!server->authenticate_connection(wsi)) {
                 return 1;
             }
             break;
@@ -194,6 +202,36 @@ void WebSocketServer::service_loop() {
         lws_service(context_, 50);
         schedule_pending_writes();
     }
+}
+
+bool WebSocketServer::authenticate_connection(struct lws* wsi) const {
+    if (api_key_.empty()) {
+        return true;
+    }
+
+    auto token = get_header(wsi, WSI_TOKEN_HTTP_AUTHORIZATION);
+    if (!token) {
+        token = get_url_arg(wsi, "api_key");
+    }
+
+    if (!token) {
+        LOG(WARNING, "WebSocket") << "Rejected unauthenticated websocket connection for "
+                                  << get_request_path(wsi) << std::endl;
+        return false;
+    }
+
+    static constexpr char bearer_prefix[] = "Bearer ";
+    if (token->compare(0, sizeof(bearer_prefix) - 1, bearer_prefix) == 0) {
+        token = token->substr(sizeof(bearer_prefix) - 1);
+    }
+
+    if (*token != api_key_) {
+        LOG(WARNING, "WebSocket") << "Rejected websocket connection with invalid API key for "
+                                  << get_request_path(wsi) << std::endl;
+        return false;
+    }
+
+    return true;
 }
 
 void WebSocketServer::handle_connection(const std::string& connection_id, struct lws* wsi) {
@@ -372,6 +410,16 @@ void WebSocketServer::handle_writable(const std::string& connection_id, struct l
     if (has_more) {
         lws_callback_on_writable(wsi);
     }
+}
+
+std::optional<std::string> WebSocketServer::get_header(struct lws* wsi, enum lws_token_indexes token) {
+    char buffer[512] = {0};
+    const int copied = lws_hdr_copy(wsi, buffer, sizeof(buffer), token);
+    if (copied <= 0) {
+        return std::nullopt;
+    }
+
+    return std::string(buffer, static_cast<size_t>(copied));
 }
 
 std::optional<std::string> WebSocketServer::get_url_arg(struct lws* wsi, const char* name) {

@@ -7,8 +7,9 @@
 #include <unordered_map>
 #include <mutex>
 #include <functional>
-#include <queue>
 #include <optional>
+#include <queue>
+#include <string>
 #include <libwebsockets.h>
 #include <nlohmann/json.hpp>
 #include "log_stream.h"
@@ -84,6 +85,7 @@ private:
 
     int port_;
     std::string host_;
+    std::string api_key_;
     Router* router_;
     std::unique_ptr<RealtimeSessionManager> session_manager_;
     struct lws_context* context_{nullptr};
@@ -112,6 +114,8 @@ private:
     // Handle writable callback — flush message queue
     void handle_writable(const std::string& connection_id, struct lws* wsi);
 
+    bool authenticate_connection(struct lws* wsi) const;
+    static std::optional<std::string> get_header(struct lws* wsi, enum lws_token_indexes token);
     static std::optional<std::string> get_url_arg(struct lws* wsi, const char* name);
     static std::string get_request_path(struct lws* wsi);
     static ConnectionKind classify_path(const std::string& path);
