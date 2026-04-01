@@ -30,27 +30,6 @@ namespace backends {
 // URL to direct users to for driver updates
 static const std::string DRIVER_INSTALL_URL = "https://lemonade-server.ai/driver_install.html";
 
-#ifdef __linux__
-// Read a value from /etc/os-release by key (e.g. "ID", "VERSION_ID")
-static std::string read_os_release_field(const std::string& key) {
-    std::ifstream os_release("/etc/os-release");
-    if (!os_release.is_open()) return "";
-
-    std::string target = key + "=";
-    std::string line;
-    while (std::getline(os_release, line)) {
-        if (line.find(target) == 0) {
-            std::string value = line.substr(target.size());
-            // Remove surrounding quotes if present
-            if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
-                value = value.substr(1, value.size() - 2);
-            }
-            return value;
-        }
-    }
-    return "";
-}
-#endif
 
 InstallParams FastFlowLMServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
@@ -69,26 +48,14 @@ InstallParams FastFlowLMServer::get_install_params(const std::string& backend, c
 
 #ifdef _WIN32
     params.filename = "fastflowlm_" + bare_version + "_windows_amd64.zip";
-#elif defined(__linux__)
-    // Detect Linux distribution to select the correct .deb package
-    std::string distro_id = read_os_release_field("ID");
-    std::string version_id = read_os_release_field("VERSION_ID");
-
-    if (distro_id == "debian") {
-        // Debian: e.g. fastflowlm_0.9.37_debian13_amd64.deb
-        // VERSION_ID for Debian is just the major version (e.g. "13")
-        params.filename = "fastflowlm_" + bare_version + "_debian" + version_id + "_amd64.deb";
-    } else if (distro_id == "ubuntu") {
-        // Ubuntu: e.g. fastflowlm_0.9.37_ubuntu24.04_amd64.deb
-        params.filename = "fastflowlm_" + bare_version + "_ubuntu" + version_id + "_amd64.deb";
-    } else {
-        // For other Debian-based distros, check ID_LIKE and default to ubuntu 24.04
-        LOG(WARNING, "FastFlowLM") << "Unsupported Linux distribution '" << distro_id
-                  << "', defaulting to Ubuntu 24.04 package" << std::endl;
-        params.filename = "fastflowlm_" + bare_version + "_ubuntu24.04_amd64.deb";
-    }
 #else
-    throw std::runtime_error("FLM is only supported on Windows and Linux");
+    // On Linux, FLM must be installed as a system package by the user.
+    // The FLM .deb bundles non-portable libraries (libxrt, ffmpeg) that
+    // require system-level installation. Auto-install is Windows-only.
+    throw std::runtime_error(
+        "FLM auto-install is only supported on Windows. "
+        "On Linux, install FLM manually: "
+        "https://github.com/FastFlowLM/FastFlowLM/releases/tag/" + version);
 #endif
 
     return params;
@@ -198,8 +165,10 @@ void FastFlowLMServer::load(const std::string& model_name,
     // Note: checkpoint_ is set by Router via set_model_metadata() before load() is called
     // We use checkpoint_ (base class field) for FLM API calls
 
-    // Install FLM binary if needed (downloads zip/deb and extracts)
+#ifdef _WIN32
+    // On Windows, auto-install FLM binary if needed (downloads zip and extracts)
     backend_manager_->install_backend(SPEC.recipe, "npu");
+#endif
 
     // Validate NPU hardware/drivers
     std::string flm_path = get_flm_path();
@@ -474,15 +443,26 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
 }
 
 std::string FastFlowLMServer::get_flm_path() {
-    // Use the standard backend binary path resolution (install dir, then env var)
+#ifdef _WIN32
+    // On Windows, use the standard install directory (auto-installed zip)
     try {
         std::string path = BackendUtils::get_backend_binary_path(SPEC, "npu");
         LOG(INFO, "FastFlowLM") << "Found flm at: " << path << std::endl;
         return path;
     } catch (const std::exception& e) {
-        LOG(ERROR, "FastFlowLM") << "flm not found: " << e.what() << std::endl;
+        LOG(ERROR, "FastFlowLM") << "flm not found in install dir: " << e.what() << std::endl;
         return "";
     }
+#else
+    // On Linux, FLM is installed as a system package (in PATH)
+    std::string flm_path = utils::find_flm_executable();
+    if (!flm_path.empty()) {
+        LOG(INFO, "FastFlowLM") << "Found flm at: " << flm_path << std::endl;
+    } else {
+        LOG(ERROR, "FastFlowLM") << "flm not found in PATH" << std::endl;
+    }
+    return flm_path;
+#endif
 }
 
 } // namespace backends

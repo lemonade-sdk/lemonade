@@ -1433,13 +1433,16 @@ void ModelManager::register_user_model(const std::string& model_name,
 std::vector<std::string> ModelManager::get_flm_installed_models() {
     std::vector<std::string> installed_models;
 
-    // Find the flm executable in the standard install directory
+    // Find the flm executable (install dir on Windows, system PATH on Linux)
     std::string flm_path;
     try {
         flm_path = backends::BackendUtils::get_backend_binary_path(
             backends::FastFlowLMServer::SPEC, "npu");
     } catch (...) {
-        return installed_models; // FLM not installed
+#ifndef _WIN32
+        flm_path = utils::find_flm_executable();
+#endif
+        if (flm_path.empty()) return installed_models;
     }
 
     // Run 'flm list --filter installed --quiet --json' to get only installed models
@@ -1512,13 +1515,16 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
 std::vector<ModelInfo> ModelManager::get_flm_available_models() {
     std::vector<ModelInfo> flm_models;
 
-    // Find the flm executable in the standard install directory
+    // Find the flm executable (install dir on Windows, system PATH on Linux)
     std::string flm_path;
     try {
         flm_path = backends::BackendUtils::get_backend_binary_path(
             backends::FastFlowLMServer::SPEC, "npu");
     } catch (...) {
-        return flm_models; // FLM not installed
+#ifndef _WIN32
+        flm_path = utils::find_flm_executable();
+#endif
+        if (flm_path.empty()) return flm_models;
     }
 
     LOG(INFO, "ModelManager") << "FLM binary found at: " << flm_path << std::endl;
@@ -2250,9 +2256,19 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
         throw std::runtime_error(status.error_string());
     }
 
-    // Find flm executable in the standard install directory
-    std::string flm_path = backends::BackendUtils::get_backend_binary_path(
-        backends::FastFlowLMServer::SPEC, "npu");
+    // Find flm executable (install dir on Windows, system PATH on Linux)
+    std::string flm_path;
+    try {
+        flm_path = backends::BackendUtils::get_backend_binary_path(
+            backends::FastFlowLMServer::SPEC, "npu");
+    } catch (...) {
+#ifndef _WIN32
+        flm_path = utils::find_flm_executable();
+#endif
+    }
+    if (flm_path.empty()) {
+        throw std::runtime_error("FLM executable not found");
+    }
 
     // Prepare arguments
     std::vector<std::string> args = {"pull", checkpoint};

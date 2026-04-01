@@ -874,19 +874,16 @@ jobs:
           FLM_VERSION=$(jq -r '.flm.npu' src/cpp/resources/backend_versions.json)
           FLM_VERSION_NUM=$(echo $FLM_VERSION | sed 's/^v//')
           echo "Installing FLM ${FLM_VERSION} for CI inference tests..."
-          # Extract .deb directly to the Lemonade install directory so the server
-          # finds it via BackendUtils::get_backend_binary_path() (same as Windows zip flow)
-          FLM_INSTALL_DIR="$HOME/.cache/lemonade/bin/flm/npu"
-          mkdir -p "$FLM_INSTALL_DIR"
           curl -L -o /tmp/fastflowlm.deb "https://github.com/FastFlowLM/FastFlowLM/releases/download/${FLM_VERSION}/fastflowlm_${FLM_VERSION_NUM}_ubuntu24.04_amd64.deb"
-          dpkg-deb -x /tmp/fastflowlm.deb "$FLM_INSTALL_DIR"
-          # Write version.txt so the version check matches backend_versions.json
-          echo "$FLM_VERSION" > "$FLM_INSTALL_DIR/version.txt"
-          FLM_BIN=$(find "$FLM_INSTALL_DIR" -name flm -type f | head -1)
+          mkdir -p /tmp/flm-extract
+          dpkg-deb -x /tmp/fastflowlm.deb /tmp/flm-extract
+          # Add extracted FLM binary to PATH (Linux uses system PATH for FLM discovery)
+          FLM_BIN=$(find /tmp/flm-extract -name flm -type f | head -1)
           chmod +x "$FLM_BIN"
+          echo "$(dirname "$FLM_BIN")" >> $GITHUB_PATH
+          export PATH="$(dirname "$FLM_BIN"):$PATH"
           rm /tmp/fastflowlm.deb
-          echo "FLM installed to: $FLM_INSTALL_DIR"
-          "$FLM_BIN" version
+          flm version
 
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb

@@ -173,16 +173,12 @@ bool is_safe_executable_path(const std::string& path) {
 }
 
 std::string find_flm_executable() {
-    // First check the standard Lemonade install directory
-    std::string install_dir = (fs::path(get_downloaded_bin_dir()) / "flm" / "npu").make_preferred().string();
 #ifdef _WIN32
-    std::string binary_name = "flm.exe";
-#else
-    std::string binary_name = "flm";
-#endif
+    // On Windows, check the Lemonade install directory first (auto-installed zip)
+    std::string install_dir = (fs::path(get_downloaded_bin_dir()) / "flm" / "npu").make_preferred().string();
     if (fs::exists(install_dir)) {
         for (const auto& entry : fs::recursive_directory_iterator(install_dir)) {
-            if (entry.is_regular_file() && entry.path().filename().string() == binary_name) {
+            if (entry.is_regular_file() && entry.path().filename().string() == "flm.exe") {
                 std::string path = entry.path().string();
                 if (is_safe_executable_path(path)) {
                     return path;
@@ -191,8 +187,7 @@ std::string find_flm_executable() {
         }
     }
 
-    // Fall back to system PATH
-#ifdef _WIN32
+    // Fall back to system PATH on Windows
     // Refresh PATH from Windows registry to pick up any changes since process started
     HKEY hKey;
     if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,

@@ -119,30 +119,8 @@ namespace lemon::backends {
         return true;
     }
 
-    bool BackendUtils::extract_deb(const std::string& deb_path, const std::string& dest_dir, const std::string& backend_name) {
-#if defined(__linux__)
-        std::string command;
-        ensure_directory(dest_dir);
-        LOG(DEBUG, backend_name) << "Extracting .deb package to " << dest_dir << std::endl;
-        command = "dpkg-deb -x \"" + deb_path + "\" \"" + dest_dir + "\"";
-        int result = system(command.c_str());
-        if (result != 0) {
-            LOG(ERROR, backend_name) << "DEB extraction failed. Ensure 'dpkg-deb' is installed. Code: " << result << std::endl;
-            return false;
-        }
-        return true;
-#else
-        LOG(ERROR, backend_name) << "DEB extraction is only supported on Linux" << std::endl;
-        return false;
-#endif
-    }
-
     static bool is_tarball(const std::string& filename) {
         return (filename.size() > 7) && (filename.substr(filename.size() - 7) == ".tar.gz");
-    }
-
-    static bool is_deb(const std::string& filename) {
-        return (filename.size() > 4) && (filename.substr(filename.size() - 4) == ".deb");
     }
 
     // Helper to extract archive files based on extension
@@ -150,10 +128,6 @@ namespace lemon::backends {
         // Check if it's a tar.gz file
         if (is_tarball(archive_path)) {
             return extract_tarball(archive_path, dest_dir, backend_name);
-        }
-        // Check if it's a .deb package
-        if (is_deb(archive_path)) {
-            return extract_deb(archive_path, dest_dir, backend_name);
         }
         // Default to ZIP extraction
         return extract_zip(archive_path, dest_dir, backend_name);
@@ -297,10 +271,7 @@ namespace lemon::backends {
             fs::path cache_dir = fs::temp_directory_path();
             fs::create_directories(cache_dir);
             std::string zip_name = backend == "" ? spec.recipe : spec.recipe + "_" + backend;
-            std::string zip_ext;
-            if (is_tarball(filename)) zip_ext = ".tar.gz";
-            else if (is_deb(filename)) zip_ext = ".deb";
-            else zip_ext = ".zip";
+            std::string zip_ext = is_tarball(filename) ? ".tar.gz" : ".zip";
             std::string zip_path = (cache_dir / (zip_name + "_" + expected_version + zip_ext)).string();
 
             LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;

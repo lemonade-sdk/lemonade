@@ -327,6 +327,12 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
 
             return true;
         } catch (...) {
+#ifndef _WIN32
+            // On Linux, FLM is installed as a system package (in PATH, not install dir)
+            if (recipe == "flm" && !utils::find_flm_executable().empty()) {
+                return true;
+            }
+#endif
             return false;
         }
     }
@@ -341,9 +347,22 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
     if (spec) {
         std::string version_file = BackendUtils::get_installed_version_file(*spec, backend);
         if (version_file.empty()) {
+#ifndef _WIN32
+            // On Linux, FLM is a system package with no version.txt - query directly
+            if (recipe == "flm") {
+                return SystemInfo::get_flm_version();
+            }
+#endif
             return "unknown";
         }
-        return read_version_file(version_file);
+        std::string version = read_version_file(version_file);
+#ifndef _WIN32
+        // On Linux, version.txt may not exist on disk for system-installed FLM
+        if (recipe == "flm" && (version.empty() || version == "unknown")) {
+            return SystemInfo::get_flm_version();
+        }
+#endif
+        return version;
     }
     return "";
 }
