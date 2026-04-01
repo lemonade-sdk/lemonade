@@ -11,7 +11,6 @@
 #include "lemon_tray/tray_ui.h"
 #include <lemon/cli_parser.h>
 #include <lemon/logging_config.h>
-#include <lemon/server.h>
 #include <lemon/single_instance.h>
 #include <lemon/utils/aixlog.hpp>
 #include <lemon/version.h>
@@ -26,6 +25,7 @@
 
 #ifdef _WIN32
 // Windows embeds the server
+#include <lemon/server.h>
 #include <winsock2.h>
 #include <windows.h>
 
