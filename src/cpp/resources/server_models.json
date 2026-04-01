@@ -1287,8 +1287,8 @@
         "image_defaults": {
             "steps": 20,
             "cfg_scale": 2.5,
-            "width": 1024,
-            "height": 1024,
+            "width": 512,
+            "height": 512,
             "sampling_method": "euler",
             "flow_shift": 3.0
         },
@@ -1311,8 +1311,8 @@
         "image_defaults": {
             "steps": 20,
             "cfg_scale": 2.5,
-            "width": 1024,
-            "height": 1024,
+            "width": 512,
+            "height": 512,
             "sampling_method": "euler",
             "flow_shift": 3.0
         },

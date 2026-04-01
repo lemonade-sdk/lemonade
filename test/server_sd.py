@@ -365,8 +365,8 @@ class StableDiffusionTests(ServerTestBase):
 
         self.assertEqual(defaults.get("steps"), 20)
         self.assertEqual(defaults.get("cfg_scale"), 2.5)
-        self.assertEqual(defaults.get("width"), 1024)
-        self.assertEqual(defaults.get("height"), 1024)
+        self.assertEqual(defaults.get("width"), 512)
+        self.assertEqual(defaults.get("height"), 512)
         self.assertEqual(
             defaults.get("sampling_method"),
             "euler",
