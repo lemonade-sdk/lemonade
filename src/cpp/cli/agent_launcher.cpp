@@ -91,6 +91,18 @@ std::string build_server_base_url(const std::string& host, int port) {
     return "http://" + normalize_server_host(host) + ":" + std::to_string(port);
 }
 
+void append_codex_config_arg(std::vector<std::string>& args, const std::string& config_value) {
+    args.push_back("-c");
+    args.push_back(config_value);
+}
+
+void append_codex_config_args(std::vector<std::string>& args,
+                              const std::vector<std::string>& config_values) {
+    for (const auto& config_value : config_values) {
+        append_codex_config_arg(args, config_value);
+    }
+}
+
 void configure_claude_agent(const std::string& base_url,
                             const std::string& model,
                             const std::string& api_key,
@@ -157,25 +169,22 @@ void configure_codex_agent(const std::string& base_url,
         : launch_options.codex_model_provider;
 
 
-    config.extra_args = {};
+    std::vector<std::string> codex_config_values = {
+        "model_provider=\"" + provider_name + "\"",
+        "show_raw_agent_reasoning=true",
+        "web_search=\"disabled\"",
+        "analytics.enabled=false",
+        "feedback.enabled=false"
+    };
+
     if (!launch_options.codex_use_user_config) {
-        const std::string provider_config =
-        "model_providers." + provider_name + "={ name='Lemonade', base_url='" + responses_base_url +
-        "', wire_api='responses', env_key='OPENAI_API_KEY', requires_openai_auth=false, supports_websockets=false }";
-        config.extra_args.push_back("-c");
-        config.extra_args.push_back(provider_config);
+        codex_config_values.insert(codex_config_values.begin(),
+            "model_providers." + provider_name + "={ name='Lemonade', base_url='" + responses_base_url +
+            "', wire_api='responses', env_key='OPENAI_API_KEY', requires_openai_auth=false, supports_websockets=false }");
     }
 
-    config.extra_args.push_back("-c");
-    config.extra_args.push_back("model_provider=\"" + provider_name + "\"");
-    config.extra_args.push_back("-c");
-    config.extra_args.push_back("show_raw_agent_reasoning=true");
-    config.extra_args.push_back("-c");
-    config.extra_args.push_back("web_search=\"disabled\"");
-    config.extra_args.push_back("-c");
-    config.extra_args.push_back("analytics.enabled=false");
-    config.extra_args.push_back("-c");
-    config.extra_args.push_back("feedback.enabled=false");
+    config.extra_args = {};
+    append_codex_config_args(config.extra_args, codex_config_values);
     config.extra_args.push_back("-m");
     config.extra_args.push_back(model);
 

@@ -20,7 +20,6 @@
 #include <functional>
 #include <map>
 #include <vector>
-#include <cctype>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -112,21 +111,6 @@ struct CliConfig {
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
 };
-
-static bool is_valid_provider_name(const std::string& provider_name) {
-    if (provider_name.empty()) {
-        return false;
-    }
-
-    for (const char c : provider_name) {
-        const unsigned char uc = static_cast<unsigned char>(c);
-        if (std::isalnum(uc) || c == '_' || c == '-' || c == '.') {
-            continue;
-        }
-        return false;
-    }
-    return true;
-}
 
 // Open a URL via the OS without invoking a shell (avoids shell injection).
 // On Windows, ShellExecuteA is already shell-free.
@@ -362,14 +346,6 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
             LOG(ERROR, "AgentBuilder") << "--provider is only supported for the codex agent." << std::endl;
             return 1;
         }
-
-        if (!is_valid_provider_name(config.codex_model_provider)) {
-            LOG(ERROR, "AgentBuilder")
-                << "Invalid provider name '" << config.codex_model_provider
-                << "'. Allowed characters: letters, numbers, '.', '_', '-'" << std::endl;
-            return 1;
-        }
-
     }
 
     launch_options.codex_use_user_config = config.codex_use_user_config;
