@@ -13,7 +13,7 @@ using json = nlohmann::json;
 class ConfigFile {
 public:
     /// Returns the full default config loaded from installed resource JSON.
-    /// On Linux, an optional distro override at /usr/share/lemonade/config.json
+    /// On Linux, an optional distro override at /usr/share/lemonade/defaults.json
     /// is merged on top when present.
     static json get_defaults();
 

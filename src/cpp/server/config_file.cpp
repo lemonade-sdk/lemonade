@@ -35,7 +35,7 @@ json ConfigFile::get_defaults() {
         utils::get_resource_path("resources/defaults.json")));
 
 #ifndef _WIN32
-    fs::path distro_defaults = "/usr/share/lemonade/config.json";
+    fs::path distro_defaults = "/usr/share/lemonade/defaults.json";
     if (fs::exists(distro_defaults)) {
         defaults = utils::JsonUtils::merge(defaults, load_json_file(distro_defaults));
     }

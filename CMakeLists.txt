@@ -1294,7 +1294,6 @@ if(UNIX AND NOT APPLE)
     # Install packaged config defaults for distro-managed overrides.
     install(FILES ${CMAKE_BINARY_DIR}/resources/defaults.json
         DESTINATION share/lemonade
-        RENAME config.json
     )
 
     # Install example scripts
