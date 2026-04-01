@@ -601,7 +601,7 @@
         chat: {
           endpoint: '/api/v1/chat/completions',
           code: [
-            'curl -X POST http://localhost:8000/api/v1/chat/completions \\',
+            'curl -X POST http://localhost:13305/api/v1/chat/completions \\',
             '  -H "Content-Type: application/json" \\',
             "  -d '{",
             '        "model": "Qwen3-0.6B-GGUF",',
@@ -615,7 +615,7 @@
         vision: {
           endpoint: '/api/v1/chat/completions',
           code: [
-            'curl -X POST http://localhost:8000/api/v1/chat/completions \\',
+            'curl -X POST http://localhost:13305/api/v1/chat/completions \\',
             '  -H "Content-Type: application/json" \\',
             "  -d '{",
             '        "model": "Qwen2.5-VL-7B-Instruct",',
@@ -635,7 +635,7 @@
         image: {
           endpoint: '/api/v1/images/generations',
           code: [
-            'curl -X POST http://localhost:8000/api/v1/images/generations \\',
+            'curl -X POST http://localhost:13305/api/v1/images/generations \\',
             '  -H "Content-Type: application/json" \\',
             "  -d '{",
             '        "model": "SD-Turbo",',
@@ -649,7 +649,7 @@
         tts: {
           endpoint: '/api/v1/audio/speech',
           code: [
-            'curl -X POST http://localhost:8000/api/v1/audio/speech \\',
+            'curl -X POST http://localhost:13305/api/v1/audio/speech \\',
             '  -H "Content-Type: application/json" \\',
             "  -d '{",
             '        "model": "kokoro-v1",',
@@ -663,7 +663,7 @@
         stt: {
           endpoint: '/api/v1/audio/transcriptions',
           code: [
-            'curl -X POST http://localhost:8000/api/v1/audio/transcriptions \\',
+            'curl -X POST http://localhost:13305/api/v1/audio/transcriptions \\',
             '  -F "file=@/path/to/audio.wav" \\',
             '  -F "model=Whisper-Tiny"'
           ].join('\n')

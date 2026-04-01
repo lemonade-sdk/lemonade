@@ -63,7 +63,7 @@ The following options are available for all commands:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--host HOST` | Server host address | `127.0.0.1` |
-| `--port PORT` | Server port number | `8000` |
+| `--port PORT` | Server port number | `13305` |
 | `--api-key KEY` | API key for authentication | None |
 
 These options can also be set via environment variables:
@@ -76,7 +76,7 @@ These options can also be set via environment variables:
 On Linux/macOS:
 ```bash
 export LEMONADE_HOST=192.168.1.100
-export LEMONADE_PORT=8000
+export LEMONADE_PORT=13305
 export LEMONADE_API_KEY=your-api-key-here
 lemonade list
 ```
@@ -84,7 +84,7 @@ lemonade list
 On Windows (Command Prompt):
 ```cmd
 set LEMONADE_HOST=192.168.1.100
-set LEMONADE_PORT=8000
+set LEMONADE_PORT=13305
 set LEMONADE_API_KEY=your-api-key-here
 lemonade list
 ```
@@ -92,7 +92,7 @@ lemonade list
 On Windows (PowerShell):
 ```powershell
 $env:LEMONADE_HOST="192.168.1.100"
-$env:LEMONADE_PORT="8000"
+$env:LEMONADE_PORT="13305"
 $env:LEMONADE_API_KEY="your-api-key-here"
 lemonade list
 ```
@@ -371,7 +371,7 @@ lemonade run Qwen3-0.6B-GGUF
 lemonade run Qwen3-0.6B-GGUF --ctx-size 8192
 
 # Load a model on a different host and open the web app
-lemonade run Qwen3-0.6B-GGUF --host 192.168.1.100 --port 8000
+lemonade run Qwen3-0.6B-GGUF --host 192.168.1.100 --port 13305
 ```
 
 ## Options for export
@@ -495,7 +495,7 @@ lemonade scan [options]
 | `--duration SECONDS` | Scan duration in seconds | `30` |
 
 **Notes:**
-- The scan listens on UDP port 8000 for beacon broadcasts
+- The scan listens on UDP port 13305 for beacon broadcasts
 - Each beacon must contain `service`, `hostname`, and `url` fields in JSON format
 - Duplicate beacons (same URL) are automatically filtered out
 - The scan runs for the specified duration, collecting all beacons during that time

@@ -20,7 +20,7 @@ const ConnectionSettings: React.FC<ConnectionSettingsProps> = ({settings, onValu
             Reset
           </button>
         </div>
-        <input type="text" value={settings["baseURL"].value} placeholder="http://localhost:8000/" onChange={(e) => onValueChangeFunc('baseURL', e.target.value)} className="settings-text-input"/>
+        <input type="text" value={settings["baseURL"].value} placeholder="http://localhost:13305/" onChange={(e) => onValueChangeFunc('baseURL', e.target.value)} className="settings-text-input"/>
       </div>
       <div className={`settings-section ${settings.apiKey.useDefault ? "settings-section-default" : ""}`}>
         <div className="settings-label-row">

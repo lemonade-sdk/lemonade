@@ -573,7 +573,7 @@ window.api = {
         return settings;
     },
     onSettingsUpdated: () => {},
-    getServerPort: () => parseInt(window.location.port) || 8000,
+    getServerPort: () => parseInt(window.location.port) || 13305,
     onServerPortUpdated: () => {},
     getServerAPIKey: async () => {
         const settings = await window.api.getSettings();
@@ -1022,7 +1022,7 @@ void Server::run() {
             }
             std::cout << std::endl;
             udp_beacon_.startBroadcasting(
-                8000, // Broadcast port best to not make it adjustable, so clients dont have to scan.
+                13305, // Broadcast port best to not make it adjustable, so clients dont have to scan.
                 port_,
                 2
             );
@@ -3600,7 +3600,7 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
             } else {
                 auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
                 if (!rfc1918Interfaces.empty()) {
-                    udp_beacon_.startBroadcasting(8000, port_, 2);
+                    udp_beacon_.startBroadcasting(13305, port_, 2);
                 }
             }
         } else if (key == "extra_models_dir") {

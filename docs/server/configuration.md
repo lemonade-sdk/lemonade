@@ -19,7 +19,7 @@ If `config.json` doesn't exist, it's created automatically with default values o
 ```json
 {
   "config_version": 1,
-  "port": 8000,
+  "port": 13305,
   "host": "localhost",
   "log_level": "info",
   "global_timeout": 300,
@@ -72,7 +72,7 @@ If `config.json` doesn't exist, it's created automatically with default values o
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `port` | int | 8000 | Port number for the HTTP server |
+| `port` | int | 13305 | Port number for the HTTP server |
 | `host` | string | "localhost" | Address to bind for connections |
 | `log_level` | string | "info" | Logging level (trace, debug, info, warning, error, fatal, none) |
 | `global_timeout` | int | 300 | Timeout in seconds for HTTP, inference, and readiness checks |
