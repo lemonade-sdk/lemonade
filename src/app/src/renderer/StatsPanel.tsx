@@ -200,13 +200,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
     };
   }, [lifetimeStats]);
 
-  const valueSummary = bucketMode === 'day' ? chartSummary : {
-    totalTokens: lifetimeSummary.totalTokens,
-    input: lifetimeSummary.totalInput,
-    output: lifetimeSummary.totalOutput,
-    requests: lifetimeSummary.requests,
-    avgTokensPerRequest: lifetimeSummary.avgTokensPerRequest,
-  };
+  const valueSummary = chartSummary;
 
   const recentRows = useMemo(() => {
     return [...chartPoints].reverse().slice(0, 8);
