@@ -1290,9 +1290,10 @@
             "width": 1024,
             "height": 1024,
             "sampling_method": "euler",
-            "diffusion_fa": true,
-            "flow_shift": 3.0,
-            "offload_to_cpu": true
+            "flow_shift": 3.0
+        },
+        "recipe_options": {
+            "sdcpp_args": "--diffusion-fa --offload-to-cpu"
         }
     },
     "Qwen-Image-2512-GGUF": {
@@ -1313,9 +1314,10 @@
             "width": 1024,
             "height": 1024,
             "sampling_method": "euler",
-            "diffusion_fa": true,
-            "flow_shift": 3.0,
-            "offload_to_cpu": true
+            "flow_shift": 3.0
+        },
+        "recipe_options": {
+            "sdcpp_args": "--diffusion-fa --offload-to-cpu"
         }
     },
     "Z-Image-Turbo": {

@@ -104,6 +104,86 @@ static std::string checkpoint_to_variant(std::string checkpoint) {
     return variant;
 }
 
+// Check if any model other than exclude_model references the given repo_id
+static bool is_repo_shared(const std::string& repo_id,
+                           const std::string& exclude_model,
+                           const std::map<std::string, ModelInfo>& cache) {
+    for (const auto& [name, info] : cache) {
+        if (name == exclude_model) continue;
+        for (const auto& [type, cp] : info.checkpoints) {
+            if (checkpoint_to_repo_id(cp) == repo_id) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Clean up orphaned HF cache blobs after deleting a symlink.
+// HF hub downloads use: snapshots/<hash>/file.gguf -> ../../blobs/<sha256>
+// If no remaining symlink in the repo points to the blob, it's safe to remove.
+//
+// TODO: A more robust approach would be to extend cleanup_orphaned_cache()
+// to scan for orphaned blobs across all repos, triggered automatically after
+// delete. This would need integration tests that use huggingface_hub Python
+// tooling (e.g. hf_hub_download()) to create the blob+symlink layout, since
+// Lemonade's own downloader writes real files without blobs.
+static void cleanup_orphaned_blob(const fs::path& file_path,
+                                  const fs::path& models_dir) {
+    std::error_code ec;
+    if (!fs::is_symlink(file_path, ec) || ec) {
+        return;  // Not a symlink (real file) or error — nothing to clean up
+    }
+
+    // Resolve the blob target (relative symlink like ../../blobs/<hash>)
+    fs::path link_target = fs::read_symlink(file_path, ec);
+    if (ec) return;
+    fs::path blob_path = fs::canonical(file_path.parent_path() / link_target, ec);
+    if (ec || !fs::exists(blob_path)) return;
+
+    // Check if any other symlink in the repo still references this blob
+    fs::path snapshots_dir = models_dir / "snapshots";
+    if (!fs::exists(snapshots_dir)) return;
+
+    for (auto& entry : fs::recursive_directory_iterator(snapshots_dir, ec)) {
+        if (ec) break;
+        if (entry.path() == file_path) continue;  // Skip the file we're about to delete
+        if (!fs::is_symlink(entry.path(), ec) || ec) continue;
+
+        fs::path other_target = fs::read_symlink(entry.path(), ec);
+        if (ec) continue;
+        fs::path other_blob = fs::canonical(entry.path().parent_path() / other_target, ec);
+        if (!ec && other_blob == blob_path) {
+            // Another symlink still references this blob — keep it
+            return;
+        }
+    }
+
+    // No other symlink references this blob — safe to remove
+    LOG(INFO, "ModelManager") << "Removing orphaned blob: " << path_to_utf8(blob_path) << std::endl;
+    fs::remove(blob_path, ec);
+
+    // Clean up empty blobs/ directory
+    fs::path blobs_dir = blob_path.parent_path();
+    if (fs::exists(blobs_dir) && fs::is_empty(blobs_dir, ec) && !ec) {
+        fs::remove(blobs_dir, ec);
+    }
+}
+
+// Remove empty parent directories up to (but not including) the stop directory
+static void cleanup_empty_parents(const fs::path& file_path, const fs::path& stop_dir) {
+    std::error_code ec;
+    fs::path parent = file_path.parent_path();
+    for (int i = 0; i < 6 && !parent.empty() && parent != stop_dir; ++i) {
+        if (fs::is_empty(parent, ec) && !ec) {
+            fs::remove(parent, ec);
+            parent = parent.parent_path();
+        } else {
+            break;
+        }
+    }
+}
+
 // Structure to hold identified GGUF files
 struct GGUFFiles {
     std::map<std::string, std::string> core_files;  // {"variant": "file.gguf", "mmproj": "file.mmproj"}
@@ -793,6 +873,7 @@ void ModelManager::build_cache() {
 
     models_cache_.clear();
     std::map<std::string, ModelInfo> all_models;
+    std::map<std::string, json> json_recipe_options;  // Per-model recipe_options from JSON
 
     // Step 1: Load ALL models from JSON (server models)
     for (auto& [key, value] : server_models_.items()) {
@@ -821,9 +902,12 @@ void ModelManager::build_cache() {
             info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
             info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
             info.image_defaults.sampling_method = JsonUtils::get_or_default<std::string>(img_defaults, "sampling_method", "");
-            info.image_defaults.diffusion_fa = JsonUtils::get_or_default<bool>(img_defaults, "diffusion_fa", false);
             info.image_defaults.flow_shift = JsonUtils::get_or_default<float>(img_defaults, "flow_shift", 0.0f);
-            info.image_defaults.offload_to_cpu = JsonUtils::get_or_default<bool>(img_defaults, "offload_to_cpu", false);
+        }
+
+        // Parse recipe_options if present (for per-model runtime config like sdcpp_args)
+        if (value.contains("recipe_options") && value["recipe_options"].is_object()) {
+            json_recipe_options[key] = value["recipe_options"];
         }
 
         // Populate type and device fields (multi-model support)
@@ -866,9 +950,12 @@ void ModelManager::build_cache() {
             info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
             info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
             info.image_defaults.sampling_method = JsonUtils::get_or_default<std::string>(img_defaults, "sampling_method", "");
-            info.image_defaults.diffusion_fa = JsonUtils::get_or_default<bool>(img_defaults, "diffusion_fa", false);
             info.image_defaults.flow_shift = JsonUtils::get_or_default<float>(img_defaults, "flow_shift", 0.0f);
-            info.image_defaults.offload_to_cpu = JsonUtils::get_or_default<bool>(img_defaults, "offload_to_cpu", false);
+        }
+
+        // Parse recipe_options if present (for per-model runtime config like sdcpp_args)
+        if (value.contains("recipe_options") && value["recipe_options"].is_object()) {
+            json_recipe_options[info.model_name] = value["recipe_options"];
         }
 
         // Populate type and device fields (multi-model support)
@@ -920,15 +1007,18 @@ void ModelManager::build_cache() {
             base_options["height"] = info.image_defaults.height;
             if (!info.image_defaults.sampling_method.empty())
                 base_options["sampling_method"] = info.image_defaults.sampling_method;
-            if (info.image_defaults.diffusion_fa)
-                base_options["diffusion_fa"] = info.image_defaults.diffusion_fa ? 1 : 0;
             if (info.image_defaults.flow_shift > 0.0f)
                 base_options["flow_shift"] = info.image_defaults.flow_shift;
-            if (info.image_defaults.offload_to_cpu)
-                base_options["offload_to_cpu"] = info.image_defaults.offload_to_cpu ? 1 : 0;
         }
 
-        // User-saved recipe options override image_defaults
+        // JSON-level recipe_options override image_defaults (e.g. sdcpp_args)
+        if (json_recipe_options.count(name)) {
+            for (auto& [key, value] : json_recipe_options[name].items()) {
+                base_options[key] = value;
+            }
+        }
+
+        // User-saved recipe options override everything
         if (JsonUtils::has_key(recipe_options_, name)) {
             LOG(INFO, "ModelManager") << "Found recipe options for model: " << name << std::endl;
             auto saved_options = recipe_options_[name];
@@ -2649,61 +2739,57 @@ void ModelManager::delete_model(const std::string& model_name) {
     LOG(INFO, "ModelManager") << "Cache path: " << model_cache_path << std::endl;
 
     fs::path model_cache_path_fs = path_from_utf8(model_cache_path);
-    if (fs::exists(model_cache_path_fs)) {
-        LOG(INFO, "ModelManager") << "Removing directory..." << std::endl;
-        fs::remove_all(model_cache_path_fs);
-        LOG(INFO, "ModelManager") << "✓ Deleted model files: " << model_name << std::endl;
+    std::string main_repo = checkpoint_to_repo_id(info.checkpoint("main"));
+
+    // Check if the main repo is shared with another model
+    bool main_shared = is_repo_shared(main_repo, model_name, models_cache_);
+
+    if (!main_shared) {
+        // No other model uses this repo — safe to delete the entire directory
+        if (fs::exists(model_cache_path_fs)) {
+            LOG(INFO, "ModelManager") << "Removing directory..." << std::endl;
+            fs::remove_all(model_cache_path_fs);
+            LOG(INFO, "ModelManager") << "✓ Deleted model files: " << model_name << std::endl;
+        } else {
+            LOG(INFO, "ModelManager") << "Warning: Model cache directory not found (may already be deleted)" << std::endl;
+        }
     } else {
-        LOG(INFO, "ModelManager") << "Warning: Model cache directory not found (may already be deleted)" << std::endl;
+        // Shared repo — only delete this model's specific variant file
+        LOG(INFO, "ModelManager") << "Main repo " << main_repo
+                    << " is shared with other models, deleting variant file only" << std::endl;
+        std::string rpath = info.resolved_path("main");
+        if (!rpath.empty()) {
+            fs::path file_path = path_from_utf8(rpath);
+            if (fs::exists(file_path)) {
+                cleanup_orphaned_blob(file_path, model_cache_path_fs);
+                LOG(INFO, "ModelManager") << "Removing variant file: " << rpath << std::endl;
+                fs::remove(file_path);
+                cleanup_empty_parents(file_path, model_cache_path_fs);
+            }
+        }
+        LOG(INFO, "ModelManager") << "✓ Deleted variant for: " << model_name << std::endl;
     }
 
     // Clean up non-main checkpoint files in their own repo dirs (multi-repo models)
     // Only delete if no other model in the registry references the same repo
-    std::string main_repo = checkpoint_to_repo_id(info.checkpoint("main"));
     for (const auto& [type, checkpoint] : info.checkpoints) {
         if (type == "main" || type == "npu_cache") continue;
 
         std::string cp_repo = checkpoint_to_repo_id(checkpoint);
         if (cp_repo.empty() || cp_repo == main_repo) continue;
 
-        // Check if any other model references this repo
-        bool shared = false;
-        for (const auto& [other_name, other_info] : models_cache_) {
-            if (other_name == model_name) continue;
-            for (const auto& [other_type, other_cp] : other_info.checkpoints) {
-                if (checkpoint_to_repo_id(other_cp) == cp_repo) {
-                    shared = true;
-                    break;
-                }
-            }
-            if (shared) break;
-        }
-
-        if (shared) {
+        if (is_repo_shared(cp_repo, model_name, models_cache_)) {
             LOG(INFO, "ModelManager") << "Keeping shared repo " << cp_repo
                         << " (used by other models)" << std::endl;
             continue;
         }
 
-        // Not shared — safe to delete
-        std::string rpath = info.resolved_paths.count(type) ? info.resolved_paths.at(type) : "";
-        if (rpath.empty()) continue;
-
-        fs::path file_path = path_from_utf8(rpath);
-        if (fs::exists(file_path)) {
-            LOG(INFO, "ModelManager") << "Removing non-main checkpoint: " << rpath << std::endl;
-            fs::remove(file_path);
-
-            // Remove parent dirs if empty (clean up snapshot/refs structure)
-            fs::path parent = file_path.parent_path();
-            for (int i = 0; i < 4 && !parent.empty(); ++i) {
-                if (fs::is_empty(parent)) {
-                    fs::remove(parent);
-                    parent = parent.parent_path();
-                } else {
-                    break;
-                }
-            }
+        // Not shared — safe to delete the entire repo directory
+        std::string cp_cache_dir = get_hf_cache_dir() + "/" + repo_id_to_cache_dir_name(cp_repo);
+        fs::path cp_cache_path = path_from_utf8(cp_cache_dir);
+        if (fs::exists(cp_cache_path)) {
+            LOG(INFO, "ModelManager") << "Removing non-main repo directory: " << cp_cache_dir << std::endl;
+            fs::remove_all(cp_cache_path);
         }
     }
 

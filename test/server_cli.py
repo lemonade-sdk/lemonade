@@ -34,6 +34,10 @@ from utils.server_base import wait_for_server, set_server_config, _auth_headers
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     PORT,
+    SHARED_REPO_MODEL_A_CHECKPOINT,
+    SHARED_REPO_MODEL_A_NAME,
+    SHARED_REPO_MODEL_B_CHECKPOINT,
+    SHARED_REPO_MODEL_B_NAME,
     TIMEOUT_DEFAULT,
     TIMEOUT_MODEL_OPERATION,
     USER_MODEL_MAIN_CHECKPOINT,
@@ -418,6 +422,88 @@ class PersistentServerCLITests(CLITestBase):
         except Exception as e:
             # Best-effort restore — don't fail the test
             print(f"Warning: Failed to restore host to localhost: {e}")
+
+    def test_013_removed_image_cli_flags_rejected(self):
+        """Test that removed image generation CLI flags are rejected."""
+        removed_flags = [
+            ["load", "--steps", "10", ENDPOINT_TEST_MODEL],
+            ["load", "--cfg-scale", "7.0", ENDPOINT_TEST_MODEL],
+            ["load", "--diffusion-fa", "1", ENDPOINT_TEST_MODEL],
+            ["load", "--offload-to-cpu", "1", ENDPOINT_TEST_MODEL],
+        ]
+        for args in removed_flags:
+            result = run_cli_command(args, timeout=TIMEOUT_DEFAULT)
+            combined = result.stdout.lower() + result.stderr.lower()
+            flag = args[1]
+            self.assertTrue(
+                result.returncode != 0 or "error" in combined,
+                f"Flag {flag} should be rejected but was accepted: {combined}",
+            )
+            print(f"[OK] Removed flag {flag} correctly rejected")
+
+    def test_014_delete_preserves_shared_repo(self):
+        """Test that deleting one model preserves files used by another model sharing the same repo."""
+        # Import two user models that share the same HF repo (different GGUF quants)
+        for name, checkpoint in [
+            (SHARED_REPO_MODEL_A_NAME, SHARED_REPO_MODEL_A_CHECKPOINT),
+            (SHARED_REPO_MODEL_B_NAME, SHARED_REPO_MODEL_B_CHECKPOINT),
+        ]:
+            json_file = os.path.join(tempfile.gettempdir(), f"lemonade_{name}.json")
+            with open(json_file, "w") as f:
+                f.write(
+                    json.dumps(
+                        {
+                            "id": name,
+                            "checkpoint": checkpoint,
+                            "recipe": "llamacpp",
+                        }
+                    )
+                )
+            self.assertCommandSucceeds(
+                ["import", json_file], timeout=TIMEOUT_MODEL_OPERATION
+            )
+
+        # Pull both models (downloads both quants into the same models-- directory)
+        for name in [SHARED_REPO_MODEL_A_NAME, SHARED_REPO_MODEL_B_NAME]:
+            self.assertCommandSucceeds(["pull", name], timeout=TIMEOUT_MODEL_OPERATION)
+
+        # Verify both show as downloaded
+        result = self.assertCommandSucceeds(["list", "--downloaded"])
+        output = result.stdout + result.stderr
+        self.assertIn(
+            "SharedRepo-TestA",
+            output,
+            "Model A should be listed as downloaded before delete",
+        )
+        self.assertIn(
+            "SharedRepo-TestB",
+            output,
+            "Model B should be listed as downloaded before delete",
+        )
+
+        # Delete model A — model B's files should be preserved
+        self.assertCommandSucceeds(
+            ["delete", SHARED_REPO_MODEL_A_NAME], timeout=TIMEOUT_MODEL_OPERATION
+        )
+
+        # Verify model B is still listed as downloaded
+        result = self.assertCommandSucceeds(["list", "--downloaded"])
+        output = result.stdout + result.stderr
+        self.assertIn(
+            "SharedRepo-TestB",
+            output,
+            "Model B should still be downloaded after deleting model A",
+        )
+        self.assertNotIn(
+            "SharedRepo-TestA",
+            output,
+            "Model A should no longer be listed after delete",
+        )
+
+        # Clean up: delete model B
+        self.assertCommandSucceeds(
+            ["delete", SHARED_REPO_MODEL_B_NAME], timeout=TIMEOUT_MODEL_OPERATION
+        )
 
 
 def run_cli_tests():

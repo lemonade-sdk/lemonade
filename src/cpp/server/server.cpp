@@ -1351,12 +1351,17 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 
     // Add image_defaults if present (for sd-cpp models)
     if (info.image_defaults.has_defaults) {
-        model_json["image_defaults"] = {
+        json img_def = {
             {"steps", info.image_defaults.steps},
             {"cfg_scale", info.image_defaults.cfg_scale},
             {"width", info.image_defaults.width},
             {"height", info.image_defaults.height}
         };
+        if (!info.image_defaults.sampling_method.empty())
+            img_def["sampling_method"] = info.image_defaults.sampling_method;
+        if (info.image_defaults.flow_shift > 0.0f)
+            img_def["flow_shift"] = info.image_defaults.flow_shift;
+        model_json["image_defaults"] = img_def;
     }
 
     return model_json;
