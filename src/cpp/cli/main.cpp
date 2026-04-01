@@ -679,6 +679,29 @@ static int handle_config_set(lemonade::LemonadeClient& client,
             std::cout << result.dump(4) << std::endl;
         }
         return 0;
+    } catch (const lemonade::HttpError& e) {
+        if (e.status_code() == 400) {
+            try {
+                auto error = nlohmann::json::parse(e.response_body());
+                if (error.contains("error") && error["error"].is_string()) {
+                    std::string message = error["error"].get<std::string>();
+                    const std::string prefix = "Unknown config key: '";
+
+                    if (message.rfind(prefix, 0) == 0 && !message.empty() && message.back() == '\'') {
+                        std::string key = message.substr(prefix.size(),
+                                                         message.size() - prefix.size() - 1);
+                        std::cerr << "Error setting config: unknown config key `" << key << "`"
+                                  << std::endl;
+                        std::cerr << "Run `lemonade config` to see valid keys." << std::endl;
+                        return 1;
+                    }
+                }
+            } catch (const nlohmann::json::exception&) {
+            }
+        }
+
+        std::cerr << "Error setting config: " << e.what() << std::endl;
+        return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error setting config: " << e.what() << std::endl;
         return 1;
