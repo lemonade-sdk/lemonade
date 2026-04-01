@@ -200,6 +200,7 @@ sys.exit(0)
     def _build_stubbed_agent_env(self, stub_dir):
         """Build isolated env so PATH resolves fake agents and avoids first-run side effects."""
         env = os.environ.copy()
+        env.pop("OPENAI_BASE_URL", None)
         env["PATH"] = stub_dir + os.pathsep + env.get("PATH", "")
         env["HOME"] = stub_dir
         env["XDG_CONFIG_HOME"] = os.path.join(stub_dir, ".config")
@@ -787,7 +788,7 @@ sys.exit(0)
                 "Expected injected Lemonade model provider config in codex args",
             )
             self.assertIn('model_provider="lemonade"', argv)
-            self.assertTrue(payload["env"]["OPENAI_BASE_URL"].endswith("/v1/"))
+            self.assertEqual(payload["env"]["OPENAI_BASE_URL"], "")
             self.assertEqual(payload["env"]["OPENAI_API_KEY"], "lemonade")
 
     def test_114_launch_claude_defaults_and_host_normalization(self):
@@ -849,7 +850,6 @@ sys.exit(0)
                     "codex",
                     "--model",
                     ENDPOINT_TEST_MODEL,
-                    "--use-recipe",
                     "--use-user-config",
                 ],
                 timeout=TIMEOUT_DEFAULT,
@@ -887,7 +887,6 @@ sys.exit(0)
                     "codex",
                     "--model",
                     ENDPOINT_TEST_MODEL,
-                    "--use-recipe",
                     "--use-user-config",
                     "custom-provider",
                 ],
@@ -916,7 +915,6 @@ sys.exit(0)
                     "codex",
                     "--model",
                     ENDPOINT_TEST_MODEL,
-                    "--use-recipe",
                     "--use-user-config",
                 ],
                 timeout=TIMEOUT_DEFAULT,
@@ -939,7 +937,6 @@ sys.exit(0)
                     "codex",
                     "--model",
                     ENDPOINT_TEST_MODEL,
-                    "--use-recipe",
                     "--use-user-config",
                 ],
                 timeout=TIMEOUT_DEFAULT,
@@ -960,7 +957,6 @@ sys.exit(0)
                     "claude",
                     "--model",
                     ENDPOINT_TEST_MODEL,
-                    "--use-recipe",
                     "--use-user-config",
                 ],
                 timeout=TIMEOUT_DEFAULT,
@@ -987,7 +983,6 @@ sys.exit(0)
                     "claude",
                     "--model",
                     ENDPOINT_TEST_MODEL,
-                    "--use-recipe",
                     "--agent-args",
                     "--approval-mode never --custom 'a b'",
                 ],
@@ -1005,8 +1000,8 @@ sys.exit(0)
             self.assertIn("--custom", argv)
             self.assertIn("a b", argv)
 
-    def test_103_launch_use_recipe_with_repo_flags_is_deterministic(self):
-        """--use-recipe should skip import flow even when repo flags are present."""
+    def test_103_launch_explicit_model_with_repo_flags_is_deterministic(self):
+        """Explicit model should skip import flow even when repo flags are present."""
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
             env = self._build_missing_agent_env(temp_dir)
 
