@@ -3,8 +3,8 @@
 #include <atomic>
 #include <lemon/cli_parser.h>
 #include <lemon/config_file.h>
+#include <lemon/logging_config.h>
 #include <lemon/server.h>
-#include <lemon/system_info.h>
 #include <lemon/version.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/aixlog.hpp>
@@ -77,20 +77,8 @@ int main(int argc, char** argv) {
         auto config = std::make_shared<RuntimeConfig>(config_json);
         RuntimeConfig::set_global(config.get());
 
-        // Re-initialize logging with the configured log level and file sink
-        auto filter = AixLog::Filter(AixLog::to_severity(config->log_level()));
-        auto console_sink = std::make_shared<AixLog::SinkCout>(filter, RuntimeConfig::LOG_FORMAT);
-#ifdef _WIN32
-        AixLog::Log::init({console_sink});
-#else
-        if (SystemInfo::is_running_under_systemd()) {
-            AixLog::Log::init({console_sink});
-        } else {
-            std::string log_file = utils::get_runtime_dir() + "/lemonade-server.log";
-            auto file_sink = std::make_shared<AixLog::SinkFile>(filter, log_file, RuntimeConfig::LOG_FORMAT);
-            AixLog::Log::init({console_sink, file_sink});
-        }
-#endif
+        // Initialize logging with the configured level — console + file + log hub
+        configure_application_logging(config->log_level(), LoggingMode::direct_server);
 
         if (cli_overrides) {
             ConfigFile::save(cli_config.cache_dir, config_json);

@@ -22,6 +22,7 @@ public:
     // Top-level server settings
     int port() const;
     std::string host() const;
+    int websocket_port() const;
     std::string log_level() const;
     std::string extra_models_dir() const;
     bool no_broadcast() const;

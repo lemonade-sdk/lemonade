@@ -7,9 +7,11 @@
 #include <unordered_map>
 #include <mutex>
 #include <functional>
+#include <optional>
 #include <queue>
 #include <libwebsockets.h>
 #include <nlohmann/json.hpp>
+#include "log_stream.h"
 #include "realtime_session.h"
 
 namespace lemon {
@@ -28,12 +30,12 @@ struct PerSessionData {
 };
 
 /**
- * WebSocket server for realtime audio transcription.
- * Implements OpenAI-compatible Realtime API message protocol.
+ * Shared WebSocket server for realtime audio transcription and log streaming.
+ * Multiplexes /realtime (OpenAI Realtime API) and /logs/stream endpoints.
  */
 class WebSocketServer {
 public:
-    explicit WebSocketServer(Router* router);
+    WebSocketServer(Router* router, const std::string& host, int requested_port);
     ~WebSocketServer();
 
     // Non-copyable
@@ -68,15 +70,29 @@ public:
                            void* user, void* in, size_t len);
 
 private:
+    enum class ConnectionKind {
+        invalid,
+        realtime,
+        logs,
+    };
+
+    struct ConnectionState {
+        ConnectionKind kind = ConnectionKind::invalid;
+        std::string realtime_session_id;
+        std::string log_subscriber_id;
+    };
+
     int port_;
+    std::string host_;
+    std::string api_key_;
     Router* router_;
     std::unique_ptr<RealtimeSessionManager> session_manager_;
     struct lws_context* context_{nullptr};
     std::thread service_thread_;
     std::atomic<bool> running_{false};
+    std::atomic<bool> writable_dispatch_pending_{false};
 
-    // Map connection IDs to session IDs
-    std::unordered_map<std::string, std::string> connection_sessions_;
+    std::unordered_map<std::string, ConnectionState> connection_states_;
     // Map connection IDs to lws wsi pointers for sending
     std::unordered_map<std::string, struct lws*> connection_websockets_;
     // Per-connection outbound message queues (deferred write pattern)
@@ -97,11 +113,20 @@ private:
     // Handle writable callback — flush message queue
     void handle_writable(const std::string& connection_id, struct lws* wsi);
 
-    // Parse URL query parameters
-    static std::unordered_map<std::string, std::string> parse_query_params(const std::string& url);
+    bool authenticate_connection(struct lws* wsi) const;
+    static std::optional<std::string> get_header(struct lws* wsi, enum lws_token_indexes token);
+    static std::optional<std::string> get_url_arg(struct lws* wsi, const char* name);
+    static std::string get_request_path(struct lws* wsi);
+    static ConnectionKind classify_path(const std::string& path);
 
     // Send JSON message to WebSocket by connection ID
     void send_json(const std::string& connection_id, const json& msg);
+
+    void handle_log_subscribe(const std::string& connection_id,
+                              std::optional<uint64_t> after_seq);
+    void handle_realtime_connection(const std::string& connection_id,
+                                    struct lws* wsi);
+    void schedule_pending_writes();
 
     // Service loop run in background thread
     void service_loop();

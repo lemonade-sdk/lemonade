@@ -2,6 +2,7 @@
   "config_version": 1,
   "port": 8000,
   "host": "localhost",
+  "websocket_port": "auto",
   "log_level": "info",
   "global_timeout": 300,
   "max_loaded_models": 1,

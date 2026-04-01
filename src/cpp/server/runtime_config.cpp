@@ -111,6 +111,15 @@ std::string RuntimeConfig::host() const {
     return config_["host"].get<std::string>();
 }
 
+int RuntimeConfig::websocket_port() const {
+    std::shared_lock lock(mutex_);
+    const auto& val = config_["websocket_port"];
+    if (val.is_string() && val.get<std::string>() == "auto") {
+        return 0;  // OS auto-assign
+    }
+    return val.get<int>();
+}
+
 std::string RuntimeConfig::log_level() const {
     std::shared_lock lock(mutex_);
     return config_["log_level"].get<std::string>();
@@ -260,6 +269,22 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
     } else if (key == "host") {
         if (!value.is_string()) {
             throw std::invalid_argument("'host' must be a string");
+        }
+    } else if (key == "websocket_port") {
+        if (value.is_string()) {
+            if (value.get<std::string>() != "auto") {
+                throw std::invalid_argument(
+                    "'websocket_port' must be \"auto\" or an integer 0-65535");
+            }
+        } else if (value.is_number_integer()) {
+            int p = value.get<int>();
+            if (p < 0 || p > 65535) {
+                throw std::invalid_argument(
+                    "'websocket_port' must be between 0 and 65535");
+            }
+        } else {
+            throw std::invalid_argument(
+                "'websocket_port' must be \"auto\" or an integer 0-65535");
         }
     } else if (key == "log_level") {
         if (!value.is_string()) {

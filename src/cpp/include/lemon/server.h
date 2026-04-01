@@ -15,9 +15,7 @@
 #include "router.h"
 #include "model_manager.h"
 #include "backend_manager.h"
-#ifdef LEMON_HAS_WEBSOCKET
 #include "websocket_server.h"
-#endif
 #include "lemon/utils/network_beacon.h"
 
 namespace lemon {
@@ -76,10 +74,6 @@ private:
     void handle_system_stats(const httplib::Request& req, httplib::Response& res);
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
-    void handle_logs_stream(const httplib::Request& req, httplib::Response& res);
-#ifdef HAVE_SYSTEMD
-    void handle_logs_stream_journald(const httplib::Request& req, httplib::Response& res);
-#endif
 
     // Backend management endpoint handlers
     void handle_install(const httplib::Request& req, httplib::Response& res);
@@ -133,7 +127,6 @@ private:
     std::shared_ptr<RuntimeConfig> config_;
     std::string cache_dir_;  // Lemonade cache dir for config.json persistence
     std::atomic<int> port_;  // Atomic cache for lock-free reads from listener threads
-    std::string log_file_path_;
 
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;
@@ -145,9 +138,7 @@ private:
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
-#ifdef LEMON_HAS_WEBSOCKET
     std::unique_ptr<WebSocketServer> websocket_server_;
-#endif
 
     bool running_;
     std::atomic<bool> rebind_requested_{false};

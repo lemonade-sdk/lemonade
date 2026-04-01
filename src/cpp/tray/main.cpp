@@ -11,6 +11,7 @@
 #include "lemon_tray/tray_ui.h"
 #include <lemon/cli_parser.h>
 #include <lemon/config_file.h>
+#include <lemon/logging_config.h>
 #include <lemon/runtime_config.h>
 #include <lemon/server.h>
 #include <lemon/single_instance.h>
@@ -160,18 +161,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
 
     lemon::utils::set_models_dir(runtime_config->models_dir());
 
-    // Initialize logging to file (SUBSYSTEM:WINDOWS has no console).
-    // The server's /api/v1/logs/stream endpoint tails this same file.
-    {
-        char temp_path[MAX_PATH];
-        GetTempPathA(MAX_PATH, temp_path);
-        std::string log_file = std::string(temp_path) + "lemonade-server.log";
-        auto file_sink = std::make_shared<AixLog::SinkFile>(
-            AixLog::Filter(AixLog::to_severity(runtime_config->log_level())),
-            log_file,
-            lemon::RuntimeConfig::LOG_FORMAT);
-        AixLog::Log::init({file_sink});
-    }
+    // Initialize logging (file + log hub; SUBSYSTEM:WINDOWS has no console)
+    lemon::configure_application_logging(
+        runtime_config->log_level(), lemon::LoggingMode::embedded_tray_server);
 
     // Initialize Winsock (required by httplib)
     WSADATA wsa;
