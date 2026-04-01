@@ -1012,7 +1012,6 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     load_checkpoints(info, *model_json);
     parse_composite_models(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
-    info.recipe_options = RecipeOptions(info.recipe, JsonUtils::get_or_default(recipe_options_, model_name, json::object()));
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
 
@@ -1021,6 +1020,37 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
             info.labels.push_back(label.get<std::string>());
         }
     }
+
+    // Parse image_defaults (must match build_cache logic)
+    if (model_json->contains("image_defaults") && (*model_json)["image_defaults"].is_object()) {
+        const auto& img_defaults = (*model_json)["image_defaults"];
+        info.image_defaults.has_defaults = true;
+        info.image_defaults.steps = JsonUtils::get_or_default<int>(img_defaults, "steps", 20);
+        info.image_defaults.cfg_scale = JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
+        info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
+        info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
+    }
+
+    // Build recipe_options with same merge order as build_cache:
+    // 1. image_defaults, 2. JSON recipe_options, 3. user-saved options
+    json base_options = json::object();
+    if (info.image_defaults.has_defaults) {
+        base_options["steps"] = info.image_defaults.steps;
+        base_options["cfg_scale"] = info.image_defaults.cfg_scale;
+        base_options["width"] = info.image_defaults.width;
+        base_options["height"] = info.image_defaults.height;
+    }
+    if (model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object()) {
+        for (auto& [k, v] : (*model_json)["recipe_options"].items()) {
+            base_options[k] = v;
+        }
+    }
+    if (JsonUtils::has_key(recipe_options_, model_name)) {
+        for (auto& [k, v] : recipe_options_[model_name].items()) {
+            base_options[k] = v;
+        }
+    }
+    info.recipe_options = RecipeOptions(info.recipe, base_options);
 
     // Populate type and device fields (multi-model support)
     info.type = get_model_type_from_labels(info.labels);
