@@ -829,8 +829,8 @@ sys.exit(0)
                 payload["env"]["ANTHROPIC_BASE_URL"], f"http://localhost:{PORT}"
             )
 
-    def test_102c_launch_codex_use_user_config_default_provider(self):
-        """Codex launch --use-user-config should select provider without injecting provider config."""
+    def test_102c_launch_codex_provider_default(self):
+        """Codex launch -p should select default provider without injecting provider config."""
         if IS_WINDOWS:
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
 
@@ -850,7 +850,7 @@ sys.exit(0)
                     "codex",
                     "--model",
                     ENDPOINT_TEST_MODEL,
-                    "--use-user-config",
+                    "-p",
                 ],
                 timeout=TIMEOUT_DEFAULT,
                 env=env,
@@ -866,8 +866,8 @@ sys.exit(0)
                 any(arg.startswith("model_providers.lemonade=") for arg in argv)
             )
 
-    def test_102d_launch_codex_use_user_config_custom_provider(self):
-        """Codex launch --use-user-config PROVIDER should target custom provider name."""
+    def test_102d_launch_codex_provider_custom(self):
+        """Codex launch --provider PROVIDER should target custom provider name."""
         if IS_WINDOWS:
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
 
@@ -887,7 +887,7 @@ sys.exit(0)
                     "codex",
                     "--model",
                     ENDPOINT_TEST_MODEL,
-                    "--use-user-config",
+                    "--provider",
                     "custom-provider",
                 ],
                 timeout=TIMEOUT_DEFAULT,
@@ -904,8 +904,8 @@ sys.exit(0)
                 any(arg.startswith("model_providers.custom-provider=") for arg in argv)
             )
 
-    def test_102e_launch_codex_use_user_config_missing_config_fails(self):
-        """Codex --use-user-config should fail early when no config.toml exists."""
+    def test_102e_launch_codex_provider_missing_config_fails(self):
+        """Codex --provider should fail early when no config.toml exists."""
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
             env = self._build_missing_agent_env(temp_dir)
 
@@ -915,7 +915,7 @@ sys.exit(0)
                     "codex",
                     "--model",
                     ENDPOINT_TEST_MODEL,
-                    "--use-user-config",
+                    "--provider",
                 ],
                 timeout=TIMEOUT_DEFAULT,
                 env=env,
@@ -925,8 +925,8 @@ sys.exit(0)
             output = result.stdout + result.stderr
             self.assertIn("no Codex config.toml was found", output)
 
-    def test_102f_launch_codex_use_user_config_missing_provider_fails(self):
-        """Codex --use-user-config should fail when provider is missing from config.toml."""
+    def test_102f_launch_codex_provider_missing_provider_fails(self):
+        """Codex --provider should fail when provider is missing from config.toml."""
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
             env = self._build_missing_agent_env(temp_dir)
             self._write_codex_config(env, '[model_providers.other]\nname = "Other"\n')
@@ -937,7 +937,7 @@ sys.exit(0)
                     "codex",
                     "--model",
                     ENDPOINT_TEST_MODEL,
-                    "--use-user-config",
+                    "--provider",
                 ],
                 timeout=TIMEOUT_DEFAULT,
                 env=env,
@@ -947,8 +947,8 @@ sys.exit(0)
             output = result.stdout + result.stderr
             self.assertIn("Codex provider 'lemonade' not found", output)
 
-    def test_102g_launch_claude_use_user_config_rejected(self):
-        """--use-user-config should be rejected for non-codex agents."""
+    def test_102g_launch_claude_provider_rejected(self):
+        """--provider should be rejected for non-codex agents."""
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
             env = self._build_missing_agent_env(temp_dir)
             result = run_cli_command(
@@ -957,7 +957,7 @@ sys.exit(0)
                     "claude",
                     "--model",
                     ENDPOINT_TEST_MODEL,
-                    "--use-user-config",
+                    "--provider",
                 ],
                 timeout=TIMEOUT_DEFAULT,
                 env=env,
@@ -1121,7 +1121,7 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
             "For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first",
             docs_text,
         )
-        self.assertIn("--use-user-config [PROVIDER]", docs_text)
+        self.assertIn("--provider,-p [PROVIDER]", docs_text)
         self.assertIn("--agent-args ARGS", docs_text)
 
 

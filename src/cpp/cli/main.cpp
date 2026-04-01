@@ -244,7 +244,7 @@ static bool validate_codex_user_config_provider(const std::string& provider_name
     if (!codex_config_contains_provider(config_text, provider_name)) {
         error_message = "Codex provider '" + provider_name +
                         "' not found in config.toml. Define [model_providers." + provider_name +
-                        "] in " + config_path + " or disable --use-user-config.";
+                        "] in " + config_path + " or launch without --provider.";
         return false;
     }
 
@@ -482,7 +482,7 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
 
     if (config.codex_use_user_config) {
         if (config.agent != "codex") {
-            LOG(ERROR, "AgentBuilder") << "--use-user-config is only supported for the codex agent." << std::endl;
+            LOG(ERROR, "AgentBuilder") << "--provider is only supported for the codex agent." << std::endl;
             return 1;
         }
 
@@ -1055,7 +1055,7 @@ int main(int argc, char* argv[]) {
     export_cmd->add_option("--output", config.output_file, "Output file path (prints to stdout if not specified)")->type_name("PATH");
 
     // Launch options
-    CLI::Option* use_user_config_opt = nullptr;
+    CLI::Option* provider_opt = nullptr;
     launch_cmd->add_option("agent", config.agent, "Agent name to launch")
         ->type_name("AGENT")
         ->check(CLI::IsMember(SUPPORTED_AGENTS));
@@ -1065,7 +1065,7 @@ int main(int argc, char* argv[]) {
         ->type_name("DIR");
     launch_cmd->add_option("--recipe-file", config.recipe_file,
         "Remote recipe JSON filename used only if you choose recipe import at prompt")->type_name("FILE");
-    use_user_config_opt = launch_cmd->add_option("--use-user-config", config.codex_model_provider,
+    provider_opt = launch_cmd->add_option("--provider,-p", config.codex_model_provider,
         "Use model provider from Codex config.toml instead of Lemonade-injected provider definition")
         ->type_name("PROVIDER")
         ->default_val(config.codex_model_provider)
@@ -1081,7 +1081,7 @@ int main(int argc, char* argv[]) {
 
     // Parse arguments
     CLI11_PARSE(app, argc, argv);
-    config.codex_use_user_config = (use_user_config_opt != nullptr && use_user_config_opt->count() > 0);
+    config.codex_use_user_config = (provider_opt != nullptr && provider_opt->count() > 0);
 
     // Auto-discover local server via UDP beacon if the default connection fails
     // Skip when: no command given, scan command, or user explicitly set --host/--port
