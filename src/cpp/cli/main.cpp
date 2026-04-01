@@ -20,7 +20,6 @@
 #include <functional>
 #include <map>
 #include <vector>
-#include <filesystem>
 #include <cctype>
 
 #ifdef _WIN32
@@ -38,8 +37,6 @@
 #endif
 
 #include "lemon/utils/aixlog.hpp"
-
-namespace fs = std::filesystem;
 
 static const std::vector<std::string> VALID_LABELS = {
     "coding",
@@ -116,38 +113,6 @@ struct CliConfig {
     std::string agent_args;
 };
 
-static std::string expand_home_path(const std::string& path) {
-    if (path.empty() || path[0] != '~') {
-        return path;
-    }
-
-#ifdef _WIN32
-    const char* user_profile = std::getenv("USERPROFILE");
-    if (!user_profile) {
-        return path;
-    }
-    if (path.size() == 1) {
-        return std::string(user_profile);
-    }
-    if (path[1] == '\\' || path[1] == '/') {
-        return std::string(user_profile) + path.substr(1);
-    }
-    return path;
-#else
-    const char* home = std::getenv("HOME");
-    if (!home) {
-        return path;
-    }
-    if (path.size() == 1) {
-        return std::string(home);
-    }
-    if (path[1] == '/') {
-        return std::string(home) + path.substr(1);
-    }
-    return path;
-#endif
-}
-
 static bool is_valid_provider_name(const std::string& provider_name) {
     if (provider_name.empty()) {
         return false;
@@ -160,94 +125,6 @@ static bool is_valid_provider_name(const std::string& provider_name) {
         }
         return false;
     }
-    return true;
-}
-
-static std::vector<std::string> codex_config_search_paths() {
-    std::vector<std::string> paths;
-
-    const char* codex_config = std::getenv("CODEX_CONFIG");
-    if (codex_config && codex_config[0]) {
-        paths.push_back(codex_config);
-    }
-
-#ifdef _WIN32
-    const char* app_data = std::getenv("APPDATA");
-    if (app_data && app_data[0]) {
-        paths.push_back(std::string(app_data) + "\\codex\\config.toml");
-    }
-    paths.push_back("~\\.codex\\config.toml");
-#else
-    const char* xdg_config_home = std::getenv("XDG_CONFIG_HOME");
-    if (xdg_config_home && xdg_config_home[0]) {
-        paths.push_back(std::string(xdg_config_home) + "/codex/config.toml");
-    }
-    paths.push_back("~/.config/codex/config.toml");
-    paths.push_back("~/.codex/config.toml");
-#endif
-
-    return paths;
-}
-
-static bool find_codex_config_path(std::string& found_path, std::vector<std::string>& searched_paths) {
-    for (const auto& candidate : codex_config_search_paths()) {
-        std::string expanded = expand_home_path(candidate);
-        searched_paths.push_back(expanded);
-
-        std::error_code ec;
-        fs::path p(expanded);
-        if (fs::exists(p, ec) && fs::is_regular_file(p, ec)) {
-            found_path = expanded;
-            return true;
-        }
-    }
-
-    return false;
-}
-
-static bool read_file_contents(const std::string& path, std::string& output) {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        return false;
-    }
-
-    output.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    return true;
-}
-
-static bool codex_config_contains_provider(const std::string& config_text, const std::string& provider_name) {
-    const std::string table_pattern = "[model_providers." + provider_name + "]";
-    const std::string inline_pattern = "model_providers." + provider_name + " = {";
-    return config_text.find(table_pattern) != std::string::npos ||
-           config_text.find(inline_pattern) != std::string::npos;
-}
-
-static bool validate_codex_user_config_provider(const std::string& provider_name,
-                                                std::string& error_message) {
-    std::string config_path;
-    std::vector<std::string> searched_paths;
-
-    if (!find_codex_config_path(config_path, searched_paths)) {
-        error_message = "Codex user config mode requested, but no Codex config.toml was found. Searched:";
-        for (const auto& path : searched_paths) {
-            error_message += "\n  - " + path;
-        }
-        return false;
-    }
-
-    std::string config_text;
-    if (!read_file_contents(config_path, config_text)) {
-        error_message = "Codex user config mode requested, but failed to read config file: " + config_path;
-        return false;
-    }
-
-    if (!codex_config_contains_provider(config_text, provider_name)) {
-        error_message = "Codex provider '" + provider_name +
-                        "' not found in config.toml. Define [model_providers." + provider_name +
-                        "] in " + config_path + " or launch without --provider.";
-        return false;
-    }
-
     return true;
 }
 
@@ -493,11 +370,6 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
             return 1;
         }
 
-        std::string provider_error;
-        if (!validate_codex_user_config_provider(config.codex_model_provider, provider_error)) {
-            LOG(ERROR, "AgentBuilder") << provider_error << std::endl;
-            return 1;
-        }
     }
 
     launch_options.codex_use_user_config = config.codex_use_user_config;
@@ -1066,7 +938,7 @@ int main(int argc, char* argv[]) {
     launch_cmd->add_option("--recipe-file", config.recipe_file,
         "Remote recipe JSON filename used only if you choose recipe import at prompt")->type_name("FILE");
     provider_opt = launch_cmd->add_option("--provider,-p", config.codex_model_provider,
-        "Use model provider from Codex config.toml instead of Lemonade-injected provider definition")
+        "Use model provider name for Codex instead of Lemonade-injected provider definition")
         ->type_name("PROVIDER")
         ->default_val(config.codex_model_provider)
         ->expected(0, 1);

@@ -225,16 +225,6 @@ sys.exit(0)
         env["PATH"] = stub_dir
         return env
 
-    def _write_codex_config(self, env, content):
-        """Write a codex config.toml under the configured XDG config root."""
-        config_home = env.get("XDG_CONFIG_HOME", "")
-        codex_dir = os.path.join(config_home, "codex")
-        os.makedirs(codex_dir, exist_ok=True)
-        config_path = os.path.join(codex_dir, "config.toml")
-        with open(config_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        return config_path
-
     # =============================================================================
     # Status Tests
     # =============================================================================
@@ -840,10 +830,6 @@ sys.exit(0)
             )
             self._write_fake_agent(temp_dir, "codex", capture_path)
             env = self._build_stubbed_agent_env(temp_dir)
-            self._write_codex_config(
-                env, '[model_providers.lemonade]\nname = "Lemonade"\n'
-            )
-
             result = run_cli_command(
                 [
                     "launch",
@@ -877,10 +863,6 @@ sys.exit(0)
             )
             self._write_fake_agent(temp_dir, "codex", capture_path)
             env = self._build_stubbed_agent_env(temp_dir)
-            self._write_codex_config(
-                env, '[model_providers.custom-provider]\nname = "Custom"\n'
-            )
-
             result = run_cli_command(
                 [
                     "launch",
@@ -904,10 +886,17 @@ sys.exit(0)
                 any(arg.startswith("model_providers.custom-provider=") for arg in argv)
             )
 
-    def test_102e_launch_codex_provider_missing_config_fails(self):
-        """Codex --provider should fail early when no config.toml exists."""
+    def test_102e_launch_codex_provider_without_config_check(self):
+        """Codex --provider should not read/validate config.toml in launcher."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
-            env = self._build_missing_agent_env(temp_dir)
+            capture_path = os.path.join(
+                temp_dir, "codex_capture_provider_no_config_check.json"
+            )
+            self._write_fake_agent(temp_dir, "codex", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
 
             result = run_cli_command(
                 [
@@ -921,15 +910,27 @@ sys.exit(0)
                 env=env,
             )
 
-            self.assertNotEqual(result.returncode, 0)
-            output = result.stdout + result.stderr
-            self.assertIn("no Codex config.toml was found", output)
+            self.assertEqual(result.returncode, 0)
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
 
-    def test_102f_launch_codex_provider_missing_provider_fails(self):
-        """Codex --provider should fail when provider is missing from config.toml."""
+            argv = payload["argv"]
+            self.assertIn('model_provider="lemonade"', argv)
+            self.assertFalse(
+                any(arg.startswith("model_providers.lemonade=") for arg in argv)
+            )
+
+    def test_102f_launch_codex_provider_custom_without_config_check(self):
+        """Codex --provider custom name should not be launcher-validated against config.toml."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
-            env = self._build_missing_agent_env(temp_dir)
-            self._write_codex_config(env, '[model_providers.other]\nname = "Other"\n')
+            capture_path = os.path.join(
+                temp_dir, "codex_capture_provider_custom_no_config_check.json"
+            )
+            self._write_fake_agent(temp_dir, "codex", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
 
             result = run_cli_command(
                 [
@@ -938,14 +939,23 @@ sys.exit(0)
                     "--model",
                     ENDPOINT_TEST_MODEL,
                     "--provider",
+                    "missing-in-config",
                 ],
                 timeout=TIMEOUT_DEFAULT,
                 env=env,
             )
 
-            self.assertNotEqual(result.returncode, 0)
-            output = result.stdout + result.stderr
-            self.assertIn("Codex provider 'lemonade' not found", output)
+            self.assertEqual(result.returncode, 0)
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            argv = payload["argv"]
+            self.assertIn('model_provider="missing-in-config"', argv)
+            self.assertFalse(
+                any(
+                    arg.startswith("model_providers.missing-in-config=") for arg in argv
+                )
+            )
 
     def test_102g_launch_claude_provider_rejected(self):
         """--provider should be rejected for non-codex agents."""
@@ -1094,7 +1104,7 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
             help_output,
         )
         self.assertIn(
-            "Use model provider from Codex config.toml",
+            "Use model provider name for Codex",
             help_output,
         )
         self.assertIn(
