@@ -24,7 +24,7 @@ namespace lemon {
 
 class Server {
 public:
-    Server(std::shared_ptr<RuntimeConfig> config, const std::string& home_dir);
+    Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_dir);
 
     ~Server();
 
@@ -131,7 +131,7 @@ private:
     double get_npu_utilization();
 
     std::shared_ptr<RuntimeConfig> config_;
-    std::string home_dir_;   // Lemonade home dir for config.json persistence
+    std::string cache_dir_;  // Lemonade cache dir for config.json persistence
     std::atomic<int> port_;  // Atomic cache for lock-free reads from listener threads
     std::string log_file_path_;
 

@@ -546,7 +546,7 @@ class SystemInfoMockTests(unittest.TestCase):
         Run a single test with a mock hardware configuration.
 
         Creates a temporary cache directory with the mock hardware_info.json,
-        starts the server with a home dir pointing to it, and validates
+        starts the server with a cache dir pointing to it, and validates
         the /system-info response matches expected recipe support.
         """
         config = MOCK_HARDWARE_CONFIGS[config_name]
@@ -576,7 +576,7 @@ class SystemInfoMockTests(unittest.TestCase):
             with open(config_file, "w") as f:
                 json.dump({"log_level": "debug"}, f)
 
-            # Start lemond with the temp dir as its home directory
+            # Start lemond with the temp dir as its cache directory
             cmd = [self.lemond_binary, temp_cache_dir]
             print(f"Starting server: {' '.join(cmd)}")
 

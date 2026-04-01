@@ -182,7 +182,7 @@ parse_serve_args(const std::vector<std::string>& args) {
             // Ignored (no longer applicable)
         }
         else {
-            // Unknown arg — pass through (might be home_dir positional)
+            // Unknown arg — pass through (might be cache_dir positional)
             lemond_args.push_back(arg);
         }
     }

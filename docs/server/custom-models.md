@@ -10,14 +10,14 @@ This guide explains how to manually register custom models in Lemonade Server us
 
 ## Overview
 
-Custom model configuration involves two files, both located in the Lemonade home directory:
+Custom model configuration involves two files, both located in the Lemonade cache directory:
 
 | File | Purpose |
 |------|---------|
 | `user_models.json` | Model registry — defines what models are available (checkpoint, recipe, etc.) |
 | `recipe_options.json` | Per-model settings — configures how models run (context size, backend, etc.) |
 
-See [configuration.md](./configuration.md) for more information about finding the home directory.
+See [configuration.md](./configuration.md) for more information about finding the cache directory.
 
 ## `user_models.json` Reference
 

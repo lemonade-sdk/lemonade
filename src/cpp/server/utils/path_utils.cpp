@@ -24,15 +24,15 @@ namespace fs = std::filesystem;
 namespace lemon::utils {
 
 // ---------------------------------------------------------------------------
-// Lemonade home dir and models dir — set once at startup before any
+// Lemonade cache dir and models dir — set once at startup before any
 // concurrent access, then read-only from that point on.
 // ---------------------------------------------------------------------------
 
-static std::string g_home_dir;
+static std::string g_cache_dir;
 static std::string g_models_dir;
 
-void set_home_dir(const std::string& dir) {
-    g_home_dir = dir;
+void set_cache_dir(const std::string& dir) {
+    g_cache_dir = dir;
 }
 
 void set_models_dir(const std::string& dir) {
@@ -156,8 +156,8 @@ std::string get_resource_path(const std::string& relative_path) {
     // Also check user's local install directory
     const char* home = std::getenv("HOME");
     if (home) {
-        std::string home_local = std::string(home) + "/.local/share/lemonade-server";
-        install_prefixes.insert(install_prefixes.begin(), home_local);
+        std::string user_local = std::string(home) + "/.local/share/lemonade-server";
+        install_prefixes.insert(install_prefixes.begin(), user_local);
     }
 
     for (const auto& prefix : install_prefixes) {
@@ -292,9 +292,9 @@ bool is_ggml_hip_plugin_available() {
 }
 
 std::string get_cache_dir() {
-    // If set_home_dir() was called at startup, use that
-    if (!g_home_dir.empty()) {
-        return g_home_dir;
+    // If set_cache_dir() was called at startup, use that
+    if (!g_cache_dir.empty()) {
+        return g_cache_dir;
     }
 
     // Check LEMONADE_CACHE_DIR environment variable

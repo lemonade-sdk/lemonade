@@ -2,11 +2,11 @@
 
 ## Overview
 
-Lemonade Server starts automatically with the OS after installation. Configuration is managed through a single `config.json` file stored in the lemonade home directory.
+Lemonade Server starts automatically with the OS after installation. Configuration is managed through a single `config.json` file stored in the lemonade cache directory.
 
 ## config.json
 
-All settings are in `config.json`, located in the lemonade home directory:
+All settings are in `config.json`, located in the lemonade cache directory:
 
 - **Linux (systemd):** `/var/lib/lemonade/config.json`
 - **Windows:** `%USERPROFILE%\.cache\lemonade\config.json`
@@ -180,10 +180,10 @@ sudo systemctl restart lemonade-server
 ## lemond CLI
 
 ```
-lemond [home_dir] [--port PORT] [--host HOST]
+lemond [cache_dir] [--port PORT] [--host HOST]
 ```
 
-- **home_dir** — Path to the lemonade home directory containing config.json and model data. Optional; defaults to platform-specific location.
+- **cache_dir** — Path to the lemonade cache directory containing config.json and model data. Optional; defaults to platform-specific location.
 - **--port** — Port to serve on (overrides config.json, persisted). Use as a fallback if the server cannot start.
 - **--host** — Address to bind (overrides config.json, persisted). Use as a fallback if the server cannot start.
 

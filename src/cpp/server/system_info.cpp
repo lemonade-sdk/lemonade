@@ -2887,7 +2887,7 @@ bool SystemInfoCache::is_valid() const {
         return false;
     }
 
-    // Hardware cache is always enabled when a home dir is configured
+    // Hardware cache is always enabled when a cache dir is configured
 
     // Check if cache file exists
     if (!fs::exists(cache_file_path_)) {

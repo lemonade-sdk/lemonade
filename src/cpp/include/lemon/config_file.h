@@ -9,7 +9,7 @@ namespace lemon {
 
 using json = nlohmann::json;
 
-/// Manages reading, writing, and migrating config.json in the lemonade home dir.
+/// Manages reading, writing, and migrating config.json in the lemonade cache dir.
 class ConfigFile {
 public:
     /// Returns the full default config loaded from installed resource JSON.
@@ -17,14 +17,14 @@ public:
     /// is merged on top when present.
     static json get_defaults();
 
-    /// Load config.json from home_dir, deep-merging with defaults.
+    /// Load config.json from cache_dir, deep-merging with defaults.
     /// If the file doesn't exist, creates it with defaults.
     /// Unknown keys are preserved (forward compatibility).
-    static json load(const std::string& home_dir);
+    static json load(const std::string& cache_dir);
 
-    /// Save config to <home_dir>/config.json atomically (write temp, rename).
+    /// Save config to <cache_dir>/config.json atomically (write temp, rename).
     /// Thread-safe.
-    static void save(const std::string& home_dir, const json& config);
+    static void save(const std::string& cache_dir, const json& config);
 
 private:
     /// When config.json doesn't exist yet, read legacy LEMONADE_* environment

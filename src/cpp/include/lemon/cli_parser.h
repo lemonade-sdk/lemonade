@@ -6,7 +6,7 @@
 namespace lemon {
 
 struct ServerConfig {
-    std::string home_dir;      // Positional arg: lemonade home dir (optional, platform default)
+    std::string cache_dir;     // Positional arg: lemonade cache dir (optional, platform default)
     int port = -1;             // -1 = not specified on CLI, use config.json value
     std::string host;          // Empty = not specified on CLI, use config.json value
 };

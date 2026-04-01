@@ -43,17 +43,17 @@ json ConfigFile::get_defaults() {
     return defaults;
 }
 
-json ConfigFile::load(const std::string& home_dir) {
+json ConfigFile::load(const std::string& cache_dir) {
     json defaults = get_defaults();
-    fs::path config_path = utils::path_from_utf8(home_dir) / "config.json";
+    fs::path config_path = utils::path_from_utf8(cache_dir) / "config.json";
 
     if (!fs::exists(config_path)) {
-        fs::path home_path = utils::path_from_utf8(home_dir);
-        if (!fs::exists(home_path)) {
-            fs::create_directories(home_path);
+        fs::path cache_path = utils::path_from_utf8(cache_dir);
+        if (!fs::exists(cache_path)) {
+            fs::create_directories(cache_path);
         }
         json config = migrate_from_env(defaults);
-        save(home_dir, config);
+        save(cache_dir, config);
         return config;
     }
 
@@ -100,23 +100,23 @@ json ConfigFile::load(const std::string& home_dir) {
         }
 
         std::cerr << "  Using defaults." << std::endl;
-        save(home_dir, defaults);
+        save(cache_dir, defaults);
         return defaults;
     }
 
     return utils::JsonUtils::merge(defaults, loaded);
 }
 
-void ConfigFile::save(const std::string& home_dir, const json& config) {
+void ConfigFile::save(const std::string& cache_dir, const json& config) {
     std::unique_lock lock(file_mutex_);
 
-    fs::path home_path = utils::path_from_utf8(home_dir);
-    if (!fs::exists(home_path)) {
-        fs::create_directories(home_path);
+    fs::path cache_path = utils::path_from_utf8(cache_dir);
+    if (!fs::exists(cache_path)) {
+        fs::create_directories(cache_path);
     }
 
-    fs::path config_path = home_path / "config.json";
-    fs::path temp_path = home_path / "config.json.tmp";
+    fs::path config_path = cache_path / "config.json";
+    fs::path temp_path = cache_path / "config.json.tmp";
 
     {
         std::ofstream file(temp_path);

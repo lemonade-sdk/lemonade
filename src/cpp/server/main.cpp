@@ -54,8 +54,8 @@ int main(int argc, char** argv) {
 
         auto cli_config = parser.get_config();
 
-        utils::set_home_dir(cli_config.home_dir);
-        json config_json = ConfigFile::load(cli_config.home_dir);
+        utils::set_cache_dir(cli_config.cache_dir);
+        json config_json = ConfigFile::load(cli_config.cache_dir);
 
         // CLI --port/--host override config.json and persist
         bool cli_overrides = false;
@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
 #endif
 
         if (cli_overrides) {
-            ConfigFile::save(cli_config.home_dir, config_json);
+            ConfigFile::save(cli_config.cache_dir, config_json);
             if (cli_config.port != -1) {
                 LOG(INFO) << "Persisted port=" << cli_config.port << " to config.json" << std::endl;
             }
@@ -100,7 +100,7 @@ int main(int argc, char** argv) {
 
         LOG(INFO) << "Starting Lemonade Server..." << std::endl;
         LOG(INFO) << "  Version: " << LEMON_VERSION_STRING << std::endl;
-        LOG(INFO) << "  Home dir: " << cli_config.home_dir << std::endl;
+        LOG(INFO) << "  Cache dir: " << cli_config.cache_dir << std::endl;
         LOG(INFO) << "  Port: " << config->port() << std::endl;
         LOG(INFO) << "  Host: " << config->host() << std::endl;
         LOG(INFO) << "  Log level: " << config->log_level() << std::endl;
@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
             LOG(INFO) << "  Extra models dir: " << config->extra_models_dir() << std::endl;
         }
 
-        Server server(config, cli_config.home_dir);
+        Server server(config, cli_config.cache_dir);
 
         g_server_instance = &server;
         std::signal(SIGINT, signal_handler);

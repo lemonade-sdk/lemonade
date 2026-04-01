@@ -12,10 +12,10 @@ CLIParser::CLIParser()
 
     app_.set_version_flag("-v,--version", (APP_NAME " version " LEMON_VERSION_STRING));
 
-    // Positional arg: lemonade home directory (optional)
+    // Positional arg: lemonade cache directory (optional)
     // Default to platform-specific cache dir when not specified
-    app_.add_option("home_dir", config_.home_dir,
-                    "Lemonade home directory containing config.json and model data")
+    app_.add_option("cache_dir", config_.cache_dir,
+                    "Lemonade cache directory containing config.json and model data")
         ->type_name("DIR")
         ->default_val(utils::get_cache_dir());
 

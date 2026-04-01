@@ -49,9 +49,9 @@ def shutdown_existing_server():
 
 
 def start_server(env_overrides=None):
-    """Start lemond with given env overrides in an isolated temp home dir.
+    """Start lemond with given env overrides in an isolated temp cache dir.
 
-    Returns (subprocess.Popen, home_dir).
+    Returns (subprocess.Popen, cache_dir).
     """
     shutdown_existing_server()
     env = os.environ.copy()
@@ -59,8 +59,8 @@ def start_server(env_overrides=None):
     for k in list(env.keys()):
         if k.startswith("LEMONADE_"):
             del env[k]
-    home_dir = tempfile.mkdtemp(prefix="lemon_test_")
-    env["LEMONADE_CACHE_DIR"] = home_dir
+    cache_dir = tempfile.mkdtemp(prefix="lemon_test_")
+    env["LEMONADE_CACHE_DIR"] = cache_dir
     env["LEMONADE_PORT"] = str(PORT)
     env["LEMONADE_HOST"] = "localhost"
     env["LEMONADE_NO_BROADCAST"] = "1"
@@ -73,7 +73,7 @@ def start_server(env_overrides=None):
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    return proc, home_dir
+    return proc, cache_dir
 
 
 def stop_server(proc):
@@ -132,7 +132,7 @@ class TestConfigEnvVars(unittest.TestCase):
                     "LEMONADE_FLM_ARGS": "--socket 20",
                 }
             )
-        cls.proc, cls.home_dir = start_server(cls.env)
+        cls.proc, cls.cache_dir = start_server(cls.env)
         wait_for_server(port=PORT)
         cls.snapshot = get_config()
 
@@ -204,7 +204,7 @@ class TestApiKeyEnvVar(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.proc, cls.home_dir = start_server({"LEMONADE_API_KEY": cls.API_KEY})
+        cls.proc, cls.cache_dir = start_server({"LEMONADE_API_KEY": cls.API_KEY})
         # /live is unauthenticated, use it to detect readiness
         wait_for_server(port=PORT)
 
@@ -258,7 +258,7 @@ class TestDefaults(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.proc, cls.home_dir = start_server()
+        cls.proc, cls.cache_dir = start_server()
         wait_for_server(port=PORT)
         cls.snapshot = get_config()
 

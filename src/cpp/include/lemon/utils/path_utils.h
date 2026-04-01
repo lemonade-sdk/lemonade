@@ -73,15 +73,15 @@ std::string find_executable_in_path(const std::string& executable_name);
 bool is_ggml_hip_plugin_available();
 
 /**
- * Set the lemonade home directory. Must be called once at startup before
+ * Set the lemonade cache directory. Must be called once at startup before
  * get_cache_dir(). After this call, get_cache_dir() returns this path.
  */
-void set_home_dir(const std::string& dir);
+void set_cache_dir(const std::string& dir);
 
 /**
- * Get the lemonade home directory (cache directory).
- * Returns the path set by set_home_dir(), or falls back to
- * platform-specific defaults if set_home_dir() was never called.
+ * Get the lemonade cache directory.
+ * Returns the path set by set_cache_dir(), or falls back to
+ * platform-specific defaults if set_cache_dir() was never called.
  */
 std::string get_cache_dir();
 

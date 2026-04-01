@@ -129,9 +129,9 @@ static const json MIME_TYPES = {
     {"pcm",  "audio/l16;rate=24000;endianness=little-endian"}
 };
 
-Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& home_dir)
+Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_dir)
     : config_(config),
-      home_dir_(home_dir),
+      cache_dir_(cache_dir),
       port_(config->port()), running_(false), udp_beacon_() {
 
     // Set global HttpClient timeout
@@ -3553,9 +3553,9 @@ void Server::handle_config_set(const httplib::Request& req, httplib::Response& r
         });
 
         // Persist changes to config.json
-        if (!home_dir_.empty()) {
+        if (!cache_dir_.empty()) {
             try {
-                ConfigFile::save(home_dir_, config_->snapshot());
+                ConfigFile::save(cache_dir_, config_->snapshot());
             } catch (const std::exception& e) {
                 LOG(WARNING, "Server") << "Failed to persist config.json: " << e.what() << std::endl;
             }
