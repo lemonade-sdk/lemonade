@@ -736,6 +736,7 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 #   - static/index.html, static/favicon.ico (web UI)
 #   - server_models.json (model registry)
 #   - backend_versions.json (backend version configuration)
+#   - defaults.json (default config values)
 
 # Collect resource files for dependency tracking
 file(GLOB_RECURSE RESOURCE_FILES
@@ -1288,6 +1289,12 @@ if(UNIX AND NOT APPLE)
     # Install resources (all files including KaTeX fonts)
     install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/
         DESTINATION share/lemonade-server/resources
+    )
+
+    # Install packaged config defaults for distro-managed overrides.
+    install(FILES ${CMAKE_BINARY_DIR}/resources/defaults.json
+        DESTINATION share/lemonade
+        RENAME config.json
     )
 
     # Install example scripts

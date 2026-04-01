@@ -7,7 +7,7 @@ LEMONADE_PORT="${LEMONADE_PORT:-8000}"
 
 # Discover the actual port from a running server
 if command -v lemonade &> /dev/null; then
-    DISCOVERED_PORT=$(lemonade status --json 2>/dev/null | grep -o '"port":[0-9]*' | grep -o '[0-9]*')
+    DISCOVERED_PORT=$(lemonade status --json 2>/dev/null | jq -r '.port // empty')
     if [ -n "$DISCOVERED_PORT" ]; then
         LEMONADE_PORT="$DISCOVERED_PORT"
     fi

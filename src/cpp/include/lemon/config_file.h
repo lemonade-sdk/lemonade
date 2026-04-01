@@ -12,8 +12,9 @@ using json = nlohmann::json;
 /// Manages reading, writing, and migrating config.json in the lemonade home dir.
 class ConfigFile {
 public:
-    /// Returns the full default config with nested backend sections.
-    /// Platform-specific defaults (e.g. models_dir) are resolved at call time.
+    /// Returns the full default config loaded from installed resource JSON.
+    /// On Linux, an optional distro override at /usr/share/lemonade/config.json
+    /// is merged on top when present.
     static json get_defaults();
 
     /// Load config.json from home_dir, deep-merging with defaults.
@@ -26,9 +27,6 @@ public:
     static void save(const std::string& home_dir, const json& config);
 
 private:
-    /// Get platform-specific default models directory.
-    static std::string default_models_dir();
-
     /// When config.json doesn't exist yet, read legacy LEMONADE_* environment
     /// variables and overlay them on top of defaults.  Returns the merged config.
     static json migrate_from_env(const json& defaults);

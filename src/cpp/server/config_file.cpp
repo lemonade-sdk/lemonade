@@ -16,59 +16,31 @@ namespace lemon {
 
 std::shared_mutex ConfigFile::file_mutex_;
 
-std::string ConfigFile::default_models_dir() {
-    return "auto";
+static json load_json_file(const fs::path& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open " + utils::path_to_utf8(path));
+    }
+
+    try {
+        return json::parse(file);
+    } catch (const json::parse_error& e) {
+        throw std::runtime_error("Failed to parse " + utils::path_to_utf8(path) + ": " + e.what());
+    }
 }
 
 json ConfigFile::get_defaults() {
-    return {
-        {"config_version", 1},
-        {"port", 8000},
-        {"host", "localhost"},
-        {"log_level", "info"},
-        {"global_timeout", 300},
-        {"max_loaded_models", 1},
-        {"no_broadcast", false},
-        {"extra_models_dir", ""},
-        {"models_dir", default_models_dir()},
-        {"ctx_size", 4096},
-        {"offline", false},
-        {"disable_model_filtering", false},
-        {"enable_dgpu_gtt", false},
-        {"llamacpp", {
-            {"backend", "auto"},
-            {"args", ""},
-            {"prefer_system", false},
-            {"rocm_bin", "builtin"},
-            {"vulkan_bin", "builtin"},
-            {"cpu_bin", "builtin"}
-        }},
-        {"whispercpp", {
-            {"backend", "auto"},
-            {"args", ""},
-            {"cpu_bin", "builtin"},
-            {"npu_bin", "builtin"}
-        }},
-        {"sdcpp", {
-            {"backend", "auto"},
-            {"steps", 20},
-            {"cfg_scale", 7.0},
-            {"width", 512},
-            {"height", 512},
-            {"cpu_bin", "builtin"},
-            {"rocm_bin", "builtin"},
-            {"vulkan_bin", "builtin"}
-        }},
-        {"flm", {
-            {"args", ""},
-        }},
-        {"ryzenai", {
-            {"server_bin", "builtin"}
-        }},
-        {"kokoro", {
-            {"cpu_bin", "builtin"}
-        }}
-    };
+    json defaults = load_json_file(utils::path_from_utf8(
+        utils::get_resource_path("resources/defaults.json")));
+
+#ifndef _WIN32
+    fs::path distro_defaults = "/usr/share/lemonade/config.json";
+    if (fs::exists(distro_defaults)) {
+        defaults = utils::JsonUtils::merge(defaults, load_json_file(distro_defaults));
+    }
+#endif
+
+    return defaults;
 }
 
 json ConfigFile::load(const std::string& home_dir) {
