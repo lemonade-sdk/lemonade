@@ -610,11 +610,6 @@ jobs:
   build-lemonade-embeddable-linux:
     name: Build Embeddable Lemonade (Linux)
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
@@ -623,12 +618,15 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Configure git safe directory
-        run: git config --global --add safe.directory $(pwd)
-
       - name: Get version from CMakeLists.txt
         id: get_version
         uses: ./.github/actions/get-version
+
+      - name: Install minimal build dependencies
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev
 
       - name: Build lemond and lemonade
         shell: bash
@@ -636,6 +634,9 @@ jobs:
           set -e
 
           echo "Configuring build with web app disabled..."
+          # Do not use setup.sh — we intentionally avoid installing system
+          # libraries so that FetchContent statically links all deps, making
+          # the embeddable binary portable across Ubuntu versions.
           cmake --preset default -DBUILD_WEB_APP=OFF
 
           echo "Building lemond and lemonade..."
@@ -649,6 +650,10 @@ jobs:
           test -f build/resources/defaults.json
           test -d build/resources/static
           echo "Build outputs verified!"
+
+          # Verify no unexpected dynamic dependencies
+          echo "Dynamic dependencies:"
+          ldd build/lemond | grep -v "linux-vdso\|ld-linux" || true
 
       - name: Assemble embeddable archive
         shell: bash
