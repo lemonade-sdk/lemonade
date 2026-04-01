@@ -12,6 +12,7 @@ static const json DEFAULTS = {
     {"llamacpp_backend", ""},  // Will be overridden dynamically
     {"llamacpp_args", ""},
     {"sd-cpp_backend", ""},  // sd.cpp backend selection (cpu or rocm)
+    {"sdcpp_args", ""},
     {"whispercpp_backend", ""},
     {"whispercpp_args", ""},
     // Image generation defaults (for sd-cpp recipe)
@@ -51,6 +52,12 @@ static const json CLI_OPTIONS = {
         {"allowed_values", {"cpu", "rocm"}},
         {"envname", "LEMONADE_SDCPP"},
         {"help", "SD.cpp backend to use (cpu for CPU, rocm for AMD GPU)"}
+    }},
+    {"--sdcpp-args", {
+        {"option_name", "sdcpp_args"},
+        {"type_name", "ARGS"},
+        {"envname", "LEMONADE_SDCPP_ARGS"},
+        {"help", "Custom arguments to pass to sd-server (must not conflict with managed args)"}
     }},
     // ASR options
     {"--whispercpp", {
@@ -109,7 +116,7 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     } else if (recipe == "ryzenai-llm") {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
-        return {"sd-cpp_backend", "steps", "cfg_scale", "width", "height"};
+        return {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height"};
     } else {
         return {};
     }

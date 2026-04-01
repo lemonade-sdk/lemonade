@@ -51,7 +51,8 @@
     "react-dom": "^19.2.0"
   },
   "overrides": {
-    "serialize-javascript": "^7.0.3"
+    "serialize-javascript": "^7.0.3",
+    "lodash": "~4.17.21"
   },
   "build": {
     "appId": "com.lemonade.app",
