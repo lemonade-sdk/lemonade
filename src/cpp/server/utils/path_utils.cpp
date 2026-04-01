@@ -174,7 +174,8 @@ bool is_safe_executable_path(const std::string& path) {
 
 std::string find_flm_executable() {
 #ifdef _WIN32
-    // On Windows, check the Lemonade install directory first (auto-installed zip)
+    // On Windows, only check the Lemonade install directory (auto-installed zip).
+    // No system PATH fallback - FLM should be installed via install_backend().
     std::string install_dir = (fs::path(get_downloaded_bin_dir()) / "flm" / "npu").make_preferred().string();
     if (fs::exists(install_dir)) {
         for (const auto& entry : fs::recursive_directory_iterator(install_dir)) {
@@ -186,42 +187,6 @@ std::string find_flm_executable() {
             }
         }
     }
-
-    // Fall back to system PATH on Windows
-    // Refresh PATH from Windows registry to pick up any changes since process started
-    HKEY hKey;
-    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-                      "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
-                      0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        char buffer[32767];
-        DWORD bufferSize = sizeof(buffer);
-        if (RegQueryValueExA(hKey, "PATH", nullptr, nullptr,
-                            reinterpret_cast<LPBYTE>(buffer), &bufferSize) == ERROR_SUCCESS) {
-            std::string system_path = buffer;
-            const char* current_path = std::getenv("PATH");
-            if (current_path) {
-                system_path = system_path + ";" + std::string(current_path);
-            }
-            _putenv(("PATH=" + system_path).c_str());
-        }
-        RegCloseKey(hKey);
-    }
-
-    char found_path[MAX_PATH];
-    DWORD result = SearchPathA(
-        nullptr,      // Use system PATH
-        "flm.exe",    // File to search for
-        nullptr,      // No default extension needed
-        MAX_PATH,
-        found_path,
-        nullptr
-    );
-
-    if (result > 0 && result < MAX_PATH) {
-        std::string path(found_path);
-        return is_safe_executable_path(path) ? path : "";
-    }
-
     return "";
 #else
     // On Linux/Mac, check PATH using which
