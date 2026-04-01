@@ -663,7 +663,6 @@ sys.exit(0)
                     "launch",
                     "--model",
                     ENDPOINT_TEST_MODEL,
-                    "--use-recipe",
                 ],
                 timeout=TIMEOUT_DEFAULT,
                 env=env,
@@ -707,7 +706,6 @@ sys.exit(0)
                     ENDPOINT_TEST_MODEL,
                     "--api-key",
                     "test-api-key",
-                    "--use-recipe",
                 ],
                 timeout=TIMEOUT_DEFAULT,
                 env=env,
@@ -734,7 +732,10 @@ sys.exit(0)
             )
 
             output = result.stdout + result.stderr
-            self.assertIn("--use-recipe set: skipping recipe import", output)
+            self.assertIn(
+                "Model was provided explicitly; skipping recipe import prompts.",
+                output,
+            )
             self.assertIn("Launching claude", output)
 
     def test_113_launch_codex_with_fake_binary(self):
@@ -753,7 +754,6 @@ sys.exit(0)
                     "codex",
                     "--model",
                     ENDPOINT_TEST_MODEL,
-                    "--use-recipe",
                 ],
                 timeout=TIMEOUT_DEFAULT,
                 env=env,
@@ -793,7 +793,6 @@ sys.exit(0)
                     "claude",
                     "--model",
                     ENDPOINT_TEST_MODEL,
-                    "--use-recipe",
                 ],
                 timeout=TIMEOUT_DEFAULT,
                 env=env,
@@ -814,8 +813,8 @@ sys.exit(0)
                 payload["env"]["ANTHROPIC_BASE_URL"], f"http://localhost:{PORT}"
             )
 
-    def test_115_launch_use_recipe_with_directory_flags_is_deterministic(self):
-        """--use-recipe should skip import flow even when directory flags are present."""
+    def test_115_launch_with_model_and_directory_flags_is_deterministic(self):
+        """A provided model should skip import flow even when directory flags are present."""
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
             env = self._build_missing_agent_env(temp_dir)
 
@@ -825,7 +824,6 @@ sys.exit(0)
                     "claude",
                     "--model",
                     ENDPOINT_TEST_MODEL,
-                    "--use-recipe",
                     "--directory",
                     "coding-agents",
                     "--recipe-file",
@@ -837,7 +835,10 @@ sys.exit(0)
 
             self.assertNotEqual(result.returncode, 0)
             output = result.stdout + result.stderr
-            self.assertIn("--use-recipe set: skipping recipe import", output)
+            self.assertIn(
+                "Model was provided explicitly; skipping recipe import prompts.",
+                output,
+            )
             self.assertIn("Agent binary not found", output)
 
     def test_116_launch_missing_binary_fails_fast(self):
@@ -848,7 +849,7 @@ sys.exit(0)
             )
 
         result = run_cli_command(
-            ["launch", "claude", "--model", ENDPOINT_TEST_MODEL, "--use-recipe"],
+            ["launch", "claude", "--model", ENDPOINT_TEST_MODEL],
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertNotEqual(result.returncode, 0)
@@ -891,16 +892,12 @@ sys.exit(0)
 class CLIHelpDocsConsistencyTests(unittest.TestCase):
     """Lightweight checks that compare launch help semantics with CLI docs text."""
 
-    def test_900_launch_use_recipe_docs_match_help_text(self):
-        """The launch --use-recipe wording in docs should match actual CLI behavior/help."""
+    def test_900_launch_docs_match_help_text(self):
+        """The launch model-selection wording in docs should match actual CLI behavior/help."""
         result = run_cli_command(["launch", "--help"], timeout=TIMEOUT_DEFAULT)
         self.assertEqual(result.returncode, 0)
 
         help_output = result.stdout + result.stderr
-        self.assertIn(
-            "Skip recipe import prompts and launch with the selected/provided model",
-            help_output,
-        )
         self.assertIn(
             "Remote recipe directory used only if you choose recipe import at prompt",
             help_output,
@@ -916,10 +913,7 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         with open(docs_path, "r", encoding="utf-8") as f:
             docs_text = f.read()
 
-        self.assertIn(
-            "Skip recipe import prompts and launch directly with the selected/provided model",
-            docs_text,
-        )
+        self.assertNotIn("`--use-recipe`", docs_text)
         self.assertNotIn(
             "Import a recipe from `lemonade-sdk/recipes` before launch",
             docs_text,

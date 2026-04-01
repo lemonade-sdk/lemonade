@@ -438,7 +438,7 @@ lemonade recipes --install flm:npu
 
 ## Options for launch
 
-The `launch` command launches an agent and triggers model loading asynchronously. By default, launch can prompt for optional recipe import before starting the agent:
+The `launch` command launches an agent and triggers model loading asynchronously. If no model is provided, launch prompts for recipe/model selection before starting the agent:
 
 ```bash
 lemonade launch AGENT [--model MODEL_NAME] [options]
@@ -448,7 +448,6 @@ lemonade launch AGENT [--model MODEL_NAME] [options]
 |-----------------|-------------|----------|
 | `AGENT` | Agent name to launch. Supported agents: `claude`, `codex` | Yes |
 | `--model MODEL_NAME` | Model name to launch with. If omitted, you will be prompted to select one. | No |
-| `--use-recipe` | Skip recipe import prompts and launch directly with the selected/provided model | No |
 | `--directory DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
 | `--recipe-file FILE` | Remote recipe JSON filename used only if you choose recipe import at prompt | No |
 | `--ctx-size SIZE` | Context size for the model | `4096` |
@@ -457,7 +456,6 @@ lemonade launch AGENT [--model MODEL_NAME] [options]
 
 **Notes:**
 - The model load request is asynchronous: launch starts the agent immediately while loading continues in the background.
-- If `--use-recipe` is passed, launch skips recipe import prompts.
 - If a model is already provided, launch skips recipe import prompts.
 - `--directory` and `--recipe-file` are only used for remote recipe import at prompt time.
 - For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first, then launch with the imported model id.
@@ -478,9 +476,6 @@ lemonade launch codex --model Qwen3-0.6B-GGUF --llamacpp vulkan
 
 # Launch an agent with custom llama.cpp arguments
 lemonade launch claude --model Qwen3-0.6B-GGUF --ctx-size 4096 --llamacpp-args "--flash-attn on --no-mmap"
-
-# Launch and skip recipe import prompts
-lemonade launch claude --use-recipe
 
 # Launch and allow optional prompt-driven recipe import using prefilled remote recipe flags
 lemonade launch claude --directory coding-agents --recipe-file Qwen3.5-35B-A3B-NoThinking.json

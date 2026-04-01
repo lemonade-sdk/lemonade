@@ -100,7 +100,6 @@ struct CliConfig {
     std::string output_file;
     bool downloaded = false;
     std::string agent;
-    bool use_recipe = false;
     std::string repo_dir;
     std::string recipe_file;
     bool skip_prompt = false;
@@ -328,34 +327,10 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         return 1;
     }
 
-    bool should_import_recipe = false;
     if (model_was_missing) {
         // Interactive model resolution for launch already handled recipe selection/import choices.
     } else {
         std::cout << "Model was provided explicitly; skipping recipe import prompts." << std::endl;
-    }
-
-    if (config.use_recipe) {
-        std::cout << "--use-recipe set: skipping recipe import and using selected/provided model." << std::endl;
-        should_import_recipe = false;
-    } else if (model_was_missing) {
-        // No-op: launch model resolution already handled recipe import path interactively.
-    } else {
-        should_import_recipe = false;
-    }
-
-    if (should_import_recipe) {
-        std::string imported_model;
-        int import_result = lemon_cli::import_remote_recipe(client, config.repo_dir, config.recipe_file,
-                                                            config.skip_prompt, config.yes,
-                                                            &imported_model, true);
-        if (import_result != 0) {
-            return import_result;
-        }
-        if (!imported_model.empty()) {
-            config.model = imported_model;
-            std::cout << "Using imported recipe model: " << config.model << std::endl;
-        }
     }
 
     lemon_tray::AgentConfig agent_config;
@@ -728,8 +703,6 @@ int main(int argc, char* argv[]) {
         ->type_name("AGENT")
         ->check(CLI::IsMember(SUPPORTED_AGENTS));
     launch_cmd->add_option("--model,-m", config.model, "Model name to load")->type_name("MODEL");
-    launch_cmd->add_flag("--use-recipe", config.use_recipe,
-        "Skip recipe import prompts and launch with the selected/provided model");
     launch_cmd->add_option("--directory", config.repo_dir,
         "Remote recipe directory used only if you choose recipe import at prompt")
         ->type_name("DIR");

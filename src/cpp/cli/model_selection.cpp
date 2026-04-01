@@ -279,8 +279,11 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
                 continue;
             }
 
+            const bool in_preferred_recipe_dir =
+                use_preferred_recipe_dir && selected_recipe_dir == preferred_recipe_dir;
+
             if (!agent_name_display.empty()) {
-                if (use_preferred_recipe_dir && selected_recipe_dir == preferred_recipe_dir) {
+                if (in_preferred_recipe_dir) {
                     std::cout << "Select a recipe to import and use with "
                               << agent_name_display << ":" << std::endl;
                 } else {
@@ -293,10 +296,7 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
                           << "' to import and use:" << std::endl;
             }
 
-            bool show_browse_other_option =
-                use_preferred_recipe_dir && selected_recipe_dir == preferred_recipe_dir;
-
-            if (show_browse_other_option) {
+            if (in_preferred_recipe_dir) {
                 std::cout << "  0) Browse downloaded models" << std::endl;
             } else {
                 std::cout << "  0) Back to recipe directories" << std::endl;
@@ -307,7 +307,7 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
 
             if (recipe_files.empty()) {
                 std::cout << "No recipe files found under '" << selected_recipe_dir << "'.";
-                if (show_browse_other_option) {
+                if (in_preferred_recipe_dir) {
                     std::cout << " Use option 0 to browse downloaded models.";
                 } else {
                     std::cout << " Use option 0 to pick another directory.";
@@ -321,7 +321,7 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
             }
 
             if (selected == 0) {
-                if (show_browse_other_option) {
+                if (in_preferred_recipe_dir) {
                     state = MenuState::DownloadedModels;
                 } else {
                     state = MenuState::RecipeDirectories;
