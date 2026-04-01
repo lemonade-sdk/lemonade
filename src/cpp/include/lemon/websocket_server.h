@@ -9,7 +9,6 @@
 #include <functional>
 #include <optional>
 #include <queue>
-#include <string>
 #include <libwebsockets.h>
 #include <nlohmann/json.hpp>
 #include "log_stream.h"
@@ -31,8 +30,8 @@ struct PerSessionData {
 };
 
 /**
- * WebSocket server for realtime audio transcription.
- * Implements OpenAI-compatible Realtime API message protocol.
+ * Shared WebSocket server for realtime audio transcription and log streaming.
+ * Multiplexes /realtime (OpenAI Realtime API) and /logs/stream endpoints.
  */
 class WebSocketServer {
 public:

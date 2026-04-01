@@ -857,7 +857,7 @@ Resume after a known sequence number (e.g., on reconnect):
 
 - **Reconnection**: Track the last `seq` received and pass it as `after_seq` on reconnect to avoid duplicate entries.
 - **Backlog**: The server retains up to 5000 recent log entries. The snapshot may be smaller if fewer entries exist.
-- **Platform availability**: WebSocket log streaming is available on Windows and Linux. On macOS, the WebSocket server is not included in the build.
+- **Platform availability**: WebSocket log streaming is available on all platforms (Windows, Linux, and macOS).
 
 
 ### `POST /api/v1/images/generations` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
