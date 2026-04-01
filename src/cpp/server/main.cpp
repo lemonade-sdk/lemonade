@@ -2,10 +2,10 @@
 #include <csignal>
 #include <atomic>
 #include <lemon/cli_parser.h>
+#include <lemon/logging_config.h>
 #include <lemon/server.h>
 #include <lemon/system_info.h>
 #include <lemon/version.h>
-#include <lemon/log_stream.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/aixlog.hpp>
 
@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
 
         // Direct router runs should keep console logs while also feeding the
         // shared log hub for websocket log streaming and retained history.
-        configure_application_logging(config.log_level, true);
+        configure_application_logging(config.log_level, LoggingMode::direct_server);
 
         // Start the server
         LOG(INFO) << "Starting Lemonade Server..." << std::endl;

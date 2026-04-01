@@ -10,10 +10,8 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-#include <nlohmann/json.hpp>
-
 #include "utils/aixlog.hpp"
+#include <nlohmann/json.hpp>
 
 namespace lemon {
 
@@ -39,10 +37,6 @@ public:
     std::string add_subscriber(SubscriberCallback callback);
     void remove_subscriber(const std::string& subscriber_id);
 
-    std::vector<std::shared_ptr<AixLog::Sink>> create_sinks(
-        const std::string& log_level,
-        bool include_console) const;
-
     void publish(const AixLog::Metadata& metadata, const std::string& formatted_line);
 
 private:
@@ -60,7 +54,5 @@ private:
     std::atomic<uint64_t> next_seq_{1};
     std::atomic<uint64_t> next_subscriber_{1};
 };
-
-void configure_application_logging(const std::string& log_level, bool include_console);
 
 } // namespace lemon

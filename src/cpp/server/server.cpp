@@ -6,6 +6,7 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
+#include "lemon/logging_config.h"
 #include "lemon/log_stream.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
@@ -3585,7 +3586,7 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
         } else if (key == "log_level") {
             std::string level = config_->log_level();
             LOG(INFO, "Server") << "Log level changed to: " << level << std::endl;
-            configure_application_logging(level, true);
+            reconfigure_application_logging(level);
         } else if (key == "websocket_port") {
 #ifdef LEMON_HAS_WEBSOCKET
             if (websocket_server_) {

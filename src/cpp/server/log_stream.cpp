@@ -1,53 +1,8 @@
 #include "lemon/log_stream.h"
 
-#include "lemon/runtime_config.h"
-#include "lemon/utils/path_utils.h"
-
-#include <fstream>
-#include <sstream>
 #include <utility>
 
 namespace lemon {
-
-namespace {
-
-class LogStreamSink : public AixLog::SinkFormat {
-public:
-    LogStreamSink(const AixLog::Filter& filter,
-                  const std::string& filename,
-                  const std::string& format)
-        : AixLog::SinkFormat(filter, format),
-          file_(filename.c_str(), std::ofstream::out | std::ofstream::trunc) {
-    }
-
-    void log(const AixLog::Metadata& metadata, const std::string& message) override {
-        std::ostringstream stream;
-        do_log(stream, metadata, message);
-
-        std::string formatted = stream.str();
-        if (!formatted.empty() && formatted.back() == '\n') {
-            formatted.pop_back();
-        }
-
-        file_ << formatted << std::endl;
-        file_.flush();
-
-        LogStreamHub::instance().publish(metadata, formatted);
-    }
-
-private:
-    std::ofstream file_;
-};
-
-std::string log_file_path() {
-#ifdef _WIN32
-    return utils::get_runtime_dir() + "lemonade-server.log";
-#else
-    return utils::get_runtime_dir() + "/lemonade-server.log";
-#endif
-}
-
-} // namespace
 
 json LogStreamEntry::to_json() const {
     return {
@@ -89,20 +44,6 @@ std::string LogStreamHub::add_subscriber(SubscriberCallback callback) {
 void LogStreamHub::remove_subscriber(const std::string& subscriber_id) {
     std::lock_guard<std::mutex> lock(mutex_);
     subscribers_.erase(subscriber_id);
-}
-
-std::vector<std::shared_ptr<AixLog::Sink>> LogStreamHub::create_sinks(
-    const std::string& log_level,
-    bool include_console) const {
-    auto filter = AixLog::Filter(AixLog::to_severity(log_level));
-
-    std::vector<std::shared_ptr<AixLog::Sink>> sinks;
-    if (include_console) {
-        sinks.push_back(std::make_shared<AixLog::SinkCout>(filter, RuntimeConfig::LOG_FORMAT));
-    }
-    sinks.push_back(std::make_shared<LogStreamSink>(filter, log_file_path(), RuntimeConfig::LOG_FORMAT));
-
-    return sinks;
 }
 
 void LogStreamHub::publish(const AixLog::Metadata& metadata, const std::string& formatted_line) {
@@ -152,10 +93,6 @@ std::string LogStreamHub::resolve_timestamp(const AixLog::Metadata& metadata) {
         return metadata.timestamp.to_string("%Y-%m-%d %H:%M:%S.#ms");
     }
     return "";
-}
-
-void configure_application_logging(const std::string& log_level, bool include_console) {
-    AixLog::Log::init(LogStreamHub::instance().create_sinks(log_level, include_console));
 }
 
 } // namespace lemon

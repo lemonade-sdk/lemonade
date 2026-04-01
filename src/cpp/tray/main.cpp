@@ -10,7 +10,7 @@
 
 #include "lemon_tray/tray_ui.h"
 #include <lemon/cli_parser.h>
-#include <lemon/log_stream.h>
+#include <lemon/logging_config.h>
 #include <lemon/server.h>
 #include <lemon/single_instance.h>
 #include <lemon/utils/aixlog.hpp>
@@ -138,7 +138,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     // Initialize logging to file (SUBSYSTEM:WINDOWS has no console).
     // The shared log hub forwards these entries to the websocket log stream.
     {
-        lemon::configure_application_logging(config.log_level, false);
+        lemon::configure_application_logging(config.log_level, lemon::LoggingMode::embedded_tray_server);
     }
 
     // Initialize Winsock (required by httplib)
