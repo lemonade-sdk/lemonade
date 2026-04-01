@@ -2,7 +2,6 @@
 
 set -e
 
-LEMONADE_HOST="localhost"
 LEMONADE_PORT="${LEMONADE_PORT:-8000}"
 
 # Discover the actual port from a running server
@@ -13,12 +12,7 @@ if command -v lemonade &> /dev/null; then
     fi
 fi
 
-# If listening on localhost always run on localhost for WMClass
-if [ "${LEMONADE_HOST}" = "0.0.0.0" ]; then
-    LEMONADE_HOST="localhost"
-fi
-
-URL="http://${LEMONADE_HOST}:${LEMONADE_PORT}/lemonade"
+URL="http://localhost:${LEMONADE_PORT}/lemonade"
 
 # Prefer chromium based browsers otherwise xdg-open
 if [ "$(echo "${LEMONADE_PREFER_CHROMIUM:-true}" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
