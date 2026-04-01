@@ -578,7 +578,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
                     return filepath;
                 }
             }
-            return model_cache_path;  // Not found
+            return "";  // Exact variant not found — signal not downloaded
         }
 
         // Case 3: Files ending with {variant}.gguf (case insensitive)
