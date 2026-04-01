@@ -148,17 +148,12 @@ class EndpointTests(ServerTestBase):
         self.assertIn("all_models_loaded", data)
         self.assertIsInstance(data["all_models_loaded"], list)
         self.assertIn("max_models", data)
-        self.assertIn("log_streaming", data)
 
         # max_models should have llm, embedding, reranking keys
         max_models = data["max_models"]
         self.assertIn("llm", max_models)
         self.assertIn("embedding", max_models)
         self.assertIn("reranking", max_models)
-
-        self.assertFalse(data["log_streaming"].get("sse", True))
-        self.assertTrue(data["log_streaming"].get("websocket", False))
-        self.assertIn("path", data["log_streaming"])
 
         print(
             f"[OK] /health endpoint response: status={data['status']}, models_loaded={len(data['all_models_loaded'])}"

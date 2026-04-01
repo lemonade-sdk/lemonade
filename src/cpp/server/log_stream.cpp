@@ -19,23 +19,20 @@ LogStreamHub& LogStreamHub::instance() {
     return hub;
 }
 
-std::vector<LogStreamEntry> LogStreamHub::snapshot(std::optional<uint64_t> after_seq) const {
+std::string LogStreamHub::subscribe_with_snapshot(
+    SubscriberCallback callback,
+    std::optional<uint64_t> after_seq,
+    std::vector<LogStreamEntry>& out_snapshot) {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    std::vector<LogStreamEntry> snapshot_entries;
-    snapshot_entries.reserve(entries_.size());
-
+    out_snapshot.clear();
+    out_snapshot.reserve(entries_.size());
     for (const auto& entry : entries_) {
         if (!after_seq.has_value() || entry.seq > *after_seq) {
-            snapshot_entries.push_back(entry);
+            out_snapshot.push_back(entry);
         }
     }
 
-    return snapshot_entries;
-}
-
-std::string LogStreamHub::add_subscriber(SubscriberCallback callback) {
-    std::lock_guard<std::mutex> lock(mutex_);
     std::string subscriber_id = next_subscriber_id();
     subscribers_.emplace(subscriber_id, std::move(callback));
     return subscriber_id;
@@ -48,7 +45,6 @@ void LogStreamHub::remove_subscriber(const std::string& subscriber_id) {
 
 void LogStreamHub::publish(const AixLog::Metadata& metadata, const std::string& formatted_line) {
     LogStreamEntry entry;
-    entry.seq = next_seq_.fetch_add(1);
     entry.timestamp = resolve_timestamp(metadata);
     entry.severity = AixLog::to_string(metadata.severity);
     entry.tag = resolve_tag(metadata);
@@ -58,6 +54,7 @@ void LogStreamHub::publish(const AixLog::Metadata& metadata, const std::string& 
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        entry.seq = next_seq_++;
         entries_.push_back(entry);
         while (entries_.size() > kMaxRetainedEntries) {
             entries_.pop_front();
@@ -69,13 +66,15 @@ void LogStreamHub::publish(const AixLog::Metadata& metadata, const std::string& 
         }
     }
 
+    // Invoke callbacks outside the lock to avoid deadlocking if a callback
+    // ends up logging (which would re-enter publish via the HubPublishingSink).
     for (const auto& callback : callbacks) {
         callback(entry);
     }
 }
 
 std::string LogStreamHub::next_subscriber_id() {
-    return "log-sub-" + std::to_string(next_subscriber_.fetch_add(1));
+    return "log-sub-" + std::to_string(next_subscriber_++);
 }
 
 std::string LogStreamHub::resolve_tag(const AixLog::Metadata& metadata) {

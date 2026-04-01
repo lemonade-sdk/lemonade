@@ -40,7 +40,7 @@ public:
                 const std::string& filename,
                 const std::string& format)
         : AixLog::SinkFormat(filter, format),
-          file_(filename.c_str(), std::ofstream::out | std::ofstream::trunc) {
+          file_(filename.c_str(), std::ofstream::out | std::ofstream::app) {
     }
 
     void log(const AixLog::Metadata& metadata, const std::string& message) override {

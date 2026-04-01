@@ -270,14 +270,16 @@ void WebSocketServer::handle_realtime_connection(
 
 void WebSocketServer::handle_log_subscribe(const std::string& connection_id,
                                            std::optional<uint64_t> after_seq) {
-    const auto snapshot_entries = LogStreamHub::instance().snapshot(after_seq);
-    const std::string subscriber_id = LogStreamHub::instance().add_subscriber(
+    std::vector<LogStreamEntry> snapshot_entries;
+    const std::string subscriber_id = LogStreamHub::instance().subscribe_with_snapshot(
         [this, connection_id](const LogStreamEntry& entry) {
             send_json(connection_id, {
                 {"type", "logs.entry"},
                 {"entry", entry.to_json()},
             });
-        });
+        },
+        after_seq,
+        snapshot_entries);
 
     {
         std::lock_guard<std::mutex> lock(connections_mutex_);

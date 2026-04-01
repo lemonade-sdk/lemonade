@@ -246,8 +246,8 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
           </div>
         )}
         <pre className="logs-text">
-          {logs.map((log, index) => (
-            <div key={`${log.seq}-${index}`} className="log-line">
+          {logs.map((log) => (
+            <div key={log.seq} className="log-line">
               {log.line}
             </div>
           ))}

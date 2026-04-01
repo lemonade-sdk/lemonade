@@ -1700,11 +1700,6 @@ curl http://localhost:8000/api/v1/health
     "llm":1,
     "reranking":1,
     "tts":1
-  },
-  "log_streaming": {
-    "sse": false,
-    "websocket": true,
-    "path": "/logs/stream"
   }
 }
 ```
@@ -1731,10 +1726,6 @@ curl http://localhost:8000/api/v1/health
   - `image` - Maximum image models
   - `tts` - Maximum text-to-speech models
 - `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`.
-- `log_streaming` - Log streaming capabilities:
-  - `sse` - Always `false` (SSE log streaming has been removed)
-  - `websocket` - `true` when WebSocket log streaming is available
-  - `path` - WebSocket path for log streaming (currently `/logs/stream`)
 
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 

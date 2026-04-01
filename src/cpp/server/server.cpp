@@ -7,7 +7,6 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
-#include "lemon/log_stream.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #ifdef LEMON_HAS_WEBSOCKET
@@ -1283,12 +1282,6 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
 
     // Add max model limits
     response["max_models"] = router_->get_max_model_limits();
-
-    response["log_streaming"] = {
-        {"sse", false},
-        {"websocket", true},
-        {"path", "/logs/stream"}
-    };
 
 #ifdef LEMON_HAS_WEBSOCKET
     // Add WebSocket server port for realtime API

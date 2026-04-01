@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -33,8 +32,9 @@ public:
 
     static LogStreamHub& instance();
 
-    std::vector<LogStreamEntry> snapshot(std::optional<uint64_t> after_seq = std::nullopt) const;
-    std::string add_subscriber(SubscriberCallback callback);
+    std::string subscribe_with_snapshot(SubscriberCallback callback,
+                                        std::optional<uint64_t> after_seq,
+                                        std::vector<LogStreamEntry>& out_snapshot);
     void remove_subscriber(const std::string& subscriber_id);
 
     void publish(const AixLog::Metadata& metadata, const std::string& formatted_line);
@@ -51,8 +51,8 @@ private:
     mutable std::mutex mutex_;
     std::deque<LogStreamEntry> entries_;
     std::unordered_map<std::string, SubscriberCallback> subscribers_;
-    std::atomic<uint64_t> next_seq_{1};
-    std::atomic<uint64_t> next_subscriber_{1};
+    uint64_t next_seq_{1};
+    uint64_t next_subscriber_{1};
 };
 
 } // namespace lemon
