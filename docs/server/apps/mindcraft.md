@@ -53,7 +53,7 @@ In the clone of the `mindcraft` repository:
     "name": "Andy",
     "model": {
         "model": "Qwen-1.5-7B-Chat-Hybrid",
-        "url": "http://localhost:8000/api/v1",
+        "url": "http://localhost:13305/api/v1",
         "params": {
             "temperature": 0.5
         }
@@ -137,7 +137,7 @@ The following are examples of requests made by the Mindcraft software to the Lem
 
 ```json
 TRACE:    ::1:56880 - HTTP connection made
-TRACE:    ::1:56880 - ASGI [4] Started scope={'type': 'http', 'asgi': {'version': '3.0', 'spec_version': '2.3'}, 'http_version': '1.1', 'server': ('::1', 8000), 'client': ('::1', 56880), 'scheme': 'http', 'root_path': '', 'headers': '<...>', 'state': {}, 'method': 'POST', 'path': '/api/v1/chat/completions', 'raw_path': b'/api/v1/chat/completions', 'query_string': b''}
+TRACE:    ::1:56880 - ASGI [4] Started scope={'type': 'http', 'asgi': {'version': '3.0', 'spec_version': '2.3'}, 'http_version': '1.1', 'server': ('::1', 13305), 'client': ('::1', 56880), 'scheme': 'http', 'root_path': '', 'headers': '<...>', 'state': {}, 'method': 'POST', 'path': '/api/v1/chat/completions', 'raw_path': b'/api/v1/chat/completions', 'query_string': b''}
 TRACE:    ::1:56880 - ASGI [4] Receive {'type': 'http.request', 'body': '<8378 bytes>', 'more_body': False}
 DEBUG:    Input Tokens: 2036
 TRACE:    Input Message: <|im_start|>system

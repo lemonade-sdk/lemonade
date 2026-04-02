@@ -57,7 +57,7 @@ def get_default_lemond_binary():
 
 
 # Default port for lemonade server
-PORT = 8000
+PORT = 13305
 
 # =============================================================================
 # TIMEOUT CONSTANTS (in seconds)

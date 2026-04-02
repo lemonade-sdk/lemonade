@@ -153,10 +153,10 @@ runs:
         # --- Kill the MSI-auto-started server ---
         Write-Host "Stopping MSI-auto-started LemonadeServer.exe..." -ForegroundColor Cyan
         Stop-Process -Name LemonadeServer -Force -ErrorAction SilentlyContinue
-        # Wait for port 8000 to be released
+        # Wait for port 13305 to be released
         $portWait = 0
         while ($portWait -lt 10) {
-          $listening = netstat -an | Select-String ":8000 .*LISTENING"
+          $listening = netstat -an | Select-String ":13305 .*LISTENING"
           if (-not $listening) { break }
           Start-Sleep -Seconds 1
           $portWait++
@@ -182,7 +182,7 @@ runs:
         $waited = 0
         while ($waited -lt $maxWait) {
           try {
-            $response = Invoke-WebRequest -Uri "http://localhost:8000/live" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
+            $response = Invoke-WebRequest -Uri "http://localhost:13305/live" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
             if ($response.StatusCode -eq 200) {
               Write-Host "Server is running and healthy" -ForegroundColor Green
               exit 0
@@ -203,12 +203,12 @@ runs:
         Write-Host "`nProcess check:" -ForegroundColor Cyan
         Get-Process -Name LemonadeServer -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, StartTime -AutoSize
 
-        Write-Host "`nPort 8000 state:" -ForegroundColor Cyan
-        netstat -an | Select-String ":8000 "
+        Write-Host "`nPort 13305 state:" -ForegroundColor Cyan
+        netstat -an | Select-String ":13305 "
 
         Write-Host "`nTrying 127.0.0.1 directly:" -ForegroundColor Cyan
         try {
-          $r = Invoke-WebRequest -Uri "http://127.0.0.1:8000/live" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop
+          $r = Invoke-WebRequest -Uri "http://127.0.0.1:13305/live" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop
           Write-Host "  127.0.0.1 responded: $($r.StatusCode)" -ForegroundColor Green
         } catch {
           Write-Host "  127.0.0.1 failed: $($_.Exception.Message)" -ForegroundColor Red
@@ -216,7 +216,7 @@ runs:
 
         Write-Host "`nTrying [::1] directly:" -ForegroundColor Cyan
         try {
-          $r = Invoke-WebRequest -Uri "http://[::1]:8000/live" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop
+          $r = Invoke-WebRequest -Uri "http://[::1]:13305/live" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop
           Write-Host "  [::1] responded: $($r.StatusCode)" -ForegroundColor Green
         } catch {
           Write-Host "  [::1] failed: $($_.Exception.Message)" -ForegroundColor Red

@@ -54,7 +54,7 @@ pipx install wut-cli
 ```bash
 export OPENAI_API_KEY="-"
 export OPENAI_MODEL="Llama-3.2-3B-Instruct-Hybrid"
-export OPENAI_BASE_URL="http://localhost:8000/api/v1"
+export OPENAI_BASE_URL="http://localhost:13305/api/v1"
 ```
 
 ## Usage
@@ -75,14 +75,14 @@ Then, try some of these example commands that `wut` can help explain.
 People often ask exactly what Lemonade Server's `models` endpoint does. Fortunately, `wut` is able to intuit the answer!
 
 ```bash
-curl http://localhost:8000/api/v1/models
+curl http://localhost:13305/api/v1/models
 wut
 ```
 
 The terminal response of the `curl` command is this (only intelligible by machines):
 
 ```
-curl http://localhost:8000/api/v1/models
+curl http://localhost:13305/api/v1/models
 {"object":"list","data":[{"id":"Qwen2.5-0.5B-Instruct-CPU","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"Llama-3.2-1B-Instruct-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"Llama-3.2-3B-Instruct-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"Phi-3-Mini-Instruct-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"Qwen-1.5-7B-Chat-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"DeepSeek-R1-Distill-Llama-8B-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"DeepSeek-R1-Distill-Qwen-7B-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"}]}
 ```
 

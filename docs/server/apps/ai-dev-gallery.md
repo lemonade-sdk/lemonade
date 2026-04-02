@@ -75,12 +75,12 @@ AI Dev Gallery supports various AI scenarios through its sample applications wit
 
 ### AI Dev Gallery doesn't detect Lemonade
 
-- Ensure Lemonade Server is running and accessible at `http://localhost:8000`
+- Ensure Lemonade Server is running and accessible at `http://localhost:13305`
 - Restart AI Dev Gallery after ensuring Lemonade Server is running
 
 ### Models not appearing in the selector
 
-- Open `http://localhost:8000` in a browser and make sure to download the models you want to use through the "Model Manager" tab.
+- Open `http://localhost:13305` in a browser and make sure to download the models you want to use through the "Model Manager" tab.
 
 ## Additional Resources
 

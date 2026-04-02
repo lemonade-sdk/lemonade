@@ -90,7 +90,7 @@ runs:
         # Give it a few seconds to come up before checking.
         echo "Waiting for server to be ready..."
         for i in $(seq 1 15); do
-          if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
+          if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
             echo "Server is running and healthy (started by launchd)"
             exit 0
           fi
@@ -103,7 +103,7 @@ runs:
         "$BIN_PATH/lemonade-server" serve --no-tray > "$LOG_FILE" 2>&1 &
 
         for i in $(seq 1 15); do
-          if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
+          if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
             echo "Server is running and healthy (started manually)"
             exit 0
           fi

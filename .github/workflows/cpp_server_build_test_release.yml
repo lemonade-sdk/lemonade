@@ -439,7 +439,7 @@ jobs:
         run: |
           echo "Checking server health..."
           for i in $(seq 1 15); do
-            if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
+            if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
               echo "Server is running and healthy"
               exit 0
             fi
@@ -451,7 +451,7 @@ jobs:
           /usr/local/bin/lemonade-server serve --no-tray > /tmp/lemonade-server.log 2>&1 &
 
           for i in $(seq 1 15); do
-            if curl -sf http://localhost:8000/live > /dev/null 2>&1; then
+            if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
               echo "Server is running and healthy (started manually)"
               exit 0
             fi
@@ -1184,7 +1184,7 @@ jobs:
           FAIL=0
 
           # 1. No API key → must get 401
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/api/v1/health 2>/dev/null || echo "000")
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:13305/api/v1/health 2>/dev/null || echo "000")
           if [ "$HTTP_CODE" = "401" ]; then
             echo "PASS: No API key → $HTTP_CODE"
             PASS=$((PASS+1))
@@ -1194,7 +1194,7 @@ jobs:
           fi
 
           # 2. Wrong API key → must get 401
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer wrong-key" http://127.0.0.1:8000/api/v1/health 2>/dev/null || echo "000")
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer wrong-key" http://127.0.0.1:13305/api/v1/health 2>/dev/null || echo "000")
           if [ "$HTTP_CODE" = "401" ]; then
             echo "PASS: Wrong API key → $HTTP_CODE"
             PASS=$((PASS+1))
@@ -1204,7 +1204,7 @@ jobs:
           fi
 
           # 3. Correct API key → must get 200
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $LEMONADE_API_KEY" http://127.0.0.1:8000/api/v1/health 2>/dev/null || echo "000")
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $LEMONADE_API_KEY" http://127.0.0.1:13305/api/v1/health 2>/dev/null || echo "000")
           if [ "$HTTP_CODE" = "200" ]; then
             echo "PASS: Correct API key → $HTTP_CODE"
             PASS=$((PASS+1))
@@ -1280,7 +1280,7 @@ jobs:
           FAIL=0
 
           # 1. No API key → must get 401
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/v1/health 2>/dev/null || echo "000")
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:13305/api/v1/health 2>/dev/null || echo "000")
           if [ "$HTTP_CODE" = "401" ]; then
             echo "PASS: No API key → $HTTP_CODE"
             PASS=$((PASS+1))
@@ -1290,7 +1290,7 @@ jobs:
           fi
 
           # 2. Wrong API key → must get 401
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer wrong-key" http://localhost:8000/api/v1/health 2>/dev/null || echo "000")
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer wrong-key" http://localhost:13305/api/v1/health 2>/dev/null || echo "000")
           if [ "$HTTP_CODE" = "401" ]; then
             echo "PASS: Wrong API key → $HTTP_CODE"
             PASS=$((PASS+1))
@@ -1300,7 +1300,7 @@ jobs:
           fi
 
           # 3. Correct API key → must get 200
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $LEMONADE_API_KEY" http://localhost:8000/api/v1/health 2>/dev/null || echo "000")
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $LEMONADE_API_KEY" http://localhost:13305/api/v1/health 2>/dev/null || echo "000")
           if [ "$HTTP_CODE" = "200" ]; then
             echo "PASS: Correct API key → $HTTP_CODE"
             PASS=$((PASS+1))

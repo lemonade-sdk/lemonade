@@ -26,7 +26,7 @@ import time
 
 import requests
 
-DEFAULT_PORT = 8000
+DEFAULT_PORT = 13305
 TIMEOUT_HEALTH = 60
 TIMEOUT_INFERENCE = 1800  # 30 minutes — large models may need 60+ GB download
 SERVER_STARTUP_TIMEOUT = 120

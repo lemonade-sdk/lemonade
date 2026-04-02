@@ -88,7 +88,7 @@ static bool prompt_agent_selection(std::string& agent_out) {
 // Configuration structure for CLI options
 struct CliConfig {
     std::string host = "127.0.0.1";
-    int port = 8000;
+    int port = 13305;
     std::string api_key;
     std::string model;
     std::map<std::string, std::string> checkpoints;
@@ -472,7 +472,7 @@ struct BeaconListener {
 
 // Listen for a UDP beacon from localhost and return the server's HTTP port, or 0 if none found
 static int discover_local_server_port() {
-    BeaconListener listener(8000, 250);
+    BeaconListener listener(13305, 250);
     if (!listener.valid) return 0;
 
     auto start_time = std::chrono::steady_clock::now();
@@ -709,7 +709,7 @@ static int handle_config_set(lemonade::LemonadeClient& client,
 }
 
 static int handle_scan_command(const CliConfig& config) {
-    const int beacon_port = 8000;
+    const int beacon_port = 13305;
     const int scan_duration_seconds = config.scan_duration;
 
     std::cout << "Scanning for network beacons on port " << beacon_port << " for "

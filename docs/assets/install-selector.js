@@ -224,7 +224,7 @@ function renderDownload() {
         if (type === 'app') {
           frontendSection = `
             <div class="lmn-install-section-title">Step 2: Choose your frontend</div>
-            <div class="lmn-install-method-header">Option 1: Web App (default, available at <a href="http://localhost:8000" target="_blank">http://localhost:8000</a>)</div>
+            <div class="lmn-install-method-header">Option 1: Web App (default, available at <a href="http://localhost:13305" target="_blank">http://localhost:13305</a>)</div>
             <div class="lmn-note">The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.</div>
 
             <div class="lmn-install-method-header">Option 2: Lemonade Desktop package (web app launcher)</div>
@@ -341,7 +341,7 @@ function renderDownload() {
         if (type === 'app') {
           frontendSection = `
             <div class="lmn-install-section-title">Step 2: Choose your frontend</div>
-            <div class="lmn-install-method-header">Option 1: Web App (default, available at <a href="http://localhost:8000" target="_blank">http://localhost:8000</a>)</div>
+            <div class="lmn-install-method-header">Option 1: Web App (default, available at <a href="http://localhost:13305" target="_blank">http://localhost:13305</a>)</div>
             <div class="lmn-note">The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.</div>
 
             <div class="lmn-install-method-header">Option 2: AppImage (portable desktop app, no installation required)</div>
@@ -406,7 +406,7 @@ function renderDownload() {
       const commands = [
         `docker run -d \\`,
           `  --name lemonade-server \\`,
-          `  -p 8000:8000 \\`,
+          `  -p 13305:13305 \\`,
           `  -v lemonade-cache:/root/.cache/huggingface \\`,
           `  -v lemonade-llama:/opt/lemonade/llama \\`,
           `  ghcr.io/lemonade-sdk/lemonade-server:latest`
@@ -610,7 +610,7 @@ function renderQuickStart() {
     if (fw === 'llama' && dev === 'gpu') {
       commands.push(`docker run -d \\
   --name lemonade-server \\
-  -p 8000:8000 \\
+  -p 13305:13305 \\
   -v lemonade-cache:/root/.cache/huggingface \\
   -v lemonade-llama:/opt/lemonade/llama \\
   -e LEMONADE_LLAMACPP_BACKEND=vulkan \\
@@ -621,7 +621,7 @@ function renderQuickStart() {
     if (fw === 'llama' && dev === 'cpu') {
       commands.push(`docker run -d \\
   --name lemonade-server \\
-  -p 8000:8000 \\
+  -p 13305:13305 \\
   -v lemonade-cache:/root/.cache/huggingface \\
   -v lemonade-llama:/opt/lemonade/llama \\
   -e LEMONADE_LLAMACPP_BACKEND=cpu \\

@@ -780,7 +780,7 @@
             <h1>🍋 Lemonade Multi-Model Tester</h1>
             <p class="subtitle">Test multiple models concurrently with streaming responses</p>
             <div class="server-config">
-                <input type="text" id="serverUrl" value="http://localhost:8000" placeholder="Server URL">
+                <input type="text" id="serverUrl" value="http://localhost:13305" placeholder="Server URL">
                 <div class="status-indicator">
                     <div class="status-dot" id="statusDot"></div>
                     <span id="statusText">Disconnected</span>
@@ -829,7 +829,7 @@
 
     <script>
         // State
-        let serverUrl = 'http://localhost:8000';
+        let serverUrl = 'http://localhost:13305';
         let availableModels = [];
         let loadedModels = [];
         let healthPollInterval = null;

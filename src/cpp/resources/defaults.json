@@ -1,6 +1,6 @@
 {
   "config_version": 1,
-  "port": 8000,
+  "port": 13305,
   "host": "localhost",
   "websocket_port": "auto",
   "log_level": "info",

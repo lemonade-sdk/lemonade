@@ -55,7 +55,7 @@ title="YouTube video player" frameborder="0" allowfullscreen></iframe>
           <br><em>Navigating to the connection settings.</em></br>
           <img src="https://github.com/lemonade-sdk/assets/blob/main/webui/connection_settings.png?raw=true" alt="Navigating the settings menu" width="600"/>
         </div>
-    3. Fill in the URL field with `http://localhost:8000/api/v1` (unless you're using a different port), API key (this is unused but required, suggest just putting a `-`), and then click "Save".
+    3. Fill in the URL field with `http://localhost:13305/api/v1` (unless you're using a different port), API key (this is unused but required, suggest just putting a `-`), and then click "Save".
         <div align="center">
           <br><em>Filling in the connection details for Lemonade Server.</em></br>
           <img src="https://github.com/lemonade-sdk/assets/blob/main/webui/connection_form.png?raw=true" alt="Filling in the connection form" width="600"/>
@@ -103,7 +103,7 @@ Now that everything is configured, you are ready to interact with an LLM!
 Vision Language Models (VLMs) can take images as part of their input.
 
 1. Install a VLM in Lemonade by opening the Lemonade Model Manager:
-    1. Open <http://localhost:8000> in your browser.
+    1. Open <http://localhost:13305> in your browser.
     2. Select the Model Management tab.
     3. Scroll down until you see a model with the blue `VISION` label and click the "+" button to install it.
 
@@ -177,7 +177,7 @@ Open WebUI supports [image generation](https://docs.openwebui.com/features/image
     1. Toggle `Image Generation` on.
     2. Choose `Standard (Open AI)` as the Image Generation Engine.
     3. Toggle `Prompt Generation` on.
-    4. For `OpenAI-API-Basis-URL`, fill in `http://localhost:8000/api/v1` (unless you're using a different port).
+    4. For `OpenAI-API-Basis-URL`, fill in `http://localhost:13305/api/v1` (unless you're using a different port).
     5. Add a character like `-` for `OpenAI-API-Key`.
     6. If you want to add more parameters, add them to the text field as JSON. For example: `{ "steps": 4, "cfg_scale": 1 }`. See available parameters at [Image Generation (Stable Diffusion CPP)](https://lemonade-server.ai/models.html).
     7. Add your model name to `Model`, e.g., `SDXL-Turbo`.
