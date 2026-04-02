@@ -666,7 +666,8 @@
         "labels": [
 	        "hot",
             "tool-calling",
-            "vision"
+            "vision",
+            "llamacpp"
         ],
         "size": 16.9
     },
