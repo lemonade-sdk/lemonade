@@ -658,6 +658,17 @@
         ],
         "size": 3.61
     },
+    "Gemma-4-26B-A4B-it-GGUF": {
+        "checkpoint": "unsloth/Gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+	    "hot",
+            "tool-calling"
+        ],
+        "size": 16.9
+    },
     "Phi-4-mini-instruct-GGUF": {
         "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Phi-4-mini-instruct-Q4_K_M.gguf",
         "recipe": "llamacpp",
