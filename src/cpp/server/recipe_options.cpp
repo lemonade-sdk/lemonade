@@ -24,7 +24,9 @@ static const json DEFAULTS = {
     {"width", 512},
     {"height", 512},
     // FLM-specific options
-    {"flm_args", ""}       // Custom arguments to pass to flm serve
+    {"flm_args", ""},       // Custom arguments to pass to flm serve
+    // RPC option for distributed inference
+    {"rpc", ""}
 };
 
 // Mapping from flat option names to CLI flags (used by to_cli_options)
@@ -40,12 +42,13 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"cfg_scale", "--cfg-scale"},
     {"width", "--width"},
     {"height", "--height"},
-    {"flm_args", "--flm-args"}
+    {"flm_args", "--flm-args"},
+    {"rpc", "--rpc"}
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
-        return {"ctx_size", "llamacpp_backend", "llamacpp_args"};
+        return {"ctx_size", "llamacpp_backend", "llamacpp_args", "rpc"};
     } else if (recipe == "whispercpp") {
         return {"whispercpp_backend", "whispercpp_args"};
     } else if (recipe == "flm") {
@@ -190,7 +193,8 @@ static const json CLI_OPTIONS = {
     {"--cfg-scale", {{"option_name", "cfg_scale"}, {"type_name", "SCALE"}, {"envname", "LEMONADE_CFG_SCALE"}, {"help", "Classifier-free guidance scale"}}},
     {"--width", {{"option_name", "width"}, {"type_name", "PX"}, {"envname", "LEMONADE_WIDTH"}, {"help", "Image width in pixels"}}},
     {"--height", {{"option_name", "height"}, {"type_name", "PX"}, {"envname", "LEMONADE_HEIGHT"}, {"help", "Image height in pixels"}}},
-    {"--flm-args", {{"option_name", "flm_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_FLM_ARGS"}, {"help", "Custom arguments to pass to flm serve"}}}
+    {"--flm-args", {{"option_name", "flm_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_FLM_ARGS"}, {"help", "Custom arguments to pass to flm serve"}}},
+    {"--rpc", {{"option_name", "rpc"}, {"type_name", "SERVERS"}, {"envname", "LEMONADE_RPC"}, {"help", "RPC server addresses for distributed inference (host:port,host:port)"}}}
 };
 
 void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {

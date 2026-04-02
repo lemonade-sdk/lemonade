@@ -253,6 +253,7 @@ json RuntimeConfig::recipe_options() const {
     }
 
     if (config_.contains("ctx_size")) result["ctx_size"] = config_["ctx_size"];
+    if (config_.contains("rpc")) result["rpc"] = config_["rpc"];
 
     return result;
 }
@@ -327,6 +328,10 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
         if (value.get<int>() <= 0) {
             throw std::invalid_argument("'ctx_size' must be positive");
+        }
+    } else if (key == "rpc") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'rpc' must be a string");
         }
     } else if (key == "config_version") {
         if (!value.is_number_integer()) {

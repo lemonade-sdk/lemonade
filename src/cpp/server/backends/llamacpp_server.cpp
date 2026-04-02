@@ -161,6 +161,7 @@ void LlamaCppServer::load(const std::string& model_name,
     int ctx_size = options.get_option("ctx_size");
     std::string llamacpp_backend = options.get_option("llamacpp_backend");
     std::string llamacpp_args = options.get_option("llamacpp_args");
+    std::string rpc = options.get_option("rpc");
 
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend);
 
@@ -257,6 +258,11 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string gpu_layers = use_gpu ? "99" : "0";  // 99 for GPU, 0 for CPU-only
     LOG(DEBUG, "LlamaCpp") << "ngl set to " << gpu_layers << std::endl;
     push_arg(args, reserved_flags, "-ngl", gpu_layers, std::vector<std::string>{"--gpu-layers", "--n-gpu-layers"});
+
+    // Add RPC server addresses for distributed inference
+    if (!rpc.empty()) {
+        push_arg(args, reserved_flags, "--rpc", rpc);
+    }
 
     // Validate and append custom arguments
     if (!llamacpp_args.empty()) {

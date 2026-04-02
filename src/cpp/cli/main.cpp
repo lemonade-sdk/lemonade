@@ -15,6 +15,7 @@
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <thread>
 #include <unordered_set>
 #include <functional>
@@ -29,6 +30,8 @@
 #else
     #include <arpa/inet.h>
     #include <netinet/in.h>
+    #include <signal.h>
+    #include <sys/stat.h>
     #include <sys/socket.h>
     #include <sys/wait.h>
     #include <fcntl.h>
@@ -51,6 +54,9 @@ static const std::vector<std::string> SUPPORTED_AGENTS = {
     "claude",
     "codex"
 };
+
+static bool try_live_check(const std::string& host, int port, const std::string& api_key,
+                           int timeout_ms = 500);
 
 static bool prompt_agent_selection(std::string& agent_out) {
     std::cout << "Select an agent to launch:" << std::endl;
@@ -110,6 +116,10 @@ struct CliConfig {
     bool codex_use_user_config = false;
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
+    std::string rpc_host = "0.0.0.0";
+    int rpc_port = 50052;
+    std::string rpc_backend;
+    int rpc_mem = 0;
 };
 
 // Open a URL via the OS without invoking a shell (avoids shell injection).
@@ -433,7 +443,7 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
 
 // Attempt a quick liveness check against the given host:port
 static bool try_live_check(const std::string& host, int port, const std::string& api_key,
-                           int timeout_ms = 500) {
+                           int timeout_ms) {
     try {
         lemonade::LemonadeClient client(host, port, api_key);
         client.make_request("/live", "GET", "", "", timeout_ms, timeout_ms);
@@ -814,6 +824,272 @@ static int handle_scan_command(const CliConfig& config) {
     return 0;
 }
 
+static bool is_local_server_host(const std::string& host) {
+    return host.empty() || host == "127.0.0.1" || host == "localhost" || host == "0.0.0.0";
+}
+
+static std::string find_local_server_executable() {
+    namespace fs = std::filesystem;
+
+    fs::path exe_dir = lemon::utils::get_executable_dir();
+    std::vector<fs::path> candidates;
+
+#ifdef _WIN32
+    candidates.push_back(exe_dir / "LemonadeServer.exe");
+    candidates.push_back(exe_dir / "lemond.exe");
+#else
+    candidates.push_back(exe_dir / "lemond");
+#endif
+
+    for (const auto& candidate : candidates) {
+        if (fs::exists(candidate) && fs::is_regular_file(candidate)) {
+            return candidate.string();
+        }
+    }
+
+#ifdef _WIN32
+    return lemon::utils::find_executable_in_path("LemonadeServer.exe");
+#else
+    return lemon::utils::find_executable_in_path("lemond");
+#endif
+}
+
+#ifdef _WIN32
+static std::string escape_windows_arg(const std::string& arg) {
+    if (arg.find_first_of(" \t\"") == std::string::npos) {
+        return arg;
+    }
+
+    std::string escaped = "\"";
+    int backslashes = 0;
+    for (char c : arg) {
+        if (c == '\\') {
+            backslashes++;
+        } else if (c == '"') {
+            escaped.append(backslashes * 2 + 1, '\\');
+            escaped.push_back('"');
+            backslashes = 0;
+        } else {
+            escaped.append(backslashes, '\\');
+            escaped.push_back(c);
+            backslashes = 0;
+        }
+    }
+    escaped.append(backslashes * 2, '\\');
+    escaped.push_back('"');
+    return escaped;
+}
+#endif
+
+static bool start_detached_local_server(const CliConfig& config, std::string& error_message) {
+    std::string server_executable = find_local_server_executable();
+    if (server_executable.empty()) {
+        error_message = "No local server executable found. Start lemond manually or install/build the server binary first.";
+        return false;
+    }
+
+    std::vector<std::string> args;
+    args.push_back(lemon::utils::get_cache_dir());
+    args.push_back("--host");
+    args.push_back(config.host);
+    args.push_back("--port");
+    args.push_back(std::to_string(config.port));
+
+#ifdef _WIN32
+    std::string cmdline = escape_windows_arg(server_executable);
+    for (const auto& arg : args) {
+        cmdline += " " + escape_windows_arg(arg);
+    }
+
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    ZeroMemory(&pi, sizeof(pi));
+
+    DWORD creation_flags = CREATE_NEW_PROCESS_GROUP;
+    if (server_executable.find("LemonadeServer.exe") == std::string::npos) {
+        creation_flags |= CREATE_NO_WINDOW;
+    }
+
+    BOOL success = CreateProcessA(
+        server_executable.c_str(),
+        cmdline.data(),
+        nullptr,
+        nullptr,
+        FALSE,
+        creation_flags,
+        nullptr,
+        nullptr,
+        &si,
+        &pi
+    );
+
+    if (!success) {
+        DWORD win_error = GetLastError();
+        error_message = "Failed to start local server executable '" + server_executable +
+                        "' (error code " + std::to_string(win_error) + ")";
+        return false;
+    }
+
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return true;
+#else
+    pid_t pid = fork();
+    if (pid < 0) {
+        error_message = "Failed to fork while starting local server";
+        return false;
+    }
+
+    if (pid == 0) {
+        setsid();
+
+        int dev_null = open("/dev/null", O_RDWR);
+        if (dev_null >= 0) {
+            dup2(dev_null, STDIN_FILENO);
+            dup2(dev_null, STDOUT_FILENO);
+            dup2(dev_null, STDERR_FILENO);
+            if (dev_null > STDERR_FILENO) {
+                close(dev_null);
+            }
+        }
+
+        std::vector<char*> argv_ptrs;
+        argv_ptrs.push_back(const_cast<char*>(server_executable.c_str()));
+        for (const auto& arg : args) {
+            argv_ptrs.push_back(const_cast<char*>(arg.c_str()));
+        }
+        argv_ptrs.push_back(nullptr);
+
+        execvp(server_executable.c_str(), argv_ptrs.data());
+        _exit(1);
+    }
+
+    int status = 0;
+    pid_t wait_result = waitpid(pid, &status, WNOHANG);
+    if (wait_result == pid) {
+        error_message = "Local server exited immediately while starting";
+        return false;
+    }
+
+    return true;
+#endif
+}
+
+static bool ensure_local_server_running(const CliConfig& config, const std::string& api_key) {
+    if (try_live_check(config.host, config.port, api_key, 500)) {
+        return true;
+    }
+
+    if (!is_local_server_host(config.host)) {
+        std::cerr << "Error: No Lemonade server is reachable at " << config.host << ":" << config.port
+                  << ", and rpc-server only auto-starts a local server." << std::endl;
+        return false;
+    }
+
+    std::cout << "No local Lemonade server detected on " << config.host << ":" << config.port
+              << ". Starting one..." << std::endl;
+
+    std::string start_error;
+    if (!start_detached_local_server(config, start_error)) {
+        std::cerr << "Error: " << start_error << std::endl;
+        return false;
+    }
+
+    for (int attempt = 0; attempt < 150; ++attempt) {
+        if (try_live_check(config.host, config.port, api_key, 200)) {
+            std::cout << "Local Lemonade server is ready." << std::endl;
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    std::cerr << "Error: Local Lemonade server did not become ready on "
+              << config.host << ":" << config.port << " within 15 seconds." << std::endl;
+    return false;
+}
+
+static int handle_rpc_server_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+    if (!ensure_local_server_running(config, config.api_key)) {
+        return 1;
+    }
+
+    std::string backend = config.rpc_backend;
+
+    // Default backend: vulkan on Linux/Windows, metal on macOS
+    if (backend.empty()) {
+#ifdef __APPLE__
+        backend = "metal";
+#else
+        backend = "vulkan";
+#endif
+    }
+
+    // Ensure the llamacpp backend is installed
+    std::cout << "Ensuring llamacpp:" << backend << " backend is installed..." << std::endl;
+    int install_result = client.install_backend("llamacpp", backend);
+    if (install_result != 0) {
+        std::cerr << "Error: Failed to install llamacpp:" << backend << " backend" << std::endl;
+        return install_result;
+    }
+
+    // Find the rpc-server binary in the llamacpp install directory
+    std::string install_dir = (std::filesystem::path(lemon::utils::get_downloaded_bin_dir()) / "llamacpp" / backend).string();
+
+#ifdef _WIN32
+    std::string rpc_binary_name = "rpc-server.exe";
+#else
+    std::string rpc_binary_name = "rpc-server";
+#endif
+
+    std::string rpc_exe;
+    if (std::filesystem::exists(install_dir)) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(install_dir)) {
+            if (entry.is_regular_file() && entry.path().filename() == rpc_binary_name) {
+                rpc_exe = entry.path().string();
+                break;
+            }
+        }
+    }
+
+    if (rpc_exe.empty()) {
+        std::cerr << "Error: " << rpc_binary_name << " not found in install directory: " << install_dir << std::endl;
+        return 1;
+    }
+
+#ifndef _WIN32
+    // Ensure the binary is executable
+    chmod(rpc_exe.c_str(), 0755);
+#endif
+
+    std::cout << "Starting rpc-server on " << config.rpc_host << ":" << config.rpc_port << std::endl;
+
+    // Build arguments
+    std::vector<std::string> args;
+    args.push_back("--host");
+    args.push_back(config.rpc_host);
+    args.push_back("--port");
+    args.push_back(std::to_string(config.rpc_port));
+
+    if (config.rpc_mem > 0) {
+        args.push_back("--mem");
+        args.push_back(std::to_string(config.rpc_mem));
+    }
+
+    // Start rpc-server with inherited output
+    lemon::utils::ProcessHandle handle;
+    try {
+        handle = lemon::utils::ProcessManager::start_process(
+            rpc_exe, args, "", true, false, {});
+    } catch (const std::exception& e) {
+        std::cerr << "Error: Failed to start rpc-server: " << e.what() << std::endl;
+        return 1;
+    }
+
+    return lemon::utils::ProcessManager::wait_for_exit(handle, -1);
+}
+
 int main(int argc, char* argv[]) {
     // CLI11 configuration
     CLI::App app{"Lemonade CLI - HTTP client for Lemonade Server"};
@@ -849,6 +1125,7 @@ int main(int argc, char* argv[]) {
     status_cmd->add_flag("--json", config.json_output, "Output status as JSON");
     CLI::App* logs_cmd = app.add_subcommand("logs", "Open server logs in the web UI")->group("Server");
     CLI::App* scan_cmd = app.add_subcommand("scan", "Scan for network beacons")->group("Server");
+    CLI::App* rpc_server_cmd = app.add_subcommand("rpc-server", "Start a llama.cpp RPC server for distributed inference")->group("Server");
 
     // Config commands
     CLI::App* config_cmd = app.add_subcommand("config", "View or modify server configuration")->group("Server");
@@ -942,6 +1219,12 @@ int main(int argc, char* argv[]) {
     // Scan options
     scan_cmd->add_option("--duration", config.scan_duration, "Scan duration in seconds")->default_val(config.scan_duration)->type_name("SECONDS");
 
+    // RPC server options
+    rpc_server_cmd->add_option("--rpc-host", config.rpc_host, "Host to bind to")->default_val("0.0.0.0");
+    rpc_server_cmd->add_option("--rpc-port", config.rpc_port, "RPC server port")->default_val(50052);
+    rpc_server_cmd->add_option("--backend", config.rpc_backend, "llamacpp backend (vulkan/rocm/metal/cpu)")->type_name("BACKEND");
+    rpc_server_cmd->add_option("--mem", config.rpc_mem, "Memory to allocate in MB")->type_name("MB");
+
     // Parse arguments
     CLI11_PARSE(app, argc, argv);
     config.codex_use_user_config = (provider_opt != nullptr && provider_opt->count() > 0);
@@ -1018,6 +1301,8 @@ int main(int argc, char* argv[]) {
         return 0;
     } else if (scan_cmd->count() > 0) {
         return handle_scan_command(config);
+    } else if (rpc_server_cmd->count() > 0) {
+        return handle_rpc_server_command(client, config);
     } else if (config_cmd->count() > 0) {
         if (config_set_cmd->count() > 0) {
             return handle_config_set(client, config_set_cmd->remaining());

@@ -168,6 +168,7 @@ parse_serve_args(const std::vector<std::string>& args) {
         else if (arg == "--global-timeout") { config_set_args.push_back("global_timeout=" + next()); }
         else if (arg == "--max-loaded-models") { config_set_args.push_back("max_loaded_models=" + next()); }
         else if (arg == "--ctx-size") { config_set_args.push_back("ctx_size=" + next()); }
+        else if (arg == "--rpc") { config_set_args.push_back("rpc=" + next()); }
         else if (arg == "--llamacpp") { config_set_args.push_back("llamacpp.backend=" + next()); }
         else if (arg == "--llamacpp-args") { config_set_args.push_back("llamacpp.args=" + next()); }
         else if (arg == "--whispercpp") { config_set_args.push_back("whispercpp.backend=" + next()); }
@@ -408,8 +409,23 @@ static int discover_port(const fs::path &dir) {
     }
 }
 
-static int do_stop(const fs::path &dir) {
-    int port = discover_port(dir);
+static int do_stop(const fs::path &dir, const std::vector<std::string>& args) {
+    int port = 0;
+    for (size_t i = 1; i < args.size(); ++i) {
+        if (args[i] == "--port" && i + 1 < args.size()) {
+            try {
+                port = std::stoi(args[i + 1]);
+            } catch (...) {
+                std::cerr << "error: invalid port '" << args[i + 1] << "'" << std::endl;
+                return 1;
+            }
+            break;
+        }
+    }
+
+    if (port == 0) {
+        port = discover_port(dir);
+    }
     if (port == 0) port = 13305;
 
     httplib::Client client("127.0.0.1", port);
@@ -470,7 +486,7 @@ int main(int argc, char *argv[]) {
 
     // stop → discover port via lemonade status --json, then POST /internal/shutdown
     if (cmd == "stop") {
-        return do_stop(dir);
+        return do_stop(dir, args);
     }
 
     // Everything else → delegate to lemonade CLI
