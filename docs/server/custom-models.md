@@ -17,15 +17,7 @@ Custom model configuration involves two files, both located in the Lemonade cach
 | `user_models.json` | Model registry — defines what models are available (checkpoint, recipe, etc.) |
 | `recipe_options.json` | Per-model settings — configures how models run (context size, backend, etc.) |
 
-**Cache directory location:**
-
-| OS | Default Path |
-|----|-------------|
-| Windows | `%USERPROFILE%\.cache\lemonade\` |
-| Linux | `~/.cache/lemonade/` |
-| macOS | `~/.cache/lemonade/` |
-
-The cache directory can be overridden by setting the `LEMONADE_CACHE_DIR` environment variable.
+See [configuration.md](./configuration.md) for more information about finding the cache directory.
 
 ## `user_models.json` Reference
 
@@ -133,49 +125,6 @@ This file configures per-model runtime settings. Each key is a **full model name
 }
 ```
 
-### Options by recipe
-
-#### llamacpp
-
-| Option | Default | Env Variable | Description |
-|--------|---------|-------------|-------------|
-| `ctx_size` | 4096 | `LEMONADE_CTX_SIZE` | Context window size in tokens |
-| `llamacpp_backend` | vulkan (Windows/Linux), metal (macOS) | `LEMONADE_LLAMACPP` | Inference backend: `vulkan`, `rocm`, `cpu`, `metal` |
-| `llamacpp_args` | (empty) | `LEMONADE_LLAMACPP_ARGS` | Extra arguments passed to llama-server |
-
-#### whispercpp
-
-| Option | Default | Env Variable | Description |
-|--------|---------|-------------|-------------|
-| `whispercpp_backend` | npu | `LEMONADE_WHISPERCPP` | Backend: `npu`, `cpu`, `vulkan` |
-
-#### sd-cpp
-
-| Option | Default | Env Variable | Description |
-|--------|---------|-------------|-------------|
-| `sd-cpp_backend` | cpu | `LEMONADE_SDCPP` | Backend: `cpu`, `rocm` |
-| `steps` | 20 | `LEMONADE_STEPS` | Number of inference steps |
-| `cfg_scale` | 7.0 | `LEMONADE_CFG_SCALE` | Classifier-free guidance scale |
-| `width` | 512 | `LEMONADE_WIDTH` | Image width in pixels |
-| `height` | 512 | `LEMONADE_HEIGHT` | Image height in pixels |
-
-#### flm
-
-| Option | Default | Env Variable | Description |
-|--------|---------|-------------|-------------|
-| `ctx_size` | 4096 | `LEMONADE_CTX_SIZE` | Context window size in tokens |
-| `flm_args` | (empty) | `LEMONADE_FLM_ARGS` | Extra arguments passed to `flm serve` |
-
-#### ryzenai-llm
-
-| Option | Default | Env Variable | Description |
-|--------|---------|-------------|-------------|
-| `ctx_size` | 4096 | `LEMONADE_CTX_SIZE` | Context window size in tokens |
-
-#### kokoro
-
-The `kokoro` recipe (text-to-speech) has no configurable options in `recipe_options.json`.
-
 > **Note:** Per-model options can also be configured through the Lemonade desktop app's model settings, or via the `save_options` parameter in the [`/api/v1/load` endpoint](./server_spec.md#post-apiv1load).
 
 ## Complete Examples
@@ -249,8 +198,7 @@ When loading a model, settings are resolved in this order (highest to lowest pri
 
 1. Values explicitly passed in the `/api/v1/load` request
 2. Per-model values from `recipe_options.json`
-3. Values set via environment variables or server startup arguments (see [Server Configuration](./configuration.md))
-4. Default hardcoded values in `lemond`
+3. Global configuration values, see [Server Configuration](./configuration.md)
 
 For full details, see the [load endpoint documentation](./server_spec.md#post-apiv1load).
 

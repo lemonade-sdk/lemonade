@@ -1,6 +1,7 @@
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
@@ -160,6 +161,8 @@ void LlamaCppServer::load(const std::string& model_name,
     int ctx_size = options.get_option("ctx_size");
     std::string llamacpp_backend = options.get_option("llamacpp_backend");
     std::string llamacpp_args = options.get_option("llamacpp_args");
+
+    RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend);
 
     bool use_gpu = (llamacpp_backend != "cpu");
 

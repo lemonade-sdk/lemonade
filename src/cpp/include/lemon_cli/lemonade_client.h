@@ -15,6 +15,18 @@ namespace httplib {
 
 namespace lemonade {
 
+class HttpError : public std::runtime_error {
+public:
+    HttpError(int status, std::string body, const std::string& message);
+
+    int status_code() const;
+    const std::string& response_body() const;
+
+private:
+    int status_code_;
+    std::string response_body_;
+};
+
 // Helper struct for streaming request state
 struct StreamingRequestState {
     std::string last_file;
@@ -33,6 +45,8 @@ struct ModelInfo {
     std::string checkpoint;
     std::string recipe;
     bool downloaded = false;
+    bool suggested = false;
+    std::vector<std::string> labels;
     std::string download_url;
     std::string description;
 };

@@ -164,7 +164,13 @@ runs:
 
         # --- Restart with CI env vars ---
         Write-Host "Starting LemonadeServer.exe with CI environment..." -ForegroundColor Cyan
-        Start-Process -FilePath $serverExe -WorkingDirectory (Split-Path $serverExe)
+        # Pass lemonade home dir if LEMONADE_CACHE_DIR is set (config.json lives there)
+        $homeDir = $env:LEMONADE_CACHE_DIR
+        if ($homeDir) {
+          Start-Process -FilePath $serverExe -ArgumentList "`"$homeDir`"" -WorkingDirectory (Split-Path $serverExe)
+        } else {
+          Start-Process -FilePath $serverExe -WorkingDirectory (Split-Path $serverExe)
+        }
         Write-Host "  LemonadeServer.exe started" -ForegroundColor Green
 
     - name: Wait for server to be ready

@@ -223,7 +223,7 @@ Creates `lemonade-server-minimal.msi` which:
 - Creates Start Menu shortcuts (launches `lemonade-tray.exe`)
 - Optionally creates desktop shortcut and startup entry
 - Uses Windows Installer Restart Manager to gracefully close running processes
-- Includes all executables (router, server, tray, log-viewer)
+- Includes all core executables (router, server, tray, CLI, and optional desktop app)
 - Proper upgrade handling between versions
 - Includes uninstaller
 
@@ -706,19 +706,18 @@ The `lemond` executable is a pure HTTP server without any command-based interfac
 # Start server with default options
 ./lemond
 
-# Start server with custom options
-./lemond --port 8080 --ctx-size 8192 --log-level debug
+# Start server with custom port
+./lemond --port 8080
 
 # Available options:
+#   [cache_dir]              Path to lemonade cache directory (optional)
 #   --port PORT              Port number (default: 8000)
 #   --host HOST              Bind address (default: localhost)
-#   --ctx-size SIZE          Context size (default: 4096)
-#   --log-level LEVEL        Log level: critical, error, warning, info, debug, trace
-#   --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal
-#   --max-loaded-models N    Maximum models per type slot (default: 1)
 #   --version, -v            Show version
 #   --help, -h               Show help
 ```
+
+All other server settings are managed via `lemonade config set` (see [Server Configuration](./server/configuration.md)).
 
 ### lemonade (CLI Client)
 
@@ -778,7 +777,7 @@ The tray application provides a system tray icon for desktop users:
 - Load/unload models via menu
 - Change server port and context size
 - Open web UI, documentation, and logs
-- "Show Logs" opens log viewer with historical and live logs
+- "Show Logs" opens the desktop app's logs view with historical and live logs
 - Background model monitoring
 - Click balloon notifications to open menu
 - Quit option
@@ -791,18 +790,16 @@ The tray application provides a system tray icon for desktop users:
 ### Logging and Console Output
 
 When running `LemonadeServer.exe` or `lemond`:
-- **Log File:** All logs are written to a persistent log file (default: `%TEMP%\lemonade-server.log`)
-- **Log Viewer:** Click "Show Logs" in the tray to open `lemonade-log-viewer.exe`, or use `lemonade logs`
-  - Displays last 100KB of historical logs
-  - Live tails new content as it's written
-  - Automatically closes when server stops
-  - Uses shared file access (won't block installer)
+- **Log File:** Direct runs write logs to a persistent log file (default: `%TEMP%\lemonade-server.log` on Windows). When `lemond` runs as the systemd service, logs go to the journal instead.
+- **Logs UI:** Click "Show Logs" in the tray or use `lemonade logs` to open the desktop app's logs view
+  - Connects to the server's WebSocket log stream
+  - Shows retained recent log history plus live entries
+  - Reconnects automatically if the stream drops
 
-**Log Viewer Features:**
-- Cross-platform tail implementation
-- Parent process monitoring for auto-cleanup
-- Installer-friendly (FILE_SHARE_DELETE on Windows)
-- Real-time updates with minimal latency (100ms polling)
+**Logs UI Features:**
+- Real-time streaming over `/logs/stream`
+- Snapshot + live log entries
+- Integrated into the desktop app instead of a standalone log viewer binary
 
 ## Testing
 

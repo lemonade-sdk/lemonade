@@ -73,13 +73,34 @@ std::string find_executable_in_path(const std::string& executable_name);
 bool is_ggml_hip_plugin_available();
 
 /**
- * Get the cache directory
+ * Set the lemonade cache directory. Must be called once at startup before
+ * get_cache_dir(). After this call, get_cache_dir() returns this path.
+ */
+void set_cache_dir(const std::string& dir);
+
+/**
+ * Get the lemonade cache directory.
+ * Returns the path set by set_cache_dir(), or falls back to
+ * platform-specific defaults if set_cache_dir() was never called.
  */
 std::string get_cache_dir();
 
 /**
- * Get the Hugging Face cache directory.
- * Checks HF_HUB_CACHE, then HF_HOME/hub, then platform defaults.
+ * Set the models directory for HuggingFace model cache.
+ * Must be called at startup with the value from config.json.
+ */
+void set_models_dir(const std::string& dir);
+
+/**
+ * Get the platform-specific default HuggingFace cache directory.
+ * (~/.cache/huggingface/hub on Linux/macOS, %USERPROFILE%\.cache\huggingface\hub on Windows)
+ */
+std::string default_hf_cache_dir();
+
+/**
+ * Get the models directory (HuggingFace cache).
+ * Returns the path set by set_models_dir(), or falls back to
+ * default_hf_cache_dir().
  */
 std::string get_hf_cache_dir();
 

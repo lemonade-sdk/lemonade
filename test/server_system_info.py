@@ -16,7 +16,7 @@ LIMITATIONS:
 
 Usage:
     python server_system_info.py
-    python server_system_info.py --server-binary /path/to/lemonade-server
+    python server_system_info.py --lemond-binary /path/to/lemond
 """
 
 import json
@@ -26,7 +26,6 @@ import shutil
 import tempfile
 import unittest
 import subprocess
-import time
 import sys
 import argparse
 
@@ -35,7 +34,7 @@ try:
 except ImportError as e:
     raise ImportError("You must `pip install requests` to run this test", e)
 
-from utils.test_models import PORT, TIMEOUT_DEFAULT, get_default_server_binary
+from utils.test_models import PORT, TIMEOUT_DEFAULT, get_default_lemond_binary
 from utils.server_base import wait_for_server
 
 # Detect current platform for skipping incompatible tests
@@ -46,21 +45,21 @@ IS_X86_64 = platform.machine().lower() in ("x86_64", "amd64")
 IS_ARM64 = platform.machine().lower() in ("arm64", "aarch64")
 
 
-def get_server_version(server_binary: str) -> str:
+def get_server_version(lemond_binary: str) -> str:
     """
-    Get the lemonade server version by calling --version.
+    Get the lemond server version by calling --version.
 
     The cache uses the version to decide if hardware needs to be re-detected.
     If the mock version doesn't match, the server will re-detect real hardware.
     """
     try:
         result = subprocess.run(
-            [server_binary, "--version"],
+            [lemond_binary, "--version"],
             capture_output=True,
             text=True,
             timeout=10,
         )
-        # Output format: "lemonade-server version X.Y.Z"
+        # Output format: "lemond version X.Y.Z"
         output = result.stdout.strip()
         if "version" in output.lower():
             # Extract version number
@@ -356,11 +355,16 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_supported": {
             "llamacpp": ["vulkan", "cpu"],
             "sd-cpp": ["cpu"],
-            "whispercpp": ["cpu", "vulkan"],  # whispercpp CPU + Vulkan supported on Linux
+            "whispercpp": [
+                "cpu",
+                "vulkan",
+            ],  # whispercpp CPU + Vulkan supported on Linux
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],
-            "whispercpp": ["npu"],  # NPU is Windows-only; CPU and Vulkan supported on Linux
+            "whispercpp": [
+                "npu"
+            ],  # NPU is Windows-only; CPU and Vulkan supported on Linux
             "sd-cpp": ["rocm"],
             "flm": ["npu"],
             "ryzenai-llm": ["npu"],
@@ -399,11 +403,16 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_supported": {
             "llamacpp": ["vulkan", "rocm", "cpu"],
             "sd-cpp": ["cpu", "rocm"],
-            "whispercpp": ["cpu", "vulkan"],  # whispercpp CPU + Vulkan supported on Linux
+            "whispercpp": [
+                "cpu",
+                "vulkan",
+            ],  # whispercpp CPU + Vulkan supported on Linux
         },
         "expected_unsupported": {
             "llamacpp": ["metal"],
-            "whispercpp": ["npu"],  # NPU is Windows-only; CPU and Vulkan supported on Linux
+            "whispercpp": [
+                "npu"
+            ],  # NPU is Windows-only; CPU and Vulkan supported on Linux
             "flm": ["npu"],  # Windows NPU only
             "ryzenai-llm": ["npu"],
         },
@@ -441,32 +450,22 @@ MOCK_HARDWARE_CONFIGS = {
         "expected_supported": {
             "llamacpp": ["vulkan", "cpu"],
             "sd-cpp": ["cpu"],
-            "whispercpp": ["cpu", "vulkan"],  # whispercpp CPU + Vulkan supported on Linux
+            "whispercpp": [
+                "cpu",
+                "vulkan",
+            ],  # whispercpp CPU + Vulkan supported on Linux
         },
         "expected_unsupported": {
             "llamacpp": ["metal", "rocm"],  # rocm not supported on RDNA2
-            "whispercpp": ["npu"],  # NPU is Windows-only; CPU and Vulkan supported on Linux
+            "whispercpp": [
+                "npu"
+            ],  # NPU is Windows-only; CPU and Vulkan supported on Linux
             "sd-cpp": ["rocm"],
             "flm": ["npu"],
             "ryzenai-llm": ["npu"],
         },
     },
 }
-
-
-def stop_server(server_binary):
-    """Stop the lemonade server."""
-    try:
-        result = subprocess.run(
-            [server_binary, "stop"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        # Give server time to fully stop
-        time.sleep(2)
-    except Exception as e:
-        print(f"Warning: failed to stop server: {e}")
 
 
 class SystemInfoMockTests(unittest.TestCase):
@@ -479,20 +478,29 @@ class SystemInfoMockTests(unittest.TestCase):
             description="Test system-info with mock hardware"
         )
         parser.add_argument(
-            "--server-binary",
+            "--lemond-binary",
             type=str,
-            default=get_default_server_binary(),
-            help="Path to server binary",
+            default=get_default_lemond_binary(),
+            help="Path to lemond binary",
         )
         args, _ = parser.parse_known_args()
-        cls.server_binary = args.server_binary
+        cls.lemond_binary = args.lemond_binary
+        print(f"[SETUP] Using lemond binary: {cls.lemond_binary}")
 
         # Get the server version dynamically for cache compatibility
-        cls.server_version = get_server_version(cls.server_binary)
+        cls.server_version = get_server_version(cls.lemond_binary)
         print(f"[SETUP] Using server version: {cls.server_version}")
 
-        # Ensure any existing server is stopped
-        stop_server(cls.server_binary)
+        # Kill any existing server on the test port (e.g., left running by
+        # the deb install verification step in CI).
+        try:
+            requests.post(f"http://localhost:{PORT}/internal/shutdown", timeout=5)
+            import time
+
+            time.sleep(1)
+            print("[SETUP] Stopped pre-existing server on port")
+        except Exception:
+            pass
 
     def check_platform_requirements(self, config: dict, config_name: str) -> bool:
         """
@@ -538,7 +546,7 @@ class SystemInfoMockTests(unittest.TestCase):
         Run a single test with a mock hardware configuration.
 
         Creates a temporary cache directory with the mock hardware_info.json,
-        starts the server with LEMONADE_CACHE_DIR pointing to it, and validates
+        starts the server with a cache dir pointing to it, and validates
         the /system-info response matches expected recipe support.
         """
         config = MOCK_HARDWARE_CONFIGS[config_name]
@@ -563,15 +571,16 @@ class SystemInfoMockTests(unittest.TestCase):
                 json.dump(cache_data, f, indent=2)
             print(f"Created mock hardware_info.json (version={self.server_version})")
 
-            # Prepare environment with mock cache directory
-            env = os.environ.copy()
-            env["LEMONADE_CACHE_DIR"] = temp_cache_dir
-            # Note: Do NOT set LEMONADE_CI_MODE=1 here as it invalidates the cache!
+            # Write config.json with debug log level
+            config_file = os.path.join(temp_cache_dir, "config.json")
+            with open(config_file, "w") as f:
+                json.dump({"log_level": "debug"}, f)
 
-            # Start server with mock cache
-            cmd = [self.server_binary, "serve", "--no-tray", "--log-level", "debug"]
+            # Start lemond with the temp dir as its cache directory
+            cmd = [self.lemond_binary, temp_cache_dir]
             print(f"Starting server: {' '.join(cmd)}")
 
+            env = os.environ.copy()
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
@@ -649,13 +658,25 @@ class SystemInfoMockTests(unittest.TestCase):
                         print(f"  [OK] {recipe}/{backend}: state=unsupported")
 
             finally:
-                # Stop the server
-                stop_server(self.server_binary)
-                process.terminate()
+                # Stop the server and wait for port to be released
                 try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
+                    requests.post(
+                        f"http://localhost:{PORT}/internal/shutdown",
+                        timeout=5,
+                    )
+                except Exception:
+                    pass
+                process.kill()
+                process.wait()
+                # Wait for port to be fully released
+                import time
+
+                for _ in range(20):
+                    try:
+                        requests.get(f"http://localhost:{PORT}/live", timeout=0.5)
+                        time.sleep(0.25)
+                    except Exception:
+                        break
 
         finally:
             # Cleanup temp directory

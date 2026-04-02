@@ -9,6 +9,17 @@ namespace lemonade {
 
 using json = nlohmann::json;
 
+HttpError::HttpError(int status, std::string body, const std::string& message)
+    : std::runtime_error(message), status_code_(status), response_body_(std::move(body)) {}
+
+int HttpError::status_code() const {
+    return status_code_;
+}
+
+const std::string& HttpError::response_body() const {
+    return response_body_;
+}
+
 LemonadeClient::LemonadeClient(const std::string& host, int port, const std::string& api_key)
     : host_(host), port_(port), api_key_(api_key) {}
 
@@ -42,7 +53,8 @@ static void assert_http_ok(const httplib::Result& res) {
     } else if (res->status == 401) {
         throw std::runtime_error("Forbidden by the server. Did you set the API key?");
     } else if (res->status != 200) {
-        throw std::runtime_error("Request failed: " + std::to_string(res->status));
+        throw HttpError(res->status, res->body,
+                        "Request failed: " + std::to_string(res->status));
     }
 }
 
@@ -227,6 +239,18 @@ std::vector<ModelInfo> LemonadeClient::get_models(bool show_all) const {
 
             if (model_item.contains("downloaded") && model_item["downloaded"].is_boolean()) {
                 info.downloaded = model_item["downloaded"].get<bool>();
+            }
+
+            if (model_item.contains("suggested") && model_item["suggested"].is_boolean()) {
+                info.suggested = model_item["suggested"].get<bool>();
+            }
+
+            if (model_item.contains("labels") && model_item["labels"].is_array()) {
+                for (const auto& label : model_item["labels"]) {
+                    if (label.is_string()) {
+                        info.labels.push_back(label.get<std::string>());
+                    }
+                }
             }
 
             if (!info.id.empty()) {

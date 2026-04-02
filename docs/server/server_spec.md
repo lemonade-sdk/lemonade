@@ -28,6 +28,7 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/audio/transcriptions` - Audio Transcription (audio file -> text)
 - POST `/api/v1/audio/speech` - Text to speech (text -> audio)
 - WS `/realtime` - Realtime Audio Transcription (streaming audio -> text, OpenAI SDK compatible)
+- WS `/logs/stream` - Log Streaming (subscribe -> snapshot + live log entries)
 - POST `/api/v1/images/generations` - Image Generation (prompt -> image)
 - POST `/api/v1/images/edits` - Image Editing (image + prompt -> edited image)
 - POST `/api/v1/images/variations` - Image Variations (image -> varied image)
@@ -101,7 +102,7 @@ Lemonade Server supports loading multiple models simultaneously, allowing you to
 
 ### Configuration
 
-Configure via the `LEMONADE_MAX_LOADED_MODELS` environment variable. See [Server Configuration](./configuration.md#environment-variables).
+Configure via `lemonade config set max_loaded_models=N`. See [Server Configuration](./configuration.md).
 
 **Default:** `1` (one model of each type). Use `-1` for unlimited.
 
@@ -115,7 +116,7 @@ Models are categorized into these types:
 - **Audio** - Models for audio transcription using Whisper (identified by the `audio` label)
 - **Image** - Models for image generation (identified by the `image` label)
 
-Each type has its own independent LRU cache, all sharing the same slot limit set by `--max-loaded-models`.
+Each type has its own independent LRU cache, all sharing the same slot limit set by `max_loaded_models`.
 
 ### Device Constraints
 
@@ -761,6 +762,102 @@ python examples/realtime_transcription.py --model Whisper-Tiny
 - **Clear Buffer**: Use `input_audio_buffer.clear` to discard audio without transcribing.
 - **Chunking**: We are still tuning the chunking to balance latency vs. accuracy.
 
+
+### Log Streaming API (WebSocket) <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Stream server logs over WebSocket. Clients connect, send a subscribe message, and receive a snapshot of recent log history followed by live log entries as they occur.
+
+#### Connection
+
+The WebSocket server shares the same port as the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket). Discover the port via the [`/api/v1/health`](#get-apiv1health) endpoint (`websocket_port` field), then connect:
+
+```
+ws://localhost:<websocket_port>/logs/stream
+```
+
+After connecting, send a `logs.subscribe` message to start receiving logs.
+
+#### Client → Server Messages
+
+| Message Type | Description |
+|--------------|-------------|
+| `logs.subscribe` | Subscribe to log stream. Optional `after_seq` field to resume from a specific sequence number. |
+
+#### Server → Client Messages
+
+| Message Type | Description |
+|--------------|-------------|
+| `logs.snapshot` | Initial batch of retained log entries (up to 5000). Sent once after subscribing. |
+| `logs.entry` | A single live log entry. Sent as new log lines are emitted. |
+| `error` | Error message (e.g., invalid subscribe request). |
+
+#### Example: Subscribe to Logs
+
+Subscribe from the beginning (full backlog):
+
+```json
+{
+  "type": "logs.subscribe",
+  "after_seq": null
+}
+```
+
+Resume after a known sequence number (e.g., on reconnect):
+
+```json
+{
+  "type": "logs.subscribe",
+  "after_seq": 1042
+}
+```
+
+#### Example: Snapshot Response
+
+```json
+{
+  "type": "logs.snapshot",
+  "entries": [
+    {
+      "seq": 1,
+      "timestamp": "2025-03-30 14:22:01.123",
+      "severity": "Info",
+      "tag": "Server",
+      "line": "2025-03-30 14:22:01.123 [Info] (Server) Starting Lemonade Server..."
+    }
+  ]
+}
+```
+
+#### Example: Live Entry
+
+```json
+{
+  "type": "logs.entry",
+  "entry": {
+    "seq": 1043,
+    "timestamp": "2025-03-30 14:22:05.456",
+    "severity": "Info",
+    "tag": "Router",
+    "line": "2025-03-30 14:22:05.456 [Info] (Router) Model loaded successfully"
+  }
+}
+```
+
+#### Log Entry Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `seq` | integer | Monotonically increasing sequence number. Use for dedup and resume. |
+| `timestamp` | string | Formatted timestamp from the log system. |
+| `severity` | string | Log level: `Trace`, `Debug`, `Info`, `Warning`, `Error`, `Fatal`. |
+| `tag` | string | Log source tag (e.g., `Server`, `Router`, component name). |
+| `line` | string | The full formatted log line. |
+
+#### Integration Notes
+
+- **Reconnection**: Track the last `seq` received and pass it as `after_seq` on reconnect to avoid duplicate entries.
+- **Backlog**: The server retains up to 5000 recent log entries. The snapshot may be smaller if fewer entries exist.
+- **Platform availability**: WebSocket log streaming is available on all platforms (Windows, Linux, and macOS).
 
 
 ### `POST /api/v1/images/generations` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -1621,14 +1718,14 @@ curl http://localhost:8000/api/v1/health
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
-- `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `--max-loaded-models`):
+- `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](./configuration.md)):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
   - `reranking` - Maximum reranking models
   - `audio` - Maximum speech-to-text models
   - `image` - Maximum image models
   - `tts` - Maximum text-to-speech models
-- `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned.
+- `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`.
 
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -1890,7 +1987,7 @@ In case of an error, returns an `error` field with details.
 
 # Debugging
 
-To control logging verbosity, set the `LEMONADE_LOG_LEVEL` environment variable (see [Server Configuration](./configuration.md#environment-variables)).
+To control logging verbosity, use `lemonade config set log_level=debug` (see [Server Configuration](./configuration.md)).
 
 Available levels:
 

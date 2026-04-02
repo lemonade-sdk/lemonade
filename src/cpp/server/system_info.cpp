@@ -1,4 +1,5 @@
 #include "lemon/system_info.h"
+#include "lemon/runtime_config.h"
 #include "lemon/version.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/version_utils.h"
@@ -742,12 +743,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
     // Check if user prefers system llamacpp backend (off by default)
     bool prefer_llamacpp_system = false;
-    const char* prefer_system_env = std::getenv("LEMONADE_LLAMACPP_PREFER_SYSTEM");
-    if (prefer_system_env) {
-        std::string pref_val(prefer_system_env);
-        if (pref_val == "true" || pref_val == "1") {
-            prefer_llamacpp_system = true;
-        }
+    if (auto* cfg = RuntimeConfig::global()) {
+        prefer_llamacpp_system = cfg->backend_bool("llamacpp", "prefer_system");
     }
 
     // Build recipes from the definition table
@@ -2890,14 +2887,7 @@ bool SystemInfoCache::is_valid() const {
         return false;
     }
 
-#ifdef __linux__
-    // On Linux, cache is disabled by default (always re-detect hardware) unless
-    // LEMONADE_CACHE_DIR is explicitly set (for testing purposes)
-    const char* cache_dir_env = std::getenv("LEMONADE_CACHE_DIR");
-    if (!cache_dir_env || cache_dir_env[0] == '\0') {
-        return false;
-    }
-#endif
+    // Hardware cache is always enabled when a cache dir is configured
 
     // Check if cache file exists
     if (!fs::exists(cache_file_path_)) {

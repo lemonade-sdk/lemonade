@@ -4,18 +4,17 @@ This file provides guidance to agent driven code reviews when working with this 
 
 ## Project Overview
 
-Lemonade is a local LLM server (v10.0.0) providing GPU and NPU acceleration for running large language models on consumer hardware. It exposes OpenAI-compatible, Ollama-compatible, and Anthropic-compatible REST APIs, plus a WebSocket Realtime API. It supports multiple backends: llama.cpp, FastFlowLM, RyzenAI, whisper.cpp, stable-diffusion.cpp, and Kokoro TTS.
+Lemonade is a local LLM server providing GPU and NPU acceleration for running large language models on consumer hardware. It exposes OpenAI-compatible, Ollama-compatible, and Anthropic-compatible REST APIs, plus a WebSocket Realtime API. It supports multiple backends: llama.cpp, FastFlowLM, RyzenAI, whisper.cpp, stable-diffusion.cpp, and Kokoro TTS.
 
 ## Architecture
 
 ### Executables
 
-- **lemond** — Pure HTTP server. Handles REST API, routes requests to backends, manages model loading/unloading. No CLI.
-- **lemonade** — CLI client (`src/cpp/cli/`). Commands: `list`, `pull`, `delete`, `run`, `status`, `logs`, `launch`, `recipes`, `scan`. Communicates with router via HTTP. Discovers running server via UDP beacon.
+- **lemond** — Pure HTTP server. Handles REST API, routes requests to backends, manages model loading/unloading. Configured via `config.json` in the lemonade cache directory. CLI args: `[cache_dir] [--port PORT] [--host HOST]`.
+- **lemonade** — CLI client (`src/cpp/cli/`). Commands: `list`, `pull`, `delete`, `run`, `status`, `logs`, `launch`, `recipes`, `scan`, etc. Communicates with router via HTTP. Discovers running server via UDP beacon.
 - **LemonadeServer.exe** (Windows) — SUBSYSTEM:WINDOWS GUI app that embeds `lemond` and shows a system tray icon. Auto-starts via Windows startup folder.
 - **lemonade-tray** (macOS/Linux) — Lightweight tray client that connects to a running `lemond`. Platform code in `src/cpp/tray/platform/`.
 - **lemonade-server** — Deprecated backwards-compatibility shim. Delegates to `lemond` or `lemonade`.
-- **lemonade-log-viewer** — Windows-only log file viewer.
 
 ### Backend Abstraction
 
@@ -54,7 +53,7 @@ All core endpoints are registered under **4 path prefixes**:
 
 **Anthropic-compatible endpoint:** `POST /api/messages` — supports message completion, tool use, and SSE streaming.
 
-**WebSocket Realtime API** (Windows/Linux only): OpenAI-compatible Realtime protocol for real-time audio transcription. Binds to an OS-assigned port (9000+), exposed via the `websocket_port` field in the `/health` endpoint response.
+**WebSocket Realtime API**: OpenAI-compatible Realtime protocol for real-time audio transcription. Binds to an OS-assigned port (9000+), exposed via the `websocket_port` field in the `/health` endpoint response.
 
 **Internal endpoints:** `POST /internal/shutdown`
 
@@ -67,7 +66,7 @@ Optional API key auth via `LEMONADE_API_KEY` env var. CORS enabled on all routes
 
 ### Key Dependencies
 
-**C++ (FetchContent):** cpp-httplib, nlohmann/json, CLI11, libcurl, zstd, IXWebSocket (Windows/Linux), brotli (macOS). Platform SSL: Schannel (Windows), SecureTransport (macOS), OpenSSL (Linux).
+**C++ (FetchContent):** cpp-httplib, nlohmann/json, CLI11, libcurl, zstd, libwebsockets, brotli (macOS). Platform SSL: Schannel (Windows), SecureTransport (macOS), OpenSSL (Linux).
 
 **Electron:** React 19, TypeScript 5.3, Webpack 5, Electron 39, markdown-it, highlight.js, katex.
 
@@ -172,6 +171,7 @@ Test utilities in `test/utils/` with `server_base.py` as the base class. Test de
 | `src/cpp/server/ollama_api.cpp` | Ollama API compatibility |
 | `src/cpp/include/lemon/websocket_server.h` | WebSocket Realtime API server |
 | `src/cpp/include/lemon/model_types.h` | Model type and device type enums |
+| `src/cpp/include/lemon/config_file.h` | config.json load/save/migrate |
 | `src/cpp/include/lemon/recipe_options.h` | Per-recipe JSON configuration |
 | `src/cpp/tray/tray_app.cpp` | Tray application UI and logic |
 | `src/app/src/renderer/ModelManager.tsx` | Model management UI |

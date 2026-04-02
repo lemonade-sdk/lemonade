@@ -5,12 +5,13 @@ target_include_directories(lemonade-server PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-# Link httplib (for stop command's HTTP POST)
+# Link httplib (for stop command's HTTP POST) and nlohmann_json (for config)
 if(USE_SYSTEM_HTTPLIB)
     target_link_libraries(lemonade-server PRIVATE cpp-httplib)
 else()
     target_link_libraries(lemonade-server PRIVATE httplib::httplib)
 endif()
+target_link_libraries(lemonade-server PRIVATE nlohmann_json::nlohmann_json)
 if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
     target_include_directories(lemonade-server PRIVATE ${HTTPLIB_INCLUDE_DIRS})
 endif()

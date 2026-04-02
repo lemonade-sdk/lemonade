@@ -21,6 +21,7 @@ bool build_agent_config(const std::string& agent,
                         const std::string& host,
                         int port,
                         const std::string& model,
+                        const std::string& api_key,
                         AgentConfig& config,
                         std::string& error_message);
 

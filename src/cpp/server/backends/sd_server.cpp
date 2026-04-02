@@ -1,6 +1,7 @@
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
@@ -84,6 +85,8 @@ void SDServer::load(const std::string& model_name,
 
     std::string backend = options.get_option("sd-cpp_backend");
     std::string sdcpp_args = options.get_option("sdcpp_args");
+
+    RuntimeConfig::validate_backend_choice("sdcpp", backend);
 
     // Install sd-server if needed
     backend_manager_->install_backend(SPEC.recipe, backend);
