@@ -41,7 +41,7 @@ const SETTINGS_FILE_NAME = 'app_settings.json';
 const SETTINGS_UPDATED_CHANNEL = 'settings-updated';
 const SERVER_PORT_UPDATED_CHANNEL = 'server-port-updated';
 const CONNECTION_SETTINGS_UPDATED_CHANNEL = 'connection-settings-updated'
-let cachedServerPort = 8000; // Default port
+let cachedServerPort = 13305; // Default port
 
 /**
  * Parse and normalize a server base URL.
@@ -389,7 +389,7 @@ const fetchWithApiKey = async (entpoint) => {
   let apiKey = (await readAppSettingsFile()).apiKey.value;
 
   if (!serverUrl) {
-    serverUrl = cachedServerPort ? `http://localhost:${cachedServerPort}` : 'http://localhost:8000';
+    serverUrl = cachedServerPort ? `http://localhost:${cachedServerPort}` : 'http://localhost:13305';
   }
 
   const options = {timeout: 3000};
@@ -495,14 +495,14 @@ function gracefulKillBlocking(processPattern) {
 
 /**
  * Discovers the lemonade server using UDP broadcast beacons.
- * The server broadcasts its presence on UDP port 8000 with a JSON payload
+ * The server broadcasts its presence on UDP port 13305 with a JSON payload
  * containing the service name, hostname, and URL.
  *
  * This works for both local and remote servers on the same network.
  */
 const discoverServerPort = () => {
-  const DEFAULT_PORT = 8000;
-  const BEACON_PORT = 8000;
+  const DEFAULT_PORT = 13305;
+  const BEACON_PORT = 13305;
   const DISCOVERY_TIMEOUT_MS = 5000;
 
   return new Promise((resolve) => {
@@ -609,7 +609,7 @@ const discoverServerPort = () => {
 let beaconSocket = null;
 
 const startBeaconListener = async () => {
-  const BEACON_PORT = 8000;
+  const BEACON_PORT = 13305;
 
   // Don't listen if an explicit base URL is configured
   const baseURL = await getBaseURLFromConfig();

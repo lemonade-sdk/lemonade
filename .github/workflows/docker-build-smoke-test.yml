@@ -36,14 +36,14 @@ jobs:
         run: |
           docker run -d \
             --name lemonade-test \
-            -p 8000:8000 \
+            -p 13305:13305 \
             lemonade:test
 
       - name: Wait for server to be ready
         run: |
           echo "Waiting for Lemonade to start..."
           for i in {1..30}; do
-            if curl -sf http://localhost:8000/live > /dev/null; then
+            if curl -sf http://localhost:13305/live > /dev/null; then
               echo "Server is up"
               exit 0
             fi
@@ -55,13 +55,13 @@ jobs:
 
       - name: Load model
         run: |
-          curl -X POST http://localhost:8000/api/v1/load \
+          curl -X POST http://localhost:13305/api/v1/load \
             -H "Content-Type: application/json" \
             -d '{"model_name": "Qwen3-0.6B-GGUF"}'
 
       - name: Chat completion smoke test
         run: |
-          RESPONSE=$(curl -s http://localhost:8000/api/v1/chat/completions \
+          RESPONSE=$(curl -s http://localhost:13305/api/v1/chat/completions \
             -H "Content-Type: application/json" \
             -d '{
               "model": "Qwen3-0.6B-GGUF",

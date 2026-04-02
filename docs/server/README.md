@@ -27,7 +27,7 @@ Once you've installed, we recommend checking out these resources:
 
 ## Integrate Lemonade Server with Your Application
 
-Since Lemonade Server implements the standard OpenAI API specification, you can use any OpenAI-compatible client library by configuring it to use `http://localhost:8000/api/v1` as the base URL. A table containing official and popular OpenAI clients on different languages is shown below.
+Since Lemonade Server implements the standard OpenAI API specification, you can use any OpenAI-compatible client library by configuring it to use `http://localhost:13305/api/v1` as the base URL. A table containing official and popular OpenAI clients on different languages is shown below.
 
 Feel free to pick and choose your preferred language.
 
@@ -43,7 +43,7 @@ from openai import OpenAI
 
 # Initialize the client to use Lemonade Server
 client = OpenAI(
-    base_url="http://localhost:8000/api/v1",
+    base_url="http://localhost:13305/api/v1",
     api_key="lemonade"  # required but unused
 )
 

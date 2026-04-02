@@ -50,7 +50,7 @@ static void push_arg(std::vector<std::string>& args,
     push_reserved(reserved, key, aliases);
 }
 
-// Helper to add a flag-value pair (e.g., --port 8000, -m model.gguf)
+// Helper to add a flag-value pair (e.g., --port 13305, -m model.gguf)
 static void push_arg(std::vector<std::string>& args,
                     std::set<std::string>& reserved,
                     const std::string& key,

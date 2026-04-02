@@ -67,7 +67,7 @@ class ReusableHTTPServer(ThreadingHTTPServer):
 
 
 capture_path = os.environ.get("MOCK_LLAMA_REQUEST_PATH", "")
-port = int(get_arg("--port", "8000"))
+port = int(get_arg("--port", "13305"))
 
 
 class Handler(BaseHTTPRequestHandler):

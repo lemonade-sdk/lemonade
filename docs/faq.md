@@ -133,7 +133,7 @@
    Yes! Lemonade Server exposes a `/stats` endpoint that returns performance metrics from the most recent completion request:
 
    ```bash
-   curl http://localhost:8000/api/v1/stats
+   curl http://localhost:13305/api/v1/stats
    ```
 
    Or, use `lemonade config set log_level=debug` to enable debug logging, or `lemonade logs` to view logs.
