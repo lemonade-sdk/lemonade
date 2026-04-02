@@ -472,25 +472,30 @@ lemonade launch AGENT [--model MODEL_NAME] [options]
 
 ```bash
 # Launch an agent with default model settings
-lemonade launch claude --model Qwen3-0.6B-GGUF
+lemonade launch claude --model Qwen3.5-0.8B-GGUF
 
 # Launch an agent with custom context size
-lemonade launch claude --model Qwen3-0.6B-GGUF --ctx-size 8192
+lemonade launch claude --model Qwen3.5-0.8B-GGUF --ctx-size 32768
 
 # Launch an agent with a specific llama.cpp backend
-lemonade launch codex --model Qwen3-0.6B-GGUF --llamacpp vulkan
+lemonade launch codex --model Qwen3.5-0.8B-GGUF --llamacpp vulkan
 
 # Launch codex using provider from your Codex config.toml (default provider: lemonade)
-lemonade launch codex --model Qwen3-0.6B-GGUF -p
+lemonade launch codex --model Qwen3.5-0.8B-GGUF -p
 
 # Launch codex using a custom provider name from your Codex config.toml
-lemonade launch codex --model Qwen3-0.6B-GGUF --provider my-provider
+lemonade launch codex --model Qwen3.5-0.8B-GGUF --provider my-provider
 
 # Launch an agent with custom llama.cpp arguments
-lemonade launch claude --model Qwen3-0.6B-GGUF --ctx-size 4096 --llamacpp-args "--flash-attn on --no-mmap"
+lemonade launch claude --model Qwen3.5-0.8B-GGUF --ctx-size 32768 --llamacpp-args "--flash-attn on --no-mmap"
 
 # Pass additional arguments directly to the agent
-lemonade launch claude --model Qwen3-0.6B-GGUF --agent-args "--approval-mode never"
+lemonade launch claude --model Qwen3.5-0.8B-GGUF --agent-args "--approval-mode never"
+
+# Resume from previous session
+lemonade launch codex --model Qwen3.5-0.8B-GGUF --agent-args "resume SESSION_ID"
+
+lemonade launch claude --model Qwen3.5-0.8B-GGUF --agent-args "--resume SESSION_ID"
 
 # Launch and allow optional prompt-driven recipe import using prefilled remote recipe flags
 lemonade launch claude --directory coding-agents --recipe-file Qwen3.5-35B-A3B-NoThinking.json
