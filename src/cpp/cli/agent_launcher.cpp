@@ -151,7 +151,6 @@ void configure_codex_agent(const std::string& base_url,
         {"LEMONADE_API_KEY", resolved_api_key}
     };
     config.extra_args = {
-        "--oss",
         "-m",
         model,
         "--config",
