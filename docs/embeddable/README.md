@@ -12,7 +12,14 @@ Use Embeddable Lemonade instead of a global Lemonade Service when you want a coh
 
 ## What's in the release artifact?
 
-Embeddable Lemonade is an zip/tarball artifact shipped in Lemonade releases. It has the following contents:
+Embeddable Lemonade is an zip/tarball artifact shipped in Lemonade releases.
+
+- Windows: `lemonade-embeddable-10.1.0-windows-x64.zip`
+- Ubuntu: `lemonade-embeddable-10.1.0-ubuntu-x64.tar.gz`
+
+> Note: see TODO for instructions for building your own embeddable Lemonade from source, including for other Linux distros.
+
+Each arcive has the following contents:
 
 - `lemond.exe` / `lemond` executable: your own private Lemoande instance.
 - `lemonade.exe` / `lemonade` CLI: useful for configuring and testing `lemond` before you ship. Feel free to exclude this from your shipped app.
@@ -33,34 +40,50 @@ Many of the customization options rely of `lemond`'s `config.json` file, a persi
 
 `config.json` is automatically generated based on the values in `resources/defaults.json` the first time `lemond` starts. The positional arg `lemond DIR` determines where `config.json` and other runtime files (e.g., backend binaries) will be located.
 
-In these examples, we start `lemond ./` to place these files in the same directory as `lemond` itself, but you can choose any path within your application's layout. Next, we use the `lemonade` CLI's `config set` command to programmatically customize the contents of `config.json` (you can also manually edit `config.json` if you prefer). You can also use `lemonade recipes --install` to pre-download backends to be bundled in your app.
+In the examples in this guide, we start `lemond ./` to place these files in the same directory as `lemond` itself. Then:
 
-Then, we give examples of how you can exit `server_models.json` and `backend_versions.json` to fully customize the experience for your users.
-
-Next, you can delete the `lemonade` CLI and `defaults.json` files to minimize the footprint of your app.
+1. We use the `lemonade` CLI's `config set` command to programmatically customize the contents of `config.json` (you can also manually edit `config.json` if you prefer).
+2. Use `lemonade recipes --install` to pre-download backends to be bundled in your app.
+3. Edit `server_models.json` and `backend_versions.json` to fully customize the experience for your users.
+4. You can delete the `lemonade` CLI and `defaults.json` files to minimize the footprint of your app.
 
 Finally, you can place the fully-configured Embeddable Lemonade folder into your app's installer.
 
-### Customized Layout
+### Deployment-Ready Layout
 
-TODO
-
-### Bundling Backends
-
-`lemond` can download backends such as `llama-server` on your behalf, or it can utilize backends that are already part of your app. You can also download backends at packaging time, install time, or runtime.
-
-#### Using Pre-Existing Backends
-
-You can provide `lemond` the path to pre-existing backends with the following settings. This will cause `lemond` to use your custom backend binaries instead of downloading its own.
+Once you've finished customization, you'll have a portable Lemonade folder ready for deployment with a layout like this:
 
 ```
-# Start lemond to update configuration
-lemond ./
+lemond.exe                      # App runs lemond as a subprocess
+lemonade.exe                    # Optional: CLI management for lemond
+config.json                     # Persistant customized settings for lemond
+recipe_options.json             # Per-model customization (e.g., llama args)
+resources/
+    |- server_models.json       # Customized lemond models list
+    |- backend_versions.json    # Customized version numbers for llamacpp, etc.
+bin/                            # Pre-downloaded backends bundled into app
+    |- llamacpp/                # GPU LLMs, embedding, and reranking
+        |- rocm/
+            |- llama-server.exe
+        |- vulkan/
+            |- llama-server.exe
+    |- ryzenai-server/          # NPU LLMs
+    |- flm/                     # NPU LLMs, embedding, and ASR
+    |- sdpp/                    # GPU image generation
+    |- whispercpp/              # NPU and GPU ASR
+models/                         # Pre-downloaded models bundled into app
+    |- hub/                     # Hugging Face standard layout for models
+        |- models--unsloth--Qwen3-0.6B-GGUF/
+    |- gguf/                    # Additional GGUF files
+        |- Qwen3.5-4B-UD-Q4_K_XL.gguf
+```
 
-# Set the llama-server vulkan binary path
-lemonade config set llamacpp.vulkan_bin /path/to/bins
+## Next Steps
 
-# Works for llamacpp.rocm_bin and llamacpp.cpu_bin as well
+Reference detailed guides for each of the following subjects:
 
-# Set the sdcpp binary path
-lemonade config set
+- TODO Deployment: Using `lemond` at runtime.
+- TODO Configuration: server settings, model directories, backend settings, etc.
+- [Backends](./backends.md): deploy backends at packaging time, install time, or runtime.
+- TODO Models: bundling, organization, sharing, per-model settings.
+- TODO API Key: Ensure only your app can access `lemond`.
