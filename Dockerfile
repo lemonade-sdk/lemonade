@@ -61,6 +61,7 @@ WORKDIR /opt/lemonade
 # Copy built executables and resources from builder
 COPY --from=builder /app/build/lemond ./lemond
 COPY --from=builder /app/build/lemonade-server ./lemonade-server
+COPY --from=builder /app/build/lemonade ./lemonade
 COPY --from=builder /app/build/resources ./resources
 
 # Download and install FLM using version from backend_versions.json
@@ -79,11 +80,11 @@ RUN mkdir -p /opt/lemonade/llama/cpu \
     /root/.cache/huggingface
 
 # Expose default port
-EXPOSE 8000
+EXPOSE 13305
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/live || exit 1
+    CMD curl -f http://localhost:13305/live || exit 1
 
 # Default command: start server in headless mode
 CMD ["./lemonade-server", "serve", "--no-tray", "--host", "0.0.0.0"]

@@ -148,8 +148,8 @@ Here are some general guidelines to observe when creating or modifying workflows
     - It would be very bad to fill up a hard drive, since Windows machines misbehave pretty bad when their drives are full.
     - Place your Hugging Face cache inside the `_work` directory so that it will be wiped after each job.
         - Example: `$Env:HF_HOME=".\hf-cache"`
-    - Place your Lemonade cache inside the `_work` directory so that it will be wiped after each job.
-        - Example: `lemonade-eval -d .\ci-cache` or `$Env:LEMONADE_CACHE_DIR=".\ci-cache"`. Use the environment variable, rather than the `-d` flag, wherever possible since it will apply to all lemonade-eval calls within the job step.
+    - Place your Lemonade cache directory inside the `_work` directory so that it will be wiped after each job.
+        - Example: Pass the cache dir as the first argument to `lemond`: `lemond .\ci-cache`
 
 # License
 

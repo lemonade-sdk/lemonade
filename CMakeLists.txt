@@ -182,6 +182,7 @@ if(APPLE)
     FetchContent_Declare(brotli
         GIT_REPOSITORY https://github.com/google/brotli.git
         GIT_TAG v1.1.0
+        GIT_SHALLOW TRUE
         EXCLUDE_FROM_ALL
     )
 endif()
@@ -191,6 +192,7 @@ if(NOT USE_SYSTEM_JSON)
     FetchContent_Declare(json
         GIT_REPOSITORY https://github.com/nlohmann/json.git
         GIT_TAG v${MIN_NLOHMANN_JSON_VERSION}
+        GIT_SHALLOW TRUE
     )
     set(JSON_BuildTests OFF CACHE INTERNAL "")
     set(JSON_Install OFF CACHE INTERNAL "")
@@ -202,6 +204,7 @@ if(NOT USE_SYSTEM_CLI11)
     FetchContent_Declare(CLI11
         GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
         GIT_TAG v${MIN_CLI11_VERSION}
+        GIT_SHALLOW TRUE
     )
     set(CLI11_BUILD_TESTS OFF CACHE INTERNAL "")
     set(CLI11_BUILD_EXAMPLES OFF CACHE INTERNAL "")
@@ -214,6 +217,7 @@ if(NOT USE_SYSTEM_CURL)
     FetchContent_Declare(curl
         GIT_REPOSITORY https://github.com/curl/curl.git
         GIT_TAG curl-${CURL_TAG_VERSION}
+        GIT_SHALLOW TRUE
         EXCLUDE_FROM_ALL
     )
     set(BUILD_STATIC_LIBS ON CACHE INTERNAL "")
@@ -238,6 +242,7 @@ if(NOT USE_SYSTEM_ZSTD)
     FetchContent_Declare(zstd
         GIT_REPOSITORY https://github.com/facebook/zstd.git
         GIT_TAG v${DOWNLOAD_ZSTD_VERSION}
+        GIT_SHALLOW TRUE
         SOURCE_SUBDIR build/cmake
         EXCLUDE_FROM_ALL
     )
@@ -291,6 +296,7 @@ if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
         GIT_TAG v${MIN_HTTPLIB_VERSION}
+        GIT_SHALLOW TRUE
     )
     set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
     set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE INTERNAL "")
@@ -318,6 +324,7 @@ if(NOT USE_SYSTEM_LWS)
     FetchContent_Declare(libwebsockets
         GIT_REPOSITORY https://github.com/warmcat/libwebsockets.git
         GIT_TAG v${MIN_LWS_VERSION}
+        GIT_SHALLOW TRUE
     )
     # Build as static library, disable features we don't need
     set(LWS_WITH_SHARED OFF CACHE BOOL "" FORCE)
@@ -545,12 +552,15 @@ set(SOURCES_CORE
     src/cpp/server/server.cpp
     src/cpp/server/router.cpp
     src/cpp/server/cli_parser.cpp
+    src/cpp/server/config_file.cpp
     src/cpp/server/model_manager.cpp
     src/cpp/server/wrapped_server.cpp
     src/cpp/server/streaming_proxy.cpp
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
     src/cpp/server/runtime_config.cpp
+    src/cpp/server/logging_config.cpp
+    src/cpp/server/log_stream.cpp
     src/cpp/server/utils/http_client.cpp
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
@@ -652,7 +662,7 @@ if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
     target_include_directories(lemonade-server-core PUBLIC ${HTTPLIB_INCLUDE_DIRS})
 endif()
 
-# libwebsockets for WebSocket support
+# libwebsockets for the realtime and log-stream WebSocket server
 if(USE_SYSTEM_LWS)
     target_link_libraries(lemonade-server-core PUBLIC ${LWS_LIBRARIES})
     target_include_directories(lemonade-server-core PUBLIC ${LWS_INCLUDE_DIRS})
@@ -662,7 +672,6 @@ else()
     target_link_libraries(lemonade-server-core PUBLIC websockets)
     target_include_directories(lemonade-server-core PUBLIC ${libwebsockets_BINARY_DIR}/include ${libwebsockets_SOURCE_DIR}/include)
 endif()
-target_compile_definitions(lemonade-server-core PUBLIC LEMON_HAS_WEBSOCKET)
 
 # Enable ARC (Automatic Reference Counting) for macOS Objective-C++ files
 if(APPLE)
@@ -728,6 +737,7 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 #   - static/index.html, static/favicon.ico (web UI)
 #   - server_models.json (model registry)
 #   - backend_versions.json (backend version configuration)
+#   - defaults.json (default config values)
 
 # Collect resource files for dependency tracking
 file(GLOB_RECURSE RESOURCE_FILES
@@ -1282,6 +1292,11 @@ if(UNIX AND NOT APPLE)
         DESTINATION share/lemonade-server/resources
     )
 
+    # Install packaged config defaults for distro-managed overrides.
+    install(FILES ${CMAKE_BINARY_DIR}/resources/defaults.json
+        DESTINATION share/lemonade
+    )
+
     # Install example scripts
     install(DIRECTORY ${CMAKE_SOURCE_DIR}/examples/
         DESTINATION share/lemonade-server/examples
@@ -1289,52 +1304,14 @@ if(UNIX AND NOT APPLE)
         PATTERN "*.sh" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
     )
 
-    function(lemon_extract_source_default filepath pattern out_var)
-        file(READ "${filepath}" lemon_source_default_content)
-        string(REGEX MATCH "${pattern}" lemon_source_default_match "${lemon_source_default_content}")
-        if(NOT lemon_source_default_match)
-            message(FATAL_ERROR "Failed to extract ${out_var} from ${filepath}")
-        endif()
-        set(${out_var} "${CMAKE_MATCH_1}" PARENT_SCOPE)
-    endfunction()
-
-    set(LEMON_CLI_PARSER_HEADER "${CMAKE_SOURCE_DIR}/src/cpp/include/lemon/cli_parser.h")
-    set(LEMON_RECIPE_OPTIONS_CPP "${CMAKE_SOURCE_DIR}/src/cpp/server/recipe_options.cpp")
-
-    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "int port = ([0-9]+);" LEMONADE_DEFAULT_PORT)
-    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "std::string host = \"([^\"]*)\";" LEMONADE_DEFAULT_HOST)
-    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "std::string log_level = \"([^\"]*)\";" LEMONADE_DEFAULT_LOG_LEVEL)
-    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "std::string extra_models_dir = \"([^\"]*)\";" LEMONADE_DEFAULT_EXTRA_MODELS_DIR)
-    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "bool no_broadcast = (true|false);" LEMONADE_DEFAULT_NO_BROADCAST_BOOL)
-    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "long global_timeout = ([0-9]+);" LEMONADE_DEFAULT_GLOBAL_TIMEOUT)
-    lemon_extract_source_default("${LEMON_CLI_PARSER_HEADER}" "int max_loaded_models = ([0-9-]+);" LEMONADE_DEFAULT_MAX_LOADED_MODELS)
-    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"ctx_size\", ([0-9]+)" LEMONADE_DEFAULT_CTX_SIZE)
-    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"llamacpp_args\", \"([^\"]*)\"" LEMONADE_DEFAULT_LLAMACPP_ARGS)
-    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"flm_args\", \"([^\"]*)\"" LEMONADE_DEFAULT_FLM_ARGS)
-    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"steps\", ([0-9]+)" LEMONADE_DEFAULT_STEPS)
-    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"cfg_scale\", ([0-9.]+)" LEMONADE_DEFAULT_CFG_SCALE)
-    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"width\", ([0-9]+)" LEMONADE_DEFAULT_WIDTH)
-    lemon_extract_source_default("${LEMON_RECIPE_OPTIONS_CPP}" "\"height\", ([0-9]+)" LEMONADE_DEFAULT_HEIGHT)
-
-    if(LEMONADE_DEFAULT_NO_BROADCAST_BOOL STREQUAL "true")
-        set(LEMONADE_DEFAULT_NO_BROADCAST 1)
-    else()
-        set(LEMONADE_DEFAULT_NO_BROADCAST 0)
-    endif()
-
-    # Configure systemd service file and config files with current source defaults
+    # Configure systemd service file (uses CMAKE_INSTALL_FULL_* variables)
     configure_file(
         ${CMAKE_SOURCE_DIR}/data/lemonade-server.service.in
         ${CMAKE_BINARY_DIR}/lemonade-server.service
         @ONLY
     )
-    configure_file(
-        ${CMAKE_SOURCE_DIR}/data/lemonade.conf.in
-        ${CMAKE_BINARY_DIR}/lemonade.conf
-        @ONLY
-    )
 
-    # Install systemd service and configuration files
+    # Install systemd service file
     install(FILES ${CMAKE_BINARY_DIR}/lemonade-server.service
         DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system
     )
@@ -1350,11 +1327,8 @@ if(UNIX AND NOT APPLE)
             )
         ")
     endif()
-    install(FILES ${CMAKE_BINARY_DIR}/lemonade.conf
-        DESTINATION /etc/lemonade
-        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE WORLD_READ
-    )
 
+    # Install secrets.conf for LEMONADE_API_KEY (still loaded via EnvironmentFile)
     install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
         DESTINATION /etc/lemonade/conf.d
         RENAME zz-secrets.conf
@@ -1518,29 +1492,51 @@ if(UNIX AND NOT APPLE)
     # ============================================================
     # AppImage Build Target (Linux only)
     # ============================================================
+    option(BUILD_APPIMAGE "Build the AppImage automatically" OFF)
+
     if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
         # Set the build directory and source directory for AppImage
         set(APPIMAGE_BUILD_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/app-appimage-src")
         set(APPIMAGE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/app-appimage")
 
-        add_custom_target(appimage
-            COMMAND ${CMAKE_COMMAND} -E echo "Copying Electron app source to AppImage build directory..."
-            COMMAND ${CMAKE_COMMAND} -E remove_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
-            COMMAND ${CMAKE_COMMAND} -E copy_directory "${ELECTRON_APP_SOURCE_DIR}" "${APPIMAGE_BUILD_SOURCE_DIR}"
-            COMMAND ${CMAKE_COMMAND} -E echo "Setting version to ${PROJECT_VERSION}..."
-            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} version ${PROJECT_VERSION} --no-git-tag-version --allow-same-version
-            COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for AppImage build..."
-            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci
-            COMMAND ${CMAKE_COMMAND} -E echo "Building AppImage with electron-builder..."
-            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} run build:renderer:prod
-            COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_EXECUTABLE} exec -- electron-builder --linux AppImage --config.directories.output=${APPIMAGE_BUILD_DIR}
-            COMMAND ${CMAKE_COMMAND} -E echo "AppImage build complete. Output in ${APPIMAGE_BUILD_DIR}"
-            COMMENT "Building Electron app as AppImage"
-            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-        )
-
-        message(STATUS "AppImage build target available: cmake --build . --target appimage")
+        if(BUILD_APPIMAGE)
+            add_custom_target(appimage ALL
+                COMMAND ${CMAKE_COMMAND} -E echo "Copying Electron app source to AppImage build directory..."
+                COMMAND ${CMAKE_COMMAND} -E remove_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E copy_directory "${ELECTRON_APP_SOURCE_DIR}" "${APPIMAGE_BUILD_SOURCE_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E echo "Setting version to ${PROJECT_VERSION}..."
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} version ${PROJECT_VERSION} --no-git-tag-version --allow-same-version
+                COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for AppImage build..."
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci
+                COMMAND ${CMAKE_COMMAND} -E echo "Building AppImage with electron-builder..."
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} run build:renderer:prod
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_EXECUTABLE} exec -- electron-builder --linux AppImage --config.directories.output=${APPIMAGE_BUILD_DIR}
+                COMMAND ${CMAKE_COMMAND} -E echo "AppImage build complete. Output in ${APPIMAGE_BUILD_DIR}"
+                COMMENT "Building Electron app as AppImage"
+                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+            )
+            message(STATUS "AppImage will be built automatically (disable with -DBUILD_APPIMAGE=OFF)")
+        else()
+            add_custom_target(appimage
+                COMMAND ${CMAKE_COMMAND} -E echo "Copying Electron app source to AppImage build directory..."
+                COMMAND ${CMAKE_COMMAND} -E remove_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${APPIMAGE_BUILD_SOURCE_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E copy_directory "${ELECTRON_APP_SOURCE_DIR}" "${APPIMAGE_BUILD_SOURCE_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E echo "Setting version to ${PROJECT_VERSION}..."
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} version ${PROJECT_VERSION} --no-git-tag-version --allow-same-version
+                COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for AppImage build..."
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} ci
+                COMMAND ${CMAKE_COMMAND} -E echo "Building AppImage with electron-builder..."
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_COMMAND} run build:renderer:prod
+                COMMAND ${CMAKE_COMMAND} -E chdir "${APPIMAGE_BUILD_SOURCE_DIR}" ${NPM_EXECUTABLE} exec -- electron-builder --linux AppImage --config.directories.output=${APPIMAGE_BUILD_DIR}
+                COMMAND ${CMAKE_COMMAND} -E echo "AppImage build complete. Output in ${APPIMAGE_BUILD_DIR}"
+                COMMENT "Building Electron app as AppImage"
+                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+            )
+            message(STATUS "AppImage automatic build disabled (enable with -DBUILD_APPIMAGE=ON)")
+            message(STATUS "AppImage can be built manually with: cmake --build . --target appimage")
+        endif()
     else()
         message(STATUS "Node.js or npm not found - AppImage build target disabled")
     endif()

@@ -47,7 +47,7 @@ This will add a CodeGPT tab to your VS Code Activity Bar.
     <table>
       <tr><th>Field</th><th>Value</th></tr>
       <tr><td><b>API Key</b></td><td><code>-</code></td></tr>
-      <tr><td><b>Custom Link</b></td><td><code>http://localhost:8000/api/v1/api/v1</code></td></tr>
+      <tr><td><b>Custom Link</b></td><td><code>http://localhost:13305/api/v1/api/v1</code></td></tr>
     </table>
   </li>
 </ol>

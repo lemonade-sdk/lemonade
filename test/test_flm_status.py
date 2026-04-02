@@ -329,8 +329,12 @@ class FlmStatusTests(unittest.TestCase):
                 json.dump(cache_data, f, indent=2)
 
             env = os.environ.copy()
-            env["LEMONADE_CACHE_DIR"] = temp_cache_dir
             env.pop("LEMONADE_CI_MODE", None)
+
+            # Write config.json with debug log level to the temp dir
+            config_file = os.path.join(temp_cache_dir, "config.json")
+            with open(config_file, "w") as cf:
+                json.dump({"log_level": "debug"}, cf)
 
             if flm_dir is not None:
                 if flm_dir == "":
@@ -345,10 +349,9 @@ class FlmStatusTests(unittest.TestCase):
 
             cmd = [
                 self.router_binary,
+                temp_cache_dir,
                 "--port",
                 str(PORT),
-                "--log-level",
-                "debug",
             ]
             # Use a new process group so we can kill the entire group on cleanup
             kwargs = {}

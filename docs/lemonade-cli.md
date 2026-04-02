@@ -63,7 +63,7 @@ The following options are available for all commands:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--host HOST` | Server host address | `127.0.0.1` |
-| `--port PORT` | Server port number | `8000` |
+| `--port PORT` | Server port number | `13305` |
 | `--api-key KEY` | API key for authentication | None |
 
 These options can also be set via environment variables:
@@ -76,7 +76,7 @@ These options can also be set via environment variables:
 On Linux/macOS:
 ```bash
 export LEMONADE_HOST=192.168.1.100
-export LEMONADE_PORT=8000
+export LEMONADE_PORT=13305
 export LEMONADE_API_KEY=your-api-key-here
 lemonade list
 ```
@@ -84,7 +84,7 @@ lemonade list
 On Windows (Command Prompt):
 ```cmd
 set LEMONADE_HOST=192.168.1.100
-set LEMONADE_PORT=8000
+set LEMONADE_PORT=13305
 set LEMONADE_API_KEY=your-api-key-here
 lemonade list
 ```
@@ -92,7 +92,7 @@ lemonade list
 On Windows (PowerShell):
 ```powershell
 $env:LEMONADE_HOST="192.168.1.100"
-$env:LEMONADE_PORT="8000"
+$env:LEMONADE_PORT="13305"
 $env:LEMONADE_API_KEY="your-api-key-here"
 lemonade list
 ```
@@ -173,15 +173,29 @@ lemonade pull user.MyCodingModel \
 
 ## Options for import
 
-The `import` command imports a model from a JSON configuration file. This is useful for importing models with complex configurations that would be cumbersome to specify via command-line options:
+The `import` command supports two flows:
+- Import from a local JSON file.
+- Browse remote recipes from `lemonade-sdk/recipes` and import one interactively.
+
+This is useful for importing models with complex configurations that would be cumbersome to specify via command-line options:
 
 ```bash
-lemonade import JSON_FILE
+lemonade import [JSON_FILE] [options]
 ```
 
 | Option | Description | Required |
 |--------|-------------|----------|
-| `JSON_FILE` | Path to a JSON configuration file | Yes |
+| `JSON_FILE` | Path to a JSON configuration file | No |
+| `--directory DIR` | Remote recipes directory to query (e.g., `coding-agents`) | No |
+| `--recipe-file FILE` | Specific recipe JSON filename from the selected directory | No |
+| `--skip-prompt` | Run non-interactively (requires `--directory` and `--recipe-file` for remote import) | No |
+| `--yes` | Alias for `--skip-prompt` | No |
+
+**Remote import notes:**
+- Running `lemonade import` without `JSON_FILE` starts interactive recipe browsing from GitHub.
+- You can skip recipe import during prompts and continue.
+- In non-interactive mode, you must provide both `--directory` and `--recipe-file`.
+- `--recipe-file` is only used for remote recipe import (with `--directory`).
 
 **JSON File Format:**
 
@@ -226,6 +240,12 @@ The JSON file must contain the following fields:
 ```bash
 # Import a model from a JSON file
 lemonade import model.json
+
+# Interactively browse and import a remote recipe
+lemonade import
+
+# Non-interactive remote import
+lemonade import --directory coding-agents --recipe-file GLM-4.7-Flash-GGUF-NoThinking.json --yes
 ```
 
 `model-with-multiple-checkpoints.json`:
@@ -298,6 +318,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--sdcpp BACKEND` | SD.cpp backend to use (`cpu` for CPU, `rocm` for AMD GPU) | Auto-detected |
+| `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
 | `--steps N` | Number of inference steps for image generation | `20` |
 | `--cfg-scale SCALE` | Classifier-free guidance scale for image generation | `7.0` |
 | `--width PX` | Image width in pixels | `512` |
@@ -350,7 +371,7 @@ lemonade run Qwen3-0.6B-GGUF
 lemonade run Qwen3-0.6B-GGUF --ctx-size 8192
 
 # Load a model on a different host and open the web app
-lemonade run Qwen3-0.6B-GGUF --host 192.168.1.100 --port 8000
+lemonade run Qwen3-0.6B-GGUF --host 192.168.1.100 --port 13305
 ```
 
 ## Options for export
@@ -418,22 +439,28 @@ lemonade recipes --install flm:npu
 
 ## Options for launch
 
-The `launch` command launches an agent with a model loaded. It requires an agent name and a model name, and supports recipe-specific options:
+The `launch` command launches an agent and triggers model loading asynchronously. If no model is provided, launch prompts for recipe/model selection before starting the agent:
 
 ```bash
-lemonade launch AGENT --model MODEL_NAME [options]
+lemonade launch AGENT [--model MODEL_NAME] [options]
 ```
 
 | Option/Argument | Description | Required |
 |-----------------|-------------|----------|
 | `AGENT` | Agent name to launch. Supported agents: `claude`, `codex` | Yes |
-| `--model MODEL_NAME` | Model name to load before launching the agent | Yes |
+| `--model MODEL_NAME` | Model name to launch with. If omitted, you will be prompted to select one. | No |
+| `--directory DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
+| `--recipe-file FILE` | Remote recipe JSON filename used only if you choose recipe import at prompt | No |
 | `--ctx-size SIZE` | Context size for the model | `4096` |
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server (must not conflict with managed args) | `""` |
 
 **Notes:**
-- The model is loaded before launching the agent
+- The model load request is asynchronous: launch starts the agent immediately while loading continues in the background.
+- If a model is already provided, launch skips recipe import prompts.
+- `--directory` and `--recipe-file` are only used for remote recipe import at prompt time.
+- For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first, then launch with the imported model id.
+- `--api-key` is propagated to the launched agent process.
 - Supported agents: `claude`, `codex`
 
 **Examples:**
@@ -450,6 +477,9 @@ lemonade launch codex --model Qwen3-0.6B-GGUF --llamacpp vulkan
 
 # Launch an agent with custom llama.cpp arguments
 lemonade launch claude --model Qwen3-0.6B-GGUF --ctx-size 4096 --llamacpp-args "--flash-attn on --no-mmap"
+
+# Launch and allow optional prompt-driven recipe import using prefilled remote recipe flags
+lemonade launch claude --directory coding-agents --recipe-file Qwen3.5-35B-A3B-NoThinking.json
 ```
 
 ## Options for scan
@@ -465,7 +495,7 @@ lemonade scan [options]
 | `--duration SECONDS` | Scan duration in seconds | `30` |
 
 **Notes:**
-- The scan listens on UDP port 8000 for beacon broadcasts
+- The scan listens on UDP port 13305 for beacon broadcasts
 - Each beacon must contain `service`, `hostname`, and `url` fields in JSON format
 - Duplicate beacons (same URL) are automatically filtered out
 - The scan runs for the specified duration, collecting all beacons during that time
