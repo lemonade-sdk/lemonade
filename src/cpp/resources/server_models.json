@@ -1241,6 +1241,12 @@
             "height": 1024
         }
     },
+    "Llama-3.2-3B-Fluxed-GGUF": {
+        "checkpoint": "mradermacher/Llama-3.2-3B-Fluxed-uncensored-GGUF",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 1.9
+    },
     "Lemonade Ultra": {
         "checkpoint": "",
         "recipe": "experience",
