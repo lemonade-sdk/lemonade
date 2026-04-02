@@ -1242,7 +1242,7 @@
         }
     },
     "Llama-3.2-3B-Fluxed-GGUF": {
-        "checkpoint": "mradermacher/Llama-3.2-3B-Fluxed-uncensored-GGUF",
+        "checkpoint": "mradermacher/Llama-3.2-3B-Fluxed-uncensored-GGUF:Q4_K_M",
         "recipe": "llamacpp",
         "suggested": true,
         "size": 1.9
