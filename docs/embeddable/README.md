@@ -58,9 +58,11 @@ lemond.exe                      # App runs lemond as a subprocess
 lemonade.exe                    # Optional: CLI management for lemond
 config.json                     # Persistant customized settings for lemond
 recipe_options.json             # Per-model customization (e.g., llama args)
+
 resources/
     |- server_models.json       # Customized lemond models list
     |- backend_versions.json    # Customized version numbers for llamacpp, etc.
+
 bin/                            # Pre-downloaded backends bundled into app
     |- llamacpp/                # GPU LLMs, embedding, and reranking
         |- rocm/
@@ -71,6 +73,7 @@ bin/                            # Pre-downloaded backends bundled into app
     |- flm/                     # NPU LLMs, embedding, and ASR
     |- sdpp/                    # GPU image generation
     |- whispercpp/              # NPU and GPU ASR
+
 models/                         # Pre-downloaded models bundled into app
     |- hub/                     # Hugging Face standard layout for models
         |- models--unsloth--Qwen3-0.6B-GGUF/
