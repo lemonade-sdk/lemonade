@@ -62,13 +62,9 @@ namespace lemon::backends {
     }
 #endif
 
-    static void ensure_directory(const std::string& dir) {
-        fs::create_directories(dir);
-    }
-
     bool BackendUtils::extract_zip(const std::string& zip_path, const std::string& dest_dir, const std::string& backend_name) {
         std::string command;
-        ensure_directory(dest_dir);
+        fs::create_directories(dest_dir);
 #ifdef _WIN32
         if (is_native_tar_available()) {
             LOG(DEBUG, backend_name) << "Extracting ZIP with native tar to " << dest_dir << std::endl;
@@ -101,7 +97,7 @@ namespace lemon::backends {
 
     bool BackendUtils::extract_tarball(const std::string& tarball_path, const std::string& dest_dir, const std::string& backend_name) {
         std::string command;
-        ensure_directory(dest_dir);
+        fs::create_directories(dest_dir);
         LOG(DEBUG, backend_name) << "Extracting tarball to " << dest_dir << std::endl;
 #ifdef _WIN32
         if (!is_native_tar_available()) {

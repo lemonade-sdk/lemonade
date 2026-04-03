@@ -882,15 +882,51 @@ json SystemInfo::build_recipes_info(const json& devices) {
             backend["message"] = message;
             backend["action"] = "";
         } else if (!available) {
-            backend["state"] = "installable";
-            backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
+            // FLM on Linux needs richer state to guide users through manual setup
+            // (installing .deb, xrt drivers, etc.)
+            if (def.recipe == "flm") {
+                bool is_not_installed = install_error.find("not installed") != std::string::npos
+                                     || install_error.find("not found") != std::string::npos;
+                bool is_version_mismatch = install_error.find("requires") != std::string::npos;
 
-            // Special action for ROCm backend on llamacpp/sd-cpp if CWSR fix is missing
-            if ((def.recipe == "llamacpp" || def.recipe == "sd-cpp") && def.backend == "rocm"
-                && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
-                backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
-            } else {
+                if (is_not_installed) {
+                    backend["state"] = "installable";
+                } else if (is_version_mismatch) {
+                    backend["state"] = "update_required";
+                } else {
+                    backend["state"] = "action_required";
+                }
+                backend["message"] = install_error;
+
+                if (!is_not_installed) {
+                    std::string installed_version = get_recipe_version(def.recipe, def.backend);
+                    if (!installed_version.empty() && installed_version != "unknown") {
+                        backend["version"] = installed_version;
+                    }
+                }
+
+#ifdef __linux__
+                backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html?mode=troubleshoot";
+#elif defined(_WIN32)
+                if (!is_not_installed && !is_version_mismatch) {
+                    backend["action"] = "Visit https://lemonade-server.ai/driver_install.html";
+                } else {
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+                }
+#else
                 backend["action"] = get_install_command(def.recipe, def.backend);
+#endif
+            } else {
+                backend["state"] = "installable";
+                backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
+
+                // Special action for ROCm backend on llamacpp/sd-cpp if CWSR fix is missing
+                if ((def.recipe == "llamacpp" || def.recipe == "sd-cpp") && def.backend == "rocm"
+                    && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
+                    backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
+                } else {
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+                }
             }
         } else {
             std::string installed_version = get_recipe_version(def.recipe, def.backend);

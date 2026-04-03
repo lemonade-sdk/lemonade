@@ -1452,22 +1452,27 @@ void ModelManager::register_user_model(const std::string& model_name,
     add_model_to_cache("user." + clean_name);
 }
 
-// Helper function to get FLM installed models by calling 'flm list --filter installed --quiet'
-// Uses the improved FLM CLI methodology with --filter and --quiet flags
-std::vector<std::string> ModelManager::get_flm_installed_models() {
-    std::vector<std::string> installed_models;
-
-    // Find the flm executable (install dir on Windows, system PATH on Linux)
-    std::string flm_path;
+// Find the FLM executable: install dir on Windows, system PATH on Linux.
+// Returns empty string if not found.
+static std::string find_flm_binary() {
     try {
-        flm_path = backends::BackendUtils::get_backend_binary_path(
+        return backends::BackendUtils::get_backend_binary_path(
             backends::FastFlowLMServer::SPEC, "npu");
     } catch (...) {
 #ifndef _WIN32
-        flm_path = utils::find_flm_executable();
+        return utils::find_flm_executable();
+#else
+        return "";
 #endif
-        if (flm_path.empty()) return installed_models;
     }
+}
+
+// Helper function to get FLM installed models by calling 'flm list --filter installed --quiet'
+std::vector<std::string> ModelManager::get_flm_installed_models() {
+    std::vector<std::string> installed_models;
+
+    std::string flm_path = find_flm_binary();
+    if (flm_path.empty()) return installed_models;
 
     // Run 'flm list --filter installed --quiet --json' to get only installed models
     std::string output;
@@ -1539,17 +1544,8 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
 std::vector<ModelInfo> ModelManager::get_flm_available_models() {
     std::vector<ModelInfo> flm_models;
 
-    // Find the flm executable (install dir on Windows, system PATH on Linux)
-    std::string flm_path;
-    try {
-        flm_path = backends::BackendUtils::get_backend_binary_path(
-            backends::FastFlowLMServer::SPEC, "npu");
-    } catch (...) {
-#ifndef _WIN32
-        flm_path = utils::find_flm_executable();
-#endif
-        if (flm_path.empty()) return flm_models;
-    }
+    std::string flm_path = find_flm_binary();
+    if (flm_path.empty()) return flm_models;
 
     LOG(INFO, "ModelManager") << "FLM binary found at: " << flm_path << std::endl;
 
@@ -2284,16 +2280,7 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
         throw std::runtime_error(status.error_string());
     }
 
-    // Find flm executable (install dir on Windows, system PATH on Linux)
-    std::string flm_path;
-    try {
-        flm_path = backends::BackendUtils::get_backend_binary_path(
-            backends::FastFlowLMServer::SPEC, "npu");
-    } catch (...) {
-#ifndef _WIN32
-        flm_path = utils::find_flm_executable();
-#endif
-    }
+    std::string flm_path = find_flm_binary();
     if (flm_path.empty()) {
         throw std::runtime_error("FLM executable not found");
     }
