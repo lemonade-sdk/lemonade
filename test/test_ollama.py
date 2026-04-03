@@ -472,10 +472,10 @@ class OllamaTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 200)
 
-        # 1x1 red PNG (smallest valid PNG)
+        # 10x10 red PNG to avoid backend assertions on tiny images.
         png_b64 = (
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4"
-            "2mP8/58BAwAI/AL+hc2rNAAAAABJRU5ErkJggg=="
+            "iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFElEQVR42mP4"
+            "z8DwnxjMMKqQvgoBksPHOXvuG4oAAAAASUVORK5CYII="
         )
 
         response = requests.post(
