@@ -20,6 +20,9 @@ struct AgentLaunchOptions {
     std::string codex_model_provider = "lemonade";
 };
 
+// Returns true if the agent requires file-based config sync before launch.
+bool agent_needs_config_sync(const std::string& agent);
+
 // Build launcher configuration for a supported agent.
 // Returns true on success, false if agent is unknown.
 bool build_agent_config(const std::string& agent,

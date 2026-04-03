@@ -14,6 +14,8 @@ set(COMMON_SOURCES
     ../server/utils/json_utils.cpp
     ../server/utils/http_client.cpp
     agent_launcher.cpp
+    agent_config_file.cpp
+    opencode_profile.cpp
 )
 
 # ============================================================
