@@ -87,9 +87,14 @@ bool sync_agent_config_file(const AgentConfigProfile& profile,
 
     fs::rename(tmp_path, output_path, ec);
     if (ec) {
-        fs::remove(output_path, ec);
+        // Cross-device or filesystem edge cases can make rename fail.
+        // Fall back to copy-overwrite without deleting the existing file first.
         ec.clear();
-        fs::rename(tmp_path, output_path, ec);
+        fs::copy_file(tmp_path, output_path, fs::copy_options::overwrite_existing, ec);
+        if (!ec) {
+            std::error_code remove_tmp_ec;
+            fs::remove(tmp_path, remove_tmp_ec);
+        }
     }
 
     if (ec) {
