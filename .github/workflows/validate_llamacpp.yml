@@ -86,14 +86,14 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          Write-Host "Building lemond and lemonade-server..." -ForegroundColor Cyan
+          Write-Host "Building Lemonade server binaries..." -ForegroundColor Cyan
           if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
           cmake --preset windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build build --config Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path "build\Release\lemonade-server.exe")) {
-              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
+          if (-not (Test-Path "build\Release\lemond.exe")) {
+              Write-Host "ERROR: lemond.exe not found!" -ForegroundColor Red
               exit 1
           }
           Write-Host "Build successful!" -ForegroundColor Green
@@ -131,14 +131,55 @@ jobs:
       - name: Verify binaries
         shell: PowerShell
         run: |
-          $serverExe = "build\Release\lemonade-server.exe"
-          if (-not (Test-Path $serverExe)) {
-              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
+          $lemondExe = "build\Release\lemond.exe"
+          if (-not (Test-Path $lemondExe)) {
+              Write-Host "ERROR: lemond.exe not found!" -ForegroundColor Red
               Get-ChildItem -Recurse build | Select-Object FullName
               exit 1
           }
-          & $serverExe --version
+          & $lemondExe --version
           Write-Host "Binaries verified!" -ForegroundColor Green
+
+      - name: Start lemond
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $lemondExe = (Resolve-Path "build\Release\lemond.exe").Path
+          $logsDir = "server-logs-vulkan"
+          $cacheDir = Join-Path $PWD "ci-cache-vulkan"
+
+          New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+
+          $stdoutLog = Join-Path $PWD "$logsDir\lemond.stdout.log"
+          $stderrLog = Join-Path $PWD "$logsDir\lemond.stderr.log"
+
+          $proc = Start-Process `
+            -FilePath $lemondExe `
+            -ArgumentList @($cacheDir, "--port", "13305", "--host", "127.0.0.1") `
+            -RedirectStandardOutput $stdoutLog `
+            -RedirectStandardError $stderrLog `
+            -PassThru
+
+          Write-Host "Started lemond PID $($proc.Id)" -ForegroundColor Cyan
+
+          $deadline = (Get-Date).AddMinutes(2)
+          do {
+            Start-Sleep -Seconds 2
+            try {
+              $response = Invoke-RestMethod -Uri "http://127.0.0.1:13305/api/v1/health" -TimeoutSec 10
+              if ($response.status -eq "ok") {
+                Write-Host "lemond is ready on port 13305" -ForegroundColor Green
+                exit 0
+              }
+            } catch {
+            }
+          } while ((Get-Date) -lt $deadline)
+
+          Write-Host "ERROR: lemond failed to become ready" -ForegroundColor Red
+          if (Test-Path $stdoutLog) { Get-Content $stdoutLog }
+          if (Test-Path $stderrLog) { Get-Content $stderrLog }
+          exit 1
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -152,15 +193,24 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $venvPython = ".\.venv\Scripts\python.exe"
-          $serverExe = (Resolve-Path "build\Release\lemonade-server.exe").Path
 
           & $venvPython test/validate_llamacpp.py `
             --backend vulkan `
-            --server-binary $serverExe `
             --output llamacpp_validation_vulkan.json `
             --logs-dir server-logs-vulkan
 
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Stop lemond
+        if: always()
+        shell: PowerShell
+        run: |
+          try {
+            Invoke-WebRequest -Uri "http://127.0.0.1:13305/internal/shutdown" -Method POST -TimeoutSec 10 | Out-Null
+            Start-Sleep -Seconds 2
+          } catch {
+            Write-Host "lemond shutdown endpoint was not reachable; relying on cleanup step." -ForegroundColor Yellow
+          }
 
       - name: Upload results
         if: always()
@@ -207,14 +257,55 @@ jobs:
       - name: Verify binaries
         shell: PowerShell
         run: |
-          $serverExe = "build\Release\lemonade-server.exe"
-          if (-not (Test-Path $serverExe)) {
-              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
+          $lemondExe = "build\Release\lemond.exe"
+          if (-not (Test-Path $lemondExe)) {
+              Write-Host "ERROR: lemond.exe not found!" -ForegroundColor Red
               Get-ChildItem -Recurse build | Select-Object FullName
               exit 1
           }
-          & $serverExe --version
+          & $lemondExe --version
           Write-Host "Binaries verified!" -ForegroundColor Green
+
+      - name: Start lemond
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $lemondExe = (Resolve-Path "build\Release\lemond.exe").Path
+          $logsDir = "server-logs-rocm"
+          $cacheDir = Join-Path $PWD "ci-cache-rocm"
+
+          New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+
+          $stdoutLog = Join-Path $PWD "$logsDir\lemond.stdout.log"
+          $stderrLog = Join-Path $PWD "$logsDir\lemond.stderr.log"
+
+          $proc = Start-Process `
+            -FilePath $lemondExe `
+            -ArgumentList @($cacheDir, "--port", "13305", "--host", "127.0.0.1") `
+            -RedirectStandardOutput $stdoutLog `
+            -RedirectStandardError $stderrLog `
+            -PassThru
+
+          Write-Host "Started lemond PID $($proc.Id)" -ForegroundColor Cyan
+
+          $deadline = (Get-Date).AddMinutes(2)
+          do {
+            Start-Sleep -Seconds 2
+            try {
+              $response = Invoke-RestMethod -Uri "http://127.0.0.1:13305/api/v1/health" -TimeoutSec 10
+              if ($response.status -eq "ok") {
+                Write-Host "lemond is ready on port 13305" -ForegroundColor Green
+                exit 0
+              }
+            } catch {
+            }
+          } while ((Get-Date) -lt $deadline)
+
+          Write-Host "ERROR: lemond failed to become ready" -ForegroundColor Red
+          if (Test-Path $stdoutLog) { Get-Content $stdoutLog }
+          if (Test-Path $stderrLog) { Get-Content $stderrLog }
+          exit 1
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -228,15 +319,24 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $venvPython = ".\.venv\Scripts\python.exe"
-          $serverExe = (Resolve-Path "build\Release\lemonade-server.exe").Path
 
           & $venvPython test/validate_llamacpp.py `
             --backend rocm `
-            --server-binary $serverExe `
             --output llamacpp_validation_rocm.json `
             --logs-dir server-logs-rocm
 
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Stop lemond
+        if: always()
+        shell: PowerShell
+        run: |
+          try {
+            Invoke-WebRequest -Uri "http://127.0.0.1:13305/internal/shutdown" -Method POST -TimeoutSec 10 | Out-Null
+            Start-Sleep -Seconds 2
+          } catch {
+            Write-Host "lemond shutdown endpoint was not reachable; relying on cleanup step." -ForegroundColor Yellow
+          }
 
       - name: Upload results
         if: always()
