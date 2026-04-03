@@ -79,7 +79,19 @@ bool sync_agent_config_file(const AgentConfigProfile& profile,
         }
 
         out << config.dump(2) << "\n";
+        out.flush();
         if (!out.good()) {
+            out.close();
+            std::error_code remove_ec;
+            fs::remove(tmp_path, remove_ec);
+            error_out = "Write failed for " + tmp_path.string();
+            return false;
+        }
+
+        out.close();
+        if (!out) {
+            std::error_code remove_ec;
+            fs::remove(tmp_path, remove_ec);
             error_out = "Write failed for " + tmp_path.string();
             return false;
         }
