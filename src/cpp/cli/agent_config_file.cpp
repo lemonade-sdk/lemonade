@@ -57,17 +57,6 @@ bool sync_agent_config_file(const AgentConfigProfile& profile,
         profile.build_provider_block(provider_name, base_url, api_key, models);
 
     auto& providers = config[profile.provider_key];
-    if (providers.contains(provider_name) && providers[provider_name].is_object()) {
-        auto& existing_provider = providers[provider_name];
-        if (existing_provider.contains("models") && existing_provider["models"].is_object() &&
-            provider_block.contains("models") && provider_block["models"].is_object()) {
-            nlohmann::json merged_models = existing_provider["models"];
-            for (auto& [model_id, model_json] : provider_block["models"].items()) {
-                merged_models[model_id] = model_json;
-            }
-            provider_block["models"] = std::move(merged_models);
-        }
-    }
     providers[provider_name] = std::move(provider_block);
 
     const fs::path output_path(config_path);

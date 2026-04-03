@@ -1128,8 +1128,8 @@ sys.exit(0)
                 40960,
             )
 
-    def test_119_launch_opencode_preserves_existing_config(self):
-        """Launch opencode should merge into existing config without deleting user data."""
+    def test_119_launch_opencode_refreshes_model_entries(self):
+        """Launch opencode should refresh Lemonade models and remove stale entries."""
         if IS_WINDOWS:
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
 
@@ -1176,13 +1176,7 @@ sys.exit(0)
 
             self.assertIn("anthropic", cfg["provider"])
             self.assertIn("claude-3.5-sonnet", cfg["provider"]["anthropic"]["models"])
-            self.assertIn("User-Custom-Model", cfg["provider"]["Lemonade"]["models"])
-            self.assertEqual(
-                cfg["provider"]["Lemonade"]["models"]["User-Custom-Model"][
-                    "contextWindow"
-                ],
-                8192,
-            )
+            self.assertNotIn("User-Custom-Model", cfg["provider"]["Lemonade"]["models"])
             self.assertIn(ENDPOINT_TEST_MODEL, cfg["provider"]["Lemonade"]["models"])
             self.assertNotEqual(
                 cfg["provider"]["Lemonade"]["options"]["baseURL"],
