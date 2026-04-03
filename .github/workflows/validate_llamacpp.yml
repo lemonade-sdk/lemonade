@@ -108,12 +108,16 @@ jobs:
           retention-days: 7
 
   # ========================================================================
-  # Validate vulkan backend on self-hosted runner
+  # Validate backends on self-hosted runner
   # ========================================================================
-  validate-vulkan:
-    name: Validate vulkan
+  validate:
+    name: Validate ${{ matrix.backend }}
     needs: [get-latest-releases, build]
     runs-on: [self-hosted, Windows, 128gb]
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [vulkan, rocm]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -145,8 +149,9 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $lemondExe = (Resolve-Path "build\Release\lemond.exe").Path
-          $logsDir = "server-logs-vulkan"
-          $cacheDir = Join-Path $PWD "ci-cache-vulkan"
+          $backend = "${{ matrix.backend }}"
+          $logsDir = "server-logs-$backend"
+          $cacheDir = Join-Path $PWD "ci-cache-$backend"
 
           New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
           New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
@@ -193,11 +198,12 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $venvPython = ".\.venv\Scripts\python.exe"
+          $backend = "${{ matrix.backend }}"
 
           & $venvPython test/validate_llamacpp.py `
-            --backend vulkan `
-            --output llamacpp_validation_vulkan.json `
-            --logs-dir server-logs-vulkan
+            --backend $backend `
+            --output "llamacpp_validation_$backend.json" `
+            --logs-dir "server-logs-$backend"
 
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -216,142 +222,16 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: validation-results-vulkan
-          path: llamacpp_validation_vulkan.json
+          name: validation-results-${{ matrix.backend }}
+          path: llamacpp_validation_${{ matrix.backend }}.json
           retention-days: 30
 
       - name: Upload server logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: server-logs-vulkan
-          path: server-logs-vulkan/
-          retention-days: 30
-          if-no-files-found: ignore
-
-      - name: Cleanup
-        if: always()
-        uses: ./.github/actions/cleanup-processes-windows
-
-  # ========================================================================
-  # Validate rocm backend on self-hosted runner
-  # ========================================================================
-  validate-rocm:
-    name: Validate rocm
-    needs: [get-latest-releases, build]
-    runs-on: [self-hosted, Windows, 128gb]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          clean: true
-
-      - name: Cleanup processes
-        uses: ./.github/actions/cleanup-processes-windows
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: llamacpp-build
-          path: build
-
-      - name: Verify binaries
-        shell: PowerShell
-        run: |
-          $lemondExe = "build\Release\lemond.exe"
-          if (-not (Test-Path $lemondExe)) {
-              Write-Host "ERROR: lemond.exe not found!" -ForegroundColor Red
-              Get-ChildItem -Recurse build | Select-Object FullName
-              exit 1
-          }
-          & $lemondExe --version
-          Write-Host "Binaries verified!" -ForegroundColor Green
-
-      - name: Start lemond
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $lemondExe = (Resolve-Path "build\Release\lemond.exe").Path
-          $logsDir = "server-logs-rocm"
-          $cacheDir = Join-Path $PWD "ci-cache-rocm"
-
-          New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
-          New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
-
-          $stdoutLog = Join-Path $PWD "$logsDir\lemond.stdout.log"
-          $stderrLog = Join-Path $PWD "$logsDir\lemond.stderr.log"
-
-          $proc = Start-Process `
-            -FilePath $lemondExe `
-            -ArgumentList @($cacheDir, "--port", "13305", "--host", "127.0.0.1") `
-            -RedirectStandardOutput $stdoutLog `
-            -RedirectStandardError $stderrLog `
-            -PassThru
-
-          Write-Host "Started lemond PID $($proc.Id)" -ForegroundColor Cyan
-
-          $deadline = (Get-Date).AddMinutes(2)
-          do {
-            Start-Sleep -Seconds 2
-            try {
-              $response = Invoke-RestMethod -Uri "http://127.0.0.1:13305/api/v1/health" -TimeoutSec 10
-              if ($response.status -eq "ok") {
-                Write-Host "lemond is ready on port 13305" -ForegroundColor Green
-                exit 0
-              }
-            } catch {
-            }
-          } while ((Get-Date) -lt $deadline)
-
-          Write-Host "ERROR: lemond failed to become ready" -ForegroundColor Red
-          if (Test-Path $stdoutLog) { Get-Content $stdoutLog }
-          if (Test-Path $stderrLog) { Get-Content $stderrLog }
-          exit 1
-
-      - name: Setup Python and virtual environment
-        uses: ./.github/actions/setup-venv
-        with:
-          venv-name: '.venv'
-          python-version: '3.10'
-          requirements-file: 'test/requirements.txt'
-
-      - name: Run validation
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $venvPython = ".\.venv\Scripts\python.exe"
-
-          & $venvPython test/validate_llamacpp.py `
-            --backend rocm `
-            --output llamacpp_validation_rocm.json `
-            --logs-dir server-logs-rocm
-
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Stop lemond
-        if: always()
-        shell: PowerShell
-        run: |
-          try {
-            Invoke-WebRequest -Uri "http://127.0.0.1:13305/internal/shutdown" -Method POST -TimeoutSec 10 | Out-Null
-            Start-Sleep -Seconds 2
-          } catch {
-            Write-Host "lemond shutdown endpoint was not reachable; relying on cleanup step." -ForegroundColor Yellow
-          }
-
-      - name: Upload results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: validation-results-rocm
-          path: llamacpp_validation_rocm.json
-          retention-days: 30
-
-      - name: Upload server logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: server-logs-rocm
-          path: server-logs-rocm/
+          name: server-logs-${{ matrix.backend }}
+          path: server-logs-${{ matrix.backend }}/
           retention-days: 30
           if-no-files-found: ignore
 
@@ -364,12 +244,11 @@ jobs:
   # ========================================================================
   create-pr:
     name: Create update PR
-    needs: [get-latest-releases, validate-vulkan, validate-rocm]
+    needs: [get-latest-releases, validate]
     runs-on: ubuntu-latest
     if: >-
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      needs.validate-vulkan.result == 'success' &&
-      needs.validate-rocm.result == 'success'
+      needs.validate.result == 'success'
     steps:
       - uses: actions/checkout@v4
 
