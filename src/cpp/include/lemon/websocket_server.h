@@ -85,6 +85,7 @@ private:
     int port_;
     std::string host_;
     std::string api_key_;
+    std::string admin_api_key_;
     Router* router_;
     std::unique_ptr<RealtimeSessionManager> session_manager_;
     struct lws_context* context_{nullptr};

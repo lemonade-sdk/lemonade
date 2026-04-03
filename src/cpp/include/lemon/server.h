@@ -144,6 +144,7 @@ private:
     std::atomic<bool> rebind_requested_{false};
 
     std::string api_key_;
+    std::string admin_api_key_;
     NetworkBeacon udp_beacon_;
 
     // CPU usage tracking
