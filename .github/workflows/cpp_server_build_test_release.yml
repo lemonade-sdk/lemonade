@@ -478,6 +478,7 @@ jobs:
           PYTHONIOENCODING: utf-8
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           HF_HOME: ${{ github.workspace }}/hf-cache
+          GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
           echo "Running CLI tests..."
@@ -493,6 +494,7 @@ jobs:
           PYTHONIOENCODING: utf-8
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           HF_HOME: ${{ github.workspace }}/hf-cache
+          GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
           echo "Running endpoint tests..."
@@ -507,6 +509,7 @@ jobs:
           PYTHONIOENCODING: utf-8
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           HF_HOME: ${{ github.workspace }}/hf-cache
+          GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
           echo "Running Ollama API tests..."
@@ -521,6 +524,7 @@ jobs:
           PYTHONIOENCODING: utf-8
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           HF_HOME: ${{ github.workspace }}/hf-cache
+          GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
           echo "Running streaming error termination tests..."
@@ -888,6 +892,7 @@ jobs:
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-macos-dmg.outputs.version }}
+      GGML_METAL_NO_RESIDENCY: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -1028,6 +1033,7 @@ jobs:
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
+      GGML_METAL_NO_RESIDENCY: "1"
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-macos-dmg.outputs.version }}
     steps:
