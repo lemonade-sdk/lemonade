@@ -262,6 +262,11 @@ def main():
         default=None,
         help="Directory to collect server log files into (for CI artifact upload)",
     )
+    parser.add_argument(
+        "--lite",
+        action="store_true",
+        help="Lite mode: only test the smallest hot model",
+    )
     args = parser.parse_args()
 
     base_url = f"http://localhost:{args.port}/api/v1"
@@ -283,6 +288,15 @@ def main():
     if not hot_models:
         print("ERROR: No hot llamacpp models found!", file=sys.stderr, flush=True)
         sys.exit(1)
+
+    if args.lite and len(hot_models) > 1:
+        smallest = min(hot_models, key=lambda m: m.get("size", float("inf")))
+        print(
+            f"Lite mode: testing only smallest model: "
+            f"{smallest['id']} ({smallest.get('size', '?')} GB)",
+            flush=True,
+        )
+        hot_models = [smallest]
 
     if not args.skip_install:
         install_backend(base_url, args.backend)

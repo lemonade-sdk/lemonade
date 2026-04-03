@@ -2,6 +2,12 @@ name: Validate New llama.cpp Release
 
 on:
   workflow_dispatch:
+    inputs:
+      lite:
+        description: 'Run in lite mode (smallest model only)'
+        type: boolean
+        default: false
+  pull_request:
   schedule:
     # Sunday at 12:00 PM ET (17:00 UTC, 16:00 UTC during EDT)
     - cron: "0 16 * * 0"
@@ -13,6 +19,7 @@ permissions:
 env:
   LEMONADE_CI_MODE: "True"
   PYTHONIOENCODING: utf-8
+  LITE_MODE: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
 
 jobs:
   # ========================================================================
@@ -20,6 +27,7 @@ jobs:
   # ========================================================================
   get-latest-releases:
     name: Get latest releases
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     outputs:
       llamacpp_release: ${{ steps.llamacpp.outputs.release }}
@@ -49,6 +57,7 @@ jobs:
   build:
     name: Build
     needs: get-latest-releases
+    if: always() && !failure() && !cancelled()
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,6 +66,7 @@ jobs:
           fetch-depth: 0
 
       - name: Update backend_versions.json
+        if: needs.get-latest-releases.result == 'success'
         shell: PowerShell
         env:
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
@@ -113,6 +123,7 @@ jobs:
   validate:
     name: Validate ${{ matrix.backend }}
     needs: [get-latest-releases, build]
+    if: always() && needs.build.result == 'success'
     runs-on: [self-hosted, Windows, 128gb]
     strategy:
       fail-fast: false
@@ -144,7 +155,14 @@ jobs:
           & $lemondExe --version
           Write-Host "Binaries verified!" -ForegroundColor Green
 
-      - name: Start lemond
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Run validation with lemond
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
@@ -152,6 +170,7 @@ jobs:
           $backend = "${{ matrix.backend }}"
           $logsDir = "server-logs-$backend"
           $cacheDir = Join-Path $PWD "ci-cache-$backend"
+          $venvPython = ".\.venv\Scripts\python.exe"
 
           New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
           New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
@@ -159,6 +178,7 @@ jobs:
           $stdoutLog = Join-Path $PWD "$logsDir\lemond.stdout.log"
           $stderrLog = Join-Path $PWD "$logsDir\lemond.stderr.log"
 
+          # Start lemond (Python script handles readiness polling)
           $proc = Start-Process `
             -FilePath $lemondExe `
             -ArgumentList @($cacheDir, "--port", "13305", "--host", "127.0.0.1") `
@@ -168,54 +188,27 @@ jobs:
 
           Write-Host "Started lemond PID $($proc.Id)" -ForegroundColor Cyan
 
-          $deadline = (Get-Date).AddMinutes(2)
-          do {
-            Start-Sleep -Seconds 2
-            try {
-              $response = Invoke-RestMethod -Uri "http://127.0.0.1:13305/api/v1/health" -TimeoutSec 10
-              if ($response.status -eq "ok") {
-                Write-Host "lemond is ready on port 13305" -ForegroundColor Green
-                exit 0
-              }
-            } catch {
-            }
-          } while ((Get-Date) -lt $deadline)
-
-          Write-Host "ERROR: lemond failed to become ready" -ForegroundColor Red
-          if (Test-Path $stdoutLog) { Get-Content $stdoutLog }
-          if (Test-Path $stderrLog) { Get-Content $stderrLog }
-          exit 1
-
-      - name: Setup Python and virtual environment
-        uses: ./.github/actions/setup-venv
-        with:
-          venv-name: '.venv'
-          python-version: '3.10'
-          requirements-file: 'test/requirements.txt'
-
-      - name: Run validation
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $venvPython = ".\.venv\Scripts\python.exe"
-          $backend = "${{ matrix.backend }}"
-
-          & $venvPython test/validate_llamacpp.py `
-            --backend $backend `
-            --output "llamacpp_validation_$backend.json" `
-            --logs-dir "server-logs-$backend"
-
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Stop lemond
-        if: always()
-        shell: PowerShell
-        run: |
           try {
-            Invoke-WebRequest -Uri "http://127.0.0.1:13305/internal/shutdown" -Method POST -TimeoutSec 10 | Out-Null
-            Start-Sleep -Seconds 2
-          } catch {
-            Write-Host "lemond shutdown endpoint was not reachable; relying on cleanup step." -ForegroundColor Yellow
+            $validationArgs = @(
+              "test/validate_llamacpp.py",
+              "--backend", $backend,
+              "--output", "llamacpp_validation_$backend.json",
+              "--logs-dir", $logsDir
+            )
+            if ("${{ env.LITE_MODE }}" -eq "true") {
+              $validationArgs += "--lite"
+            }
+
+            & $venvPython @validationArgs
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally {
+            try {
+              Invoke-WebRequest -Uri "http://127.0.0.1:13305/internal/shutdown" `
+                -Method POST -TimeoutSec 10 | Out-Null
+              Start-Sleep -Seconds 2
+            } catch {
+              Write-Host "lemond shutdown not reachable; relying on cleanup step." -ForegroundColor Yellow
+            }
           }
 
       - name: Upload results
