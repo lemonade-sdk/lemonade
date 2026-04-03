@@ -885,7 +885,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
             // FLM on Linux needs richer state to guide users through manual setup
             // (installing .deb, xrt drivers, etc.)
             if (def.recipe == "flm") {
-                bool is_not_installed = install_error.find("not installed") != std::string::npos
+                bool is_not_installed = install_error.empty()
+                                     || install_error.find("not installed") != std::string::npos
                                      || install_error.find("not found") != std::string::npos;
                 bool is_version_mismatch = install_error.find("requires") != std::string::npos;
 
