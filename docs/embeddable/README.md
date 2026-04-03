@@ -12,7 +12,6 @@ Use Embeddable Lemonade instead of a global Lemonade Service when you want a coh
 
 ## What's in the release artifact?
 
-<<<<<<< HEAD
 Embeddable Lemonade is an zip/tarball artifact shipped in Lemonade releases.
 
 - Windows: `lemonade-embeddable-10.1.0-windows-x64.zip`
@@ -21,9 +20,6 @@ Embeddable Lemonade is an zip/tarball artifact shipped in Lemonade releases.
 > Note: see TODO for instructions for building your own embeddable Lemonade from source, including for other Linux distros.
 
 Each arcive has the following contents:
-=======
-Embeddable Lemonade is an zip/tarball artifact shipped in Lemonade releases. It has the following contents:
->>>>>>> e73f404bdfa31d7b0814b79ff5c7e9b81a6329d5
 
 - `lemond.exe` / `lemond` executable: your own private Lemoande instance.
 - `lemonade.exe` / `lemonade` CLI: useful for configuring and testing `lemond` before you ship. Feel free to exclude this from your shipped app.
