@@ -304,13 +304,13 @@ void LlamaCppServer::load(const std::string& model_name,
 #endif
 
 #ifdef __APPLE__
-    // Forward GGML_METAL_NO_RESIDENCY to llama-server if set in the parent
-    // environment. Metal residency sets crash on paravirtualized GPUs (e.g.
-    // GitHub Actions macOS runners with MTLGPUFamilyApple5).
+    // Disable Metal residency sets by default. Residency sets crash on
+    // paravirtualized GPUs (e.g. GitHub Actions macOS runners with
+    // MTLGPUFamilyApple5) and the env var is the upstream escape hatch.
+    // If the user has explicitly set the variable, respect their choice.
     const char* no_residency = std::getenv("GGML_METAL_NO_RESIDENCY");
-    if (no_residency) {
-        env_vars.push_back({"GGML_METAL_NO_RESIDENCY", no_residency});
-        LOG(DEBUG, "LlamaCpp") << "Forwarding GGML_METAL_NO_RESIDENCY=" << no_residency << std::endl;
+    if (!no_residency) {
+        env_vars.push_back({"GGML_METAL_NO_RESIDENCY", "1"});
     }
 #endif
 
