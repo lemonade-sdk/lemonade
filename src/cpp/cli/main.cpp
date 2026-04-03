@@ -335,13 +335,6 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
     return client.list_recipes();
 }
 
-static std::string normalize_server_host_for_agent(const std::string& host) {
-    if (host.empty() || host == "0.0.0.0" || host == "::" || host == "[::]" || host == "*") {
-        return "localhost";
-    }
-    return host;
-}
-
 static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
     lemonade::LemonadeClient& client,
     int context_window) {
@@ -431,8 +424,8 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         config_api_key = config.api_key;
     }
 
-    const std::string base_url = "http://" + normalize_server_host_for_agent(config.host) +
-                                 ":" + std::to_string(config.port) + "/v1";
+    const std::string base_url =
+        lemon_tray::build_agent_server_base_url(config.host, config.port) + "/v1";
 
     std::string error_message;
     if (!lemon_cli::sync_agent_config_file(*profile,
