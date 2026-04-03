@@ -427,6 +427,8 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     std::string config_api_key;
     if (config.api_key.empty()) {
         config_api_key = "lemonade";
+    } else {
+        config_api_key = config.api_key;
     }
 
     const std::string base_url = "http://" + normalize_server_host_for_agent(config.host) +
