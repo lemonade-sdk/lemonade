@@ -85,7 +85,7 @@ models/                         # Pre-downloaded models bundled into app
 
 Reference detailed guides for each of the following subjects:
 
-- TODO Deployment: Using `lemond` at runtime.
+- [Runtime](./runtime.md): Using `lemond` as a subprocess runtime.
 - TODO Configuration: server settings, model directories, backend settings, etc.
 - [Backends](./backends.md): deploy backends at packaging time, install time, or runtime.
 - TODO Models: bundling, organization, sharing, per-model settings.

@@ -1,4 +1,4 @@
-# Embeddable Lemonade at Runtime
+# Embeddable Lemonade: Runtime
 
 This guide will show you how to operate Embeddable Lemonade in your app at runtime.
 
@@ -27,18 +27,18 @@ Breaking this down:
 
 ## Runtime Model and Backend Management
 
-`lemond` provides a full set of endpoints for managing models and backends.
+`lemond` provides a full set of endpoints for managing models and backends at runtime.
 
 | Endpoint | Description |
 |----------|-------------|
-| `POST /api/v1/pull` | Download a model |
-| `POST /api/v1/delete` | Delete a downloaded model |
-| `POST /api/v1/load` | Load a model into memory |
-| `POST /api/v1/unload` | Unload a model from memory |
-| `POST /api/v1/install` | Install or update a backend |
-| `POST /api/v1/uninstall` | Remove a backend |
-| `GET /api/v1/models` | List available models |
-| `GET /api/v1/health` | Server status and loaded models |
+| `POST /v1/pull` | Download a model |
+| `POST /v1/delete` | Delete a downloaded model |
+| `POST /v1/load` | Load a model into memory |
+| `POST /v1/unload` | Unload a model from memory |
+| `POST /v1/install` | Install or update a backend |
+| `POST /v1/uninstall` | Remove a backend |
+| `GET /v1/models` | List available models |
+| `GET /v1/health` | Server status and loaded models |
 
 See the [Server Spec](../server/server_spec.md) for full request/response details.
 
