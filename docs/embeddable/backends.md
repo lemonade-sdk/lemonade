@@ -2,6 +2,14 @@
 
 This guide discusses how to set up and manage backends for `lemond`. Backends are the software that implements inference, such as `llama.cpp`, `whisper.cpp`, `FastFlowLM`, etc. `lemond` can install backends on your behalf, or it can utilize backends that are already part of your app. You can also download backends at packaging time, install time, or runtime.
 
+Contents:
+
+- [Setting Up Lemonade's Backends](#setting-up-lemonades-backends)
+  - [Customizing Backend Versions](#customizing-backend-versions)
+  - [Bundling Backends at Packaging Time](#bundling-backends-at-packaging-time)
+  - [Installing Backends at Install-Time or Runtime](#installing-backends-at-install-time-or-runtime)
+- [Bring Your Own Backends](#bring-your-own-backends)
+
 ## Setting Up Lemonade's Backends
 
 ### Customizing Backend Versions
@@ -26,6 +34,69 @@ lemond ./
 # Download llama.cpp with the Vulkan backend to ./bin/llamacpp/vulkan
 lemonade recipes --install llamacpp:vulkan
 ```
+
+### Installing Backends at Install-Time or Runtime
+
+You can install backends either during your app's installer or first-run flow, or later while the app is running. In both cases, start by calling [`GET /v1/system-info`](../server/server_spec.md#get-apiv1system-info) on the target machine. The response tells you which backends are supported on that specific system.
+
+This is useful when the correct backend depends on the user's hardware. For example, you can prefer `llamacpp:rocm` when ROCm is supported, and fall back to `llamacpp:vulkan` otherwise.
+
+Example flow:
+
+1. Launch `lemond`.
+2. Call `/v1/system-info`.
+3. Check `recipes.llamacpp.backends.rocm.devices` or `recipes.llamacpp.backends.rocm.state`.
+4. If ROCm is supported, call `POST /v1/install` with `{"recipe":"llamacpp","backend":"rocm"}`.
+5. Otherwise, call `POST /v1/install` with `{"recipe":"llamacpp","backend":"vulkan"}`.
+
+For example:
+
+```bash
+curl http://localhost:8000/v1/system-info
+```
+
+If the response shows ROCm support:
+
+```json
+{
+  "recipes": {
+    "llamacpp": {
+      "backends": {
+        "rocm": {
+          "devices": ["amd_igpu"],
+          "state": "installable"
+        }
+      }
+    }
+  }
+}
+```
+
+Install ROCm:
+
+```bash
+curl -X POST http://localhost:8000/v1/install \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipe": "llamacpp",
+    "backend": "rocm",
+    "stream": false
+  }'
+```
+
+Otherwise, install Vulkan:
+
+```bash
+curl -X POST http://localhost:8000/v1/install \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipe": "llamacpp",
+    "backend": "vulkan",
+    "stream": false
+  }'
+```
+
+See the [Server Spec](../server/server_spec.md) for endpoint details.
 
 ## Bring Your Own Backends
 

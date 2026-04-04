@@ -94,5 +94,4 @@ Reference detailed guides for each of the following subjects:
 - [Runtime](./runtime.md): Using `lemond` as a subprocess runtime.
 - [Backends](./backends.md): Deploy backends at packaging time, install time, or runtime.
 - [Models](./models.md): Bundling, organization, sharing, per-model settings.
-- [API Key](./key.md): Ensure only your app can access `lemond`.
 - [Building from Source](./building.md): Customize `lemond` compile-time features.

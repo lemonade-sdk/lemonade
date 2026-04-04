@@ -1,1 +1,0 @@
-# Embeddable Lemonade: API Key

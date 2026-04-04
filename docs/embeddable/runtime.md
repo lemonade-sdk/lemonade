@@ -5,6 +5,7 @@ This guide will show you how to operate Embeddable Lemonade in your app at runti
 Contents:
 
 - [Launching](#launching)
+- [Authenticating Requests](#authenticating-requests)
 - [Runtime Model and Backend Management](#runtime-model-and-backend-management)
 - [Runtime Settings Management](#runtime-settings-management)
   - [`GET /internal/config`](#get-internalconfig)
@@ -31,7 +32,41 @@ Breaking this down:
 - The positional `./` is the working directory for `lemond`, where it will look for `config.json`, `bin/`, etc.
 - `--port PORT` ensures that `lemond` launches on a specific port where your app will find it.
 
-> Note: If you set LEMONADE_API_KEY, make sure you set the API in endpoint requests or else you will get 401 errors.
+## Authenticating Requests
+
+If you launch `lemond` with `LEMONADE_API_KEY` set, your app must send that same key on every HTTP request to Lemonade endpoints. Do this by setting an `Authorization` header with a Bearer token:
+
+```http
+Authorization: Bearer KEY
+```
+
+For example, with `curl`:
+
+```bash
+curl http://localhost:8000/v1/health \
+  -H "Authorization: Bearer KEY"
+```
+
+For JSON `POST` requests:
+
+```bash
+curl -X POST http://localhost:8000/internal/set \
+  -H "Authorization: Bearer KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"log_level": "debug"}'
+```
+
+In JavaScript:
+
+```js
+await fetch("http://localhost:8000/v1/models", {
+  headers: {
+    Authorization: `Bearer ${apiKey}`,
+  },
+});
+```
+
+This matches the existing CLI, tray, app, and test implementations in this repo. If the header is missing or the key is wrong, `lemond` will reject the request with `401 Unauthorized`.
 
 ## Runtime Model and Backend Management
 
