@@ -2043,6 +2043,21 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         total_download_size += file_desc["size"].get<size_t>();
     }
 
+    // Pre-flight disk space check: fail fast before downloading anything
+    {
+        std::error_code ec;
+        auto si = fs::space(fs::path(download_path), ec);
+        if (!ec && total_download_size > si.available) {
+            std::ostringstream oss;
+            oss << "Insufficient disk space: download requires "
+                << std::fixed << std::setprecision(1)
+                << (total_download_size / (1024.0 * 1024.0 * 1024.0)) << " GB but only "
+                << (si.available / (1024.0 * 1024.0 * 1024.0)) << " GB is available on "
+                << download_path;
+            throw std::runtime_error(oss.str());
+        }
+    }
+
     for (const auto& file_desc : manifest["files"]) {
         file_index++;
         std::string filename = file_desc["name"].get<std::string>();
