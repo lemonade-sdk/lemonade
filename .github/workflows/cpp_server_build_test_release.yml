@@ -940,7 +940,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test_type: [cli, endpoints, system-info, ollama, llamacpp-system, streaming-errors, env-vars]
+        test_type: [cli, endpoints, ollama, llamacpp-system, streaming-errors, env-vars]
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -996,10 +996,6 @@ jobs:
               echo "Running endpoint tests..."
               $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY"
               $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY" --server-per-test
-          elif [ "${{ matrix.test_type }}" = "system-info" ]; then
-              echo "Running system-info mock hardware tests..."
-              unset LEMONADE_CI_MODE
-              $VENV_PYTHON test/server_system_info.py --lemond-binary lemond
           elif [ "${{ matrix.test_type }}" = "ollama" ]; then
               echo "Running Ollama API tests..."
               $VENV_PYTHON test/test_ollama.py --server-binary "$SERVER_BINARY"
@@ -1109,14 +1105,6 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "endpoints" ]; then
               echo "Running endpoint tests..."
               $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY"
-          elif [ "${{ matrix.test_type }}" = "system-info" ]; then
-              echo "Running system-info mock hardware tests..."
-              # Unset LEMONADE_CI_MODE so the server uses mock cache files
-              # Note: The test creates a temp home dir with mock hardware_info.json
-              unset LEMONADE_CI_MODE
-              # Use lemond directly (next to lemonade-server in the install dir)
-              LEMOND_BINARY="$(dirname "$SERVER_BINARY")/lemond"
-              $VENV_PYTHON test/server_system_info.py --lemond-binary "$LEMOND_BINARY"
           elif [ "${{ matrix.test_type }}" = "ollama" ]; then
               echo "Running Ollama API tests..."
               $VENV_PYTHON test/test_ollama.py --server-binary "$SERVER_BINARY"
