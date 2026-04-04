@@ -9,7 +9,7 @@ namespace backends {
 
 class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer {
 public:
-    static InstallParams get_install_params(const std::string& backend, const std::string& version, bool force);
+    static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
     inline static const BackendSpec SPEC = BackendSpec(
             "llamacpp",

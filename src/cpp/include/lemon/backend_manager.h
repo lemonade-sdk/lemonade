@@ -56,7 +56,7 @@ private:
     };
 
     // Get the install parameters for a recipe/backend combination
-    InstallParams get_install_params(const std::string& recipe, const std::string& backend, bool force = false);
+    InstallParams get_install_params(const std::string& recipe, const std::string& backend);
 
 };
 

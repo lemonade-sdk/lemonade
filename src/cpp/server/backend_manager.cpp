@@ -49,7 +49,7 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
 // Install parameters
 // ============================================================================
 
-BackendManager::InstallParams BackendManager::get_install_params(const std::string& recipe, const std::string& backend, bool force) {
+BackendManager::InstallParams BackendManager::get_install_params(const std::string& recipe, const std::string& backend) {
     if (recipe == "flm") {
         throw std::runtime_error("FLM uses a special installer and cannot be installed via get_install_params");
     }
@@ -64,7 +64,7 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
         throw std::runtime_error("No install params function for recipe: " + recipe);
     }
 
-    auto params = spec->install_params_fn(backend, version, force);
+    auto params = spec->install_params_fn(backend, version);
     return {params.repo, params.filename, version};
 }
 
@@ -100,7 +100,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         return;
     }
 
-    auto params = get_install_params(recipe, backend, force);
+    auto params = get_install_params(recipe, backend);
     auto* spec = backends::try_get_spec_for_recipe(recipe);
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);

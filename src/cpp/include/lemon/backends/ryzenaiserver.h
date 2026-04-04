@@ -13,7 +13,7 @@ using backends::InstallParams;
 
 class RyzenAIServer : public WrappedServer {
 public:
-    static InstallParams get_install_params(const std::string& backend, const std::string& version, bool force);
+    static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
     inline static const BackendSpec SPEC = BackendSpec(
         "ryzenai-server",

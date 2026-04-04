@@ -16,7 +16,7 @@ using namespace lemon::utils;
 
 namespace lemon {
 
-InstallParams RyzenAIServer::get_install_params(const std::string& /*backend*/, const std::string& /*version*/, bool /*force*/) {
+InstallParams RyzenAIServer::get_install_params(const std::string& /*backend*/, const std::string& /*version*/) {
     return {"lemonade-sdk/ryzenai-server", "ryzenai-server.zip"};
 }
 

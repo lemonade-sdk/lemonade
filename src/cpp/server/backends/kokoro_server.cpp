@@ -21,7 +21,7 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-InstallParams KokoroServer::get_install_params(const std::string& /*backend*/, const std::string& version, bool /*force*/) {
+InstallParams KokoroServer::get_install_params(const std::string& /*backend*/, const std::string& version) {
     InstallParams params;
     params.repo = "lemonade-sdk/Kokoros";
 

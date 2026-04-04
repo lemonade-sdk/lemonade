@@ -52,7 +52,7 @@ WhisperServer::~WhisperServer() {
     }
 }
 
-InstallParams WhisperServer::get_install_params(const std::string& backend, const std::string& version, bool force) {
+InstallParams WhisperServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
 
     if (backend == "npu") {
@@ -60,11 +60,7 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
 #ifdef _WIN32
         params.filename = "whisper-" + version + "-windows-npu-x64.zip";
 #else
-        if (force) {
-            params.filename = "whisper-" + version + "-windows-npu-x64.zip";
-        } else {
-            throw std::runtime_error("NPU whisper.cpp only supported on Windows");
-        }
+        throw std::runtime_error("NPU whisper.cpp only supported on Windows");
 #endif
     } else if (backend == "cpu") {
 #ifdef _WIN32
@@ -84,12 +80,7 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
         params.repo = "lemonade-sdk/whisper.cpp-builds";
         params.filename = "whisper-" + version + "-linux-vulkan-x86_64.tar.gz";
 #else
-        if (force) {
-            params.repo = "lemonade-sdk/whisper.cpp-builds";
-            params.filename = "whisper-" + version + "-linux-vulkan-x86_64.tar.gz";
-        } else {
-            throw std::runtime_error("Vulkan whisper.cpp backend is currently supported only on Linux");
-        }
+        throw std::runtime_error("Vulkan whisper.cpp backend is currently supported only on Linux");
 #endif
     } else {
         throw std::runtime_error("[WhisperServer] Unknown whisper backend: " + backend);

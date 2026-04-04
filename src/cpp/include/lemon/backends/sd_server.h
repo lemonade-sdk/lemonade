@@ -13,7 +13,7 @@ namespace backends {
 
 class SDServer : public WrappedServer, public IImageServer {
 public:
-    static InstallParams get_install_params(const std::string& backend, const std::string& version, bool force);
+    static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
     inline static const BackendSpec SPEC = BackendSpec(
             "sd-cpp",

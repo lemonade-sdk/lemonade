@@ -1936,8 +1936,7 @@ curl -X POST http://localhost:13305/api/v1/install \
   -d '{
     "recipe": "llamacpp",
     "backend": "vulkan",
-    "stream": false,
-    "force": false
+    "stream": false
   }'
 ```
 
