@@ -2252,6 +2252,74 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         LOG(INFO, "ModelManager") << "Warning: No commit hash found in API response, using 'main'" << std::endl;
     }
 
+    // Check for an existing in-progress download in a different snapshot.
+    // The upstream repo may have received new commits since the download started,
+    // giving us a different commit_hash. Rather than orphaning the old .partial
+    // files and restarting from zero, resume from the existing snapshot.
+    fs::path snapshots_dir = model_cache_path / "snapshots";
+    if (fs::exists(snapshots_dir)) {
+        for (const auto& entry : fs::directory_iterator(snapshots_dir)) {
+            if (!entry.is_directory()) continue;
+            fs::path manifest_path = entry.path() / ".download_manifest.json";
+            if (!fs::exists(manifest_path)) continue;
+
+            // Found an in-progress download — check if it has .partial files
+            bool has_partial = false;
+            for (const auto& f : fs::directory_iterator(entry.path())) {
+                if (f.is_regular_file() && f.path().extension() == ".partial") {
+                    has_partial = true;
+                    break;
+                }
+            }
+
+            if (has_partial) {
+                std::string old_hash = entry.path().filename().string();
+                if (old_hash != commit_hash) {
+                    LOG(INFO, "ModelManager") << "Found in-progress download in snapshot "
+                        << old_hash << ", resuming instead of starting new snapshot "
+                        << commit_hash << std::endl;
+
+                    // Resume from the existing manifest
+                    auto existing_manifest = JsonUtils::load_from_file(manifest_path.string());
+                    download_from_manifest(existing_manifest, headers, progress_callback);
+
+                    // Download complete — move files to the new commit hash snapshot
+                    // so the cache reflects the latest commit going forward
+                    fs::path new_snapshot = snapshots_dir / commit_hash;
+                    if (entry.path() != new_snapshot) {
+                        fs::rename(entry.path(), new_snapshot);
+                        LOG(INFO, "ModelManager") << "Moved completed download from "
+                            << old_hash << " to " << commit_hash << std::endl;
+                    }
+
+                    // Remove manifest and update refs
+                    fs::path new_manifest = new_snapshot / ".download_manifest.json";
+                    if (fs::exists(new_manifest)) {
+                        fs::remove(new_manifest);
+                        LOG(INFO, "ModelManager") << "Removed download manifest (download complete)" << std::endl;
+                    }
+
+                    // Update refs/main to point to new commit hash
+                    fs::path refs_dir = model_cache_path / "refs";
+                    fs::create_directories(refs_dir);
+                    std::ofstream refs_file(refs_dir / "main");
+                    if (refs_file.is_open()) {
+                        refs_file << commit_hash;
+                        refs_file.close();
+                    }
+
+                    // Send completion event
+                    if (progress_callback) {
+                        DownloadProgress progress;
+                        progress.complete = true;
+                        (void)progress_callback(progress);
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
     // Create snapshot directory using commit hash
     fs::path snapshot_path = model_cache_path / "snapshots" / commit_hash;
     fs::create_directories(snapshot_path);
