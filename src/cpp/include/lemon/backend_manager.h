@@ -15,6 +15,7 @@ public:
 
     // Core operations
     void install_backend(const std::string& recipe, const std::string& backend,
+                         bool force = false,
                          DownloadProgressCallback progress_cb = nullptr);
     void uninstall_backend(const std::string& recipe, const std::string& backend);
 
@@ -55,7 +56,7 @@ private:
     };
 
     // Get the install parameters for a recipe/backend combination
-    InstallParams get_install_params(const std::string& recipe, const std::string& backend);
+    InstallParams get_install_params(const std::string& recipe, const std::string& backend, bool force = false);
 
 };
 

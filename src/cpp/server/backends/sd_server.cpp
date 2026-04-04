@@ -22,7 +22,7 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version) {
+InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version, bool force) {
     InstallParams params;
     params.repo = "superm1/stable-diffusion.cpp";
 
@@ -49,7 +49,11 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 #elif defined(__linux__)
         params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm.zip";
 #else
-        throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
+        if (force) {
+            params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm.zip";
+        } else {
+            throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
+        }
 #endif
     } else {
         // CPU build (default)

@@ -39,7 +39,7 @@ This guide covers everything you need to build, test, and contribute to Lemonade
 
 Lemonade consists of these main executables:
 - **lemond** - Core HTTP server that handles requests and LLM backend orchestration
-- **lemonade** - CLI client for terminal users (list, pull, delete, run, status, logs, launch, recipes, scan)
+- **lemonade** - CLI client for terminal users (list, pull, delete, run, status, logs, launch, backends, scan)
 - **LemonadeServer.exe** (Windows only) - SUBSYSTEM:WINDOWS GUI app that embeds the server and shows a system tray icon
 - **lemonade-tray** (macOS/Linux) - Lightweight tray client that connects to a running `lemond`
 - **lemonade-server** - Deprecated backwards-compatibility shim (delegates to `lemond` or `lemonade`)
@@ -585,7 +585,7 @@ A pure HTTP server that:
 #### lemonade (CLI Client)
 
 A console application for terminal users:
-- Provides command-based user interface (`list`, `pull`, `delete`, `run`, `status`, `logs`, `launch`, `recipes`, `scan`)
+- Provides command-based user interface (`list`, `pull`, `delete`, `run`, `status`, `logs`, `launch`, `backends`, `scan`)
 - Communicates with `lemond` via HTTP endpoints
 - Expects the server to already be running (auto-started by the OS after installation)
 
@@ -746,7 +746,7 @@ The `lemonade` executable is the command-line interface for terminal users:
 ./lemonade logs
 
 # List recipes and backends
-./lemonade recipes
+./lemonade backends
 ```
 
 ### LemonadeServer.exe / lemonade-tray (GUI Tray Application)

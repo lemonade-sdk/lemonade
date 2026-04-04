@@ -89,7 +89,7 @@ static void push_overridable_arg(std::vector<std::string>& args,
     }
 }
 
-InstallParams LlamaCppServer::get_install_params(const std::string& backend, const std::string& version) {
+InstallParams LlamaCppServer::get_install_params(const std::string& backend, const std::string& version, bool force) {
     InstallParams params;
 
     if (backend == "system") {
@@ -116,7 +116,11 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #ifdef __APPLE__
         params.filename = "llama-" + version + "-bin-macos-arm64.tar.gz";
 #else
-        throw std::runtime_error("Metal llamacpp only supported on macOS");
+        if (force) {
+            params.filename = "llama-" + version + "-bin-macos-arm64.tar.gz";
+        } else {
+            throw std::runtime_error("Metal llamacpp only supported on macOS");
+        }
 #endif
     } else if (backend == "cpu") {
         params.repo = "ggml-org/llama.cpp";

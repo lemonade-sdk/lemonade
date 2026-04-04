@@ -11,7 +11,7 @@ namespace backends {
 
 class WhisperServer : public WrappedServer, public IAudioServer {
 public:
-    static InstallParams get_install_params(const std::string& backend, const std::string& version);
+    static InstallParams get_install_params(const std::string& backend, const std::string& version, bool force);
 
     inline static const BackendSpec SPEC = BackendSpec(
         "whispercpp",

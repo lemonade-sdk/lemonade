@@ -49,7 +49,7 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
 // Install parameters
 // ============================================================================
 
-BackendManager::InstallParams BackendManager::get_install_params(const std::string& recipe, const std::string& backend) {
+BackendManager::InstallParams BackendManager::get_install_params(const std::string& recipe, const std::string& backend, bool force) {
     if (recipe == "flm") {
         throw std::runtime_error("FLM uses a special installer and cannot be installed via get_install_params");
     }
@@ -64,11 +64,12 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
         throw std::runtime_error("No install params function for recipe: " + recipe);
     }
 
-    auto params = spec->install_params_fn(backend, version);
+    auto params = spec->install_params_fn(backend, version, force);
     return {params.repo, params.filename, version};
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
+                                     bool force,
                                      DownloadProgressCallback progress_cb) {
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << backend << std::endl;
 
@@ -82,7 +83,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         auto status = SystemInfoCache::get_flm_status();
         if (status.state == "installed") {
             // Already installed — nothing to do
-        } else if (status.state == "unsupported") {
+        } else if (status.state == "unsupported" && !force) {
             throw std::runtime_error("FLM is not supported on this system: " + status.message);
         } else {
             // installable, update_required, or action_required
@@ -92,14 +93,14 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         }
         // Re-read status after install
         status = SystemInfoCache::get_flm_status();
-        if (!status.is_ready()) {
+        if (!status.is_ready() && !force) {
             throw std::runtime_error("FLM installation incomplete: " + status.message +
                 (status.action.empty() ? "" : ". " + status.action));
         }
         return;
     }
 
-    auto params = get_install_params(recipe, backend);
+    auto params = get_install_params(recipe, backend, force);
     auto* spec = backends::try_get_spec_for_recipe(recipe);
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
