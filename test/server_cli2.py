@@ -299,11 +299,17 @@ sys.exit(0)
         )
         print(f"Backends output: {output}")
 
+    @unittest.skipIf(
+        platform.system() == "Darwin", "llamacpp:cpu not supported on macOS"
+    )
     def test_041_backends_install(self):
         """Test backends install."""
         result = self.assertCommandSucceeds(["backends", "install", "llamacpp:cpu"])
         print(f"Backends install exit code: {result.returncode}")
 
+    @unittest.skipIf(
+        platform.system() == "Darwin", "llamacpp:cpu not supported on macOS"
+    )
     def test_042_backends_uninstall(self):
         """Test backends uninstall."""
         result = self.assertCommandSucceeds(["backends", "uninstall", "llamacpp:cpu"])
