@@ -41,9 +41,12 @@ export async function connectLogStream(
     query.set('api_key', apiKey);
   }
 
+  const isSecure = window.location.protocol === 'https:';
+  const wsProto = isSecure ? 'wss' : 'ws';
+  const wsHost = isSecure ? window.location.host : `${getServerHost()}:${wsPort}`;
   const wsUrl = query.size > 0
-    ? `ws://${getServerHost()}:${wsPort}/logs/stream?${query.toString()}`
-    : `ws://${getServerHost()}:${wsPort}/logs/stream`;
+    ? `${wsProto}://${wsHost}/logs/stream?${query.toString()}`
+    : `${wsProto}://${wsHost}/logs/stream`;
   const socket = new WebSocket(wsUrl);
 
   socket.addEventListener('open', () => {
