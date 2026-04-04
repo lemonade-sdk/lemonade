@@ -1924,7 +1924,15 @@ void ModelManager::download_model(const std::string& model_name,
     auto model_info = get_model_info(model_name);
 
     if (model_data.contains("recipe_options")) {
-        model_info.recipe_options = RecipeOptions(model_info.recipe, model_data["recipe_options"]);
+        // Merge import recipe_options on top of the already-merged options
+        // (which include image_defaults + JSON recipe_options + user-saved).
+        // This preserves the full 3-level merge from add_model_to_cache while
+        // layering in any import-specific overrides (e.g. sdcpp_args).
+        json merged = model_info.recipe_options.to_json();
+        for (auto& [key, value] : model_data["recipe_options"].items()) {
+            merged[key] = value;
+        }
+        model_info.recipe_options = RecipeOptions(model_info.recipe, merged);
         save_model_options(model_info);
     }
 
