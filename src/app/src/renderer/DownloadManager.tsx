@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { deleteModel, uninstallBackend } from './utils/backendInstaller';
 
 export interface DownloadItem {
@@ -29,10 +29,28 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   // Track models that are currently being deleted to prevent retry during cleanup
   const [deletingModels, setDeletingModels] = useState<Set<string>>(new Set());
 
+  // Sliding window speed tracking: stores recent {timestamp, bytes} samples per download
+  const speedSamples = useRef<Map<string, Array<{ time: number; bytes: number }>>>(new Map());
+
   useEffect(() => {
     // Listen for download events from the global download tracker
     const handleDownloadUpdate = (event: CustomEvent<DownloadItem>) => {
       const downloadItem = event.detail;
+
+      // Record speed sample for sliding window calculation
+      const now = Date.now();
+      const sessionBytes = downloadItem.bytesDownloaded - (downloadItem.bytesResumed || 0);
+      if (!speedSamples.current.has(downloadItem.id)) {
+        speedSamples.current.set(downloadItem.id, []);
+      }
+      const samples = speedSamples.current.get(downloadItem.id)!;
+      samples.push({ time: now, bytes: sessionBytes });
+      // Keep only samples from the last 5 seconds
+      const windowMs = 5000;
+      while (samples.length > 0 && samples[0].time < now - windowMs) {
+        samples.shift();
+      }
+
       setDownloads(prev => {
         const existingIndex = prev.findIndex(d => d.id === downloadItem.id);
         if (existingIndex >= 0) {
@@ -49,6 +67,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
 
     const handleDownloadComplete = (event: CustomEvent<{ id: string }>) => {
       const { id } = event.detail;
+      speedSamples.current.delete(id);
       setDownloads(prev => prev.map(d =>
         d.id === id ? { ...d, status: 'completed' as const, percent: 100 } : d
       ));
@@ -56,6 +75,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
 
     const handleDownloadError = (event: CustomEvent<{ id: string; error: string }>) => {
       const { id, error } = event.detail;
+      speedSamples.current.delete(id);
       setDownloads(prev => prev.map(d =>
         d.id === id ? { ...d, status: 'error' as const, error } : d
       ));
@@ -85,11 +105,16 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   };
 
   const calculateSpeed = (download: DownloadItem): number => {
-    const elapsedSeconds = (Date.now() - download.startTime) / 1000;
-    if (elapsedSeconds === 0) return 0;
-    // Only count bytes downloaded in this session, not bytes already on disk from a prior run
-    const sessionBytes = download.bytesDownloaded - (download.bytesResumed || 0);
-    return Math.max(0, sessionBytes) / elapsedSeconds;
+    const samples = speedSamples.current.get(download.id);
+    if (!samples || samples.length < 2) return 0;
+
+    const oldest = samples[0];
+    const newest = samples[samples.length - 1];
+    const elapsedSeconds = (newest.time - oldest.time) / 1000;
+    if (elapsedSeconds <= 0) return 0;
+
+    const bytesInWindow = newest.bytes - oldest.bytes;
+    return Math.max(0, bytesInWindow) / elapsedSeconds;
   };
 
   const calculateETA = (download: DownloadItem): string => {
