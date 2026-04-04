@@ -57,12 +57,20 @@ def get_default_lemond_binary():
 
 
 def get_hf_cache_dir():
-    """Resolve the HF cache directory using the same logic as the C++ server.
+    """Resolve the HF cache directory for on-disk assertions.
 
-    Mirrors path_utils.cpp resolve_hf_cache_dir():
+    Mirrors path_utils.cpp resolve_hf_cache_dir() — the env-var / platform
+    default chain:
       1. HF_HUB_CACHE env var (direct path)
       2. HF_HOME env var + /hub
       3. Platform default (~/.cache/huggingface/hub)
+
+    NOTE: This does NOT cover the server's models_dir override
+    (path_utils.cpp get_hf_cache_dir() / config.json "models_dir").
+    If the server under test has models_dir set to something other than
+    "auto", on-disk assertions using this path will inspect the wrong
+    location. There is no API to query the server's effective models_dir
+    and no env var mapping for it — it is only settable via config.json.
     """
     hf_hub_cache = os.environ.get("HF_HUB_CACHE", "")
     if hf_hub_cache:
