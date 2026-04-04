@@ -1,13 +1,17 @@
 # Embeddable Lemonade: Models
 
-This guide discusses how to organize models within your app's `lemond` instance.
+This guide covers how `lemond` discovers, exposes, and bundles models in an embeddable deployment.
 
-There are 3 fundamental ways for `lemond` to access models:
-1. Shared with your user's other apps via the Hugging Face Hub standard.
-2. Completely private to `lemond`.
-3. Shared with other runtimes within your app.
+Contents:
 
-Additionally, you can customize which models `lemond` will expose as options in its `/v1/models` endpoint. This guide will also cover how to implement custom per-model load options, known as `recipes`. Finally, we also discuss how to pre-download models to bundle them in your application.
+- [Model Organization](#model-organization)
+    - [Sharing Models With Other Apps](#sharing-models-with-other-apps)
+    - [Private Models](#private-models)
+    - [Importing Models to `lemond`](#importing-models-to-lemond)
+- [Customization](#customization)
+    - [Changing the Built-In Models List](#changing-the-built-in-models-list)
+    - [Per-Model Load Options](#per-model-load-options)
+- [Bundling Models](#bundling-models)
 
 ## Model Organization
 

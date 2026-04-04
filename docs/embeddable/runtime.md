@@ -2,6 +2,14 @@
 
 This guide will show you how to operate Embeddable Lemonade in your app at runtime.
 
+Contents:
+
+- [Launching](#launching)
+- [Runtime Model and Backend Management](#runtime-model-and-backend-management)
+- [Runtime Settings Management](#runtime-settings-management)
+  - [`GET /internal/config`](#get-internalconfig)
+  - [`POST /internal/set`](#post-internalset)
+
 ## Launching
 
 We recommend that your app launches `lemond` as a subprocess, using a command like this:
