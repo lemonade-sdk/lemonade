@@ -3,7 +3,7 @@
   "llamacpp": {
     "vulkan": "b8653",
     "rocm": "b1229",
-    "metal": "b8653",
+    "metal": "b8460",
     "cpu": "b8653"
   },
   "whispercpp": {
