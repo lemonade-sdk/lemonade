@@ -23,8 +23,8 @@ These backend versions have been validated against that specific release of `lem
 Follow these instructions if you want backends to be bundled into your app's installer:
 
 1. Start `lemond ./` on the system where you are packaging your app.
-2. Run `lemonade recipes` to see the full set of supported backends.
-3. `lemonade recipes --install BACKEND` for each backend.
+2. Run `lemonade backends` to see the full set of supported backends.
+3. `lemonade backends install BACKEND:DEVICE` for each backend.
 
 
 ```
@@ -32,7 +32,7 @@ Follow these instructions if you want backends to be bundled into your app's ins
 lemond ./
 
 # Download llama.cpp with the Vulkan backend to ./bin/llamacpp/vulkan
-lemonade recipes --install llamacpp:vulkan
+lemonade backends install llamacpp:vulkan
 ```
 
 ### Installing Backends at Install-Time or Runtime
