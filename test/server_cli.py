@@ -31,12 +31,16 @@ import unittest
 
 import requests
 from utils.server_base import wait_for_server, set_server_config, _auth_headers
+from huggingface_hub.constants import HF_HUB_CACHE
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
+    MULTI_REPO_MODEL_A_CACHE_DIR,
     MULTI_REPO_MODEL_A_MAIN,
     MULTI_REPO_MODEL_A_NAME,
+    MULTI_REPO_MODEL_B_CACHE_DIR,
     MULTI_REPO_MODEL_B_MAIN,
     MULTI_REPO_MODEL_B_NAME,
+    MULTI_REPO_SHARED_CACHE_DIR,
     MULTI_REPO_SHARED_CHECKPOINT,
     PORT,
     SHARED_REPO_MODEL_A_CHECKPOINT,
@@ -498,12 +502,19 @@ class PersistentServerCLITests(CLITestBase):
           Model A: main from repo1, text_encoder from repo2 (shared)
           Model B: main from repo3, text_encoder from repo2 (shared)
 
-          - Download A → downloads repo1 + repo2
-          - Download B → downloads repo3, repo2 already present
-          - Delete A → deletes repo1 only (repo2 still needed by B)
-          - Delete B → deletes repo3 + repo2
+          - Download A -> downloads repo1 + repo2
+          - Download B -> downloads repo3, repo2 already present
+          - Delete A -> deletes repo1 only (repo2 still needed by B)
+          - Delete B -> deletes repo3 + repo2
+
+        Verifies both CLI output and on-disk HF cache state at each step.
         """
-        # Import Model A with two checkpoints from different repos
+        hf_cache = HF_HUB_CACHE
+        repo1_path = os.path.join(hf_cache, MULTI_REPO_MODEL_A_CACHE_DIR)
+        repo2_path = os.path.join(hf_cache, MULTI_REPO_SHARED_CACHE_DIR)
+        repo3_path = os.path.join(hf_cache, MULTI_REPO_MODEL_B_CACHE_DIR)
+
+        # Import both models with multi-checkpoint configs
         for name, main_cp in [
             (MULTI_REPO_MODEL_A_NAME, MULTI_REPO_MODEL_A_MAIN),
             (MULTI_REPO_MODEL_B_NAME, MULTI_REPO_MODEL_B_MAIN),
@@ -534,59 +545,71 @@ class PersistentServerCLITests(CLITestBase):
         result = self.assertCommandSucceeds(["list", "--downloaded"])
         output = result.stdout + result.stderr
         self.assertIn(
-            "MultiRepo-TestA",
-            output,
-            "Model A should be listed as downloaded",
+            "MultiRepo-TestA", output, "Model A should be listed as downloaded"
         )
         self.assertIn(
-            "MultiRepo-TestB",
-            output,
-            "Model B should be listed as downloaded",
+            "MultiRepo-TestB", output, "Model B should be listed as downloaded"
         )
 
-        # Delete Model A — Model B (and its shared text_encoder repo) should be preserved
+        # Verify all three repo dirs exist on disk after download
+        self.assertTrue(
+            os.path.isdir(repo1_path), f"repo1 dir should exist: {repo1_path}"
+        )
+        self.assertTrue(
+            os.path.isdir(repo2_path), f"shared repo dir should exist: {repo2_path}"
+        )
+        self.assertTrue(
+            os.path.isdir(repo3_path), f"repo3 dir should exist: {repo3_path}"
+        )
+        print("[OK] All three HF cache repo directories present after pull")
+
+        # Delete Model A -- Model B (and shared text_encoder repo2) should be preserved
         self.assertCommandSucceeds(
             ["delete", MULTI_REPO_MODEL_A_NAME], timeout=TIMEOUT_MODEL_OPERATION
         )
 
-        # Verify Model B is still downloaded
+        # Verify Model B is still downloaded via CLI
         result = self.assertCommandSucceeds(["list", "--downloaded"])
         output = result.stdout + result.stderr
-        self.assertIn(
-            "MultiRepo-TestB",
-            output,
-            "Model B should still be downloaded after deleting Model A",
-        )
-        self.assertNotIn(
-            "MultiRepo-TestA",
-            output,
-            "Model A should no longer be listed after delete",
-        )
+        self.assertIn("MultiRepo-TestB", output, "Model B should still be downloaded")
+        self.assertNotIn("MultiRepo-TestA", output, "Model A should be gone")
 
-        # Verify Model B can still be pulled (shared text_encoder intact)
-        # A re-pull should succeed without re-downloading the shared checkpoint
-        self.assertCommandSucceeds(
-            ["pull", MULTI_REPO_MODEL_B_NAME], timeout=TIMEOUT_MODEL_OPERATION
+        # Verify on-disk: repo1 deleted, repo2 (shared) preserved, repo3 preserved
+        self.assertFalse(
+            os.path.isdir(repo1_path),
+            f"repo1 should be deleted after removing Model A: {repo1_path}",
         )
+        self.assertTrue(
+            os.path.isdir(repo2_path),
+            f"shared repo should be preserved (still needed by Model B): {repo2_path}",
+        )
+        self.assertTrue(
+            os.path.isdir(repo3_path),
+            f"repo3 should still exist (Model B main): {repo3_path}",
+        )
+        print("[OK] After deleting A: repo1 gone, shared repo2 + repo3 preserved")
 
-        # Clean up: delete Model B (should also remove the shared text_encoder repo)
+        # Delete Model B -- should clean up repo3 and shared repo2
         self.assertCommandSucceeds(
             ["delete", MULTI_REPO_MODEL_B_NAME], timeout=TIMEOUT_MODEL_OPERATION
         )
 
-        # Verify both are gone
+        # Verify both gone from CLI
         result = self.assertCommandSucceeds(["list", "--downloaded"])
         output = result.stdout + result.stderr
-        self.assertNotIn(
-            "MultiRepo-TestA",
-            output,
-            "Model A should not be listed after full cleanup",
+        self.assertNotIn("MultiRepo-TestA", output, "Model A should not be listed")
+        self.assertNotIn("MultiRepo-TestB", output, "Model B should not be listed")
+
+        # Verify on-disk: repo2 and repo3 both deleted
+        self.assertFalse(
+            os.path.isdir(repo2_path),
+            f"shared repo should be deleted after removing last dependent: {repo2_path}",
         )
-        self.assertNotIn(
-            "MultiRepo-TestB",
-            output,
-            "Model B should not be listed after full cleanup",
+        self.assertFalse(
+            os.path.isdir(repo3_path),
+            f"repo3 should be deleted after removing Model B: {repo3_path}",
         )
+        print("[OK] After deleting B: all repo directories cleaned up")
 
 
 def run_cli_tests():

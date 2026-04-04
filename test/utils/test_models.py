@@ -172,12 +172,14 @@ MULTI_REPO_MODEL_A_MAIN = (
     "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf"
 )
 MULTI_REPO_MODEL_B_NAME = "user.MultiRepo-TestB"
-MULTI_REPO_MODEL_B_MAIN = (
-    "Comfy-Org/z_image:split_files/vae/ae.safetensors"
-)
+MULTI_REPO_MODEL_B_MAIN = "Comfy-Org/z_image:split_files/vae/ae.safetensors"
 MULTI_REPO_SHARED_CHECKPOINT = (
     "mradermacher/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct.Q2_K.gguf"
 )
+# Cache directory names for on-disk verification (repo_id with / replaced by --)
+MULTI_REPO_MODEL_A_CACHE_DIR = "models--unsloth--SmolLM2-135M-Instruct-GGUF"
+MULTI_REPO_MODEL_B_CACHE_DIR = "models--Comfy-Org--z_image"
+MULTI_REPO_SHARED_CACHE_DIR = "models--mradermacher--SmolLM2-135M-Instruct-GGUF"
 
 # Models that should be pre-downloaded for offline testing
 MODELS_FOR_OFFLINE_CACHE = [

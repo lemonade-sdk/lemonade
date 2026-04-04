@@ -1144,7 +1144,44 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     load_checkpoints(info, *model_json);
     parse_composite_models(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
-    info.recipe_options = RecipeOptions(info.recipe, JsonUtils::get_or_default(recipe_options_, model_name, json::object()));
+
+    // Parse image_defaults if present (for sd-cpp models)
+    if (model_json->contains("image_defaults") && (*model_json)["image_defaults"].is_object()) {
+        const auto& img_defaults = (*model_json)["image_defaults"];
+        info.image_defaults.has_defaults = true;
+        info.image_defaults.steps = JsonUtils::get_or_default<int>(img_defaults, "steps", 20);
+        info.image_defaults.cfg_scale = JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
+        info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
+        info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
+        info.image_defaults.sampling_method = JsonUtils::get_or_default<std::string>(img_defaults, "sampling_method", "");
+        info.image_defaults.flow_shift = JsonUtils::get_or_default<float>(img_defaults, "flow_shift", 0.0f);
+    }
+
+    // Build recipe options with 3-level merge: image_defaults -> JSON recipe_options -> user-saved
+    json base_options = json::object();
+    if (info.image_defaults.has_defaults) {
+        base_options["steps"] = info.image_defaults.steps;
+        base_options["cfg_scale"] = info.image_defaults.cfg_scale;
+        base_options["width"] = info.image_defaults.width;
+        base_options["height"] = info.image_defaults.height;
+        if (!info.image_defaults.sampling_method.empty())
+            base_options["sampling_method"] = info.image_defaults.sampling_method;
+        if (info.image_defaults.flow_shift > 0.0f)
+            base_options["flow_shift"] = info.image_defaults.flow_shift;
+    }
+    if (model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object()) {
+        for (auto& [key, value] : (*model_json)["recipe_options"].items()) {
+            base_options[key] = value;
+        }
+    }
+    if (JsonUtils::has_key(recipe_options_, model_name)) {
+        auto saved_options = recipe_options_[model_name];
+        for (auto& [key, value] : saved_options.items()) {
+            base_options[key] = value;
+        }
+    }
+    info.recipe_options = RecipeOptions(info.recipe, base_options);
+
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
 
