@@ -20,6 +20,7 @@ Usage:
 """
 
 import argparse
+import glob
 import json
 import os
 import re
@@ -50,7 +51,7 @@ from utils.test_models import (
     USER_MODEL_MAIN_CHECKPOINT,
     USER_MODEL_NAME,
     get_default_server_binary,
-    get_hf_cache_dir,
+    get_hf_cache_dir_candidates,
 )
 
 # Global configuration
@@ -111,6 +112,69 @@ def run_cli_command(args, timeout=60, check=False):
         )
 
     return result
+
+
+def _checkpoint_variant_path(checkpoint):
+    """Return the repo-relative variant path for a HF checkpoint string."""
+    parts = checkpoint.split(":", 1)
+    if len(parts) != 2:
+        return ""
+    return os.path.join(*parts[1].split("/"))
+
+
+def _find_cached_checkpoint(cache_root, repo_cache_dir, checkpoint):
+    """Return the on-disk snapshot path for a checkpoint, if present."""
+    variant_path = _checkpoint_variant_path(checkpoint)
+    if not variant_path:
+        return None
+
+    pattern = os.path.join(cache_root, repo_cache_dir, "snapshots", "*", variant_path)
+    matches = glob.glob(pattern)
+    if matches:
+        return matches[0]
+    return None
+
+
+def _resolve_hf_cache_root(repo_cache_dirs, checkpoint_specs=None):
+    """Pick the HF cache root that actually contains the downloaded repo artifacts."""
+    diagnostics = []
+    matches = []
+
+    for hf_cache in get_hf_cache_dir_candidates():
+        missing = [
+            repo_dir
+            for repo_dir in repo_cache_dirs
+            if not os.path.isdir(os.path.join(hf_cache, repo_dir))
+        ]
+        checkpoint_paths = []
+        if not missing and checkpoint_specs:
+            for repo_cache_dir, checkpoint in checkpoint_specs:
+                checkpoint_path = _find_cached_checkpoint(
+                    hf_cache, repo_cache_dir, checkpoint
+                )
+                if checkpoint_path is None:
+                    missing.append(f"{repo_cache_dir}:{checkpoint}")
+                else:
+                    checkpoint_paths.append(checkpoint_path)
+
+        if not missing:
+            probe_paths = [
+                os.path.join(hf_cache, repo_cache_dir)
+                for repo_cache_dir in repo_cache_dirs
+            ] + checkpoint_paths
+            newest_mtime = max(os.path.getmtime(path) for path in probe_paths)
+            matches.append((newest_mtime, hf_cache))
+            continue
+        diagnostics.append(f"{hf_cache} (missing: {', '.join(missing)})")
+
+    if matches:
+        matches.sort(reverse=True)
+        return matches[0][1]
+
+    raise AssertionError(
+        "Could not resolve HF cache root after pull. Checked: "
+        + "; ".join(diagnostics)
+    )
 
 
 class CLITestBase(unittest.TestCase):
@@ -496,7 +560,7 @@ class PersistentServerCLITests(CLITestBase):
         )
 
     def test_014_delete_preserves_cross_repo_dependency(self):
-        """Test multi-repo dependency: deleting one model preserves shared checkpoint repos.
+        """Test multi-repo dependency cleanup in the persistent CLI suite.
 
         Scenario:
           Model A: main from repo1, text_encoder from repo2 (shared)
@@ -504,16 +568,12 @@ class PersistentServerCLITests(CLITestBase):
 
           - Download A -> downloads repo1 + repo2
           - Download B -> downloads repo3, repo2 already present
-          - Delete A -> deletes repo1 only (repo2 still needed by B)
+          - Delete A -> removes A's main checkpoint file only; repo dirs may remain
+            if earlier persistent tests imported another model from the same repo
           - Delete B -> deletes repo3 + repo2
 
         Verifies both CLI output and on-disk HF cache state at each step.
         """
-        hf_cache = get_hf_cache_dir()
-        repo1_path = os.path.join(hf_cache, MULTI_REPO_MODEL_A_CACHE_DIR)
-        repo2_path = os.path.join(hf_cache, MULTI_REPO_SHARED_CACHE_DIR)
-        repo3_path = os.path.join(hf_cache, MULTI_REPO_MODEL_B_CACHE_DIR)
-
         # Import both models with multi-checkpoint configs
         for name, main_cp in [
             (MULTI_REPO_MODEL_A_NAME, MULTI_REPO_MODEL_A_MAIN),
@@ -551,6 +611,31 @@ class PersistentServerCLITests(CLITestBase):
             "MultiRepo-TestB", output, "Model B should be listed as downloaded"
         )
 
+        hf_cache = _resolve_hf_cache_root(
+            [
+                MULTI_REPO_MODEL_A_CACHE_DIR,
+                MULTI_REPO_SHARED_CACHE_DIR,
+                MULTI_REPO_MODEL_B_CACHE_DIR,
+            ],
+            [
+                (MULTI_REPO_MODEL_A_CACHE_DIR, MULTI_REPO_MODEL_A_MAIN),
+                (MULTI_REPO_SHARED_CACHE_DIR, MULTI_REPO_SHARED_CHECKPOINT),
+                (MULTI_REPO_MODEL_B_CACHE_DIR, MULTI_REPO_MODEL_B_MAIN),
+            ],
+        )
+        repo1_path = os.path.join(hf_cache, MULTI_REPO_MODEL_A_CACHE_DIR)
+        repo2_path = os.path.join(hf_cache, MULTI_REPO_SHARED_CACHE_DIR)
+        repo3_path = os.path.join(hf_cache, MULTI_REPO_MODEL_B_CACHE_DIR)
+        model_a_main_path = _find_cached_checkpoint(
+            hf_cache, MULTI_REPO_MODEL_A_CACHE_DIR, MULTI_REPO_MODEL_A_MAIN
+        )
+        shared_checkpoint_path = _find_cached_checkpoint(
+            hf_cache, MULTI_REPO_SHARED_CACHE_DIR, MULTI_REPO_SHARED_CHECKPOINT
+        )
+        model_b_main_path = _find_cached_checkpoint(
+            hf_cache, MULTI_REPO_MODEL_B_CACHE_DIR, MULTI_REPO_MODEL_B_MAIN
+        )
+
         # Verify all three repo dirs exist on disk after download
         self.assertTrue(
             os.path.isdir(repo1_path), f"repo1 dir should exist: {repo1_path}"
@@ -560,6 +645,18 @@ class PersistentServerCLITests(CLITestBase):
         )
         self.assertTrue(
             os.path.isdir(repo3_path), f"repo3 dir should exist: {repo3_path}"
+        )
+        self.assertIsNotNone(
+            model_a_main_path,
+            f"Model A main checkpoint should exist in snapshots under {repo1_path}",
+        )
+        self.assertIsNotNone(
+            shared_checkpoint_path,
+            f"Shared checkpoint should exist in snapshots under {repo2_path}",
+        )
+        self.assertIsNotNone(
+            model_b_main_path,
+            f"Model B main checkpoint should exist in snapshots under {repo3_path}",
         )
         print("[OK] All three HF cache repo directories present after pull")
 
@@ -574,20 +671,30 @@ class PersistentServerCLITests(CLITestBase):
         self.assertIn("MultiRepo-TestB", output, "Model B should still be downloaded")
         self.assertNotIn("MultiRepo-TestA", output, "Model A should be gone")
 
-        # Verify on-disk: repo1 deleted, repo2 (shared) preserved, repo3 preserved
+        # Verify on-disk: Model A file deleted, repo2 (shared) preserved, repo3 preserved.
+        # repo1 directory may remain because this suite is persistent and other imported
+        # models can reference the same repo.
         self.assertFalse(
-            os.path.isdir(repo1_path),
-            f"repo1 should be deleted after removing Model A: {repo1_path}",
+            os.path.exists(model_a_main_path),
+            f"Model A main checkpoint should be deleted after removing Model A: {model_a_main_path}",
         )
         self.assertTrue(
             os.path.isdir(repo2_path),
             f"shared repo should be preserved (still needed by Model B): {repo2_path}",
         )
         self.assertTrue(
+            os.path.exists(shared_checkpoint_path),
+            "Shared checkpoint should still exist after removing Model A",
+        )
+        self.assertTrue(
             os.path.isdir(repo3_path),
             f"repo3 should still exist (Model B main): {repo3_path}",
         )
-        print("[OK] After deleting A: repo1 gone, shared repo2 + repo3 preserved")
+        self.assertTrue(
+            os.path.exists(model_b_main_path),
+            "Model B main checkpoint should still exist after removing Model A",
+        )
+        print("[OK] After deleting A: A main file gone, shared repo2 + repo3 preserved")
 
         # Delete Model B -- should clean up repo3 and shared repo2
         self.assertCommandSucceeds(
@@ -600,7 +707,16 @@ class PersistentServerCLITests(CLITestBase):
         self.assertNotIn("MultiRepo-TestA", output, "Model A should not be listed")
         self.assertNotIn("MultiRepo-TestB", output, "Model B should not be listed")
 
-        # Verify on-disk: repo2 and repo3 both deleted
+        # Verify on-disk: repo2 shared file and repo3 main file deleted, and both
+        # unique repo directories removed once the last dependent model is gone.
+        self.assertFalse(
+            os.path.exists(shared_checkpoint_path),
+            "Shared checkpoint should be deleted after removing the last dependent model",
+        )
+        self.assertFalse(
+            os.path.exists(model_b_main_path),
+            f"Model B main checkpoint should be deleted after removing Model B: {model_b_main_path}",
+        )
         self.assertFalse(
             os.path.isdir(repo2_path),
             f"shared repo should be deleted after removing last dependent: {repo2_path}",

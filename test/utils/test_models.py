@@ -85,6 +85,37 @@ def get_hf_cache_dir():
     return os.path.join(home, ".cache", "huggingface", "hub")
 
 
+def get_default_hf_cache_dir():
+    """Return the platform-default HF cache directory, ignoring HF_* overrides."""
+    if platform.system() == "Windows":
+        userprofile = os.environ.get("USERPROFILE", "C:\\")
+        return os.path.join(userprofile, ".cache", "huggingface", "hub")
+    home = os.environ.get("HOME", "/tmp")
+    return os.path.join(home, ".cache", "huggingface", "hub")
+
+
+def get_hf_cache_dir_candidates():
+    """Return likely HF cache roots for on-disk assertions.
+
+    Order matters:
+      1. Env-derived HF cache root from get_hf_cache_dir()
+      2. Platform default HF cache root, ignoring HF_HUB_CACHE / HF_HOME
+
+    This still does not cover config.json "models_dir" overrides.
+    """
+    candidates = []
+    seen = set()
+
+    for path in [get_hf_cache_dir(), get_default_hf_cache_dir()]:
+        normalized = os.path.normcase(os.path.abspath(path))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        candidates.append(path)
+
+    return candidates
+
+
 # Default port for lemonade server
 PORT = 13305
 
