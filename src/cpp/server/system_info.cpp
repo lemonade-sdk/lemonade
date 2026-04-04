@@ -179,6 +179,12 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"ryzenai-llm", "npu", {"windows"}, {
         {"amd_npu", {"XDNA2"}},
     }},
+
+    // vLLM - ROCm backend for AMD GPUs (Linux only)
+    {"vllm", "rocm", {"linux"}, {
+        {"amd_igpu", {"gfx1150", "gfx1151"}},
+        {"amd_dgpu", {"gfx120X"}},
+    }},
 };
 
 // ============================================================================
@@ -300,7 +306,7 @@ static bool device_matches_constraint(const std::string& device_family,
 // Generic installation check
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
     // Special handling for ROCm backends on gfx1151 (Strix Halo) if kernel CWSR fix is missing
-    if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
+    if ((recipe == "llamacpp" || recipe == "sd-cpp" || recipe == "vllm") && backend == "rocm") {
         if (needs_gfx1151_cwsr_fix()) {
             error_message = "Linux kernel missing support";
             return false;

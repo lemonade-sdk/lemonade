@@ -24,7 +24,10 @@ static const json DEFAULTS = {
     {"width", 512},
     {"height", 512},
     // FLM-specific options
-    {"flm_args", ""}       // Custom arguments to pass to flm serve
+    {"flm_args", ""},       // Custom arguments to pass to flm serve
+    // vLLM-specific options
+    {"vllm_backend", ""},  // "" means auto-detect
+    {"vllm_args", ""}      // Custom arguments to pass to vllm-server
 };
 
 // Mapping from flat option names to CLI flags (used by to_cli_options)
@@ -40,7 +43,9 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"cfg_scale", "--cfg-scale"},
     {"width", "--width"},
     {"height", "--height"},
-    {"flm_args", "--flm-args"}
+    {"flm_args", "--flm-args"},
+    {"vllm_backend", "--vllm"},
+    {"vllm_args", "--vllm-args"}
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
@@ -54,6 +59,8 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
         return {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height"};
+    } else if (recipe == "vllm") {
+        return {"vllm_backend", "vllm_args"};
     } else {
         return {};
     }

@@ -1353,5 +1353,34 @@
             "image"
         ],
         "size": 0.017
+    },
+    "OPT-125M-vllm": {
+        "checkpoint": "facebook/opt-125m",
+        "recipe": "vllm",
+        "suggested": false,
+        "labels": [
+            "vllm"
+        ],
+        "size": 0.25
+    },
+    "Qwen3-0.6B-vllm": {
+        "checkpoint": "Qwen/Qwen3-0.6B",
+        "recipe": "vllm",
+        "suggested": false,
+        "labels": [
+            "reasoning",
+            "vllm"
+        ],
+        "size": 1.2
+    },
+    "Llama-3.2-1B-Instruct-vllm": {
+        "checkpoint": "meta-llama/Llama-3.2-1B-Instruct",
+        "recipe": "vllm",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "vllm"
+        ],
+        "size": 2.5
     }
 }

@@ -25,5 +25,8 @@
   "kokoro": {
     "cpu": "b16"
   },
+  "vllm": {
+    "rocm": "b1000"
+  },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

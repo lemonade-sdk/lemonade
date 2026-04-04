@@ -1,0 +1,106 @@
+name: Validate vLLM ROCm
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Sunday at 6:00 PM UTC
+    - cron: "0 18 * * 0"
+
+permissions:
+  contents: read
+
+env:
+  LEMONADE_CI_MODE: "True"
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  build:
+    name: Build (Linux)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Build Lemonade server
+        run: |
+          ./setup.sh
+          cmake --build --preset default
+          test -f build/lemond || { echo "lemond not found!"; exit 1; }
+          echo "Build successful!"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vllm-build
+          path: |
+            build/lemond
+            build/lemonade
+            build/resources/
+          retention-days: 7
+
+  validate:
+    name: Validate vLLM ROCm
+    needs: build
+    runs-on: [stx-halo, Linux]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: vllm-build
+          path: build
+
+      - name: Verify binaries
+        run: |
+          chmod +x build/lemond build/lemonade
+          ./build/lemond --version
+          echo "Binaries verified!"
+
+      - name: Setup Python virtual environment
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install -r test/requirements.txt
+
+      - name: Run validation with lemond
+        run: |
+          CACHE_DIR="$(pwd)/ci-cache-vllm"
+          LOGS_DIR="$(pwd)/server-logs-vllm"
+          mkdir -p "$CACHE_DIR" "$LOGS_DIR"
+
+          # Start lemond in background
+          ./build/lemond "$CACHE_DIR" --port 13305 --host 127.0.0.1 \
+            > "$LOGS_DIR/lemond.stdout.log" 2> "$LOGS_DIR/lemond.stderr.log" &
+          LEMOND_PID=$!
+          echo "Started lemond PID $LEMOND_PID"
+
+          # Run validation
+          EXIT_CODE=0
+          .venv/bin/python test/validate_vllm.py \
+            --backend rocm \
+            --output-dir "$LOGS_DIR" || EXIT_CODE=$?
+
+          # Shutdown
+          curl -sf -X POST http://127.0.0.1:13305/internal/shutdown || true
+          sleep 2
+          kill $LEMOND_PID 2>/dev/null || true
+
+          exit $EXIT_CODE
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vllm-validation-results
+          path: server-logs-vllm/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Cleanup
+        if: always()
+        run: |
+          pkill -f lemond 2>/dev/null || true
+          pkill -f vllm 2>/dev/null || true
