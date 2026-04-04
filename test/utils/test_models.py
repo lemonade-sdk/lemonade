@@ -56,6 +56,27 @@ def get_default_lemond_binary():
     return _default_build_binary("lemond")
 
 
+def get_hf_cache_dir():
+    """Resolve the HF cache directory using the same logic as the C++ server.
+
+    Mirrors path_utils.cpp resolve_hf_cache_dir():
+      1. HF_HUB_CACHE env var (direct path)
+      2. HF_HOME env var + /hub
+      3. Platform default (~/.cache/huggingface/hub)
+    """
+    hf_hub_cache = os.environ.get("HF_HUB_CACHE", "")
+    if hf_hub_cache:
+        return hf_hub_cache
+    hf_home = os.environ.get("HF_HOME", "")
+    if hf_home:
+        return os.path.join(hf_home, "hub")
+    if platform.system() == "Windows":
+        userprofile = os.environ.get("USERPROFILE", "C:\\")
+        return os.path.join(userprofile, ".cache", "huggingface", "hub")
+    home = os.environ.get("HOME", "/tmp")
+    return os.path.join(home, ".cache", "huggingface", "hub")
+
+
 # Default port for lemonade server
 PORT = 13305
 

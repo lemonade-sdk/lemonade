@@ -31,7 +31,6 @@ import unittest
 
 import requests
 from utils.server_base import wait_for_server, set_server_config, _auth_headers
-from huggingface_hub.constants import HF_HUB_CACHE
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     MULTI_REPO_MODEL_A_CACHE_DIR,
@@ -51,6 +50,7 @@ from utils.test_models import (
     USER_MODEL_MAIN_CHECKPOINT,
     USER_MODEL_NAME,
     get_default_server_binary,
+    get_hf_cache_dir,
 )
 
 # Global configuration
@@ -509,7 +509,7 @@ class PersistentServerCLITests(CLITestBase):
 
         Verifies both CLI output and on-disk HF cache state at each step.
         """
-        hf_cache = HF_HUB_CACHE
+        hf_cache = get_hf_cache_dir()
         repo1_path = os.path.join(hf_cache, MULTI_REPO_MODEL_A_CACHE_DIR)
         repo2_path = os.path.join(hf_cache, MULTI_REPO_SHARED_CACHE_DIR)
         repo3_path = os.path.join(hf_cache, MULTI_REPO_MODEL_B_CACHE_DIR)

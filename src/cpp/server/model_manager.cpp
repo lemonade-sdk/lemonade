@@ -119,6 +119,59 @@ static bool is_repo_shared(const std::string& repo_id,
     return false;
 }
 
+// Parse image_defaults from a model JSON entry into ModelInfo
+static void parse_image_defaults(ModelInfo& info, const json& model_json) {
+    if (model_json.contains("image_defaults") && model_json["image_defaults"].is_object()) {
+        const auto& img_defaults = model_json["image_defaults"];
+        info.image_defaults.has_defaults = true;
+        info.image_defaults.steps = JsonUtils::get_or_default<int>(img_defaults, "steps", 20);
+        info.image_defaults.cfg_scale = JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
+        info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
+        info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
+        info.image_defaults.sampling_method = JsonUtils::get_or_default<std::string>(img_defaults, "sampling_method", "");
+        info.image_defaults.flow_shift = JsonUtils::get_or_default<float>(img_defaults, "flow_shift", 0.0f);
+    }
+}
+
+// Build merged recipe options: image_defaults -> JSON recipe_options -> user-saved overrides.
+// json_recipe_options: pre-extracted recipe_options for this model (from build_cache's
+// two-phase pattern). Pass a null json if the model JSON should be read directly instead.
+static RecipeOptions build_recipe_options(const ModelInfo& info,
+                                          const json& json_recipe_options,
+                                          const std::string& model_name,
+                                          const json& saved_recipe_options) {
+    json base_options = json::object();
+
+    // Layer 1: image_defaults as base
+    if (info.image_defaults.has_defaults) {
+        base_options["steps"] = info.image_defaults.steps;
+        base_options["cfg_scale"] = info.image_defaults.cfg_scale;
+        base_options["width"] = info.image_defaults.width;
+        base_options["height"] = info.image_defaults.height;
+        if (!info.image_defaults.sampling_method.empty())
+            base_options["sampling_method"] = info.image_defaults.sampling_method;
+        if (info.image_defaults.flow_shift > 0.0f)
+            base_options["flow_shift"] = info.image_defaults.flow_shift;
+    }
+
+    // Layer 2: JSON-level recipe_options override image_defaults (e.g. sdcpp_args)
+    if (!json_recipe_options.is_null() && json_recipe_options.is_object()) {
+        for (auto& [key, value] : json_recipe_options.items()) {
+            base_options[key] = value;
+        }
+    }
+
+    // Layer 3: User-saved recipe options override everything
+    if (JsonUtils::has_key(saved_recipe_options, model_name)) {
+        auto saved = saved_recipe_options[model_name];
+        for (auto& [key, value] : saved.items()) {
+            base_options[key] = value;
+        }
+    }
+
+    return RecipeOptions(info.recipe, base_options);
+}
+
 // Clean up orphaned HF cache blobs after deleting a symlink.
 // HF hub downloads use: snapshots/<hash>/file.gguf -> ../../blobs/<sha256>
 // If no remaining symlink in the repo points to the blob, it's safe to remove.
@@ -893,17 +946,7 @@ void ModelManager::build_cache() {
             }
         }
 
-        // Parse image_defaults if present (for sd-cpp models)
-        if (value.contains("image_defaults") && value["image_defaults"].is_object()) {
-            const auto& img_defaults = value["image_defaults"];
-            info.image_defaults.has_defaults = true;
-            info.image_defaults.steps = JsonUtils::get_or_default<int>(img_defaults, "steps", 20);
-            info.image_defaults.cfg_scale = JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
-            info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
-            info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
-            info.image_defaults.sampling_method = JsonUtils::get_or_default<std::string>(img_defaults, "sampling_method", "");
-            info.image_defaults.flow_shift = JsonUtils::get_or_default<float>(img_defaults, "flow_shift", 0.0f);
-        }
+        parse_image_defaults(info, value);
 
         // Parse recipe_options if present (for per-model runtime config like sdcpp_args)
         if (value.contains("recipe_options") && value["recipe_options"].is_object()) {
@@ -941,17 +984,7 @@ void ModelManager::build_cache() {
             }
         }
 
-        // Parse image_defaults if present (for sd-cpp models)
-        if (value.contains("image_defaults") && value["image_defaults"].is_object()) {
-            const auto& img_defaults = value["image_defaults"];
-            info.image_defaults.has_defaults = true;
-            info.image_defaults.steps = JsonUtils::get_or_default<int>(img_defaults, "steps", 20);
-            info.image_defaults.cfg_scale = JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
-            info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
-            info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
-            info.image_defaults.sampling_method = JsonUtils::get_or_default<std::string>(img_defaults, "sampling_method", "");
-            info.image_defaults.flow_shift = JsonUtils::get_or_default<float>(img_defaults, "flow_shift", 0.0f);
-        }
+        parse_image_defaults(info, value);
 
         // Parse recipe_options if present (for per-model runtime config like sdcpp_args)
         if (value.contains("recipe_options") && value["recipe_options"].is_object()) {
@@ -998,37 +1031,8 @@ void ModelManager::build_cache() {
 
     // Populate recipe options
     for (auto& [name, info] : all_models) {
-        // Start with image_defaults as base options for sd-cpp models
-        json base_options = json::object();
-        if (info.image_defaults.has_defaults) {
-            base_options["steps"] = info.image_defaults.steps;
-            base_options["cfg_scale"] = info.image_defaults.cfg_scale;
-            base_options["width"] = info.image_defaults.width;
-            base_options["height"] = info.image_defaults.height;
-            if (!info.image_defaults.sampling_method.empty())
-                base_options["sampling_method"] = info.image_defaults.sampling_method;
-            if (info.image_defaults.flow_shift > 0.0f)
-                base_options["flow_shift"] = info.image_defaults.flow_shift;
-        }
-
-        // JSON-level recipe_options override image_defaults (e.g. sdcpp_args)
-        if (json_recipe_options.count(name)) {
-            for (auto& [key, value] : json_recipe_options[name].items()) {
-                base_options[key] = value;
-            }
-        }
-
-        // User-saved recipe options override everything
-        if (JsonUtils::has_key(recipe_options_, name)) {
-            LOG(INFO, "ModelManager") << "Found recipe options for model: " << name << std::endl;
-            auto saved_options = recipe_options_[name];
-            // Merge saved options over base options
-            for (auto& [key, value] : saved_options.items()) {
-                base_options[key] = value;
-            }
-        }
-
-        info.recipe_options = RecipeOptions(info.recipe, base_options);
+        json jro = json_recipe_options.count(name) ? json_recipe_options[name] : json(nullptr);
+        info.recipe_options = build_recipe_options(info, jro, name, recipe_options_);
     }
 
     // Step 2: Filter by backend availability
@@ -1145,42 +1149,10 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     parse_composite_models(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
 
-    // Parse image_defaults if present (for sd-cpp models)
-    if (model_json->contains("image_defaults") && (*model_json)["image_defaults"].is_object()) {
-        const auto& img_defaults = (*model_json)["image_defaults"];
-        info.image_defaults.has_defaults = true;
-        info.image_defaults.steps = JsonUtils::get_or_default<int>(img_defaults, "steps", 20);
-        info.image_defaults.cfg_scale = JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
-        info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
-        info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
-        info.image_defaults.sampling_method = JsonUtils::get_or_default<std::string>(img_defaults, "sampling_method", "");
-        info.image_defaults.flow_shift = JsonUtils::get_or_default<float>(img_defaults, "flow_shift", 0.0f);
-    }
-
-    // Build recipe options with 3-level merge: image_defaults -> JSON recipe_options -> user-saved
-    json base_options = json::object();
-    if (info.image_defaults.has_defaults) {
-        base_options["steps"] = info.image_defaults.steps;
-        base_options["cfg_scale"] = info.image_defaults.cfg_scale;
-        base_options["width"] = info.image_defaults.width;
-        base_options["height"] = info.image_defaults.height;
-        if (!info.image_defaults.sampling_method.empty())
-            base_options["sampling_method"] = info.image_defaults.sampling_method;
-        if (info.image_defaults.flow_shift > 0.0f)
-            base_options["flow_shift"] = info.image_defaults.flow_shift;
-    }
-    if (model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object()) {
-        for (auto& [key, value] : (*model_json)["recipe_options"].items()) {
-            base_options[key] = value;
-        }
-    }
-    if (JsonUtils::has_key(recipe_options_, model_name)) {
-        auto saved_options = recipe_options_[model_name];
-        for (auto& [key, value] : saved_options.items()) {
-            base_options[key] = value;
-        }
-    }
-    info.recipe_options = RecipeOptions(info.recipe, base_options);
+    parse_image_defaults(info, *model_json);
+    json jro = (model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object())
+        ? (*model_json)["recipe_options"] : json(nullptr);
+    info.recipe_options = build_recipe_options(info, jro, model_name, recipe_options_);
 
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
