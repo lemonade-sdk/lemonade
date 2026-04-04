@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libdrm-dev \
     git \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy source code
@@ -24,7 +26,7 @@ WORKDIR /app
 # Build the project
 RUN rm -rf build && \
     cmake --preset default && \
-    cmake --build --preset default
+    cmake --build --preset default web-app
 
 # Debug: Check build outputs
 RUN echo "=== Build directory contents ===" && \

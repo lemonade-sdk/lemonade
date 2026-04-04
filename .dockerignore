@@ -10,7 +10,6 @@
 .pylintrc
 
 # Docs
-docs
 mkdocs.yml
 README.md
 NOTICE.md
