@@ -14,39 +14,39 @@ Contents:
 
 The [release workflow](../../.github/workflows/cpp_server_build_test_release.yml) builds the embeddable archives with the web app disabled, producing only the server, CLI, and required resource files.
 
-Linux (Ubuntu):
+=== "Windows (cmd.exe)"
 
-```bash
-sudo apt-get update
-sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
-cmake --preset default -DBUILD_WEB_APP=OFF
-cmake --build --preset default --target lemond lemonade
-```
+    ```cmd
+    cmake --preset windows -DBUILD_WEB_APP=OFF
+    cmake --build --preset windows --target lemond lemonade
+    ```
 
-Windows (Visual Studio preset):
+=== "Linux (bash)"
 
-```powershell
-cmake --preset windows -DBUILD_WEB_APP=OFF
-cmake --build --preset windows --target lemond lemonade
-```
+    ```bash
+    sudo apt-get update
+    sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
+    cmake --preset default -DBUILD_WEB_APP=OFF
+    cmake --build --preset default --target lemond lemonade
+    ```
 
 ## Include the Web App
 
 If you want the embeddable build to include the browser UI assets under `resources/web-app`, enable `BUILD_WEB_APP`.
 
-Example on Linux:
+=== "Windows (cmd.exe)"
 
-```bash
-cmake --preset default -DBUILD_WEB_APP=ON
-cmake --build --preset default --target lemond lemonade web-app
-```
+    ```cmd
+    cmake --preset windows -DBUILD_WEB_APP=ON
+    cmake --build --preset windows --target lemond lemonade web-app
+    ```
 
-Example on Windows:
+=== "Linux (bash)"
 
-```powershell
-cmake --preset windows -DBUILD_WEB_APP=ON
-cmake --build --preset windows --target lemond lemonade web-app
-```
+    ```bash
+    cmake --preset default -DBUILD_WEB_APP=ON
+    cmake --build --preset default --target lemond lemonade web-app
+    ```
 
 ## Expected Outputs
 

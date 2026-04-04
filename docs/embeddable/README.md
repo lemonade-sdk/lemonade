@@ -50,7 +50,7 @@ Many of the customization options rely of `lemond`'s `config.json` file, a persi
 In the examples in this guide, we start `lemond ./` to place these files in the same directory as `lemond` itself. Then:
 
 1. We use the `lemonade` CLI's `config set` command to programmatically customize the contents of `config.json` (you can also manually edit `config.json` if you prefer).
-2. Use `lemonade recipes --install` to pre-download backends to be bundled in your app.
+2. Use `lemonade backends install` to pre-download backends to be bundled in your app.
 3. Edit `server_models.json` and `backend_versions.json` to fully customize the experience for your users.
 4. You can delete the `lemonade` CLI and `defaults.json` files to minimize the footprint of your app.
 
@@ -60,32 +60,63 @@ Finally, you can place the fully-configured Embeddable Lemonade folder into your
 
 Once you've finished customization, you'll have a portable Lemonade folder ready for deployment with a layout like this:
 
-```
-lemond.exe                      # App runs lemond as a subprocess
-lemonade.exe                    # Optional: CLI management for lemond
-config.json                     # Persistent customized settings for lemond
-recipe_options.json             # Per-model customization (e.g., llama args)
+=== "Windows (cmd.exe)"
 
-resources/
-    |- server_models.json       # Customized lemond models list
-    |- backend_versions.json    # Customized version numbers for llamacpp, etc.
+    ```text
+    lemond.exe                      # App runs lemond as a subprocess
+    lemonade.exe                    # Optional: CLI management for lemond
+    config.json                     # Persistent customized settings for lemond
+    recipe_options.json             # Per-model customization (e.g., llama args)
 
-bin/                            # Pre-downloaded backends bundled into app
-    |- llamacpp/                # GPU LLMs, embedding, and reranking
-        |- rocm/
-            |- llama-server.exe
-        |- vulkan/
-            |- llama-server.exe
-    |- ryzenai-server/          # NPU LLMs
-    |- flm/                     # NPU LLMs, embedding, and ASR
-    |- sdpp/                    # GPU image generation
-    |- whispercpp/              # NPU and GPU ASR
+    resources\
+        |- server_models.json       # Customized lemond models list
+        |- backend_versions.json    # Customized version numbers for llamacpp, etc.
 
-models/                         # Hugging Face standard layout for models
-    |- models--unsloth--Qwen3-0.6B-GGUF/
-extra_models/                   # Additional GGUF files
-    |- my_custom_model.gguf
-```
+    bin\                            # Pre-downloaded backends bundled into app
+        |- llamacpp\                # GPU LLMs, embedding, and reranking
+            |- rocm\
+                |- llama-server.exe
+            |- vulkan\
+                |- llama-server.exe
+        |- ryzenai-server\          # NPU LLMs
+        |- flm\                     # NPU LLMs, embedding, and ASR
+        |- sdpp\                    # GPU image generation
+        |- whispercpp\              # NPU and GPU ASR
+
+    models\                         # Hugging Face standard layout for models
+        |- models--unsloth--Qwen3-0.6B-GGUF\
+    extra_models\                   # Additional GGUF files
+        |- my_custom_model.gguf
+    ```
+
+=== "Linux (bash)"
+
+    ```text
+    lemond                          # App runs lemond as a subprocess
+    lemonade                        # Optional: CLI management for lemond
+    config.json                     # Persistent customized settings for lemond
+    recipe_options.json             # Per-model customization (e.g., llama args)
+
+    resources/
+        |- server_models.json       # Customized lemond models list
+        |- backend_versions.json    # Customized version numbers for llamacpp, etc.
+
+    bin/                            # Pre-downloaded backends bundled into app
+        |- llamacpp/                # GPU LLMs, embedding, and reranking
+            |- rocm/
+                |- llama-server
+            |- vulkan/
+                |- llama-server
+        |- ryzenai-server/          # NPU LLMs
+        |- flm/                     # NPU LLMs, embedding, and ASR
+        |- sdpp/                    # GPU image generation
+        |- whispercpp/              # NPU and GPU ASR
+
+    models/                         # Hugging Face standard layout for models
+        |- models--unsloth--Qwen3-0.6B-GGUF/
+    extra_models/                   # Additional GGUF files
+        |- my_custom_model.gguf
+    ```
 
 ## In-Depth Customization
 

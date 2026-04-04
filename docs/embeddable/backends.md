@@ -27,13 +27,25 @@ Follow these instructions if you want backends to be bundled into your app's ins
 3. `lemonade backends install BACKEND:DEVICE` for each backend.
 
 
-```
-# Start lemond to download backends to ./bin/
-lemond ./
+=== "Windows (cmd.exe)"
 
-# Download llama.cpp with the Vulkan backend to ./bin/llamacpp/vulkan
-lemonade backends install llamacpp:vulkan
-```
+    ```cmd
+    REM Start lemond to download backends to ./bin/
+    lemond.exe ./
+
+    REM Download llama.cpp with the Vulkan backend to ./bin/llamacpp/vulkan
+    lemonade.exe backends install llamacpp:vulkan
+    ```
+
+=== "Linux (bash)"
+
+    ```bash
+    # Start lemond to download backends to ./bin/
+    ./lemond ./
+
+    # Download llama.cpp with the Vulkan backend to ./bin/llamacpp/vulkan
+    ./lemonade backends install llamacpp:vulkan
+    ```
 
 ### Installing Backends at Install-Time or Runtime
 
@@ -51,9 +63,17 @@ Example flow:
 
 For example:
 
-```bash
-curl http://localhost:8000/v1/system-info
-```
+=== "Windows (cmd.exe)"
+
+    ```cmd
+    curl http://localhost:8000/v1/system-info
+    ```
+
+=== "Linux (bash)"
+
+    ```bash
+    curl http://localhost:8000/v1/system-info
+    ```
 
 If the response shows ROCm support:
 
@@ -74,27 +94,47 @@ If the response shows ROCm support:
 
 Install ROCm:
 
-```bash
-curl -X POST http://localhost:8000/v1/install \
-  -H "Content-Type: application/json" \
-  -d '{
-    "recipe": "llamacpp",
-    "backend": "rocm",
-    "stream": false
-  }'
-```
+=== "Windows (cmd.exe)"
+
+    ```cmd
+    curl -X POST http://localhost:8000/v1/install ^
+      -H "Content-Type: application/json" ^
+      -d "{\"recipe\": \"llamacpp\", \"backend\": \"rocm\", \"stream\": false}"
+    ```
+
+=== "Linux (bash)"
+
+    ```bash
+    curl -X POST http://localhost:8000/v1/install \
+      -H "Content-Type: application/json" \
+      -d '{
+        "recipe": "llamacpp",
+        "backend": "rocm",
+        "stream": false
+      }'
+    ```
 
 Otherwise, install Vulkan:
 
-```bash
-curl -X POST http://localhost:8000/v1/install \
-  -H "Content-Type: application/json" \
-  -d '{
-    "recipe": "llamacpp",
-    "backend": "vulkan",
-    "stream": false
-  }'
-```
+=== "Windows (cmd.exe)"
+
+    ```cmd
+    curl -X POST http://localhost:8000/v1/install ^
+      -H "Content-Type: application/json" ^
+      -d "{\"recipe\": \"llamacpp\", \"backend\": \"vulkan\", \"stream\": false}"
+    ```
+
+=== "Linux (bash)"
+
+    ```bash
+    curl -X POST http://localhost:8000/v1/install \
+      -H "Content-Type: application/json" \
+      -d '{
+        "recipe": "llamacpp",
+        "backend": "vulkan",
+        "stream": false
+      }'
+    ```
 
 See the [Server Spec](../server/server_spec.md) for endpoint details.
 
@@ -104,12 +144,24 @@ You can provide `lemond` the path to your own backend binaries with the followin
 
 For example, to use your own Vulkan `llama-server` in place of Lemonade's:
 
-```
-# Start lemond to update configuration
-lemond ./
+=== "Windows (cmd.exe)"
 
-# Set the llama-server vulkan binary path
-lemonade config set llamacpp.vulkan_bin /path/to/bins
-```
+    ```cmd
+    REM Start lemond to update configuration
+    lemond.exe ./
+
+    REM Set the llama-server vulkan binary path
+    lemonade.exe config set llamacpp.vulkan_bin C:\path\to\bins
+    ```
+
+=== "Linux (bash)"
+
+    ```bash
+    # Start lemond to update configuration
+    ./lemond ./
+
+    # Set the llama-server vulkan binary path
+    ./lemonade config set llamacpp.vulkan_bin /path/to/bins
+    ```
 
 See the `*_bin` settings in the [Configuration Guide](../server/configuration.md) for the full set of customization options.

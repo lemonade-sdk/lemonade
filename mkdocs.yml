@@ -61,6 +61,12 @@ theme:
 # The order of the files in the list will determine the order they appear in the documentation
 nav:
   - Downloading and Getting Started: server/README.md
+  - Embeddable Lemonade:
+      - Overview: embeddable/README.md
+      - Runtime: embeddable/runtime.md
+      - Backends: embeddable/backends.md
+      - Models: embeddable/models.md
+      - Building from Source: embeddable/building.md
   - Developer Getting Started: dev-getting-started.md
   - Supported Applications: server/apps/README.md
   - Application Guides:
