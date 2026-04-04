@@ -3695,6 +3695,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         std::string recipe = request_json.value("recipe", "");
         std::string backend = request_json.value("backend", "");
         bool stream = request_json.value("stream", false);
+        bool force = request_json.value("force", false);
 
         if (recipe.empty() || backend.empty()) {
             res.status = 400;
@@ -3715,7 +3716,22 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
             system_info["recipes"].contains(recipe) &&
             system_info["recipes"][recipe].contains("backends") &&
             system_info["recipes"][recipe]["backends"].contains(backend)) {
-            std::string action = system_info["recipes"][recipe]["backends"][backend].value("action", "");
+            const auto& backend_info = system_info["recipes"][recipe]["backends"][backend];
+            std::string state = backend_info.value("state", "unsupported");
+            std::string message = backend_info.value("message", "Backend is not supported on this system.");
+            std::string action = backend_info.value("action", "");
+
+            if (state == "unsupported" && !force) {
+                res.status = 400;
+                nlohmann::json error = {
+                    {"error", "Cannot install " + recipe + ":" + backend + " on this system: " + message},
+                    {"recipe", recipe},
+                    {"backend", backend}
+                };
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+
             if (action.find(".html") != std::string::npos) {
                 auto url_pos = action.find("https://");
                 if (url_pos != std::string::npos) {
@@ -3731,13 +3747,13 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         }
 
         if (stream) {
-            stream_download_operation(res, [this, recipe, backend](DownloadProgressCallback progress_cb) {
-                backend_manager_->install_backend(recipe, backend, progress_cb);
+            stream_download_operation(res, [this, recipe, backend, force](DownloadProgressCallback progress_cb) {
+                backend_manager_->install_backend(recipe, backend, force, progress_cb);
                 SystemInfoCache::invalidate_recipes();
                 model_manager_->invalidate_models_cache();
             });
         } else {
-            backend_manager_->install_backend(recipe, backend);
+            backend_manager_->install_backend(recipe, backend, force);
             SystemInfoCache::invalidate_recipes();
             model_manager_->invalidate_models_cache();
             nlohmann::json response = {

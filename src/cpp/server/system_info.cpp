@@ -381,7 +381,7 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
 }
 
 static std::string get_install_command(const std::string& recipe, const std::string& backend) {
-    return "lemonade recipes --install " + recipe + ":" + backend;
+    return "lemonade backends install " + recipe + ":" + backend;
 }
 
 static std::string get_expected_backend_version(const std::string& recipe, const std::string& backend) {

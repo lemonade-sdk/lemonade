@@ -5,7 +5,7 @@ Tests the lemonade CLI client commands (HTTP client for Lemonade Server):
 - status
 - list
 - export
-- recipes
+- backends
 - import (from JSON file)
 - pull with labels and checkpoints
 - load
@@ -289,25 +289,31 @@ sys.exit(0)
     # Recipes Tests
     # =============================================================================
 
-    def test_040_recipes(self):
-        """Test recipes command."""
-        result = self.assertCommandSucceeds(["recipes"])
+    def test_040_backends(self):
+        """Test backends command."""
+        result = self.assertCommandSucceeds(["backends"])
         output = result.stdout + result.stderr
         self.assertTrue(
             len(output) > 0,
-            f"Recipes command should produce output: {output}",
+            f"Backends command should produce output: {output}",
         )
-        print(f"Recipes output: {output}")
+        print(f"Backends output: {output}")
 
-    def test_041_recipes_install(self):
-        """Test recipes --install."""
-        result = self.assertCommandSucceeds(["recipes", "--install", "llamacpp:cpu"])
-        print(f"Recipes --install exit code: {result.returncode}")
+    @unittest.skipIf(
+        platform.system() == "Darwin", "llamacpp:cpu not supported on macOS"
+    )
+    def test_041_backends_install(self):
+        """Test backends install."""
+        result = self.assertCommandSucceeds(["backends", "install", "llamacpp:cpu"])
+        print(f"Backends install exit code: {result.returncode}")
 
-    def test_042_recipes_uninstall(self):
-        """Test recipes --uninstall."""
-        result = self.assertCommandSucceeds(["recipes", "--uninstall", "llamacpp:cpu"])
-        print(f"Recipes --uninstall exit code: {result.returncode}")
+    @unittest.skipIf(
+        platform.system() == "Darwin", "llamacpp:cpu not supported on macOS"
+    )
+    def test_042_backends_uninstall(self):
+        """Test backends uninstall."""
+        result = self.assertCommandSucceeds(["backends", "uninstall", "llamacpp:cpu"])
+        print(f"Backends uninstall exit code: {result.returncode}")
 
     # =============================================================================
     # Pull Tests
