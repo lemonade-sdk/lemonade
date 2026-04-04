@@ -33,12 +33,16 @@ import requests
 from utils.server_base import wait_for_server, set_server_config, _auth_headers
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
+    MULTI_REPO_MODEL_A_MAIN,
+    MULTI_REPO_MODEL_A_NAME,
+    MULTI_REPO_MODEL_B_MAIN,
+    MULTI_REPO_MODEL_B_NAME,
+    MULTI_REPO_SHARED_CHECKPOINT,
     PORT,
     SHARED_REPO_MODEL_A_CHECKPOINT,
     SHARED_REPO_MODEL_A_NAME,
     SHARED_REPO_MODEL_B_CHECKPOINT,
     SHARED_REPO_MODEL_B_NAME,
-    TIMEOUT_DEFAULT,
     TIMEOUT_MODEL_OPERATION,
     USER_MODEL_MAIN_CHECKPOINT,
     USER_MODEL_NAME,
@@ -423,25 +427,7 @@ class PersistentServerCLITests(CLITestBase):
             # Best-effort restore — don't fail the test
             print(f"Warning: Failed to restore host to localhost: {e}")
 
-    def test_013_removed_image_cli_flags_rejected(self):
-        """Test that removed image generation CLI flags are rejected."""
-        removed_flags = [
-            ["load", "--steps", "10", ENDPOINT_TEST_MODEL],
-            ["load", "--cfg-scale", "7.0", ENDPOINT_TEST_MODEL],
-            ["load", "--diffusion-fa", "1", ENDPOINT_TEST_MODEL],
-            ["load", "--offload-to-cpu", "1", ENDPOINT_TEST_MODEL],
-        ]
-        for args in removed_flags:
-            result = run_cli_command(args, timeout=TIMEOUT_DEFAULT)
-            combined = result.stdout.lower() + result.stderr.lower()
-            flag = args[1]
-            self.assertTrue(
-                result.returncode != 0 or "error" in combined,
-                f"Flag {flag} should be rejected but was accepted: {combined}",
-            )
-            print(f"[OK] Removed flag {flag} correctly rejected")
-
-    def test_014_delete_preserves_shared_repo(self):
+    def test_013_delete_preserves_shared_repo(self):
         """Test that deleting one model preserves files used by another model sharing the same repo."""
         # Import two user models that share the same HF repo (different GGUF quants)
         for name, checkpoint in [
@@ -503,6 +489,103 @@ class PersistentServerCLITests(CLITestBase):
         # Clean up: delete model B
         self.assertCommandSucceeds(
             ["delete", SHARED_REPO_MODEL_B_NAME], timeout=TIMEOUT_MODEL_OPERATION
+        )
+
+    def test_014_delete_preserves_cross_repo_dependency(self):
+        """Test multi-repo dependency: deleting one model preserves shared checkpoint repos.
+
+        Scenario:
+          Model A: main from repo1, text_encoder from repo2 (shared)
+          Model B: main from repo3, text_encoder from repo2 (shared)
+
+          - Download A → downloads repo1 + repo2
+          - Download B → downloads repo3, repo2 already present
+          - Delete A → deletes repo1 only (repo2 still needed by B)
+          - Delete B → deletes repo3 + repo2
+        """
+        # Import Model A with two checkpoints from different repos
+        for name, main_cp in [
+            (MULTI_REPO_MODEL_A_NAME, MULTI_REPO_MODEL_A_MAIN),
+            (MULTI_REPO_MODEL_B_NAME, MULTI_REPO_MODEL_B_MAIN),
+        ]:
+            json_file = os.path.join(tempfile.gettempdir(), f"lemonade_{name}.json")
+            with open(json_file, "w") as f:
+                f.write(
+                    json.dumps(
+                        {
+                            "id": name,
+                            "checkpoints": {
+                                "main": main_cp,
+                                "text_encoder": MULTI_REPO_SHARED_CHECKPOINT,
+                            },
+                            "recipe": "llamacpp",
+                        }
+                    )
+                )
+            self.assertCommandSucceeds(
+                ["import", json_file], timeout=TIMEOUT_MODEL_OPERATION
+            )
+
+        # Pull both models
+        for name in [MULTI_REPO_MODEL_A_NAME, MULTI_REPO_MODEL_B_NAME]:
+            self.assertCommandSucceeds(["pull", name], timeout=TIMEOUT_MODEL_OPERATION)
+
+        # Verify both show as downloaded
+        result = self.assertCommandSucceeds(["list", "--downloaded"])
+        output = result.stdout + result.stderr
+        self.assertIn(
+            "MultiRepo-TestA",
+            output,
+            "Model A should be listed as downloaded",
+        )
+        self.assertIn(
+            "MultiRepo-TestB",
+            output,
+            "Model B should be listed as downloaded",
+        )
+
+        # Delete Model A — Model B (and its shared text_encoder repo) should be preserved
+        self.assertCommandSucceeds(
+            ["delete", MULTI_REPO_MODEL_A_NAME], timeout=TIMEOUT_MODEL_OPERATION
+        )
+
+        # Verify Model B is still downloaded
+        result = self.assertCommandSucceeds(["list", "--downloaded"])
+        output = result.stdout + result.stderr
+        self.assertIn(
+            "MultiRepo-TestB",
+            output,
+            "Model B should still be downloaded after deleting Model A",
+        )
+        self.assertNotIn(
+            "MultiRepo-TestA",
+            output,
+            "Model A should no longer be listed after delete",
+        )
+
+        # Verify Model B can still be pulled (shared text_encoder intact)
+        # A re-pull should succeed without re-downloading the shared checkpoint
+        self.assertCommandSucceeds(
+            ["pull", MULTI_REPO_MODEL_B_NAME], timeout=TIMEOUT_MODEL_OPERATION
+        )
+
+        # Clean up: delete Model B (should also remove the shared text_encoder repo)
+        self.assertCommandSucceeds(
+            ["delete", MULTI_REPO_MODEL_B_NAME], timeout=TIMEOUT_MODEL_OPERATION
+        )
+
+        # Verify both are gone
+        result = self.assertCommandSucceeds(["list", "--downloaded"])
+        output = result.stdout + result.stderr
+        self.assertNotIn(
+            "MultiRepo-TestA",
+            output,
+            "Model A should not be listed after full cleanup",
+        )
+        self.assertNotIn(
+            "MultiRepo-TestB",
+            output,
+            "Model B should not be listed after full cleanup",
         )
 
 

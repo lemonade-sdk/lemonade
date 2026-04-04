@@ -163,6 +163,22 @@ SHARED_REPO_MODEL_B_CHECKPOINT = (
     "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q4_K_M.gguf"
 )
 
+# Models for multi-repo dependency testing (different repos, shared text_encoder)
+# Scenario: Model A has main(repo1) + text_encoder(repo2-shared)
+#           Model B has main(repo3) + text_encoder(repo2-shared)
+# Deleting A must keep repo2 (still needed by B). Deleting B then cleans up repo2+repo3.
+MULTI_REPO_MODEL_A_NAME = "user.MultiRepo-TestA"
+MULTI_REPO_MODEL_A_MAIN = (
+    "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf"
+)
+MULTI_REPO_MODEL_B_NAME = "user.MultiRepo-TestB"
+MULTI_REPO_MODEL_B_MAIN = (
+    "Comfy-Org/z_image:split_files/vae/ae.safetensors"
+)
+MULTI_REPO_SHARED_CHECKPOINT = (
+    "mradermacher/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct.Q2_K.gguf"
+)
+
 # Models that should be pre-downloaded for offline testing
 MODELS_FOR_OFFLINE_CACHE = [
     "Qwen3-0.6B-GGUF",
