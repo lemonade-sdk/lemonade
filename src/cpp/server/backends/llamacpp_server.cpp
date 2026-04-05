@@ -303,6 +303,17 @@ void LlamaCppServer::load(const std::string& model_name,
     }
 #endif
 
+#ifdef __APPLE__
+    // Forward GGML_METAL_NO_RESIDENCY to llama-server if set in the parent
+    // environment. Metal residency sets crash on paravirtualized GPUs (e.g.
+    // GitHub Actions macOS runners with MTLGPUFamilyApple5).
+    const char* no_residency = std::getenv("GGML_METAL_NO_RESIDENCY");
+    if (no_residency) {
+        env_vars.push_back({"GGML_METAL_NO_RESIDENCY", no_residency});
+        LOG(DEBUG, "LlamaCpp") << "Forwarding GGML_METAL_NO_RESIDENCY=" << no_residency << std::endl;
+    }
+#endif
+
     // Start process (inherit output if debug logging enabled, filter health check spam)
     // Keep llama-server output visible at info log level.
     bool inherit_llama_output = (log_level_ == "info") || is_debug();

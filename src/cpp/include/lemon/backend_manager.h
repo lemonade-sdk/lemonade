@@ -15,6 +15,7 @@ public:
 
     // Core operations
     void install_backend(const std::string& recipe, const std::string& backend,
+                         bool force = false,
                          DownloadProgressCallback progress_cb = nullptr);
     void uninstall_backend(const std::string& recipe, const std::string& backend);
 

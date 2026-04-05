@@ -1821,7 +1821,7 @@ curl "http://localhost:13305/api/v1/system-info"
           "devices": ["amd_igpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade recipes --install llamacpp:rocm"
+          "action": "lemonade backends install llamacpp:rocm"
         },
         "metal": {
           "devices": [],
@@ -1833,7 +1833,7 @@ curl "http://localhost:13305/api/v1/system-info"
           "devices": ["cpu"],
           "state": "update_required",
           "message": "Backend update is required before use.",
-          "action": "lemonade recipes --install llamacpp:cpu"
+          "action": "lemonade backends install llamacpp:cpu"
         }
       }
     },
@@ -1844,7 +1844,7 @@ curl "http://localhost:13305/api/v1/system-info"
           "devices": ["cpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade recipes --install whispercpp:default"
+          "action": "lemonade backends install whispercpp:default"
         }
       }
     },
@@ -1855,7 +1855,7 @@ curl "http://localhost:13305/api/v1/system-info"
           "devices": ["cpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade recipes --install sd-cpp:default"
+          "action": "lemonade backends install sd-cpp:default"
         }
       }
     },
@@ -1926,6 +1926,7 @@ Install or update a backend for a specific recipe/backend pair. If the backend i
 | `recipe` | Yes | Recipe name (for example, `llamacpp`, `flm`, `whispercpp`, `sd-cpp`, `ryzenai-llm`) |
 | `backend` | Yes | Backend name within the recipe (for example, `vulkan`, `rocm`, `cpu`, `default`) |
 | `stream` | No | If `true`, returns Server-Sent Events with progress. Defaults to `false`. |
+| `force` | No | If `true`, bypasses hardware filtering for `unsupported` backends and attempts installation anyway. Defaults to `false`. |
 
 #### Example request
 
