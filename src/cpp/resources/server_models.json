@@ -1354,15 +1354,6 @@
         ],
         "size": 0.017
     },
-    "OPT-125M-vllm": {
-        "checkpoint": "facebook/opt-125m",
-        "recipe": "vllm",
-        "suggested": true,
-        "labels": [
-            "vllm"
-        ],
-        "size": 0.25
-    },
     "Qwen3-0.6B-vllm": {
         "checkpoint": "Qwen/Qwen3-0.6B",
         "recipe": "vllm",
@@ -1372,6 +1363,56 @@
             "vllm"
         ],
         "size": 1.2
+    },
+    "Qwen3-1.7B-vllm": {
+        "checkpoint": "Qwen/Qwen3-1.7B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "vllm"
+        ],
+        "size": 3.4
+    },
+    "Qwen3-4B-vllm": {
+        "checkpoint": "Qwen/Qwen3-4B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "vllm"
+        ],
+        "size": 8.2
+    },
+    "Qwen3-8B-vllm": {
+        "checkpoint": "Qwen/Qwen3-8B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "vllm"
+        ],
+        "size": 16.6
+    },
+    "Qwen3.5-7B-A3B-vllm": {
+        "checkpoint": "Qwen/Qwen3.5-7B-A3B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "vllm"
+        ],
+        "size": 14.4
+    },
+    "Qwen3.5-3B-A1B-vllm": {
+        "checkpoint": "Qwen/Qwen3.5-3B-A1B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "vllm"
+        ],
+        "size": 6.4
     },
     "Llama-3.2-1B-Instruct-vllm": {
         "checkpoint": "meta-llama/Llama-3.2-1B-Instruct",
