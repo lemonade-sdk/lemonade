@@ -1109,7 +1109,7 @@ void ModelManager::build_cache() {
                 if (safe_is_directory(resolved)) {
                     // For directories, scan for any .partial files inside
                     std::error_code ec;
-                    for (const auto& entry : fs::directory_iterator(snapshot_dir, ec)) {
+                    for (const auto& entry : fs::recursive_directory_iterator(snapshot_dir, ec)) {
                         if (entry.path().extension() == ".partial") {
                             has_partial = true;
                             break;
@@ -2274,7 +2274,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
             // Sum partial file sizes in this snapshot
             size_t partial_bytes = 0;
-            for (const auto& f : fs::directory_iterator(entry.path())) {
+            for (const auto& f : fs::recursive_directory_iterator(entry.path())) {
                 if (f.is_regular_file() && f.path().extension() == ".partial") {
                     partial_bytes += f.file_size();
                 }
