@@ -214,10 +214,18 @@ void Router::load_model(const std::string& model_name,
                        bool do_not_upgrade) {
     RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options());
 
-    // Resolve settings: load overrides take precedence over per-model overrides which take precedence over defaults
-        RecipeOptions effective_options = options.inherit(model_info.recipe_options.inherit(default_opt));
+    // Also look up per-model saved options directly from recipe_options.json
+    // This ensures saved options are applied even if build_cache missed them
+    RecipeOptions saved_opt = model_info.recipe_options;
+    auto saved_json = model_manager_->get_saved_recipe_options(model_name);
+    if (!saved_json.empty()) {
+        saved_opt = RecipeOptions(model_info.recipe, saved_json);
+    }
 
-    LOG(DEBUG, "Router") << "Effective settings: " << effective_options.to_log_string() << std::endl;
+    // Resolve settings: load overrides > per-model saved options > defaults
+    RecipeOptions effective_options = options.inherit(saved_opt.inherit(default_opt));
+
+    LOG(INFO, "Router") << "Loading " << model_name << " with: " << effective_options.to_log_string(true) << std::endl;
 
 
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)

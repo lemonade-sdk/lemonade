@@ -257,6 +257,13 @@ ModelManager::ModelManager() {
     recipe_options_ = load_optional_json(get_recipe_options_file());
 }
 
+json ModelManager::get_saved_recipe_options(const std::string& model_name) const {
+    if (recipe_options_.contains(model_name) && !recipe_options_[model_name].is_null()) {
+        return recipe_options_[model_name];
+    }
+    return json::object();
+}
+
 std::string ModelManager::get_user_models_file() {
     return get_cache_dir() + "/user_models.json";
 }
