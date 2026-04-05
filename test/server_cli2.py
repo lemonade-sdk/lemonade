@@ -1183,8 +1183,8 @@ sys.exit(0)
                 "http://old:9999/v1",
             )
 
-    def test_120_launch_opencode_with_api_key_omits_from_config(self):
-        """When --api-key is provided, opencode.json should NOT contain apiKey."""
+    def test_120_launch_opencode_with_api_key_sets_config(self):
+        """When --api-key is provided, opencode.json should contain the same apiKey."""
         if IS_WINDOWS:
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
 
@@ -1212,7 +1212,10 @@ sys.exit(0)
             with open(config_path, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
 
-            self.assertNotIn("apiKey", cfg["provider"]["Lemonade"]["options"])
+            self.assertEqual(
+                cfg["provider"]["Lemonade"]["options"].get("apiKey"),
+                "real-secret-key",
+            )
 
     # =============================================================================
     # Unload Tests

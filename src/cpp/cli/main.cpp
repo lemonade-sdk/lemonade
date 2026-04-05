@@ -417,12 +417,7 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         return;
     }
 
-    std::string config_api_key;
-    if (config.api_key.empty()) {
-        config_api_key = "lemonade";
-    } else {
-        config_api_key = config.api_key;
-    }
+    const std::string config_api_key = config.api_key.empty() ? "lemonade" : config.api_key;
 
     const std::string base_url =
         lemon_tray::build_agent_server_base_url(config.host, config.port) + "/v1";
