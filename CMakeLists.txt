@@ -19,9 +19,9 @@ endif()
 if(APPLE)
     set(CMAKE_IGNORE_PATH "/opt/homebrew/lib" "/opt/homebrew/include")
 endif()
-# Set default install prefix to /opt on Linux if not specified
+# Set default install prefix to /opt/lemonade on Linux if not specified
 if(UNIX AND NOT APPLE AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-    set(CMAKE_INSTALL_PREFIX "/opt" CACHE PATH "Install prefix" FORCE)
+    set(CMAKE_INSTALL_PREFIX "/opt/lemonade" CACHE PATH "Install prefix" FORCE)
 endif()
 
 # Include GNUInstallDirs for standard installation directories

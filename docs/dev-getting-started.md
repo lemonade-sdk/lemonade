@@ -136,7 +136,7 @@ This will:
 The tray app searches for the Electron app in these locations:
 - **Windows installed**: `../app/lemonade-app.exe` (relative to bin/ directory)
 - **Windows development**: `../app/win-unpacked/lemonade-app.exe` (from build/Release/)
-- **Linux installed**: `/opt/share/lemonade-server/app/lemonade-app`
+- **Linux installed**: `/opt/lemonade/share/lemonade-server/app/lemonade-app`
 - **Linux development**: `../app/linux-unpacked/lemonade-app` (from build/)
 
 If not found, the "Open app" menu option is hidden but everything else works.
@@ -190,7 +190,7 @@ chmod +x build/app-appimage/lemonade-app-*.AppImage
 - Clean .deb package with only runtime files (no development headers)
 - Proper graceful shutdown - all child processes cleaned up correctly
 - File locations:
-  - Installed binaries: `/opt/bin`
+  - Installed binaries: `/opt/lemonade/bin`
   - Downloaded backends (llama-server, ryzenai-server): `~/.cache/lemonade/bin/`
   - Model downloads: `~/.cache/huggingface/` (follows HF conventions)
   - Runtime files (lock, log): `$XDG_RUNTIME_DIR/lemonade/` when set and writable, otherwise `/tmp/`
@@ -250,13 +250,13 @@ cpack
 **Package Output:**
 
 Creates `lemonade-server_<VERSION>_amd64.deb` (e.g., `lemonade-server_9.0.3_amd64.deb`) which:
-- Installs to `/opt/bin/` (executables)
-- Installs resources to `/opt/share/lemonade-server/`
-- Creates desktop entry in `/opt/share/applications/`
+- Installs to `/opt/lemonade/bin/` (executables)
+- Installs resources to `/opt/lemonade/share/lemonade-server/`
+- Creates desktop entry in `/opt/lemonade/share/applications/`
 - Declares dependencies: `libcurl4`, `libssl3`, `libz1`, `unzip`, `fonts-katex`
 - Recommends: `ffmpeg` for whisper.cpp audio resampling and/or transcoding, plus a Chromium-compatible browser for `lemonade-web-app`
 - Package size: ~2.2 MB (clean, runtime-only package)
-- Includes postinst script that creates writable `/opt/share/lemonade-server/llama/` directory
+- Includes postinst script that creates writable `/opt/lemonade/share/lemonade-server/llama/` directory
 
 **Installation:**
 
