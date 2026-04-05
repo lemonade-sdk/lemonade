@@ -2043,15 +2043,33 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         total_download_size += file_desc["size"].get<size_t>();
     }
 
-    // Pre-flight disk space check: fail fast before downloading anything
+    // Pre-flight disk space check: fail fast before downloading anything.
+    // Subtract bytes already on disk (completed files + partial downloads)
+    // so resumed downloads aren't falsely rejected.
     {
+        size_t bytes_already_on_disk = 0;
+        for (const auto& file_desc : manifest["files"]) {
+            std::string filename = file_desc["name"].get<std::string>();
+            size_t file_size = file_desc["size"].get<size_t>();
+            std::string output_path = download_path + "/" + filename;
+            std::string partial_path = output_path + ".partial";
+            fs::path output_path_fs = path_from_utf8(output_path);
+            fs::path partial_path_fs = path_from_utf8(partial_path);
+            if (safe_exists(output_path_fs) && !safe_exists(partial_path_fs)) {
+                bytes_already_on_disk += file_size;
+            } else if (safe_exists(partial_path_fs)) {
+                bytes_already_on_disk += fs::file_size(partial_path_fs);
+            }
+        }
+
+        size_t bytes_needed = total_download_size - bytes_already_on_disk;
         std::error_code ec;
         auto si = fs::space(fs::path(download_path), ec);
-        if (!ec && total_download_size > si.available) {
+        if (!ec && bytes_needed > si.available) {
             std::ostringstream oss;
             oss << "Insufficient disk space: download requires "
                 << std::fixed << std::setprecision(1)
-                << (total_download_size / (1024.0 * 1024.0 * 1024.0)) << " GB but only "
+                << (bytes_needed / (1024.0 * 1024.0 * 1024.0)) << " GB but only "
                 << (si.available / (1024.0 * 1024.0 * 1024.0)) << " GB is available on "
                 << download_path;
             throw std::runtime_error(oss.str());
