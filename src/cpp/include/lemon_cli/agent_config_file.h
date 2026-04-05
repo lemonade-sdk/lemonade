@@ -17,8 +17,7 @@ struct AgentModelEntry {
 struct AgentConfigProfile {
     std::string agent_name;
     std::function<std::string()> resolve_config_path;
-    std::function<nlohmann::json(const std::string& provider_name,
-                                 const std::string& base_url,
+    std::function<nlohmann::json(const std::string& base_url,
                                  const std::string& api_key,
                                  const std::vector<AgentModelEntry>& models)>
         build_provider_block;

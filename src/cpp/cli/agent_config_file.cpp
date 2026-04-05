@@ -54,7 +54,7 @@ bool sync_agent_config_file(const AgentConfigProfile& profile,
     }
 
     nlohmann::json provider_block =
-        profile.build_provider_block(provider_name, base_url, api_key, models);
+        profile.build_provider_block(base_url, api_key, models);
 
     auto& providers = config[profile.provider_key];
     providers[provider_name] = std::move(provider_block);

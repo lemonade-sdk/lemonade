@@ -36,12 +36,9 @@ std::string resolve_opencode_config_path() {
 }
 
 nlohmann::json build_opencode_provider_block(
-    const std::string& provider_name,
     const std::string& base_url,
     const std::string& api_key,
     const std::vector<AgentModelEntry>& models) {
-    (void)provider_name;
-
     nlohmann::json provider_block = nlohmann::json::object();
     provider_block["npm"] = "@ai-sdk/openai-compatible";
     provider_block["name"] = "Lemonade Server (local)";
