@@ -1235,7 +1235,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
             bool has_partial = false;
             if (safe_is_directory(resolved)) {
                 std::error_code ec;
-                for (const auto& entry : fs::directory_iterator(snapshot_dir, ec)) {
+                for (const auto& entry : fs::recursive_directory_iterator(snapshot_dir, ec)) {
                     if (entry.path().extension() == ".partial") {
                         has_partial = true;
                         break;
