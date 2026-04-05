@@ -1217,6 +1217,45 @@ sys.exit(0)
                 "real-secret-key",
             )
 
+    def test_121_launch_opencode_backfills_schema_on_existing_config(self):
+        """Launch opencode should add $schema when syncing an existing config missing it."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "opencode_capture_schema.json")
+            self._write_fake_agent(temp_dir, "opencode", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            config_dir = os.path.join(temp_dir, ".config", "opencode")
+            os.makedirs(config_dir)
+            config_path = os.path.join(config_dir, "opencode.json")
+            existing = {
+                "provider": {
+                    "Lemonade": {
+                        "npm": "@ai-sdk/openai-compatible",
+                        "name": "Lemonade Server (local)",
+                        "options": {"baseURL": "http://old:9999/v1"},
+                        "models": {},
+                    }
+                }
+            }
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(existing, f)
+
+            result = run_cli_command(
+                ["launch", "opencode", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+
+            self.assertEqual(cfg.get("$schema"), "https://opencode.ai/config.json")
+
     # =============================================================================
     # Unload Tests
     # =============================================================================

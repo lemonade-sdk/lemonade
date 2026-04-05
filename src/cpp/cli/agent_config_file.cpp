@@ -42,6 +42,14 @@ bool sync_agent_config_file(const AgentConfigProfile& profile,
             error_out = config_path + " is not a JSON object. Refusing to overwrite.";
             return false;
         }
+
+        if (profile.initial_skeleton.is_object()) {
+            for (auto it = profile.initial_skeleton.begin(); it != profile.initial_skeleton.end(); ++it) {
+                if (!config.contains(it.key())) {
+                    config[it.key()] = it.value();
+                }
+            }
+        }
     } else {
         config = profile.initial_skeleton;
         if (!config.is_object()) {
