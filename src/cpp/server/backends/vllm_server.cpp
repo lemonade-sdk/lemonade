@@ -82,6 +82,9 @@ void VLLMServer::load(const std::string& model_name,
     args.push_back(std::to_string(port_));
     args.push_back("--host");
     args.push_back("127.0.0.1");
+    // Serve using the Lemonade model name so forwarded requests match
+    args.push_back("--served-model-name");
+    args.push_back(model_name);
 
     // Append custom vllm_args if provided
     if (!vllm_args.empty()) {
