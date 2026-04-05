@@ -2058,11 +2058,16 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             if (safe_exists(output_path_fs) && !safe_exists(partial_path_fs)) {
                 bytes_already_on_disk += file_size;
             } else if (safe_exists(partial_path_fs)) {
-                bytes_already_on_disk += fs::file_size(partial_path_fs);
+                // Cap credit to manifest size — partial can't save more than the file costs
+                size_t partial_size = fs::file_size(partial_path_fs);
+                bytes_already_on_disk += (std::min)(partial_size, file_size);
             }
         }
 
-        size_t bytes_needed = total_download_size - bytes_already_on_disk;
+        // Clamp to zero: manifest can contain size=0 entries while partials exist
+        size_t bytes_needed = (total_download_size > bytes_already_on_disk)
+            ? total_download_size - bytes_already_on_disk
+            : 0;
         std::error_code ec;
         auto si = fs::space(fs::path(download_path), ec);
         if (!ec && bytes_needed > si.available) {
