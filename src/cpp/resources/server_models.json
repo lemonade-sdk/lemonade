@@ -1394,26 +1394,6 @@
         ],
         "size": 16.6
     },
-    "Qwen3.5-7B-A3B-vllm": {
-        "checkpoint": "Qwen/Qwen3.5-7B-A3B",
-        "recipe": "vllm",
-        "suggested": true,
-        "labels": [
-            "reasoning",
-            "vllm"
-        ],
-        "size": 14.4
-    },
-    "Qwen3.5-3B-A1B-vllm": {
-        "checkpoint": "Qwen/Qwen3.5-3B-A1B",
-        "recipe": "vllm",
-        "suggested": true,
-        "labels": [
-            "reasoning",
-            "vllm"
-        ],
-        "size": 6.4
-    },
     "Llama-3.2-1B-Instruct-vllm": {
         "checkpoint": "meta-llama/Llama-3.2-1B-Instruct",
         "recipe": "vllm",
