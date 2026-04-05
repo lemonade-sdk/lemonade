@@ -33,6 +33,7 @@ from utils.server_base import (
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
+    SHARED_REPO_MODEL_B_CHECKPOINT,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
     USER_MODEL_MAIN_CHECKPOINT,
@@ -929,7 +930,10 @@ class EndpointTests(ServerTestBase):
                 json={
                     "model_name": model_name,
                     "checkpoints": {
-                        "main": USER_MODEL_MAIN_CHECKPOINT,
+                        # Use a different main quant than USER_MODEL_NAME so this test's
+                        # cleanup does not delete the same shared main file and poison
+                        # later reruns of test_021_pull_multi in server-per-test CI.
+                        "main": SHARED_REPO_MODEL_B_CHECKPOINT,
                         "text_encoder": USER_MODEL_TE_CHECKPOINT,
                         "vae": USER_MODEL_VAE_CHECKPOINT,
                     },
