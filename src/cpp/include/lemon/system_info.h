@@ -132,15 +132,17 @@ public:
     // Windows-specific methods
     std::string get_processor_name();
     std::string get_physical_memory();
-    std::string get_system_model();
-    std::string get_bios_version();
-    std::string get_max_clock_speed();
-    std::string get_windows_power_setting();
+
+    // POD used by read_cpu_hardware() (defined in system_info.cpp)
+    struct CpuHardware {
+        std::string brand;
+        int logical  = 0;
+        int physical = 0;
+    };
 
 private:
     std::vector<GPUInfo> detect_amd_gpus(const std::string& gpu_type);
     std::string get_driver_version(const std::string& device_name);
-    std::string get_npu_power_mode();
     double get_gpu_vram_dxdiag(const std::string& gpu_name);
     double get_gpu_vram_wmi(uint64_t adapter_ram);
 };
@@ -224,48 +226,18 @@ struct FlmStatus {
     }
 };
 
-// Cache management
+// In-memory system info cache (populated once on first access, held for process lifetime)
 class SystemInfoCache {
 public:
-    SystemInfoCache();
-
-    // Check if cache is valid
-    bool is_valid() const;
-
-    // Load cached hardware info
-    json load_hardware_info();
-
-    // Save hardware info to cache
-    void save_hardware_info(const json& hardware_info);
-
-    // Clear cache
-    void clear();
-
-    // Perform cleanup tasks needed when upgrading from older versions
-    // (e.g., deleting stale backend binaries)
-    void perform_upgrade_cleanup();
-
-    // Get cache file path
-    std::string get_cache_file_path() const { return cache_file_path_; }
-
-    // High-level function: Get complete system info (with cache handling and friendly messages)
+    // Get complete system info (hardware + recipes). Computed once, then cached in memory.
     static json get_system_info_with_cache();
 
-    // Invalidate recipes portion of cache (hardware stays cached).
-    // Call after installing/upgrading FLM so the next get_system_info_with_cache()
-    // re-evaluates backend availability.
+    // Invalidate recipes portion of cache so the next get_system_info_with_cache()
+    // re-evaluates backend availability (call after installing/upgrading a backend).
     static void invalidate_recipes();
 
     // Get FLM status from cached system-info (single source of truth)
     static FlmStatus get_flm_status();
-
-private:
-    std::string cache_file_path_;
-    std::string get_lemonade_version() const;
-    bool is_ci_mode() const;
-
-    // Helper to compare semantic versions (returns true if v1 < v2)
-    static bool is_version_less_than(const std::string& v1, const std::string& v2);
 };
 
 } // namespace lemon

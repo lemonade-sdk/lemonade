@@ -39,7 +39,7 @@ This guide covers everything you need to build, test, and contribute to Lemonade
 
 Lemonade consists of these main executables:
 - **lemond** - Core HTTP server that handles requests and LLM backend orchestration
-- **lemonade** - CLI client for terminal users (list, pull, delete, run, status, logs, launch, recipes, scan)
+- **lemonade** - CLI client for terminal users (list, pull, delete, run, status, logs, launch, backends, scan)
 - **LemonadeServer.exe** (Windows only) - SUBSYSTEM:WINDOWS GUI app that embeds the server and shows a system tray icon
 - **lemonade-tray** (macOS/Linux) - Lightweight tray client that connects to a running `lemond`
 - **lemonade-server** - Deprecated backwards-compatibility shim (delegates to `lemond` or `lemonade`)
@@ -535,7 +535,7 @@ src/cpp/
 │       ├── json_utils.h        # JSON utilities
 │       ├── process_manager.h   # Process management
 │       |── path_utils.h        # Path utilities
-|       |── network_beacon.h    # Helps broadcast a beacon on port 8000 to network multicast
+|       |── network_beacon.h    # Helps broadcast a beacon on port 13305 to network multicast
 │
 └── tray/                       # System tray application
     ├── CMakeLists.txt          # Tray-specific build config
@@ -585,7 +585,7 @@ A pure HTTP server that:
 #### lemonade (CLI Client)
 
 A console application for terminal users:
-- Provides command-based user interface (`list`, `pull`, `delete`, `run`, `status`, `logs`, `launch`, `recipes`, `scan`)
+- Provides command-based user interface (`list`, `pull`, `delete`, `run`, `status`, `logs`, `launch`, `backends`, `scan`)
 - Communicates with `lemond` via HTTP endpoints
 - Expects the server to already be running (auto-started by the OS after installation)
 
@@ -618,7 +618,7 @@ The client automatically:
 - The `lemonade` CLI auto-discovers the running server via UDP beacon broadcast, falling back to the default port if no beacon is found.
 
 **Network Beacon based broadcasting:**
-- Uses port 8000 to broadcast to the network that it exists
+- Uses port 13305 to broadcast to the network that it exists
 - Clients can read the json broadcast message to add server to server picker.
 - Uses machine hostname as broadcast name.
 - The custom flag --no-broadcast is available in the command line to disable.
@@ -670,7 +670,7 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 
 **Example:**
 ```bash
-curl -X POST http://localhost:8000/internal/set \
+curl -X POST http://localhost:13305/internal/set \
   -H "Content-Type: application/json" \
   -d '{"ctx_size": 8192, "max_loaded_models": 3, "log_level": "debug"}'
 ```
@@ -681,7 +681,7 @@ Returns the full runtime configuration as a flat JSON object containing all serv
 
 **Example:**
 ```bash
-curl http://localhost:8000/internal/config
+curl http://localhost:13305/internal/config
 ```
 
 ### Dependencies
@@ -711,7 +711,7 @@ The `lemond` executable is a pure HTTP server without any command-based interfac
 
 # Available options:
 #   [cache_dir]              Path to lemonade cache directory (optional)
-#   --port PORT              Port number (default: 8000)
+#   --port PORT              Port number (default: 13305)
 #   --host HOST              Bind address (default: localhost)
 #   --version, -v            Show version
 #   --help, -h               Show help
@@ -746,7 +746,7 @@ The `lemonade` executable is the command-line interface for terminal users:
 ./lemonade logs
 
 # List recipes and backends
-./lemonade recipes
+./lemonade backends
 ```
 
 ### LemonadeServer.exe / lemonade-tray (GUI Tray Application)

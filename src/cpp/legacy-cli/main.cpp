@@ -275,7 +275,7 @@ static int do_serve(const fs::path& dir, const std::vector<std::string>& args) {
     fs::path server = sibling_exe(dir, "lemond");
 
     // Extract port/host from lemond_args for health check
-    int port = 8000;
+    int port = 13305;
     std::string host = "127.0.0.1";
     for (size_t i = 0; i < lemond_args.size(); ++i) {
         if (lemond_args[i] == "--port" && i + 1 < lemond_args.size()) {
@@ -410,7 +410,7 @@ static int discover_port(const fs::path &dir) {
 
 static int do_stop(const fs::path &dir) {
     int port = discover_port(dir);
-    if (port == 0) port = 8000;
+    if (port == 0) port = 13305;
 
     httplib::Client client("127.0.0.1", port);
     client.set_connection_timeout(5);

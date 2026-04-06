@@ -86,6 +86,19 @@ static std::string extract_quantization_level(const std::string& checkpoint) {
 }
 
 // ============================================================================
+// Check if a router/backend response is an error and send HTTP 500 if so.
+// Returns true if an error was handled (caller should return immediately).
+// ============================================================================
+static bool send_backend_error(const json& response, httplib::Response& res) {
+    if (!response.contains("error")) return false;
+    LOG(ERROR, "OllamaApi") << "Backend returned error: " << response["error"].dump() << std::endl;
+    res.status = 500;
+    json error = {{"error", response["error"].value("message", "backend error")}};
+    res.set_content(error.dump(), "application/json");
+    return true;
+}
+
+// ============================================================================
 // Ollama → OpenAI option name mapping (ollama_key → openai_key)
 // Options where both names are the same use identical strings.
 // ============================================================================
@@ -635,6 +648,9 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
             LOG(INFO, "OllamaApi") << "POST /api/chat - Non-streaming (model: " << model << ")" << std::endl;
 
             auto openai_response = router_->chat_completion(openai_req);
+
+            if (send_backend_error(openai_response, res)) return;
+
             auto ollama_response = convert_openai_chat_to_ollama(openai_response, model);
             res.set_content(ollama_response.dump(), "application/json");
         }
@@ -761,6 +777,8 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
 
             auto openai_response = router_->completion(openai_req);
 
+            if (send_backend_error(openai_response, res)) return;
+
             // Convert to Ollama generate format
             json ollama_res;
             ollama_res["model"] = model;
@@ -865,6 +883,8 @@ void OllamaApi::handle_generate_image(const json& request_json, httplib::Respons
         }
 
         auto openai_response = router_->image_generations(openai_req);
+
+        if (send_backend_error(openai_response, res)) return;
 
         // Convert OpenAI response to Ollama format
         json ollama_res;
@@ -1129,6 +1149,8 @@ void OllamaApi::handle_embed(const httplib::Request& req, httplib::Response& res
 
         auto openai_response = router_->embeddings(openai_req);
 
+        if (send_backend_error(openai_response, res)) return;
+
         // Convert OpenAI response to Ollama embed format
         json ollama_res;
         ollama_res["model"] = model;
@@ -1195,6 +1217,8 @@ void OllamaApi::handle_embeddings(const httplib::Request& req, httplib::Response
         }
 
         auto openai_response = router_->embeddings(openai_req);
+
+        if (send_backend_error(openai_response, res)) return;
 
         // Convert to legacy Ollama format (single embedding)
         json ollama_res;

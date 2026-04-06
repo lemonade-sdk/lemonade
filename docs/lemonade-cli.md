@@ -12,7 +12,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 - [Options for load](#options-for-load)
 - [Options for run](#options-for-run)
 - [Options for export](#options-for-export)
-- [Options for recipes](#options-for-recipes)
+- [Options for backends](#options-for-backends)
 - [Options for launch](#options-for-launch)
 - [Options for scan](#options-for-scan)
 
@@ -33,7 +33,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 |---------------------|-------------------------------------|
 | `status`            | Check if server can be reached. If it is, prints server information. Use `--json` for machine-readable output. |
 | `logs`              | Open server logs in the web UI. |
-| `recipes`           | List available recipes and backends. Use `--install` or `--uninstall` to manage backends. |
+| `backends`          | List available recipes and backends. Use `install` or `uninstall` to manage backends. |
 | `scan`              | Scan for network beacons on the local network. See command options [below](#options-for-scan). |
 
 ### Model Management
@@ -63,7 +63,7 @@ The following options are available for all commands:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--host HOST` | Server host address | `127.0.0.1` |
-| `--port PORT` | Server port number | `8000` |
+| `--port PORT` | Server port number | `13305` |
 | `--api-key KEY` | API key for authentication | None |
 
 These options can also be set via environment variables:
@@ -76,7 +76,7 @@ These options can also be set via environment variables:
 On Linux/macOS:
 ```bash
 export LEMONADE_HOST=192.168.1.100
-export LEMONADE_PORT=8000
+export LEMONADE_PORT=13305
 export LEMONADE_API_KEY=your-api-key-here
 lemonade list
 ```
@@ -84,7 +84,7 @@ lemonade list
 On Windows (Command Prompt):
 ```cmd
 set LEMONADE_HOST=192.168.1.100
-set LEMONADE_PORT=8000
+set LEMONADE_PORT=13305
 set LEMONADE_API_KEY=your-api-key-here
 lemonade list
 ```
@@ -92,7 +92,7 @@ lemonade list
 On Windows (PowerShell):
 ```powershell
 $env:LEMONADE_HOST="192.168.1.100"
-$env:LEMONADE_PORT="8000"
+$env:LEMONADE_PORT="13305"
 $env:LEMONADE_API_KEY="your-api-key-here"
 lemonade list
 ```
@@ -108,7 +108,7 @@ lemonade pull user.MyModel --checkpoint main org/model:Q4_K_M --recipe llamacpp
 lemonade load Qwen3-0.6B-GGUF --ctx-size 8192
 
 # Install a backend for a recipe
-lemonade recipes --install llamacpp:vulkan
+lemonade backends install llamacpp:vulkan
 
 # Export model info to JSON file
 lemonade export Qwen3-0.6B-GGUF --output model-info.json
@@ -371,7 +371,7 @@ lemonade run Qwen3-0.6B-GGUF
 lemonade run Qwen3-0.6B-GGUF --ctx-size 8192
 
 # Load a model on a different host and open the web app
-lemonade run Qwen3-0.6B-GGUF --host 192.168.1.100 --port 8000
+lemonade run Qwen3-0.6B-GGUF --host 192.168.1.100 --port 13305
 ```
 
 ## Options for export
@@ -404,37 +404,44 @@ lemonade export Qwen3-0.6B-GGUF --output my-model.json
 lemonade export Qwen3-0.6B-GGUF --output model.json && cat model.json
 ```
 
-## Options for recipes
+## Options for backends
 
-The `recipes` command lists available recipes and their backends. It also supports installing and uninstalling backends:
+The `backends` command lists available recipes and their backends. Use the `install` and `uninstall` subcommands to manage them:
 
 ```bash
-lemonade recipes [options]
+lemonade backends
+lemonade backends install SPEC [--force]
+lemonade backends uninstall SPEC
 ```
 
-| Option | Description | Required |
-|--------|-------------|----------|
-| `--install SPEC` | Install a backend. Format: `recipe:backend` (e.g., `llamacpp:vulkan`) | No |
-| `--uninstall SPEC` | Uninstall a backend. Format: `recipe:backend` (e.g., `llamacpp:cpu`) | No |
+| Command | Description |
+|--------|-------------|
+| `lemonade backends` | List available recipes and backends |
+| `lemonade backends install SPEC` | Install a backend. Format: `recipe:backend` (e.g., `llamacpp:vulkan`) |
+| `lemonade backends uninstall SPEC` | Uninstall a backend. Format: `recipe:backend` (e.g., `llamacpp:cpu`) |
+| `lemonade backends install SPEC --force` | Bypass hardware filtering and attempt the install anyway |
 
 **Notes:**
 - Available backends depend on your system and the recipe
-- Use `lemonade recipes` without options to list all available recipes and backends
+- Use `lemonade backends` to list all available recipes and backends
 
 **Examples:**
 
 ```bash
 # List all available recipes and backends
-lemonade recipes
+lemonade backends
 
 # Install Vulkan backend for llamacpp
-lemonade recipes --install llamacpp:vulkan
+lemonade backends install llamacpp:vulkan
 
 # Uninstall CPU backend for llamacpp
-lemonade recipes --uninstall llamacpp:cpu
+lemonade backends uninstall llamacpp:cpu
 
 # Install FLM backend
-lemonade recipes --install flm:npu
+lemonade backends install flm:npu
+
+# Install an otherwise filtered backend
+lemonade backends install llamacpp:rocm --force
 ```
 
 ## Options for launch
@@ -514,7 +521,7 @@ lemonade scan [options]
 | `--duration SECONDS` | Scan duration in seconds | `30` |
 
 **Notes:**
-- The scan listens on UDP port 8000 for beacon broadcasts
+- The scan listens on UDP port 13305 for beacon broadcasts
 - Each beacon must contain `service`, `hostname`, and `url` fields in JSON format
 - Duplicate beacons (same URL) are automatically filtered out
 - The scan runs for the specified duration, collecting all beacons during that time

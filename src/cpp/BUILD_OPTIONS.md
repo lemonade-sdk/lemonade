@@ -57,7 +57,7 @@ ninja lemond
 ```
 
 Result:
-- ✅ Web app available at `http://localhost:8000/app`
+- ✅ Web app available at `http://localhost:13305/app`
 - ❌ No Electron desktop app
 - Minimal build time and dependencies
 
@@ -83,7 +83,7 @@ ninja electron-app  # Build desktop app separately
 ```
 
 Result:
-- ✅ Web app at `http://localhost:8000/app`
+- ✅ Web app at `http://localhost:13305/app`
 - ✅ Electron desktop app available
 - Both `webapp` and `electron-app` targets enabled
 

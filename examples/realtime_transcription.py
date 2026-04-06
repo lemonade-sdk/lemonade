@@ -261,7 +261,7 @@ def main():
         "--model", default="Whisper-Tiny", help="Whisper model (default: Whisper-Tiny)"
     )
     parser.add_argument(
-        "--server", default="http://localhost:8000/api/v1", help="REST API URL"
+        "--server", default="http://localhost:13305/api/v1", help="REST API URL"
     )
 
     args = parser.parse_args()

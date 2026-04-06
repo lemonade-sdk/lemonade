@@ -2,6 +2,12 @@ name: Validate New llama.cpp Release
 
 on:
   workflow_dispatch:
+    inputs:
+      lite:
+        description: 'Run in lite mode (smallest model only)'
+        type: boolean
+        default: false
+  pull_request:
   schedule:
     # Sunday at 12:00 PM ET (17:00 UTC, 16:00 UTC during EDT)
     - cron: "0 16 * * 0"
@@ -13,6 +19,7 @@ permissions:
 env:
   LEMONADE_CI_MODE: "True"
   PYTHONIOENCODING: utf-8
+  LITE_MODE: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
 
 jobs:
   # ========================================================================
@@ -20,6 +27,7 @@ jobs:
   # ========================================================================
   get-latest-releases:
     name: Get latest releases
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     outputs:
       llamacpp_release: ${{ steps.llamacpp.outputs.release }}
@@ -49,6 +57,7 @@ jobs:
   build:
     name: Build
     needs: get-latest-releases
+    if: always() && !failure() && !cancelled()
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,6 +66,7 @@ jobs:
           fetch-depth: 0
 
       - name: Update backend_versions.json
+        if: needs.get-latest-releases.result == 'success'
         shell: PowerShell
         env:
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
@@ -86,14 +96,14 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          Write-Host "Building lemond and lemonade-server..." -ForegroundColor Cyan
+          Write-Host "Building Lemonade server binaries..." -ForegroundColor Cyan
           if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
           cmake --preset windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build build --config Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path "build\Release\lemonade-server.exe")) {
-              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
+          if (-not (Test-Path "build\Release\lemond.exe")) {
+              Write-Host "ERROR: lemond.exe not found!" -ForegroundColor Red
               exit 1
           }
           Write-Host "Build successful!" -ForegroundColor Green
@@ -108,12 +118,17 @@ jobs:
           retention-days: 7
 
   # ========================================================================
-  # Validate vulkan backend on self-hosted runner
+  # Validate backends on self-hosted runner
   # ========================================================================
-  validate-vulkan:
-    name: Validate vulkan
+  validate:
+    name: Validate ${{ matrix.backend }}
     needs: [get-latest-releases, build]
+    if: always() && needs.build.result == 'success'
     runs-on: [self-hosted, Windows, 128gb]
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [vulkan, rocm]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -131,13 +146,13 @@ jobs:
       - name: Verify binaries
         shell: PowerShell
         run: |
-          $serverExe = "build\Release\lemonade-server.exe"
-          if (-not (Test-Path $serverExe)) {
-              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
+          $lemondExe = "build\Release\lemond.exe"
+          if (-not (Test-Path $lemondExe)) {
+              Write-Host "ERROR: lemond.exe not found!" -ForegroundColor Red
               Get-ChildItem -Recurse build | Select-Object FullName
               exit 1
           }
-          & $serverExe --version
+          & $lemondExe --version
           Write-Host "Binaries verified!" -ForegroundColor Green
 
       - name: Setup Python and virtual environment
@@ -147,111 +162,69 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      - name: Run validation
+      - name: Run validation with lemond
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
+          $lemondExe = (Resolve-Path "build\Release\lemond.exe").Path
+          $backend = "${{ matrix.backend }}"
+          $logsDir = "server-logs-$backend"
+          $cacheDir = Join-Path $PWD "ci-cache-$backend"
           $venvPython = ".\.venv\Scripts\python.exe"
-          $serverExe = (Resolve-Path "build\Release\lemonade-server.exe").Path
 
-          & $venvPython test/validate_llamacpp.py `
-            --backend vulkan `
-            --server-binary $serverExe `
-            --output llamacpp_validation_vulkan.json `
-            --logs-dir server-logs-vulkan
+          New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
 
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $stdoutLog = Join-Path $PWD "$logsDir\lemond.stdout.log"
+          $stderrLog = Join-Path $PWD "$logsDir\lemond.stderr.log"
 
-      - name: Upload results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: validation-results-vulkan
-          path: llamacpp_validation_vulkan.json
-          retention-days: 30
+          # Start lemond (Python script handles readiness polling)
+          $proc = Start-Process `
+            -FilePath $lemondExe `
+            -ArgumentList @($cacheDir, "--port", "13305", "--host", "127.0.0.1") `
+            -RedirectStandardOutput $stdoutLog `
+            -RedirectStandardError $stderrLog `
+            -PassThru
 
-      - name: Upload server logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: server-logs-vulkan
-          path: server-logs-vulkan/
-          retention-days: 30
-          if-no-files-found: ignore
+          Write-Host "Started lemond PID $($proc.Id)" -ForegroundColor Cyan
 
-      - name: Cleanup
-        if: always()
-        uses: ./.github/actions/cleanup-processes-windows
+          try {
+            $validationArgs = @(
+              "test/validate_llamacpp.py",
+              "--backend", $backend,
+              "--output", "llamacpp_validation_$backend.json",
+              "--logs-dir", $logsDir
+            )
+            if ("${{ env.LITE_MODE }}" -eq "true") {
+              $validationArgs += "--lite"
+            }
 
-  # ========================================================================
-  # Validate rocm backend on self-hosted runner
-  # ========================================================================
-  validate-rocm:
-    name: Validate rocm
-    needs: [get-latest-releases, build]
-    runs-on: [self-hosted, Windows, 128gb]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          clean: true
-
-      - name: Cleanup processes
-        uses: ./.github/actions/cleanup-processes-windows
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: llamacpp-build
-          path: build
-
-      - name: Verify binaries
-        shell: PowerShell
-        run: |
-          $serverExe = "build\Release\lemonade-server.exe"
-          if (-not (Test-Path $serverExe)) {
-              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
-              Get-ChildItem -Recurse build | Select-Object FullName
-              exit 1
+            & $venvPython @validationArgs
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally {
+            try {
+              Invoke-WebRequest -Uri "http://127.0.0.1:13305/internal/shutdown" `
+                -Method POST -TimeoutSec 10 | Out-Null
+              Start-Sleep -Seconds 2
+            } catch {
+              Write-Host "lemond shutdown not reachable; relying on cleanup step." -ForegroundColor Yellow
+            }
           }
-          & $serverExe --version
-          Write-Host "Binaries verified!" -ForegroundColor Green
-
-      - name: Setup Python and virtual environment
-        uses: ./.github/actions/setup-venv
-        with:
-          venv-name: '.venv'
-          python-version: '3.10'
-          requirements-file: 'test/requirements.txt'
-
-      - name: Run validation
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $venvPython = ".\.venv\Scripts\python.exe"
-          $serverExe = (Resolve-Path "build\Release\lemonade-server.exe").Path
-
-          & $venvPython test/validate_llamacpp.py `
-            --backend rocm `
-            --server-binary $serverExe `
-            --output llamacpp_validation_rocm.json `
-            --logs-dir server-logs-rocm
-
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: validation-results-rocm
-          path: llamacpp_validation_rocm.json
+          name: validation-results-${{ matrix.backend }}
+          path: llamacpp_validation_${{ matrix.backend }}.json
           retention-days: 30
 
       - name: Upload server logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: server-logs-rocm
-          path: server-logs-rocm/
+          name: server-logs-${{ matrix.backend }}
+          path: server-logs-${{ matrix.backend }}/
           retention-days: 30
           if-no-files-found: ignore
 
@@ -264,12 +237,11 @@ jobs:
   # ========================================================================
   create-pr:
     name: Create update PR
-    needs: [get-latest-releases, validate-vulkan, validate-rocm]
+    needs: [get-latest-releases, validate]
     runs-on: ubuntu-latest
     if: >-
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      needs.validate-vulkan.result == 'success' &&
-      needs.validate-rocm.result == 'success'
+      needs.validate.result == 'success'
     steps:
       - uses: actions/checkout@v4
 

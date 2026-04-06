@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libdrm-dev \
     git \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy source code
@@ -24,7 +26,7 @@ WORKDIR /app
 # Build the project
 RUN rm -rf build && \
     cmake --preset default && \
-    cmake --build --preset default
+    cmake --build --preset default web-app
 
 # Debug: Check build outputs
 RUN echo "=== Build directory contents ===" && \
@@ -80,11 +82,11 @@ RUN mkdir -p /opt/lemonade/llama/cpu \
     /root/.cache/huggingface
 
 # Expose default port
-EXPOSE 8000
+EXPOSE 13305
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/live || exit 1
+    CMD curl -f http://localhost:13305/live || exit 1
 
 # Default command: start server in headless mode
 CMD ["./lemonade-server", "serve", "--no-tray", "--host", "0.0.0.0"]

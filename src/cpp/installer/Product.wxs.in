@@ -366,7 +366,7 @@
 <?else?>
     <CustomAction Id="LaunchApplication"
                   Directory="SystemFolder"
-                  ExeCommand='"[SystemFolder]explorer.exe" "http://127.0.0.1:8000/"'
+                  ExeCommand='"[SystemFolder]explorer.exe" "http://127.0.0.1:13305/"'
                   Impersonate="yes"
                   Return="asyncNoWait" />
 <?endif?>
