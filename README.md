@@ -1,10 +1,8 @@
-## 🍋 Lemonade: Refreshingly fast local LLMs, Speech, and Image Generation
+## 🍋 Lemonade: Refreshingly fast local AI
 
 <p align="center">
   <a href="https://discord.gg/5xXzkMu8Zk">
     <img src="https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white" alt="Discord" /></a>
-  <a href="https://github.com/lemonade-sdk/lemonade/tree/main/test" title="Check out our tests">
-    <img src="https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml/badge.svg" alt="Lemonade Server Build" /></a>
   <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/contribute.md" title="Contribution Guide">
     <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome" /></a>
   <a href="https://github.com/lemonade-sdk/lemonade/releases/latest" title="Download the latest release">
@@ -30,8 +28,9 @@
 Lemonade is the local AI server that gives you the same capabilities as cloud APIs, except 100% free and private. Use the latest models for chat, coding, speech, and image generation on your own NPU and GPU.
 
 Lemonade comes in two flavors:
-⁃ Lemonade Server installs a service you can connect to hundreds of great apps using standard OpenAI, Anthropic, and Ollama APIs.
-⁃ Embeddable Lemonade is a portable binary you can package into your own application to give it multi-modal local AI that auto-optimizes for your user’s PC.
+
+* **Lemonade Server** installs a service you can connect to hundreds of great apps using standard OpenAI, Anthropic, and Ollama APIs.
+* **Embeddable Lemonade** is a portable binary you can package into your own application to give it multi-modal local AI that auto-optimizes for your user’s PC.
 
 *This project is built by the community for every PC, with optimizations by AMD engineers to get the most from Ryzen AI, Radeon, and Strix Halo PCs.*
 
@@ -41,35 +40,35 @@ Lemonade comes in two flavors:
 2. **Get Models**: Browse and download with the [Model Manager](#model-library)
 3. **Generate**: Try models with the built-in interfaces for chat, image gen, speech gen, and more
 4. **Mobile**: Take your lemonade to go: [iOS](https://apps.apple.com/us/app/lemonade-mobile/id6757372210) · [Android](https://play.google.com/store/apps/details?id=com.lemonade.mobile.chat.ai&pli=1) · [Source](https://github.com/lemonade-sdk/lemonade-mobile)
-5. **Connect**: Use Lemonade with your favorite apps:
+5. **Connect**: Use Lemonade with your [favorite apps](https://lemonade-server.ai/marketplace):
 
 <!-- MARKETPLACE_START -->
 <p align="center">
-  <a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/continue/logo.png" alt="Continue" width="60" /></a>&nbsp;&nbsp;<a href="https://deeptutor.knowhiz.us/" title="Deep Tutor"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/deep-tutor/logo.png" alt="Deep Tutor" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.dify.ai/plugins/langgenius/lemonade" title="Dify"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/dify/logo.png" alt="Dify" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/amd/gaia?tab=readme-ov-file#getting-started-guide" title="Gaia"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/gaia/logo.png" alt="Gaia" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.visualstudio.com/items?itemName=lemonade-sdk.lemonade-sdk" title="GitHub Copilot"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/github-copilot/logo.png" alt="GitHub Copilot" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/infinity-arcade" title="Infinity Arcade"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/infinity-arcade/logo.png" alt="Infinity Arcade" width="60" /></a>&nbsp;&nbsp;<a href="https://www.iterate.ai/" title="Iterate.ai"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/iterate-ai/logo.png" alt="Iterate.ai" width="60" /></a>&nbsp;&nbsp;<a href="https://n8n.io/integrations/lemonade-model/" title="n8n"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/n8n/logo.png" alt="n8n" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/open-webui/logo.png" alt="Open WebUI" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/open-hands/" title="OpenHands"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/openhands/logo.png" alt="OpenHands" width="60" /></a>
+  <a href="https://quickthoughts.ca/posts/firefox-chatback-lemonade-sdk/" title="Firefox Chatbot"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/fx-chatbot/logo.png" alt="Firefox Chatbot" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/anythingLLM/" title="AnythingLLM"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/anythingllm/logo.png" alt="AnythingLLM" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/continue/logo.png" alt="Continue" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.dify.ai/plugins/langgenius/lemonade" title="Dify"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/dify/logo.png" alt="Dify" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/amd/gaia?tab=readme-ov-file#getting-started-guide" title="GAIA"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/gaia/logo.png" alt="GAIA" width="60" /></a>&nbsp;&nbsp;<a href="https://admcpr.com/local-github-copilot-with-lemonade-server-on-windows" title="GitHub Copilot"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/github-copilot/logo.png" alt="GitHub Copilot" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/infinity-arcade" title="Infinity Arcade"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/infinity-arcade/logo.png" alt="Infinity Arcade" width="60" /></a>&nbsp;&nbsp;<a href="https://n8n.io/integrations/lemonade-model/" title="n8n"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/n8n/logo.png" alt="n8n" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/open-webui/logo.png" alt="Open WebUI" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/open-hands/" title="OpenHands"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/openhands/logo.png" alt="OpenHands" width="60" /></a>
 </p>
 
-<p align="center"><em><a href="https://lemonade-server.ai/marketplace">View all apps →</a></br>Want your app featured here? <a href="https://github.com/lemonade-sdk/marketplace">Just submit a marketplace PR!</a></em></p>
+<p align="center"><em>Want your app featured here? <a href="https://github.com/lemonade-sdk/marketplace">Just submit a marketplace PR!</a></em></p>
 <!-- MARKETPLACE_END -->
 
 ## Supported Platforms
 
 | Platform | Build |
 |----------|-------|
-| [![Windows 11](https://img.shields.io/badge/Windows-11-0078D6?logo=windows&logoColor=white)](https://lemonade-server.ai/install_options.html#windows) | [![Build Lemonade Server Installer](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20Lemonade%20Server%20Installer)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
-| [![Ubuntu 24.04+](https://img.shields.io/badge/Ubuntu-24.04%2B-E95420?logo=ubuntu&logoColor=white)](https://lemonade-server.ai/install_options.html#ubuntu) | [![Build Launchpad PPA](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/launchpad-ppa.yml?branch=main&label=Build%20Launchpad%20PPA)](https://github.com/lemonade-sdk/lemonade/actions/workflows/launchpad-ppa.yml) |
-| [![Snap Store](https://snapcraft.io/lemonade-server/badge.svg)](https://snapcraft.io/lemonade-server) | [![Snap Repo](https://img.shields.io/badge/lemonade--server--snap-packaging-82BEA0?logo=snapcraft&logoColor=white)](https://github.com/lemonade-sdk/lemonade-server-snap) |
 | [![Arch Linux](https://img.shields.io/badge/Arch%20Linux-supported-1793D1?logo=arch-linux&logoColor=white)](https://lemonade-server.ai/install_options.html#arch) | [![Build on Arch](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/linux_distro_builds.yml?branch=main&label=Build%20on%20Arch)](https://github.com/lemonade-sdk/lemonade/actions/workflows/linux_distro_builds.yml) |
-| [![Fedora 43](https://img.shields.io/badge/Fedora-43-294172?logo=fedora&logoColor=white)](https://lemonade-server.ai/install_options.html#fedora) | [![Build Lemonade RPM Package](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20Lemonade%20RPM%20Package)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
 | [![Debian Trixie+](https://img.shields.io/badge/Debian-Trixie%2B-A81D33?logo=debian&logoColor=white)](https://lemonade-server.ai/install_options.html#debian) | [![Build on Debian](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/linux_distro_builds.yml?branch=main&label=Build%20on%20Debian)](https://github.com/lemonade-sdk/lemonade/actions/workflows/linux_distro_builds.yml) |
-| [![macOS beta](https://img.shields.io/badge/macOS-beta-999999?logo=apple&logoColor=white)](https://lemonade-server.ai/install_options.html#macos) | [![Build Lemonade macOS Package](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20Lemonade%20macOS%20Package)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
-| [![Docker](https://img.shields.io/badge/Docker-supported-2496ED?logo=docker&logoColor=white)](https://lemonade-server.ai/install_options.html#docker) | [![Build and Push Container Image](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/build-and-push-container.yml?branch=main&label=Build%20and%20Push%20Container%20Image)](https://github.com/lemonade-sdk/lemonade/actions/workflows/build-and-push-container.yml) |
+| [![Docker](https://img.shields.io/badge/Docker-supported-2496ED?logo=docker&logoColor=white)](https://lemonade-server.ai/install_options.html#docker) | [![Build Container Image](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/build-and-push-container.yml?branch=main&label=Build%20Container%20Image)](https://github.com/lemonade-sdk/lemonade/actions/workflows/build-and-push-container.yml) |
+| [![Fedora 43](https://img.shields.io/badge/Fedora-43-294172?logo=fedora&logoColor=white)](https://lemonade-server.ai/install_options.html#fedora) | [![Build .rpm](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20.rpm)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
+| [![macOS beta](https://img.shields.io/badge/macOS-beta-999999?logo=apple&logoColor=white)](https://lemonade-server.ai/install_options.html#macos) | [![Build .pkg](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20.pkg)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
+| [![Snap](https://img.shields.io/badge/Snap-supported-82BEA0?logo=snapcraft&logoColor=white)](https://snapcraft.io/lemonade-server) | [![Build Snap](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade-server-snap/snap-build.yaml?branch=main&label=Build%20Snap)](https://github.com/lemonade-sdk/lemonade-server-snap/actions/workflows/snap-build.yaml) |
+| [![Ubuntu 24.04+](https://img.shields.io/badge/Ubuntu-24.04%2B-E95420?logo=ubuntu&logoColor=white)](https://lemonade-server.ai/install_options.html#ubuntu) | [![Build Launchpad PPA](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/launchpad-ppa.yml?branch=main&label=Build%20Launchpad%20PPA)](https://github.com/lemonade-sdk/lemonade/actions/workflows/launchpad-ppa.yml) |
+| [![Windows 11](https://img.shields.io/badge/Windows-11-0078D6?logo=windows&logoColor=white)](https://lemonade-server.ai/install_options.html#windows) | [![Build .msi](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20.msi)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
 
 ## Using the CLI
 
 To run and chat with Gemma 3:
 
 ```
-lemonade run Gemma-3-4b-it-GGUF
+lemonade run Gemma-4-E2B-it-GGUF
 ```
 
 More modalities:
@@ -90,7 +89,7 @@ To see available models and download them:
 ```
 lemonade list
 
-lemonade pull Gemma-3-4b-it-GGUF
+lemonade pull Gemma-4-E2B-it-GGUF
 ```
 
 To see the backends available on your PC:
@@ -286,7 +285,7 @@ client = OpenAI(
 
 # Create a chat completion
 completion = client.chat.completions.create(
-    model="Gemma-3-4b-it-GGUF",  # or any other available model
+    model="Gemma-4-E2B-it-GGUF",  # or any other available model
     messages=[
         {"role": "user", "content": "What is the capital of France?"}
     ]
@@ -304,13 +303,7 @@ To read our frequently asked questions, see our [FAQ Guide](./docs/faq.md)
 
 ## Contributing
 
-We are actively seeking collaborators from across the industry. If you would like to contribute to this project, please check out our [contribution guide](./docs/contribute.md).
-
-New contributors can find beginner-friendly issues tagged with "Good First Issue" to get started.
-
-<a href="https://github.com/lemonade-sdk/lemonade/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22">
-  <img src="https://img.shields.io/badge/🍋Lemonade-Good%20First%20Issue-yellowgreen?colorA=38b000&colorB=cccccc" alt="Good First Issue" />
-</a>
+Lemonade is built by the local AI community! If you would like to contribute to this project, please check out our [contribution guide](./docs/contribute.md).
 
 ## Maintainers
 
