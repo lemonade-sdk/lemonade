@@ -1,6 +1,6 @@
 import { ModelInfo, ModelsData } from './modelData';
 
-const NON_LLM_LABELS = new Set(['image', 'speech', 'tts', 'audio', 'transcription', 'embeddings', 'embedding', 'reranking']);
+export const NON_LLM_LABELS = new Set(['image', 'speech', 'tts', 'audio', 'transcription', 'embeddings', 'embedding', 'reranking']);
 
 export const getExperienceComponents = (info?: ModelInfo): string[] => {
   if (!info || !Array.isArray(info.composite_models)) {

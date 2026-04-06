@@ -1,6 +1,6 @@
 import { serverFetch } from './serverConfig';
 import { ModelsData } from './modelData';
-import { getExperienceComponents } from './experienceModels';
+import { getExperienceComponents, NON_LLM_LABELS } from './experienceModels';
 import toolDefinitions from './toolDefinitions.json';
 
 // Types
@@ -11,6 +11,12 @@ export interface LemonadeToolDef {
     description: string;
     parameters: Record<string, any>;
   };
+}
+
+interface ToolDefinitionEntry {
+  requires_labels?: string[];
+  requires_llm_labels?: string[];
+  function: { name: string; description: string; parameters: Record<string, any> };
 }
 
 export interface LemonadeToolsResult {
@@ -32,8 +38,6 @@ export interface ToolExecutionResult {
   text?: string;
 }
 
-const NON_LLM_LABELS = new Set(['image', 'speech', 'tts', 'audio', 'transcription', 'embeddings', 'embedding', 'reranking']);
-
 /**
  * Build tools, system prompt, and model map from an experience model's components.
  * Tool definitions are loaded from toolDefinitions.json — the single source of truth.
@@ -53,9 +57,9 @@ export function buildLemonadeTools(
   const tools: LemonadeToolDef[] = [];
   const models: Record<string, string> = {};
 
-  for (const def of toolDefinitions.tools) {
-    const requiresLabels = (def as any).requires_labels as string[] | undefined;
-    const requiresLlmLabels = (def as any).requires_llm_labels as string[] | undefined;
+  for (const def of (toolDefinitions.tools as ToolDefinitionEntry[])) {
+    const requiresLabels = def.requires_labels;
+    const requiresLlmLabels = def.requires_llm_labels;
 
     if (requiresLabels) {
       const labelSet = new Set(requiresLabels);
@@ -97,7 +101,8 @@ export async function executeLemonadeTool(
   let args: Record<string, any>;
   try {
     args = JSON.parse(toolCall.function.arguments);
-  } catch {
+  } catch (e) {
+    console.warn(`[LemonadeTools] Failed to parse arguments for ${funcName}:`, e);
     args = {};
   }
 

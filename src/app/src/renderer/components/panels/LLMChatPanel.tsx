@@ -450,7 +450,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     const llmMessages = [...processedMessages];
 
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-      console.log(`[LLMChat] Experience loop iteration ${iteration + 1}`);
 
       const requestBody = {
         model: chatModelName,
@@ -557,11 +556,12 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     }
 
     // Max iterations reached — show whatever we have
+    const fallbackText = artifacts.length === 0 ? 'Sorry, I was unable to complete that request.' : '';
     setMessages(prev => {
       const newMessages = [...prev];
       newMessages[newMessages.length - 1] = {
         role: 'assistant',
-        content: buildFinalContent('', artifacts),
+        content: buildFinalContent(fallbackText, artifacts),
       };
       return newMessages;
     });
@@ -1001,20 +1001,22 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           {content.map((item, index) => {
             if (item.type === 'text') return <MarkdownMessage key={index} content={item.text} isComplete={isComplete} />;
             if (item.type === 'image_url') {
+              const url = item.image_url.url;
+              if (!url.startsWith('data:image/')) return null;
               if (role === 'assistant') {
                 return (
                   <div key={index} className="image-generation-item">
                     <div className="generated-images-row">
                       <div className="generated-image-column">
                         <div className="image-wrapper">
-                          <img src={item.image_url.url} alt="Generated" className="generated-image" />
+                          <img src={url} alt="Generated" className="generated-image" />
                         </div>
                       </div>
                     </div>
                   </div>
                 );
               }
-              return <img key={index} src={item.image_url.url} alt="Uploaded" className="message-image" />;
+              return <img key={index} src={url} alt="Uploaded" className="message-image" />;
             }
             if (item.type === 'audio') {
               const audioItem = item as AudioContent;
@@ -1029,9 +1031,11 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                   </div>
                 );
               }
+              const SAFE_AUDIO_MIMES = ['audio/wav', 'audio/mpeg', 'audio/mp3', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/m4a', 'audio/mp4'];
+              const safeMime = SAFE_AUDIO_MIMES.includes(audioItem.audio.mime) ? audioItem.audio.mime : 'audio/wav';
               return (
                 <div key={index} className="message-audio">
-                  <audio controls src={`data:${audioItem.audio.mime};base64,${audioItem.audio.data}`} />
+                  <audio controls src={`data:${safeMime};base64,${audioItem.audio.data}`} />
                 </div>
               );
             }
