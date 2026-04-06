@@ -405,7 +405,18 @@ namespace lemon::backends {
             vf.close();
 
     #ifndef _WIN32
-            // Make executable on Linux/macOS
+            // Make all binaries in bin/ executable (tar may lose permissions)
+            {
+                auto bin_dir = fs::path(install_dir) / "bin";
+                if (fs::exists(bin_dir)) {
+                    for (auto& entry : fs::directory_iterator(bin_dir)) {
+                        if (entry.is_regular_file()) {
+                            chmod(entry.path().c_str(), 0755);
+                        }
+                    }
+                }
+            }
+            // Also make the found executable itself executable
             chmod(exe_path.c_str(), 0755);
     #endif
 
