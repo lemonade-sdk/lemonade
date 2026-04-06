@@ -8,9 +8,9 @@ Lemonade Server starts automatically with the OS after installation. Configurati
 
 If you used an installer from the Lemonade release your `config.json` will be at these locations depending on your OS:
 
-- **Linux (systemd):** `/var/lib/lemonade/config.json`
+- **Linux (systemd):** `/var/lib/lemonade/.cache/lemonade/config.json`
 - **Windows:** `%USERPROFILE%\.cache\lemonade\config.json`
-- **macOS:** `~/Library/Application Support/lemonade/config.json`
+- **macOS:** `/Library/Application Support/lemonade/.cache/config.json`
 
 If you are using a standalone `lemond` exectable, the default location is `~/.cache/lemonade/config.json`.
 
@@ -173,7 +173,7 @@ If the server won't start and CLI arguments aren't sufficient, you can edit conf
 
 ```bash
 # Linux
-sudo nano /var/lib/lemonade/config.json
+sudo nano /var/lib/lemonade/.cache/lemonade/config.json
 sudo systemctl restart lemonade-server
 
 # Windows — edit with your preferred text editor:

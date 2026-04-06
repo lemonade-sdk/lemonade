@@ -87,7 +87,7 @@ public:
 
     // Recipe/backend commands
     int list_recipes() const;
-    int install_backend(const std::string& recipe, const std::string& backend);
+    int install_backend(const std::string& recipe, const std::string& backend, bool force = false);
     int uninstall_backend(const std::string& recipe, const std::string& backend);
 
     // Utility (timeouts are in milliseconds)

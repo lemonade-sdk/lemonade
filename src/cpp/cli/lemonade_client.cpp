@@ -58,6 +58,19 @@ static void assert_http_ok(const httplib::Result& res) {
     }
 }
 
+static std::string extract_server_error_message(const HttpError& error) {
+    if (!error.response_body().empty()) {
+        try {
+            auto parsed = json::parse(error.response_body());
+            if (parsed.contains("error") && parsed["error"].is_string()) {
+                return parsed["error"].get<std::string>();
+            }
+        } catch (const json::exception&) {
+        }
+    }
+    return error.what();
+}
+
 // Overloaded make_request with configurable timeouts (in milliseconds)
 std::string LemonadeClient::make_request(const std::string& path, const std::string& method,
                                           const std::string& body, const std::string& content_type,
@@ -84,9 +97,12 @@ std::string LemonadeClient::make_request(const std::string& path, const std::str
 static httplib::Result handle_sse_stream(httplib::Client& cli, const std::string& path, const std::string& body, const std::string& content_type,
                               std::function<void(const std::string& event_type, const std::string& event_data)> callback) {
     std::string buffer;
+    std::string raw_response_body;
+    bool saw_sse_event = false;
 
     auto res = cli.Post(path, httplib::Headers(), body, content_type,
         [&](const char* data, size_t len) {
+            raw_response_body.append(data, len);
             buffer.append(data, len);
 
             size_t pos;
@@ -114,12 +130,17 @@ static httplib::Result handle_sse_stream(httplib::Client& cli, const std::string
                 }
 
                 if (!event_data.empty()) {
+                    saw_sse_event = true;
                     callback(event_type, event_data);
                 }
             }
 
             return true;
         });
+
+    if (res && !saw_sse_event && !raw_response_body.empty()) {
+        res->body = raw_response_body;
+    }
 
     return res;
 }
@@ -636,12 +657,13 @@ int LemonadeClient::list_recipes() const {
     }
 }
 
-int LemonadeClient::install_backend(const std::string& recipe, const std::string& backend) {
+int LemonadeClient::install_backend(const std::string& recipe, const std::string& backend, bool force) {
     std::cout << "Installing backend: " << recipe << ":" << backend << std::endl;
 
     try {
         json request_body = {{"recipe", recipe}, {"backend", backend}};
         request_body["stream"] = true;
+        request_body["force"] = force;
         std::string body = request_body.dump();
 
         StreamingRequestState state;
@@ -674,6 +696,9 @@ int LemonadeClient::install_backend(const std::string& recipe, const std::string
 
         std::cout << "Backend installed successfully: " << recipe << ":" << backend << std::endl;
         return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error: " << extract_server_error_message(e) << std::endl;
+        return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
