@@ -93,13 +93,13 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
 // Determine device type from recipe
 inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
-        return DEVICE_GPU;
+        return DEVICE_GPU;  // Default; LlamaCppServer::load() overrides to DEVICE_CPU for the cpu backend
     } else if (recipe == "ryzenai-llm") {
         return DEVICE_NPU;
     } else if (recipe == "flm") {
         return DEVICE_NPU;
     } else if (recipe == "whispercpp") {
-        return DEVICE_CPU;  // Whisper.cpp runs on CPU (with optional GPU acceleration)
+        return DEVICE_CPU;  // Default; WhisperServer::load() overrides to DEVICE_NPU/DEVICE_GPU for npu/vulkan backends
     } else if (recipe == "sd-cpp") {
         return DEVICE_CPU;  // Default; SDServer::load() overrides to DEVICE_GPU for rocm/vulkan backends
     } else if (recipe == "kokoro") {
