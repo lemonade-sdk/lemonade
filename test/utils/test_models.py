@@ -131,7 +131,7 @@ TEST_AUDIO_URL = (
 )
 
 # Vision model test configuration
-VISION_MODEL = "Gemma-3-4b-it-GGUF"
+VISION_MODEL = "Qwen3.5-0.8B-GGUF"
 
 # Stable Diffusion test configuration
 SD_MODEL = "SD-Turbo"
