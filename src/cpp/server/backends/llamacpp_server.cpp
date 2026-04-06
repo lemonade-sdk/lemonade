@@ -166,6 +166,10 @@ void LlamaCppServer::load(const std::string& model_name,
 
     bool use_gpu = (llamacpp_backend != "cpu");
 
+    // Update device type based on the actual backend selected.
+    // get_device_type_from_recipe() defaults llamacpp to GPU, but the cpu backend runs on CPU.
+    device_type_ = use_gpu ? DEVICE_GPU : DEVICE_CPU;
+
     // Install llama-server if needed (use per-model backend)
     backend_manager_->install_backend(SPEC.recipe, llamacpp_backend);
 
