@@ -38,6 +38,16 @@ export const isExperienceFullyLoaded = (
   return components.every((component) => loadedModels.has(component));
 };
 
+export const getExperienceImageModel = (selectedModel: string, modelsData: ModelsData): string | null => {
+  const info = modelsData[selectedModel];
+  const components = getExperienceComponents(info);
+  const imageModel = components.find((component) => {
+    const componentInfo = modelsData[component];
+    return componentInfo?.labels?.includes('image');
+  });
+  return imageModel || null;
+};
+
 export const getExperiencePrimaryChatModel = (selectedModel: string, modelsData: ModelsData): string => {
   const info = modelsData[selectedModel];
   const components = getExperienceComponents(info);

@@ -1296,8 +1296,8 @@
         "recipe": "experience",
         "suggested": true,
         "composite_models": [
-            "Qwen3.5-122B-A10B-GGUF",
-            "Z-Image-Turbo",
+            "Qwen3.5-35B-A3B-GGUF",
+            "Flux-2-Klein-9B-GGUF",
             "Whisper-Large-v3-Turbo",
             "kokoro-v1"
         ]

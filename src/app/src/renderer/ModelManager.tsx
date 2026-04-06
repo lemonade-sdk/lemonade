@@ -1190,7 +1190,7 @@ const [searchQuery, setSearchQuery] = useState('');
           <div className="model-info-left">
             <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
             <span className="model-name">{displayName ?? modelName}</span>
-            <span className="model-size">{formatSize(modelInfo.size)}</span>
+            <span className="model-size">{formatSize(getModelSize(modelName, modelInfo))}</span>
             {renderActionButtons(modelName, isHovered)}
           </div>
           {modelInfo.labels && modelInfo.labels.length > 0 && (

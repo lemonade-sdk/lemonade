@@ -9,6 +9,7 @@ import InferenceControls from '../InferenceControls';
 import ModelSelector from '../ModelSelector';
 import EmptyState from '../EmptyState';
 import { ImageUploadIcon } from '../Icons';
+import { isExperienceModel, getExperienceImageModel } from '../../utils/experienceModels';
 
 type ImageMode = 'generate' | 'edit' | 'variations';
 
@@ -72,7 +73,12 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const supportsEdit = useMemo(() => {
-    return modelsData[selectedModel]?.labels?.includes('edit') || false;
+    const info = modelsData[selectedModel];
+    if (isExperienceModel(info)) {
+      const imageModel = getExperienceImageModel(selectedModel, modelsData);
+      return imageModel ? modelsData[imageModel]?.labels?.includes('edit') || false : false;
+    }
+    return info?.labels?.includes('edit') || false;
   }, [selectedModel, modelsData]);
 
   useEffect(() => {
@@ -87,11 +93,11 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
       upscaleModel: prev.upscaleModel,
     }));
     // Reset to generate mode if the new model doesn't support editing
-    if (!modelsData[selectedModel]?.labels?.includes('edit') && imageMode !== 'generate') {
+    if (!supportsEdit && imageMode !== 'generate') {
       setImageMode('generate');
       setReferenceImage(null);
     }
-  }, [selectedModel, modelsData]);
+  }, [selectedModel, modelsData, supportsEdit]);
 
   const handleUpscaleChange = async (upscaleModel: string) => {
     setImageSettings(prev => ({ ...prev, upscaleModel }));

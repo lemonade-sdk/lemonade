@@ -968,7 +968,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     });
   };
 
-  const renderMessageContent = (content: MessageContent, thinking?: string, messageIndex?: number, isComplete?: boolean) => (
+  const renderMessageContent = (content: MessageContent, thinking?: string, messageIndex?: number, isComplete?: boolean, role?: string) => (
     <>
       {thinking && (
         <div className="thinking-section">
@@ -1000,7 +1000,22 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
         <div className="message-content-array">
           {content.map((item, index) => {
             if (item.type === 'text') return <MarkdownMessage key={index} content={item.text} isComplete={isComplete} />;
-            if (item.type === 'image_url') return <img key={index} src={item.image_url.url} alt="Uploaded" className="message-image" />;
+            if (item.type === 'image_url') {
+              if (role === 'assistant') {
+                return (
+                  <div key={index} className="image-generation-item">
+                    <div className="generated-images-row">
+                      <div className="generated-image-column">
+                        <div className="image-wrapper">
+                          <img src={item.image_url.url} alt="Generated" className="generated-image" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              return <img key={index} src={item.image_url.url} alt="Uploaded" className="message-image" />;
+            }
             if (item.type === 'audio') {
               const audioItem = item as AudioContent;
               const fileName = audioItem.audio.name;
@@ -1204,7 +1219,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                   onClick={(e) => message.role === 'user' && !isBusy && handleEditMessage(index, e)}
                   style={{ cursor: message.role === 'user' && !isBusy ? 'pointer' : 'default' }}
                 >
-                  {renderMessageContent(message.content, message.thinking, index, message.role === 'assistant')}
+                  {renderMessageContent(message.content, message.thinking, index, message.role === 'assistant', message.role)}
                 </div>
               )}
             </div>

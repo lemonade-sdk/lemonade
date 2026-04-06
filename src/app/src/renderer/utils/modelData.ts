@@ -63,7 +63,7 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
   const checkpoint = typeof info['checkpoint'] === 'string' ? info['checkpoint'] : '';
   const recipe = typeof info['recipe'] === 'string' ? info['recipe'] : '';
 
-  if (!checkpoint || !recipe) {
+  if (!recipe || (!checkpoint && recipe !== 'experience')) {
     return null;
   }
 

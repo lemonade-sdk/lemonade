@@ -50,16 +50,16 @@ The `experience` recipe is a **virtual composite model** that bundles multiple s
 
 | Experience | LLM | Image | Audio | TTS |
 |-----------|-----|-------|-------|-----|
-| Lemonade Ultra | gpt-oss-120b-mxfp-GGUF | Z-Image-Turbo | Whisper-Large-v3-Turbo | kokoro-v1 |
-| Lemonade Medium | gpt-oss-20b-mxfp4-GGUF | SDXL-Turbo | Whisper-Large-v3-Turbo | kokoro-v1 |
-| Lemonade Lite | Qwen3-4B-Instruct-2507-GGUF | SD-Turbo | Whisper-Tiny | kokoro-v1 |
+| Lemonade Ultra | Qwen3.5-35B-A3B-GGUF | Flux-2-Klein-9B-GGUF (gen + edit) | Whisper-Large-v3-Turbo | kokoro-v1 |
+| Lemonade Medium | Qwen3.5-35B-A3B-GGUF | SDXL-Turbo (gen only) | Whisper-Large-v3-Turbo | kokoro-v1 |
+| Lemonade Lite | Qwen3.5-4B-GGUF | SD-Turbo (gen only) | Whisper-Tiny | kokoro-v1 |
 
 **JSON structure:**
 ```json
 "Lemonade Ultra": {
     "checkpoint": "",
     "recipe": "experience",
-    "composite_models": ["gpt-oss-120b-mxfp-GGUF", "Z-Image-Turbo", "Whisper-Large-v3-Turbo", "kokoro-v1"]
+    "composite_models": ["Qwen3.5-35B-A3B-GGUF", "Flux-2-Klein-9B-GGUF", "Whisper-Large-v3-Turbo", "kokoro-v1"]
 }
 ```
 
@@ -73,6 +73,7 @@ The `experience` recipe is a **virtual composite model** that bundles multiple s
 **Frontend orchestration** (`src/app/src/renderer/utils/experienceModels.ts`):
 - `isExperienceModel()` — checks `recipe === 'experience'` and non-empty `composite_models`
 - `getExperiencePrimaryChatModel()` — finds the LLM component (first model without `NON_LLM_LABELS`: image, speech, tts, audio, transcription, embeddings, reranking)
+- `getExperienceImageModel()` — finds the image component (first model with `image` label); used to check edit capability
 - `isExperienceFullyDownloaded()` / `isExperienceFullyLoaded()` — check all components
 - `ChatWindow.tsx` activates "experience mode" UI, routing chat to the primary LLM component and dispatching `experienceModeChanged` events
 
