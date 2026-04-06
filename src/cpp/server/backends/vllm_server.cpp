@@ -26,7 +26,7 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
             );
         }
 #ifdef __linux__
-        params.filename = "vllm-" + version + "-ubuntu-rocm-" + target_arch + "-x64.tar.gz";
+        params.filename = version + "-" + target_arch + "-x64.tar.gz";
 #else
         throw std::runtime_error("vLLM ROCm is only supported on Linux");
 #endif
