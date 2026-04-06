@@ -44,7 +44,7 @@ jobs:
           echo "$timestamp" > "heartbeat-$runner.txt"
 
       - name: Upload heartbeat artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: heartbeat-${{ runner.name }}
           path: heartbeat-${{ runner.name }}.txt

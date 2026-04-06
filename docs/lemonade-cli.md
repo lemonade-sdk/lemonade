@@ -69,7 +69,7 @@ The following options are available for all commands:
 These options can also be set via environment variables:
 - `LEMONADE_HOST` for `--host`
 - `LEMONADE_PORT` for `--port`
-- `LEMONADE_API_KEY` for `--api-key`
+- `LEMONADE_API_KEY` or `LEMONADE_ADMIN_API_KEY` for `--api-key`
 
 **Examples:**
 
@@ -94,6 +94,28 @@ On Windows (PowerShell):
 $env:LEMONADE_HOST="192.168.1.100"
 $env:LEMONADE_PORT="13305"
 $env:LEMONADE_API_KEY="your-api-key-here"
+lemonade list
+```
+
+**Admin API Key Example:**
+
+To use the admin API key (which provides full access including internal endpoints):
+
+On Linux/macOS:
+```bash
+export LEMONADE_ADMIN_API_KEY=admin-secret-key
+lemonade list
+```
+
+On Windows (Command Prompt):
+```cmd
+set LEMONADE_ADMIN_API_KEY=admin-secret-key
+lemonade list
+```
+
+On Windows (PowerShell):
+```powershell
+$env:LEMONADE_ADMIN_API_KEY="admin-secret-key"
 lemonade list
 ```
 
@@ -458,6 +480,8 @@ lemonade launch AGENT [--model MODEL_NAME] [options]
 | `--model MODEL_NAME` | Model name to launch with. If omitted, you will be prompted to select one. | No |
 | `--directory DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
 | `--recipe-file FILE` | Remote recipe JSON filename used only if you choose recipe import at prompt | No |
+| `--provider,-p [PROVIDER]` | Codex only: select provider name for Codex config; Lemonade does not read or modify `config.toml` (defaults to `lemonade`) | No |
+| `--agent-args ARGS` | Custom arguments to pass directly to the launched agent process | `""` |
 | `--ctx-size SIZE` | Context size for the model | `4096` |
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server (must not conflict with managed args) | `""` |
@@ -468,22 +492,39 @@ lemonade launch AGENT [--model MODEL_NAME] [options]
 - `--directory` and `--recipe-file` are only used for remote recipe import at prompt time.
 - For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first, then launch with the imported model id.
 - `--api-key` is propagated to the launched agent process.
+- For `codex`, launch now injects a Lemonade model provider by default so host/port settings are honored.
+- `--provider` is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
+- `--agent-args` is parsed and appended to the launched agent command.
 - Supported agents: `claude`, `codex`
 
 **Examples:**
 
 ```bash
 # Launch an agent with default model settings
-lemonade launch claude --model Qwen3-0.6B-GGUF
+lemonade launch claude --model Qwen3.5-0.8B-GGUF
 
 # Launch an agent with custom context size
-lemonade launch claude --model Qwen3-0.6B-GGUF --ctx-size 8192
+lemonade launch claude --model Qwen3.5-0.8B-GGUF --ctx-size 32768
 
 # Launch an agent with a specific llama.cpp backend
-lemonade launch codex --model Qwen3-0.6B-GGUF --llamacpp vulkan
+lemonade launch codex --model Qwen3.5-0.8B-GGUF --llamacpp vulkan
+
+# Launch codex using provider from your Codex config.toml (default provider: lemonade)
+lemonade launch codex --model Qwen3.5-0.8B-GGUF -p
+
+# Launch codex using a custom provider name from your Codex config.toml
+lemonade launch codex --model Qwen3.5-0.8B-GGUF --provider my-provider
 
 # Launch an agent with custom llama.cpp arguments
-lemonade launch claude --model Qwen3-0.6B-GGUF --ctx-size 4096 --llamacpp-args "--flash-attn on --no-mmap"
+lemonade launch claude --model Qwen3.5-0.8B-GGUF --ctx-size 32768 --llamacpp-args "--flash-attn on --no-mmap"
+
+# Pass additional arguments directly to the agent
+lemonade launch claude --model Qwen3.5-0.8B-GGUF --agent-args "--approval-mode never"
+
+# Resume from previous session
+lemonade launch codex --model Qwen3.5-0.8B-GGUF --agent-args "resume SESSION_ID"
+
+lemonade launch claude --model Qwen3.5-0.8B-GGUF --agent-args "--resume SESSION_ID"
 
 # Launch and allow optional prompt-driven recipe import using prefilled remote recipe flags
 lemonade launch claude --directory coding-agents --recipe-file Qwen3.5-35B-A3B-NoThinking.json
