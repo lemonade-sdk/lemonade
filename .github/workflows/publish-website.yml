@@ -13,7 +13,7 @@ jobs:
       name: Build and publish lemonade-server.ai website
       runs-on: ubuntu-latest
       steps:
-        - uses: actions/checkout@main
+        - uses: actions/checkout@v5
           with:
             fetch-depth: 0
         - name: Set up Python
