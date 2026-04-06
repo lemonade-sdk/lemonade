@@ -649,14 +649,41 @@
   
   
     <li class="md-nav__item">
-      <a href="../server/lemonade-server-cli/" class="md-nav__link">
+      <a href="../lemonade-cli/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Lemonade Server CLI Guide
+    Lemonade CLI Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server Configuration
   
 
     
@@ -1277,6 +1304,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#tts_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TTS
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="TTS">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-what-voices-are-supported_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. What voices are supported?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-can-voices-be-mixed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Can voices be mixed?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-i-entered-a-voice-but-no-audio-is-playing_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. I entered a voice, but no audio is playing?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#support-roadmap" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1821,6 +1898,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#tts_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TTS
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="TTS">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-what-voices-are-supported_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. What voices are supported?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-can-voices-be-mixed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Can voices be mixed?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-i-entered-a-voice-but-no-audio-is-playing_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. I entered a voice, but no audio is playing?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#support-roadmap" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1932,7 +2059,7 @@
 <p>You can change this location by setting the <code>HF_HOME</code> env var, which will store your models in <code>$HF_HOME/hub</code> (e.g., <code>$HF_HOME/hub/models--Qwen--Qwen2.5-0.5B</code>). Alternatively, you can set <code>HF_HUB_CACHE</code> and your models will be in <code>$HF_HUB_CACHE</code> (e.g., <code>$HF_HUB_CACHE/models--Qwen--Qwen2.5-0.5B</code>).</p>
 <p>You can use the official Hugging Face Hub utility (<code>pip install huggingface-hub</code>) to manage models outside of Lemonade, e.g., <code>hf cache ls</code> will print all models and their sizes.</p>
 <p><strong>Secondary: Extra Models Directory (GGUF)</strong></p>
-<p>Lemonade Server can discover GGUF models from a secondary directory using the <code>--extra-models-dir</code> option, enabling compatibility with llama.cpp and LM Studio model caches. Suggested paths:</p>
+<p>Lemonade Server can discover GGUF models from a secondary directory using the <code>extra_models_dir</code> option, enabling compatibility with llama.cpp and LM Studio model caches. Suggested paths:</p>
 <ul>
 <li><strong>Windows:</strong><ul>
 <li>LM Studio: <code>C:\Users\You\.lmstudio\models</code></li>
@@ -1941,14 +2068,16 @@
 </li>
 <li><strong>Linux:</strong> <code>~/.cache/llama.cpp</code></li>
 </ul>
-<p>Example: <code>lemonade-server serve --extra-models-dir "%LOCALAPPDATA%\llama.cpp"</code></p>
+<p>Set <code>extra_models_dir</code> (see <a href="../server/configuration/">Server Configuration</a>):</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">extra_models_dir</span><span class="o">=</span><span class="s2">&quot;/home/you/.cache/llama.cpp&quot;</span>
+</code></pre></div>
 <p>Any <code>.gguf</code> files found in this directory (including subdirectories) will automatically appear in Lemonade's model list in the <code>custom</code> category.</p>
 <p><strong>FastFlowLM</strong></p>
 <p>FastFlowLM (FLM) has its own model management system. When you first install FLM the install wizard asks for a model directory, which is then saved to the <code>FLM_MODEL_PATH</code> environment variable on your system PATH. Models are stored in that directory. If you change the variable's value, newly downloaded models will be stored on the new path, but your prior models will still be at the prior path.</p>
 <h3 id="2-what-models-are-supported">2. <strong>What models are supported?</strong></h3>
 <p>Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, gpt-oss, LFM, and many more. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface in the app or the <code>pull</code> command on the CLI.</p>
 <p>👉 <a href="https://lemonade-server.ai/models.html">Supported Models List</a>
-   👉 <a href="https://lemonade-server.ai/docs/server/lemonade-server-cli/#options-for-pull">pull command</a></p>
+   👉 <a href="https://lemonade-server.ai/docs/lemonade-cli/#options-for-pull">pull command</a></p>
 <h3 id="3-how-do-i-know-what-size-model-will-work-with-my-setup">3. <strong>How do I know what size model will work with my setup?</strong></h3>
 <p>Model compatibility depends on your system's RAM, VRAM, and NPU availability. <strong>The actual file size varies significantly between models</strong> due to different quantization techniques and architectures.</p>
 <p><strong>To check if a model will work:</strong>
@@ -1960,12 +2089,12 @@
 <p>If a model isn't listed, it may not be compatible with your PC due to device or RAM limitations, or we just haven't added it to the <code>server_models.json</code> file yet.</p>
 <p>You can:</p>
 <ul>
-<li>Add a custom model manually via the app's "Add a Model" interface or the <a href="https://lemonade-server.ai/docs/server/lemonade-server-cli/#options-for-pull">CLI pull command</a>. For advanced manual configuration, see the <a href="https://lemonade-server.ai/docs/server/custom-models/">Custom Model Configuration Guide</a>.</li>
+<li>Add a custom model manually via the app's "Add a Model" interface or the <a href="https://lemonade-server.ai/docs/lemonade-cli/#options-for-pull">CLI pull command</a>. For advanced manual configuration, see the <a href="https://lemonade-server.ai/docs/server/custom-models/">Custom Model Configuration Guide</a>.</li>
 <li>Use a pull request to add the model to the built-in <code>server_models.json</code> file.</li>
 <li>Request support by opening a <a href="https://github.com/lemonade-sdk/lemonade/issues">GitHub issue</a>.</li>
 </ul>
-<p>If you are sure that a model should be listed, but you aren't seeing it, you can set the <code>LEMONADE_DISABLE_MODEL_FILTERING</code> environment variable to show all models supported by Lemonade on any PC configuration. But please note, this can show models that definitely won't work on your system.</p>
-<p>Alternatively if you are attempting to use GTT on your dGPU then you can set the <code>LEMONADE_ENABLE_DGPU_GTT</code> environment variable to filter using the combined memory pool. Please note ROCM does not support splitting memory across multiple pools, vulkan is likely required for this usecase.</p>
+<p>If you are sure that a model should be listed, but you aren't seeing it, you can <code>lemonade config set disable_model_filtering=true</code> in to show all models supported by Lemonade on any PC configuration. But please note, this can show models that definitely won't work on your system.</p>
+<p>Alternatively if you are attempting to use GTT on your dGPU then you can <code>lemonade config set enable_dgpu_gtt=true</code> to filter using the combined memory pool. Please note ROCM does not support splitting memory across multiple pools, vulkan is likely required for this usecase.</p>
 <h3 id="5-is-there-a-script-or-tool-to-convert-models-to-ryzen-ai-npu-format">5. <strong>Is there a script or tool to convert models to Ryzen AI NPU format?</strong></h3>
 <p>Yes, there's a guide on preparing your models for Ryzen AI NPU:</p>
 <p>👉 <a href="https://ryzenai.docs.amd.com/en/latest/oga_model_prepare.html">Model Preparation Guide</a></p>
@@ -1977,9 +2106,9 @@
 <h2 id="inference-behavior-performance">Inference Behavior &amp; Performance</h2>
 <h3 id="1-can-lemonade-print-out-stats-like-tokens-per-second">1. <strong>Can Lemonade print out stats like tokens per second?</strong></h3>
 <p>Yes! Lemonade Server exposes a <code>/stats</code> endpoint that returns performance metrics from the most recent completion request:</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8000/api/v1/stats
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:13305/api/v1/stats
 </code></pre></div>
-<p>Or, you can launch <code>lemonade-server</code> with the option <code>--log-level debug</code> and that will also print out stats.</p>
+<p>Or, use <code>lemonade config set log_level=debug</code> to enable debug logging, or <code>lemonade logs</code> to view logs.</p>
 <h3 id="2-how-does-lemonades-performance-compare-to-llamacpp">2. <strong>How does Lemonade's performance compare to llama.cpp?</strong></h3>
 <p>Lemonade supports llama.cpp as a backend, so performance is similar when using the same model and quantization.</p>
 <h3 id="3-how-can-rocm-performance-be-improved-for-my-use-case">3. <strong>How can ROCm performance be improved for my use case?</strong></h3>
@@ -1995,10 +2124,8 @@
 </blockquote>
 <h2 id="hybrid-and-npu-questions">Hybrid and NPU Questions</h2>
 <h3 id="1-does-llm-inference-with-the-npu-only-work-on-windows">1. <strong>Does LLM inference with the NPU only work on Windows?</strong></h3>
-<p>Yes, today, NPU and hybrid inference is currently supported only on Windows.</p>
-<p>To request NPU support on Linux, file an issue with either:
-     - Ryzen AI SW: https://github.com/amd/ryzenai-sw
-     - FastFlowLM: https://github.com/FastFlowLM/FastFlowLM</p>
+<p>Today, NPU-only inference on Linux is available via FastFlowLM, see the guide <a href="https://lemonade-server.ai/flm_npu_linux.html">here</a>.</p>
+<p>At the moment, Ryzen AI SW's implementation of NPU and hybrid inference is currently supported only on Windows.</p>
 <h3 id="2-i-loaded-a-hybrid-model-but-the-npu-is-barely-active-is-that-expected">2. <strong>I loaded a hybrid model, but the NPU is barely active. Is that expected?</strong></h3>
 <p>Yes. In hybrid mode:</p>
 <ul>
@@ -2034,24 +2161,24 @@
 <h2 id="remote-access">Remote Access</h2>
 <h3 id="1-how-do-i-run-lemonade-server-on-one-pc-and-access-it-from-another">1. <strong>How do I run Lemonade Server on one PC and access it from another?</strong></h3>
 <p>Lemonade supports running the server on one machine while using the app from another machine on the same network.</p>
-<p><strong>Quick setup:</strong>
-   1. On the server machine, start with network access enabled:
-      <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve<span class="w"> </span>--host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>--port<span class="w"> </span><span class="m">8000</span>
-</code></pre></div>
-   2. On the client machine, launch the app and configure the endpoint through the UI:
-      <div class="highlight"><pre><span></span><code>lemonade-app
-</code></pre></div></p>
-<p>For detailed instructions and security considerations, see <a href="./lemonade-server-cli.md#remote-server-connection">Remote Server Connection</a>.</p>
+<p>For detailed instructions and security considerations, see <a href="../server/configuration/#remote-server-connection">Remote Server Connection</a>.</p>
 <h2 id="customization">Customization</h2>
 <h3 id="1-how-do-i-use-my-own-llamacpp-or-whispercpp-binaries">1. <strong>How do I use my own llama.cpp or whisper.cpp binaries?</strong></h3>
 <p>Lemonade Server allows you to use custom <code>llama-server</code> or <code>whisper-server</code> binaries instead of the bundled ones by setting environment variables to the full path of your binary.</p>
-<p>👉 <a href="../server/lemonade-server-cli/#custom-backend-binaries">Custom Backend Binaries</a></p>
+<p>👉 <a href="../server/configuration/#custom-backend-binaries">Custom Backend Binaries</a></p>
 <h2 id="tts">TTS</h2>
 <h3 id="1-what-voices-are-supported">1. <strong>What voices are supported?</strong></h3>
 <p>Lemonade supports most of the voices listed in <a href="https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md">Kokoro-82M VOICES</a>. OpenAI voices can be selected from a default list, while other voices must be entered manually via text.</p>
 <h3 id="2-can-voices-be-mixed">2. <strong>Can voices be mixed?</strong></h3>
 <p>Yes, two voices can be mixed using the following format: <code>af_jessica.5+af_kore.4</code></p>
 <h3 id="3-i-entered-a-voice-but-no-audio-is-playing">3. <strong>I entered a voice, but no audio is playing?</strong></h3>
+<p>Some voices are not supported yet. If you manually enter a voice name instead of selecting one from the default list, and that voice is not supported, a muted audio will be generated.</p>
+<h2 id="tts_1">TTS</h2>
+<h3 id="1-what-voices-are-supported_1">1. <strong>What voices are supported?</strong></h3>
+<p>Lemonade supports most of the voices listed in <a href="https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md">Kokoro-82M VOICES</a>. OpenAI voices can be selected from a default list, while other voices must be entered manually via text.</p>
+<h3 id="2-can-voices-be-mixed_1">2. <strong>Can voices be mixed?</strong></h3>
+<p>Yes, two voices can be mixed using the following format: <code>af_jessica.5+af_kore.4</code></p>
+<h3 id="3-i-entered-a-voice-but-no-audio-is-playing_1">3. <strong>I entered a voice, but no audio is playing?</strong></h3>
 <p>Some voices are not supported yet. If you manually enter a voice name instead of selecting one from the default list, and that voice is not supported, a muted audio will be generated.</p>
 <h2 id="support-roadmap">Support &amp; Roadmap</h2>
 <h3 id="1-what-if-i-encounter-installation-or-runtime-errors">1. <strong>What if I encounter installation or runtime errors?</strong></h3>

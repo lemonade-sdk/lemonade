@@ -16,7 +16,7 @@
         <link rel="prev" href="../open-webui/">
       
       
-        <link rel="next" href="../../lemonade-server-cli/">
+        <link rel="next" href="../../../lemonade-cli/">
       
       
         
@@ -835,14 +835,41 @@
   
   
     <li class="md-nav__item">
-      <a href="../../lemonade-server-cli/" class="md-nav__link">
+      <a href="../../../lemonade-cli/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Lemonade Server CLI Guide
+    Lemonade CLI Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server Configuration
   
 
     
@@ -1243,7 +1270,7 @@ pipx<span class="w"> </span>ensurepath
 </ul>
 <div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span><span class="s2">&quot;-&quot;</span>
 <span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_MODEL</span><span class="o">=</span><span class="s2">&quot;Llama-3.2-3B-Instruct-Hybrid&quot;</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_BASE_URL</span><span class="o">=</span><span class="s2">&quot;http://localhost:8000/api/v1&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_BASE_URL</span><span class="o">=</span><span class="s2">&quot;http://localhost:13305/api/v1&quot;</span>
 </code></pre></div>
 <h2 id="usage">Usage</h2>
 <h3 id="start-a-terminal">Start a terminal</h3>
@@ -1256,11 +1283,11 @@ pipx<span class="w"> </span>ensurepath
 <p>Then, try some of these example commands that <code>wut</code> can help explain.</p>
 <h3 id="help-with-lemonade-server">Help with Lemonade Server</h3>
 <p>People often ask exactly what Lemonade Server's <code>models</code> endpoint does. Fortunately, <code>wut</code> is able to intuit the answer!</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8000/api/v1/models
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:13305/api/v1/models
 wut
 </code></pre></div>
 <p>The terminal response of the <code>curl</code> command is this (only intelligible by machines):</p>
-<div class="highlight"><pre><span></span><code>curl http://localhost:8000/api/v1/models
+<div class="highlight"><pre><span></span><code>curl http://localhost:13305/api/v1/models
 {&quot;object&quot;:&quot;list&quot;,&quot;data&quot;:[{&quot;id&quot;:&quot;Qwen2.5-0.5B-Instruct-CPU&quot;,&quot;created&quot;:1744226681,&quot;object&quot;:&quot;model&quot;,&quot;owned_by&quot;:&quot;lemonade&quot;},{&quot;id&quot;:&quot;Llama-3.2-1B-Instruct-Hybrid&quot;,&quot;created&quot;:1744226681,&quot;object&quot;:&quot;model&quot;,&quot;owned_by&quot;:&quot;lemonade&quot;},{&quot;id&quot;:&quot;Llama-3.2-3B-Instruct-Hybrid&quot;,&quot;created&quot;:1744226681,&quot;object&quot;:&quot;model&quot;,&quot;owned_by&quot;:&quot;lemonade&quot;},{&quot;id&quot;:&quot;Phi-3-Mini-Instruct-Hybrid&quot;,&quot;created&quot;:1744226681,&quot;object&quot;:&quot;model&quot;,&quot;owned_by&quot;:&quot;lemonade&quot;},{&quot;id&quot;:&quot;Qwen-1.5-7B-Chat-Hybrid&quot;,&quot;created&quot;:1744226681,&quot;object&quot;:&quot;model&quot;,&quot;owned_by&quot;:&quot;lemonade&quot;},{&quot;id&quot;:&quot;DeepSeek-R1-Distill-Llama-8B-Hybrid&quot;,&quot;created&quot;:1744226681,&quot;object&quot;:&quot;model&quot;,&quot;owned_by&quot;:&quot;lemonade&quot;},{&quot;id&quot;:&quot;DeepSeek-R1-Distill-Qwen-7B-Hybrid&quot;,&quot;created&quot;:1744226681,&quot;object&quot;:&quot;model&quot;,&quot;owned_by&quot;:&quot;lemonade&quot;}]}
 </code></pre></div>
 <p>But <code>wut</code> does a nice job interpreting:</p>
@@ -1335,13 +1362,13 @@ Modifications Copyright (c) 2025 AMD-->
         
         
           
-          <a href="../../lemonade-server-cli/" class="md-footer__link md-footer__link--next" aria-label="Next: Lemonade Server CLI Guide">
+          <a href="../../../lemonade-cli/" class="md-footer__link md-footer__link--next" aria-label="Next: Lemonade CLI Guide">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Lemonade Server CLI Guide
+                Lemonade CLI Guide
               </div>
             </div>
             <div class="md-footer__button md-icon">

@@ -812,14 +812,41 @@
   
   
     <li class="md-nav__item">
-      <a href="../../lemonade-server-cli/" class="md-nav__link">
+      <a href="../../../lemonade-cli/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Lemonade Server CLI Guide
+    Lemonade CLI Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server Configuration
   
 
     
@@ -1214,7 +1241,7 @@ title="YouTube video player" frameborder="0" allowfullscreen></iframe>
       <br><em>Navigating to the connection settings.</em></br>
       <img src="https://github.com/lemonade-sdk/assets/blob/main/webui/connection_settings.png?raw=true" alt="Navigating the settings menu" width="600"/>
     </div></li>
-<li>Fill in the URL field with <code>http://localhost:8000/api/v1</code> (unless you're using a different port), API key (this is unused but required, suggest just putting a <code>-</code>), and then click "Save".
+<li>Fill in the URL field with <code>http://localhost:13305/api/v1</code> (unless you're using a different port), API key (this is unused but required, suggest just putting a <code>-</code>), and then click "Save".
     <div align="center">
       <br><em>Filling in the connection details for Lemonade Server.</em></br>
       <img src="https://github.com/lemonade-sdk/assets/blob/main/webui/connection_form.png?raw=true" alt="Filling in the connection form" width="600"/>
@@ -1269,7 +1296,7 @@ title="YouTube video player" frameborder="0" allowfullscreen></iframe>
 <li>
 <p>Install a VLM in Lemonade by opening the Lemonade Model Manager:</p>
 <ol>
-<li>Open <a href="http://localhost:8000">http://localhost:8000</a> in your browser.</li>
+<li>Open <a href="http://localhost:13305">http://localhost:13305</a> in your browser.</li>
 <li>Select the Model Management tab.</li>
 <li>
 <p>Scroll down until you see a model with the blue <code>VISION</code> label and click the "+" button to install it.</p>
@@ -1346,7 +1373,7 @@ title="YouTube video player" frameborder="0" allowfullscreen></iframe>
 <li>Toggle <code>Image Generation</code> on.</li>
 <li>Choose <code>Standard (Open AI)</code> as the Image Generation Engine.</li>
 <li>Toggle <code>Prompt Generation</code> on.</li>
-<li>For <code>OpenAI-API-Basis-URL</code>, fill in <code>http://localhost:8000/api/v1</code> (unless you're using a different port).</li>
+<li>For <code>OpenAI-API-Basis-URL</code>, fill in <code>http://localhost:13305/api/v1</code> (unless you're using a different port).</li>
 <li>Add a character like <code>-</code> for <code>OpenAI-API-Key</code>.</li>
 <li>If you want to add more parameters, add them to the text field as JSON. For example: <code>{ "steps": 4, "cfg_scale": 1 }</code>. See available parameters at <a href="https://lemonade-server.ai/models.html">Image Generation (Stable Diffusion CPP)</a>.</li>
 <li>Add your model name to <code>Model</code>, e.g., <code>SDXL-Turbo</code>.</li>

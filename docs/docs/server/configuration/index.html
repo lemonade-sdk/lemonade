@@ -10,10 +10,10 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/server/lemonade-server-cli/">
+        <link rel="canonical" href="https://lemonade-server.ai/server/configuration/">
       
       
-        <link rel="prev" href="../apps/wut/">
+        <link rel="prev" href="../../lemonade-cli/">
       
       
         <link rel="next" href="../concepts/">
@@ -27,7 +27,7 @@
     
     
       
-        <title>Lemonade Server CLI Guide - Lemonade Server Documentation</title>
+        <title>Server Configuration - Lemonade Server Documentation</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#lemonade-server-cli" class="md-skip">
+        <a href="#lemonade-server-configuration" class="md-skip">
           Skip to content
         </a>
       
@@ -115,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Lemonade Server CLI Guide
+              Server Configuration
             
           </span>
         </div>
@@ -646,6 +646,33 @@
       
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../../lemonade-cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lemonade CLI Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
     
   
   
@@ -665,7 +692,7 @@
   <span class="md-ellipsis">
     
   
-    Lemonade Server CLI Guide
+    Server Configuration
   
 
     
@@ -683,7 +710,7 @@
   <span class="md-ellipsis">
     
   
-    Lemonade Server CLI Guide
+    Server Configuration
   
 
     
@@ -709,10 +736,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#commands" class="md-nav__link">
+  <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Commands
+        Overview
       
     </span>
   </a>
@@ -720,22 +747,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#options-for-serve-and-run" class="md-nav__link">
+  <a href="#configjson" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Options for serve and run
+        config.json
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Options for serve and run">
+    <nav class="md-nav" aria-label="config.json">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#timeout-configuration" class="md-nav__link">
+  <a href="#example-configjson" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Timeout Configuration
+        Example config.json
       
     </span>
   </a>
@@ -743,22 +770,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#environment-variables" class="md-nav__link">
+  <a href="#settings-reference" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Environment Variables
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Environment Variables">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#custom-backend-binaries" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Custom Backend Binaries
+        Settings Reference
       
     </span>
   </a>
@@ -766,6 +781,83 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#backend-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backend Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#editing-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Editing Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Editing Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lemonade-config-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lemonade config (recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lemond-cli-arguments-fallback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lemond CLI arguments (fallback)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#edit-configjson-manually-last-resort" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Edit config.json manually (last resort)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lemond-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lemond CLI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#api-key-and-security" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -774,57 +866,14 @@
     </span>
   </a>
   
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#options-for-pull" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Options for pull
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#options-for-launch" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Options for launch
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#lemonade-desktop-app" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Lemonade Desktop App
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Lemonade Desktop App">
+    <nav class="md-nav" aria-label="API Key and Security">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#launching-the-app" class="md-nav__link">
+  <a href="#regular-api-key" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Launching the App
+        Regular API Key
       
     </span>
   </a>
@@ -832,6 +881,22 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#admin-api-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Admin API Key
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#remote-server-connection" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -839,11 +904,6 @@
       
     </span>
   </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1055,10 +1115,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#commands" class="md-nav__link">
+  <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Commands
+        Overview
       
     </span>
   </a>
@@ -1066,22 +1126,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#options-for-serve-and-run" class="md-nav__link">
+  <a href="#configjson" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Options for serve and run
+        config.json
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Options for serve and run">
+    <nav class="md-nav" aria-label="config.json">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#timeout-configuration" class="md-nav__link">
+  <a href="#example-configjson" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Timeout Configuration
+        Example config.json
       
     </span>
   </a>
@@ -1089,22 +1149,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#environment-variables" class="md-nav__link">
+  <a href="#settings-reference" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Environment Variables
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Environment Variables">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#custom-backend-binaries" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Custom Backend Binaries
+        Settings Reference
       
     </span>
   </a>
@@ -1112,6 +1160,83 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#backend-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backend Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#editing-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Editing Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Editing Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lemonade-config-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lemonade config (recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lemond-cli-arguments-fallback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lemond CLI arguments (fallback)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#edit-configjson-manually-last-resort" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Edit config.json manually (last resort)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lemond-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lemond CLI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#api-key-and-security" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1120,57 +1245,14 @@
     </span>
   </a>
   
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#options-for-pull" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Options for pull
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#options-for-launch" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Options for launch
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#lemonade-desktop-app" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Lemonade Desktop App
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Lemonade Desktop App">
+    <nav class="md-nav" aria-label="API Key and Security">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#launching-the-app" class="md-nav__link">
+  <a href="#regular-api-key" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Launching the App
+        Regular API Key
       
     </span>
   </a>
@@ -1178,6 +1260,22 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#admin-api-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Admin API Key
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#remote-server-connection" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1185,11 +1283,6 @@
       
     </span>
   </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1224,473 +1317,288 @@
   
 
 
-<h1 id="lemonade-server-cli"><code>lemonade-server</code> CLI</h1>
-<p>The <code>lemonade-server</code> command-line interface (CLI) provides a set of utility commands for managing the server. When you install, <code>lemonade-server</code> is added to your PATH so that it can be invoked from any terminal.</p>
-<p><strong>Contents:</strong></p>
+<h1 id="lemonade-server-configuration">Lemonade Server Configuration</h1>
+<h2 id="overview">Overview</h2>
+<p>Lemonade Server starts automatically with the OS after installation. Configuration is managed through a single <code>config.json</code> file stored in the lemonade cache directory.</p>
+<h2 id="configjson">config.json</h2>
+<p>All settings are in <code>config.json</code>, located in the lemonade cache directory:</p>
 <ul>
-<li><a href="#commands">Commands</a></li>
-<li><a href="#options-for-serve-and-run">Options for serve and run</a></li>
-<li><a href="#environment-variables">Environment Variables</a> | <a href="#custom-backend-binaries">Custom Backend Binaries</a> | <a href="#api-key-and-security">API Key and Security</a></li>
-<li><a href="#options-for-pull">Options for pull</a></li>
-<li><a href="#options-for-launch">Options for launch</a></li>
-<li><a href="#lemonade-desktop-app">Lemonade Desktop App</a> | <a href="#remote-server-connection">Remote Server Connection</a></li>
+<li><strong>Linux (systemd):</strong> <code>/var/lib/lemonade/.cache/lemonade/config.json</code></li>
+<li><strong>Windows:</strong> <code>%USERPROFILE%\.cache\lemonade\config.json</code></li>
+<li><strong>macOS:</strong> <code>/Library/Application Support/lemonade/.cache/config.json</code></li>
 </ul>
-<h2 id="commands">Commands</h2>
-<p><code>lemonade-server</code> provides these utilities:</p>
+<p>If <code>config.json</code> doesn't exist, it's created automatically with default values on first run.</p>
+<h3 id="example-configjson">Example config.json</h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;config_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;port&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">13305</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;host&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;localhost&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;log_level&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;info&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;global_timeout&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">300</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;max_loaded_models&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;no_broadcast&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;extra_models_dir&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;models_dir&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;ctx_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;offline&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;disable_model_filtering&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;enable_dgpu_gtt&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;prefer_system&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;rocm_bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;builtin&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;vulkan_bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;builtin&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;cpu_bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;builtin&quot;</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;whispercpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;cpu_bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;builtin&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;npu_bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;builtin&quot;</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;sdcpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;steps&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;cfg_scale&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">7.0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;width&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;height&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;cpu_bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;builtin&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;rocm_bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;builtin&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;vulkan_bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;builtin&quot;</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;flm&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;ryzenai&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;server_bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;builtin&quot;</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;kokoro&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;cpu_bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;builtin&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="settings-reference">Settings Reference</h3>
 <table>
 <thead>
 <tr>
-<th>Option/Command</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>-v</code>, <code>--version</code></td>
-<td>Print the <code>lemonade-sdk</code> package version used to install Lemonade Server.</td>
-</tr>
-<tr>
-<td><code>serve</code></td>
-<td>Start the server process in the current terminal. See command options <a href="#options-for-serve-and-run">below</a>.</td>
-</tr>
-<tr>
-<td><code>status</code></td>
-<td>Check if server is running. If it is, print the port number.</td>
-</tr>
-<tr>
-<td><code>stop</code></td>
-<td>Stop any running Lemonade Server process.</td>
-</tr>
-<tr>
-<td><code>pull MODEL_NAME</code></td>
-<td>Install an LLM named <code>MODEL_NAME</code>. See <a href="#options-for-pull">pull command options</a> for registering custom models.</td>
-</tr>
-<tr>
-<td><code>run MODEL_NAME</code></td>
-<td>Start the server (if not already running) and chat with the specified model. Supports the same options as <code>serve</code>.</td>
-</tr>
-<tr>
-<td><code>launch AGENT -m MODEL_NAME</code></td>
-<td>Launch a local coding agent (<code>claude</code> or <code>codex</code>) connected to a running Lemonade server.</td>
-</tr>
-<tr>
-<td><code>list</code></td>
-<td>List all models.</td>
-</tr>
-<tr>
-<td><code>delete MODEL_NAME</code></td>
-<td>Delete a model and its files from local storage.</td>
-</tr>
-</tbody>
-</table>
-<p>Examples:</p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Start server with custom settings</span>
-lemonade-server<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">8080</span><span class="w"> </span>--log-level<span class="w"> </span>debug<span class="w"> </span>--llamacpp<span class="w"> </span>vulkan
-
-<span class="c1"># Run a specific model with custom server settings</span>
-lemonade-server<span class="w"> </span>run<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--port<span class="w"> </span><span class="m">8080</span><span class="w"> </span>--log-level<span class="w"> </span>debug<span class="w"> </span>--llamacpp<span class="w"> </span>rocm
-</code></pre></div>
-<h2 id="options-for-serve-and-run">Options for serve and run</h2>
-<p>When using the <code>serve</code> command, you can configure the server with these additional options. The <code>run</code> command supports the same options but also requires a <code>MODEL_NAME</code> parameter:</p>
-<div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
-lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Option</th>
-<th>Description</th>
+<th>Key</th>
+<th>Type</th>
 <th>Default</th>
+<th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>--port [port]</code></td>
-<td>Specify the port number to run the server on</td>
-<td>8000</td>
+<td><code>port</code></td>
+<td>int</td>
+<td>13305</td>
+<td>Port number for the HTTP server</td>
 </tr>
 <tr>
-<td><code>--host [host]</code></td>
-<td>Specify the host address for where to listen connections</td>
-<td><code>localhost</code></td>
+<td><code>host</code></td>
+<td>string</td>
+<td>"localhost"</td>
+<td>Address to bind for connections</td>
 </tr>
 <tr>
-<td><code>--log-level [level]</code></td>
-<td>Set the logging level</td>
-<td>info</td>
+<td><code>log_level</code></td>
+<td>string</td>
+<td>"info"</td>
+<td>Logging level (trace, debug, info, warning, error, fatal, none)</td>
 </tr>
 <tr>
-<td><code>--no-tray</code></td>
-<td>Start server without the tray app (headless mode)</td>
-<td>False</td>
-</tr>
-<tr>
-<td><code>--llamacpp [vulkan\|rocm\cpu]</code></td>
-<td>Default LlamaCpp backend to use when loading models. Can be overridden per-model via the <code>/api/v1/load</code> endpoint.</td>
-<td>vulkan</td>
-</tr>
-<tr>
-<td><code>--ctx-size [size]</code></td>
-<td>Default context size for models. For llamacpp recipes, this sets the <code>--ctx-size</code> parameter for the llama server. For other recipes, prompts exceeding this size will be truncated. Can be overridden per-model via the <code>/api/v1/load</code> endpoint.</td>
-<td>4096</td>
-</tr>
-<tr>
-<td><code>--llamacpp-args [args]</code></td>
-<td>Default custom arguments to pass to llama-server. Must not conflict with arguments managed by Lemonade (e.g., <code>-m</code>, <code>--port</code>, <code>--ctx-size</code>, <code>-ngl</code>). Can be overridden per-model via the <code>/api/v1/load</code> endpoint. Example: <code>--llamacpp-args "--flash-attn on --no-mmap"</code></td>
-<td>""</td>
-</tr>
-<tr>
-<td><code>--whispercpp-args [args]</code></td>
-<td>Default custom arguments to pass to whisper-server. Must not conflict with arguments managed by Lemonade (currently <code>-m</code>, <code>--model</code>, and <code>--port</code>). Can be overridden per-model via the <code>/api/v1/load</code> endpoint. Example: <code>--whispercpp-args "--convert"</code></td>
-<td>""</td>
-</tr>
-<tr>
-<td><code>--flm-args [args]</code></td>
-<td>Custom arguments to pass to FLM (FastFlowLM) server. Must not conflict with arguments managed by Lemonade (e.g., <code>--host</code>, <code>--port</code>, <code>--ctx-len</code>). Commonly used for NPU concurrency tuning. Can be overridden per-model via the <code>/api/v1/load</code> endpoint. Example: <code>--flm-args "-s 20 -q 15"</code> (socket connections and queue length).</td>
-<td>""</td>
-</tr>
-<tr>
-<td><code>--extra-models-dir [path]</code></td>
-<td>Experimental feature. Secondary directory to scan for LLM GGUF model files. Audio, embedding, reranking, and non-GGUF files are not supported, yet.</td>
-<td>None</td>
-</tr>
-<tr>
-<td><code>--max-loaded-models [N]</code></td>
-<td>Maximum number of models to keep loaded per type slot (LLMs, audio, image, etc.). Use <code>-1</code> for unlimited. Example: <code>--max-loaded-models 5</code> allows up to 5 of each model type simultaneously.</td>
-<td><code>1</code></td>
-</tr>
-<tr>
-<td><code>--global-timeout [seconds]</code></td>
-<td>Global default timeout for HTTP requests, inference, and readiness checks in seconds. This value sets the <code>CURLOPT_TIMEOUT</code> in the underlying HTTP client and overrides internal defaults for inference and backend startup.</td>
+<td><code>global_timeout</code></td>
+<td>int</td>
 <td>300</td>
+<td>Timeout in seconds for HTTP, inference, and readiness checks</td>
 </tr>
 <tr>
-<td><code>--save-options</code></td>
-<td>Only available for the run command. Saves the context size, LlamaCpp backend and custom llama-server arguments as default for running this model. Unspecified values will be saved using their default value.</td>
-<td>False</td>
-</tr>
-</tbody>
-</table>
-<h3 id="timeout-configuration">Timeout Configuration</h3>
-<p>Lemonade uses a unified timeout strategy controlled by the <code>--global-timeout</code> CLI flag. This value ensures stability across different operations:</p>
-<table>
-<thead>
-<tr>
-<th>Timeout Name</th>
-<th>Controlled By</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Global HTTP Timeout</strong></td>
-<td><code>--global-timeout</code></td>
-<td>300s</td>
-<td>Sets the base timeout for all <code>curl</code> operations, including model downloads and management tasks.</td>
+<td><code>max_loaded_models</code></td>
+<td>int</td>
+<td>1</td>
+<td>Max models per type slot. Use -1 for unlimited</td>
 </tr>
 <tr>
-<td><strong>Inference Timeout</strong></td>
-<td><code>--global-timeout</code></td>
-<td>300s</td>
-<td>Applied specifically to inference requests (chat, completion) to backends. For very long generations, increasing the global timeout may be necessary.</td>
+<td><code>no_broadcast</code></td>
+<td>bool</td>
+<td>false</td>
+<td>Disable UDP broadcasting for server discovery</td>
 </tr>
 <tr>
-<td><strong>Readiness Timeout</strong></td>
-<td><code>--global-timeout</code></td>
-<td>300s*</td>
-<td>Maximum time the router waits for a backend server to become healthy after starting it. *Note: If not explicitly set, backends may use up to 600s for initial setup.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="environment-variables">Environment Variables</h3>
-<p>These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method:</p>
-<table>
-<thead>
-<tr>
-<th>Environment Variable</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>LEMONADE_HOST</code></td>
-<td>Host address for where to listen for connections</td>
-</tr>
-<tr>
-<td><code>LEMONADE_PORT</code></td>
-<td>Port number to run the server on</td>
-</tr>
-<tr>
-<td><code>LEMONADE_LOG_LEVEL</code></td>
-<td>Logging level</td>
-</tr>
-<tr>
-<td><code>LEMONADE_LLAMACPP</code></td>
-<td>Default LlamaCpp backend (<code>vulkan</code>, <code>rocm</code>, or <code>cpu</code>)</td>
-</tr>
-<tr>
-<td><code>LEMONADE_WHISPERCPP</code></td>
-<td>Default WhisperCpp backend: <code>npu</code> or <code>cpu</code> on Windows; <code>cpu</code> or <code>vulkan</code> on Linux</td>
-</tr>
-<tr>
-<td><code>LEMONADE_CTX_SIZE</code></td>
-<td>Default context size for models</td>
-</tr>
-<tr>
-<td><code>LEMONADE_LLAMACPP_ARGS</code></td>
-<td>Custom arguments to pass to llama-server</td>
-</tr>
-<tr>
-<td><code>LEMONADE_WHISPERCPP_ARGS</code></td>
-<td>Custom arguments to pass to whisper-server (for example <code>--convert</code>)</td>
-</tr>
-<tr>
-<td><code>LEMONADE_FLM_ARGS</code></td>
-<td>Custom arguments to pass to FLM server</td>
-</tr>
-<tr>
-<td><code>LEMONADE_EXTRA_MODELS_DIR</code></td>
+<td><code>extra_models_dir</code></td>
+<td>string</td>
+<td>""</td>
 <td>Secondary directory to scan for GGUF model files</td>
 </tr>
 <tr>
-<td><code>LEMONADE_MAX_LOADED_MODELS</code></td>
-<td>Maximum number of models to keep loaded per type slot (LLMs, audio, image, etc.). Use <code>-1</code> for unlimited, or a positive integer. Default: <code>1</code></td>
+<td><code>models_dir</code></td>
+<td>string</td>
+<td>"auto"</td>
+<td>Directory for cached model files. "auto" follows HF_HUB_CACHE / HF_HOME / platform default</td>
 </tr>
 <tr>
-<td><code>LEMONADE_DISABLE_MODEL_FILTERING</code></td>
-<td>Set to <code>1</code> to disable hardware-based model filtering (e.g., RAM amount, NPU availability) and show all models regardless of system capabilities</td>
+<td><code>ctx_size</code></td>
+<td>int</td>
+<td>4096</td>
+<td>Default context size for LLM models</td>
 </tr>
 <tr>
-<td><code>LEMONADE_ENABLE_DGPU_GTT</code></td>
-<td>Set to <code>1</code> to include GTT for hardware-based model filtering</td>
+<td><code>offline</code></td>
+<td>bool</td>
+<td>false</td>
+<td>Skip model downloads</td>
 </tr>
 <tr>
-<td><code>LEMONADE_GLOBAL_TIMEOUT</code></td>
-<td>Global default timeout for HTTP requests, inference, and readiness checks in seconds</td>
+<td><code>disable_model_filtering</code></td>
+<td>bool</td>
+<td>false</td>
+<td>Show all models regardless of hardware capabilities</td>
+</tr>
+<tr>
+<td><code>enable_dgpu_gtt</code></td>
+<td>bool</td>
+<td>false</td>
+<td>Include GTT for hardware-based model filtering</td>
 </tr>
 </tbody>
 </table>
-<h4 id="custom-backend-binaries">Custom Backend Binaries</h4>
-<p>You can provide your own <code>llama-server</code>, <code>whisper-server</code>, or <code>ryzenai-server</code> binary by setting the full path via the following environment variables:</p>
+<h3 id="backend-configuration">Backend Configuration</h3>
+<p>Backend-specific settings are nested under their backend name:</p>
+<p><strong>llamacpp</strong> — LLM inference via llama.cpp:
+| Key | Default | Description |
+|-----|---------|-------------|
+| <code>backend</code> | "auto" | Backend to use: "auto" means "choose for me" |
+| <code>args</code> | "" | Custom arguments to pass to llama-server |
+| <code>prefer_system</code> | false | Prefer system-installed llama.cpp over bundled |
+| <code>*_bin</code> | "builtin" | Path to custom binary, or "builtin" for bundled |</p>
+<p><strong>whispercpp</strong> — Audio transcription:
+| Key | Default | Description |
+|-----|---------|-------------|
+| <code>backend</code> | "auto" | Backend to use: "auto" means "choose for me" |
+| <code>args</code> | "" | Custom arguments to pass to whisper-server |
+| <code>*_bin</code> | "builtin" | Path to custom binary, or "builtin" for bundled |</p>
+<p><strong>sdcpp</strong> — Image generation:
+| Key | Default | Description |
+|-----|---------|-------------|
+| <code>backend</code> | "auto" | Backend to use: "auto" means "choose for me" |
+| <code>args</code> | "" | Custom arguments to pass to <code>sd-server</code> |
+| <code>steps</code> | 20 | Number of inference steps |
+| <code>cfg_scale</code> | 7.0 | Classifier-free guidance scale |
+| <code>width</code> | 512 | Image width in pixels |
+| <code>height</code> | 512 | Image height in pixels |
+| <code>*_bin</code> | "builtin" | Path to custom binary, or "builtin" for bundled |</p>
+<p><strong>flm</strong> — FastFlowLM NPU inference:
+| Key | Default | Description |
+|-----|---------|-------------|
+| <code>args</code> | "" | Custom arguments to pass to flm serve |</p>
+<p><strong>ryzenai</strong> — RyzenAI NPU inference:
+| Key | Default | Description |
+|-----|---------|-------------|
+| <code>server_bin</code> | "builtin" | Path to custom binary, or "builtin" for bundled |</p>
+<p><strong>kokoro</strong> — Text-to-speech:
+| Key | Default | Description |
+|-----|---------|-------------|
+| <code>cpu_bin</code> | "builtin" | Path to custom binary, or "builtin" for bundled |</p>
+<h2 id="editing-configuration">Editing Configuration</h2>
+<h3 id="lemonade-config-recommended">lemonade config (recommended)</h3>
+<p>Use the <code>lemonade config</code> CLI to view and modify settings while the server is running. Changes are applied immediately and persisted to config.json.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># View all current settings</span>
+lemonade<span class="w"> </span>config
+
+<span class="c1"># Set one or more values</span>
+lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">key</span><span class="o">=</span>value<span class="w"> </span><span class="o">[</span><span class="nv">key</span><span class="o">=</span>value<span class="w"> </span>...<span class="o">]</span>
+</code></pre></div>
+<p>Top-level settings use their JSON key name directly. Nested backend settings use dot notation (<code>section.key=value</code>):</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Change the server port and log level</span>
+lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">port</span><span class="o">=</span><span class="m">9000</span><span class="w"> </span><span class="nv">log_level</span><span class="o">=</span>debug
+
+<span class="c1"># Change a backend setting</span>
+lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>llamacpp.backend<span class="o">=</span>rocm
+
+<span class="c1"># Set multiple values at once</span>
+lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">port</span><span class="o">=</span><span class="m">9000</span><span class="w"> </span>llamacpp.backend<span class="o">=</span>rocm<span class="w"> </span>sdcpp.steps<span class="o">=</span><span class="m">30</span>
+</code></pre></div>
+<h3 id="lemond-cli-arguments-fallback">lemond CLI arguments (fallback)</h3>
+<p>If the server cannot start (e.g., invalid port in config.json), <code>lemond</code> accepts <code>--port</code> and <code>--host</code> as CLI arguments to override config.json. These overrides are persisted so the server can start normally next time:</p>
+<div class="highlight"><pre><span></span><code>lemond<span class="w"> </span>--port<span class="w"> </span><span class="m">9000</span><span class="w"> </span>--host<span class="w"> </span><span class="m">0</span>.0.0.0
+</code></pre></div>
+<h3 id="edit-configjson-manually-last-resort">Edit config.json manually (last resort)</h3>
+<p>If the server won't start and CLI arguments aren't sufficient, you can edit config.json directly. Restart the server after making changes:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Linux</span>
+sudo<span class="w"> </span>nano<span class="w"> </span>/var/lib/lemonade/.cache/lemonade/config.json
+sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>lemonade-server
+
+<span class="c1"># Windows — edit with your preferred text editor:</span>
+<span class="c1"># %USERPROFILE%\.cache\lemonade\config.json</span>
+<span class="c1"># Then quit and relaunch from the Start Menu</span>
+</code></pre></div>
+<h2 id="lemond-cli">lemond CLI</h2>
+<div class="highlight"><pre><span></span><code>lemond [cache_dir] [--port PORT] [--host HOST]
+</code></pre></div>
+<ul>
+<li><strong>cache_dir</strong> — Path to the lemonade cache directory containing config.json and model data. Optional; defaults to platform-specific location.</li>
+<li><strong>--port</strong> — Port to serve on (overrides config.json, persisted). Use as a fallback if the server cannot start.</li>
+<li><strong>--host</strong> — Address to bind (overrides config.json, persisted). Use as a fallback if the server cannot start.</li>
+</ul>
+<h2 id="api-key-and-security">API Key and Security</h2>
+<h3 id="regular-api-key">Regular API Key</h3>
+<p>The <code>LEMONADE_API_KEY</code> environment variable sets an API key for authentication on regular API endpoints (<code>/api/*</code>, <code>/v0/*</code>, <code>/v1/*</code>). On Linux with systemd, set it in the service environment (e.g., via a systemd override or drop-in file). On Windows, set it as a system environment variable.</p>
+<h3 id="admin-api-key">Admin API Key</h3>
+<p>The <code>LEMONADE_ADMIN_API_KEY</code> environment variable provides elevated access to both regular API endpoints and internal endpoints (<code>/internal/*</code>). When set, it takes precedence over <code>LEMONADE_API_KEY</code> for client authentication.</p>
+<p><strong>Authentication Hierarchy:</strong></p>
 <table>
 <thead>
 <tr>
-<th>Environment Variable</th>
-<th>Description</th>
+<th>Scenario</th>
+<th><code>LEMONADE_API_KEY</code></th>
+<th><code>LEMONADE_ADMIN_API_KEY</code></th>
+<th>Internal Endpoints</th>
+<th>Regular API Endpoints</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>LEMONADE_LLAMACPP_ROCM_BIN</code></td>
-<td>Path to custom <code>llama-server</code> binary for ROCm backend</td>
+<td>No keys set</td>
+<td>(not set)</td>
+<td>(not set)</td>
+<td>No auth required</td>
+<td>No auth required</td>
 </tr>
 <tr>
-<td><code>LEMONADE_LLAMACPP_VULKAN_BIN</code></td>
-<td>Path to custom <code>llama-server</code> binary for Vulkan backend</td>
+<td>Only API key</td>
+<td>"secret"</td>
+<td>(not set)</td>
+<td>Requires key</td>
+<td>Requires key</td>
 </tr>
 <tr>
-<td><code>LEMONADE_LLAMACPP_CPU_BIN</code></td>
-<td>Path to custom <code>llama-server</code> binary for CPU backend</td>
+<td>Only admin key</td>
+<td>(not set)</td>
+<td>"admin"</td>
+<td>Requires admin key</td>
+<td>No auth required</td>
 </tr>
 <tr>
-<td><code>LEMONADE_WHISPERCPP_CPU_BIN</code></td>
-<td>Path to custom <code>whisper-server</code> binary for CPU backend</td>
-</tr>
-<tr>
-<td><code>LEMONADE_WHISPERCPP_NPU_BIN</code></td>
-<td>Path to custom <code>whisper-server</code> binary for NPU backend</td>
-</tr>
-<tr>
-<td><code>LEMONADE_RYZENAI_SERVER_BIN</code></td>
-<td>Path to custom <code>ryzenai-server</code> binary for NPU/Hybrid models</td>
+<td>Both keys different</td>
+<td>"regular"</td>
+<td>"admin"</td>
+<td>Requires admin key</td>
+<td>Either key accepted</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Note:</strong> These environment variables do not override the <code>--llamacpp</code> option. They allow you to specify an alternative binary for specific backends while still using the standard backend selection mechanism.</p>
-<p><strong>Examples:</strong></p>
-<p>On Windows:</p>
-<div class="highlight"><pre><span></span><code>set LEMONADE_LLAMACPP_VULKAN_BIN=C:\path\to\my\llama-server.exe
-lemonade-server serve
+<p><strong>Client Behavior:</strong> Clients (CLI, tray app) automatically prefer <code>LEMONADE_ADMIN_API_KEY</code> if set, otherwise fall back to <code>LEMONADE_API_KEY</code>.</p>
+<h2 id="remote-server-connection">Remote Server Connection</h2>
+<p>To make Lemonade Server accessible from other machines on your network, set the host to <code>0.0.0.0</code>:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">host</span><span class="o">=</span><span class="m">0</span>.0.0.0
 </code></pre></div>
-<p>On Linux:</p>
-<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">LEMONADE_LLAMACPP_VULKAN_BIN</span><span class="o">=</span>/path/to/my/llama-server
-lemonade-server<span class="w"> </span>serve
-</code></pre></div>
-<h4 id="api-key-and-security">API Key and Security</h4>
-<p>If you expose your server over a network you can use the <code>LEMONADE_API_KEY</code> environment variable to set an API key (use a random long string) that will be required to execute any request. The API key will be expected as HTTP Bearer authentication, which is compatible with the OpenAI API.</p>
-<p><strong>IMPORTANT</strong>: If you need to access <code>lemonade-server</code> over the internet, do not expose it directly! You will also need to setup an HTTPS reverse proxy (such as nginx) and expose that instead, otherwise all communication will be in plaintext!</p>
-<h2 id="options-for-pull">Options for pull</h2>
-<p>The <code>pull</code> command downloads and installs models. For models already in the <a href="https://lemonade-server.ai/models.html">Lemonade Server registry</a>, only the model name is required. To register and install custom models from Hugging Face, use the registration options below:</p>
-<div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>pull<span class="w"> </span>&lt;model_name&gt;<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Option</th>
-<th>Description</th>
-<th>Required</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--checkpoint CHECKPOINT</code></td>
-<td>Hugging Face checkpoint in the format <code>org/model:variant</code>. For GGUF models, the variant (after the colon) is required. Examples: <code>unsloth/Qwen3-8B-GGUF:Q4_0</code>, <code>amd/Qwen3-4B-awq-quant-onnx-hybrid</code></td>
-<td>For custom models</td>
-</tr>
-<tr>
-<td><code>--recipe RECIPE</code></td>
-<td>Inference recipe to use. Options: <code>llamacpp</code>, <code>flm</code>, <code>ryzenai-llm</code></td>
-<td>For custom models</td>
-</tr>
-<tr>
-<td><code>--reasoning</code></td>
-<td>Mark the model as a reasoning model (e.g., DeepSeek-R1). Adds the 'reasoning' label to model metadata.</td>
-<td>No</td>
-</tr>
-<tr>
-<td><code>--vision</code></td>
-<td>Mark the model as a vision/multimodal model. Adds the 'vision' label to model metadata.</td>
-<td>No</td>
-</tr>
-<tr>
-<td><code>--embedding</code></td>
-<td>Mark the model as an embedding model. Adds the 'embeddings' label to model metadata. For use with the <code>/api/v1/embeddings</code> endpoint.</td>
-<td>No</td>
-</tr>
-<tr>
-<td><code>--reranking</code></td>
-<td>Mark the model as a reranking model. Adds the 'reranking' label to model metadata. For use with the <code>/api/v1/reranking</code> endpoint.</td>
-<td>No</td>
-</tr>
-<tr>
-<td><code>--mmproj FILENAME</code></td>
-<td>Multimodal projector file for GGUF vision models. Example: <code>mmproj-model-f16.gguf</code></td>
-<td>For vision models</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Notes:</strong>
-- Custom model names must use the <code>user.</code> namespace prefix (e.g., <code>user.MyModel</code>)
-- GGUF models require a variant specified in the checkpoint after the colon
-- Use <code>lemonade-server pull --help</code> to see examples and detailed information</p>
-<p><strong>Examples:</strong></p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Install a registered model from the Lemonade Server registry</span>
-lemonade-server<span class="w"> </span>pull<span class="w"> </span>Qwen3-0.6B-GGUF
-
-<span class="c1"># Register and install a custom GGUF model</span>
-lemonade-server<span class="w"> </span>pull<span class="w"> </span>user.Phi-4-Mini-GGUF<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--checkpoint<span class="w"> </span>unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--recipe<span class="w"> </span>llamacpp
-
-<span class="c1"># Register and install a vision model with multimodal projector</span>
-lemonade-server<span class="w"> </span>pull<span class="w"> </span>user.Gemma-3-4b<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--checkpoint<span class="w"> </span>ggml-org/gemma-3-4b-it-GGUF:Q4_K_M<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--recipe<span class="w"> </span>llamacpp<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--vision<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--mmproj<span class="w"> </span>mmproj-model-f16.gguf
-
-<span class="c1"># Register and install an embedding model</span>
-lemonade-server<span class="w"> </span>pull<span class="w"> </span>user.nomic-embed<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--checkpoint<span class="w"> </span>nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--recipe<span class="w"> </span>llamacpp<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--embedding
-</code></pre></div>
-<p>For more information about model formats and recipes, see the <a href="../lemonade_api.md">API documentation</a> and the <a href="https://lemonade-server.ai/models.html">server models guide</a>. For details on the underlying JSON files (<code>user_models.json</code> and <code>recipe_options.json</code>), see the <a href="../custom-models/">Custom Model Configuration Guide</a>.</p>
-<h2 id="options-for-launch">Options for launch</h2>
-<p>Use the <code>launch</code> command to start a coding agent CLI connected to an already-running Lemonade server:</p>
-<div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>launch<span class="w"> </span>&lt;claude<span class="p">|</span>codex&gt;<span class="w"> </span>-m<span class="w"> </span>&lt;model_name&gt;<span class="w"> </span><span class="o">[</span>--llamacpp-args<span class="w"> </span>ARGS<span class="o">]</span><span class="w"> </span><span class="o">[</span>--use-recipe<span class="o">]</span><span class="w"> </span><span class="o">[</span>--host<span class="w"> </span>HOST<span class="o">]</span><span class="w"> </span><span class="o">[</span>--port<span class="w"> </span>PORT<span class="o">]</span>
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Option</th>
-<th>Description</th>
-<th>Required</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>agent</code></td>
-<td>Agent CLI to launch (<code>claude</code> or <code>codex</code>)</td>
-<td>Yes</td>
-</tr>
-<tr>
-<td><code>-m, --model MODEL_NAME</code></td>
-<td>Model name to preload and use in the agent session</td>
-<td>Yes</td>
-</tr>
-<tr>
-<td><code>--llamacpp-args ARGS</code></td>
-<td>Custom llama.cpp load arguments for launch. When set, launch defaults are skipped.</td>
-<td>No</td>
-</tr>
-<tr>
-<td><code>--use-recipe</code></td>
-<td>Use the model's saved <code>recipe_options.json</code> values instead of launch defaults.</td>
-<td>No</td>
-</tr>
-<tr>
-<td><code>--host HOST</code></td>
-<td>Server host (also supports <code>LEMONADE_HOST</code>)</td>
-<td>No</td>
-</tr>
-<tr>
-<td><code>--port PORT</code></td>
-<td>Server port (also supports <code>LEMONADE_PORT</code>)</td>
-<td>No</td>
-</tr>
-</tbody>
-</table>
-<p>Notes:
-- <code>launch</code> does not start the Lemonade server. It first checks <code>/api/version</code> on the target host/port and exits with an error if unreachable.
-- If <code>--port</code> is not provided and the host is local (<code>localhost</code>, <code>127.0.0.1</code>, <code>0.0.0.0</code>, or empty), Lemonade auto-discovers a running server port.
-- Model loading is started in a background thread so agent startup is immediate.
-- The launched agent process takes over the terminal and Lemonade waits for that process to exit.
-- For llama.cpp-backed models, <code>launch</code> sends <code>-b 16384 -ub 16384 -fa on</code> in the <code>/api/v1/load</code> request by default. These are conservative coding-oriented defaults chosen to improve prompt prefill throughput and keep Flash Attention enabled on hardware that supports it.
-- If you pass <code>--llamacpp-args</code>, Lemonade skips those defaults entirely and sends only the arguments you provide. This is the simplest way to tune for smaller GPUs, CPU-only systems, or stricter memory budgets.
-- If you pass <code>--use-recipe</code>, Lemonade does not send launch defaults, so the saved per-model settings in <code>recipe_options.json</code> can apply. This follows the <code>/api/v1/load</code> priority order documented in the server spec: explicit load-request values win over saved recipe values, which win over CLI or environment defaults.
-- <code>--llamacpp-args</code> still uses the same <code>/api/v1/load</code> field as the HTTP API, so the usual managed-argument restrictions for <code>llamacpp_args</code> still apply.</p>
-<p>Examples:</p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Launch Codex against a local running server (auto-detect port)</span>
-lemonade-server<span class="w"> </span>launch<span class="w"> </span>codex<span class="w"> </span>-m<span class="w"> </span>Qwen3-Coder-Next-GGUF
-
-<span class="c1"># Launch Claude against an explicit endpoint</span>
-lemonade-server<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>-m<span class="w"> </span>Qwen3-Coder-Next-GGUF<span class="w"> </span>--host<span class="w"> </span><span class="m">127</span>.0.0.1<span class="w"> </span>--port<span class="w"> </span><span class="m">8000</span>
-
-<span class="c1"># Replace launch defaults with custom llama.cpp tuning</span>
-lemonade-server<span class="w"> </span>launch<span class="w"> </span>codex<span class="w"> </span>-m<span class="w"> </span>Qwen3-Coder-Next-GGUF<span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">&quot;-b 8192 -ub 4096 -fa off&quot;</span>
-
-<span class="c1"># Prefer the model&#39;s saved recipe_options.json settings</span>
-lemonade-server<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>-m<span class="w"> </span>Qwen3-Coder-Next-GGUF<span class="w"> </span>--use-recipe
-</code></pre></div>
-<h2 id="lemonade-desktop-app">Lemonade Desktop App</h2>
-<p>The Lemonade Desktop App provides a graphical interface for chatting with models and managing the server. When installed via the full installer, <code>lemonade-app</code> is added to your PATH for easy command-line access.</p>
-<h3 id="launching-the-app">Launching the App</h3>
-<div class="highlight"><pre><span></span><code><span class="c1"># Launch the app (connects to local server automatically)</span>
-lemonade-app
-</code></pre></div>
-<p>By default, the app connects to a server running on <code>localhost</code> and automatically discovers the port. To connect to a remote server, change the app settings.</p>
-<h3 id="remote-server-connection">Remote Server Connection</h3>
-<p>To connect the app to a server running on a different machine:</p>
-<ol>
-<li>
-<p><strong>Start the server with network access</strong> on the host machine:
-   <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve<span class="w"> </span>--host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>--port<span class="w"> </span><span class="m">8000</span>
-</code></pre></div></p>
 <blockquote>
-<p><strong>Note:</strong> Using <code>--host 0.0.0.0</code> allows connections from other machines on the network. Only do this on trusted networks. You can use <code>LEMONADE_API_KEY</code> (see above) to manage access on your network.</p>
+<p><strong>Note:</strong> Using <code>host: "0.0.0.0"</code> allows connections from any machine on the network. Only do this on trusted networks. Set <code>LEMONADE_API_KEY</code> or <code>LEMONADE_ADMIN_API_KEY</code> to manage access.</p>
 </blockquote>
-</li>
-<li>
-<p><strong>Launch the app</strong> on the client machine and configure the endpoint through the UI:
-   <div class="highlight"><pre><span></span><code>lemonade-app
-</code></pre></div></p>
-</li>
-</ol>
-<p>The app automatically discovers and connects to a local server unless an endpoint is explicitly configured in the UI.</p>
 <h2 id="next-steps">Next Steps</h2>
-<p>The <a href="../server_integration/">Lemonade Server integration guide</a> provides more information about how these commands can be used to integrate Lemonade Server into an application.</p>
+<p>The <a href="../server_integration/">Integration Guide</a> provides more information about how to integrate Lemonade Server into an application.</p>
 <!--Copyright (c) 2025 AMD-->
 
 
@@ -1727,7 +1635,7 @@ lemonade-app
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../apps/wut/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Wut">
+          <a href="../../lemonade-cli/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Lemonade CLI Guide">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1737,7 +1645,7 @@ lemonade-app
                 Previous
               </span>
               <div class="md-ellipsis">
-                Wut
+                Lemonade CLI Guide
               </div>
             </div>
           </a>

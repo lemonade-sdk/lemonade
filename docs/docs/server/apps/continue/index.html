@@ -896,14 +896,41 @@
   
   
     <li class="md-nav__item">
-      <a href="../../lemonade-server-cli/" class="md-nav__link">
+      <a href="../../../lemonade-cli/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Lemonade Server CLI Guide
+    Lemonade CLI Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server Configuration
   
 
     
@@ -1333,7 +1360,7 @@
 <ul>
 <li><strong>IDE</strong>: <a href="https://code.visualstudio.com/">Visual Studio Code (v1.80+)</a> or another supported IDE.</li>
 <li><strong>Lemonade Server</strong>: Installed and set up using the <a href="https://lemonade-server.ai/docs/server/">Getting Started guide</a>.</li>
-<li><strong>Lemonade Server Running</strong>: The server should be running at <code>http://localhost:8000</code>. If you change the port in Lemonade Server (e.g., to 8020, 8040, etc.), you'll need to update the API Base URL in Continue's configuration to match the same port.</li>
+<li><strong>Lemonade Server Running</strong>: The server should be running at <code>http://localhost:13305</code>. If you change the port in Lemonade Server (e.g., to 8020, 8040, etc.), you'll need to update the API Base URL in Continue's configuration to match the same port.</li>
 <li><strong>Model Downloaded</strong>: At least one model from the <a href="https://lemonade-server.ai/models.html">supported models list</a> must be installed locally.</li>
 </ul>
 <h3 id="hardware-requirements">Hardware Requirements</h3>
@@ -1352,18 +1379,16 @@
 <li>
 <p><strong>Install Models Locally</strong></p>
 <ul>
-<li>Use the Model Manager or <a href="https://lemonade-server.ai/docs/server/lemonade-server-cli/">lemonade-server CLI</a> to download your desired model, for example:</li>
+<li>Use the Model Manager or <a href="https://lemonade-server.ai/docs/lemonade-cli/"><code>lemonade</code> CLI</a> to download your desired model, for example:</li>
 </ul>
-<p><div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>pull<span class="w"> </span>&lt;model-name&gt;
+<p><div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>&lt;model-name&gt;
 </code></pre></div>
   <em>Example downloading Qwen3-Coder:</em>
-  <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>pull<span class="w"> </span>Qwen3-Coder-30B-A3B-Instruct-GGUF
+  <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>Qwen3-Coder-30B-A3B-Instruct-GGUF
 </code></pre></div></p>
 </li>
 <li>
-<p><strong>Start Lemonade Server</strong>: Ensure Lemonade Server is running at <code>http://localhost:8000</code>. You can start it from the Lemon tray icon or by running:</p>
-<div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve
-</code></pre></div>
+<p><strong>Start Lemonade Server</strong>: Ensure Lemonade Server is running at <code>http://localhost:13305</code>. The server starts automatically after installation. You can verify with <code>lemonade status</code>.</p>
 </li>
 <li>
 <p><strong>Verify Model is Loaded</strong>: Use the Model Manager or tray icon to confirm your model is loaded and ready. Continue will automatically detect Lemonade Server running on localhost.</p>
@@ -1381,7 +1406,7 @@
 <p><strong>Open Continue in VS Code</strong>: After installation completes, the Continue logo appears in the Activity bar. Click it to open the extension.</p>
 </li>
 <li>
-<p><strong>Add Lemonade Server Provider</strong>: Click the model dropdown menu in the Continue sidebar, then select "Add Chat Model". Choose "Lemonade Server" from the list of available providers. Continue will set the default address to <code>http://localhost:8000</code>, but it can be changed to match a different setup.</p>
+<p><strong>Add Lemonade Server Provider</strong>: Click the model dropdown menu in the Continue sidebar, then select "Add Chat Model". Choose "Lemonade Server" from the list of available providers. Continue will set the default address to <code>http://localhost:13305</code>, but it can be changed to match a different setup.</p>
 <p><em>Example configuration screen:</em>
 <img alt="Add Lemonade Provider" src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_add_lemonade_provider.png" /></p>
 </li>
@@ -1413,11 +1438,11 @@
 <p>In this example, we'll use Plan mode to have the LLM analyze your code and provide feedback. Plan mode reviews your code and suggests improvements, but does not modify your files.</p>
 <p><strong>To use Plan mode with large files, increase Lemonade Server's context size:</strong></p>
 <ol>
-<li><strong>Stop Lemonade Server</strong>: Use the tray icon to "Quit Lemonade" or close any running Lemonade Server processes.</li>
 <li>
-<p><strong>Restart with higher context size</strong>: Open a terminal and run:</p>
-<div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve<span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">8192</span>
+<p><strong>Load the model with a higher context size</strong>: Open a terminal and run:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>load<span class="w"> </span>&lt;model-name&gt;<span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">8192</span>
 </code></pre></div>
+<p>For persistent changes, see <a href="../../configuration/">Server Configuration</a>.</p>
 </li>
 <li>
 <p><strong>Use Plan mode in VS Code</strong>: Select the "Plan" option in Continue, enter your prompt and press Alt+Enter to include the currently active file as context.</p>
@@ -1433,10 +1458,10 @@
 <h3 id="setup-configuration">Setup &amp; Configuration</h3>
 <ul>
 <li><strong>Install Lemonade Server</strong>: Follow the <a href="https://lemonade-server.ai/docs/server/">setup guide</a> to install and configure Lemonade Server before you begin development.</li>
-<li><strong>Download Models Locally</strong>: Use <code>lemonade-server pull &lt;model-name&gt;</code> to install models you want to use. Refer to the <a href="https://lemonade-server.ai/models.html">supported models list</a> for available options.</li>
+<li><strong>Download Models Locally</strong>: Use <code>lemonade pull &lt;model-name&gt;</code> to install models you want to use. Refer to the <a href="https://lemonade-server.ai/models.html">supported models list</a> for available options.</li>
 <li><strong>Pre-load Models</strong>: Start Lemonade Server and load your models before coding sessions. This can easily be done using the Lemon tray icon and <code>Load</code>.</li>
-<li><strong>Increase Context Size for Agent Mode</strong>: For large code changes with GGUF models, start Lemonade Server with a higher context size:
-    <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve<span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">8192</span>
+<li><strong>Increase Context Size for Agent Mode</strong>: For large code changes with GGUF models, load the model with a higher context size:
+    <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>load<span class="w"> </span>&lt;model-name&gt;<span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">8192</span>
 </code></pre></div></li>
 <li><strong>Customize Scoping</strong>: See <a href="https://docs.continue.dev/customization/overview">Continue Customization</a> for tips on effective model configuration and scoping.</li>
 </ul>
@@ -1455,7 +1480,7 @@
 <ul>
 <li>Make sure Lemonade Server is running and the model is loaded locally.</li>
 <li>Double-check the <a href="https://lemonade-server.ai/models.html">supported models list</a> and install any missing models with:
-      <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>pull<span class="w"> </span>&lt;model-name&gt;
+      <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>&lt;model-name&gt;
 </code></pre></div></li>
 </ul>
 <p><strong>Slow response times</strong></p>

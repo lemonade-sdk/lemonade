@@ -649,14 +649,41 @@
   
   
     <li class="md-nav__item">
-      <a href="../lemonade-server-cli/" class="md-nav__link">
+      <a href="../../lemonade-cli/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Lemonade Server CLI Guide
+    Lemonade CLI Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server Configuration
   
 
     
@@ -930,89 +957,6 @@
       
     </span>
   </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#options-by-recipe" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Options by recipe
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Options by recipe">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#llamacpp" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        llamacpp
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#whispercpp" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        whispercpp
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#sd-cpp" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        sd-cpp
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#flm" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        flm
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#ryzenai-llm" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        ryzenai-llm
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#kokoro" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        kokoro
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
         
@@ -1298,89 +1242,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#options-by-recipe" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Options by recipe
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Options by recipe">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#llamacpp" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        llamacpp
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#whispercpp" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        whispercpp
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#sd-cpp" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        sd-cpp
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#flm" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        flm
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#ryzenai-llm" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        ryzenai-llm
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#kokoro" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        kokoro
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -1481,8 +1342,8 @@
 <h1 id="custom-model-configuration">Custom Model Configuration</h1>
 <p>This guide explains how to manually register custom models in Lemonade Server using the JSON configuration files. This is useful for adding any HuggingFace model that isn't in the built-in model list.</p>
 <blockquote>
-<p><strong>Tip:</strong> The easiest way to add a custom model is using the <a href="../lemonade-server-cli/#options-for-pull"><code>lemonade-server pull</code> CLI command</a> or the <a href="../server_spec/#post-apiv1pull"><code>/api/v1/pull</code> endpoint</a>, which automate the registration and download process. For example:
-<div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>pull<span class="w"> </span>user.MyModel<span class="w"> </span>--checkpoint<span class="w"> </span><span class="s2">&quot;org/repo:file.gguf&quot;</span><span class="w"> </span>--recipe<span class="w"> </span>llamacpp
+<p><strong>Tip:</strong> The easiest way to add a custom model is using the <a href="../../lemonade-cli/#options-for-pull"><code>lemonade pull</code> CLI command</a> or the <a href="../server_spec/#post-apiv1pull"><code>/api/v1/pull</code> endpoint</a>, which automate the registration and download process. For example:
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyModel<span class="w"> </span>--checkpoint<span class="w"> </span>main<span class="w"> </span><span class="s2">&quot;org/repo:file.gguf&quot;</span><span class="w"> </span>--recipe<span class="w"> </span>llamacpp
 </code></pre></div>
 This guide covers the underlying JSON files for users who need manual control.</p>
 </blockquote>
@@ -1506,30 +1367,7 @@ This guide covers the underlying JSON files for users who need manual control.</
 </tr>
 </tbody>
 </table>
-<p><strong>Cache directory location:</strong></p>
-<table>
-<thead>
-<tr>
-<th>OS</th>
-<th>Default Path</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Windows</td>
-<td><code>%USERPROFILE%\.cache\lemonade\</code></td>
-</tr>
-<tr>
-<td>Linux</td>
-<td><code>~/.cache/lemonade/</code></td>
-</tr>
-<tr>
-<td>macOS</td>
-<td><code>~/.cache/lemonade/</code></td>
-</tr>
-</tbody>
-</table>
-<p>The cache directory can be overridden by setting the <code>LEMONADE_CACHE_DIR</code> environment variable.</p>
+<p>See <a href="../configuration/">configuration.md</a> for more information about finding the cache directory.</p>
 <h2 id="user_modelsjson-reference"><code>user_models.json</code> Reference</h2>
 <p>This file contains a JSON object where each key is a model name and each value defines the model's properties. Create this file in your cache directory if it doesn't exist.</p>
 <h3 id="template">Template</h3>
@@ -1677,146 +1515,6 @@ This guide covers the underlying JSON files for users who need manual control.</
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
-<h3 id="options-by-recipe">Options by recipe</h3>
-<h4 id="llamacpp">llamacpp</h4>
-<table>
-<thead>
-<tr>
-<th>Option</th>
-<th>Default</th>
-<th>Env Variable</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>ctx_size</code></td>
-<td>4096</td>
-<td><code>LEMONADE_CTX_SIZE</code></td>
-<td>Context window size in tokens</td>
-</tr>
-<tr>
-<td><code>llamacpp_backend</code></td>
-<td>vulkan (Windows/Linux), metal (macOS)</td>
-<td><code>LEMONADE_LLAMACPP</code></td>
-<td>Inference backend: <code>vulkan</code>, <code>rocm</code>, <code>cpu</code>, <code>metal</code></td>
-</tr>
-<tr>
-<td><code>llamacpp_args</code></td>
-<td>(empty)</td>
-<td><code>LEMONADE_LLAMACPP_ARGS</code></td>
-<td>Extra arguments passed to llama-server</td>
-</tr>
-</tbody>
-</table>
-<h4 id="whispercpp">whispercpp</h4>
-<table>
-<thead>
-<tr>
-<th>Option</th>
-<th>Default</th>
-<th>Env Variable</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>whispercpp_backend</code></td>
-<td>npu</td>
-<td><code>LEMONADE_WHISPERCPP</code></td>
-<td>Backend: <code>npu</code>, <code>cpu</code>, <code>vulkan</code></td>
-</tr>
-</tbody>
-</table>
-<h4 id="sd-cpp">sd-cpp</h4>
-<table>
-<thead>
-<tr>
-<th>Option</th>
-<th>Default</th>
-<th>Env Variable</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>sd-cpp_backend</code></td>
-<td>cpu</td>
-<td><code>LEMONADE_SDCPP</code></td>
-<td>Backend: <code>cpu</code>, <code>rocm</code></td>
-</tr>
-<tr>
-<td><code>steps</code></td>
-<td>20</td>
-<td><code>LEMONADE_STEPS</code></td>
-<td>Number of inference steps</td>
-</tr>
-<tr>
-<td><code>cfg_scale</code></td>
-<td>7.0</td>
-<td><code>LEMONADE_CFG_SCALE</code></td>
-<td>Classifier-free guidance scale</td>
-</tr>
-<tr>
-<td><code>width</code></td>
-<td>512</td>
-<td><code>LEMONADE_WIDTH</code></td>
-<td>Image width in pixels</td>
-</tr>
-<tr>
-<td><code>height</code></td>
-<td>512</td>
-<td><code>LEMONADE_HEIGHT</code></td>
-<td>Image height in pixels</td>
-</tr>
-</tbody>
-</table>
-<h4 id="flm">flm</h4>
-<table>
-<thead>
-<tr>
-<th>Option</th>
-<th>Default</th>
-<th>Env Variable</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>ctx_size</code></td>
-<td>4096</td>
-<td><code>LEMONADE_CTX_SIZE</code></td>
-<td>Context window size in tokens</td>
-</tr>
-<tr>
-<td><code>flm_args</code></td>
-<td>(empty)</td>
-<td><code>LEMONADE_FLM_ARGS</code></td>
-<td>Extra arguments passed to <code>flm serve</code></td>
-</tr>
-</tbody>
-</table>
-<h4 id="ryzenai-llm">ryzenai-llm</h4>
-<table>
-<thead>
-<tr>
-<th>Option</th>
-<th>Default</th>
-<th>Env Variable</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>ctx_size</code></td>
-<td>4096</td>
-<td><code>LEMONADE_CTX_SIZE</code></td>
-<td>Context window size in tokens</td>
-</tr>
-</tbody>
-</table>
-<h4 id="kokoro">kokoro</h4>
-<p>The <code>kokoro</code> recipe (text-to-speech) has no configurable options in <code>recipe_options.json</code>.</p>
 <blockquote>
 <p><strong>Note:</strong> Per-model options can also be configured through the Lemonade desktop app's model settings, or via the <code>save_options</code> parameter in the <a href="../server_spec/#post-apiv1load"><code>/api/v1/load</code> endpoint</a>.</p>
 </blockquote>
@@ -1840,7 +1538,7 @@ This guide covers the underlying JSON files for users who need manual control.</
 <span class="p">}</span>
 </code></pre></div></p>
 <p>Then load the model:
-<div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>run<span class="w"> </span>user.Qwen2.5-Coder-1.5B-Instruct
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>run<span class="w"> </span>user.Qwen2.5-Coder-1.5B-Instruct
 </code></pre></div></p>
 <h3 id="example-2-adding-a-vision-model-with-mmproj">Example 2: Adding a vision model with mmproj</h3>
 <p><strong><code>user_models.json</code>:</strong>
@@ -1864,23 +1562,22 @@ This guide covers the underlying JSON files for users who need manual control.</
 <span class="p">}</span>
 </code></pre></div></p>
 <p>The model will automatically be available as <code>user.My-Embedding-Model</code>. To mark it as an embedding model, use the pull CLI instead:
-<div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>pull<span class="w"> </span>user.My-Embedding-Model<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--checkpoint<span class="w"> </span><span class="s2">&quot;nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S&quot;</span><span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>user.My-Embedding-Model<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--checkpoint<span class="w"> </span>main<span class="w"> </span><span class="s2">&quot;nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--recipe<span class="w"> </span>llamacpp<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--embedding
+<span class="w">    </span>--label<span class="w"> </span>embeddings
 </code></pre></div></p>
 <h2 id="settings-priority">Settings Priority</h2>
 <p>When loading a model, settings are resolved in this order (highest to lowest priority):</p>
 <ol>
 <li>Values explicitly passed in the <code>/api/v1/load</code> request</li>
 <li>Per-model values from <code>recipe_options.json</code></li>
-<li>Values set via <code>lemonade-server</code> CLI arguments or environment variables</li>
-<li>Default hardcoded values in <code>lemonade-router</code></li>
+<li>Global configuration values, see <a href="../configuration/">Server Configuration</a></li>
 </ol>
 <p>For full details, see the <a href="../server_spec/#post-apiv1load">load endpoint documentation</a>.</p>
 <h2 id="see-also">See Also</h2>
 <ul>
-<li><a href="../lemonade-server-cli/#options-for-pull">CLI pull command</a> — register and download models from the command line</li>
+<li><a href="../../lemonade-cli/#options-for-pull">CLI pull command</a> — register and download models from the command line</li>
 <li><a href="../server_spec/#post-apiv1pull"><code>/api/v1/pull</code> endpoint</a> — register and download models via API</li>
 <li><a href="../server_integration/#installing-additional-models">Server Integration Guide</a> — overview of model management options</li>
 </ul>
