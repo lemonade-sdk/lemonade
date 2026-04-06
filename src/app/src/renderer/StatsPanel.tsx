@@ -8,6 +8,14 @@ type BucketMap = Record<string, {
   output_tokens?: number;
 }>;
 
+interface ModelStats {
+  requests?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  by_day?: BucketMap;
+  by_hour?: BucketMap;
+}
+
 interface LifetimeStats {
   requests?: number;
   input_tokens?: number;
@@ -18,6 +26,7 @@ interface LifetimeStats {
   persistence_path?: string;
   by_day?: BucketMap;
   by_hour?: BucketMap;
+  by_model?: Record<string, ModelStats>;
 }
 
 interface StatsPanelProps {
@@ -55,6 +64,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
   const [dayRangePreset, setDayRangePreset] = useState<DayRangePreset>('30d');
   const [customDayCount, setCustomDayCount] = useState(90);
   const [selectedDay, setSelectedDay] = useState('');
+  const [selectedModel, setSelectedModel] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -108,9 +118,21 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
     };
   }, [fetchStats]);
 
-  const availableDays = useMemo(() => {
-    return Object.keys(lifetimeStats?.by_day ?? {}).sort((a, b) => a.localeCompare(b));
+  const availableModels = useMemo(() => {
+    return Object.keys(lifetimeStats?.by_model ?? {}).sort((a, b) => a.localeCompare(b));
   }, [lifetimeStats]);
+
+  // The active stats source: either the selected model's slice or the full aggregate
+  const activeStats = useMemo<Pick<LifetimeStats, 'requests' | 'input_tokens' | 'output_tokens' | 'by_day' | 'by_hour'>>(() => {
+    if (selectedModel && lifetimeStats?.by_model?.[selectedModel]) {
+      return lifetimeStats.by_model[selectedModel];
+    }
+    return lifetimeStats ?? {};
+  }, [lifetimeStats, selectedModel]);
+
+  const availableDays = useMemo(() => {
+    return Object.keys(activeStats?.by_day ?? {}).sort((a, b) => a.localeCompare(b));
+  }, [activeStats]);
 
   useEffect(() => {
     if (!availableDays.length) {
@@ -126,19 +148,19 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
   }, [availableDays, selectedDay]);
 
   const dayPoints = useMemo<UsagePoint[]>(() => {
-    const entries = Object.entries(lifetimeStats?.by_day ?? {}).sort(([a], [b]) => a.localeCompare(b));
+    const entries = Object.entries(activeStats?.by_day ?? {}).sort(([a], [b]) => a.localeCompare(b));
     const dayLimit = resolveDayLimit(dayRangePreset, customDayCount);
     const trimmed = dayLimit === null ? entries : entries.slice(-dayLimit);
 
     return trimmed.map(([bucket, value]) => makeUsagePoint(bucket, formatDayLabel(bucket), value));
-  }, [customDayCount, dayRangePreset, lifetimeStats]);
+  }, [customDayCount, dayRangePreset, activeStats]);
 
   const hourlyPoints = useMemo<UsagePoint[]>(() => {
     if (!selectedDay) {
       return [];
     }
 
-    const hours = new Map(Object.entries(lifetimeStats?.by_hour ?? {}));
+    const hours = new Map(Object.entries(activeStats?.by_hour ?? {}));
     const points: UsagePoint[] = [];
 
     for (let hour = 0; hour < HOURLY_SLOT_COUNT; hour += 1) {
@@ -148,7 +170,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
     }
 
     return points;
-  }, [lifetimeStats, selectedDay]);
+  }, [activeStats, selectedDay]);
 
   const basePoints = bucketMode === 'day' ? dayPoints : hourlyPoints;
 
@@ -186,9 +208,9 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
   }, [chartPoints]);
 
   const lifetimeSummary = useMemo(() => {
-    const totalInput = lifetimeStats?.input_tokens ?? 0;
-    const totalOutput = lifetimeStats?.output_tokens ?? 0;
-    const requests = lifetimeStats?.requests ?? 0;
+    const totalInput = activeStats?.input_tokens ?? 0;
+    const totalOutput = activeStats?.output_tokens ?? 0;
+    const requests = activeStats?.requests ?? 0;
     const totalTokens = totalInput + totalOutput;
 
     return {
@@ -198,7 +220,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
       totalTokens,
       avgTokensPerRequest: requests > 0 ? totalTokens / requests : 0,
     };
-  }, [lifetimeStats]);
+  }, [activeStats]);
 
   const valueSummary = chartSummary;
 
@@ -207,10 +229,10 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
   }, [chartPoints]);
 
   const utilizationSummary = useMemo(() => {
-    const allDayPoints = Object.entries(lifetimeStats?.by_day ?? {})
+    const allDayPoints = Object.entries(activeStats?.by_day ?? {})
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([bucket, value]) => makeUsagePoint(bucket, formatDayLabel(bucket), value));
-    const allHourPoints = Object.entries(lifetimeStats?.by_hour ?? {})
+    const allHourPoints = Object.entries(activeStats?.by_hour ?? {})
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([bucket, value]) => makeUsagePoint(bucket, bucket, value));
 
@@ -238,7 +260,37 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
       peakHourLabel: peakHour ? formatHourBucketHeading(peakHour.bucket) : 'No activity yet',
       peakHourTokens: peakHour?.totalTokens ?? 0,
     };
-  }, [lifetimeStats, lifetimeSummary.totalTokens]);
+  }, [activeStats, lifetimeSummary.totalTokens]);
+
+  const renderModelSelector = () => {
+    if (availableModels.length === 0) {
+      return null;
+    }
+    return (
+      <div className="stats-controls">
+        <div className="stats-chip-group">
+          <button
+            key="all"
+            type="button"
+            className={`stats-chip ${selectedModel === '' ? 'active' : ''}`}
+            onClick={() => setSelectedModel('')}
+          >
+            All Models
+          </button>
+          {availableModels.map((model) => (
+            <button
+              key={model}
+              type="button"
+              className={`stats-chip ${selectedModel === model ? 'active' : ''}`}
+              onClick={() => setSelectedModel(model)}
+            >
+              {model}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   const renderRangeControls = () => (
     bucketMode === 'day' ? (
@@ -317,9 +369,11 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
 
       <div className="stats-summary-grid">
         <div className="stats-summary-card">
-          <span className="stats-summary-label">Lifetime tokens</span>
+          <span className="stats-summary-label">{selectedModel ? 'Model tokens' : 'Lifetime tokens'}</span>
           <strong>{formatNumber(lifetimeSummary.totalTokens)}</strong>
-          <span className="stats-summary-meta">All persisted prompt and completion tokens</span>
+          <span className="stats-summary-meta">
+            {selectedModel ? `All persisted tokens for ${selectedModel}` : 'All persisted prompt and completion tokens'}
+          </span>
         </div>
         <div className="stats-summary-card">
           <span className="stats-summary-label">{bucketMode === 'day' ? 'Selected range' : 'Selected day'}</span>
@@ -329,7 +383,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
           </span>
         </div>
         <div className="stats-summary-card">
-          <span className="stats-summary-label">Lifetime requests</span>
+          <span className="stats-summary-label">{selectedModel ? 'Model requests' : 'Lifetime requests'}</span>
           <strong>{formatNumber(lifetimeSummary.requests)}</strong>
           <span className="stats-summary-meta">{formatCompactNumber(lifetimeSummary.avgTokensPerRequest)} avg tokens per request</span>
         </div>
@@ -373,6 +427,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
           </div>
         </div>
 
+        {renderModelSelector()}
         {renderRangeControls()}
 
         <ChartSection
@@ -516,6 +571,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
                 <XIcon size={16} strokeWidth={2.2} />
               </button>
             </div>
+            {renderModelSelector()}
             {renderRangeControls()}
             <ChartSection
               points={chartPoints}
