@@ -101,7 +101,7 @@ inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
     } else if (recipe == "whispercpp") {
         return DEVICE_CPU;  // Whisper.cpp runs on CPU (with optional GPU acceleration)
     } else if (recipe == "sd-cpp") {
-        return DEVICE_CPU;  // stable-diffusion.cpp uses CPU (AVX2) by default
+        return DEVICE_CPU;  // Default; SDServer::load() overrides to DEVICE_GPU for rocm/vulkan backends
     } else if (recipe == "kokoro") {
         return DEVICE_CPU;  // Kokoros runs on CPU
     } else if (recipe == "experience") {
