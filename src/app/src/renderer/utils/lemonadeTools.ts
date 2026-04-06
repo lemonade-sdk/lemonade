@@ -91,6 +91,7 @@ export async function executeLemonadeTool(
   toolCall: { function: { name: string; arguments: string } },
   model: string,
   context: ToolExecutionContext,
+  modelsData?: ModelsData,
 ): Promise<ToolExecutionResult> {
   const funcName = toolCall.function.name;
   let args: Record<string, any>;
@@ -101,7 +102,9 @@ export async function executeLemonadeTool(
   }
 
   const hasPreviousImage = context.previousArtifacts.some(a => a.type === 'image');
-  const effectiveName = (funcName === 'generate_image' && hasPreviousImage) ? 'edit_image' : funcName;
+  const modelLabels = modelsData?.[model]?.labels ?? [];
+  const modelSupportsEdit = modelLabels.includes('edit');
+  const effectiveName = (funcName === 'generate_image' && hasPreviousImage && modelSupportsEdit) ? 'edit_image' : funcName;
 
   if (effectiveName === 'generate_image' || effectiveName === 'edit_image') {
     return executeImageTool(effectiveName, args, model, context);

@@ -510,7 +510,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
               extractedImages,
               previousArtifacts: artifacts,
             };
-            const result = await executeLemonadeTool(toolCall, toolModel, context);
+            const result = await executeLemonadeTool(toolCall, toolModel, context, modelsData);
 
             if (result.type === 'image' && result.data) {
               // For edits, replace the last image; for generation, append

@@ -17,7 +17,7 @@
       }
     },
     {
-      "requires_labels": ["image"],
+      "requires_labels": ["edit"],
       "function": {
         "name": "edit_image",
         "description": "Edit or modify a previously generated image. Use this when the user wants to add, remove, change, modify, update, fix, or adjust anything in an existing image from this conversation. The most recently generated image is used automatically as the source. Always prefer this over generate_image when an image already exists in the conversation.",
