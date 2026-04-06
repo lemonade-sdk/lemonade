@@ -7,6 +7,7 @@
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/network_beacon.h>
+#include <lemon/utils/custom_args.h>
 #include <CLI/CLI.hpp>
 #include <iostream>
 #include <string>
@@ -35,7 +36,6 @@
 #endif
 
 #include "lemon/utils/aixlog.hpp"
-
 
 static const std::vector<std::string> VALID_LABELS = {
     "coding",
@@ -107,6 +107,9 @@ struct CliConfig {
     bool yes = false;
     int scan_duration = 30;
     bool json_output = false;
+    bool codex_use_user_config = false;
+    std::string codex_model_provider = "lemonade";
+    std::string agent_args;
 };
 
 // Open a URL via the OS without invoking a shell (avoids shell injection).
@@ -346,11 +349,22 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
     }
 
     lemon_tray::AgentConfig agent_config;
+    lemon_tray::AgentLaunchOptions launch_options;
     std::string config_error;
+
+    if (config.codex_use_user_config) {
+        if (config.agent != "codex") {
+            LOG(ERROR, "AgentBuilder") << "--provider is only supported for the codex agent." << std::endl;
+            return 1;
+        }
+    }
+
+    launch_options.codex_use_user_config = config.codex_use_user_config;
+    launch_options.codex_model_provider = config.codex_model_provider;
 
     // Build agent config
     if (!lemon_tray::build_agent_config(config.agent, config.host, config.port, config.model,
-                                         config.api_key,
+                                         config.api_key, launch_options,
                                          agent_config, config_error)) {
         LOG(ERROR, "AgentBuilder") << "Failed to build agent config: " << config_error << std::endl;
         return 1;
@@ -360,6 +374,11 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         std::cout << "Launch auth: no API key provided; using default agent auth token." << std::endl;
     } else {
         std::cout << "Launch auth: API key provided and propagated to the launched agent." << std::endl;
+    }
+
+    if (!config.agent_args.empty()) {
+        std::vector<std::string> user_args = lemon::utils::parse_custom_args(config.agent_args);
+        agent_config.extra_args.insert(agent_config.extra_args.end(), user_args.begin(), user_args.end());
     }
 
     // Find agent binary
@@ -899,6 +918,7 @@ int main(int argc, char* argv[]) {
     export_cmd->add_option("--output", config.output_file, "Output file path (prints to stdout if not specified)")->type_name("PATH");
 
     // Launch options
+    CLI::Option* provider_opt = nullptr;
     launch_cmd->add_option("agent", config.agent, "Agent name to launch")
         ->type_name("AGENT")
         ->check(CLI::IsMember(SUPPORTED_AGENTS));
@@ -908,6 +928,15 @@ int main(int argc, char* argv[]) {
         ->type_name("DIR");
     launch_cmd->add_option("--recipe-file", config.recipe_file,
         "Remote recipe JSON filename used only if you choose recipe import at prompt")->type_name("FILE");
+    provider_opt = launch_cmd->add_option("--provider,-p", config.codex_model_provider,
+        "Use model provider name for Codex instead of Lemonade-injected provider definition")
+        ->type_name("PROVIDER")
+        ->default_val(config.codex_model_provider)
+        ->expected(0, 1);
+    launch_cmd->add_option("--agent-args", config.agent_args,
+        "Custom arguments to pass directly to the launched agent process")
+        ->type_name("ARGS")
+        ->default_val(config.agent_args);
     lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
 
     // Scan options
@@ -915,6 +944,7 @@ int main(int argc, char* argv[]) {
 
     // Parse arguments
     CLI11_PARSE(app, argc, argv);
+    config.codex_use_user_config = (provider_opt != nullptr && provider_opt->count() > 0);
 
     // Auto-discover local server via UDP beacon if the default connection fails
     // Skip when: no command given, scan command, or user explicitly set --host/--port

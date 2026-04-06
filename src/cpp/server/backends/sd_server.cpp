@@ -88,6 +88,14 @@ void SDServer::load(const std::string& model_name,
 
     RuntimeConfig::validate_backend_choice("sdcpp", backend);
 
+    // Update device type based on the actual backend selected.
+    // get_device_type_from_recipe() defaults sd-cpp to CPU, but rocm/vulkan are GPU backends.
+    if (backend == "rocm" || backend == "vulkan") {
+        device_type_ = DEVICE_GPU;
+    } else {
+        device_type_ = DEVICE_CPU;
+    }
+
     // Install sd-server if needed
     backend_manager_->install_backend(SPEC.recipe, backend);
 
