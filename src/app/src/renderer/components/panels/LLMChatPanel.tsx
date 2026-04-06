@@ -450,6 +450,16 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     const llmMessages = [...processedMessages];
 
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+      // Show thinking indicator while waiting for LLM response
+      const thinkingText = iteration === 0 ? 'Thinking...' : 'Thinking...';
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages[newMessages.length - 1] = {
+          role: 'assistant',
+          content: buildFinalContent(thinkingText, artifacts),
+        };
+        return newMessages;
+      });
 
       const requestBody = {
         model: chatModelName,
