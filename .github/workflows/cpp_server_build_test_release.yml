@@ -33,7 +33,7 @@ jobs:
     outputs:
       unsigned-artifact-id: ${{ steps.upload-unsigned-msi.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           clean: true
           fetch-depth: 0
@@ -130,12 +130,12 @@ jobs:
           & $wixExe --version
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build/_deps
           key: fetchcontent-windows-${{ hashFiles('CMakeLists.txt') }}
@@ -189,7 +189,7 @@ jobs:
 
       - name: Upload Lemonade Server Installers
         id: upload-unsigned-msi
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Lemonade_Server_MSI
           path: |
@@ -238,7 +238,7 @@ jobs:
           Get-ChildItem -Path "signed-msi" -Recurse | Format-Table Name, Length
 
       - name: Upload Signed MSI Installers
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Lemonade_Server_MSI_Signed
           path: |
@@ -257,7 +257,7 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           clean: true
           fetch-depth: 0
@@ -280,7 +280,7 @@ jobs:
           deb-version: ${{ steps.get_version.outputs.version }}
 
       - name: Upload .deb package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lemonade-deb
           path: ${{ steps.build_deb.outputs.output-dir }}/*.deb
@@ -294,7 +294,7 @@ jobs:
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           clean: true
           fetch-depth: 0
@@ -338,7 +338,7 @@ jobs:
           rpm -qip "$RPM_FILE"
 
       - name: Upload .rpm package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lemonade-rpm
           path: build/lemonade-server-${{ env.LEMONADE_VERSION }}.x86_64.rpm
@@ -351,7 +351,7 @@ jobs:
       version: ${{ steps.get_version.outputs.version }}
       has_signing: ${{ steps.check_signing.outputs.has_signing }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           clean: true
           fetch-depth: 0
@@ -393,7 +393,7 @@ jobs:
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lemonade-macos-pkg
           path: build/*.pkg
@@ -558,7 +558,7 @@ jobs:
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           clean: true
           fetch-depth: 0
@@ -576,7 +576,7 @@ jobs:
           echo "Build environment configured successfully!"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
 
@@ -605,7 +605,7 @@ jobs:
           "$APPIMAGE_FILE" --appimage-help | head -5
 
       - name: Upload AppImage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lemonade-appimage
           path: build/app-appimage/lemonade-app-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
@@ -672,7 +672,7 @@ jobs:
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Cleanup processes
         uses: ./.github/actions/cleanup-processes-windows
@@ -775,7 +775,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Cleanup processes
         uses: ./.github/actions/cleanup-processes-linux
@@ -848,7 +848,7 @@ jobs:
       LEMONADE_VERSION: ${{ needs.build-lemonade-rpm.outputs.version }}
     steps:
       - name: Download Lemonade .rpm Package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: lemonade-rpm
           path: .
@@ -894,7 +894,7 @@ jobs:
       LEMONADE_VERSION: ${{ needs.build-lemonade-macos-dmg.outputs.version }}
       GGML_METAL_NO_RESIDENCY: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set HF_HOME environment variable
         run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
@@ -947,7 +947,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Configure git safe directory
         run: git config --global --add safe.directory $(pwd)
@@ -1033,7 +1033,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-macos-dmg.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # ---- Windows Setup ----
       - name: Setup (Windows)
@@ -1060,7 +1060,7 @@ jobs:
       # ---- macOS Setup (only when signed .pkg is available) ----
       - name: Download .pkg package
         if: runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: lemonade-macos-pkg
           path: .
@@ -1148,7 +1148,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Configure git safe directory
         run: git config --global --add safe.directory $(pwd)
@@ -1239,7 +1239,7 @@ jobs:
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup (Windows)
         shell: powershell
@@ -1343,30 +1343,30 @@ jobs:
       LEMONADE_VERSION: ${{ needs.build-lemonade-rpm.outputs.version }}
     steps:
       - name: Checkout for release notes action
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           sparse-checkout: .github
 
       - name: Download Signed Lemonade Server Installer (Windows)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: Lemonade_Server_MSI_Signed
           path: .
 
       - name: Download Lemonade .rpm Package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: lemonade-rpm
           path: .
 
       - name: Download Lemonade macOS .pkg Package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: lemonade-macos-pkg
           path: .
 
       - name: Download Lemonade AppImage (Linux)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: lemonade-appimage
           path: .
