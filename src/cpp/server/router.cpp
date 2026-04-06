@@ -164,26 +164,50 @@ void Router::persist_usage_stats_locked() const {
     }
 }
 
-void Router::record_usage_locked(int input_tokens, int output_tokens, std::time_t recorded_at) {
+void Router::record_usage_locked(const std::string& model_name, const std::string& device_type, int input_tokens, int output_tokens, std::time_t recorded_at) {
+    const auto in_tokens = static_cast<uint64_t>(std::max(input_tokens, 0));
+    const auto out_tokens = static_cast<uint64_t>(std::max(output_tokens, 0));
+    const std::string day_key = format_day_bucket(recorded_at);
+    const std::string hour_key = format_hour_bucket(recorded_at);
+    UsageBucket& day_bucket = lifetime_usage_stats_.by_day[day_key];
+    UsageBucket& hour_bucket = lifetime_usage_stats_.by_hour[hour_key];
+
+    lifetime_usage_stats_.requests++;
+    lifetime_usage_stats_.input_tokens += in_tokens;
+    lifetime_usage_stats_.output_tokens += out_tokens;
+    lifetime_usage_stats_.updated_at = format_timestamp(recorded_at);
+
+    day_bucket.requests++;
+    day_bucket.input_tokens += in_tokens;
+    day_bucket.output_tokens += out_tokens;
+
+    hour_bucket.requests++;
+    hour_bucket.input_tokens += in_tokens;
+    hour_bucket.output_tokens += out_tokens;
+
+    persist_usage_stats_locked();
+}
+
+// Patches token counts onto already-recorded buckets without incrementing request counts.
+// Called by update_telemetry() after execute_inference() has already counted the request.
+void Router::add_tokens_locked(const std::string& model_name, const std::string& device_type, int input_tokens, int output_tokens, std::time_t recorded_at) {
     if (input_tokens <= 0 && output_tokens <= 0) {
         return;
     }
 
-    UsageBucket& day_bucket = lifetime_usage_stats_.by_day[format_day_bucket(recorded_at)];
-    UsageBucket& hour_bucket = lifetime_usage_stats_.by_hour[format_hour_bucket(recorded_at)];
+    const auto in_tokens = static_cast<uint64_t>(std::max(input_tokens, 0));
+    const auto out_tokens = static_cast<uint64_t>(std::max(output_tokens, 0));
+    const std::string day_key = format_day_bucket(recorded_at);
+    const std::string hour_key = format_hour_bucket(recorded_at);
 
-    lifetime_usage_stats_.requests++;
-    lifetime_usage_stats_.input_tokens += static_cast<uint64_t>(std::max(input_tokens, 0));
-    lifetime_usage_stats_.output_tokens += static_cast<uint64_t>(std::max(output_tokens, 0));
+    lifetime_usage_stats_.input_tokens += in_tokens;
+    lifetime_usage_stats_.output_tokens += out_tokens;
     lifetime_usage_stats_.updated_at = format_timestamp(recorded_at);
 
-    day_bucket.requests++;
-    day_bucket.input_tokens += static_cast<uint64_t>(std::max(input_tokens, 0));
-    day_bucket.output_tokens += static_cast<uint64_t>(std::max(output_tokens, 0));
-
-    hour_bucket.requests++;
-    hour_bucket.input_tokens += static_cast<uint64_t>(std::max(input_tokens, 0));
-    hour_bucket.output_tokens += static_cast<uint64_t>(std::max(output_tokens, 0));
+    lifetime_usage_stats_.by_day[day_key].input_tokens += in_tokens;
+    lifetime_usage_stats_.by_day[day_key].output_tokens += out_tokens;
+    lifetime_usage_stats_.by_hour[hour_key].input_tokens += in_tokens;
+    lifetime_usage_stats_.by_hour[hour_key].output_tokens += out_tokens;
 
     persist_usage_stats_locked();
 }
@@ -738,6 +762,13 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
     try {
         auto response = inference_func(server);
         server->set_busy(false);
+        // Record the request. Token counts are 0 here; for LLM completions, update_telemetry
+        // will later add the actual token counts via add_tokens_locked without double-counting.
+        {
+            std::lock_guard<std::mutex> stats_lock(stats_mutex_);
+            record_usage_locked(server->get_model_name(), device_type_to_string(server->get_device_type()),
+                                0, 0, std::time(nullptr));
+        }
         return response;
     } catch (...) {
         server->set_busy(false);
@@ -914,6 +945,8 @@ void Router::update_telemetry(int input_tokens, int output_tokens,
                               double time_to_first_token, double tokens_per_second) {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = get_most_recent_server();
+    std::string model_name = server ? server->get_model_name() : "";
+    std::string device_type = server ? device_type_to_string(server->get_device_type()) : "";
     if (server) {
         server->set_telemetry(input_tokens, output_tokens,
                              time_to_first_token, tokens_per_second);
@@ -923,7 +956,7 @@ void Router::update_telemetry(int input_tokens, int output_tokens,
     last_completed_telemetry_.output_tokens = output_tokens;
     last_completed_telemetry_.time_to_first_token = time_to_first_token;
     last_completed_telemetry_.tokens_per_second = tokens_per_second;
-    record_usage_locked(input_tokens, output_tokens, std::time(nullptr));
+    add_tokens_locked(model_name, device_type, input_tokens, output_tokens, std::time(nullptr));
 }
 
 void Router::update_prompt_tokens(int prompt_tokens) {
