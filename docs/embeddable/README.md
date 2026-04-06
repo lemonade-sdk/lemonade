@@ -65,6 +65,7 @@ Once you've finished customization, you'll have a portable Lemonade folder ready
     ```text
     lemond.exe                      # App runs lemond as a subprocess
     lemonade.exe                    # Optional: CLI management for lemond
+    LICENSE                         # Lemonade license file
     config.json                     # Persistent customized settings for lemond
     recipe_options.json             # Per-model customization (e.g., llama args)
 
@@ -94,6 +95,7 @@ Once you've finished customization, you'll have a portable Lemonade folder ready
     ```text
     lemond                          # App runs lemond as a subprocess
     lemonade                        # Optional: CLI management for lemond
+    LICENSE                         # Lemonade license file
     config.json                     # Persistent customized settings for lemond
     recipe_options.json             # Per-model customization (e.g., llama args)
 

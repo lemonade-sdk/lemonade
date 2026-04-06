@@ -668,6 +668,7 @@ jobs:
 
           cp build/lemond "${ARCHIVE_DIR}/"
           cp build/lemonade "${ARCHIVE_DIR}/"
+          cp LICENSE "${ARCHIVE_DIR}/"
           cp build/resources/server_models.json "${ARCHIVE_DIR}/resources/"
           cp build/resources/backend_versions.json "${ARCHIVE_DIR}/resources/"
           cp build/resources/defaults.json "${ARCHIVE_DIR}/resources/"
@@ -781,6 +782,7 @@ jobs:
 
           Copy-Item "build\Release\lemond.exe" "$archiveDir\"
           Copy-Item "build\Release\lemonade.exe" "$archiveDir\"
+          Copy-Item "LICENSE" "$archiveDir\"
           Copy-Item "build\Release\resources\server_models.json" "$archiveDir\resources\"
           Copy-Item "build\Release\resources\backend_versions.json" "$archiveDir\resources\"
           Copy-Item "build\Release\resources\defaults.json" "$archiveDir\resources\"
@@ -1095,6 +1097,7 @@ jobs:
           # Verify expected files exist
           test -f "$DIR/lemond"
           test -f "$DIR/lemonade"
+          test -f "$DIR/LICENSE"
           test -f "$DIR/resources/server_models.json"
           test -f "$DIR/resources/backend_versions.json"
           test -f "$DIR/resources/defaults.json"
@@ -1186,6 +1189,7 @@ jobs:
           $expected = @(
               "$archiveDir\lemond.exe",
               "$archiveDir\lemonade.exe",
+              "$archiveDir\LICENSE",
               "$archiveDir\resources\server_models.json",
               "$archiveDir\resources\backend_versions.json",
               "$archiveDir\resources\defaults.json"
