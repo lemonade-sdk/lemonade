@@ -107,6 +107,14 @@ private:
         }
     };
 
+    struct ModelStats {
+        uint64_t requests = 0;
+        uint64_t input_tokens = 0;
+        uint64_t output_tokens = 0;
+        std::map<std::string, UsageBucket> by_day;
+        std::map<std::string, UsageBucket> by_hour;
+    };
+
     struct LifetimeUsageStats {
         uint64_t requests = 0;
         uint64_t input_tokens = 0;
@@ -115,6 +123,7 @@ private:
         std::string updated_at;
         std::map<std::string, UsageBucket> by_day;
         std::map<std::string, UsageBucket> by_hour;
+        std::map<std::string, ModelStats> by_model;
     };
 
     // Multi-model support: Manage multiple WrappedServers
@@ -164,7 +173,7 @@ private:
     static json usage_buckets_to_json(const std::map<std::string, UsageBucket>& buckets);
     void load_usage_stats();
     void persist_usage_stats_locked() const;
-    void record_usage_locked(int input_tokens, int output_tokens, std::time_t recorded_at);
+    void record_usage_locked(const std::string& model_name, int input_tokens, int output_tokens, std::time_t recorded_at);
     json get_lifetime_usage_stats() const;
 };
 
