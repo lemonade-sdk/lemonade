@@ -27,6 +27,7 @@ interface LifetimeStats {
   by_day?: BucketMap;
   by_hour?: BucketMap;
   by_model?: Record<string, ModelStats>;
+  by_device_type?: Record<string, ModelStats>;
 }
 
 interface StatsPanelProps {
@@ -65,6 +66,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
   const [customDayCount, setCustomDayCount] = useState(90);
   const [selectedDay, setSelectedDay] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
+  const [selectedDeviceType, setSelectedDeviceType] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -122,13 +124,20 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
     return Object.keys(lifetimeStats?.by_model ?? {}).sort((a, b) => a.localeCompare(b));
   }, [lifetimeStats]);
 
-  // The active stats source: either the selected model's slice or the full aggregate
+  const availableDeviceTypes = useMemo(() => {
+    return Object.keys(lifetimeStats?.by_device_type ?? {}).sort((a, b) => a.localeCompare(b));
+  }, [lifetimeStats]);
+
+  // The active stats source: selected model, selected device type, or the full aggregate
   const activeStats = useMemo<Pick<LifetimeStats, 'requests' | 'input_tokens' | 'output_tokens' | 'by_day' | 'by_hour'>>(() => {
     if (selectedModel && lifetimeStats?.by_model?.[selectedModel]) {
       return lifetimeStats.by_model[selectedModel];
     }
+    if (selectedDeviceType && lifetimeStats?.by_device_type?.[selectedDeviceType]) {
+      return lifetimeStats.by_device_type[selectedDeviceType];
+    }
     return lifetimeStats ?? {};
-  }, [lifetimeStats, selectedModel]);
+  }, [lifetimeStats, selectedModel, selectedDeviceType]);
 
   const availableDays = useMemo(() => {
     return Object.keys(activeStats?.by_day ?? {}).sort((a, b) => a.localeCompare(b));
@@ -262,33 +271,59 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
     };
   }, [activeStats, lifetimeSummary.totalTokens]);
 
-  const renderModelSelector = () => {
-    if (availableModels.length === 0) {
+  const renderFilterSelectors = () => {
+    if (availableModels.length === 0 && availableDeviceTypes.length === 0) {
       return null;
     }
     return (
-      <div className="stats-controls">
-        <div className="stats-chip-group">
-          <button
-            key="all"
-            type="button"
-            className={`stats-chip ${selectedModel === '' ? 'active' : ''}`}
-            onClick={() => setSelectedModel('')}
-          >
-            All Models
-          </button>
-          {availableModels.map((model) => (
-            <button
-              key={model}
-              type="button"
-              className={`stats-chip ${selectedModel === model ? 'active' : ''}`}
-              onClick={() => setSelectedModel(model)}
-            >
-              {model}
-            </button>
-          ))}
-        </div>
-      </div>
+      <>
+        {availableModels.length > 0 && (
+          <div className="stats-controls">
+            <div className="stats-chip-group">
+              <button
+                type="button"
+                className={`stats-chip ${selectedModel === '' ? 'active' : ''}`}
+                onClick={() => { setSelectedModel(''); setSelectedDeviceType(''); }}
+              >
+                All Models
+              </button>
+              {availableModels.map((model) => (
+                <button
+                  key={model}
+                  type="button"
+                  className={`stats-chip ${selectedModel === model ? 'active' : ''}`}
+                  onClick={() => { setSelectedModel(model); setSelectedDeviceType(''); }}
+                >
+                  {model}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {availableDeviceTypes.length > 0 && (
+          <div className="stats-controls">
+            <div className="stats-chip-group">
+              <button
+                type="button"
+                className={`stats-chip ${selectedDeviceType === '' && selectedModel === '' ? 'active' : ''}`}
+                onClick={() => { setSelectedDeviceType(''); setSelectedModel(''); }}
+              >
+                All Devices
+              </button>
+              {availableDeviceTypes.map((device) => (
+                <button
+                  key={device}
+                  type="button"
+                  className={`stats-chip ${selectedDeviceType === device ? 'active' : ''}`}
+                  onClick={() => { setSelectedDeviceType(device); setSelectedModel(''); }}
+                >
+                  {device.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </>
     );
   };
 
@@ -369,10 +404,10 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
 
       <div className="stats-summary-grid">
         <div className="stats-summary-card">
-          <span className="stats-summary-label">{selectedModel ? 'Model tokens' : 'Lifetime tokens'}</span>
+          <span className="stats-summary-label">{selectedModel ? 'Model tokens' : selectedDeviceType ? 'Device tokens' : 'Lifetime tokens'}</span>
           <strong>{formatNumber(lifetimeSummary.totalTokens)}</strong>
           <span className="stats-summary-meta">
-            {selectedModel ? `All persisted tokens for ${selectedModel}` : 'All persisted prompt and completion tokens'}
+            {selectedModel ? `All persisted tokens for ${selectedModel}` : selectedDeviceType ? `All persisted tokens on ${selectedDeviceType.toUpperCase()}` : 'All persisted prompt and completion tokens'}
           </span>
         </div>
         <div className="stats-summary-card">
@@ -383,7 +418,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
           </span>
         </div>
         <div className="stats-summary-card">
-          <span className="stats-summary-label">{selectedModel ? 'Model requests' : 'Lifetime requests'}</span>
+          <span className="stats-summary-label">{selectedModel ? 'Model requests' : selectedDeviceType ? 'Device requests' : 'Lifetime requests'}</span>
           <strong>{formatNumber(lifetimeSummary.requests)}</strong>
           <span className="stats-summary-meta">{formatCompactNumber(lifetimeSummary.avgTokensPerRequest)} avg tokens per request</span>
         </div>
@@ -427,7 +462,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
           </div>
         </div>
 
-        {renderModelSelector()}
+        {renderFilterSelectors()}
         {renderRangeControls()}
 
         <ChartSection
@@ -571,7 +606,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ searchQuery }) => {
                 <XIcon size={16} strokeWidth={2.2} />
               </button>
             </div>
-            {renderModelSelector()}
+            {renderFilterSelectors()}
             {renderRangeControls()}
             <ChartSection
               points={chartPoints}
