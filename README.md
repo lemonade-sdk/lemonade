@@ -93,7 +93,7 @@ lemonade pull Gemma-3-4b-it-GGUF
 To see the backends available on your PC:
 
 ```
-lemonade recipes
+lemonade backends
 ```
 
 
@@ -205,7 +205,7 @@ Lemonade supports multiple recipes (LLM, speech, TTS, and image generation), and
 To check exactly which recipes/backends are supported on your own machine, run:
 
 ```
-lemonade recipes
+lemonade backends
 ```
 
 <details>

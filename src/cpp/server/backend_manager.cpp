@@ -64,6 +64,7 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
+                                     bool force,
                                      DownloadProgressCallback progress_cb) {
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << backend << std::endl;
 

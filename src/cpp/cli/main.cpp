@@ -96,8 +96,8 @@ struct CliConfig {
     std::vector<std::string> labels;
     nlohmann::json recipe_options;
     bool save_options = false;
-    std::string install_backend;  // Format: "recipe:backend"
-    std::string uninstall_backend;  // Format: "recipe:backend"
+    std::string backend_spec;  // Format: "recipe:backend"
+    bool force = false;
     std::string output_file;
     bool downloaded = false;
     std::string agent;
@@ -302,17 +302,28 @@ static int handle_run_command(lemonade::LemonadeClient& client, CliConfig& confi
     return 0;
 }
 
-static int handle_recipes_command(lemonade::LemonadeClient& client, const CliConfig& config) {
-    if (handle_backend_operation(config.install_backend, "Install",
-        [&client](const std::string& recipe, const std::string& backend) {
-            return client.install_backend(recipe, backend);
-        })) {
-            return 0;
-    } else if (handle_backend_operation(config.uninstall_backend, "Uninstall",
-        [&client](const std::string& recipe, const std::string& backend) {
-            return client.uninstall_backend(recipe, backend);
-        })) {
-            return 0;
+static int handle_backends_command(lemonade::LemonadeClient& client,
+                                   const CliConfig& config,
+                                   bool install_requested,
+                                   bool uninstall_requested) {
+    if (install_requested) {
+        int result = 0;
+        handle_backend_operation(config.backend_spec, "Install",
+            [&client, &config, &result](const std::string& recipe, const std::string& backend) {
+                result = client.install_backend(recipe, backend, config.force);
+                return result;
+            });
+        return result;
+    }
+
+    if (uninstall_requested) {
+        int result = 0;
+        handle_backend_operation(config.backend_spec, "Uninstall",
+            [&client, &result](const std::string& recipe, const std::string& backend) {
+                result = client.uninstall_backend(recipe, backend);
+                return result;
+            });
+        return result;
     }
 
     return client.list_recipes();
@@ -811,7 +822,10 @@ int main(int argc, char* argv[]) {
     CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model")->group("Quick start");
 
     // Server commands
-    CLI::App* recipes_cmd = app.add_subcommand("recipes", "List available recipes and backends")->group("Server");
+    CLI::App* backends_cmd = app.add_subcommand("backends", "List available recipes and backends")->group("Server");
+    backends_cmd->alias("recipes");
+    CLI::App* backends_install_cmd = backends_cmd->add_subcommand("install", "Install a backend")->group("Subcommands");
+    CLI::App* backends_uninstall_cmd = backends_cmd->add_subcommand("uninstall", "Uninstall a backend")->group("Subcommands");
     CLI::App* status_cmd = app.add_subcommand("status", "Check server status")->group("Server");
     status_cmd->add_flag("--json", config.json_output, "Output status as JSON");
     CLI::App* logs_cmd = app.add_subcommand("logs", "Open server logs in the web UI")->group("Server");
@@ -819,7 +833,7 @@ int main(int argc, char* argv[]) {
 
     // Config commands
     CLI::App* config_cmd = app.add_subcommand("config", "View or modify server configuration")->group("Server");
-    CLI::App* config_set_cmd = config_cmd->add_subcommand("set", "Set configuration values (e.g., llamacpp.backend=rocm port=8123)");
+    CLI::App* config_set_cmd = config_cmd->add_subcommand("set", "Set configuration values (e.g., llamacpp.backend=rocm port=8123)")->group("Subcommands");
     config_set_cmd->allow_extras(true);
     config_set_cmd->fallthrough(false);
 
@@ -835,9 +849,10 @@ int main(int argc, char* argv[]) {
     // List options
     list_cmd->add_flag("--downloaded", config.downloaded, "Save model options for future loads");
 
-    // Install/uninstall options for recipes command
-    recipes_cmd->add_option("--install", config.install_backend, "Install a backend (recipe:backend)")->type_name("SPEC");
-    recipes_cmd->add_option("--uninstall", config.uninstall_backend, "Uninstall a backend (recipe:backend)")->type_name("SPEC");
+    // Backend management options
+    backends_install_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
+    backends_install_cmd->add_flag("--force", config.force, "Bypass hardware filtering when installing a backend");
+    backends_uninstall_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
 
     // Pull options
     pull_cmd->add_option("model", config.model, "Model name to pull")->required()->type_name("MODEL");
@@ -955,8 +970,10 @@ int main(int argc, char* argv[]) {
         return client.unload_model(config.model);
     } else if (export_cmd->count() > 0) {
         return handle_export_command(client, config);
-    } else if (recipes_cmd->count() > 0) {
-        return handle_recipes_command(client, config);
+    } else if (backends_cmd->count() > 0) {
+        return handle_backends_command(client, config,
+                                       backends_install_cmd->count() > 0,
+                                       backends_uninstall_cmd->count() > 0);
     } else if (launch_cmd->count() > 0) {
         return handle_launch_command(client, config);
     } else if (logs_cmd->count() > 0) {
