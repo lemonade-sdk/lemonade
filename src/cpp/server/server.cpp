@@ -146,6 +146,14 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
     const char* api_key_env = std::getenv("LEMONADE_API_KEY");
     api_key_ = api_key_env ? std::string(api_key_env) : "";
 
+    // Read admin API key - if not set, defaults to regular API key value
+    const char* admin_api_key_env = std::getenv("LEMONADE_ADMIN_API_KEY");
+    if (admin_api_key_env) {
+        admin_api_key_ = std::string(admin_api_key_env);
+    } else {
+        admin_api_key_ = api_key_;
+    }
+
     setup_http_servers();
 
     // Initialize WebSocket server for realtime API and log streaming
@@ -209,11 +217,31 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
         }
     }
 
-    if ((api_key_ != "") && (req.method != "OPTIONS") && (is_api_route || is_internal_route)) {
-        if (api_key_ != httplib::get_bearer_token_auth(req)) {
-            res.status = 401;
-            res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
-            return httplib::Server::HandlerResponse::Handled;
+    // Authentication hierarchy:
+    // - Admin key: access to both internal and regular API endpoints
+    // - Regular API key: access only to regular API endpoints (not internal)
+    // - If admin key is not set, it defaults to regular API key value
+    // - If only admin key is set, regular endpoints are accessible without auth, internal requires admin key
+    // - If no keys are set, all endpoints are accessible without auth
+
+    std::string auth_token = httplib::get_bearer_token_auth(req);
+
+    if (is_internal_route) {
+        // Internal routes require admin key authentication
+        if (!admin_api_key_.empty() && req.method != "OPTIONS") {
+            if (auth_token != admin_api_key_) {
+                res.status = 401;
+                res.set_content("{\"error\": \"Invalid or missing admin API key\"}", "application/json");
+                return httplib::Server::HandlerResponse::Handled;
+            }
+        }
+    } else if (is_api_route && req.method != "OPTIONS") {
+        if (!api_key_.empty()) {
+            if ((auth_token != api_key_) && (auth_token != admin_api_key_)) {
+                res.status = 401;
+                res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
+                return httplib::Server::HandlerResponse::Handled;
+            }
         }
     }
 

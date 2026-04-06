@@ -57,7 +57,7 @@ All core endpoints are registered under **4 path prefixes**:
 
 **Internal endpoints:** `POST /internal/shutdown`
 
-Optional API key auth via `LEMONADE_API_KEY` env var. CORS enabled on all routes.
+Optional API key auth via `LEMONADE_API_KEY` env var (regular API endpoints) or `LEMONADE_ADMIN_API_KEY` env var (full access including internal endpoints). Clients prefer `LEMONADE_ADMIN_API_KEY` if set. CORS enabled on all routes.
 
 ### Desktop & Web App
 

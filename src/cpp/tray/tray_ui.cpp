@@ -166,8 +166,9 @@ std::string TrayUI::http_get(const std::string& endpoint) {
     cli.set_connection_timeout(2);
     cli.set_read_timeout(5);
 
-    // Pass API key if set
-    const char* api_key = std::getenv("LEMONADE_API_KEY");
+    // Pass API key if set - prefer admin key over regular API key
+    const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
+    const char* api_key = admin_api_key ? admin_api_key : std::getenv("LEMONADE_API_KEY");
     httplib::Headers headers;
     if (api_key && api_key[0]) {
         headers.emplace("Authorization", std::string("Bearer ") + api_key);
@@ -185,7 +186,9 @@ std::string TrayUI::http_post(const std::string& endpoint, const std::string& bo
     cli.set_connection_timeout(2);
     cli.set_read_timeout(30);
 
-    const char* api_key = std::getenv("LEMONADE_API_KEY");
+    // Pass API key if set - prefer admin key over regular API key
+    const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
+    const char* api_key = admin_api_key ? admin_api_key : std::getenv("LEMONADE_API_KEY");
     httplib::Headers headers;
     if (api_key && api_key[0]) {
         headers.emplace("Authorization", std::string("Bearer ") + api_key);

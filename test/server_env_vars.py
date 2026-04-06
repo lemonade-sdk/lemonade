@@ -247,6 +247,148 @@ class TestApiKeyEnvVar(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Test: LEMONADE_ADMIN_API_KEY
+# ---------------------------------------------------------------------------
+
+
+class TestAdminApiKeyEnvVar(unittest.TestCase):
+    """Verify LEMONADE_ADMIN_API_KEY provides elevated access to internal endpoints."""
+
+    proc = None
+    ADMIN_API_KEY = "admin-secret-key-xyz"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.proc, cls.cache_dir = start_server(
+            {"LEMONADE_ADMIN_API_KEY": cls.ADMIN_API_KEY}
+        )
+        wait_for_server(port=PORT)
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.proc:
+            stop_server(cls.proc)
+
+    def test_no_key_rejected_on_internal(self):
+        """Internal endpoints require admin key when LEMONADE_ADMIN_API_KEY is set."""
+        r = requests.get(CONFIG, timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(r.status_code, 401)
+
+    def test_wrong_key_rejected_on_internal(self):
+        """Wrong admin key should be rejected on internal endpoints."""
+        r = requests.get(
+            CONFIG,
+            headers={"Authorization": "Bearer wrong-admin-key"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 401)
+
+    def test_correct_admin_key_accepted_on_internal(self):
+        """Correct admin key should grant access to internal endpoints."""
+        r = requests.get(
+            CONFIG,
+            headers={"Authorization": f"Bearer {self.ADMIN_API_KEY}"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 200)
+
+    def test_admin_key_works_on_regular_api_endpoints(self):
+        """Admin key should also work on regular API endpoints."""
+        r = requests.get(
+            f"{BASE}/v1/health",
+            headers={"Authorization": f"Bearer {self.ADMIN_API_KEY}"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 200)
+
+    def test_no_key_accepted_on_regular_endpoints(self):
+        """When only LEMONADE_ADMIN_API_KEY is set, regular API endpoints should be accessible without auth."""
+        r = requests.get(f"{BASE}/v1/health", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(r.status_code, 200)
+
+
+# ---------------------------------------------------------------------------
+# Test: LEMONADE_API_KEY and LEMONADE_ADMIN_API_KEY together
+# ---------------------------------------------------------------------------
+
+
+class TestBothApiKeysEnvVar(unittest.TestCase):
+    """Verify behavior when both LEMONADE_API_KEY and LEMONADE_ADMIN_API_KEY are set."""
+
+    proc = None
+    REGULAR_API_KEY = "regular-key-abc"
+    ADMIN_API_KEY = "admin-key-xyz"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.proc, cls.cache_dir = start_server(
+            {
+                "LEMONADE_API_KEY": cls.REGULAR_API_KEY,
+                "LEMONADE_ADMIN_API_KEY": cls.ADMIN_API_KEY,
+            }
+        )
+        wait_for_server(port=PORT)
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.proc:
+            stop_server(cls.proc)
+
+    def test_regular_key_works_on_regular_endpoints(self):
+        """Regular API key should work on regular API endpoints."""
+        r = requests.get(
+            f"{BASE}/v1/health",
+            headers={"Authorization": f"Bearer {self.REGULAR_API_KEY}"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 200)
+
+    def test_admin_key_works_on_regular_endpoints(self):
+        """Admin API key should also work on regular API endpoints."""
+        r = requests.get(
+            f"{BASE}/v1/health",
+            headers={"Authorization": f"Bearer {self.ADMIN_API_KEY}"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 200)
+
+    def test_regular_key_rejected_on_internal(self):
+        """Regular API key should NOT work on internal endpoints."""
+        r = requests.get(
+            CONFIG,
+            headers={"Authorization": f"Bearer {self.REGULAR_API_KEY}"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 401)
+
+    def test_admin_key_works_on_internal(self):
+        """Admin API key should work on internal endpoints."""
+        r = requests.get(
+            CONFIG,
+            headers={"Authorization": f"Bearer {self.ADMIN_API_KEY}"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 200)
+
+    def test_wrong_key_rejected_everywhere(self):
+        """Wrong key should be rejected on all endpoints."""
+        # Regular endpoint
+        r = requests.get(
+            f"{BASE}/v1/health",
+            headers={"Authorization": "Bearer wrong-key"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 401)
+        # Internal endpoint
+        r = requests.get(
+            CONFIG,
+            headers={"Authorization": "Bearer wrong-key"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 401)
+
+
+# ---------------------------------------------------------------------------
 # Test: defaults when no env vars set
 # ---------------------------------------------------------------------------
 

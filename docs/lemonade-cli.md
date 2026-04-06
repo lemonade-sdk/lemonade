@@ -69,7 +69,7 @@ The following options are available for all commands:
 These options can also be set via environment variables:
 - `LEMONADE_HOST` for `--host`
 - `LEMONADE_PORT` for `--port`
-- `LEMONADE_API_KEY` for `--api-key`
+- `LEMONADE_API_KEY` or `LEMONADE_ADMIN_API_KEY` for `--api-key`
 
 **Examples:**
 
@@ -94,6 +94,28 @@ On Windows (PowerShell):
 $env:LEMONADE_HOST="192.168.1.100"
 $env:LEMONADE_PORT="13305"
 $env:LEMONADE_API_KEY="your-api-key-here"
+lemonade list
+```
+
+**Admin API Key Example:**
+
+To use the admin API key (which provides full access including internal endpoints):
+
+On Linux/macOS:
+```bash
+export LEMONADE_ADMIN_API_KEY=admin-secret-key
+lemonade list
+```
+
+On Windows (Command Prompt):
+```cmd
+set LEMONADE_ADMIN_API_KEY=admin-secret-key
+lemonade list
+```
+
+On Windows (PowerShell):
+```powershell
+$env:LEMONADE_ADMIN_API_KEY="admin-secret-key"
 lemonade list
 ```
 

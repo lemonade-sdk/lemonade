@@ -29,6 +29,10 @@ WebSocketServer::WebSocketServer(Router* router, const std::string& host, int re
           const char* api_key_env = std::getenv("LEMONADE_API_KEY");
           return api_key_env ? std::string(api_key_env) : std::string();
       }()),
+      admin_api_key_([]() {
+          const char* api_key_env = std::getenv("LEMONADE_ADMIN_API_KEY");
+          return api_key_env ? std::string(api_key_env) : std::string();
+      }()),
       router_(router),
       session_manager_(std::make_unique<RealtimeSessionManager>(router)) {
     LOG(INFO, "WebSocket") << "Configured port: " << port_ << std::endl;
@@ -225,7 +229,7 @@ bool WebSocketServer::authenticate_connection(struct lws* wsi) const {
         token = token->substr(sizeof(bearer_prefix) - 1);
     }
 
-    if (*token != api_key_) {
+    if ((*token != api_key_) && (admin_api_key_.empty() || (*token != admin_api_key_))) {
         LOG(WARNING, "WebSocket") << "Rejected websocket connection with invalid API key for "
                                   << get_request_path(wsi) << std::endl;
         return false;
