@@ -632,59 +632,32 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
 
-      - name: Build lemond and lemonade
+      - name: Build embeddable archive
         shell: bash
         run: |
           set -e
 
-          echo "Configuring build with web app disabled..."
           # Do not use setup.sh — we intentionally avoid installing system
           # libraries so that FetchContent statically links all deps, making
           # the embeddable binary portable across Ubuntu versions.
           cmake --preset default -DBUILD_WEB_APP=OFF
+          cmake --build --preset default --target embeddable
 
-          echo "Building lemond and lemonade..."
-          cmake --build --preset default --target lemond lemonade
-
-          # Verify outputs
-          test -f build/lemond
-          test -f build/lemonade
-          test -f build/resources/server_models.json
-          test -f build/resources/backend_versions.json
-          test -f build/resources/defaults.json
-          echo "Build outputs verified!"
+          ARCHIVE="build/lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz"
+          test -f "$ARCHIVE"
+          echo "Archive contents:"
+          tar tzf "$ARCHIVE"
+          ls -lh "$ARCHIVE"
 
           # Verify no unexpected dynamic dependencies
           echo "Dynamic dependencies:"
           ldd build/lemond | grep -v "linux-vdso\|ld-linux" || true
 
-      - name: Assemble embeddable archive
-        shell: bash
-        run: |
-          set -e
-
-          ARCHIVE_DIR="lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64"
-          mkdir -p "${ARCHIVE_DIR}/resources"
-
-          cp build/lemond "${ARCHIVE_DIR}/"
-          cp build/lemonade "${ARCHIVE_DIR}/"
-          cp LICENSE "${ARCHIVE_DIR}/"
-          cp build/resources/server_models.json "${ARCHIVE_DIR}/resources/"
-          cp build/resources/backend_versions.json "${ARCHIVE_DIR}/resources/"
-          cp build/resources/defaults.json "${ARCHIVE_DIR}/resources/"
-          chmod 755 "${ARCHIVE_DIR}/lemond" "${ARCHIVE_DIR}/lemonade"
-
-          tar czf "${ARCHIVE_DIR}.tar.gz" "${ARCHIVE_DIR}"
-          echo "Archive contents:"
-          tar tzf "${ARCHIVE_DIR}.tar.gz"
-          echo ""
-          ls -lh "${ARCHIVE_DIR}.tar.gz"
-
       - name: Upload embeddable archive
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-embeddable-linux
-          path: lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
+          path: build/lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
           retention-days: 7
 
   build-lemonade-embeddable-windows:
@@ -741,64 +714,27 @@ jobs:
           key: fetchcontent-windows-embeddable-${{ hashFiles('CMakeLists.txt') }}
           restore-keys: fetchcontent-windows-embeddable-
 
-      - name: Build lemond and lemonade
+      - name: Build embeddable archive
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "Configuring build with web app disabled..." -ForegroundColor Cyan
           cmake --preset windows -DBUILD_WEB_APP=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          Write-Host "Building lemond and lemonade..." -ForegroundColor Cyan
-          cmake --build --preset windows --target lemond lemonade
+          cmake --build --preset windows --target embeddable
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          # Verify outputs
-          $failures = @()
-          @(
-              "build\Release\lemond.exe",
-              "build\Release\lemonade.exe",
-              "build\Release\resources\server_models.json",
-              "build\Release\resources\backend_versions.json",
-              "build\Release\resources\defaults.json"
-          ) | ForEach-Object {
-              if (-not (Test-Path $_)) {
-                  Write-Host "ERROR: $_ not found!" -ForegroundColor Red
-                  $failures += $_
-              }
-          }
-
-          if ($failures.Count -gt 0) { exit 1 }
-          Write-Host "Build outputs verified!" -ForegroundColor Green
-
-      - name: Assemble embeddable archive
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $archiveDir = "lemonade-embeddable-$($env:LEMONADE_VERSION)-windows-x64"
-          New-Item -ItemType Directory -Path "$archiveDir\resources" -Force | Out-Null
-
-          Copy-Item "build\Release\lemond.exe" "$archiveDir\"
-          Copy-Item "build\Release\lemonade.exe" "$archiveDir\"
-          Copy-Item "LICENSE" "$archiveDir\"
-          Copy-Item "build\Release\resources\server_models.json" "$archiveDir\resources\"
-          Copy-Item "build\Release\resources\backend_versions.json" "$archiveDir\resources\"
-          Copy-Item "build\Release\resources\defaults.json" "$archiveDir\resources\"
-
-          Compress-Archive -Path "$archiveDir" -DestinationPath "$archiveDir.zip"
-
-          Write-Host "Archive contents:"
-          Get-ChildItem -Recurse "$archiveDir" | ForEach-Object { $_.FullName.Replace("$PWD\", "") }
-          Write-Host ""
-          Get-ChildItem "$archiveDir.zip"
+          $archive = "build\lemonade-embeddable-$($env:LEMONADE_VERSION)-windows-x64.zip"
+          if (-not (Test-Path $archive)) { throw "Archive not found: $archive" }
+          Write-Host "Archive created:" -ForegroundColor Green
+          Get-ChildItem $archive
 
       - name: Upload embeddable archive
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-embeddable-windows
-          path: lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
+          path: build/lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
           retention-days: 7
 
 

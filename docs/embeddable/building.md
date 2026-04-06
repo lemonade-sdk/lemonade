@@ -12,14 +12,16 @@ Contents:
 
 ## Default Embeddable Build
 
-The [release workflow](../../.github/workflows/cpp_server_build_test_release.yml) builds the embeddable archives with the web app disabled, producing only the server, CLI, and required resource files.
+The `embeddable` CMake target builds the server, CLI, and required resource files, then packages them into a single archive. The [release workflow](../../.github/workflows/cpp_server_build_test_release.yml) uses this target to produce the embeddable archives.
 
 === "Windows (cmd.exe)"
 
     ```cmd
     cmake --preset windows -DBUILD_WEB_APP=OFF
-    cmake --build --preset windows --target lemond lemonade
+    cmake --build --preset windows --target embeddable
     ```
+
+    This produces `build\lemonade-embeddable-{VERSION}-windows-x64.zip`.
 
 === "Linux (bash)"
 
@@ -27,36 +29,43 @@ The [release workflow](../../.github/workflows/cpp_server_build_test_release.yml
     sudo apt-get update
     sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
     cmake --preset default -DBUILD_WEB_APP=OFF
-    cmake --build --preset default --target lemond lemonade
+    cmake --build --preset default --target embeddable
     ```
+
+    This produces `build/lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz`.
 
 ## Include the Web App
 
-If you want the embeddable build to include the browser UI assets under `resources/web-app`, enable `BUILD_WEB_APP`.
+If you want the embeddable build to include the browser UI assets under `resources/web-app`, enable `BUILD_WEB_APP` and build the `web-app` target before `embeddable`:
 
 === "Windows (cmd.exe)"
 
     ```cmd
     cmake --preset windows -DBUILD_WEB_APP=ON
-    cmake --build --preset windows --target lemond lemonade web-app
+    cmake --build --preset windows --target web-app embeddable
     ```
 
 === "Linux (bash)"
 
     ```bash
     cmake --preset default -DBUILD_WEB_APP=ON
-    cmake --build --preset default --target lemond lemonade web-app
+    cmake --build --preset default --target web-app embeddable
     ```
 
 ## Expected Outputs
 
-Default embeddable builds produce:
+The `embeddable` target produces a single archive in `build/`:
 
-- `build/lemond` or `build/Release/lemond.exe`
-- `build/lemonade` or `build/Release/lemonade.exe`
-- `build/resources/` or `build/Release/resources/`
-  - `server_models.json`
-  - `backend_versions.json`
-  - `defaults.json`
+| Platform | Archive |
+|----------|---------|
+| Linux    | `lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz` |
+| Windows  | `lemonade-embeddable-{VERSION}-windows-x64.zip` |
 
-If `BUILD_WEB_APP=ON`, the build also includes `resources/web-app/`.
+Each archive contains:
+
+- `lemond` (or `lemond.exe`) — the server binary
+- `lemonade` (or `lemonade.exe`) — the CLI binary
+- `LICENSE`
+- `resources/server_models.json`
+- `resources/backend_versions.json`
+- `resources/defaults.json`
