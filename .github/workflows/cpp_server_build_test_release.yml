@@ -649,10 +649,6 @@ jobs:
           tar tzf "$ARCHIVE"
           ls -lh "$ARCHIVE"
 
-          # Verify no unexpected dynamic dependencies
-          echo "Dynamic dependencies:"
-          ldd build/lemond | grep -v "linux-vdso\|ld-linux" || true
-
       - name: Upload embeddable archive
         uses: actions/upload-artifact@v4
         with:
@@ -1074,7 +1070,7 @@ jobs:
           DIR="lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64"
           cd "$DIR"
 
-          ./lemond ./ --port 13305 &
+          ./lemond ./ &
           LEMOND_PID=$!
 
           # Wait for server to become healthy
@@ -1171,7 +1167,7 @@ jobs:
           $archiveDir = "lemonade-embeddable-$($env:LEMONADE_VERSION)-windows-x64"
 
           Push-Location $archiveDir
-          $proc = Start-Process -FilePath ".\lemond.exe" -ArgumentList ".\", "--port", "13305" -PassThru -NoNewWindow
+          $proc = Start-Process -FilePath ".\lemond.exe" -ArgumentList ".\" -PassThru -NoNewWindow
 
           # Wait for server to become healthy
           $healthy = $false
