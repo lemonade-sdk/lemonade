@@ -175,6 +175,7 @@ private:
     void load_usage_stats();
     void persist_usage_stats_locked() const;
     void record_usage_locked(const std::string& model_name, const std::string& device_type, int input_tokens, int output_tokens, std::time_t recorded_at);
+    void add_tokens_locked(const std::string& model_name, const std::string& device_type, int input_tokens, int output_tokens, std::time_t recorded_at);
     json get_lifetime_usage_stats() const;
 };
 
