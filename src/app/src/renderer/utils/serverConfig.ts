@@ -11,7 +11,7 @@ type PortChangeListener = (port: number) => void;
 type UrlChangeListener = (url: string, apiKey: string) => void;
 
 class ServerConfig {
-  private port: number = 8000;
+  private port: number = 13305;
   private explicitBaseUrl: string | null = null;
   private apiKey: string | null = null;
   private portListeners: Set<PortChangeListener> = new Set();

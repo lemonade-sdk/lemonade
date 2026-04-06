@@ -9,7 +9,7 @@
 ```bash
 docker run -d \
   --name lemonade-server \
-  -p 8000:8000 \
+  -p 13305:13305 \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
@@ -28,7 +28,7 @@ docker run -d \
   -v lemonade-recipe:/root/.cache/lemonade \
   -e LEMONADE_LLAMACPP_BACKEND=cpu \
   ghcr.io/lemonade-sdk/lemonade-server:v9.1.3 \
-  ./lemonade-server serve --no-tray --host 0.0.0.0 --port 5000
+  ./lemond --host 0.0.0.0 --port 5000
 ```
 
 > This will run the server on port 5000 inside the container, mapped to port 4000 on your host.
@@ -38,7 +38,7 @@ docker run -d \
 ```bash
 docker run -d \
   --name lemonade-server \
-  -p 8000:8000 \
+  -p 13305:13305 \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
@@ -63,7 +63,7 @@ services:
     image: ghcr.io/lemonade-sdk/lemonade-server:latest
     container_name: lemonade-server
     ports:
-      - "8000:8000"
+      - "13305:13305"
     volumes:
       # Persist downloaded models
       - lemonade-cache:/root/.cache/huggingface
@@ -94,7 +94,7 @@ This will pull the latest image (or the version you specified) from the Lemonade
 Once the container is running, verify it’s working:
 
 ```bash
-curl http://localhost:8000/api/v1/models
+curl http://localhost:13305/api/v1/models
 ```
 
 You should receive a response listing available models.
@@ -217,12 +217,12 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /opt/lemonade
 
 # Copy built executables and resources from builder
-COPY --from=builder /app/build/lemonade-router ./lemonade-router
+COPY --from=builder /app/build/lemond ./lemond
 COPY --from=builder /app/build/lemonade-server ./lemonade-server
 COPY --from=builder /app/build/resources ./resources
 
 # Make executables executable
-RUN chmod +x ./lemonade-router ./lemonade-server
+RUN chmod +x ./lemond ./lemonade-server
 
 # Create necessary directories
 RUN mkdir -p /opt/lemonade/llama/cpu \
@@ -230,14 +230,14 @@ RUN mkdir -p /opt/lemonade/llama/cpu \
     /root/.cache/huggingface
 
 # Expose default port
-EXPOSE 8000
+EXPOSE 13305
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/live || exit 1
+    CMD curl -f http://localhost:13305/live || exit 1
 
 # Default command: start server in headless mode
-CMD ["./lemonade-server", "serve", "--no-tray", "--host", "0.0.0.0"]
+CMD ["./lemond", "--host", "0.0.0.0"]
 ```
 
 ### 2. Build the Docker Image
@@ -252,7 +252,7 @@ services:
       dockerfile: Dockerfile
     container_name: lemonade-server
     ports:
-      - "8000:8000"
+      - "13305:13305"
     volumes:
       # Persist downloaded models
       - lemonade-cache:/root/.cache/huggingface
@@ -279,7 +279,7 @@ docker-compose build
 
 This will:
 
-- Compile Lemonade C++ (lemonade-server and lemonade-router)
+- Compile Lemonade C++ (lemonade-server and lemond)
 - Prepare a runtime image with all dependencies
 
 ### 3. Run the Container
@@ -290,7 +290,7 @@ Start the container with Docker Compose:
 docker-compose up -d
 ```
 
-- The API will be exposed on port 8000
+- The API will be exposed on port 13305
 - HuggingFace models will be cached in the lemonade-cache volume
 - LLaMA binaries are persisted in lemonade-llama volume
 
@@ -303,8 +303,8 @@ docker logs -f lemonade-server
 You should see:
 
 ```bash
-lemonade-server  | Lemonade Server vx.x.x started on port 8000
-lemonade-server  | Chat and manage models: http://localhost:8000
+lemonade-server  | Lemonade Server vx.x.x started on port 13305
+lemonade-server  | Chat and manage models: http://localhost:13305
 ```
 
 ---
@@ -313,17 +313,17 @@ lemonade-server  | Chat and manage models: http://localhost:8000
 
 Test the API:
 ```bash
-curl http://localhost:8000/api/v1/models
+curl http://localhost:13305/api/v1/models
 ```
 
 You should get a response with available models.
 
 ### 5. Load a Model
 
-You can use the gui on localhost:8000 or below command to load a model (e.g., Qwen 0.6B):
+You can use the gui on localhost:13305 or below command to load a model (e.g., Qwen 0.6B):
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/load \
+curl -X POST http://localhost:13305/api/v1/load \
      -H "Content-Type: application/json" \
      -d '{"model_name": "Qwen3-0.6B-GGUF"}'
 ```
@@ -341,7 +341,7 @@ Once the model is loaded:
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8000/api/v1",
+    base_url="http://localhost:13305/api/v1",
     api_key="lemonade"  # required but unused
 )
 

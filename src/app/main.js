@@ -6,6 +6,14 @@ const { spawn, spawnSync } = require('child_process');
 const strict = require('assert/strict');
 const dgram = require('dgram');
 
+// Register lemonade:// protocol handler for deep linking from tray/CLI
+if (process.defaultApp) {
+  // Dev mode: need to pass the script path
+  app.setAsDefaultProtocolClient('lemonade', process.execPath, [path.resolve(process.argv[1])]);
+} else {
+  app.setAsDefaultProtocolClient('lemonade');
+}
+
 const DEFAULT_MIN_WIDTH = 400;
 const DEFAULT_MIN_HEIGHT = 600;
 const ABSOLUTE_MIN_WIDTH = 400;
@@ -33,7 +41,7 @@ const SETTINGS_FILE_NAME = 'app_settings.json';
 const SETTINGS_UPDATED_CHANNEL = 'settings-updated';
 const SERVER_PORT_UPDATED_CHANNEL = 'server-port-updated';
 const CONNECTION_SETTINGS_UPDATED_CHANNEL = 'connection-settings-updated'
-let cachedServerPort = 8000; // Default port
+let cachedServerPort = 13305; // Default port
 
 /**
  * Parse and normalize a server base URL.
@@ -381,7 +389,7 @@ const fetchWithApiKey = async (entpoint) => {
   let apiKey = (await readAppSettingsFile()).apiKey.value;
 
   if (!serverUrl) {
-    serverUrl = cachedServerPort ? `http://localhost:${cachedServerPort}` : 'http://localhost:8000';
+    serverUrl = cachedServerPort ? `http://localhost:${cachedServerPort}` : 'http://localhost:13305';
   }
 
   const options = {timeout: 3000};
@@ -487,14 +495,14 @@ function gracefulKillBlocking(processPattern) {
 
 /**
  * Discovers the lemonade server using UDP broadcast beacons.
- * The server broadcasts its presence on UDP port 8000 with a JSON payload
+ * The server broadcasts its presence on UDP port 13305 with a JSON payload
  * containing the service name, hostname, and URL.
  *
  * This works for both local and remote servers on the same network.
  */
 const discoverServerPort = () => {
-  const DEFAULT_PORT = 8000;
-  const BEACON_PORT = 8000;
+  const DEFAULT_PORT = 13305;
+  const BEACON_PORT = 13305;
   const DISCOVERY_TIMEOUT_MS = 5000;
 
   return new Promise((resolve) => {
@@ -601,7 +609,7 @@ const discoverServerPort = () => {
 let beaconSocket = null;
 
 const startBeaconListener = async () => {
-  const BEACON_PORT = 8000;
+  const BEACON_PORT = 13305;
 
   // Don't listen if an explicit base URL is configured
   const baseURL = await getBaseURLFromConfig();
@@ -665,6 +673,18 @@ const startBeaconListener = async () => {
     setTimeout(() => startBeaconListener(), 10000);
   }
 };
+
+// Renderer signals that React has mounted and IPC listeners are active.
+// Deliver any pending lemonade:// protocol navigation now.
+ipcMain.on('renderer-ready', () => {
+  rendererReady = true;
+  if (pendingProtocolNav && Object.keys(pendingProtocolNav).length > 0) {
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('navigate', pendingProtocolNav);
+    }
+    pendingProtocolNav = null;
+  }
+});
 
 ipcMain.handle('write-clipboard', (_event, text) => {
   clipboard.writeText(String(text));
@@ -897,6 +917,10 @@ function createWindow() {
 
   mainWindow.loadFile(htmlPath);
 
+  // Pending lemonade:// navigation is delivered when the renderer signals ready
+  // via the 'renderer-ready' IPC (see ipcMain.on below), not on did-finish-load,
+  // because React effects haven't registered their listeners at that point.
+
   // Open all external links in the default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     // Open in external browser instead of new Electron window
@@ -964,14 +988,83 @@ function createWindow() {
 
   mainWindow.on('closed', function () {
     mainWindow = null;
+    rendererReady = false;
   });
 }
 
+
+// Pending protocol navigation — stored when URL arrives before renderer is ready
+let pendingProtocolNav = null;
+let rendererReady = false;
+
+function handleProtocolUrl(url) {
+  if (!url || !url.startsWith('lemonade://')) return;
+
+  try {
+    // Parse: lemonade://open?view=logs&model=foo
+    const parsed = new URL(url);
+    const view = parsed.searchParams.get('view');
+    const model = parsed.searchParams.get('model');
+
+    const navData = {};
+    if (view) navData.view = view;
+    if (model) navData.model = model;
+
+    // Focus the window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+
+    // If renderer isn't ready yet, queue it for delivery after load
+    if (!rendererReady || !mainWindow || !mainWindow.webContents) {
+      pendingProtocolNav = navData;
+      return;
+    }
+
+    if (Object.keys(navData).length > 0) {
+      mainWindow.webContents.send('navigate', navData);
+    }
+  } catch (e) {
+    console.error('Failed to parse protocol URL:', url, e);
+  }
+}
+
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    // Someone tried to run a second instance -- focus existing window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+    // On Windows, the protocol URL is in commandLine
+    const url = commandLine.find(arg => arg.startsWith('lemonade://'));
+    if (url) {
+      handleProtocolUrl(url);
+    }
+  });
+}
+
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleProtocolUrl(url);
+});
 
 app.on('ready', () => {
   ensureTrayRunning();
   startBeaconListener();
   createWindow();
+
+  // Handle protocol URL from initial launch (Windows/Linux)
+  const protocolUrl = process.argv.find(arg => arg.startsWith('lemonade://'));
+  if (protocolUrl) {
+    handleProtocolUrl(protocolUrl);
+  }
 
   // Allow microphone access for streaming audio transcription.
   // Only 'media' is auto-approved; all other permissions use Electron's default (deny).

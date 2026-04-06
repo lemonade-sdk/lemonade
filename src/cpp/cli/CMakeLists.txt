@@ -6,11 +6,14 @@
 set(COMMON_SOURCES
     main.cpp
     lemonade_client.cpp
+    model_selection.cpp
+    recipe_import.cpp
     ../server/recipe_options.cpp
     ../server/utils/process_manager.cpp
     ../server/utils/path_utils.cpp
     ../server/utils/json_utils.cpp
-    ../tray/agent_launcher.cpp
+    ../server/utils/http_client.cpp
+    agent_launcher.cpp
 )
 
 # ============================================================

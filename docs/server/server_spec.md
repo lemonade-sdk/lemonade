@@ -28,9 +28,11 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/audio/transcriptions` - Audio Transcription (audio file -> text)
 - POST `/api/v1/audio/speech` - Text to speech (text -> audio)
 - WS `/realtime` - Realtime Audio Transcription (streaming audio -> text, OpenAI SDK compatible)
+- WS `/logs/stream` - Log Streaming (subscribe -> snapshot + live log entries)
 - POST `/api/v1/images/generations` - Image Generation (prompt -> image)
 - POST `/api/v1/images/edits` - Image Editing (image + prompt -> edited image)
 - POST `/api/v1/images/variations` - Image Variations (image -> varied image)
+- POST `/api/v1/images/upscale` - Image Upscaling (image + ESRGAN model -> upscaled image)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
 
@@ -66,11 +68,7 @@ The additional endpoints are:
 
 Lemonade supports the [Ollama API](https://github.com/ollama/ollama/blob/main/docs/api.md), allowing applications built for Ollama to work with Lemonade without modification.
 
-To enable auto-detection by Ollama-integrated apps, launch the server on the Ollama default port:
-
-```bash
-lemonade-server serve --port 11434
-```
+To enable auto-detection by Ollama-integrated apps, configure the server to use the Ollama default port. See [Server Configuration](./configuration.md#environment-variables) for how to change the port.
 
 | Endpoint | Status | Notes |
 |----------|--------|-------|
@@ -104,15 +102,7 @@ Lemonade Server supports loading multiple models simultaneously, allowing you to
 
 ### Configuration
 
-Use the `--max-loaded-models` option to specify how many models to keep loaded per type slot:
-
-```bash
-# Allow up to 5 models of each type (5 LLMs, 5 embedding, 5 reranking, 5 audio, 5 image)
-lemonade-server serve --max-loaded-models 5
-
-# Unlimited models (no LRU eviction)
-lemonade-server serve --max-loaded-models -1
-```
+Configure via `lemonade config set max_loaded_models=N`. See [Server Configuration](./configuration.md).
 
 **Default:** `1` (one model of each type). Use `-1` for unlimited.
 
@@ -126,14 +116,14 @@ Models are categorized into these types:
 - **Audio** - Models for audio transcription using Whisper (identified by the `audio` label)
 - **Image** - Models for image generation (identified by the `image` label)
 
-Each type has its own independent LRU cache, all sharing the same slot limit set by `--max-loaded-models`.
+Each type has its own independent LRU cache, all sharing the same slot limit set by `max_loaded_models`.
 
 ### Device Constraints
 
 - **NPU Exclusivity:** `flm`, `ryzenai-llm`, and `whispercpp` are mutually exclusive on the NPU.
     - Loading a model from one of these backends will automatically evict all NPU models from the other backends.
     - `flm` supports loading 1 ASR model, 1 LLM, and 1 embedding model on the NPU at the same time.
-    - `ryzenai-llm` supports loading exactly 1 LLM, which uses the entire NPU. 
+    - `ryzenai-llm` supports loading exactly 1 LLM, which uses the entire NPU.
     - `whispercpp` supports loading exactly 1 ASR model at a time, which uses the entire NPU.
 - **CPU/GPU:** No inherent limits beyond available RAM. Multiple models can coexist on CPU or GPU.
 
@@ -152,18 +142,14 @@ Each model can be loaded with custom settings (context size, llamacpp backend, l
 
 **Setting Priority Order:**
 1. Values passed explicitly in `/api/v1/load` request (highest priority)
-2. Values from `lemonade-server` CLI arguments or environment variables
-3. Hardcoded defaults in `lemonade-router` (lowest priority)
+2. Values from environment variables or server startup arguments (see [Server Configuration](./configuration.md))
+3. Hardcoded defaults in `lemond` (lowest priority)
 
 ## Start the HTTP Server
 
 > **NOTE:** This server is intended for use on local systems only. Do not expose the server port to the open internet.
 
-See the [Lemonade Server getting started instructions](./README.md).
-
-```bash
-lemonade-server serve
-```
+Lemonade Server starts automatically with the OS after installation. See the [Getting Started instructions](./README.md). For server configuration options, see [Server Configuration](./configuration.md).
 
 ## OpenAI-Compatible Endpoints
 
@@ -195,7 +181,7 @@ Chat Completions API. You provide a list of messages and receive a completion. T
 
     ```powershell
     Invoke-WebRequest `
-      -Uri "http://localhost:8000/api/v1/chat/completions" `
+      -Uri "http://localhost:13305/api/v1/chat/completions" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{
@@ -212,7 +198,7 @@ Chat Completions API. You provide a list of messages and receive a completion. T
 === "Bash"
 
     ```bash
-    curl -X POST http://localhost:8000/api/v1/chat/completions \
+    curl -X POST http://localhost:13305/api/v1/chat/completions \
       -H "Content-Type: application/json" \
       -d '{
             "model": "Qwen3-0.6B-GGUF",
@@ -228,7 +214,7 @@ Chat Completions API. You provide a list of messages and receive a completion. T
 To send images to `chat/completions`, pass a `messages[*].content` array that mixes `text` and `image_url` items. The image can be provided as a base64 data URL (for example, from `FileReader.readAsDataURL(...)` in web apps).
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/chat/completions \
+curl -X POST http://localhost:13305/api/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
         "model": "Qwen2.5-VL-7B-Instruct",
@@ -310,7 +296,7 @@ Text Completions API. You provide a prompt and receive a completion. This API wi
 === "PowerShell"
 
     ```powershell
-    Invoke-WebRequest -Uri "http://localhost:8000/api/v1/completions" `
+    Invoke-WebRequest -Uri "http://localhost:13305/api/v1/completions" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{
@@ -323,7 +309,7 @@ Text Completions API. You provide a prompt and receive a completion. This API wi
 === "Bash"
 
     ```bash
-    curl -X POST http://localhost:8000/api/v1/completions \
+    curl -X POST http://localhost:13305/api/v1/completions \
       -H "Content-Type: application/json" \
       -d '{
             "model": "Qwen3-0.6B-GGUF",
@@ -372,7 +358,7 @@ Embeddings API. You provide input text and receive vector representations (embed
 
     ```powershell
     Invoke-WebRequest `
-      -Uri "http://localhost:8000/api/v1/embeddings" `
+      -Uri "http://localhost:13305/api/v1/embeddings" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{
@@ -385,7 +371,7 @@ Embeddings API. You provide input text and receive vector representations (embed
 === "Bash"
 
     ```bash
-    curl -X POST http://localhost:8000/api/v1/embeddings \
+    curl -X POST http://localhost:13305/api/v1/embeddings \
       -H "Content-Type: application/json" \
       -d '{
             "model": "nomic-embed-text-v1-GGUF",
@@ -455,7 +441,7 @@ Reranking API. You provide a query and a list of documents, and receive the docu
 
     ```powershell
     Invoke-WebRequest `
-      -Uri "http://localhost:8000/api/v1/reranking" `
+      -Uri "http://localhost:13305/api/v1/reranking" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{
@@ -472,7 +458,7 @@ Reranking API. You provide a query and a list of documents, and receive the docu
 === "Bash"
 
     ```bash
-    curl -X POST http://localhost:8000/api/v1/reranking \
+    curl -X POST http://localhost:13305/api/v1/reranking \
       -H "Content-Type: application/json" \
       -d '{
             "model": "bge-reranker-v2-m3-GGUF",
@@ -560,7 +546,7 @@ For a full list of event types, see the [API reference for streaming](https://pl
 === "PowerShell"
 
     ```powershell
-    Invoke-WebRequest -Uri "http://localhost:8000/api/v1/responses" `
+    Invoke-WebRequest -Uri "http://localhost:13305/api/v1/responses" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{
@@ -573,7 +559,7 @@ For a full list of event types, see the [API reference for streaming](https://pl
 === "Bash"
 
     ```bash
-    curl -X POST http://localhost:8000/api/v1/responses \
+    curl -X POST http://localhost:13305/api/v1/responses \
       -H "Content-Type: application/json" \
       -d '{
             "model": "Llama-3.2-1B-Instruct-Hybrid",
@@ -630,7 +616,7 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 === "Windows"
 
     ```bash
-    curl -X POST http://localhost:8000/api/v1/audio/transcriptions ^
+    curl -X POST http://localhost:13305/api/v1/audio/transcriptions ^
       -F "file=@C:\path\to\audio.wav" ^
       -F "model=Whisper-Tiny"
     ```
@@ -638,7 +624,7 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 === "Linux"
 
     ```bash
-    curl -X POST http://localhost:8000/api/v1/audio/transcriptions \
+    curl -X POST http://localhost:13305/api/v1/audio/transcriptions \
       -F "file=@/path/to/audio.wav" \
       -F "model=Whisper-Tiny"
     ```
@@ -777,6 +763,102 @@ python examples/realtime_transcription.py --model Whisper-Tiny
 - **Chunking**: We are still tuning the chunking to balance latency vs. accuracy.
 
 
+### Log Streaming API (WebSocket) <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Stream server logs over WebSocket. Clients connect, send a subscribe message, and receive a snapshot of recent log history followed by live log entries as they occur.
+
+#### Connection
+
+The WebSocket server shares the same port as the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket). Discover the port via the [`/api/v1/health`](#get-apiv1health) endpoint (`websocket_port` field), then connect:
+
+```
+ws://localhost:<websocket_port>/logs/stream
+```
+
+After connecting, send a `logs.subscribe` message to start receiving logs.
+
+#### Client → Server Messages
+
+| Message Type | Description |
+|--------------|-------------|
+| `logs.subscribe` | Subscribe to log stream. Optional `after_seq` field to resume from a specific sequence number. |
+
+#### Server → Client Messages
+
+| Message Type | Description |
+|--------------|-------------|
+| `logs.snapshot` | Initial batch of retained log entries (up to 5000). Sent once after subscribing. |
+| `logs.entry` | A single live log entry. Sent as new log lines are emitted. |
+| `error` | Error message (e.g., invalid subscribe request). |
+
+#### Example: Subscribe to Logs
+
+Subscribe from the beginning (full backlog):
+
+```json
+{
+  "type": "logs.subscribe",
+  "after_seq": null
+}
+```
+
+Resume after a known sequence number (e.g., on reconnect):
+
+```json
+{
+  "type": "logs.subscribe",
+  "after_seq": 1042
+}
+```
+
+#### Example: Snapshot Response
+
+```json
+{
+  "type": "logs.snapshot",
+  "entries": [
+    {
+      "seq": 1,
+      "timestamp": "2025-03-30 14:22:01.123",
+      "severity": "Info",
+      "tag": "Server",
+      "line": "2025-03-30 14:22:01.123 [Info] (Server) Starting Lemonade Server..."
+    }
+  ]
+}
+```
+
+#### Example: Live Entry
+
+```json
+{
+  "type": "logs.entry",
+  "entry": {
+    "seq": 1043,
+    "timestamp": "2025-03-30 14:22:05.456",
+    "severity": "Info",
+    "tag": "Router",
+    "line": "2025-03-30 14:22:05.456 [Info] (Router) Model loaded successfully"
+  }
+}
+```
+
+#### Log Entry Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `seq` | integer | Monotonically increasing sequence number. Use for dedup and resume. |
+| `timestamp` | string | Formatted timestamp from the log system. |
+| `severity` | string | Log level: `Trace`, `Debug`, `Info`, `Warning`, `Error`, `Fatal`. |
+| `tag` | string | Log source tag (e.g., `Server`, `Router`, component name). |
+| `line` | string | The full formatted log line. |
+
+#### Integration Notes
+
+- **Reconnection**: Track the last `seq` received and pass it as `after_seq` on reconnect to avoid duplicate entries.
+- **Backlog**: The server retains up to 5000 recent log entries. The snapshot may be smaller if fewer entries exist.
+- **Platform availability**: WebSocket log streaming is available on all platforms (Windows, Linux, and macOS).
+
 
 ### `POST /api/v1/images/generations` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -804,7 +886,7 @@ Image Generation API. You provide a text prompt and receive a generated image. T
 === "Bash"
 
     ```bash
-    curl -X POST http://localhost:8000/api/v1/images/generations \
+    curl -X POST http://localhost:13305/api/v1/images/generations \
       -H "Content-Type: application/json" \
       -d '{
             "model": "SD-Turbo",
@@ -848,7 +930,7 @@ Image Editing API. You provide a source image and a text prompt describing the d
 === "Bash"
 
     ```bash
-    curl -X POST http://localhost:8000/api/v1/images/edits \
+    curl -X POST http://localhost:13305/api/v1/images/edits \
       -F "model=Flux-2-Klein-4B" \
       -F "prompt=Add a red barn and mountains in the background, photorealistic" \
       -F "size=512x512" \
@@ -861,7 +943,7 @@ Image Editing API. You provide a source image and a text prompt describing the d
 
     ```python
     from openai import OpenAI
-    client = OpenAI(base_url="http://localhost:8000/api/v1", api_key="not-needed")
+    client = OpenAI(base_url="http://localhost:13305/api/v1", api_key="not-needed")
     with open("source_image.png", "rb") as image_file:
         response = client.images.edit(
             model="Flux-2-Klein-4B",
@@ -900,7 +982,7 @@ Image Variations API. You provide a source image and receive a variation of it. 
 === "Bash"
 
     ```bash
-    curl -X POST http://localhost:8000/api/v1/images/variations \
+    curl -X POST http://localhost:13305/api/v1/images/variations \
       -F "model=Flux-2-Klein-4B" \
       -F "size=512x512" \
       -F "n=1" \
@@ -912,7 +994,7 @@ Image Variations API. You provide a source image and receive a variation of it. 
 
     ```python
     from openai import OpenAI
-    client = OpenAI(base_url="http://localhost:8000/api/v1", api_key="not-needed")
+    client = OpenAI(base_url="http://localhost:13305/api/v1", api_key="not-needed")
     with open("source_image.png", "rb") as image_file:
         response = client.images.create_variation(
             model="Flux-2-Klein-4B",
@@ -924,6 +1006,138 @@ Image Variations API. You provide a source image and receive a variation of it. 
     image_data = base64.b64decode(response.data[0].b64_json)
     open("variation.png", "wb").write(image_data)
     ```
+
+---
+
+### `POST /api/v1/images/upscale` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model name, and receive a 4x upscaled image. This API uses the `sd-cli` binary from [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) to perform super-resolution.
+
+> **Note:** Available upscale models are `RealESRGAN-x4plus` (general-purpose, 64 MB) and `RealESRGAN-x4plus-anime` (optimized for anime-style art, 17 MB). Both produce a 4x resolution increase (e.g., 256x256 → 1024x1024).
+>
+> **Note:** Unlike `/images/edits` and `/images/variations`, this endpoint accepts a JSON body (not multipart/form-data). The image must be provided as a base64-encoded string.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `image` | Yes | Base64-encoded PNG image to upscale. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The ESRGAN model to use (e.g., `RealESRGAN-x4plus`, `RealESRGAN-x4plus-anime`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+#### Example request
+
+A typical workflow is to generate an image first, then upscale it:
+
+=== "Bash"
+
+    ```bash
+    # Step 1: Generate an image and save the base64 response
+    RESPONSE=$(curl -s -X POST http://localhost:13305/api/v1/images/generations \
+      -H "Content-Type: application/json" \
+      -d '{
+            "model": "SD-Turbo",
+            "prompt": "A serene mountain landscape at sunset",
+            "size": "512x512",
+            "steps": 4,
+            "response_format": "b64_json"
+          }')
+
+    # Step 2: Build the upscale JSON payload and pipe it to curl via stdin
+    # (base64 images are too large for command-line interpolation)
+    echo "$RESPONSE" | python3 -c "
+    import sys, json
+    b64 = json.load(sys.stdin)['data'][0]['b64_json']
+    print(json.dumps({'image': b64, 'model': 'RealESRGAN-x4plus'}))
+    " | curl -X POST http://localhost:13305/api/v1/images/upscale \
+      -H "Content-Type: application/json" \
+      -d @-
+    ```
+
+=== "PowerShell"
+
+    ```powershell
+    # Step 1: Generate an image
+    $genResponse = Invoke-WebRequest `
+      -Uri "http://localhost:13305/api/v1/images/generations" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+        "model": "SD-Turbo",
+        "prompt": "A serene mountain landscape at sunset",
+        "size": "512x512",
+        "steps": 4,
+        "response_format": "b64_json"
+      }'
+
+    # Step 2: Extract the base64 image
+    $imageB64 = ($genResponse.Content | ConvertFrom-Json).data[0].b64_json
+
+    # Step 3: Upscale the image with Real-ESRGAN
+    $body = @{ image = $imageB64; model = "RealESRGAN-x4plus" } | ConvertTo-Json
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/api/v1/images/upscale" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body $body
+    ```
+
+=== "Python (requests)"
+
+    ```python
+    import requests
+    import base64
+
+    BASE_URL = "http://localhost:13305/api/v1"
+
+    # Step 1: Generate an image
+    gen_response = requests.post(f"{BASE_URL}/images/generations", json={
+        "model": "SD-Turbo",
+        "prompt": "A serene mountain landscape at sunset",
+        "size": "512x512",
+        "steps": 4,
+        "response_format": "b64_json",
+    })
+    image_b64 = gen_response.json()["data"][0]["b64_json"]
+
+    # Step 2: Upscale the image with Real-ESRGAN (512x512 -> 2048x2048)
+    upscale_response = requests.post(f"{BASE_URL}/images/upscale", json={
+        "image": image_b64,
+        "model": "RealESRGAN-x4plus",
+    })
+
+    # Step 3: Save the upscaled image to a file
+    upscaled_b64 = upscale_response.json()["data"][0]["b64_json"]
+    with open("upscaled.png", "wb") as f:
+        f.write(base64.b64decode(upscaled_b64))
+    ```
+
+#### Response format
+
+```json
+{
+  "created": 1742927481,
+  "data": [
+    {
+      "b64_json": "<base64-encoded upscaled PNG>"
+    }
+  ]
+}
+```
+
+**Field Descriptions:**
+
+- `created` - Unix timestamp of when the upscaled image was generated
+- `data` - Array containing the upscaled image
+  - `b64_json` - Base64-encoded PNG of the upscaled image
+
+#### Error responses
+
+| Status Code | Condition | Example |
+|-------------|-----------|---------|
+| 400 | Missing `image` field | `{"error": {"message": "Missing 'image' field (base64 encoded)", "type": "invalid_request_error"}}` |
+| 400 | Missing `model` field | `{"error": {"message": "Missing 'model' field", "type": "invalid_request_error"}}` |
+| 404 | Unknown model name | `{"error": {"message": "Upscale model not found: bad-model", "type": "invalid_request_error"}}` |
+| 500 | Upscale failed | `{"error": {"message": "ESRGAN upscale failed", "type": "server_error"}}` |
 
 ---
 
@@ -950,7 +1164,7 @@ Speech Generation API. You provide a text input and receive an audio file. This 
 === "Bash"
 
     ```bash
-    curl -X POST http://localhost:8000/api/v1/audio/speech \
+    curl -X POST http://localhost:13305/api/v1/audio/speech \
       -H "Content-Type: application/json" \
       -d '{
             "model": "kokoro-v1",
@@ -982,10 +1196,10 @@ By default, only models available locally (downloaded) are shown, matching OpenA
 
 ```bash
 # Show only downloaded models (OpenAI-compatible)
-curl http://localhost:8000/api/v1/models
+curl http://localhost:13305/api/v1/models
 
 # Show all models including not-yet-downloaded (extended usage)
-curl http://localhost:8000/api/v1/models?show_all=true
+curl http://localhost:13305/api/v1/models?show_all=true
 ```
 
 #### Response format
@@ -1074,7 +1288,7 @@ Retrieve a specific model by its ID. Returns the same model object format as the
 #### Example request
 
 ```bash
-curl http://localhost:8000/api/v1/models/Qwen3-0.6B-GGUF
+curl http://localhost:13305/api/v1/models/Qwen3-0.6B-GGUF
 ```
 
 #### Response format
@@ -1139,7 +1353,7 @@ The Lemonade Server built-in model registry has a collection of model names that
 Example request:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/pull \
+curl -X POST http://localhost:13305/api/v1/pull \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "Qwen2.5-0.5B-Instruct-CPU"
@@ -1179,7 +1393,7 @@ The `recipe` field defines which software framework and device will be used to l
 Example request:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/pull \
+curl -X POST http://localhost:13305/api/v1/pull \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "user.Phi-4-Mini-GGUF",
@@ -1235,7 +1449,7 @@ Delete a model by removing it from local storage. If the model is currently load
 Example request:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/delete \
+curl -X POST http://localhost:13305/api/v1/delete \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "Qwen2.5-0.5B-Instruct-CPU"
@@ -1279,8 +1493,8 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 When loading a model, settings are applied in this priority order:
 1. Values explicitly passed in the `load` request (highest priority)
 2. Per-model values configurable in `recipe_options.json` (see below for details)
-3. Values set via `lemonade-server` CLI arguments or environment variables
-4. Default hardcoded values in `lemonade-router` (lowest priority)
+3. Values from environment variables or server startup arguments (see [Server Configuration](./configuration.md))
+4. Default hardcoded values in `lemond` (lowest priority)
 
 #### Per-model options
 
@@ -1310,7 +1524,7 @@ Note that model names include any applicable prefix, such as `user.` and `extra.
 Basic load:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/load \
+curl -X POST http://localhost:13305/api/v1/load \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "Qwen2.5-0.5B-Instruct-CPU"
@@ -1320,7 +1534,7 @@ curl -X POST http://localhost:8000/api/v1/load \
 Load with custom settings:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/load \
+curl -X POST http://localhost:13305/api/v1/load \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "Qwen3-0.6B-GGUF",
@@ -1333,7 +1547,7 @@ curl -X POST http://localhost:8000/api/v1/load \
 Load and save settings:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/load \
+curl -X POST http://localhost:13305/api/v1/load \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "Qwen3-0.6B-GGUF",
@@ -1347,7 +1561,7 @@ curl -X POST http://localhost:8000/api/v1/load \
 Load a Whisper model with NPU backend and conversion enabled:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/load \
+curl -X POST http://localhost:13305/api/v1/load \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "whisper-large-v3-turbo-q8_0.bin",
@@ -1359,7 +1573,7 @@ curl -X POST http://localhost:8000/api/v1/load \
 Load an image generation model with custom settings:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/load \
+curl -X POST http://localhost:13305/api/v1/load \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "sd-turbo",
@@ -1396,7 +1610,7 @@ Explicitly unload a model from memory. This is useful to free up memory while st
 Unload a specific model:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/unload \
+curl -X POST http://localhost:13305/api/v1/unload \
   -H "Content-Type: application/json" \
   -d '{"model_name": "Qwen3-0.6B-GGUF"}'
 ```
@@ -1404,7 +1618,7 @@ curl -X POST http://localhost:8000/api/v1/unload \
 Unload all models:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/unload
+curl -X POST http://localhost:13305/api/v1/unload
 ```
 
 #### Response format
@@ -1440,7 +1654,7 @@ This endpoint does not take any parameters.
 #### Example request
 
 ```bash
-curl http://localhost:8000/api/v1/health
+curl http://localhost:13305/api/v1/health
 ```
 
 #### Response format
@@ -1504,14 +1718,14 @@ curl http://localhost:8000/api/v1/health
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
-- `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `--max-loaded-models`):
+- `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](./configuration.md)):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
   - `reranking` - Maximum reranking models
   - `audio` - Maximum speech-to-text models
   - `image` - Maximum image models
   - `tts` - Maximum text-to-speech models
-- `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned.
+- `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`.
 
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -1524,7 +1738,7 @@ This endpoint does not take any parameters.
 #### Example request
 
 ```bash
-curl http://localhost:8000/api/v1/stats
+curl http://localhost:13305/api/v1/stats
 ```
 
 #### Response format
@@ -1556,7 +1770,7 @@ System information endpoint that provides complete hardware details and device e
 #### Example request
 
 ```bash
-curl "http://localhost:8000/api/v1/system-info"
+curl "http://localhost:13305/api/v1/system-info"
 ```
 
 #### Response format
@@ -1607,7 +1821,7 @@ curl "http://localhost:8000/api/v1/system-info"
           "devices": ["amd_igpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade-server recipes --install llamacpp:rocm"
+          "action": "lemonade backends install llamacpp:rocm"
         },
         "metal": {
           "devices": [],
@@ -1619,7 +1833,7 @@ curl "http://localhost:8000/api/v1/system-info"
           "devices": ["cpu"],
           "state": "update_required",
           "message": "Backend update is required before use.",
-          "action": "lemonade-server recipes --install llamacpp:cpu"
+          "action": "lemonade backends install llamacpp:cpu"
         }
       }
     },
@@ -1630,7 +1844,7 @@ curl "http://localhost:8000/api/v1/system-info"
           "devices": ["cpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade-server recipes --install whispercpp:default"
+          "action": "lemonade backends install whispercpp:default"
         }
       }
     },
@@ -1641,7 +1855,7 @@ curl "http://localhost:8000/api/v1/system-info"
           "devices": ["cpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade-server recipes --install sd-cpp:default"
+          "action": "lemonade backends install sd-cpp:default"
         }
       }
     },
@@ -1712,11 +1926,12 @@ Install or update a backend for a specific recipe/backend pair. If the backend i
 | `recipe` | Yes | Recipe name (for example, `llamacpp`, `flm`, `whispercpp`, `sd-cpp`, `ryzenai-llm`) |
 | `backend` | Yes | Backend name within the recipe (for example, `vulkan`, `rocm`, `cpu`, `default`) |
 | `stream` | No | If `true`, returns Server-Sent Events with progress. Defaults to `false`. |
+| `force` | No | If `true`, bypasses hardware filtering for `unsupported` backends and attempts installation anyway. Defaults to `false`. |
 
 #### Example request
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/install \
+curl -X POST http://localhost:13305/api/v1/install \
   -H "Content-Type: application/json" \
   -d '{
     "recipe": "llamacpp",
@@ -1751,7 +1966,7 @@ Uninstall a backend for a specific recipe/backend pair. If loaded models are usi
 #### Example request
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/uninstall \
+curl -X POST http://localhost:13305/api/v1/uninstall \
   -H "Content-Type: application/json" \
   -d '{
     "recipe": "llamacpp",
@@ -1773,13 +1988,9 @@ In case of an error, returns an `error` field with details.
 
 # Debugging
 
-To help debug the Lemonade server, you can use the `--log-level` parameter to control the verbosity of logging information. The server supports multiple logging levels that provide increasing amounts of detail about server operations.
+To control logging verbosity, use `lemonade config set log_level=debug` (see [Server Configuration](./configuration.md)).
 
-```
-lemonade-server serve --log-level [level]
-```
-
-Where `[level]` can be one of:
+Available levels:
 
 - **critical**: Only critical errors that prevent server operation.
 - **error**: Error conditions that might allow continued operation.
@@ -1791,7 +2002,7 @@ Where `[level]` can be one of:
 # GGUF Support
 
 The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows and Ubuntu Linux are supported. Details:
-- Lemonade Server wraps `llama-server` with support for the `lemonade-server` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
+- Lemonade Server wraps `llama-server` with support for the `lemonade` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
   - The `chat/completions`, `completions`, `embeddings`, and `reranking` endpoints are supported.
   - The `embeddings` endpoint requires embedding-specific models (e.g., nomic-embed-text models).
   - The `reranking` endpoint requires reranker-specific models (e.g., bge-reranker models).
@@ -1802,7 +2013,7 @@ The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as w
 
 ## Installing GGUF Models
 
-To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by navigating to http://localhost:8000 in your web browser, click the Model Management tab, and use the Add a Model form.
+To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by navigating to http://localhost:13305 in your web browser, click the Model Management tab, and use the Add a Model form.
 
 ## Platform Support Matrix
 
@@ -1819,7 +2030,7 @@ To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by nav
 Similar to the [llama-server support](#gguf-support), Lemonade can also route OpenAI API requests to a FastFlowLM `flm serve` backend.
 
 The `flm serve` backend works with Lemonade's suggested `*-FLM` models, as well as any model mentioned in `flm list`. Windows is the only supported operating system. Details:
-- Lemonade Server wraps `flm serve` with support for the `lemonade-server` CLI, client web app, and all Lemonade custom endpoints (e.g., `pull`, `load`, etc.).
+- Lemonade Server wraps `flm serve` with support for the `lemonade` CLI, client web app, and all Lemonade custom endpoints (e.g., `pull`, `load`, etc.).
   - OpenAI API endpoints supported: `models`, `chat/completions` (streaming), and `embeddings`.
   - The `embeddings` endpoint requires embedding-specific models supported by FLM.
 - A single Lemonade Server process can seamlessly switch between FLM, OGA, and GGUF models.
@@ -1828,7 +2039,7 @@ The `flm serve` backend works with Lemonade's suggested `*-FLM` models, as well 
 
 To install an arbitrary FLM model:
 1. `flm list` to view the supported models.
-1. Open the Lemonade web app by navigating to http://localhost:8000 in your web browser, click the Model Management tab, and use the Add a Model form.
+1. Open the Lemonade web app by navigating to http://localhost:13305 in your web browser, click the Model Management tab, and use the Add a Model form.
 1. Use the model name from `flm list` as the "checkpoint name" in the Add a Model form and select "flm" as the recipe.
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.

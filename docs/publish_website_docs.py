@@ -54,7 +54,8 @@ def main():
     replacements = [
         (r"\(\./apps/README\.md\)", r"(./server/apps/README.md)"),
         (r"\(\./concepts\.md\)", r"(./server/concepts.md)"),
-        (r"\(\./lemonade-server-cli\.md\)", r"(./server/lemonade-server-cli.md)"),
+        (r"\(\./lemonade-cli\.md\)", r"(./lemonade-cli.md)"),
+        (r"\(\./server/configuration\.md\)", r"(./server/configuration.md)"),
         (r"\(\./server_models\.md\)", r"(https://lemonade-server.ai/models.html)"),
         (r"\(\./server_spec\.md\)", r"(./server/server_spec.md)"),
         (r"\(\./server_integration\.md\)", r"(./server/server_integration.md)"),

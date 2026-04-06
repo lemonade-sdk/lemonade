@@ -9,6 +9,17 @@ namespace lemonade {
 
 using json = nlohmann::json;
 
+HttpError::HttpError(int status, std::string body, const std::string& message)
+    : std::runtime_error(message), status_code_(status), response_body_(std::move(body)) {}
+
+int HttpError::status_code() const {
+    return status_code_;
+}
+
+const std::string& HttpError::response_body() const {
+    return response_body_;
+}
+
 LemonadeClient::LemonadeClient(const std::string& host, int port, const std::string& api_key)
     : host_(host), port_(port), api_key_(api_key) {}
 
@@ -21,12 +32,12 @@ std::string LemonadeClient::normalize_host(const std::string& host) const {
     return host;
 }
 
-// Helper lambda to create and configure httplib::Client
+// Helper to create and configure httplib::Client (timeouts in milliseconds)
 static httplib::Client make_client(const std::string& host, int port, const std::string& api_key,
-                                    int connection_timeout = 30, int read_timeout = 30) {
+                                    int connection_timeout_ms = 30000, int read_timeout_ms = 30000) {
     httplib::Client cli(host, port);
-    cli.set_connection_timeout(connection_timeout);
-    cli.set_read_timeout(read_timeout);
+    cli.set_connection_timeout(connection_timeout_ms / 1000, (connection_timeout_ms % 1000) * 1000);
+    cli.set_read_timeout(read_timeout_ms / 1000, (read_timeout_ms % 1000) * 1000);
 
     if (api_key != "") {
         cli.set_bearer_token_auth(api_key);
@@ -36,20 +47,36 @@ static httplib::Client make_client(const std::string& host, int port, const std:
 
 static void assert_http_ok(const httplib::Result& res) {
     if (!res) {
-        throw std::runtime_error("Connection failed: " + httplib::to_string(res.error()));
+        throw std::runtime_error(
+            "Could not connect to Lemonade server (" + httplib::to_string(res.error()) + ").\n"
+            "Make sure the server is running and try again.");
     } else if (res->status == 401) {
         throw std::runtime_error("Forbidden by the server. Did you set the API key?");
     } else if (res->status != 200) {
-        throw std::runtime_error("Request failed: " + std::to_string(res->status));
+        throw HttpError(res->status, res->body,
+                        "Request failed: " + std::to_string(res->status));
     }
 }
 
-// Overloaded make_request with configurable timeouts
+static std::string extract_server_error_message(const HttpError& error) {
+    if (!error.response_body().empty()) {
+        try {
+            auto parsed = json::parse(error.response_body());
+            if (parsed.contains("error") && parsed["error"].is_string()) {
+                return parsed["error"].get<std::string>();
+            }
+        } catch (const json::exception&) {
+        }
+    }
+    return error.what();
+}
+
+// Overloaded make_request with configurable timeouts (in milliseconds)
 std::string LemonadeClient::make_request(const std::string& path, const std::string& method,
                                           const std::string& body, const std::string& content_type,
-                                          int connection_timeout, int read_timeout) const {
+                                          int connection_timeout_ms, int read_timeout_ms) const {
     std::string normalized_host = normalize_host(host_);
-    httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout, read_timeout);
+    httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout_ms, read_timeout_ms);
 
     httplib::Result res;
 
@@ -70,9 +97,12 @@ std::string LemonadeClient::make_request(const std::string& path, const std::str
 static httplib::Result handle_sse_stream(httplib::Client& cli, const std::string& path, const std::string& body, const std::string& content_type,
                               std::function<void(const std::string& event_type, const std::string& event_data)> callback) {
     std::string buffer;
+    std::string raw_response_body;
+    bool saw_sse_event = false;
 
     auto res = cli.Post(path, httplib::Headers(), body, content_type,
         [&](const char* data, size_t len) {
+            raw_response_body.append(data, len);
             buffer.append(data, len);
 
             size_t pos;
@@ -100,6 +130,7 @@ static httplib::Result handle_sse_stream(httplib::Client& cli, const std::string
                 }
 
                 if (!event_data.empty()) {
+                    saw_sse_event = true;
                     callback(event_type, event_data);
                 }
             }
@@ -107,16 +138,20 @@ static httplib::Result handle_sse_stream(httplib::Client& cli, const std::string
             return true;
         });
 
+    if (res && !saw_sse_event && !raw_response_body.empty()) {
+        res->body = raw_response_body;
+    }
+
     return res;
 }
 
-// Overloaded make_request for streaming SSE responses
+// Overloaded make_request for streaming SSE responses (timeouts in milliseconds)
 bool LemonadeClient::make_request(const std::string& path, const std::string& method,
                                    const std::string& body, const std::string& content_type,
                                    std::function<void(const std::string& event_type, const std::string& event_data)> callback,
-                                   int connection_timeout, int read_timeout) const {
+                                   int connection_timeout_ms, int read_timeout_ms) const {
     std::string normalized_host = normalize_host(host_);
-    httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout, read_timeout);
+    httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout_ms, read_timeout_ms);
 
     if (method == "POST") {
         auto res = handle_sse_stream(cli, path, body, content_type, callback);
@@ -128,85 +163,71 @@ bool LemonadeClient::make_request(const std::string& path, const std::string& me
     throw std::runtime_error("Streaming only supports POST method");
 }
 
-int LemonadeClient::status() const {
+int LemonadeClient::status(int display_port) const {
     try {
-        std::string response = make_request("/api/v1/health");
+        std::string response = make_request("/api/v1/health", "GET", "", "", 500, 500);
         auto json_response = json::parse(response);
 
-        std::cout << "Lemonade Server Status" << std::endl;
-        std::cout << std::string(50, '=') << std::endl;
+        int port = display_port > 0 ? display_port : port_;
+        std::cout << "Server is running on port " << port << std::endl;
+        std::cout << std::endl;
 
-        // Server status
-        if (json_response.contains("status")) {
-            std::cout << "Status: " << json_response["status"].get<std::string>() << std::endl;
-        }
+        // Server info table
+        std::cout << std::left << std::setw(20) << "Property" << "Value" << std::endl;
+        std::cout << std::string(50, '-') << std::endl;
 
-        // Version
         if (json_response.contains("version")) {
-            std::cout << "Version: " << json_response["version"].get<std::string>() << std::endl;
+            std::cout << std::left << std::setw(20) << "Version"
+                      << json_response["version"].get<std::string>() << std::endl;
         }
-
-        // WebSocket port
         if (json_response.contains("websocket_port")) {
-            std::cout << "WebSocket Port: " << json_response["websocket_port"].get<int>() << std::endl;
+            std::cout << std::left << std::setw(20) << "WebSocket Port"
+                      << json_response["websocket_port"].get<int>() << std::endl;
         }
-
-        // Max models
         if (json_response.contains("max_models") && json_response["max_models"].is_object()) {
-            const auto count = json_response["max_models"]["llm"].get<int>();
-            std::cout << "Max Models Per Type: " << count << std::endl;
+            std::cout << std::left << std::setw(20) << "Max Models/Type"
+                      << json_response["max_models"]["llm"].get<int>() << std::endl;
         }
 
-        // All loaded models
+        // Loaded models table
         if (json_response.contains("all_models_loaded") && json_response["all_models_loaded"].is_array() &&
             !json_response["all_models_loaded"].empty()) {
-            std::cout << "All Loaded Models:" << std::endl;
-            std::cout << std::string(50, '=') << std::endl;
+            std::cout << std::endl;
+            std::cout << std::left
+                      << std::setw(30) << "Model"
+                      << std::setw(10) << "Type"
+                      << std::setw(10) << "Device"
+                      << std::setw(14) << "Recipe"
+                      << "Checkpoint" << std::endl;
+            std::cout << std::string(100, '-') << std::endl;
 
             for (const auto& model : json_response["all_models_loaded"]) {
-                if (model.is_object()) {
-                    std::cout << std::endl;
+                if (!model.is_object()) continue;
 
-                    if (model.contains("model_name")) {
-                        std::cout << "  Model: " << model["model_name"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("checkpoint")) {
-                        std::cout << "  Checkpoint: " << model["checkpoint"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("type")) {
-                        std::cout << "  Type: " << model["type"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("device")) {
-                        std::cout << "  Device: " << model["device"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("recipe")) {
-                        std::cout << "  Recipe: " << model["recipe"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("backend_url")) {
-                        std::cout << "  Backend URL: " << model["backend_url"].get<std::string>() << std::endl;
-                    }
-                    if (model.contains("last_use")) {
-                        std::cout << "  Last Used: " << model["last_use"].get<int>() << std::endl;
-                    }
-                    if (model.contains("recipe_options") && model["recipe_options"].is_object()) {
-                        std::cout << "  Recipe Options:" << std::endl;
-                        for (const auto& [key, value] : model["recipe_options"].items()) {
-                            std::cout << "    " << key << ": " << value.dump() << std::endl;
-                        }
-                    }
-                }
+                std::cout << std::left
+                          << std::setw(30) << model.value("model_name", "-")
+                          << std::setw(10) << model.value("type", "-")
+                          << std::setw(10) << model.value("device", "-")
+                          << std::setw(14) << model.value("recipe", "-")
+                          << model.value("checkpoint", "-") << std::endl;
             }
+        } else {
             std::cout << std::endl;
+            std::cout << "No models loaded." << std::endl;
         }
 
-        std::cout << std::string(50, '=') << std::endl;
         return 0;
 
     } catch (const json::exception& e) {
         std::cerr << "Error parsing health response JSON: " << e.what() << std::endl;
         return 1;
     } catch (const std::exception& e) {
-        std::cerr << "Error fetching health status: " << e.what() << std::endl;
+        const std::string error = e.what();
+        if (error.find("Connection failed:") == 0) {
+            std::cerr << "Server is not running" << std::endl;
+        } else {
+            std::cerr << "Error fetching health status: " << error << std::endl;
+        }
         return 1;
     }
 }
@@ -239,6 +260,18 @@ std::vector<ModelInfo> LemonadeClient::get_models(bool show_all) const {
 
             if (model_item.contains("downloaded") && model_item["downloaded"].is_boolean()) {
                 info.downloaded = model_item["downloaded"].get<bool>();
+            }
+
+            if (model_item.contains("suggested") && model_item["suggested"].is_boolean()) {
+                info.suggested = model_item["suggested"].get<bool>();
+            }
+
+            if (model_item.contains("labels") && model_item["labels"].is_array()) {
+                for (const auto& label : model_item["labels"]) {
+                    if (label.is_string()) {
+                        info.labels.push_back(label.get<std::string>());
+                    }
+                }
             }
 
             if (!info.id.empty()) {
@@ -286,8 +319,30 @@ int LemonadeClient::list_models(bool show_all) const {
 }
 
 // Helper function to parse SSE progress events
-static bool parse_sse_progress(const std::string& event_data, std::string& last_file, int& last_percent,
-                                  std::string& error_message) {
+static std::string format_speed(double bytes_per_sec) {
+    if (bytes_per_sec < 1024.0) {
+        return std::to_string(static_cast<int>(bytes_per_sec)) + " B/s";
+    } else if (bytes_per_sec < 1024.0 * 1024.0) {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(1) << (bytes_per_sec / 1024.0) << " KB/s";
+        return oss.str();
+    } else if (bytes_per_sec < 1024.0 * 1024.0 * 1024.0) {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(1) << (bytes_per_sec / (1024.0 * 1024.0)) << " MB/s";
+        return oss.str();
+    } else {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(1) << (bytes_per_sec / (1024.0 * 1024.0 * 1024.0)) << " GB/s";
+        return oss.str();
+    }
+}
+
+static bool parse_sse_progress(const std::string& event_data, StreamingRequestState& state) {
+    std::string& last_file = state.last_file;
+    int& last_percent = state.last_percent;
+    std::string& error_message = state.error_message;
+    bool& total_size_printed = state.total_size_printed;
+    uint64_t& last_file_size = state.last_file_size;
     try {
         auto json_data = json::parse(event_data);
 
@@ -298,9 +353,23 @@ static bool parse_sse_progress(const std::string& event_data, std::string& last_
             // Use uint64_t explicitly to avoid JSON type inference issues with large numbers
             uint64_t bytes_downloaded = json_data.value("bytes_downloaded", (uint64_t)0);
             uint64_t bytes_total = json_data.value("bytes_total", (uint64_t)0);
+            uint64_t bytes_prev = json_data.value("bytes_previously_downloaded", (uint64_t)0);
+            uint64_t total_download_size = json_data.value("total_download_size", (uint64_t)0);
+
+            // Print total download size once on first event
+            if (!total_size_printed && total_download_size > 0 && total_files > 0) {
+                double size_gb = total_download_size / (1024.0 * 1024.0 * 1024.0);
+                std::cout << "Total: " << std::fixed << std::setprecision(1)
+                          << size_gb << " GB, " << total_files << " files" << std::endl;
+                total_size_printed = true;
+            }
 
             if (file != last_file) {
-                if (!last_file.empty()) {
+                // First event for this file — remember its size for progress display
+                last_file_size = bytes_total;
+
+                // Add newline after progress bar (carriage-return based), but not after "(already downloaded)"
+                if (!last_file.empty() && last_percent != 100) {
                     std::cout << std::endl;
                 }
                 std::cout << "[" << file_index << "/" << total_files << "] " << file;
@@ -308,20 +377,45 @@ static bool parse_sse_progress(const std::string& event_data, std::string& last_
                     std::cout << " (" << std::fixed << std::setprecision(1)
                             << (bytes_total / (1024.0 * 1024.0)) << " MB)";
                 }
+
+                // Check if already downloaded: bytes_prev equals the KNOWN file size
+                bool is_already_downloaded = bytes_prev > 0 && bytes_prev == bytes_total;
+                if (is_already_downloaded) {
+                    std::cout << " (already downloaded)";
+                    last_percent = 100;
+                } else {
+                    last_percent = -1;
+                    state.file_start_time = std::chrono::steady_clock::now();
+                    state.file_bytes_resumed = bytes_prev;
+                }
                 std::cout << std::endl;
                 last_file = file;
-                last_percent = -1;
+            } else if (last_percent != 100 && bytes_prev > 0 && bytes_prev == last_file_size) {
+                // Completion event: bytes_prev matches known file size (not a redirect artifact)
+                std::cout << "\r" << std::string(80, ' ') << "\r  (already downloaded)" << std::endl;
+                last_percent = 100;
             }
 
-            if (bytes_total > 0 && json_data.contains("percent") && json_data["percent"].is_number_integer()) {
-                int percent = json_data["percent"].get<int>();
+            // Show progress bar using the known file size as denominator
+            if (last_percent != 100 && last_file_size > 0) {
+                int display_percent = static_cast<int>((bytes_downloaded * 100) / last_file_size);
+                if (display_percent > 100) display_percent = 100;
+                if (display_percent != last_percent) {
+                    // Calculate speed from session bytes only (exclude resumed bytes)
+                    std::string speed_str;
+                    auto elapsed = std::chrono::steady_clock::now() - state.file_start_time;
+                    double elapsed_sec = std::chrono::duration<double>(elapsed).count();
+                    if (elapsed_sec > 0.5 && bytes_downloaded > state.file_bytes_resumed) {
+                        double speed = (bytes_downloaded - state.file_bytes_resumed) / elapsed_sec;
+                        speed_str = " " + format_speed(speed);
+                    }
 
-                if (percent != last_percent) {
-                    std::cout << "\r  Progress: " << percent << "% ("
+                    std::cout << "\r  Progress: " << display_percent << "% ("
                             << std::fixed << std::setprecision(1)
                             << (bytes_downloaded / (1024.0 * 1024.0)) << "/"
-                            << (bytes_total / (1024.0 * 1024.0)) << " MB)" << std::flush;
-                    last_percent = percent;
+                            << (last_file_size / (1024.0 * 1024.0)) << " MB)"
+                            << speed_str << "    " << std::flush;
+                    last_percent = display_percent;
                 }
             }
         }
@@ -359,10 +453,19 @@ int LemonadeClient::pull_model(const json& model_data) {
             if (event_type == "complete") {
                 std::cout << std::endl;
                 state.success = true;
+            } else if (event_type == "error") {
+                try {
+                    auto error_json = json::parse(event_data);
+                    if (error_json.contains("error")) {
+                        state.error_message = error_json["error"].get<std::string>();
+                    }
+                } catch (...) {
+                    state.error_message = event_data;
+                }
             } else {
-                parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
+                parse_sse_progress(event_data, state);
             }
-        }, 86400, 30);
+        }, 86400000, 30000);
 
         if (!state.success) {
             if (!state.error_message.empty()) {
@@ -554,12 +657,13 @@ int LemonadeClient::list_recipes() const {
     }
 }
 
-int LemonadeClient::install_backend(const std::string& recipe, const std::string& backend) {
+int LemonadeClient::install_backend(const std::string& recipe, const std::string& backend, bool force) {
     std::cout << "Installing backend: " << recipe << ":" << backend << std::endl;
 
     try {
         json request_body = {{"recipe", recipe}, {"backend", backend}};
         request_body["stream"] = true;
+        request_body["force"] = force;
         std::string body = request_body.dump();
 
         StreamingRequestState state;
@@ -569,21 +673,34 @@ int LemonadeClient::install_backend(const std::string& recipe, const std::string
             if (event_type == "complete") {
                 std::cout << std::endl;
                 state.success = true;
+            } else if (event_type == "error") {
+                // Server sent an explicit error event
+                try {
+                    auto error_json = json::parse(event_data);
+                    if (error_json.contains("error")) {
+                        state.error_message = error_json["error"].get<std::string>();
+                    }
+                } catch (...) {
+                    state.error_message = event_data;
+                }
             } else {
-                parse_sse_progress(event_data, state.last_file, state.last_percent, state.error_message);
+                parse_sse_progress(event_data, state);
             }
-        }, 86400, 30);
+        }, 86400000, 30000);
         if (!state.success) {
             if (!state.error_message.empty()) {
                 throw std::runtime_error(state.error_message);
             }
-            throw std::runtime_error("Backend installation failed");
+            throw std::runtime_error("Backend installation failed (no details from server)");
         }
 
         std::cout << "Backend installed successfully: " << recipe << ":" << backend << std::endl;
         return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error: " << extract_server_error_message(e) << std::endl;
+        return 1;
     } catch (const std::exception& e) {
-        std::cerr << "Error installing backend: " << e.what() << std::endl;
+        std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
 }

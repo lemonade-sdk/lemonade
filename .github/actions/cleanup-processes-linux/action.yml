@@ -53,7 +53,7 @@ runs:
         # Additional pass: kill by exact process names
         echo ""
         echo "Second pass: killing by exact name..."
-        for proc_name in lemonade-server lemonade-router lemonade-server-dev lemonade-tray llama-server llama-cli llama-bench; do
+        for proc_name in lemonade-server lemond lemonade-server-dev lemonade-tray llama-server llama-cli llama-bench; do
             kill_by_exact_name "$proc_name"
         done
 
@@ -90,7 +90,7 @@ runs:
         echo "Cleaning up lock and PID files..."
         rm -f /tmp/lemonade*.lock 2>/dev/null || true
         rm -f /tmp/lemonade*.pid 2>/dev/null || true
-        rm -f /tmp/lemonade-router.pid 2>/dev/null || true
+        rm -f /tmp/lemond.pid 2>/dev/null || true
         if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
           rm -f "${XDG_RUNTIME_DIR}/lemonade/lemonade"*.lock 2>/dev/null || true
           rm -f "${XDG_RUNTIME_DIR}/lemonade/lemonade"*.pid 2>/dev/null || true
@@ -102,7 +102,7 @@ runs:
         echo "Cleaning up log files..."
         rm -f /tmp/lemonade*.log 2>/dev/null || true
         rm -f /tmp/lemonade-server*.log 2>/dev/null || true
-        rm -f /tmp/lemonade-router*.log 2>/dev/null || true
+        rm -f /tmp/lemond*.log 2>/dev/null || true
         if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
           rm -f "${XDG_RUNTIME_DIR}/lemonade/lemonade"*.log 2>/dev/null || true
         fi

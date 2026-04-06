@@ -1,4 +1,5 @@
 #include <lemon/model_manager.h>
+#include <lemon/runtime_config.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/http_client.h>
 #include <lemon/utils/process_manager.h>
@@ -12,12 +13,36 @@
 #include <sstream>
 #include <thread>
 #include <chrono>
+#include <set>
 #include <unordered_set>
 #include <iomanip>
 #include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
+
+#ifdef _WIN32
+#include <windows.h>
+// MSVC's std::filesystem refuses to traverse reparse points it considers
+// "untrusted" when the process token lacks symlink privileges (e.g., when
+// launched from an MSI installer custom action). The Win32 API has no such
+// restriction. These helpers replace fs::exists / fs::is_directory for paths
+// that may contain symlinks (HuggingFace cache uses them for deduplication).
+static bool safe_exists(const fs::path& p) {
+    return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+static bool safe_is_directory(const fs::path& p) {
+    DWORD attrs = GetFileAttributesW(p.c_str());
+    return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY);
+}
+// fs::recursive_directory_iterator also throws on these reparse points.
+// skip_permission_denied tells it to skip inaccessible entries instead of throwing.
+static constexpr auto safe_dir_options = fs::directory_options::skip_permission_denied;
+#else
+static bool safe_exists(const fs::path& p) { return fs::exists(p); }
+static bool safe_is_directory(const fs::path& p) { return fs::is_directory(p); }
+static constexpr auto safe_dir_options = fs::directory_options::none;
+#endif
 
 namespace lemon {
 
@@ -184,6 +209,25 @@ static GGUFFiles identify_gguf_models(
             for (const auto& f : repo_files) {
                 if (ends_with_ignore_case(f, ".gguf") && starts_with_ignore_case(f, folder_prefix)) {
                     sharded_files.push_back(f);
+                }
+            }
+
+            // If no exact folder match, try folders ending with -{variant}/ or _{variant}/
+            // This handles repos where the folder is prefixed with the model name,
+            // e.g. "Qwen3-Coder-Next-Q4_K_M/" instead of just "Q4_K_M/"
+            if (sharded_files.empty()) {
+                std::string suffix_dash = "-" + variant + "/";
+                std::string suffix_underscore = "_" + variant + "/";
+                for (const auto& f : repo_files) {
+                    if (!ends_with_ignore_case(f, ".gguf")) continue;
+                    size_t slash_pos = f.find('/');
+                    if (slash_pos != std::string::npos) {
+                        std::string folder = f.substr(0, slash_pos + 1);
+                        if (ends_with_ignore_case(folder, suffix_dash) ||
+                            ends_with_ignore_case(folder, suffix_underscore)) {
+                            sharded_files.push_back(f);
+                        }
+                    }
                 }
             }
 
@@ -437,8 +481,8 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
     // For RyzenAI LLM models, look for genai_config.json directory
     if (info.recipe == "ryzenai-llm") {
-        if (fs::exists(model_cache_path_fs)) {
-            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
+        if (safe_exists(model_cache_path_fs)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
                 if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
                     return path_to_utf8(entry.path().parent_path());
                 }
@@ -449,8 +493,8 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
     // For kokoro models, look for index.json directory
     if (info.recipe == "kokoro") {
-        if (fs::exists(model_cache_path_fs)) {
-            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
+        if (safe_exists(model_cache_path_fs)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
                 if (entry.is_regular_file() && entry.path().filename() == "index.json") {
                     return path_to_utf8(entry.path());
                 }
@@ -463,13 +507,13 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
     // For whispercpp, find the .bin model file
     if (info.recipe == "whispercpp" && variant.empty()) {
         // No variant specified - use fallback logic to find any .bin file
-        if (!fs::exists(model_cache_path_fs)) {
+        if (!safe_exists(model_cache_path_fs)) {
             return model_cache_path;  // Return directory path even if not found
         }
 
         // Collect all .bin files
         std::vector<std::string> all_bin_files;
-        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
+        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
             if (entry.is_regular_file()) {
                 std::string filename = entry.path().filename().string();
                 if (filename.find(".bin") != std::string::npos) {
@@ -491,13 +535,13 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
     // For llamacpp, find the GGUF file with advanced sharded model support
     if (info.recipe == "llamacpp" && type == "main") {
-        if (!fs::exists(model_cache_path_fs)) {
+        if (!safe_exists(model_cache_path_fs)) {
             return model_cache_path;  // Return directory path even if not found
         }
 
         // Collect all GGUF files (exclude mmproj files)
         std::vector<std::string> all_gguf_files;
-        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
+        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
             if (entry.is_regular_file()) {
                 std::string filename = entry.path().filename().string();
                 std::string filename_lower = filename;
@@ -580,8 +624,8 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
     // Everything else
     if (!variant.empty()) {
         // Try to find the exact variant in snapshots subdirectories
-        if (fs::exists(model_cache_path_fs)) {
-            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs)) {
+        if (safe_exists(model_cache_path_fs)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
                 if (entry.is_regular_file()) {
                     std::string filename = entry.path().filename().string();
                     if (filename == variant) {
@@ -589,7 +633,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
                     }
                 } else if (entry.is_directory()) {
                     fs::path variant_path = entry.path() / path_from_utf8(variant);
-                    if (fs::exists(variant_path)) {
+                    if (safe_exists(variant_path)) {
                         return path_to_utf8(variant_path);
                     }
                 }
@@ -756,7 +800,11 @@ void ModelManager::build_cache() {
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
 
-        resolve_all_model_paths(info);
+        try {
+            resolve_all_model_paths(info);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "ModelManager") << "  EXCEPTION resolving '" << key << "': " << e.what() << std::endl;
+        }
         all_models[key] = info;
     }
 
@@ -793,7 +841,11 @@ void ModelManager::build_cache() {
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
 
-        resolve_all_model_paths(info);
+        try {
+            resolve_all_model_paths(info);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "ModelManager") << "  EXCEPTION resolving '" << info.model_name << "': " << e.what() << std::endl;
+        }
         all_models[info.model_name] = info;
     }
 
@@ -863,7 +915,7 @@ void ModelManager::build_cache() {
             info.downloaded = flm_set.count(info.checkpoint()) > 0;
         } else {
             // Check if model file/dir exists
-            bool file_exists = !info.resolved_path().empty() && fs::exists(info.resolved_path());
+            bool file_exists = !info.resolved_path().empty() && safe_exists(info.resolved_path());
 
             if (file_exists) {
                 // Also check for incomplete downloads:
@@ -873,17 +925,18 @@ void ModelManager::build_cache() {
 
                 // For directories (OGA models), check within the directory
                 // For files (GGUF models), check in parent directory
-                fs::path snapshot_dir = fs::is_directory(resolved) ? resolved : resolved.parent_path();
+                fs::path snapshot_dir = safe_is_directory(resolved) ? resolved : resolved.parent_path();
 
                 // Check for manifest (indicates incomplete multi-file download)
                 fs::path manifest_path = snapshot_dir / ".download_manifest.json";
-                bool has_manifest = fs::exists(manifest_path);
+                bool has_manifest = safe_exists(manifest_path);
 
                 // Check for .partial files
                 bool has_partial = false;
-                if (fs::is_directory(resolved)) {
+                if (safe_is_directory(resolved)) {
                     // For directories, scan for any .partial files inside
-                    for (const auto& entry : fs::directory_iterator(snapshot_dir)) {
+                    std::error_code ec;
+                    for (const auto& entry : fs::directory_iterator(snapshot_dir, ec)) {
                         if (entry.path().extension() == ".partial") {
                             has_partial = true;
                             break;
@@ -891,7 +944,7 @@ void ModelManager::build_cache() {
                     }
                 } else {
                     // For files, check if the specific file has a .partial version
-                    has_partial = fs::exists(info.resolved_path() + ".partial");
+                    has_partial = safe_exists(info.resolved_path() + ".partial");
                 }
 
                 info.downloaded = !has_manifest && !has_partial;
@@ -991,26 +1044,27 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
         auto flm_models = get_flm_installed_models();
         info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint()) != flm_models.end();
     } else {
-        bool file_exists = !info.resolved_path().empty() && fs::exists(info.resolved_path());
+        bool file_exists = !info.resolved_path().empty() && safe_exists(info.resolved_path());
 
         if (file_exists) {
             // Check for incomplete downloads
             fs::path resolved(info.resolved_path());
-            fs::path snapshot_dir = fs::is_directory(resolved) ? resolved : resolved.parent_path();
+            fs::path snapshot_dir = safe_is_directory(resolved) ? resolved : resolved.parent_path();
 
             fs::path manifest_path = snapshot_dir / ".download_manifest.json";
-            bool has_manifest = fs::exists(manifest_path);
+            bool has_manifest = safe_exists(manifest_path);
 
             bool has_partial = false;
-            if (fs::is_directory(resolved)) {
-                for (const auto& entry : fs::directory_iterator(snapshot_dir)) {
+            if (safe_is_directory(resolved)) {
+                std::error_code ec;
+                for (const auto& entry : fs::directory_iterator(snapshot_dir, ec)) {
                     if (entry.path().extension() == ".partial") {
                         has_partial = true;
                         break;
                     }
                 }
             } else {
-                has_partial = fs::exists(info.resolved_path() + ".partial");
+                has_partial = safe_exists(info.resolved_path() + ".partial");
             }
 
             info.downloaded = !has_manifest && !has_partial;
@@ -1178,11 +1232,14 @@ bool parse_TF_env_var(const char* env_var_name) {
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     const std::map<std::string, ModelInfo>& models) {
 
-    // Check if model filtering is disabled via environment variable
-    bool disable_filtering = parse_TF_env_var("LEMONADE_DISABLE_MODEL_FILTERING");
-
-    // Check if dGPUs should use GTT
-    bool enable_dgpu_gtt = parse_TF_env_var("LEMONADE_ENABLE_DGPU_GTT");
+    // Check if model filtering is disabled via config.json
+    bool disable_filtering = false;
+    bool enable_dgpu_gtt = false;
+    auto* cfg = lemon::RuntimeConfig::global();
+    if (cfg) {
+        disable_filtering = cfg->disable_model_filtering();
+        enable_dgpu_gtt = cfg->enable_dgpu_gtt();
+    }
 
     if (disable_filtering) {
         filtered_out_models_.clear();
@@ -1406,27 +1463,22 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
 
     // Run 'flm list --filter installed --quiet --json' to get only installed models
     // Use the full path to flm.exe to avoid PATH issues
+    std::string output;
 #ifdef _WIN32
     std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>NUL";
-    FILE* pipe = _popen(command.c_str(), "r");
+    int rc = lemon::utils::ProcessManager::run_command(command, output);
 #else
     std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>/dev/null";
     FILE* pipe = popen(command.c_str(), "r");
-#endif
-
     if (!pipe) {
         return installed_models;
     }
 
     char buffer[256];
-    std::string output;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output += buffer;
     }
 
-#ifdef _WIN32
-    _pclose(pipe);
-#else
     pclose(pipe);
 #endif
 
@@ -1487,27 +1539,22 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
     }
 
     // Run 'flm list --json' to get all available models
+    std::string output;
 #ifdef _WIN32
     std::string command = "\"" + flm_path + "\" list --json 2>NUL";
-    FILE* pipe = _popen(command.c_str(), "r");
+    int rc = lemon::utils::ProcessManager::run_command(command, output);
 #else
     std::string command = "\"" + flm_path + "\" list --json 2>/dev/null";
     FILE* pipe = popen(command.c_str(), "r");
-#endif
-
     if (!pipe) {
         return flm_models;
     }
 
     char buffer[256];
-    std::string output;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output += buffer;
     }
 
-#ifdef _WIN32
-    _pclose(pipe);
-#else
     pclose(pipe);
 #endif
 
@@ -1717,7 +1764,10 @@ void ModelManager::download_model(const std::string& model_name,
     }
 
     // Check if this recipe is supported on the current system
-    bool disable_filtering = parse_TF_env_var("LEMONADE_DISABLE_MODEL_FILTERING");
+    bool disable_filtering = false;
+    if (auto* cfg = RuntimeConfig::global()) {
+        disable_filtering = cfg->disable_model_filtering();
+    }
     std::string unsupported_reason = SystemInfo::check_recipe_supported(actual_recipe);
     if (!unsupported_reason.empty() && !disable_filtering) {
         throw std::runtime_error(
@@ -1733,10 +1783,11 @@ void ModelManager::download_model(const std::string& model_name,
     LOG(INFO, "ModelManager") << std::endl;
 
     // Check if offline mode
-    const char* offline_env = std::getenv("LEMONADE_OFFLINE");
-    if (offline_env && std::string(offline_env) == "1") {
-        LOG(INFO, "ModelManager") << "Offline mode enabled, skipping download" << std::endl;
-        return;
+    if (auto* cfg = RuntimeConfig::global()) {
+        if (cfg->offline()) {
+            LOG(INFO, "ModelManager") << "Offline mode enabled, skipping download" << std::endl;
+            return;
+        }
     }
 
     // CRITICAL: If do_not_upgrade=true AND model is already downloaded, skip entirely
@@ -1773,6 +1824,12 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
     std::string download_path = manifest["download_path"].get<std::string>();
     int total_files = manifest["files_count"].get<int>();
 
+    // Compute total download size across all files for accurate progress reporting
+    size_t total_download_size = 0;
+    for (const auto& file_desc : manifest["files"]) {
+        total_download_size += file_desc["size"].get<size_t>();
+    }
+
     for (const auto& file_desc : manifest["files"]) {
         file_index++;
         std::string filename = file_desc["name"].get<std::string>();
@@ -1793,11 +1850,21 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             progress.total_files = total_files;
             progress.bytes_downloaded = 0;
             progress.bytes_total = file_size;
+            progress.total_download_size = total_download_size;
             progress.percent = 0;
             if (!progress_callback(progress)) {
                 LOG(INFO, "ModelManager") << "Download cancelled by client" << std::endl;
                 throw std::runtime_error("Download cancelled");
             }
+        }
+
+        // Detect bytes already on disk before downloading (for resume/skip tracking)
+        size_t bytes_on_disk = 0;
+        std::string partial_path = output_path + ".partial";
+        if (fs::exists(output_path) && !fs::exists(partial_path)) {
+            bytes_on_disk = file_size;  // File already complete
+        } else if (fs::exists(partial_path)) {
+            bytes_on_disk = fs::file_size(partial_path);  // Partial download
         }
 
         utils::DownloadOptions download_opts;
@@ -1813,13 +1880,15 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         // Returns bool: true = continue, false = cancel
         utils::ProgressCallback http_progress_cb;
         if (progress_callback) {
-            http_progress_cb = [&](size_t downloaded, size_t total) -> bool {
+            http_progress_cb = [&, total_download_size, bytes_on_disk](size_t downloaded, size_t total) -> bool {
                 DownloadProgress progress;
                 progress.file = filename;
                 progress.file_index = file_index;
                 progress.total_files = total_files;
                 progress.bytes_downloaded = downloaded;
                 progress.bytes_total = total;
+                progress.total_download_size = total_download_size;
+                progress.bytes_previously_downloaded = bytes_on_disk;
                 progress.percent = (total > 0) ? static_cast<int>((downloaded * 100) / total) : 0;
                 return progress_callback(progress);  // Propagate cancellation
             };
@@ -1844,6 +1913,21 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 
         if (result.success) {
             LOG(INFO, "ModelManager") << "Downloaded: " << filename << std::endl;
+
+            // Emit completion event for already-complete files that were skipped
+            // (download_file returns bytes_downloaded=0 when file already exists)
+            if (result.bytes_downloaded == 0 && progress_callback) {
+                DownloadProgress progress;
+                progress.file = filename;
+                progress.file_index = file_index;
+                progress.total_files = total_files;
+                progress.bytes_downloaded = file_size;
+                progress.bytes_total = file_size;
+                progress.total_download_size = total_download_size;
+                progress.bytes_previously_downloaded = file_size;  // Entire file was pre-existing
+                progress.percent = 100;
+                (void)progress_callback(progress);
+            }
         } else {
             // Build a detailed error message
             std::ostringstream error_msg;
@@ -1878,9 +1962,16 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 
         // Check for .partial file (incomplete download)
         if (fs::exists(partial_path)) {
-            all_valid = false;
-            LOG(ERROR, "ModelManager") << "Incomplete file found: " << filename << ".partial" << std::endl;
-            continue;
+            if (fs::exists(expected_path)) {
+                // Final file exists alongside stale .partial — clean up the leftover
+                LOG(INFO, "ModelManager") << "Removing stale partial file: " << filename << ".partial" << std::endl;
+                std::error_code ec;
+                fs::remove(partial_path, ec);
+            } else {
+                all_valid = false;
+                LOG(ERROR, "ModelManager") << "Incomplete file found: " << filename << ".partial" << std::endl;
+                continue;
+            }
         }
 
         if (!fs::exists(expected_path)) {
@@ -1889,13 +1980,15 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             continue;
         }
 
-        // Verify file size if we have expected size
+        // Verify file size if we have expected size from tree API
         if (expected_size > 0) {
             size_t actual_size = fs::file_size(expected_path);
             if (actual_size != expected_size) {
-                all_valid = false;
-                LOG(ERROR, "ModelManager") << "Size mismatch for " << filename
-                            << ": expected " << expected_size << " bytes, got " << actual_size << " bytes" << std::endl;
+                // Log mismatch but don't fail — tree API sizes can differ from
+                // actual LFS object sizes in some edge cases
+                LOG(WARNING, "ModelManager") << "Size note for " << filename
+                            << ": tree API reports " << expected_size
+                            << " bytes, actual " << actual_size << " bytes" << std::endl;
             }
         }
     }
@@ -2013,28 +2106,37 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
     // Check if this is a GGUF model (variant provided) or non-GGUF (variant empty)
     if (!main_variant.empty()) {
-        // Check if variant is a safetensors file (for sd-cpp models)
-        bool is_safetensors = main_variant.size() > 12 &&
-            main_variant.substr(main_variant.size() - 12) == ".safetensors";
+        // Check if variant is a known non-GGUF file type (safetensors, pth, ckpt)
+        auto ends_with = [](const std::string& s, const std::string& suffix) {
+            return s.size() >= suffix.size() &&
+                   s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+        };
+        bool is_direct_file = ends_with(main_variant, ".safetensors") ||
+                              ends_with(main_variant, ".pth") ||
+                              ends_with(main_variant, ".ckpt");
 
-        if (is_safetensors) {
-            // For safetensors files, just download the specified file directly
+        if (is_direct_file) {
+            // For non-GGUF model files, download the specified file directly
             if (std::find(repo_files.begin(), repo_files.end(), main_variant) != repo_files.end()) {
                 files_to_download[main_repo_id].push_back(main_variant);
-                LOG(INFO, "ModelManager") << "Found safetensors file: " << main_variant << std::endl;
+                LOG(INFO, "ModelManager") << "Found model file: " << main_variant << std::endl;
             } else {
-                throw std::runtime_error("Safetensors file not found in repository: " + main_variant);
+                throw std::runtime_error("Model file not found in repository: " + main_variant);
             }
         } else {
             // GGUF model: Use identify_gguf_models to determine which files to download
             GGUFFiles gguf_files = identify_gguf_models(main_repo_id, main_variant, repo_files);
 
-            // Combine core files and sharded files into one list
+            // Combine core files and sharded files into one list (avoiding duplicates)
+            std::unordered_set<std::string> added_files;
             for (const auto& [key, filename] : gguf_files.core_files) {
                 files_to_download[main_repo_id].push_back(filename);
+                added_files.insert(filename);
             }
             for (const auto& filename : gguf_files.sharded_files) {
-                files_to_download[main_repo_id].push_back(filename);
+                if (added_files.find(filename) == added_files.end()) {
+                    files_to_download[main_repo_id].push_back(filename);
+                }
             }
         }
 
@@ -2093,25 +2195,38 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     std::map<std::string, size_t> file_sizes;
 
     for (auto const& [repo_id, files] : files_to_download) {
-        std::string tree_url = "https://huggingface.co/api/models/" + repo_id + "/tree/main";
-        auto tree_response = HttpClient::get(tree_url, headers);
+        // Collect unique subdirectories that need recursive tree fetches
+        std::set<std::string> subdirs_to_fetch;
+        subdirs_to_fetch.insert("");  // Root directory
 
-        if (tree_response.status_code == 200) {
-            auto tree_info = JsonUtils::parse(tree_response.body);
-            if (tree_info.is_array()) {
-                for (const auto& file : tree_info) {
-                    if (file.contains("path") && file.contains("size")) {
-                        std::string fpath = repo_id + ':' + file["path"].get<std::string>();
-                        size_t fsize = file["size"].get<size_t>();
-                        file_sizes[fpath] = fsize;
+        for (const auto& filename : files) {
+            auto last_slash_pos = filename.rfind('/');
+            if (last_slash_pos != std::string::npos) {
+                subdirs_to_fetch.insert(filename.substr(0, last_slash_pos));
+            }
+        }
+
+        for (const auto& subdir : subdirs_to_fetch) {
+            std::string tree_url = "https://huggingface.co/api/models/" + repo_id + "/tree/main";
+            if (!subdir.empty()) {
+                tree_url += "/" + subdir;
+            }
+            auto tree_response = HttpClient::get(tree_url, headers);
+
+            if (tree_response.status_code == 200) {
+                auto tree_info = JsonUtils::parse(tree_response.body);
+                if (tree_info.is_array()) {
+                    for (const auto& file : tree_info) {
+                        if (file.contains("path") && file.contains("size")) {
+                            std::string fpath = repo_id + ':' + file["path"].get<std::string>();
+                            size_t fsize = file["size"].get<size_t>();
+                            file_sizes[fpath] = fsize;
+                        }
                     }
                 }
             }
-            LOG(INFO, "ModelManager") << "Retrieved file sizes for " << file_sizes.size() << " files" << std::endl;
-        } else {
-            LOG(INFO, "ModelManager") << "Warning: Could not fetch file sizes (tree API returned "
-                        << tree_response.status_code << ")" << std::endl;
         }
+        LOG(INFO, "ModelManager") << "Retrieved file sizes for " << file_sizes.size() << " files" << std::endl;
     }
 
     // Create manifest with expected files

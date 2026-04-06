@@ -2,7 +2,6 @@ name: Publish Website
 
 on:
   push:
-    branches: ["main"]
     tags:
       - v*
   workflow_dispatch:
@@ -14,11 +13,11 @@ jobs:
       name: Build and publish lemonade-server.ai website
       runs-on: ubuntu-latest
       steps:
-        - uses: actions/checkout@main
+        - uses: actions/checkout@v5
           with:
             fetch-depth: 0
         - name: Set up Python
-          uses: actions/setup-python@v5
+          uses: actions/setup-python@v6
           with:
             python-version: "3.10"
         - name: Create virtual environment and install dependencies

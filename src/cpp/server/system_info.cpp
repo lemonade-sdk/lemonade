@@ -1,8 +1,10 @@
 #include "lemon/system_info.h"
+#include "lemon/runtime_config.h"
 #include "lemon/version.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/version_utils.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/process_manager.h"
 #include "lemon/backends/backend_utils.h"
 #include <filesystem>
 #include <fstream>
@@ -23,6 +25,7 @@
 #include <windows.h>
 #include <comdef.h>
 #include <Wbemidl.h>
+#include <intrin.h>
 #include "utils/wmi_helper.h"
 #pragma comment(lib, "wbemuuid.lib")
 #endif
@@ -70,15 +73,26 @@ const std::vector<std::string> NVIDIA_DISCRETE_GPU_KEYWORDS = {
 
 // ROCm architecture mapping - maps specific gfx architectures to their family
 const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
-    // RDNA4 family (gfx120X)
-    {"gfx1200", "gfx120X"},
-    {"gfx1201", "gfx120X"},
+    // RDNA2 family (gfx103X)
+    {"gfx1030", "gfx103X"},
+    {"gfx1031", "gfx103X"},
+    {"gfx1032", "gfx103X"},
+    {"gfx1034", "gfx103X"},
+    // Note: gfx1033, gfx1035, gfx1036 are NOT included (not confirmed as supported)
 
     // RDNA3 family (gfx110X)
     {"gfx1100", "gfx110X"},
     {"gfx1101", "gfx110X"},
     {"gfx1102", "gfx110X"},
     {"gfx1103", "gfx110X"},
+
+    // RDNA3.5 iGPUs - explicit binary names (no family mapping)
+    {"gfx1150", "gfx1150"},  // Maps to exact binary name
+    {"gfx1151", "gfx1151"},  // Maps to exact binary name
+
+    // RDNA4 family (gfx120X)
+    {"gfx1200", "gfx120X"},
+    {"gfx1201", "gfx120X"},
 };
 
 // ============================================================================
@@ -118,8 +132,8 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_dgpu", {}},      // all dGPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_igpu", {"gfx1150", "gfx1151"}},                      // STX Point/Halo iGPUs
-        {"amd_dgpu", {"gfx110X", "gfx120X"}},                      // RDNA3/RDNA4 dGPUs
+        {"amd_igpu", {"gfx1150", "gfx1151"}},                      // STX Point/Halo iGPUs (explicit binaries)
+        {"amd_dgpu", {"gfx103X", "gfx110X", "gfx120X"}},          // RDNA2/3/4 dGPUs (family binaries)
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
@@ -149,7 +163,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 #endif
             "gfx1151"
         }},
-        {"amd_dgpu", {"gfx110X", "gfx120X"}},
+        {"amd_dgpu", {"gfx103X", "gfx110X", "gfx120X"}},
     }},
 
     // stable-diffusion.cpp - CPU backend (Windows/Linux x86_64)
@@ -182,6 +196,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     // AMD iGPU/dGPU architectures (ROCm)
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
+    {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
     {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
 
@@ -366,7 +381,7 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
 }
 
 static std::string get_install_command(const std::string& recipe, const std::string& backend) {
-    return "lemonade-server recipes --install " + recipe + ":" + backend;
+    return "lemonade backends install " + recipe + ":" + backend;
 }
 
 static std::string get_expected_backend_version(const std::string& recipe, const std::string& backend) {
@@ -729,12 +744,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
     // Check if user prefers system llamacpp backend (off by default)
     bool prefer_llamacpp_system = false;
-    const char* prefer_system_env = std::getenv("LEMONADE_LLAMACPP_PREFER_SYSTEM");
-    if (prefer_system_env) {
-        std::string pref_val(prefer_system_env);
-        if (pref_val == "true" || pref_val == "1") {
-            prefer_llamacpp_system = true;
-        }
+    if (auto* cfg = RuntimeConfig::global()) {
+        prefer_llamacpp_system = cfg->backend_bool("llamacpp", "prefer_system");
     }
 
     // Build recipes from the definition table
@@ -846,24 +857,35 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
             if (def.backend == "system" && !available) {
                 message = install_error;
-            } else if (!missing_devices.empty()) {
-                // Device type not present - include required family if specified
-                const auto& [device_type, required_families] = missing_devices[0];
-                if (!required_families.empty()) {
-                    // Show specific family requirement (e.g., "Requires XDNA2 NPU")
+            } else if (!missing_devices.empty() || !wrong_family.empty()) {
+                // Get the first unsupported device (prefer wrong family over missing,
+                // since wrong family means we detected the device but it's not supported)
+                const auto& [device_type, required_families] = !wrong_family.empty()
+                    ? wrong_family[0]
+                    : missing_devices[0];
+
+                // For AMD GPUs, include the detected family in the message
+                if (device_type == "amd_dgpu" || device_type == "amd_igpu") {
+                    // Find the detected GPU family for this device type
+                    std::string detected_family;
+                    for (const auto& detected : detected_devices) {
+                        if (detected.type == device_type && !detected.family.empty()) {
+                            detected_family = detected.family;
+                            break;
+                        }
+                    }
+
+                    if (!detected_family.empty()) {
+                        message = "Unsupported GPU: " + detected_family;
+                    } else {
+                        message = "Unsupported GPU";
+                    }
+                } else if (!required_families.empty()) {
+                    // Show specific family requirement for other devices (e.g., "Requires XDNA2 NPU")
                     message = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
                 } else {
                     // No specific family required (e.g., "Requires CPU")
                     message = "Requires " + get_device_type_name(device_type);
-                }
-            } else if (!wrong_family.empty()) {
-                // Device present but wrong family - show required families
-                const auto& [device_type, required_families] = wrong_family[0];
-                if (!required_families.empty()) {
-                    // Use first required family name for concise message
-                    message = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
-                } else {
-                    message = "Incompatible " + get_device_type_name(device_type);
                 }
             } else {
                 message = "No compatible device";
@@ -1095,25 +1117,21 @@ static std::string read_version_file(const fs::path& version_file) {
 }
 
 std::string SystemInfo::get_system_llamacpp_version() {
+    std::string output;
     #ifdef _WIN32
-    FILE* pipe = _popen("llama-server --version 2>NUL", "r");
+    std::string command = "llama-server --version 2>NUL";
+    int rc = lemon::utils::ProcessManager::run_command(command, output);
     #else
     FILE* pipe = popen("llama-server --version 2>/dev/null", "r");
-    #endif
-
     if (!pipe) {
         return "unknown";
     }
 
     char buffer[256];
-    std::string output;
     if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output = buffer;
     }
 
-    #ifdef _WIN32
-    _pclose(pipe);
-    #else
     pclose(pipe);
     #endif
 
@@ -1136,11 +1154,12 @@ std::string SystemInfo::get_system_llamacpp_version() {
 }
 
 // Helper to identify ROCm architecture from GPU name
+// Returns the detected architecture even if not in ROCM_ARCH_MAPPING
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
 
-    // linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
+    // Linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
     if (std::all_of(device_lower.begin(), device_lower.end(), ::isdigit)) {
         if (device_lower.length() >= 4) {
             std::string major = device_lower.substr(0, 2);
@@ -1153,13 +1172,14 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
 
             std::string arch = "gfx" + major + minor + revision;
 
-            // Apply architecture family mapping
+            // Apply architecture family mapping if available
+            // Otherwise return the detected arch for unsupported GPUs
             auto it = ROCM_ARCH_MAPPING.find(arch);
             if (it != ROCM_ARCH_MAPPING.end()) {
                 return it->second;
             }
 
-            return arch;
+            return arch;  // Return the detected arch even if unsupported
         }
     }
 
@@ -1202,6 +1222,17 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         device_lower.find("7900") != std::string::npos ||
         device_lower.find("v710") != std::string::npos) {
         return "gfx110X";
+    }
+
+    // RDNA2 GPUs (gfx103X architecture)
+    // AMD Radeon RX 6800 XT, AMD Radeon RX 6800, AMD Radeon RX 6700 XT,
+    // AMD Radeon RX 6700, AMD Radeon RX 6600 XT, AMD Radeon RX 6600,
+    // AMD Radeon RX 6500 XT, AMD Radeon RX 6500
+    if (device_lower.find("6800") != std::string::npos ||
+        device_lower.find("6700") != std::string::npos ||
+        device_lower.find("6600") != std::string::npos ||
+        device_lower.find("6500") != std::string::npos) {
+        return "gfx103X";
     }
 
     return "";
@@ -1293,7 +1324,7 @@ static std::string identify_npu_arch_linux() {
                 if (device_str == "0x17f0") {
                     if (revision_str == "0x10" ||
                         revision_str == "0x11" ||
-                        revision_str == "0x12")
+                        revision_str == "0x20")
                         return "XDNA2";
                 }
             }
@@ -1458,33 +1489,36 @@ bool SystemInfo::get_has_igpu() {
 }
 
 std::string SystemInfo::get_flm_version() {
+    // Cache real version strings to avoid spawning the subprocess twice per
+    // build_recipes_info() pass. "unknown" is NOT cached so that post-install
+    // verification in fastflowlm_server.cpp gets a fresh result after FLM is installed.
+    static std::string cached_version;
+    if (!cached_version.empty()) {
+        return cached_version;
+    }
+
     // Find the flm executable using shared utility
     std::string flm_path = utils::find_flm_executable();
     if (flm_path.empty() || !utils::is_safe_executable_path(flm_path)) {
         return "unknown";
     }
 
+    std::string output;
     #ifdef _WIN32
     std::string command = "\"" + flm_path + "\" version --json 2>NUL";
-    FILE* pipe = _popen(command.c_str(), "r");
+    int rc = lemon::utils::ProcessManager::run_command(command, output);
     #else
     std::string command = "\"" + flm_path + "\" version --json 2>/dev/null";
     FILE* pipe = popen(command.c_str(), "r");
-    #endif
-
     if (!pipe) {
         return "unknown";
     }
 
     char buffer[256];
-    std::string output;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output += buffer;
     }
 
-    #ifdef _WIN32
-    _pclose(pipe);
-    #else
     pclose(pipe);
     #endif
 
@@ -1496,9 +1530,10 @@ std::string SystemInfo::get_flm_version() {
             // If the version doesn't start with 'v', prepend it
             // for backend_versions.json compatibility (e.g. "v0.9.34").
             if (!version.empty() && version[0] != 'v') {
-                return "v" + version;
+                version = "v" + version;
             }
-            return version;
+            cached_version = version;
+            return cached_version;
         }
     } catch (...) {
         // Fallback to legacy parsing if JSON parsing fails
@@ -1514,7 +1549,8 @@ std::string SystemInfo::get_flm_version() {
         if (end != std::string::npos) {
             version = version.substr(0, end);
         }
-        return version;
+        cached_version = version;
+        return cached_version;
     }
 
     return "unknown";
@@ -1546,28 +1582,56 @@ WindowsSystemInfo::WindowsSystemInfo() {
     // COM initialization handled by WMIConnection
 }
 
-CPUInfo WindowsSystemInfo::get_cpu_device() {
-    CPUInfo cpu;
-    cpu.available = false;
+// Read CPU brand string, physical core count, and logical processor count in one pass.
+static WindowsSystemInfo::CpuHardware read_cpu_hardware() {
+    WindowsSystemInfo::CpuHardware hw;
 
-    wmi::WMIConnection wmi;
-    if (!wmi.is_valid()) {
-        cpu.error = "Failed to connect to WMI";
-        return cpu;
+    // Brand string via CPUID leaves 0x80000002-4
+    char brand[49] = {};
+    int cpui[4] = {};
+    for (int leaf = 0x80000002; leaf <= 0x80000004; ++leaf) {
+        __cpuid(cpui, leaf);
+        memcpy(brand + (leaf - 0x80000002) * 16, cpui, 16);
+    }
+    brand[48] = '\0';
+    hw.brand = brand;
+    size_t start = hw.brand.find_first_not_of(" \t");
+    size_t end   = hw.brand.find_last_not_of(" \t");
+    if (start != std::string::npos) {
+        hw.brand = hw.brand.substr(start, end - start + 1);
     }
 
-    wmi.query(L"SELECT * FROM Win32_Processor", [&cpu](IWbemClassObject* pObj) {
-        cpu.name = wmi::get_property_string(pObj, L"Name");
-        cpu.cores = wmi::get_property_int(pObj, L"NumberOfCores");
-        cpu.threads = wmi::get_property_int(pObj, L"NumberOfLogicalProcessors");
-        cpu.max_clock_speed_mhz = wmi::get_property_int(pObj, L"MaxClockSpeed");
-        cpu.available = true;
-    });
+    // Logical processor count
+    SYSTEM_INFO si = {};
+    GetSystemInfo(&si);
+    hw.logical = static_cast<int>(si.dwNumberOfProcessors);
 
+    // Physical core count
+    DWORD buf_size = 0;
+    GetLogicalProcessorInformation(NULL, &buf_size);
+    std::vector<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> lpi_buf(
+        buf_size / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION));
+    if (GetLogicalProcessorInformation(lpi_buf.data(), &buf_size)) {
+        for (const auto& entry : lpi_buf) {
+            if (entry.Relationship == RelationProcessorCore) {
+                ++hw.physical;
+            }
+        }
+    }
+
+    return hw;
+}
+
+CPUInfo WindowsSystemInfo::get_cpu_device() {
+    CPUInfo cpu;
+    auto hw = read_cpu_hardware();
+    cpu.name    = hw.brand;
+    cpu.threads = hw.logical;
+    cpu.cores   = hw.physical;
+    cpu.available = !cpu.name.empty();
     if (!cpu.available) {
         cpu.error = "No CPU information found";
     }
-
     return cpu;
 }
 
@@ -1664,7 +1728,6 @@ NPUInfo WindowsSystemInfo::get_npu_device() {
     // Check for NPU driver
     std::string driver_version = get_driver_version("NPU Compute Accelerator Device");
     if (!driver_version.empty()) {
-        npu.power_mode = get_npu_power_mode();
         npu.available = true;
     } else {
         npu.error = "NPU hardware found but driver not installed";
@@ -1750,149 +1813,89 @@ std::vector<GPUInfo> WindowsSystemInfo::detect_amd_gpus(const std::string& gpu_t
 }
 
 std::string WindowsSystemInfo::get_driver_version(const std::string& device_name) {
-    wmi::WMIConnection wmi;
-    if (!wmi.is_valid()) {
-        return "";
-    }
-
-    std::string driver_version;
-    std::wstring query = L"SELECT * FROM Win32_PnPSignedDriver WHERE DeviceName LIKE '%" +
-                         wmi::string_to_wstring(device_name) + L"%'";
-
-    wmi.query(query, [&driver_version](IWbemClassObject* pObj) {
-        if (driver_version.empty()) {  // Only get first match
-            driver_version = wmi::get_property_string(pObj, L"DriverVersion");
-        }
-    });
-
-    return driver_version;
+    return wmi::get_driver_version_setupapi(device_name);
 }
 
-std::string WindowsSystemInfo::get_npu_power_mode() {
-    // Try to query xrt-smi for NPU power mode
-    std::string xrt_smi_path = "C:\\Windows\\System32\\AMD\\xrt-smi.exe";
-
-    // Check if xrt-smi exists
-    if (!fs::exists(xrt_smi_path)) {
-        return "Unknown";
-    }
-
-    // Execute xrt-smi examine -r platform
-    std::string command = "\"" + xrt_smi_path + "\" examine -r platform 2>NUL";
-
-    FILE* pipe = _popen(command.c_str(), "r");
-    if (!pipe) {
-        return "Unknown";
-    }
-
-    char buffer[128];
-    std::string result;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
-    }
-    _pclose(pipe);
-
-    // Parse output for "Mode" line
-    std::istringstream iss(result);
-    std::string line;
-    while (std::getline(iss, line)) {
-        if (line.find("Mode") != std::string::npos) {
-            // Extract the last word from the line
-            size_t last_space = line.find_last_of(" \t");
-            if (last_space != std::string::npos) {
-                return line.substr(last_space + 1);
-            }
-        }
-    }
-
-    return "Unknown";
-}
 
 json WindowsSystemInfo::get_system_info_dict() {
     json info = SystemInfo::get_system_info_dict();  // Get base fields (includes OS Version)
     info["Processor"] = get_processor_name();
-    info["OEM System"] = get_system_model();
     info["Physical Memory"] = get_physical_memory();
-    info["BIOS Version"] = get_bios_version();
-    info["CPU Max Clock"] = get_max_clock_speed();
-    info["Windows Power Setting"] = get_windows_power_setting();
     return info;
 }
 
 std::string WindowsSystemInfo::get_os_version() {
-    // Get detailed Windows version using WMI (similar to Python's platform.platform())
-    wmi::WMIConnection wmi;
-    if (!wmi.is_valid()) {
-        return "Windows";  // Fallback to basic name
+    // Read Windows version from registry — much faster than WMI Win32_OperatingSystem
+    HKEY hkey = NULL;
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                      L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+                      0, KEY_READ, &hkey) != ERROR_SUCCESS) {
+        return "Windows";
     }
 
-    std::string os_name, version, build_number;
-    wmi.query(L"SELECT * FROM Win32_OperatingSystem", [&](IWbemClassObject* pObj) {
-        if (os_name.empty()) {  // Only get first result
-            os_name = wmi::get_property_string(pObj, L"Caption");
-            version = wmi::get_property_string(pObj, L"Version");
-            build_number = wmi::get_property_string(pObj, L"BuildNumber");
+    auto read_reg_str = [&](const wchar_t* name) -> std::string {
+        wchar_t buf[256] = {};
+        DWORD size = sizeof(buf);
+        if (RegQueryValueExW(hkey, name, NULL, NULL, (LPBYTE)buf, &size) == ERROR_SUCCESS) {
+            return wmi::wstring_to_string(buf);
         }
-    });
+        return "";
+    };
 
-    if (!os_name.empty()) {
-        std::string result = os_name;
-        if (!version.empty()) {
-            result += " " + version;
-        }
-        if (!build_number.empty()) {
-            result += " (Build " + build_number + ")";
-        }
-        return result;
+    // ProductName is stale on Windows 11 (reports "Windows 10"); detect via build number
+    std::string product = read_reg_str(L"ProductName");
+    std::string version = read_reg_str(L"CurrentVersion");    // e.g. "10.0"
+    std::string build   = read_reg_str(L"CurrentBuildNumber");
+    RegCloseKey(hkey);
+
+    if (product.empty()) {
+        return "Windows";
     }
 
-    return "Windows";  // Fallback
+    // Reconstruct a clean name: on Windows 11 the build number is >= 22000
+    // and ProductName incorrectly says "Windows 10"
+    std::string result = product;
+    try {
+        if (!build.empty() && std::stoi(build) >= 22000) {
+            // Replace "Windows 10" with "Windows 11" in the product name
+            std::string w10 = "Windows 10";
+            auto pos = result.find(w10);
+            if (pos != std::string::npos) {
+                result.replace(pos, w10.size(), "Windows 11");
+            }
+        }
+    } catch (...) {}
+
+    if (!version.empty()) result += " " + version;
+    if (!build.empty())   result += " (Build " + build + ")";
+    return result;
 }
 
 std::string WindowsSystemInfo::get_processor_name() {
-    wmi::WMIConnection wmi;
-    if (!wmi.is_valid()) {
+    auto hw = read_cpu_hardware();
+    if (hw.brand.empty()) {
         return "Processor information not found.";
     }
-
-    std::string processor_name;
-    int cores = 0;
-    int threads = 0;
-
-    wmi.query(L"SELECT * FROM Win32_Processor", [&](IWbemClassObject* pObj) {
-        if (processor_name.empty()) {  // Only get first processor
-            processor_name = wmi::get_property_string(pObj, L"Name");
-            cores = wmi::get_property_int(pObj, L"NumberOfCores");
-            threads = wmi::get_property_int(pObj, L"NumberOfLogicalProcessors");
-        }
-    });
-
-    if (!processor_name.empty()) {
-        // Trim whitespace
-        size_t start = processor_name.find_first_not_of(" \t");
-        size_t end = processor_name.find_last_not_of(" \t");
-        if (start != std::string::npos && end != std::string::npos) {
-            processor_name = processor_name.substr(start, end - start + 1);
-        }
-
-        return processor_name + " (" + std::to_string(cores) + " cores, " +
-               std::to_string(threads) + " logical processors)";
+    if (hw.physical > 0) {
+        return hw.brand + " (" + std::to_string(hw.physical) + " cores, " +
+               std::to_string(hw.logical) + " logical processors)";
     }
-
-    return "Processor information not found.";
+    return hw.brand;
 }
 
 std::string WindowsSystemInfo::get_physical_memory() {
+    // Use WMI Win32_PhysicalMemory to get actual installed DIMM capacity.
+    // GlobalMemoryStatusEx reports usable RAM (excludes hardware-reserved memory)
+    // which can underreport by 20-30% on unified-memory systems, making it
+    // unsuitable for model size calculations.
     wmi::WMIConnection wmi;
     if (!wmi.is_valid()) {
         return "Physical memory information not found.";
     }
 
     uint64_t total_capacity = 0;
-
-    wmi.query(L"SELECT * FROM Win32_PhysicalMemory", [&](IWbemClassObject* pObj) {
-        uint64_t capacity = wmi::get_property_uint64(pObj, L"Capacity");
-        total_capacity += capacity;
+    wmi.query(L"SELECT Capacity FROM Win32_PhysicalMemory", [&](IWbemClassObject* pObj) {
+        total_capacity += wmi::get_property_uint64(pObj, L"Capacity");
     });
 
     if (total_capacity > 0) {
@@ -1905,82 +1908,6 @@ std::string WindowsSystemInfo::get_physical_memory() {
     return "Physical memory information not found.";
 }
 
-std::string WindowsSystemInfo::get_system_model() {
-    wmi::WMIConnection wmi;
-    if (!wmi.is_valid()) {
-        return "System model information not found.";
-    }
-
-    std::string model;
-    wmi.query(L"SELECT * FROM Win32_ComputerSystem", [&](IWbemClassObject* pObj) {
-        if (model.empty()) {  // Only get first result
-            model = wmi::get_property_string(pObj, L"Model");
-        }
-    });
-
-    return model.empty() ? "System model information not found." : model;
-}
-
-std::string WindowsSystemInfo::get_bios_version() {
-    wmi::WMIConnection wmi;
-    if (!wmi.is_valid()) {
-        return "BIOS Version not found.";
-    }
-
-    std::string bios_version;
-    wmi.query(L"SELECT * FROM Win32_BIOS", [&](IWbemClassObject* pObj) {
-        if (bios_version.empty()) {  // Only get first result
-            bios_version = wmi::get_property_string(pObj, L"Name");
-        }
-    });
-
-    return bios_version.empty() ? "BIOS Version not found." : bios_version;
-}
-
-std::string WindowsSystemInfo::get_max_clock_speed() {
-    wmi::WMIConnection wmi;
-    if (!wmi.is_valid()) {
-        return "Max CPU clock speed not found.";
-    }
-
-    int max_clock = 0;
-    wmi.query(L"SELECT * FROM Win32_Processor", [&](IWbemClassObject* pObj) {
-        if (max_clock == 0) {  // Only get first processor
-            max_clock = wmi::get_property_int(pObj, L"MaxClockSpeed");
-        }
-    });
-
-    if (max_clock > 0) {
-        return std::to_string(max_clock) + " MHz";
-    }
-
-    return "Max CPU clock speed not found.";
-}
-
-std::string WindowsSystemInfo::get_windows_power_setting() {
-    // Execute powercfg /getactivescheme
-    FILE* pipe = _popen("powercfg /getactivescheme 2>NUL", "r");
-    if (!pipe) {
-        return "Windows power setting not found (command failed)";
-    }
-
-    char buffer[256];
-    std::string result;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
-    }
-    _pclose(pipe);
-
-    // Extract power scheme name from parentheses
-    // Output format: "Power Scheme GUID: ... (Power Scheme Name)"
-    size_t start = result.find('(');
-    size_t end = result.find(')');
-    if (start != std::string::npos && end != std::string::npos && end > start) {
-        return result.substr(start + 1, end - start - 1);
-    }
-
-    return "Power scheme name not found in output";
-}
 
 double WindowsSystemInfo::get_gpu_vram_wmi(uint64_t adapter_ram) {
     if (adapter_ram > 0) {
@@ -2000,17 +1927,21 @@ double WindowsSystemInfo::get_gpu_vram_dxdiag(const std::string& gpu_name) {
         GetTempPathA(MAX_PATH, temp_dir);
         GetTempFileNameA(temp_dir, "dxd", 0, temp_path);
 
-        // Run dxdiag /t temp_path
-        std::string command = "dxdiag /t \"" + std::string(temp_path) + "\" 2>NUL";
-        int result = system(command.c_str());
-
-        if (result != 0) {
+        // Run dxdiag /t temp_path (use CreateProcess to avoid console window flash)
+        std::string command = "dxdiag /t \"" + std::string(temp_path) + "\"";
+        STARTUPINFOA si = {};
+        si.cb = sizeof(si);
+        PROCESS_INFORMATION pi = {};
+        if (!CreateProcessA(nullptr, const_cast<char*>(command.c_str()),
+                           nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+                           nullptr, nullptr, &si, &pi)) {
             DeleteFileA(temp_path);
             return 0.0;
         }
-
-        // Wait a bit for dxdiag to finish writing (it can take a few seconds)
-        Sleep(3000);
+        // Wait for dxdiag to finish (up to 10s)
+        WaitForSingleObject(pi.hProcess, 10000);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
 
         // Read the file
         std::ifstream file(temp_path);
@@ -2810,173 +2741,7 @@ std::string MacOSSystemInfo::get_physical_memory() {
 // Cache implementation
 // ============================================================================
 
-SystemInfoCache::SystemInfoCache() {
-    cache_file_path_ = get_cache_dir() + "/hardware_info.json";
-}
-
-std::string SystemInfoCache::get_lemonade_version() const {
-    return LEMON_VERSION_STRING;
-}
-
-bool SystemInfoCache::is_ci_mode() const {
-    const char* ci_mode = std::getenv("LEMONADE_CI_MODE");
-    return ci_mode != nullptr;
-}
-
-bool SystemInfoCache::is_version_less_than(const std::string& v1, const std::string& v2) {
-    // Parse semantic versions (e.g., "9.0.0" vs "8.5.3")
-    // Returns true if v1 < v2
-
-    auto parse_version = [](const std::string& v) -> std::vector<int> {
-        std::vector<int> parts;
-        std::stringstream ss(v);
-        std::string part;
-        while (std::getline(ss, part, '.')) {
-            try {
-                parts.push_back(std::stoi(part));
-            } catch (...) {
-                parts.push_back(0);
-            }
-        }
-        // Ensure at least 3 parts (major.minor.patch)
-        while (parts.size() < 3) {
-            parts.push_back(0);
-        }
-        return parts;
-    };
-
-    std::vector<int> parts1 = parse_version(v1);
-    std::vector<int> parts2 = parse_version(v2);
-
-    // Compare major, minor, patch (use min with parentheses to avoid Windows macro conflict)
-    size_t min_size = (parts1.size() < parts2.size()) ? parts1.size() : parts2.size();
-    for (size_t i = 0; i < min_size; ++i) {
-        if (parts1[i] < parts2[i]) return true;
-        if (parts1[i] > parts2[i]) return false;
-    }
-
-    // Equal versions
-    return false;
-}
-
-bool SystemInfoCache::is_valid() const {
-    // Cache is invalid in CI mode
-    if (is_ci_mode()) {
-        return false;
-    }
-
-#ifdef __linux__
-    // On Linux, cache is disabled by default (always re-detect hardware) unless
-    // LEMONADE_CACHE_DIR is explicitly set (for testing purposes)
-    const char* cache_dir_env = std::getenv("LEMONADE_CACHE_DIR");
-    if (!cache_dir_env || cache_dir_env[0] == '\0') {
-        return false;
-    }
-#endif
-
-    // Check if cache file exists
-    if (!fs::exists(cache_file_path_)) {
-        return false;
-    }
-
-    // Load cache and check version
-    try {
-        std::ifstream file(cache_file_path_);
-        json cache_data = json::parse(file);
-
-        // Check if version field is missing or hardware field is missing
-        if (!cache_data.contains("version") || !cache_data.contains("hardware")) {
-            return false;
-        }
-
-        // Get cached version and current version
-        std::string cached_version = cache_data["version"];
-        std::string current_version = get_lemonade_version();
-
-        // Invalidate if cache version is less than current version
-        if (is_version_less_than(cached_version, current_version)) {
-            return false;
-        }
-
-        // Cache is valid
-        return true;
-
-    } catch (...) {
-        return false;
-    }
-}
-
-json SystemInfoCache::load_hardware_info() {
-    if (!is_valid()) {
-        return json::object();
-    }
-
-    try {
-        std::ifstream file(cache_file_path_);
-        json cache_data = json::parse(file);
-        return cache_data["hardware"];
-    } catch (...) {
-        return json::object();
-    }
-}
-
-void SystemInfoCache::save_hardware_info(const json& hardware_info) {
-    // Create cache directory if it doesn't exist
-    fs::create_directories(fs::path(cache_file_path_).parent_path());
-
-    json cache_data;
-    cache_data["version"] = get_lemonade_version();
-    cache_data["hardware"] = hardware_info;
-
-    std::ofstream file(cache_file_path_);
-    file << cache_data.dump(2);
-}
-
-void SystemInfoCache::clear() {
-    if (fs::exists(cache_file_path_)) {
-        fs::remove(cache_file_path_);
-    }
-}
-
-void SystemInfoCache::perform_upgrade_cleanup() {
-    // Read the old version from the existing cache file.
-    // This should only be called when cache_file_path_ exists (upgrade path),
-    // never for new installs where no cache file is present.
-    try {
-        if (!fs::exists(cache_file_path_)) {
-            return;
-        }
-
-        std::ifstream file(cache_file_path_);
-        json cache_data = json::parse(file);
-
-        if (!cache_data.contains("version")) {
-            return;
-        }
-
-        std::string old_version = cache_data["version"];
-
-        // Delete the backend bin directory when upgrading from a version older
-        // than clear_bin_if_lemonade_below (defined in backend_versions.json).
-        // Backend binaries from older versions may be incompatible and need to
-        // be re-downloaded.
-        std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-        std::ifstream config_file(config_path);
-        json config = json::parse(config_file);
-        std::string cleanup_version = config.value("clear_bin_if_lemonade_below", "0.0.0");
-
-        if (is_version_less_than(old_version, cleanup_version)) {
-            std::string bin_dir = get_cache_dir() + "/bin";
-            std::error_code ec;
-            fs::remove_all(bin_dir, ec);
-            // Silently ignore errors - delete as much as possible
-        }
-    } catch (...) {
-        // Silently ignore any errors during upgrade cleanup
-    }
-}
-
-// Static state for system-info cache (split into hardware + recipes)
+// Static state for in-memory system-info cache (hardware + recipes)
 static std::mutex s_system_info_mutex;
 static json s_cached_system_info;
 static bool s_hardware_computed = false;
@@ -2996,37 +2761,17 @@ json SystemInfoCache::get_system_info_with_cache() {
 
         // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
         try {
-            // Create cache instance and load cached data
-            SystemInfoCache cache;
-            bool cache_exists = fs::exists(cache.get_cache_file_path());
-            json cached_data = cache.load_hardware_info();
-
-            // Create platform-specific system info instance
             auto sys_info = create_system_info();
 
-            if (!cached_data.empty()) {
-                system_info = cached_data;
-            } else {
-                if (cache_exists)
-                    cache.perform_upgrade_cleanup();
-
-                // Get system info (OS, Processor, Memory, OEM System, BIOS, etc.)
-                try {
-                    system_info = sys_info->get_system_info_dict();
-                } catch (...) {
-                    system_info["OS Version"] = "Unknown";
-                }
-
-                // Get device information - handles its own exceptions internally
-                system_info["devices"] = sys_info->get_device_dict();
-
-                // Save to cache (without recipes which are always fresh)
-                try {
-                    cache.save_hardware_info(system_info);
-                } catch (...) {
-                    // Cache save failed - not critical, continue
-                }
+            // Get system info (OS, Processor, Memory, etc.)
+            try {
+                system_info = sys_info->get_system_info_dict();
+            } catch (...) {
+                system_info["OS Version"] = "Unknown";
             }
+
+            // Get device information - handles its own exceptions internally
+            system_info["devices"] = sys_info->get_device_dict();
 
             s_cached_system_info = system_info;
 
