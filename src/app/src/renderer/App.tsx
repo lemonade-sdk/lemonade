@@ -63,7 +63,7 @@ const AppContent: React.FC = () => {
       } finally {
         // Override with URL parameters if present
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('logs') === 'true') {
+        if (urlParams.get('view') === 'logs') {
           setIsLogsVisible(true);
         }
         setLayoutLoaded(true);
@@ -146,6 +146,19 @@ const AppContent: React.FC = () => {
     return () => {
       window.removeEventListener('experienceModeChanged' as any, handleExperienceModeChanged);
     };
+  }, []);
+
+  // Handle lemonade:// protocol navigation from main process
+  useEffect(() => {
+    if (!window?.api?.onNavigate) return;
+    const unsubscribe = window.api.onNavigate((data: { view?: string; model?: string }) => {
+      if (data.view === 'logs') {
+        setIsLogsVisible(true);
+      }
+    });
+    // Tell main process that IPC listeners are active — safe to deliver pending nav
+    window?.api?.signalReady?.();
+    return unsubscribe;
   }, []);
 
   useEffect(() => {

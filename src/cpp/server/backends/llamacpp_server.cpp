@@ -1,6 +1,7 @@
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
@@ -49,7 +50,7 @@ static void push_arg(std::vector<std::string>& args,
     push_reserved(reserved, key, aliases);
 }
 
-// Helper to add a flag-value pair (e.g., --port 8000, -m model.gguf)
+// Helper to add a flag-value pair (e.g., --port 13305, -m model.gguf)
 static void push_arg(std::vector<std::string>& args,
                     std::set<std::string>& reserved,
                     const std::string& key,
@@ -160,6 +161,8 @@ void LlamaCppServer::load(const std::string& model_name,
     int ctx_size = options.get_option("ctx_size");
     std::string llamacpp_backend = options.get_option("llamacpp_backend");
     std::string llamacpp_args = options.get_option("llamacpp_args");
+
+    RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend);
 
     bool use_gpu = (llamacpp_backend != "cpu");
 
@@ -297,6 +300,17 @@ void LlamaCppServer::load(const std::string& model_name,
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
             LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151 (enables loading larger models)" << std::endl;
         }
+    }
+#endif
+
+#ifdef __APPLE__
+    // Forward GGML_METAL_NO_RESIDENCY to llama-server if set in the parent
+    // environment. Metal residency sets crash on paravirtualized GPUs (e.g.
+    // GitHub Actions macOS runners with MTLGPUFamilyApple5).
+    const char* no_residency = std::getenv("GGML_METAL_NO_RESIDENCY");
+    if (no_residency) {
+        env_vars.push_back({"GGML_METAL_NO_RESIDENCY", no_residency});
+        LOG(DEBUG, "LlamaCpp") << "Forwarding GGML_METAL_NO_RESIDENCY=" << no_residency << std::endl;
     }
 #endif
 

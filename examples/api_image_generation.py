@@ -4,7 +4,7 @@ images using Stable Diffusion models via the OpenAI Python client.
 
 Prerequisites:
 1. Install the OpenAI client: pip install openai
-2. Start the lemonade server: lemonade-server --sdcpp rocm  (or --sdcpp cpu)
+2. The lemonade server should be running (starts automatically after installation)
 3. The SD-Turbo model will be auto-downloaded on first use
 
 Usage:
@@ -28,12 +28,12 @@ def generate_with_openai_client(backend="cpu"):
 
     # Point to local lemonade server
     client = OpenAI(
-        base_url="http://localhost:8000/api/v1",
+        base_url="http://localhost:13305/api/v1",
         api_key="not-needed",  # Lemonade doesn't require API key
     )
 
     print(f"Generating image with OpenAI client...{backend}")
-    
+
     if backend == "cpu":
         print("(This may take several minutes with CPU backend)")
 
@@ -78,8 +78,7 @@ if __name__ == "__main__":
     print("Lemonade Image Generation Example")
     print("=" * 60)
     print()
-    print("Make sure the lemonade server is running:")
-    print("  lemonade-server")
+    print("Make sure the lemonade server is running (lemonade status)")
     print()
 
     # Generate using OpenAI client

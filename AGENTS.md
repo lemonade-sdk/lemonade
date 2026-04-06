@@ -4,16 +4,17 @@ This file provides guidance to agent driven code reviews when working with this 
 
 ## Project Overview
 
-Lemonade is a local LLM server (v10.0.0) providing GPU and NPU acceleration for running large language models on consumer hardware. It exposes OpenAI-compatible, Ollama-compatible, and Anthropic-compatible REST APIs, plus a WebSocket Realtime API. It supports multiple backends: llama.cpp, FastFlowLM, RyzenAI, whisper.cpp, stable-diffusion.cpp, and Kokoro TTS.
+Lemonade is a local LLM server providing GPU and NPU acceleration for running large language models on consumer hardware. It exposes OpenAI-compatible, Ollama-compatible, and Anthropic-compatible REST APIs, plus a WebSocket Realtime API. It supports multiple backends: llama.cpp, FastFlowLM, RyzenAI, whisper.cpp, stable-diffusion.cpp, and Kokoro TTS.
 
 ## Architecture
 
-### Four Executables
+### Executables
 
-- **lemonade-router** — Pure HTTP server. Handles REST API, routes requests to backends, manages model loading/unloading. No CLI.
-- **lemonade-server** — CLI client. Commands: `list`, `pull`, `delete`, `run`, `serve`, `status`, `stop`, `logs`. Communicates with router via HTTP.
-- **lemonade-tray** — GUI launcher (Windows/macOS/Linux). Starts `lemonade-server serve` without a console. Platform code in `src/cpp/tray/platform/`.
-- **lemonade-log-viewer** — Windows-only log file viewer.
+- **lemond** — Pure HTTP server. Handles REST API, routes requests to backends, manages model loading/unloading. Configured via `config.json` in the lemonade cache directory. CLI args: `[cache_dir] [--port PORT] [--host HOST]`.
+- **lemonade** — CLI client (`src/cpp/cli/`). Commands: `list`, `pull`, `delete`, `run`, `status`, `logs`, `launch`, `recipes`, `scan`, etc. Communicates with router via HTTP. Discovers running server via UDP beacon.
+- **LemonadeServer.exe** (Windows) — SUBSYSTEM:WINDOWS GUI app that embeds `lemond` and shows a system tray icon. Auto-starts via Windows startup folder.
+- **lemonade-tray** (macOS/Linux) — Lightweight tray client that connects to a running `lemond`. Platform code in `src/cpp/tray/platform/`.
+- **lemonade-server** — Deprecated backwards-compatibility shim. Delegates to `lemond` or `lemonade`.
 
 ### Backend Abstraction
 
@@ -52,11 +53,11 @@ All core endpoints are registered under **4 path prefixes**:
 
 **Anthropic-compatible endpoint:** `POST /api/messages` — supports message completion, tool use, and SSE streaming.
 
-**WebSocket Realtime API** (Windows/Linux only): OpenAI-compatible Realtime protocol for real-time audio transcription. Binds to an OS-assigned port (9000+), exposed via the `websocket_port` field in the `/health` endpoint response.
+**WebSocket Realtime API**: OpenAI-compatible Realtime protocol for real-time audio transcription. Binds to an OS-assigned port (9000+), exposed via the `websocket_port` field in the `/health` endpoint response.
 
 **Internal endpoints:** `POST /internal/shutdown`
 
-Optional API key auth via `LEMONADE_API_KEY` env var. CORS enabled on all routes.
+Optional API key auth via `LEMONADE_API_KEY` env var (regular API endpoints) or `LEMONADE_ADMIN_API_KEY` env var (full access including internal endpoints). Clients prefer `LEMONADE_ADMIN_API_KEY` if set. CORS enabled on all routes.
 
 ### Desktop & Web App
 
@@ -65,64 +66,73 @@ Optional API key auth via `LEMONADE_API_KEY` env var. CORS enabled on all routes
 
 ### Key Dependencies
 
-**C++ (FetchContent):** cpp-httplib, nlohmann/json, CLI11, libcurl, zstd, IXWebSocket (Windows/Linux), brotli (macOS). Platform SSL: Schannel (Windows), SecureTransport (macOS), OpenSSL (Linux).
+**C++ (FetchContent):** cpp-httplib, nlohmann/json, CLI11, libcurl, zstd, libwebsockets, brotli (macOS). Platform SSL: Schannel (Windows), SecureTransport (macOS), OpenSSL (Linux).
 
 **Electron:** React 19, TypeScript 5.3, Webpack 5, Electron 39, markdown-it, highlight.js, katex.
 
 ## Build Commands
 
+CMakeLists.txt is at the repository root. Build uses CMake presets — run the setup script first, then build with `--preset`.
+
 ```bash
-# C++ server (CMakeLists.txt is at repository root)
-mkdir build && cd build
-cmake ..
-cmake --build . --config Release -j
+# 1. Setup (configures build directory and installs deps)
+./setup.sh          # Linux / macOS
+./setup.ps1         # Windows (PowerShell)
 
-# Electron app
-cd src/app && npm install
-npm run build:win    # or build:mac / build:linux
+# 2. Build C++ server
+cmake --build --preset default          # Linux / macOS (Ninja)
+cmake --build --preset windows          # Windows (Visual Studio 2022)
+cmake --build --preset vs18             # Windows (Visual Studio 2026)
 
-# Web app (auto-enabled on non-Windows, or pass -DBUILD_WEB_APP=ON)
-cmake --build build --config Release --target web-app
+# 3. Electron app (optional, requires Node.js 20+)
+cmake --build --preset default --target electron-app    # Linux / macOS
+cmake --build --preset windows --target electron-app    # Windows (VS 2022)
+cmake --build --preset vs18 --target electron-app       # Windows (VS 2026)
 
-# Windows MSI installer (WiX 5.0+ required)
-cmake --build build --config Release --target wix_installer_minimal  # server + web-app
-cmake --build build --config Release --target wix_installer_full     # server + electron + web-app
+# 4. Web app (auto-built on non-Windows; manual on Windows)
+cmake --build --preset default --target web-app         # Linux / macOS
+cmake --build --preset windows --target web-app         # Windows
 
-# macOS signed installer
-cmake --build build --config Release --target package-macos
+# 5. Windows MSI installer (WiX 5.0+ required)
+cmake --build --preset windows --target wix_installer_minimal  # server + web-app
+cmake --build --preset windows --target wix_installer_full     # server + electron + web-app
 
-# Linux .deb / .rpm
-cd build && cpack
+# 6. macOS signed installer
+cmake --build --preset default --target package-macos
 
-# Linux AppImage
-cmake --build build --config Release --target appimage
+# 7. Linux .deb / .rpm
+cd build && cpack            # .deb
+cd build && cpack -G RPM     # .rpm
+
+# 8. Linux AppImage
+cmake --build --preset default --target appimage
 ```
 
-CMake presets: `default` (Ninja), `windows` (VS 2022), `debug` (Ninja Debug).
+CMake presets: `default` (Ninja, Release), `windows` (VS 2022), `vs18` (VS 2026), `debug` (Ninja, Debug).
 
 CMake options: `BUILD_WEB_APP` (ON by default on non-Windows), `BUILD_ELECTRON_APP` (Linux only, include Electron in deb), `LEMONADE_SYSTEMD_UNIT_NAME` (default: `lemonade-server.service`).
 
 ## Testing
 
-Integration tests in Python against a live server:
+Integration tests in Python against a live server. Tests auto-discover the server binary from the build directory; use `--server-binary` to override.
 
 ```bash
 pip install -r test/requirements.txt
-./build/Release/lemonade-router.exe --port 8000 --log-level debug
 
-# Separate terminal
-python test/server_endpoints.py
-python test/server_llm.py
-python test/server_sd.py
-python test/server_whisper.py
-python test/server_tts.py
-python test/server_system_info.py
+# CLI tests (no inference backend needed)
 python test/server_cli.py
-python test/server_cli2.py
-python test/server_streaming_errors.py
-python test/test_ollama.py
-python test/test_flm_status.py
-python test/test_llamacpp_system_backend.py
+
+# Endpoint tests (no inference backend needed)
+python test/server_endpoints.py
+
+# LLM tests (specify wrapped server and backend)
+python test/server_llm.py --wrapped-server llamacpp --backend vulkan
+
+# Audio transcription tests
+python test/server_whisper.py
+
+# Image generation tests (slow)
+python test/server_sd.py
 ```
 
 Test utilities in `test/utils/` with `server_base.py` as the base class. Test dependencies include `requests`, `httpx`, `openai`, `huggingface_hub`, `psutil`, `numpy`, `websockets`, and `ollama`.
@@ -133,6 +143,7 @@ Test utilities in `test/utils/` with `server_base.py` as the base class. Test de
 - C++17, `lemon::` namespace
 - `snake_case` for functions/variables, `CamelCase` for classes/types
 - 4-space indent, `#pragma once` for headers
+- Keep `#include` directives in alphabetical order within each include block
 - Platform guards: `#ifdef _WIN32`, `#ifdef __APPLE__`, `#ifdef __linux__`
 
 ### Python
@@ -160,6 +171,7 @@ Test utilities in `test/utils/` with `server_base.py` as the base class. Test de
 | `src/cpp/server/ollama_api.cpp` | Ollama API compatibility |
 | `src/cpp/include/lemon/websocket_server.h` | WebSocket Realtime API server |
 | `src/cpp/include/lemon/model_types.h` | Model type and device type enums |
+| `src/cpp/include/lemon/config_file.h` | config.json load/save/migrate |
 | `src/cpp/include/lemon/recipe_options.h` | Per-recipe JSON configuration |
 | `src/cpp/tray/tray_app.cpp` | Tray application UI and logic |
 | `src/app/src/renderer/ModelManager.tsx` | Model management UI |

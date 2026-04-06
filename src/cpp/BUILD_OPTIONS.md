@@ -53,11 +53,11 @@ Build and include the full Electron desktop application.
 ```bash
 cd build
 cmake ../src/cpp
-ninja lemonade-router
+ninja lemond
 ```
 
 Result:
-- ✅ Web app available at `http://localhost:8000/app`
+- ✅ Web app available at `http://localhost:13305/app`
 - ❌ No Electron desktop app
 - Minimal build time and dependencies
 
@@ -65,7 +65,7 @@ Result:
 ```bash
 cd build
 cmake -DBUILD_WEB_APP=OFF ../src/cpp
-ninja lemonade-router
+ninja lemond
 ```
 
 Result:
@@ -78,12 +78,12 @@ Result:
 ```bash
 cd build
 cmake -DBUILD_WEB_APP=ON -DBUILD_ELECTRON_APP=ON ../src/cpp
-ninja lemonade-router
+ninja lemond
 ninja electron-app  # Build desktop app separately
 ```
 
 Result:
-- ✅ Web app at `http://localhost:8000/app`
+- ✅ Web app at `http://localhost:13305/app`
 - ✅ Electron desktop app available
 - Both `webapp` and `electron-app` targets enabled
 

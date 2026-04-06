@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libdrm-dev \
     git \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy source code
@@ -24,7 +26,7 @@ WORKDIR /app
 # Build the project
 RUN rm -rf build && \
     cmake --preset default && \
-    cmake --build --preset default
+    cmake --build --preset default web-app
 
 # Debug: Check build outputs
 RUN echo "=== Build directory contents ===" && \
@@ -59,8 +61,9 @@ RUN add-apt-repository -y ppa:amd-team/xrt
 WORKDIR /opt/lemonade
 
 # Copy built executables and resources from builder
-COPY --from=builder /app/build/lemonade-router ./lemonade-router
+COPY --from=builder /app/build/lemond ./lemond
 COPY --from=builder /app/build/lemonade-server ./lemonade-server
+COPY --from=builder /app/build/lemonade ./lemonade
 COPY --from=builder /app/build/resources ./resources
 
 # Download and install FLM using version from backend_versions.json
@@ -71,7 +74,7 @@ RUN FLM_VERSION=$(jq -r '.flm.npu' ./resources/backend_versions.json) && \
     rm fastflowlm.deb
 
 # Make executables executable
-RUN chmod +x ./lemonade-router ./lemonade-server
+RUN chmod +x ./lemond ./lemonade-server
 
 # Create necessary directories
 RUN mkdir -p /opt/lemonade/llama/cpu \
@@ -79,11 +82,11 @@ RUN mkdir -p /opt/lemonade/llama/cpu \
     /root/.cache/huggingface
 
 # Expose default port
-EXPOSE 8000
+EXPOSE 13305
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/live || exit 1
+    CMD curl -f http://localhost:13305/live || exit 1
 
 # Default command: start server in headless mode
 CMD ["./lemonade-server", "serve", "--no-tray", "--host", "0.0.0.0"]

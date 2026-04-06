@@ -4,7 +4,7 @@ speech using Kokoro via the OpenAI Python client.
 
 Prerequisites:
 1. Install the OpenAI client: pip install openai openai[voice_helpers]
-2. Start the lemonade server: lemonade-server
+2. The lemonade server should be running (starts automatically after installation)
 3. The kokoro-v1 model will be auto-downloaded on first use
 
 Usage:
@@ -27,7 +27,7 @@ async def generate_with_openai_client():
 
     # Point to local lemonade server
     client = AsyncOpenAI(
-        base_url="http://localhost:8000/api/v1",
+        base_url="http://localhost:13305/api/v1",
         api_key="not-needed",  # Lemonade doesn't require API key by default
     )
 
@@ -48,8 +48,7 @@ if __name__ == "__main__":
     print("Lemonade Text to Speech Example")
     print("=" * 60)
     print()
-    print("Make sure the lemonade server is running:")
-    print("  lemonade-server")
+    print("Make sure the lemonade server is running (lemonade status)")
     print()
 
     # Generate using OpenAI client

@@ -2,9 +2,9 @@
 
 This guide explains how to manually register custom models in Lemonade Server using the JSON configuration files. This is useful for adding any HuggingFace model that isn't in the built-in model list.
 
-> **Tip:** The easiest way to add a custom model is using the [`lemonade-server pull` CLI command](./lemonade-server-cli.md#options-for-pull) or the [`/api/v1/pull` endpoint](./server_spec.md#post-apiv1pull), which automate the registration and download process. For example:
+> **Tip:** The easiest way to add a custom model is using the [`lemonade pull` CLI command](../lemonade-cli.md#options-for-pull) or the [`/api/v1/pull` endpoint](./server_spec.md#post-apiv1pull), which automate the registration and download process. For example:
 > ```bash
-> lemonade-server pull user.MyModel --checkpoint "org/repo:file.gguf" --recipe llamacpp
+> lemonade pull user.MyModel --checkpoint main "org/repo:file.gguf" --recipe llamacpp
 > ```
 > This guide covers the underlying JSON files for users who need manual control.
 
@@ -17,15 +17,7 @@ Custom model configuration involves two files, both located in the Lemonade cach
 | `user_models.json` | Model registry — defines what models are available (checkpoint, recipe, etc.) |
 | `recipe_options.json` | Per-model settings — configures how models run (context size, backend, etc.) |
 
-**Cache directory location:**
-
-| OS | Default Path |
-|----|-------------|
-| Windows | `%USERPROFILE%\.cache\lemonade\` |
-| Linux | `~/.cache/lemonade/` |
-| macOS | `~/.cache/lemonade/` |
-
-The cache directory can be overridden by setting the `LEMONADE_CACHE_DIR` environment variable.
+See [configuration.md](./configuration.md) for more information about finding the cache directory.
 
 ## `user_models.json` Reference
 
@@ -133,49 +125,6 @@ This file configures per-model runtime settings. Each key is a **full model name
 }
 ```
 
-### Options by recipe
-
-#### llamacpp
-
-| Option | Default | Env Variable | Description |
-|--------|---------|-------------|-------------|
-| `ctx_size` | 4096 | `LEMONADE_CTX_SIZE` | Context window size in tokens |
-| `llamacpp_backend` | vulkan (Windows/Linux), metal (macOS) | `LEMONADE_LLAMACPP` | Inference backend: `vulkan`, `rocm`, `cpu`, `metal` |
-| `llamacpp_args` | (empty) | `LEMONADE_LLAMACPP_ARGS` | Extra arguments passed to llama-server |
-
-#### whispercpp
-
-| Option | Default | Env Variable | Description |
-|--------|---------|-------------|-------------|
-| `whispercpp_backend` | npu | `LEMONADE_WHISPERCPP` | Backend: `npu`, `cpu`, `vulkan` |
-
-#### sd-cpp
-
-| Option | Default | Env Variable | Description |
-|--------|---------|-------------|-------------|
-| `sd-cpp_backend` | cpu | `LEMONADE_SDCPP` | Backend: `cpu`, `rocm` |
-| `steps` | 20 | `LEMONADE_STEPS` | Number of inference steps |
-| `cfg_scale` | 7.0 | `LEMONADE_CFG_SCALE` | Classifier-free guidance scale |
-| `width` | 512 | `LEMONADE_WIDTH` | Image width in pixels |
-| `height` | 512 | `LEMONADE_HEIGHT` | Image height in pixels |
-
-#### flm
-
-| Option | Default | Env Variable | Description |
-|--------|---------|-------------|-------------|
-| `ctx_size` | 4096 | `LEMONADE_CTX_SIZE` | Context window size in tokens |
-| `flm_args` | (empty) | `LEMONADE_FLM_ARGS` | Extra arguments passed to `flm serve` |
-
-#### ryzenai-llm
-
-| Option | Default | Env Variable | Description |
-|--------|---------|-------------|-------------|
-| `ctx_size` | 4096 | `LEMONADE_CTX_SIZE` | Context window size in tokens |
-
-#### kokoro
-
-The `kokoro` recipe (text-to-speech) has no configurable options in `recipe_options.json`.
-
 > **Note:** Per-model options can also be configured through the Lemonade desktop app's model settings, or via the `save_options` parameter in the [`/api/v1/load` endpoint](./server_spec.md#post-apiv1load).
 
 ## Complete Examples
@@ -205,7 +154,7 @@ The `kokoro` recipe (text-to-speech) has no configurable options in `recipe_opti
 
 Then load the model:
 ```bash
-lemonade-server run user.Qwen2.5-Coder-1.5B-Instruct
+lemonade run user.Qwen2.5-Coder-1.5B-Instruct
 ```
 
 ### Example 2: Adding a vision model with mmproj
@@ -237,10 +186,10 @@ lemonade-server run user.Qwen2.5-Coder-1.5B-Instruct
 
 The model will automatically be available as `user.My-Embedding-Model`. To mark it as an embedding model, use the pull CLI instead:
 ```bash
-lemonade-server pull user.My-Embedding-Model \
-    --checkpoint "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S" \
+lemonade pull user.My-Embedding-Model \
+    --checkpoint main "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S" \
     --recipe llamacpp \
-    --embedding
+    --label embeddings
 ```
 
 ## Settings Priority
@@ -249,13 +198,12 @@ When loading a model, settings are resolved in this order (highest to lowest pri
 
 1. Values explicitly passed in the `/api/v1/load` request
 2. Per-model values from `recipe_options.json`
-3. Values set via `lemonade-server` CLI arguments or environment variables
-4. Default hardcoded values in `lemonade-router`
+3. Global configuration values, see [Server Configuration](./configuration.md)
 
 For full details, see the [load endpoint documentation](./server_spec.md#post-apiv1load).
 
 ## See Also
 
-- [CLI pull command](./lemonade-server-cli.md#options-for-pull) — register and download models from the command line
+- [CLI pull command](../lemonade-cli.md#options-for-pull) — register and download models from the command line
 - [`/api/v1/pull` endpoint](./server_spec.md#post-apiv1pull) — register and download models via API
 - [Server Integration Guide](./server_integration.md#installing-additional-models) — overview of model management options

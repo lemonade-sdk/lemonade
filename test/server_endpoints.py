@@ -1,6 +1,10 @@
 """
 Inference-agnostic endpoint tests for Lemonade Server.
 
+Requires a Lemonade server to already be running on port 13305.
+This test module does not start the server, and its inherited
+`--server-binary` argument is not used here.
+
 Tests endpoints that don't require specific inference backends:
 - /health
 - /models
@@ -14,21 +18,15 @@ Tests endpoints that don't require specific inference backends:
 
 Usage:
     python server_endpoints.py
-    python server_endpoints.py --server-per-test
-    python server_endpoints.py --server-binary /path/to/lemonade-server
 """
 
-import json
 import platform
-import os
 import requests
 from openai import NotFoundError
 
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
-    parse_args,
-    get_config,
     OpenAI,
 )
 from utils.test_models import (
@@ -43,30 +41,16 @@ from utils.test_models import (
 )
 
 
-def get_recipe_options_path():
-    """Get the path to recipe_options.json file."""
-    # Default location is ~/.cache/lemonade/recipe_options.json
-    cache_dir = os.environ.get(
-        "LEMONADE_CACHE_DIR", os.path.expanduser("~/.cache/lemonade")
-    )
-    return os.path.join(cache_dir, "recipe_options.json")
-
-
 class EndpointTests(ServerTestBase):
     """Tests for inference-agnostic endpoints."""
 
-    # Track if model has been pulled in per-test mode (persists across tests)
+    # Track if model has been pulled (persists across tests)
     _model_pulled = False
 
     @classmethod
     def setUpClass(cls):
-        """Set up class - start server and ensure test model is pulled."""
+        """Set up class - verify server and ensure test model is pulled."""
         super().setUpClass()
-
-        # In per-test mode, server isn't started until setUp(), so defer pre-pull
-        if get_config().get("server_per_test", False):
-            print("\n[SETUP] Per-test mode: will pull model in setUp()")
-            return
 
         # Ensure the test model is pulled once for all tests
         cls._ensure_model_pulled()
@@ -92,10 +76,6 @@ class EndpointTests(ServerTestBase):
     def setUp(self):
         """Set up each test."""
         super().setUp()
-
-        # In per-test mode, ensure model is pulled after server starts
-        if get_config().get("server_per_test", False):
-            self._ensure_model_pulled()
 
     def test_000_endpoints_registered(self):
         """Verify all expected endpoints are registered on both v0 and v1."""
@@ -428,28 +408,20 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 200)
 
-        # Check recipe_options.json file
-        options_path = get_recipe_options_path()
-        if os.path.exists(options_path):
-            with open(options_path, "r") as f:
-                saved_options = json.load(f)
+        model_info_response = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(model_info_response.status_code, 200)
 
-            if ENDPOINT_TEST_MODEL in saved_options:
-                model_options = saved_options[ENDPOINT_TEST_MODEL]
-                self.assertEqual(
-                    model_options.get("ctx_size"),
-                    custom_ctx_size,
-                    f"Expected ctx_size={custom_ctx_size} in recipe_options.json",
-                )
-                print(
-                    f"[OK] Verified recipe_options.json contains ctx_size={custom_ctx_size}"
-                )
-            else:
-                print(
-                    f"[INFO] Model not found in recipe_options.json (may be expected)"
-                )
-        else:
-            print(f"[INFO] recipe_options.json not found at {options_path}")
+        model_info = model_info_response.json()
+        self.assertIn("recipe_options", model_info)
+        self.assertEqual(
+            model_info["recipe_options"].get("ctx_size"),
+            custom_ctx_size,
+            f"Expected saved ctx_size={custom_ctx_size} in model info recipe_options",
+        )
+        print(f"[OK] Verified saved ctx_size={custom_ctx_size} via model info")
 
     def test_012_load_uses_saved_options(self):
         """Test that load reads previously saved options from recipe_options.json."""

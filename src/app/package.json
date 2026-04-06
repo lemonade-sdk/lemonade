@@ -42,7 +42,6 @@
   },
   "dependencies": {
     "@types/markdown-it": "^14.1.2",
-    "eventsource": "^4.1.0",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.25",
     "markdown-it": "^14.1.0",
@@ -51,11 +50,18 @@
     "react-dom": "^19.2.0"
   },
   "overrides": {
-    "serialize-javascript": "^7.0.3"
+    "serialize-javascript": "^7.0.3",
+    "lodash": "~4.17.21"
   },
   "build": {
     "appId": "com.lemonade.app",
-    "productName": "Lemonade",
+    "protocols": [
+      {
+        "name": "Lemonade",
+        "schemes": ["lemonade"]
+      }
+    ],
+    "productName": "lemonade-app",
     "publish": null,
     "toolsets": {
       "appimage": "1.0.2"

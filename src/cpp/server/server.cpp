@@ -1,14 +1,15 @@
 #include "lemon/server.h"
+#include "lemon/config_file.h"
 #include "lemon/ollama_api.h"
+#include "lemon/backends/sd_server.h"
+#include "lemon/backends/backend_utils.h"
 #include <cstring>
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
+#include "lemon/logging_config.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
-#ifdef LEMON_HAS_WEBSOCKET
-#include "lemon/websocket_server.h"
-#endif
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -43,11 +44,6 @@
     #include <unistd.h>
     #include <libdrm/drm.h>
     #include "lemon/amdxdna_accel.h"
-#endif
-
-#ifdef HAVE_SYSTEMD
-    #include <systemd/sd-journal.h>
-    #include <systemd/sd-login.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -126,33 +122,48 @@ static const json MIME_TYPES = {
     {"pcm",  "audio/l16;rate=24000;endianness=little-endian"}
 };
 
-Server::Server(int port, const std::string& host, const std::string& log_level,
-               const json& default_options, int max_loaded_models,
-               const std::string& extra_models_dir, bool no_broadcast,
-               long global_timeout)
-    : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
-      no_broadcast_(no_broadcast), running_(false), udp_beacon_() {
+Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_dir)
+    : config_(config),
+      cache_dir_(cache_dir),
+      port_(config->port()), running_(false), udp_beacon_() {
 
     // Set global HttpClient timeout
-    utils::HttpClient::set_default_timeout(global_timeout);
+    utils::HttpClient::set_default_timeout(config->global_timeout());
 
-    // Detect log file path (same location as tray uses)
-    // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
-    // This server only READS from the file for the SSE streaming endpoint
-#ifdef _WIN32
-    char temp_path[MAX_PATH];
-    GetTempPathA(MAX_PATH, temp_path);
-    log_file_path_ = std::string(temp_path) + "lemonade-server.log";
-#else
-    // Use systemd journal if running under systemd
-    if (SystemInfo::is_running_under_systemd()) {
-        log_file_path_ = "";  // Empty signals journald usage
-        LOG(INFO, "Server") << "Detected systemd environment - will use journald for log streaming" << std::endl;
+    model_manager_ = std::make_unique<ModelManager>();
+
+    // Set extra models directory for GGUF discovery
+    model_manager_->set_extra_models_dir(config_->extra_models_dir());
+
+    backend_manager_ = std::make_unique<BackendManager>();
+
+    router_ = std::make_unique<Router>(config_.get(),
+                                       model_manager_.get(),
+                                       backend_manager_.get());
+
+    LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
+
+    const char* api_key_env = std::getenv("LEMONADE_API_KEY");
+    api_key_ = api_key_env ? std::string(api_key_env) : "";
+
+    // Read admin API key - if not set, defaults to regular API key value
+    const char* admin_api_key_env = std::getenv("LEMONADE_ADMIN_API_KEY");
+    if (admin_api_key_env) {
+        admin_api_key_ = std::string(admin_api_key_env);
     } else {
-        log_file_path_ = utils::get_runtime_dir() + "/lemonade-server.log";
+        admin_api_key_ = api_key_;
     }
-#endif
 
+    setup_http_servers();
+
+    // Initialize WebSocket server for realtime API and log streaming
+    websocket_server_ = std::make_unique<WebSocketServer>(
+        router_.get(),
+        config_->host(),
+        config_->websocket_port());
+}
+
+void Server::setup_http_servers() {
     http_server_ = std::make_unique<httplib::Server>();
     http_server_v6_ = std::make_unique<httplib::Server>();
 
@@ -167,29 +178,8 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     http_server_->new_task_queue = task_queue_factory;
     http_server_v6_->new_task_queue = task_queue_factory;
 
-    model_manager_ = std::make_unique<ModelManager>();
-
-    // Set extra models directory for GGUF discovery
-    model_manager_->set_extra_models_dir(extra_models_dir);
-
-    backend_manager_ = std::make_unique<BackendManager>();
-
-    router_ = std::make_unique<Router>(default_options_, log_level_,
-                                       model_manager_.get(), max_loaded_models,
-                                       backend_manager_.get());
-
-    LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
-
-    const char* api_key_env = std::getenv("LEMONADE_API_KEY");
-    api_key_ = api_key_env ? std::string(api_key_env) : "";
-
     setup_routes(*http_server_);
     setup_routes(*http_server_v6_);
-
-#ifdef LEMON_HAS_WEBSOCKET
-    // Initialize WebSocket server (binds to OS-assigned port, exposed via /health)
-    websocket_server_ = std::make_unique<WebSocketServer>(router_.get());
-#endif
 }
 
 Server::~Server() {
@@ -209,16 +199,49 @@ void Server::log_request(const httplib::Request& req) {
 }
 
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
-    // Check if path requires authentication (API routes with /api/, /v0/, or /v1/ prefix)
+    // Check if path requires authentication (API routes and internal endpoints)
     bool is_api_route = (req.path.rfind("/api/", 0) == 0) ||
                         (req.path.rfind("/v0/", 0) == 0) ||
                         (req.path.rfind("/v1/", 0) == 0);
+    bool is_internal_route = (req.path.rfind("/internal/", 0) == 0);
 
-    if ((api_key_ != "") && (req.method != "OPTIONS") && is_api_route) {
-        if (api_key_ != httplib::get_bearer_token_auth(req)) {
-            res.status = 401;
-            res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
+    // Internal endpoints are restricted to loopback regardless of API key
+    if (is_internal_route) {
+        bool is_loopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+        if (!is_loopback) {
+            LOG(WARNING, "Server") << "Rejected internal request from non-loopback address: "
+                        << req.remote_addr << " " << req.path << std::endl;
+            res.status = 403;
+            res.set_content("{\"error\": \"Internal endpoints are only accessible from localhost\"}", "application/json");
             return httplib::Server::HandlerResponse::Handled;
+        }
+    }
+
+    // Authentication hierarchy:
+    // - Admin key: access to both internal and regular API endpoints
+    // - Regular API key: access only to regular API endpoints (not internal)
+    // - If admin key is not set, it defaults to regular API key value
+    // - If only admin key is set, regular endpoints are accessible without auth, internal requires admin key
+    // - If no keys are set, all endpoints are accessible without auth
+
+    std::string auth_token = httplib::get_bearer_token_auth(req);
+
+    if (is_internal_route) {
+        // Internal routes require admin key authentication
+        if (!admin_api_key_.empty() && req.method != "OPTIONS") {
+            if (auth_token != admin_api_key_) {
+                res.status = 401;
+                res.set_content("{\"error\": \"Invalid or missing admin API key\"}", "application/json");
+                return httplib::Server::HandlerResponse::Handled;
+            }
+        }
+    } else if (is_api_route && req.method != "OPTIONS") {
+        if (!api_key_.empty()) {
+            if ((auth_token != api_key_) && (auth_token != admin_api_key_)) {
+                res.status = 401;
+                res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
+                return httplib::Server::HandlerResponse::Handled;
+            }
         }
     }
 
@@ -339,7 +362,9 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("images/variations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_image_variations(req, res);
     });
-
+    register_post("images/upscale", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_image_upscale(req, res);
+    });
     // Responses endpoint
     register_post("responses", [this](const httplib::Request& req, httplib::Response& res) {
         handle_responses(req, res);
@@ -392,10 +417,6 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_log_level(req, res);
     });
 
-    // Log streaming endpoint (SSE)
-    register_get("logs/stream", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_logs_stream(req, res);
-    });
 
     // NOTE: /api/v1/halt endpoint removed - use SIGTERM signal instead (like Python server)
     // The stop command now sends termination signal directly to the process
@@ -403,6 +424,14 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Internal shutdown endpoint (not part of public API)
     web_server.Post("/internal/shutdown", [this](const httplib::Request& req, httplib::Response& res) {
         handle_shutdown(req, res);
+    });
+
+    // Unified config endpoints (not part of public API)
+    web_server.Post("/internal/set", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_config_set(req, res);
+    });
+    web_server.Get("/internal/config", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_config_get(req, res);
     });
 
     // Test endpoint to verify POST works
@@ -572,7 +601,7 @@ window.api = {
         return settings;
     },
     onSettingsUpdated: () => {},
-    getServerPort: () => parseInt(window.location.port) || 8000,
+    getServerPort: () => parseInt(window.location.port) || 13305,
     onServerPortUpdated: () => {},
     getServerAPIKey: async () => {
         const settings = await window.api.getSettings();
@@ -940,93 +969,128 @@ void Server::setup_http_logger(httplib::Server &web_server) {
 }
 
 void Server::run() {
-    std::string ipv4 = resolve_host_to_ip(AF_INET, host_);
-    std::string ipv6 = resolve_host_to_ip(AF_INET6, host_);
-    std::atomic<bool> listener_started(false);
-    std::atomic<bool> listener_start_failed(false);
+    std::string host = config_->host();
+    LOG(INFO, "Server") << "Starting HTTP server on " << host << ":" << port_ << std::endl;
+
+    std::string ipv4 = resolve_host_to_ip(AF_INET, host);
+    std::string ipv6 = resolve_host_to_ip(AF_INET6, host);
+
+    LOG(INFO, "Server") << "Host resolution: IPv4=" << (ipv4.empty() ? "(none)" : ipv4)
+                        << ", IPv6=" << (ipv6.empty() ? "(none)" : ipv6) << std::endl;
 
     if (ipv4.empty() && ipv6.empty()) {
-        throw std::runtime_error("Failed to resolve host '" + host_ + "' to any address. "
+        throw std::runtime_error("Failed to resolve host '" + host + "' to any address. "
                                  "Cannot start server.");
     }
 
     running_ = true;
 
-#ifdef LEMON_HAS_WEBSOCKET
-    // Start WebSocket server for realtime transcription
+    // Start WebSocket server for realtime API and log streaming
     if (websocket_server_) {
         if (websocket_server_->start()) {
-            LOG(INFO, "Server") << "WebSocket server started on port " << (port_ + 100) << std::endl;
+            LOG(INFO, "Server") << "WebSocket server started on port "
+                                << websocket_server_->get_port() << std::endl;
         } else {
             LOG(WARNING, "Server") << "Failed to start WebSocket server" << std::endl;
         }
     }
-#endif
 
-    if (!ipv4.empty()) {
-        // setup ipv4 thread
-        setup_http_logger(*http_server_);
-        http_v4_thread_ = std::thread([this, ipv4, &listener_started, &listener_start_failed]() {
-            int result = http_server_->bind_to_port(ipv4, port_);
-            if (result <= 0) {
-                listener_start_failed = true;
-                return;
-            }
-            listener_started = true;
-            if (!http_server_->listen_after_bind()) {
-                listener_start_failed = true;
-            }
-        });
-    }
-    if (!ipv6.empty()) {
-        // setup ipv6 thread
-        setup_http_logger(*http_server_v6_);
-        http_v6_thread_ = std::thread([this, ipv6, &listener_started, &listener_start_failed]() {
-            int result = http_server_v6_->bind_to_port(ipv6, port_);
-            if (result <= 0) {
-                listener_start_failed = true;
-                return;
-            }
-            listener_started = true;
-            if (!http_server_v6_->listen_after_bind()) {
-                listener_start_failed = true;
-            }
-        });
-    }
+    while (true) {
+        std::atomic<bool> listener_started(false);
+        std::atomic<bool> listener_start_failed(false);
 
-    //Enumerate all RFC1918 interfaces to determine if we can broadcast.
-    //The beacon will send per-interface with the correct IP in the payload.
-    auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
-    if(!rfc1918Interfaces.empty() && !no_broadcast_) {
-        std::cout << "[Server] [Net Broadcast] Broadcasting on " << rfc1918Interfaces.size()
-                  << " RFC1918 interface(s):";
-        for (const auto& iface : rfc1918Interfaces) {
-            std::cout << " " << iface.ipAddress << " (bcast " << iface.broadcastAddress << ")";
+        if (!ipv4.empty()) {
+            // setup ipv4 thread
+            setup_http_logger(*http_server_);
+            http_v4_thread_ = std::thread([this, ipv4, &listener_started, &listener_start_failed]() {
+                LOG(INFO, "Server") << "Binding IPv4 HTTP server to " << ipv4 << ":" << port_ << "..." << std::endl;
+                int result = http_server_->bind_to_port(ipv4, port_);
+                if (result <= 0) {
+                    LOG(ERROR, "Server") << "Failed to bind IPv4 HTTP server to " << ipv4 << ":" << port_ << std::endl;
+                    listener_start_failed = true;
+                    return;
+                }
+                LOG(INFO, "Server") << "IPv4 HTTP server listening on " << ipv4 << ":" << port_ << std::endl;
+                listener_started = true;
+                if (!http_server_->listen_after_bind()) {
+                    LOG(ERROR, "Server") << "IPv4 HTTP server listen_after_bind() failed" << std::endl;
+                    listener_start_failed = true;
+                }
+            });
         }
-        std::cout << std::endl;
-        udp_beacon_.startBroadcasting(
-            8000, //Broadcast port best to not make it adjustable, so clients dont have to scan.
-            port_,
-            2
-        );
-    }
-    else if (!rfc1918Interfaces.empty() && no_broadcast_) {
-        LOG(INFO, "Server") << "Broadcasting disabled by --no-broadcast option" << std::endl;
-    }
-    else {
-        LOG(INFO, "Server") << "Unable to broadcast my existance please use a RFC1918 IPv4," << std::endl
-                    << "or hostname that resolves to RFC1918 IPv4." << std::endl;
-    }
+        if (!ipv6.empty()) {
+            // setup ipv6 thread
+            setup_http_logger(*http_server_v6_);
+            http_v6_thread_ = std::thread([this, ipv6, &listener_started, &listener_start_failed]() {
+                LOG(INFO, "Server") << "Binding IPv6 HTTP server to [" << ipv6 << "]:" << port_ << "..." << std::endl;
+                int result = http_server_v6_->bind_to_port(ipv6, port_);
+                if (result <= 0) {
+                    LOG(ERROR, "Server") << "Failed to bind IPv6 HTTP server to [" << ipv6 << "]:" << port_ << std::endl;
+                    listener_start_failed = true;
+                    return;
+                }
+                LOG(INFO, "Server") << "IPv6 HTTP server listening on [" << ipv6 << "]:" << port_ << std::endl;
+                listener_started = true;
+                if (!http_server_v6_->listen_after_bind()) {
+                    LOG(ERROR, "Server") << "IPv6 HTTP server listen_after_bind() failed" << std::endl;
+                    listener_start_failed = true;
+                }
+            });
+        }
 
-    if(http_v4_thread_.joinable())
-        http_v4_thread_.join();
-    if(http_v6_thread_.joinable())
-        http_v6_thread_.join();
+        // Enumerate all RFC1918 interfaces to determine if we can broadcast.
+        // The beacon will send per-interface with the correct IP in the payload.
+        auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
+        bool no_bcast = config_->no_broadcast();
+        if (!rfc1918Interfaces.empty() && !no_bcast) {
+            std::cout << "[Server] [Net Broadcast] Broadcasting on " << rfc1918Interfaces.size()
+                      << " RFC1918 interface(s):";
+            for (const auto& iface : rfc1918Interfaces) {
+                std::cout << " " << iface.ipAddress << " (bcast " << iface.broadcastAddress << ")";
+            }
+            std::cout << std::endl;
+            udp_beacon_.startBroadcasting(
+                13305, // Broadcast port best to not make it adjustable, so clients dont have to scan.
+                port_,
+                2
+            );
+        } else if (!rfc1918Interfaces.empty() && no_bcast) {
+            LOG(INFO, "Server") << "Broadcasting disabled by --no-broadcast option" << std::endl;
+        } else {
+            LOG(INFO, "Server") << "Unable to broadcast my existance please use a RFC1918 IPv4," << std::endl
+                        << "or hostname that resolves to RFC1918 IPv4." << std::endl;
+        }
 
-    if (!listener_started && listener_start_failed) {
-        std::cerr << "[Server] Another Lemonade router/server instance is already running on "
-                  << host_ << ":" << port_ << ". Duplicate instance now exiting." << std::endl;
-        stop();
+        if (http_v4_thread_.joinable())
+            http_v4_thread_.join();
+        if (http_v6_thread_.joinable())
+            http_v6_thread_.join();
+
+        if (!listener_started && listener_start_failed) {
+            if (rebind_requested_) {
+                // Port rebind failed (e.g. port in use) — restore old port and retry
+                LOG(ERROR, "Server") << "Failed to bind to new port " << port_
+                            << ", will not retry" << std::endl;
+                rebind_requested_ = false;
+                break;
+            }
+            std::cerr << "[Server] Another Lemonade router/server instance is already running on "
+                      << config_->host() << ":" << port_ << ". Duplicate instance now exiting." << std::endl;
+            stop();
+            break;
+        }
+
+        if (!rebind_requested_) {
+            break;  // Normal exit (stop() was called)
+        }
+
+        // Rebind requested: re-resolve host, recreate HTTP servers, loop back to bind+listen
+        host = config_->host();
+        ipv4 = resolve_host_to_ip(AF_INET, host);
+        ipv6 = resolve_host_to_ip(AF_INET6, host);
+        LOG(INFO, "Server") << "Rebinding to " << host << ":" << port_ << "..." << std::endl;
+        rebind_requested_ = false;
+        setup_http_servers();
     }
 }
 
@@ -1038,13 +1102,11 @@ void Server::stop() {
         http_server_->stop();
         running_ = false;
 
-#ifdef LEMON_HAS_WEBSOCKET
         // Stop WebSocket server
         if (websocket_server_) {
             LOG(INFO, "Server") << "Stopping WebSocket server..." << std::endl;
             websocket_server_->stop();
         }
-#endif
 
         // Explicitly clean up router (unload models, stop backend servers)
         if (router_) {
@@ -1238,18 +1300,10 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     // Add max model limits
     response["max_models"] = router_->get_max_model_limits();
 
-    // Add log streaming support information
-    response["log_streaming"] = {
-        {"sse", true},
-        {"websocket", false}  // WebSocket support not yet implemented
-    };
-
-#ifdef LEMON_HAS_WEBSOCKET
-    // Add WebSocket server port for realtime API
+    // Add WebSocket server port for realtime API and log streaming
     if (websocket_server_ && websocket_server_->is_running()) {
         response["websocket_port"] = websocket_server_->get_port();
     }
-#endif
 
     res.set_content(response.dump(), "application/json");
 }
@@ -2040,20 +2094,7 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
             return;
         }
 
-        // Handle model loading
-        if (request_json.contains("model")) {
-            std::string requested_model = request_json["model"];
-            try {
-                auto_load_model_if_needed(requested_model);
-            } catch (const std::exception& e) {
-                LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
-                auto error_response = create_model_error(requested_model, e.what());
-                std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
-                res.set_content(error_response.dump(), "application/json");
-                return;
-            }
-        } else {
+        if (!request_json.contains("model")) {
             res.status = 400;
             nlohmann::json error = {{"error", {
                 {"message", "Missing 'model' field in request"},
@@ -2063,15 +2104,27 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
             return;
         }
 
-        // Forward to router
-        auto response = router_->image_generations(request_json);
+        std::string requested_model = request_json["model"];
 
-        // Check for error in response
-        if (response.contains("error")) {
-            res.status = 500;
+        try {
+            auto_load_model_if_needed(requested_model);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
+            auto error_response = create_model_error(requested_model, e.what());
+            std::string error_code = error_response["error"]["code"].get<std::string>();
+            res.status = (error_code == "model_load_error") ? 500 : 404;
+            res.set_content(error_response.dump(), "application/json");
+            return;
         }
 
-        res.set_content(response.dump(), "application/json");
+        {
+            auto response = router_->image_generations(request_json);
+            if (response.contains("error")) {
+                LOG(ERROR, "Server") << "Image generation backend error: " << response.dump() << std::endl;
+                res.status = 500;
+            }
+            res.set_content(response.dump(), "application/json");
+        }
 
     } catch (const nlohmann::json::exception& e) {
         LOG(ERROR, "Server") << "JSON parse error in handle_image_generations: " << e.what() << std::endl;
@@ -2353,6 +2406,147 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
         res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_image_variations: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "server_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_image_upscale(const httplib::Request& req, httplib::Response& res) {
+    try {
+        LOG(INFO, "Server") << "POST /api/v1/images/upscale" << std::endl;
+
+        auto request_json = nlohmann::json::parse(req.body);
+
+        if (!request_json.contains("image") || !request_json["image"].is_string()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'image' field (base64 encoded)"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        std::string upscale_model_name = request_json.value("model", "");
+        if (upscale_model_name.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'model' field"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        std::string upscale_model_path;
+        std::string backend = "cpu";
+        try {
+            auto info = model_manager_->get_model_info(upscale_model_name);
+
+            if (!model_manager_->is_model_downloaded(upscale_model_name)) {
+                LOG(INFO, "Server") << "Upscale model not cached, downloading from Hugging Face..." << std::endl;
+                model_manager_->download_registered_model(info, true);
+                LOG(INFO, "Server") << "Upscale model download complete: " << upscale_model_name << std::endl;
+                info = model_manager_->get_model_info(upscale_model_name);
+            }
+
+            upscale_model_path = info.resolved_path("main");
+            // Use the server's --sdcpp CLI setting so we pick up the same
+            // backend binary that was installed at startup, not whatever
+            // the system auto-detects (which may be a stale installation).
+            auto recipe_opts = config_->recipe_options();
+            if (recipe_opts.contains("sd-cpp_backend") &&
+                recipe_opts["sd-cpp_backend"].is_string()) {
+                std::string b = recipe_opts["sd-cpp_backend"];
+                if (!b.empty()) backend = b;
+            }
+        } catch (const std::exception& e) {
+            res.status = 404;
+            nlohmann::json error = {{"error", {
+                {"message", "Upscale model not found: " + upscale_model_name},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // sd-server's HTTP API does not expose an upscaling endpoint.
+        // Upscaling is only available via the sd-cli binary's -M upscale mode,
+        // so we shell out to sd-cli as a subprocess. This also keeps upscaling
+        // as a separate request from generation, which lets the frontend show
+        // the original and upscaled images side by side with independent timing.
+        std::string exe_dir = lemon::backends::BackendUtils::get_backend_binary_path(
+            lemon::backends::SDServer::SPEC, backend);
+        std::filesystem::path cli_exe = std::filesystem::path(exe_dir).parent_path() /
+#ifdef _WIN32
+            "sd-cli.exe";
+#else
+            "sd-cli";
+#endif
+
+        if (!std::filesystem::exists(cli_exe)) {
+            res.status = 500;
+            nlohmann::json error = {{"error", {
+                {"message", "sd-cpp backend not installed (sd-cli not found at: "
+                            + cli_exe.string() + ")"},
+                {"type", "server_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        std::vector<std::pair<std::string, std::string>> env_vars;
+        std::filesystem::path cli_dir = cli_exe.parent_path();
+#ifndef _WIN32
+        std::string lib_path = cli_dir.string();
+        const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+        if (existing_ld_path && strlen(existing_ld_path) > 0) {
+            lib_path = lib_path + ":" + std::string(existing_ld_path);
+        }
+        env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+#else
+        if (backend == "rocm") {
+            std::string new_path = cli_dir.string();
+            const char* existing_path = std::getenv("PATH");
+            if (existing_path) new_path += ";" + std::string(existing_path);
+            env_vars.push_back({"PATH", new_path});
+        }
+#endif
+
+        std::string b64_image = request_json["image"].get<std::string>();
+        std::string upscaled = lemon::backends::SDServer::upscale_via_cli(
+            b64_image, upscale_model_path, cli_exe.string(), env_vars);
+
+        if (upscaled.empty()) {
+            res.status = 500;
+            nlohmann::json error = {{"error", {
+                {"message", "ESRGAN upscale failed"},
+                {"type", "server_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        nlohmann::json response;
+        response["created"] = static_cast<long long>(std::time(nullptr));
+        response["data"] = nlohmann::json::array();
+        response["data"].push_back({{"b64_json", upscaled}});
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const nlohmann::json::exception& e) {
+        LOG(ERROR, "Server") << "JSON parse error in handle_image_upscale: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Invalid JSON: " + std::string(e.what())},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_image_upscale: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", {
             {"message", e.what()},
@@ -2728,9 +2922,22 @@ void Server::handle_delete(const httplib::Request& req, httplib::Response& res) 
 
 void Server::handle_params(const httplib::Request& req, httplib::Response& res) {
     try {
-        // Update model parameters (stub for now)
-        nlohmann::json response = {{"status", "success"}};
-        res.set_content(response.dump(), "application/json");
+        auto body = nlohmann::json::parse(req.body);
+
+        // Delegate to RuntimeConfig — accepts all known recipe option keys
+        auto result = config_->set(body, [this](const std::vector<std::string>& keys) {
+            apply_config_side_effects(keys);
+        });
+        res.set_content(result.dump(), "application/json");
+    } catch (const nlohmann::json::parse_error& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_params: invalid JSON: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", "Invalid JSON in request body"}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_params: " << e.what() << std::endl;
         res.status = 500;
@@ -3267,10 +3474,20 @@ void Server::handle_system_stats(const httplib::Request& req, httplib::Response&
 void Server::handle_log_level(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
-        log_level_ = request_json["level"];
 
-        nlohmann::json response = {{"status", "success"}, {"level", log_level_}};
+        // Translate {"level":"debug"} -> config_->set({"log_level":"debug"})
+        json changes = {{"log_level", request_json["level"]}};
+        config_->set(changes, [this](const std::vector<std::string>& keys) {
+            apply_config_side_effects(keys);
+        });
+
+        // Return same response format for backward compatibility
+        nlohmann::json response = {{"status", "success"}, {"level", config_->log_level()}};
         res.set_content(response.dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_log_level: " << e.what() << std::endl;
         res.status = 500;
@@ -3282,139 +3499,144 @@ void Server::handle_log_level(const httplib::Request& req, httplib::Response& re
 void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res) {
     LOG(INFO, "Server") << "Shutdown request received" << std::endl;
 
+    // Unload all models SYNCHRONOUSLY before sending the response.
+    // This ensures child processes (llama-server, etc.) are terminated
+    // before the caller proceeds, avoiding zombie processes.
+    if (router_) {
+        LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
+        try {
+            router_->unload_model();
+            LOG(INFO, "Server") << "All models unloaded" << std::endl;
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Error during unload: " << e.what() << std::endl;
+        }
+    }
+
     nlohmann::json response = {{"status", "shutting down"}};
     res.set_content(response.dump(), "application/json");
 
-    // Stop the server asynchronously to allow response to be sent
+    // Stop the HTTP listener and exit asynchronously (allows response to be sent first)
     std::thread([this]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        LOG(INFO, "Server") << "Stopping server..." << std::endl;
-        std::cout.flush();
         stop();
-
-        // Graceful shutdown with timeout: explicitly unload models and stop backend servers
-        if (router_) {
-            LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
-            std::cout.flush();
-
-            // Just call unload_model directly - keep it simple
-            try {
-                router_->unload_model();
-                LOG(INFO, "Server") << "Cleanup completed successfully" << std::endl;
-                std::cout.flush();
-            } catch (const std::exception& e) {
-                LOG(ERROR, "Server") << "Error during unload: " << e.what() << std::endl;
-            }
-        }
-
-        // Force process exit - just use standard exit()
-        LOG(INFO, "Server") << "Calling exit(0)..." << std::endl;
-        std::cout.flush();
         std::exit(0);
     }).detach();
 }
 
-void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& res) {
-#ifdef HAVE_SYSTEMD
-    if (log_file_path_.empty()) {
-        LOG(INFO, "Server") << "Starting log stream from systemd journal" << std::endl;
-        handle_logs_stream_journald(req, res);
-        return;
-    }
-#endif
+void Server::handle_config_set(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto body = nlohmann::json::parse(req.body);
 
-    // Check if log file exists
-    if (log_file_path_.empty() || !std::filesystem::exists(log_file_path_)) {
-        LOG(ERROR, "Server") << "Log file not found: " << log_file_path_ << std::endl;
-        LOG(ERROR, "Server") << "Note: Log streaming only works when server is launched via tray/ServerManager" << std::endl;
-        res.status = 404;
-        nlohmann::json error = {
-            {"error", "Log file not found. Log streaming requires server to be launched via tray application."},
-            {"path", log_file_path_},
-            {"note", "When running directly, logs appear in console instead."}
-        };
-        res.set_content(error.dump(), "application/json");
-        return;
-    }
+        auto result = config_->set(body, [this](const std::vector<std::string>& keys) {
+            apply_config_side_effects(keys);
+        });
 
-    LOG(INFO, "Server") << "Starting log stream for: " << log_file_path_ << std::endl;
-
-    // Set SSE headers
-    res.set_header("Content-Type", "text/event-stream");
-    res.set_header("Cache-Control", "no-cache");
-    res.set_header("Connection", "keep-alive");
-    res.set_header("X-Accel-Buffering", "no");
-
-    // Use chunked streaming
-    res.set_chunked_content_provider(
-        "text/event-stream",
-        [this](size_t offset, httplib::DataSink& sink) {
-            // Thread-local state for this connection
-            static thread_local std::unique_ptr<std::ifstream> log_stream;
-            static thread_local std::streampos last_pos = 0;
-
-            if (offset == 0) {
-                // First call: open file and read from beginning
-                log_stream = std::make_unique<std::ifstream>(
-                    log_file_path_,
-                    std::ios::in
-                );
-
-                if (!log_stream->is_open()) {
-                    LOG(ERROR, "Server") << "Failed to open log file for streaming" << std::endl;
-                    return false;
-                }
-
-                // Start from beginning
-                log_stream->seekg(0, std::ios::beg);
-                last_pos = 0;
-
-                LOG(INFO, "Server") << "Log stream connection opened" << std::endl;
+        // Persist changes to config.json
+        if (!cache_dir_.empty()) {
+            try {
+                ConfigFile::save(cache_dir_, config_->snapshot());
+            } catch (const std::exception& e) {
+                LOG(WARNING, "Server") << "Failed to persist config.json: " << e.what() << std::endl;
             }
-
-            // Seek to last known position
-            log_stream->seekg(last_pos);
-
-            std::string line;
-            bool sent_data = false;
-            int lines_sent = 0;
-
-            // Read and send new lines
-            while (std::getline(*log_stream, line)) {
-                // Format as SSE: "data: <line>\n\n"
-                std::string sse_msg = "data: " + line + "\n\n";
-
-                if (!sink.write(sse_msg.c_str(), sse_msg.length())) {
-                    LOG(INFO, "Server") << "Log stream client disconnected" << std::endl;
-                    return false;  // Client disconnected
-                }
-
-                sent_data = true;
-                lines_sent++;
-
-                // CRITICAL: Update position after each successful line read
-                // Must do this BEFORE hitting EOF, because tellg() returns -1 at EOF!
-                last_pos = log_stream->tellg();
-            }
-
-            // Clear EOF and any other error flags so we can continue reading on next poll
-            log_stream->clear();
-
-            // Send heartbeat if no data (keeps connection alive)
-            if (!sent_data) {
-                const char* heartbeat = ": heartbeat\n\n";
-                if (!sink.write(heartbeat, strlen(heartbeat))) {
-                    LOG(INFO, "Server") << "Log stream client disconnected during heartbeat" << std::endl;
-                    return false;
-                }
-            }
-
-            // Sleep briefly before next poll
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-            return true;  // Keep streaming
         }
-    );
+
+        res.set_content(result.dump(), "application/json");
+    } catch (const nlohmann::json::parse_error& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "Invalid JSON in request body"}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_config_set: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_config_get(const httplib::Request& /*req*/, httplib::Response& res) {
+    try {
+        auto snap = config_->snapshot();
+        res.set_content(snap.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_config_get: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::apply_config_side_effects(const std::vector<std::string>& changed_keys) {
+    for (const auto& key : changed_keys) {
+        if (key == "port") {
+            int new_port = config_->port();
+            int current_port = port_.load();
+            if (new_port != current_port) {
+                LOG(INFO, "Server") << "Port change requested: " << current_port << " -> " << new_port << std::endl;
+                port_.store(new_port);
+                rebind_requested_ = true;
+                udp_beacon_.stopBroadcasting();
+                http_server_->stop();
+                http_server_v6_->stop();
+            }
+        } else if (key == "host") {
+            LOG(INFO, "Server") << "Host change requested to: " << config_->host() << std::endl;
+            rebind_requested_ = true;
+            udp_beacon_.stopBroadcasting();
+            http_server_->stop();
+            http_server_v6_->stop();
+            // Restart websocket server with new host
+            if (websocket_server_) {
+                websocket_server_->stop();
+                websocket_server_ = std::make_unique<WebSocketServer>(
+                    router_.get(),
+                    config_->host(),
+                    config_->websocket_port());
+                if (running_) {
+                    websocket_server_->start();
+                }
+            }
+        } else if (key == "websocket_port") {
+            if (websocket_server_) {
+                LOG(INFO, "Server") << "Restarting WebSocket server on requested port "
+                                    << config_->websocket_port() << std::endl;
+                websocket_server_->stop();
+                websocket_server_ = std::make_unique<WebSocketServer>(
+                    router_.get(),
+                    config_->host(),
+                    config_->websocket_port());
+                if (running_) {
+                    websocket_server_->start();
+                }
+            }
+        } else if (key == "log_level") {
+            std::string level = config_->log_level();
+            LOG(INFO, "Server") << "Log level changed to: " << level << std::endl;
+            reconfigure_application_logging(level);
+        } else if (key == "global_timeout") {
+            long timeout = config_->global_timeout();
+            LOG(INFO, "Server") << "Global timeout changed to: " << timeout << "s" << std::endl;
+            utils::HttpClient::set_default_timeout(timeout);
+        } else if (key == "no_broadcast") {
+            bool nb = config_->no_broadcast();
+            LOG(INFO, "Server") << "Broadcast " << (nb ? "disabled" : "enabled") << std::endl;
+            if (nb) {
+                udp_beacon_.stopBroadcasting();
+            } else {
+                auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
+                if (!rfc1918Interfaces.empty()) {
+                    udp_beacon_.startBroadcasting(13305, port_, 2);
+                }
+            }
+        } else if (key == "extra_models_dir") {
+            std::string dir = config_->extra_models_dir();
+            LOG(INFO, "Server") << "Extra models dir changed to: " << dir << std::endl;
+            model_manager_->set_extra_models_dir(dir);
+        }
+    }
 }
 
 // ============================================================================
@@ -3439,7 +3661,8 @@ void Server::stream_download_operation(
 
             try {
                 // Create progress callback that emits SSE events
-                DownloadProgressCallback progress_cb = [&sink](const DownloadProgress& p) -> bool {
+                bool complete_sent = false;
+                DownloadProgressCallback progress_cb = [&sink, &complete_sent](const DownloadProgress& p) -> bool {
                     nlohmann::json event_data;
                     event_data["file"] = p.file;
                     event_data["file_index"] = p.file_index;
@@ -3453,6 +3676,7 @@ void Server::stream_download_operation(
                     std::string event;
                     if (p.complete) {
                         event = "event: complete\ndata: " + event_data.dump() + "\n\n";
+                        complete_sent = true;
                     } else {
                         event = "event: progress\ndata: " + event_data.dump() + "\n\n";
                     }
@@ -3465,6 +3689,15 @@ void Server::stream_download_operation(
                 };
 
                 operation(progress_cb);
+
+                // If operation completed without sending a "complete" event
+                // (e.g. backend was already installed), send one now
+                if (!complete_sent) {
+                    nlohmann::json done_data = {{"status", "ok"}};
+                    std::string event = "event: complete\ndata: " + done_data.dump() + "\n\n";
+                    sink.write(event.c_str(), event.size());
+                }
+
             } catch (const std::exception& e) {
                 std::string error_msg = e.what();
                 if (error_msg != "Download cancelled") {
@@ -3490,6 +3723,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         std::string recipe = request_json.value("recipe", "");
         std::string backend = request_json.value("backend", "");
         bool stream = request_json.value("stream", false);
+        bool force = request_json.value("force", false);
 
         if (recipe.empty() || backend.empty()) {
             res.status = 400;
@@ -3510,7 +3744,22 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
             system_info["recipes"].contains(recipe) &&
             system_info["recipes"][recipe].contains("backends") &&
             system_info["recipes"][recipe]["backends"].contains(backend)) {
-            std::string action = system_info["recipes"][recipe]["backends"][backend].value("action", "");
+            const auto& backend_info = system_info["recipes"][recipe]["backends"][backend];
+            std::string state = backend_info.value("state", "unsupported");
+            std::string message = backend_info.value("message", "Backend is not supported on this system.");
+            std::string action = backend_info.value("action", "");
+
+            if (state == "unsupported" && !force) {
+                res.status = 400;
+                nlohmann::json error = {
+                    {"error", "Cannot install " + recipe + ":" + backend + " on this system: " + message},
+                    {"recipe", recipe},
+                    {"backend", backend}
+                };
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+
             if (action.find(".html") != std::string::npos) {
                 auto url_pos = action.find("https://");
                 if (url_pos != std::string::npos) {
@@ -3526,13 +3775,13 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         }
 
         if (stream) {
-            stream_download_operation(res, [this, recipe, backend](DownloadProgressCallback progress_cb) {
-                backend_manager_->install_backend(recipe, backend, progress_cb);
+            stream_download_operation(res, [this, recipe, backend, force](DownloadProgressCallback progress_cb) {
+                backend_manager_->install_backend(recipe, backend, force, progress_cb);
                 SystemInfoCache::invalidate_recipes();
                 model_manager_->invalidate_models_cache();
             });
         } else {
-            backend_manager_->install_backend(recipe, backend);
+            backend_manager_->install_backend(recipe, backend, force);
             SystemInfoCache::invalidate_recipes();
             model_manager_->invalidate_models_cache();
             nlohmann::json response = {
@@ -3629,100 +3878,5 @@ void Server::enrich_recipes(json& recipes) {
         }
     }
 }
-
-#ifdef HAVE_SYSTEMD
-void Server::handle_logs_stream_journald(const httplib::Request& req, httplib::Response& res) {
-    LOG(INFO, "Server") << "Starting systemd journal stream for lemonade-server.service" << std::endl;
-
-    res.set_header("Content-Type", "text/event-stream");
-    res.set_header("Cache-Control", "no-cache");
-    res.set_header("Connection", "keep-alive");
-    res.set_header("X-Accel-Buffering", "no");
-
-    sd_journal* journal = nullptr;
-    int ret = sd_journal_open(&journal, SD_JOURNAL_LOCAL_ONLY);
-    if (ret < 0) {
-        LOG(ERROR, "Server") << "Failed to open systemd journal: " << strerror(-ret) << std::endl;
-        res.status = 500;
-        nlohmann::json error = {
-            {"error", "Failed to open systemd journal"},
-            {"details", strerror(-ret)}
-        };
-        res.set_content(error.dump(), "application/json");
-        return;
-    }
-
-    ret = sd_journal_add_match(journal, "_SYSTEMD_UNIT=lemonade-server.service", 0);
-    if (ret < 0) {
-        LOG(ERROR, "Server") << "Failed to add journal filter: " << strerror(-ret) << std::endl;
-        sd_journal_close(journal);
-        res.status = 500;
-        nlohmann::json error = {
-            {"error", "Failed to add journal filter"},
-            {"details", strerror(-ret)}
-        };
-        res.set_content(error.dump(), "application/json");
-        return;
-    }
-
-    // Position at tail, then go back to show recent history
-    sd_journal_seek_tail(journal);
-    for (int i = 0; i < 100; i++) {
-        ret = sd_journal_previous(journal);
-        if (ret <= 0) break;
-    }
-
-    LOG(INFO, "Server") << "Journal stream connection opened for lemonade-server.service" << std::endl;
-
-    res.set_chunked_content_provider(
-        "text/event-stream",
-        [journal](size_t offset, httplib::DataSink& sink) mutable {
-            bool sent_data = false;
-
-            while (sd_journal_next(journal) > 0) {
-                const void* data;
-                size_t length;
-
-                int ret = sd_journal_get_data(journal, "MESSAGE", &data, &length);
-                if (ret == 0 && length > 8) {
-                    const char* msg = static_cast<const char*>(data);
-                    std::string message(msg + 8, length - 8);
-                    std::string sse_msg = "data: " + message + "\n\n";
-
-                    if (!sink.write(sse_msg.c_str(), sse_msg.length())) {
-                        LOG(INFO, "Server") << "Journal stream client disconnected" << std::endl;
-                        return false;
-                    }
-                    sent_data = true;
-                }
-            }
-
-            if (!sent_data) {
-                const char* heartbeat = ": heartbeat\n\n";
-                if (!sink.write(heartbeat, strlen(heartbeat))) {
-                    LOG(INFO, "Server") << "Journal stream client disconnected during heartbeat" << std::endl;
-                    return false;
-                }
-            }
-
-            // Wait for new journal entries
-            if (offset > 0) {  // Skip wait on first call to send historical data immediately
-                int ret = sd_journal_wait(journal, 500000);  // 500ms
-                if (ret < 0) {
-                    LOG(ERROR, "Server") << "Journal wait error: " << strerror(-ret) << std::endl;
-                }
-            }
-
-            return true;
-        },
-        [journal](bool success) mutable {
-            LOG(INFO, "Server") << "Journal stream ended, closing journal handle" << std::endl;
-            if (journal) {
-                sd_journal_close(journal);
-            }
-        }
-    );
-}
-#endif
 
 } // namespace lemon

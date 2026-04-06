@@ -658,6 +658,56 @@
         ],
         "size": 3.61
     },
+    "Gemma-4-26B-A4B-it-GGUF": {
+        "checkpoint": "unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+	        "hot",
+            "tool-calling",
+            "vision",
+            "llamacpp"
+        ],
+        "size": 16.9
+    },
+    "Gemma-4-31B-it-GGUF": {
+        "checkpoint": "unsloth/gemma-4-31B-it-GGUF:Q4_K_M",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+	        "hot",
+            "tool-calling",
+	        "vision",
+            "llamacpp"
+        ],
+        "size": 18.3
+    },
+    "Gemma-4-E4B-it-GGUF": {
+        "checkpoint": "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "tool-calling",
+            "vision",
+            "llamacpp"
+        ],
+        "size": 5.0
+    },
+    "Gemma-4-E2B-it-GGUF": {
+        "checkpoint": "unsloth/gemma-4-E2B-it-GGUF:Q4_K_M",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "tool-calling",
+            "vision",
+            "llamacpp"
+        ],
+        "size": 3.1
+    },
     "Phi-4-mini-instruct-GGUF": {
         "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Phi-4-mini-instruct-Q4_K_M.gguf",
         "recipe": "llamacpp",
@@ -1191,7 +1241,8 @@
         "recipe": "sd-cpp",
         "suggested": true,
         "labels": [
-            "image"
+            "image",
+            "edit"
         ],
         "size": 16.0,
         "image_defaults": {
@@ -1210,7 +1261,8 @@
         "recipe": "sd-cpp",
         "suggested": true,
         "labels": [
-            "image"
+            "image",
+            "edit"
         ],
         "size": 18.0,
         "image_defaults": {
@@ -1281,5 +1333,25 @@
             "speech"
         ],
         "size": 0.34
+    },
+    "RealESRGAN-x4plus": {
+        "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "esrgan",
+            "image"
+        ],
+        "size": 0.064
+    },
+    "RealESRGAN-x4plus-anime": {
+        "checkpoint": "amd/realesrgan-x4plus-anime-6b:RealESRGAN_x4plus_anime_6B.pth",
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "esrgan",
+            "image"
+        ],
+        "size": 0.017
     }
 }

@@ -13,7 +13,7 @@ There are a few things to note on this integration:
 
 - **Docker**: OpenHands leverages Docker containers to create environments for the software agents. To see how to install docker for OpenHands, see their [documentation](https://docs.all-hands.dev/usage/local-setup).
 - **Lemonade Server**: Install Lemonade Server using the [Getting Started Guide](https://lemonade-server.ai/docs/server/).
-- **Server running**: Ensure Lemonade Server is running on `http://localhost:8000`
+- **Server running**: Ensure Lemonade Server is running on `http://localhost:13305`
 - **Models installed**: Ensure at least one model from the [supported models list](https://lemonade-server.ai/models.html) is downloaded locally. For OpenHands functionality, we recommend models denoted with the `coding` label, which can be found in your Lemonade installation's `Model Manager` or in the labels of the [models list](https://lemonade-server.ai/models.html).
 
 
@@ -21,10 +21,10 @@ There are a few things to note on this integration:
 
 ### Launch Lemonade Server with the correct settings
 
-Since OpenHands runs inside Docker containers, the containers must be able to access the Lemonade Server. The simplest way to enable this is by running the Lemonade Server on IP address `0.0.0.0`, which is accessible from within Docker. Additionally, OpenHands [recommends](https://docs.all-hands.dev/usage/llms/local-llms) using a context length of at least 32,768 tokens. To configure Lemonade with a non-default context size, include the `--ctx-size` parameter set to `32768`.
+Since OpenHands runs inside Docker containers, the containers must be able to access the Lemonade Server. The simplest way to enable this is by setting the host to `0.0.0.0`, which is accessible from within Docker. Additionally, OpenHands [recommends](https://docs.all-hands.dev/usage/llms/local-llms) using a context length of at least 32,768 tokens.
 
 ```bash
-lemonade-server serve --host 0.0.0.0 --ctx-size 32768
+lemonade config set host=0.0.0.0 ctx_size=32768
 ```
 
 ### Installing OpenHands
@@ -71,7 +71,7 @@ To launch OpenHands, open a browser and navigate to http://localhost:3000. When 
 
 ## Common Issues
 
-* If on OpenHands you get an error with the message: `The request failed with an internal server error` and in the Lemonade log you see many `WARNING: Invalid HTTP request received` this is most likely because the base URL set in the settings is using `https` instead of `http`. If this occurs, update the base URL in the settings to `http://host.docker.internal:8000/api/v1/`
+* If on OpenHands you get an error with the message: `The request failed with an internal server error` and in the Lemonade log you see many `WARNING: Invalid HTTP request received` this is most likely because the base URL set in the settings is using `https` instead of `http`. If this occurs, update the base URL in the settings to `http://host.docker.internal:13305/api/v1/`
 
 ## Resources
 
