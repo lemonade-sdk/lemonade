@@ -367,7 +367,7 @@ Menu TrayUI::create_menu(const std::vector<LoadedModelInfo>& loaded_models,
     // Port submenu
     auto port_submenu = std::make_shared<Menu>();
     std::vector<std::pair<int, std::string>> ports = {
-        {8000, "Port 8000"}, {8020, "Port 8020"}, {8040, "Port 8040"},
+        {13305, "Port 13305"}, {8000, "Port 8000"}, {8020, "Port 8020"}, {8040, "Port 8040"},
         {8060, "Port 8060"}, {8080, "Port 8080"}, {9000, "Port 9000"},
         {11434, "Port 11434 (Ollama)"},
     };

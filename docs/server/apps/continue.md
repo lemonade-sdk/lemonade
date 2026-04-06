@@ -12,7 +12,7 @@ Before you start, make sure you have the following:
 
 - **IDE**: [Visual Studio Code (v1.80+)](https://code.visualstudio.com/) or another supported IDE.
 - **Lemonade Server**: Installed and set up using the [Getting Started guide](https://lemonade-server.ai/docs/server/).
-- **Lemonade Server Running**: The server should be running at `http://localhost:8000`. If you change the port in Lemonade Server (e.g., to 8020, 8040, etc.), you'll need to update the API Base URL in Continue's configuration to match the same port.
+- **Lemonade Server Running**: The server should be running at `http://localhost:13305`. If you change the port in Lemonade Server (e.g., to 8020, 8040, etc.), you'll need to update the API Base URL in Continue's configuration to match the same port.
 - **Model Downloaded**: At least one model from the [supported models list](https://lemonade-server.ai/models.html) must be installed locally.
 
 ### Hardware Requirements
@@ -39,7 +39,7 @@ For best results, a code-tuned model with at least 20B parameters is required. T
       lemonade pull Qwen3-Coder-30B-A3B-Instruct-GGUF
       ```
 
-2. **Start Lemonade Server**: Ensure Lemonade Server is running at `http://localhost:8000`. The server starts automatically after installation. You can verify with `lemonade status`.
+2. **Start Lemonade Server**: Ensure Lemonade Server is running at `http://localhost:13305`. The server starts automatically after installation. You can verify with `lemonade status`.
 
 3. **Verify Model is Loaded**: Use the Model Manager or tray icon to confirm your model is loaded and ready. Continue will automatically detect Lemonade Server running on localhost.
 
@@ -52,7 +52,7 @@ For best results, a code-tuned model with at least 20B parameters is required. T
     ![Continue Extension in VS Code Marketplace](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_vscode_marketplace.png)
 
 3. **Open Continue in VS Code**: After installation completes, the Continue logo appears in the Activity bar. Click it to open the extension.
-4. **Add Lemonade Server Provider**: Click the model dropdown menu in the Continue sidebar, then select "Add Chat Model". Choose "Lemonade Server" from the list of available providers. Continue will set the default address to `http://localhost:8000`, but it can be changed to match a different setup.
+4. **Add Lemonade Server Provider**: Click the model dropdown menu in the Continue sidebar, then select "Add Chat Model". Choose "Lemonade Server" from the list of available providers. Continue will set the default address to `http://localhost:13305`, but it can be changed to match a different setup.
 
     _Example configuration screen:_
     ![Add Lemonade Provider](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_add_lemonade_provider.png)

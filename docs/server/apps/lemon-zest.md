@@ -8,7 +8,7 @@
 <div align="center">
    <br><em>Splash screen of Lemon Zest when you first open the application.</em></br>
    <img src="https://github.com/Phqen1x/lemon-zest/blob/main/assets/Splash.png" alt="Splash screen of Lemon Zest when you first open the application." width="600"/>
-   
+
    <br><em>Lemon Zest inpainting selected regions of an image.</em></br>
    <img src="https://github.com/Phqen1x/lemon-zest/blob/main/assets/Editing.png" alt="Lemon Zest inpainting selected regions of an image." width="600"/>
 </div>
@@ -33,7 +33,7 @@ Lemon Zest requires a running **Lemonade Server** to perform inpainting. The ser
    ```bash
    lemonade-server run Flux-2-Klein-4B
    ```
-   The server will listen on `http://localhost:8000`. The Flux model will be downloaded automatically on first launch.
+   The server will listen on `http://localhost:13305`. The Flux model will be downloaded automatically on first launch.
 
 > **Note:** The Lemonade Server must be running before you start Lemon Zest. The app will show a "Connecting to server..." overlay until the server is available.
 

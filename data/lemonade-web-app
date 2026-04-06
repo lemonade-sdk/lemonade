@@ -2,7 +2,7 @@
 
 set -e
 
-LEMONADE_PORT="${LEMONADE_PORT:-8000}"
+LEMONADE_PORT="${LEMONADE_PORT:-13305}"
 
 # Discover the actual port from a running server
 if command -v lemonade &> /dev/null; then

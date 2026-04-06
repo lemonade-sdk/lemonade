@@ -41,7 +41,7 @@ The AI Toolkit now supports "Bring Your Own Model" functionality, allowing you t
 3. Select "Add a custom model".
 4. When prompted to "Enter OpenAI chat completion endpoint URL" enter:
     ```
-    http://localhost:8000/api/v1/chat/completions
+    http://localhost:13305/api/v1/chat/completions
     ```
 5. When prompted to "Enter the exact model name as in the API" select a model (e.g., `Phi-3-Mini-Instruct-Hybrid`)
     - Note: You can get a list of all models available [here](https://lemonade-server.ai/models.html).

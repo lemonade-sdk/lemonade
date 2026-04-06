@@ -27,7 +27,7 @@ async def generate_with_openai_client():
 
     # Point to local lemonade server
     client = AsyncOpenAI(
-        base_url="http://localhost:8000/api/v1",
+        base_url="http://localhost:13305/api/v1",
         api_key="not-needed",  # Lemonade doesn't require API key by default
     )
 

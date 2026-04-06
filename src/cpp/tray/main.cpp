@@ -263,7 +263,7 @@ int main(int argc, char* argv[]) {
 
     // Parse args
     CLI::App app{"Lemonade Tray - system tray interface for Lemonade Server"};
-    int port = 8000;
+    int port = 13305;
     std::string host = "localhost";
 
     app.add_option("--port,-p", port, "Server port to connect to");

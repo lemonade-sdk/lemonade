@@ -69,6 +69,7 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
+                                     bool force,
                                      DownloadProgressCallback progress_cb) {
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << backend << std::endl;
 
@@ -82,7 +83,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         auto status = SystemInfoCache::get_flm_status();
         if (status.state == "installed") {
             // Already installed — nothing to do
-        } else if (status.state == "unsupported") {
+        } else if (status.state == "unsupported" && !force) {
             throw std::runtime_error("FLM is not supported on this system: " + status.message);
         } else {
             // installable, update_required, or action_required
@@ -92,7 +93,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         }
         // Re-read status after install
         status = SystemInfoCache::get_flm_status();
-        if (!status.is_ready()) {
+        if (!status.is_ready() && !force) {
             throw std::runtime_error("FLM installation incomplete: " + status.message +
                 (status.action.empty() ? "" : ". " + status.action));
         }
