@@ -180,6 +180,16 @@ void WhisperServer::load(const std::string& model_name,
 
     RuntimeConfig::validate_backend_choice("whispercpp", whispercpp_backend);
 
+    // Update device type based on the actual backend selected.
+    // get_device_type_from_recipe() defaults whispercpp to CPU, but npu/vulkan use different devices.
+    if (whispercpp_backend == "npu") {
+        device_type_ = DEVICE_NPU;
+    } else if (whispercpp_backend == "vulkan") {
+        device_type_ = DEVICE_GPU;
+    } else {
+        device_type_ = DEVICE_CPU;
+    }
+
     backend_manager_->install_backend(SPEC.recipe, whispercpp_backend);
 
     std::string model_path = model_info.resolved_path();
