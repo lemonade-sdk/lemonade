@@ -1471,7 +1471,6 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 LOG(INFO, "Server") << "POST /api/v1/chat/completions - Streaming" << std::endl;
 
                 // Set up streaming response with SSE headers
-                res.set_header("Content-Type", "text/event-stream");
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no"); // Disable nginx buffering
@@ -1656,7 +1655,6 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 LOG(INFO, "Server") << "POST /api/v1/completions - Streaming" << std::endl;
 
                 // Set up SSE headers
-                res.set_header("Content-Type", "text/event-stream");
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no");
@@ -2588,7 +2586,6 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
 
                 // Set up streaming response with SSE headers
-                res.set_header("Content-Type", "text/event-stream");
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no");
@@ -3652,7 +3649,6 @@ void Server::stream_download_operation(
     httplib::Response& res,
     std::function<void(DownloadProgressCallback)> operation) {
 
-    res.set_header("Content-Type", "text/event-stream");
     res.set_header("Cache-Control", "no-cache");
     res.set_header("Connection", "keep-alive");
     res.set_header("X-Accel-Buffering", "no");
