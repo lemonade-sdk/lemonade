@@ -61,8 +61,9 @@ theme:
 # The order of the files in the list will determine the order they appear in the documentation
 nav:
   - Downloading and Getting Started: server/README.md
-  - Developer Getting Started: dev-getting-started.md
-  - Supported Applications: server/apps/README.md
+
+  - FAQ Guide: faq.md
+  - Lemonade CLI Guide: lemonade-cli.md
   - Application Guides:
       - AI Dev Gallery: server/apps/ai-dev-gallery.md
       - AI Toolkit: server/apps/ai-toolkit.md
@@ -73,13 +74,18 @@ nav:
       - OpenHands: server/apps/open-hands.md
       - Open WebUI: server/apps/open-webui.md
       - Wut: server/apps/wut.md
-  - Lemonade CLI Guide: lemonade-cli.md
   - Server Configuration: server/configuration.md
   - Understanding local LLM servers: server/concepts.md
+  - Developer Getting Started: dev-getting-started.md
+  - Embeddable Lemonade:
+      - Overview: embeddable/README.md
+      - Runtime: embeddable/runtime.md
+      - Backends: embeddable/backends.md
+      - Models: embeddable/models.md
+      - Building from Source: embeddable/building.md
   - Server Spec: server/server_spec.md
   - Integration Guide: server/server_integration.md
   - Custom Model Configuration: server/custom-models.md
-  - FAQ Guide: faq.md
   - Contribution Guide: contribute.md
 
 not_in_nav: |

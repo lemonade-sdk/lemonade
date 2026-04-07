@@ -611,6 +611,128 @@ jobs:
           path: build/app-appimage/lemonade-app-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
           retention-days: 7
 
+  build-lemonade-embeddable-linux:
+    name: Build Embeddable Lemonade (Linux)
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Get version from CMakeLists.txt
+        id: get_version
+        uses: ./.github/actions/get-version
+
+      - name: Install minimal build dependencies
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
+
+      - name: Build embeddable archive
+        shell: bash
+        run: |
+          set -e
+
+          # Do not use setup.sh — we intentionally avoid installing system
+          # libraries so that FetchContent statically links all deps, making
+          # the embeddable binary portable across Ubuntu versions.
+          cmake --preset default -DBUILD_WEB_APP=OFF
+          cmake --build --preset default --target embeddable
+
+          ARCHIVE="build/lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz"
+          test -f "$ARCHIVE"
+          echo "Archive contents:"
+          tar tzf "$ARCHIVE"
+          ls -lh "$ARCHIVE"
+
+      - name: Upload embeddable archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-embeddable-linux
+          path: build/lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
+          retention-days: 7
+
+  build-lemonade-embeddable-windows:
+    name: Build Embeddable Lemonade (Windows)
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Install CMake if not available
+        shell: PowerShell
+        run: |
+          $cmakeInstalled = Get-Command cmake -ErrorAction SilentlyContinue
+
+          if (-not $cmakeInstalled) {
+              Write-Host "CMake not found, installing..." -ForegroundColor Yellow
+
+              $cmakeVersion = "3.28.1"
+              $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
+              $cmakeInstaller = "cmake-installer.msi"
+
+              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller -UseBasicParsing
+
+              Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
+
+              $cmakePath = "C:\Program Files\CMake\bin"
+              $env:PATH = "$cmakePath;$env:PATH"
+              echo $cmakePath >> $env:GITHUB_PATH
+
+              cmake --version
+              if ($LASTEXITCODE -ne 0) {
+                  Write-Host "ERROR: CMake installation failed!" -ForegroundColor Red
+                  exit 1
+              }
+
+              Write-Host "CMake installed successfully!" -ForegroundColor Green
+          } else {
+              Write-Host "CMake is already installed:" -ForegroundColor Green
+              cmake --version
+          }
+
+      - name: Get version from CMakeLists.txt
+        id: get_version
+        uses: ./.github/actions/get-version
+
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: fetchcontent-windows-embeddable-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-windows-embeddable-
+
+      - name: Build embeddable archive
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          cmake --preset windows -DBUILD_WEB_APP=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          cmake --build --preset windows --target embeddable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $archive = "build\lemonade-embeddable-$($env:LEMONADE_VERSION)-windows-x64.zip"
+          if (-not (Test-Path $archive)) { throw "Archive not found: $archive" }
+          Write-Host "Archive created:" -ForegroundColor Green
+          Get-ChildItem $archive
+
+      - name: Upload embeddable archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-embeddable-windows
+          path: build/lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
+          retention-days: 7
+
 
   # ========================================================================
   # TEST JOBS - Inference tests on self-hosted runners
@@ -879,6 +1001,199 @@ jobs:
 
           /opt/bin/lemonade-server --version
           /opt/bin/lemond --version
+
+  test-embeddable-linux:
+    name: Test Embeddable (Linux)
+    runs-on: ubuntu-latest
+    needs: build-lemonade-embeddable-linux
+    env:
+      LEMONADE_VERSION: ${{ needs.build-lemonade-embeddable-linux.outputs.version }}
+    steps:
+      - name: Download embeddable archive
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-embeddable-linux
+          path: .
+
+      - name: Validate archive structure
+        shell: bash
+        run: |
+          set -e
+
+          ARCHIVE="lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz"
+          test -f "$ARCHIVE"
+          tar xzf "$ARCHIVE"
+
+          DIR="lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64"
+
+          # Verify expected files exist
+          test -f "$DIR/lemond"
+          test -f "$DIR/lemonade"
+          test -f "$DIR/LICENSE"
+          test -f "$DIR/resources/server_models.json"
+          test -f "$DIR/resources/backend_versions.json"
+          test -f "$DIR/resources/defaults.json"
+          echo "All expected files present"
+
+          # Verify NO forbidden files
+          FORBIDDEN=0
+          if ls "$DIR"/lemonade-server* 2>/dev/null; then
+            echo "ERROR: Found lemonade-server (legacy CLI) in archive"; FORBIDDEN=1
+          fi
+          if [ -d "$DIR/resources/web-app" ]; then
+            echo "ERROR: Found web-app directory in archive"; FORBIDDEN=1
+          fi
+          if ls "$DIR"/lemonade-app* 2>/dev/null; then
+            echo "ERROR: Found electron app in archive"; FORBIDDEN=1
+          fi
+          if ls "$DIR"/lemonade-tray* 2>/dev/null; then
+            echo "ERROR: Found tray app in archive"; FORBIDDEN=1
+          fi
+          if ls "$DIR"/LemonadeServer* 2>/dev/null; then
+            echo "ERROR: Found LemonadeServer in archive"; FORBIDDEN=1
+          fi
+          if [ "$FORBIDDEN" -ne 0 ]; then exit 1; fi
+          echo "No forbidden files found"
+
+      - name: Test version commands
+        shell: bash
+        run: |
+          set -e
+          DIR="lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64"
+          "$DIR/lemond" --version
+          "$DIR/lemonade" --version
+
+      - name: Test lemond startup and health check
+        shell: bash
+        run: |
+          set -e
+          DIR="lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64"
+          cd "$DIR"
+
+          ./lemond ./ &
+          LEMOND_PID=$!
+
+          # Wait for server to become healthy
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:13305/api/v1/health > /dev/null 2>&1; then
+              echo "Server is healthy!"
+              break
+            fi
+            if [ $i -eq 15 ]; then
+              echo "ERROR: Server failed to start within 30 seconds"
+              kill $LEMOND_PID 2>/dev/null || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # Verify health endpoint responds with valid JSON
+          HEALTH=$(curl -sf http://localhost:13305/api/v1/health)
+          echo "Health response: $HEALTH"
+
+          # Clean shutdown
+          kill $LEMOND_PID 2>/dev/null || true
+          wait $LEMOND_PID 2>/dev/null || true
+          echo "Embeddable Linux smoke test PASSED!"
+
+  test-embeddable-windows:
+    name: Test Embeddable (Windows)
+    runs-on: windows-latest
+    needs: build-lemonade-embeddable-windows
+    env:
+      LEMONADE_VERSION: ${{ needs.build-lemonade-embeddable-windows.outputs.version }}
+    steps:
+      - name: Download embeddable archive
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-embeddable-windows
+          path: .
+
+      - name: Validate archive structure
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $archiveDir = "lemonade-embeddable-$($env:LEMONADE_VERSION)-windows-x64"
+          Expand-Archive -Path "$archiveDir.zip" -DestinationPath .
+
+          # Verify expected files
+          $expected = @(
+              "$archiveDir\lemond.exe",
+              "$archiveDir\lemonade.exe",
+              "$archiveDir\LICENSE",
+              "$archiveDir\resources\server_models.json",
+              "$archiveDir\resources\backend_versions.json",
+              "$archiveDir\resources\defaults.json"
+          )
+          $failures = @()
+          foreach ($f in $expected) {
+              if (-not (Test-Path $f)) {
+                  Write-Host "ERROR: $f not found!" -ForegroundColor Red
+                  $failures += $f
+              }
+          }
+          if ($failures.Count -gt 0) { exit 1 }
+          Write-Host "All expected files present" -ForegroundColor Green
+
+          # Verify NO forbidden files
+          $forbidden = @(
+              "$archiveDir\lemonade-server.exe",
+              "$archiveDir\LemonadeServer.exe",
+              "$archiveDir\lemonade-app.exe",
+              "$archiveDir\lemonade-tray.exe",
+              "$archiveDir\resources\web-app"
+          )
+          foreach ($f in $forbidden) {
+              if (Test-Path $f) {
+                  Write-Host "ERROR: Forbidden file found: $f" -ForegroundColor Red
+                  exit 1
+              }
+          }
+          Write-Host "No forbidden files found" -ForegroundColor Green
+
+      - name: Test version commands
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $archiveDir = "lemonade-embeddable-$($env:LEMONADE_VERSION)-windows-x64"
+          & "$archiveDir\lemond.exe" --version
+          & "$archiveDir\lemonade.exe" --version
+
+      - name: Test lemond startup and health check
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $archiveDir = "lemonade-embeddable-$($env:LEMONADE_VERSION)-windows-x64"
+
+          Push-Location $archiveDir
+          $proc = Start-Process -FilePath ".\lemond.exe" -ArgumentList ".\" -PassThru -NoNewWindow
+
+          # Wait for server to become healthy
+          $healthy = $false
+          for ($i = 0; $i -lt 15; $i++) {
+            try {
+              $response = Invoke-WebRequest -Uri "http://localhost:13305/api/v1/health" -UseBasicParsing -TimeoutSec 2
+              if ($response.StatusCode -eq 200) {
+                Write-Host "Server is healthy!" -ForegroundColor Green
+                Write-Host "Health response: $($response.Content)"
+                $healthy = $true
+                break
+              }
+            } catch {}
+            Start-Sleep -Seconds 2
+          }
+
+          if (-not $healthy) {
+            Write-Host "ERROR: Server failed to start within 30 seconds" -ForegroundColor Red
+            Stop-Process $proc -Force -ErrorAction SilentlyContinue
+            Pop-Location
+            exit 1
+          }
+
+          Stop-Process $proc -Force -ErrorAction SilentlyContinue
+          Pop-Location
+          Write-Host "Embeddable Windows smoke test PASSED!" -ForegroundColor Green
 
   test-dmg-inference:
     name: Test .dmg - llamacpp (metal)
@@ -1336,8 +1651,12 @@ jobs:
       - build-lemonade-rpm
       - build-lemonade-macos-dmg
       - build-lemonade-appimage
+      - build-lemonade-embeddable-linux
+      - build-lemonade-embeddable-windows
       - test-cli-endpoints
       - test-rpm-package
+      - test-embeddable-linux
+      - test-embeddable-windows
     if: startsWith(github.ref, 'refs/tags/v')
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-rpm.outputs.version }}
@@ -1371,6 +1690,18 @@ jobs:
           name: lemonade-appimage
           path: .
 
+      - name: Download Lemonade Embeddable (Linux)
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-embeddable-linux
+          path: .
+
+      - name: Download Lemonade Embeddable (Windows)
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-embeddable-windows
+          path: .
+
       - name: Verify release artifacts
         run: |
           echo "Release artifacts:"
@@ -1379,6 +1710,8 @@ jobs:
           ls -lh lemonade-server-${LEMONADE_VERSION}.x86_64.rpm
           ls -lh *.pkg
           ls -lh lemonade-app-${LEMONADE_VERSION}-x86_64.AppImage
+          ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz
+          ls -lh lemonade-embeddable-${LEMONADE_VERSION}-windows-x64.zip
 
       - name: Generate release notes
         id: release-notes
@@ -1399,4 +1732,6 @@ jobs:
             lemonade-server-${{ env.LEMONADE_VERSION }}.x86_64.rpm
             *.pkg
             lemonade-app-${{ env.LEMONADE_VERSION }}-x86_64.AppImage
+            lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
+            lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
           fail_on_unmatched_files: true

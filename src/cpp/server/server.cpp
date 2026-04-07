@@ -3635,6 +3635,11 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
             std::string dir = config_->extra_models_dir();
             LOG(INFO, "Server") << "Extra models dir changed to: " << dir << std::endl;
             model_manager_->set_extra_models_dir(dir);
+        } else if (key == "models_dir") {
+            std::string dir = config_->models_dir();
+            LOG(INFO, "Server") << "Models dir changed to: " << dir << std::endl;
+            utils::set_models_dir(dir);
+            model_manager_->invalidate_models_cache();
         }
     }
 }
