@@ -65,13 +65,19 @@ Lemonade comes in two flavors:
 
 ## Using the CLI
 
-To run and chat with Gemma 3:
+To run and chat with Gemma:
 
 ```
 lemonade run Gemma-4-E2B-it-GGUF
 ```
 
-More modalities:
+To code with Lemonade models:
+
+```
+lemonade launch claude
+```
+
+Multi-modality:
 
 ```
 # image gen
