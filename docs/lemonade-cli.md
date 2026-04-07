@@ -182,7 +182,7 @@ lemonade pull user.Phi-4-Mini-GGUF \
 # Register and pull a model with multiple checkpoints (e.g., main model + mmproj)
 lemonade pull user.Gemma-3-4b \
   --checkpoint main ggml-org/gemma-3-4b-it-GGUF:Q4_K_M \
-  --checkpoint mmproj mmproj-model-f16.gguf \
+  --checkpoint mmproj ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf \
   --recipe llamacpp
 
 # Register and pull a model with multiple labels
@@ -276,7 +276,7 @@ lemonade import --directory coding-agents --recipe-file GLM-4.7-Flash-GGUF-NoThi
   "model_name": "MyMultimodalModel",
   "checkpoints": {
     "main": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
-    "mmproj": "mmproj-model-f16.gguf"
+    "mmproj": "ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf"
   },
   "recipe": "llamacpp",
   "labels": ["vision", "reasoning"]
