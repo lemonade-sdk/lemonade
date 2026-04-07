@@ -200,6 +200,7 @@ sys.exit(0)
     def _build_stubbed_agent_env(self, stub_dir):
         """Build isolated env so PATH resolves fake agents and avoids first-run side effects."""
         env = os.environ.copy()
+        env.pop("OPENAI_BASE_URL", None)
         env["PATH"] = stub_dir + os.pathsep + env.get("PATH", "")
         env["HOME"] = stub_dir
         env["XDG_CONFIG_HOME"] = os.path.join(stub_dir, ".config")
@@ -775,10 +776,15 @@ sys.exit(0)
                 payload = json.load(f)
 
             argv = payload["argv"]
-            self.assertIn("--oss", argv)
+            self.assertIn("-c", argv)
             self.assertIn("-m", argv)
             self.assertIn(ENDPOINT_TEST_MODEL, argv)
-            self.assertTrue(payload["env"]["OPENAI_BASE_URL"].endswith("/v1/"))
+            self.assertTrue(
+                any(arg.startswith("model_providers.lemonade=") for arg in argv),
+                "Expected injected Lemonade model provider config in codex args",
+            )
+            self.assertIn('model_provider="lemonade"', argv)
+            self.assertEqual(payload["env"]["OPENAI_BASE_URL"], "")
             self.assertEqual(payload["env"]["OPENAI_API_KEY"], "lemonade")
 
     def test_114_launch_claude_defaults_and_host_normalization(self):
@@ -819,8 +825,199 @@ sys.exit(0)
                 payload["env"]["ANTHROPIC_BASE_URL"], f"http://localhost:{PORT}"
             )
 
-    def test_115_launch_with_model_and_directory_flags_is_deterministic(self):
-        """A provided model should skip import flow even when directory flags are present."""
+    def test_102c_launch_codex_provider_default(self):
+        """Codex launch -p should select default provider without injecting provider config."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(
+                temp_dir, "codex_capture_user_config_default.json"
+            )
+            self._write_fake_agent(temp_dir, "codex", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+            result = run_cli_command(
+                [
+                    "launch",
+                    "codex",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "-p",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            argv = payload["argv"]
+            self.assertIn('model_provider="lemonade"', argv)
+            self.assertFalse(
+                any(arg.startswith("model_providers.lemonade=") for arg in argv)
+            )
+
+    def test_102d_launch_codex_provider_custom(self):
+        """Codex launch --provider PROVIDER should target custom provider name."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(
+                temp_dir, "codex_capture_user_config_custom.json"
+            )
+            self._write_fake_agent(temp_dir, "codex", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+            result = run_cli_command(
+                [
+                    "launch",
+                    "codex",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--provider",
+                    "custom-provider",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            argv = payload["argv"]
+            self.assertIn('model_provider="custom-provider"', argv)
+            self.assertFalse(
+                any(arg.startswith("model_providers.custom-provider=") for arg in argv)
+            )
+
+    def test_102e_launch_codex_provider_without_config_check(self):
+        """Codex --provider should not read/validate config.toml in launcher."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(
+                temp_dir, "codex_capture_provider_no_config_check.json"
+            )
+            self._write_fake_agent(temp_dir, "codex", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "codex",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--provider",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            argv = payload["argv"]
+            self.assertIn('model_provider="lemonade"', argv)
+            self.assertFalse(
+                any(arg.startswith("model_providers.lemonade=") for arg in argv)
+            )
+
+    def test_102f_launch_codex_provider_custom_without_config_check(self):
+        """Codex --provider custom name should not be launcher-validated against config.toml."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(
+                temp_dir, "codex_capture_provider_custom_no_config_check.json"
+            )
+            self._write_fake_agent(temp_dir, "codex", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "codex",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--provider",
+                    "missing-in-config",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            argv = payload["argv"]
+            self.assertIn('model_provider="missing-in-config"', argv)
+            self.assertFalse(
+                any(
+                    arg.startswith("model_providers.missing-in-config=") for arg in argv
+                )
+            )
+
+    def test_102g_launch_claude_provider_rejected(self):
+        """--provider should be rejected for non-codex agents."""
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            env = self._build_missing_agent_env(temp_dir)
+            result = run_cli_command(
+                [
+                    "launch",
+                    "claude",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--provider",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            output = result.stdout + result.stderr
+            self.assertIn("only supported for the codex agent", output)
+
+    def test_102h_launch_agent_args_passthrough(self):
+        """--agent-args should be tokenized and appended to agent argv."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "claude_capture_agent_args.json")
+            self._write_fake_agent(temp_dir, "claude", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "claude",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--agent-args",
+                    "--approval-mode never --custom 'a b'",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            argv = payload["argv"]
+            self.assertIn("--approval-mode", argv)
+            self.assertIn("never", argv)
+            self.assertIn("--custom", argv)
+            self.assertIn("a b", argv)
+
+    def test_103_launch_explicit_model_with_repo_flags_is_deterministic(self):
+        """Explicit model should skip import flow even when repo flags are present."""
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
             env = self._build_missing_agent_env(temp_dir)
 
@@ -912,6 +1109,14 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
             "Remote recipe JSON filename used only if you choose recipe import at prompt",
             help_output,
         )
+        self.assertIn(
+            "Use model provider name for Codex",
+            help_output,
+        )
+        self.assertIn(
+            "Custom arguments to pass directly to the launched agent process",
+            help_output,
+        )
 
         docs_path = os.path.join(
             os.path.dirname(__file__), "..", "docs", "lemonade-cli.md"
@@ -932,6 +1137,8 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
             "For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first",
             docs_text,
         )
+        self.assertIn("--provider,-p [PROVIDER]", docs_text)
+        self.assertIn("--agent-args ARGS", docs_text)
 
 
 def run_cli_client_tests():
