@@ -163,6 +163,10 @@ RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
     return RecipeOptions(recipe_, merged);
 }
 
+void RecipeOptions::set_option(const std::string& key, const json& value) {
+    options_[key] = value;
+}
+
 json RecipeOptions::get_option(const std::string& opt) const {
     if (options_.contains(opt)) {
         return options_[opt];

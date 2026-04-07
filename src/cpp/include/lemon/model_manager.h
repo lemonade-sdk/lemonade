@@ -58,6 +58,9 @@ struct ModelInfo {
     ModelType type = ModelType::LLM;      // Model type for LRU cache management
     DeviceType device = DEVICE_NONE;      // Target device(s) for this model
 
+    // RPC requirement flag (for models requiring distributed inference)
+    bool rpc_required = false;
+
     // Image generation defaults (for sd-cpp models)
     ImageDefaults image_defaults;
 

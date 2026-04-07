@@ -31,6 +31,10 @@ public:
     std::string models_dir() const;
     int ctx_size() const;
 
+    // RPC configuration
+    std::string rpc() const;
+    bool has_rpc() const;
+
     // Feature flags
     bool offline() const;
     bool disable_model_filtering() const;

@@ -1353,5 +1353,15 @@
             "image"
         ],
         "size": 0.017
+    },
+    "MiniMax-M2.5-GGUF": {
+        "checkpoint": "unsloth/MiniMax-M2.5-GGUF:Q4_K_M",
+        "recipe": "llamacpp",
+        "rpc_required": true,
+        "labels": [
+            "coding",
+            "tool-calling"
+        ],
+        "size": 138.0
     }
 }

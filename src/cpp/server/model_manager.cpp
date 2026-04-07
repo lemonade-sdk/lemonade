@@ -47,7 +47,7 @@ static constexpr auto safe_dir_options = fs::directory_options::none;
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults"};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "rpc_required"};
 
 // Helper functions for string operations
 static std::string to_lower(const std::string& str) {
@@ -779,6 +779,7 @@ void ModelManager::build_cache() {
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.rpc_required = JsonUtils::get_or_default<bool>(value, "rpc_required", false);
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -820,6 +821,7 @@ void ModelManager::build_cache() {
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", true);
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.rpc_required = JsonUtils::get_or_default<bool>(value, "rpc_required", false);
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -1351,7 +1353,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
         // Filter out models that are too large for system RAM
         // Heuristic: if model size > 80% of system RAM, filter it out
-        if (!filter_out && system_ram_gb > 0.0 && info.size > 0.0) {
+        // Skip this check for rpc_required models — they are designed for
+        // distributed inference across multiple machines.
+        if (!filter_out && !info.rpc_required && system_ram_gb > 0.0 && info.size > 0.0) {
             if (info.size > max_model_size_gb) {
                 filter_out = true;
                 std::ostringstream oss;
