@@ -387,10 +387,6 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_delete(req, res);
     });
 
-    register_post("cleanup-cache", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_cleanup_cache(req, res);
-    });
-
     register_post("params", [this](const httplib::Request& req, httplib::Response& res) {
         handle_params(req, res);
     });
@@ -436,6 +432,9 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     web_server.Get("/internal/config", [this](const httplib::Request& req, httplib::Response& res) {
         handle_config_get(req, res);
+    });
+    web_server.Post("/internal/cleanup-cache", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cleanup_cache(req, res);
     });
 
     // Test endpoint to verify POST works

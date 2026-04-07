@@ -513,7 +513,7 @@ int LemonadeClient::cleanup_cache(bool dry_run) const {
 
     try {
         json request_body = {{"dry_run", dry_run}};
-        std::string response = make_request("/api/v1/cleanup-cache", "POST",
+        std::string response = make_request("/internal/cleanup-cache", "POST",
             request_body.dump(), "application/json", 30, 300);
 
         auto result = json::parse(response);
