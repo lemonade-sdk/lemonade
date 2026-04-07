@@ -30,6 +30,34 @@ static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* st
     return written;
 }
 
+struct FirstByteTimeout {
+    long initial_timeout_seconds{};
+    std::chrono::steady_clock::time_point start_time;
+};
+
+static int first_byte_timeout_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
+                                       curl_off_t ultotal, curl_off_t ulnow) {
+    // If we have received any data, don't time out here;
+    // CURLOPT_LOW_SPEED_LIMIT and CURLOPT_LOW_SPEED_TIME will apply instead
+    if (dlnow > 0) {
+        return 0;
+    }
+
+    // Handle timeout while waiting for the first byte
+    const auto* data = static_cast<FirstByteTimeout*>(clientp);
+
+    // Check how much time has passed
+    const auto now = std::chrono::steady_clock::now();
+    const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - data->start_time).count();
+
+    if (elapsed > data->initial_timeout_seconds) {
+        LOG(ERROR, "HttpClient") << "Initial timeout of " << data->initial_timeout_seconds
+                                 << "s reached before receiving any data" << std::endl;
+        return 1; // Non-zero return value aborts the transfer
+    }
+    return 0; // Not timed out
+}
+
 // Callback for download progress
 struct ProgressData {
     ProgressCallback callback;
@@ -120,8 +148,30 @@ HttpResponse HttpClient::post(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
-    // Use provided timeout, or fallback to global default (set via --http-timeout)
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
+    if (timeout_seconds == 0) {
+        // Use first byte timeout if timeout_seconds is 0 (set via --http-timeout)
+        FirstByteTimeout timeout;
+        timeout.initial_timeout_seconds = default_timeout_seconds_.load();
+        timeout.start_time = std::chrono::steady_clock::now();
+
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
+        // curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
+
+        // Timeout if the LOW_SPEED_LIMIT rate is below the limit for LOW_SPEED_TIME duration
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 10L); // 10 bytes/sec
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L);  // 60 seconds
+
+        // Custom progress callback to enforce initial wait for first byte
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, first_byte_timeout_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &timeout);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    } else if (timeout_seconds > 0) {
+        // Use provided timeout
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
+    } else {
+        // Fall back to global default (set via --http-timeout)
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, default_timeout_seconds_.load());
+    }
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
@@ -182,8 +232,29 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
-    // Use provided timeout, or fallback to global default (set via --http-timeout)
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
+    if (timeout_seconds == 0) {
+        // Use first byte timeout if timeout_seconds is 0 (set via --http-timeout)
+        FirstByteTimeout timeout;
+        timeout.initial_timeout_seconds = default_timeout_seconds_.load();
+        timeout.start_time = std::chrono::steady_clock::now();
+
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
+
+        // Timeout if the LOW_SPEED_LIMIT rate is below the limit for LOW_SPEED_TIME duration
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 10L); // 10 bytes/sec
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L);  // 60 seconds
+
+        // Custom progress callback to enforce initial wait for first byte
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, first_byte_timeout_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &timeout);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    } else if (timeout_seconds > 0) {
+        // Use provided timeout
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
+    } else {
+        // Fall back to global default (set via --http-timeout)
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, default_timeout_seconds_.load());
+    }
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     CURLcode res = curl_easy_perform(curl);
@@ -258,8 +329,31 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callback_data);
-    // Use provided timeout, or fallback to global default (set via --http-timeout)
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
+
+    if (timeout_seconds == 0) {
+        // Use first byte timeout if timeout_seconds is 0 (set via --http-timeout)
+        FirstByteTimeout timeout;
+        timeout.initial_timeout_seconds = default_timeout_seconds_.load();
+        timeout.start_time = std::chrono::steady_clock::now();
+
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
+
+        // Timeout if the LOW_SPEED_LIMIT rate is below the limit for LOW_SPEED_TIME duration
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 10L); // 10 bytes/sec
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L);  // 60 seconds
+
+        // Custom progress callback to enforce initial wait for first byte
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, first_byte_timeout_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &timeout);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    } else if (timeout_seconds > 0) {
+        // Use provided timeout
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
+    } else {
+        // Fall back to global default (set via --http-timeout)
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, default_timeout_seconds_.load());
+    }
+
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
