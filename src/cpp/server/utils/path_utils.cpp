@@ -387,7 +387,11 @@ std::string resolve_hf_cache_dir() {
 
 std::string get_hf_cache_dir() {
     if (!g_models_dir.empty() && g_models_dir != "auto") {
-        return g_models_dir;
+        fs::path p = path_from_utf8(g_models_dir);
+        if (p.is_relative()) {
+            p = path_from_utf8(get_executable_dir()) / p;
+        }
+        return path_to_utf8(p);
     }
     return resolve_hf_cache_dir();
 }

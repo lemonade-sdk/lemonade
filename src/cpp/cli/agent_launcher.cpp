@@ -91,6 +91,18 @@ std::string build_server_base_url(const std::string& host, int port) {
     return "http://" + normalize_server_host(host) + ":" + std::to_string(port);
 }
 
+void append_codex_config_arg(std::vector<std::string>& args, const std::string& config_value) {
+    args.push_back("-c");
+    args.push_back(config_value);
+}
+
+void append_codex_config_args(std::vector<std::string>& args,
+                              const std::vector<std::string>& config_values) {
+    for (const auto& config_value : config_values) {
+        append_codex_config_arg(args, config_value);
+    }
+}
+
 void configure_claude_agent(const std::string& base_url,
                             const std::string& model,
                             const std::string& api_key,
@@ -130,6 +142,7 @@ void configure_claude_agent(const std::string& base_url,
 void configure_codex_agent(const std::string& base_url,
                            const std::string& model,
                            const std::string& api_key,
+                           const AgentLaunchOptions& launch_options,
                            AgentConfig& config) {
     const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
 
@@ -146,17 +159,35 @@ void configure_codex_agent(const std::string& base_url,
     add_windows_npm_fallbacks(config.fallback_paths, "codex");
 
     config.env_vars = {
-        {"OPENAI_BASE_URL", base_url + "/v1/"},
         {"OPENAI_API_KEY", resolved_api_key},
         {"LEMONADE_API_KEY", resolved_api_key}
     };
-    config.extra_args = {
-        "--oss",
-        "-m",
-        model,
-        "--config",
-        "web_search=\"disabled\""
+
+    const std::string responses_base_url = base_url + "/v1";
+    const std::string provider_name = launch_options.codex_model_provider.empty()
+        ? "lemonade"
+        : launch_options.codex_model_provider;
+
+
+    std::vector<std::string> codex_config_values = {
+        "model_provider=\"" + provider_name + "\"",
+        "show_raw_agent_reasoning=true",
+        "web_search=\"disabled\"",
+        "analytics.enabled=false",
+        "feedback.enabled=false"
     };
+
+    if (!launch_options.codex_use_user_config) {
+        codex_config_values.insert(codex_config_values.begin(),
+            "model_providers." + provider_name + "={ name='Lemonade', base_url='" + responses_base_url +
+            "', wire_api='responses', env_key='OPENAI_API_KEY', requires_openai_auth=false, supports_websockets=false }");
+    }
+
+    config.extra_args = {};
+    append_codex_config_args(config.extra_args, codex_config_values);
+    config.extra_args.push_back("-m");
+    config.extra_args.push_back(model);
+
     config.install_instructions = "Install Codex CLI and ensure 'codex' is on PATH.";
 }
 
@@ -167,6 +198,7 @@ bool build_agent_config(const std::string& agent,
                         int port,
                         const std::string& model,
                         const std::string& api_key,
+                        const AgentLaunchOptions& launch_options,
                         AgentConfig& config,
                         std::string& error_message) {
     const std::string base = build_server_base_url(host, port);
@@ -177,7 +209,7 @@ bool build_agent_config(const std::string& agent,
     }
 
     if (agent == "codex") {
-        configure_codex_agent(base, model, api_key, config);
+        configure_codex_agent(base, model, api_key, launch_options, config);
         return true;
     }
 
