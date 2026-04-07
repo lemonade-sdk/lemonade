@@ -1369,7 +1369,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
             filter_out = true;
             std::ostringstream oss;
             oss << std::fixed << std::setprecision(1);
-            oss << "The gpt-oss-20b-FLM model requires at least 64 GB of RAM. "
+            oss << "The gpt-oss-20b-FLM model requires at least 48 GB of RAM. "
                 << "Your system has " << system_ram_gb << " GB.";
             filter_reason = oss.str();
         }
