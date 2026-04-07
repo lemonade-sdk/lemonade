@@ -830,7 +830,7 @@ int main(int argc, char* argv[]) {
     // Global options (available to all subcommands)
     auto* host_opt = app.add_option("--host", config.host, "Server host")->default_val(config.host)->type_name("HOST")->envname("LEMONADE_HOST");
     auto* port_opt = app.add_option("--port", config.port, "Server port")->default_val(config.port)->type_name("PORT")->envname("LEMONADE_PORT");
-    auto* api_key_opt = app.add_option("--api-key", config.api_key, "API key for authentication")
+    app.add_option("--api-key", config.api_key, "API key for authentication")
         ->default_val(config.api_key)
         ->type_name("KEY")
         ->envname("LEMONADE_API_KEY");
@@ -964,11 +964,10 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (api_key_opt->count() == 0) {
-        const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
-        if (admin_api_key && admin_api_key[0]) {
-            config.api_key = admin_api_key;
-        }
+    // If set, LEMONADE_ADMIN_API_KEY takes precedence over the regular API key
+    const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
+    if (admin_api_key && admin_api_key[0]) {
+        config.api_key = admin_api_key;
     }
 
     // Create client
