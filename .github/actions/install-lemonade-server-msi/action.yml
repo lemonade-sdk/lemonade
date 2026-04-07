@@ -150,13 +150,14 @@ runs:
         $installPath = "${{ inputs.install-path }}"
         $serverExe = Join-Path $installPath "bin\LemonadeServer.exe"
 
-        # --- Kill the MSI-auto-started server ---
-        Write-Host "Stopping MSI-auto-started LemonadeServer.exe..." -ForegroundColor Cyan
+        # --- Kill the MSI-auto-started server and its subprocess ---
+        Write-Host "Stopping MSI-auto-started LemonadeServer.exe and lemond.exe..." -ForegroundColor Cyan
         Stop-Process -Name LemonadeServer -Force -ErrorAction SilentlyContinue
-        # Wait for port 13305 to be released
+        Stop-Process -Name lemond -Force -ErrorAction SilentlyContinue
+        # Wait for ports to be released (13305 for LemonadeServer, 8000 for orphan lemond)
         $portWait = 0
         while ($portWait -lt 10) {
-          $listening = netstat -an | Select-String ":13305 .*LISTENING"
+          $listening = netstat -an | Select-String ":(13305|8000) .*LISTENING"
           if (-not $listening) { break }
           Start-Sleep -Seconds 1
           $portWait++

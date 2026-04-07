@@ -329,35 +329,14 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
 
             return true;
         } catch (...) {
-            return false;
-        }
-    }
-    if (recipe == "flm") {
-        // 1. Is flm binary present?
-        std::string flm_path = utils::find_flm_executable();
-        if (flm_path.empty()) {
-            error_message = "FLM is not installed";
-            return false;
-        }
-        // 2. Is version >= required?
-        std::string version = SystemInfo::get_flm_version();
-        std::string required = get_expected_backend_version("flm", "npu");
-        if (!required.empty()) {
-            if (version == "unknown") {
-                // Can't determine version (FLM too old for --json flag) → treat as outdated
-                error_message = "FLM version unknown, requires " + required;
-                return false;
+#ifndef _WIN32
+            // On Linux, FLM is installed as a system package (in PATH, not install dir)
+            if (recipe == "flm" && !utils::find_flm_executable().empty()) {
+                return true;
             }
-            if (utils::Version::parse(version) < utils::Version::parse(required)) {
-                error_message = "FLM " + version + " installed, requires " + required;
-                return false;
-            }
-        }
-        // 3. Does flm validate pass?
-        if (!utils::run_flm_validate(flm_path, error_message)) {
+#endif
             return false;
         }
-        return true;
     }
     return false;
 }
@@ -370,12 +349,22 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
     if (spec) {
         std::string version_file = BackendUtils::get_installed_version_file(*spec, backend);
         if (version_file.empty()) {
+#ifndef _WIN32
+            // On Linux, FLM is a system package with no version.txt - query directly
+            if (recipe == "flm") {
+                return SystemInfo::get_flm_version();
+            }
+#endif
             return "unknown";
         }
-        return read_version_file(version_file);
-    }
-    if (recipe == "flm") {
-        return SystemInfo::get_flm_version();
+        std::string version = read_version_file(version_file);
+#ifndef _WIN32
+        // On Linux, version.txt may not exist on disk for system-installed FLM
+        if (recipe == "flm" && (version.empty() || version == "unknown")) {
+            return SystemInfo::get_flm_version();
+        }
+#endif
+        return version;
     }
     return "";
 }
@@ -894,11 +883,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
             backend["message"] = message;
             backend["action"] = "";
         } else if (!available) {
-            // FLM uses 5-state model: installable, update_required, action_required
-            // (version checking is inside is_recipe_installed() for FLM)
+            // FLM on Linux needs richer state to guide users through manual setup
+            // (installing .deb, xrt drivers, etc.)
             if (def.recipe == "flm") {
-                // Determine FLM sub-state from the error message
-                bool is_not_installed = install_error.find("not installed") != std::string::npos;
+                bool is_not_installed = install_error.empty()
+                                     || install_error.find("not installed") != std::string::npos
+                                     || install_error.find("not found") != std::string::npos;
                 bool is_version_mismatch = install_error.find("requires") != std::string::npos;
 
                 if (is_not_installed) {
@@ -910,7 +900,6 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 }
                 backend["message"] = install_error;
 
-                // Include version for update_required and action_required
                 if (!is_not_installed) {
                     std::string installed_version = get_recipe_version(def.recipe, def.backend);
                     if (!installed_version.empty() && installed_version != "unknown") {
@@ -918,8 +907,6 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     }
                 }
 
-                // Platform-specific action: action_required uses driver help URL on Windows,
-                // all other states use the install command. Linux always uses the docs URL.
 #ifdef __linux__
                 backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html?mode=troubleshoot";
 #elif defined(_WIN32)
@@ -929,8 +916,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     backend["action"] = get_install_command(def.recipe, def.backend);
                 }
 #else
-                backend["action"] = is_not_installed || is_version_mismatch
-                    ? get_install_command(def.recipe, def.backend) : "";
+                backend["action"] = get_install_command(def.recipe, def.backend);
 #endif
             } else {
                 backend["state"] = "installable";
@@ -945,39 +931,25 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 }
             }
         } else {
-            // FLM: version check already done in is_recipe_installed(), so skip generic version check
-            if (def.recipe == "flm") {
-                std::string installed_version = get_recipe_version(def.recipe, def.backend);
-                if (!installed_version.empty() && installed_version != "unknown") {
-                    backend["version"] = installed_version;
-                }
+            std::string installed_version = get_recipe_version(def.recipe, def.backend);
+            std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
+
+            if (!installed_version.empty() && installed_version != "unknown") {
+                backend["version"] = installed_version;
+            }
+
+            bool version_known = !installed_version.empty() && installed_version != "unknown";
+            bool has_expected = !expected_version.empty();
+            bool needs_update = has_expected && (!version_known || installed_version != expected_version);
+
+            if (needs_update) {
+                backend["state"] = "update_required";
+                backend["message"] = "Backend update is required before use.";
+                backend["action"] = get_install_command(def.recipe, def.backend);
+            } else {
                 backend["state"] = "installed";
                 backend["message"] = "";
                 backend["action"] = "";
-#ifdef __linux__
-                backend["can_uninstall"] = false;
-#endif
-            } else {
-                std::string installed_version = get_recipe_version(def.recipe, def.backend);
-                std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
-
-                if (!installed_version.empty() && installed_version != "unknown") {
-                    backend["version"] = installed_version;
-                }
-
-                bool version_known = !installed_version.empty() && installed_version != "unknown";
-                bool has_expected = !expected_version.empty();
-                bool needs_update = has_expected && (!version_known || installed_version != expected_version);
-
-                if (needs_update) {
-                    backend["state"] = "update_required";
-                    backend["message"] = "Backend update is required before use.";
-                    backend["action"] = get_install_command(def.recipe, def.backend);
-                } else {
-                    backend["state"] = "installed";
-                    backend["message"] = "";
-                    backend["action"] = "";
-                }
             }
         }
 

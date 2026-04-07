@@ -1,6 +1,5 @@
 #include "lemon/backend_manager.h"
 #include "lemon/backends/backend_utils.h"
-#include "lemon/backends/fastflowlm_server.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
@@ -50,10 +49,6 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
 // ============================================================================
 
 BackendManager::InstallParams BackendManager::get_install_params(const std::string& recipe, const std::string& backend) {
-    if (recipe == "flm") {
-        throw std::runtime_error("FLM uses a special installer and cannot be installed via get_install_params");
-    }
-
     auto* spec = backends::try_get_spec_for_recipe(recipe);
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
@@ -78,28 +73,6 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         return;
     }
 
-    // FLM special case - uses installer exe with its own install logic
-    if (recipe == "flm") {
-        auto status = SystemInfoCache::get_flm_status();
-        if (status.state == "installed") {
-            // Already installed — nothing to do
-        } else if (status.state == "unsupported" && !force) {
-            throw std::runtime_error("FLM is not supported on this system: " + status.message);
-        } else {
-            // installable, update_required, or action_required
-            backends::FastFlowLMServer flm_installer("info", nullptr, this);
-            flm_installer.install(backend);
-            // install() calls SystemInfoCache::invalidate_recipes()
-        }
-        // Re-read status after install
-        status = SystemInfoCache::get_flm_status();
-        if (!status.is_ready() && !force) {
-            throw std::runtime_error("FLM installation incomplete: " + status.message +
-                (status.action.empty() ? "" : ". " + status.action));
-        }
-        return;
-    }
-
     auto params = get_install_params(recipe, backend);
     auto* spec = backends::try_get_spec_for_recipe(recipe);
     if (!spec) {
@@ -112,10 +85,6 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
 void BackendManager::uninstall_backend(const std::string& recipe, const std::string& backend) {
     LOG(DEBUG, "BackendManager") << "Uninstalling " << recipe << ":" << backend << std::endl;
-
-    if (recipe == "flm") {
-        throw std::runtime_error("Uninstall FastFlowLM using their Windows uninstaller.");
-    }
 
     auto* spec = backends::try_get_spec_for_recipe(recipe);
     if (!spec) {
@@ -191,14 +160,6 @@ json BackendManager::get_all_backends_status() {
 
 std::string BackendManager::get_release_url(const std::string& recipe, const std::string& backend) {
     try {
-        if (recipe == "flm") {
-            std::string version = get_latest_version(recipe, backend);
-            if (!version.empty()) {
-                return "https://github.com/FastFlowLM/FastFlowLM/releases/tag/" + version;
-            }
-            return "";
-        }
-
         auto params = get_install_params(recipe, backend);
         return "https://github.com/" + params.repo + "/releases/tag/" + params.version;
     } catch (...) {
@@ -218,17 +179,6 @@ std::string BackendManager::get_download_filename(const std::string& recipe, con
 BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const std::string& recipe, const std::string& backend) {
     BackendEnrichment result;
     try {
-        if (recipe == "flm") {
-            result.version = get_latest_version(recipe, backend);
-            if (!result.version.empty()) {
-                result.release_url = "https://github.com/FastFlowLM/FastFlowLM/releases/tag/" + result.version;
-            }
-            // FLM installer artifact used by install_flm_if_needed().
-            result.download_filename = "flm-setup.exe";
-            return result;
-        }
-
-        // All standard recipes (including ryzenai-llm): one get_install_params() call gives us everything
         auto params = get_install_params(recipe, backend);
         result.release_url = "https://github.com/" + params.repo + "/releases/tag/" + params.version;
         result.download_filename = params.filename;

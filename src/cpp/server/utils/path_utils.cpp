@@ -190,44 +190,19 @@ bool is_safe_executable_path(const std::string& path) {
 
 std::string find_flm_executable() {
 #ifdef _WIN32
-    // Refresh PATH from Windows registry to pick up any changes since process started
-    // This is important because users may install FLM after starting lemonade-server
-    HKEY hKey;
-    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-                      "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
-                      0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        char buffer[32767];
-        DWORD bufferSize = sizeof(buffer);
-        if (RegQueryValueExA(hKey, "PATH", nullptr, nullptr,
-                            reinterpret_cast<LPBYTE>(buffer), &bufferSize) == ERROR_SUCCESS) {
-            std::string system_path = buffer;
-            // Combine with current process PATH (system PATH takes priority for FLM lookup)
-            const char* current_path = std::getenv("PATH");
-            if (current_path) {
-                system_path = system_path + ";" + std::string(current_path);
+    // On Windows, only check the Lemonade install directory (auto-installed zip).
+    // No system PATH fallback - FLM should be installed via install_backend().
+    std::string install_dir = (fs::path(get_downloaded_bin_dir()) / "flm" / "npu").make_preferred().string();
+    if (fs::exists(install_dir)) {
+        for (const auto& entry : fs::recursive_directory_iterator(install_dir)) {
+            if (entry.is_regular_file() && entry.path().filename().string() == "flm.exe") {
+                std::string path = entry.path().string();
+                if (is_safe_executable_path(path)) {
+                    return path;
+                }
             }
-            _putenv(("PATH=" + system_path).c_str());
         }
-        RegCloseKey(hKey);
     }
-
-    // Use SearchPathA which is the same API that CreateProcessA uses internally
-    // This ensures we find the exact same executable that will be launched
-    char found_path[MAX_PATH];
-    DWORD result = SearchPathA(
-        nullptr,      // Use system PATH
-        "flm.exe",    // File to search for
-        nullptr,      // No default extension needed
-        MAX_PATH,
-        found_path,
-        nullptr
-    );
-
-    if (result > 0 && result < MAX_PATH) {
-        std::string path(found_path);
-        return is_safe_executable_path(path) ? path : "";
-    }
-
     return "";
 #else
     // On Linux/Mac, check PATH using which
@@ -430,7 +405,8 @@ std::string get_runtime_dir() {
 std::string get_downloaded_bin_dir() {
     // Use cache directory on all platforms for consistent multi-user support
     // This is important for All Users installs on Windows where Program Files is read-only
-    std::string bin_dir = get_cache_dir() + "/bin";
+    // Use fs::path to ensure native path separators (avoids cmd.exe issues on Windows)
+    std::string bin_dir = (fs::path(get_cache_dir()) / "bin").make_preferred().string();
 
     // Ensure directory exists
     fs::path bin_path = path_from_utf8(bin_dir);
