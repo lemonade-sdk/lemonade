@@ -6,6 +6,8 @@
 #include <lemon_cli/agent_launcher.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
+#include <lemon/utils/http_client.h>
+#include <lemon/utils/json_utils.h>
 #include <lemon/utils/network_beacon.h>
 #include <lemon/utils/custom_args.h>
 #include <CLI/CLI.hpp>
@@ -1010,10 +1012,161 @@ static bool ensure_local_server_running(const CliConfig& config, const std::stri
     return false;
 }
 
-static int handle_rpc_server_command(lemonade::LemonadeClient& client, const CliConfig& config) {
-    if (!ensure_local_server_running(config, config.api_key)) {
+// Install llamacpp backend locally for rpc-server (no server API needed).
+// Returns 0 on success, non-zero on failure.
+static int install_llamacpp_locally(const std::string& backend) {
+    namespace fs = std::filesystem;
+
+    // Read version from backend_versions.json
+    std::string config_path = lemon::utils::get_resource_path("resources/backend_versions.json");
+    auto config = lemon::utils::JsonUtils::load_from_file(config_path);
+
+    if (!config.contains("llamacpp") || !config["llamacpp"].contains(backend)) {
+        std::cerr << "Error: backend_versions.json missing version for llamacpp:" << backend << std::endl;
         return 1;
     }
+    std::string version = config["llamacpp"][backend].get<std::string>();
+
+    std::string install_dir = (fs::path(lemon::utils::get_downloaded_bin_dir()) / "llamacpp" / backend).string();
+
+    // Check if already installed with correct version
+    std::string version_file = (fs::path(install_dir) / "version.txt").string();
+    if (fs::exists(version_file)) {
+        std::ifstream vf(version_file);
+        std::string installed_version;
+        std::getline(vf, installed_version);
+        if (installed_version == version) {
+            // Already up to date
+            return 0;
+        }
+        std::cout << "Upgrading llamacpp:" << backend << " from " << installed_version << " to " << version << std::endl;
+        fs::remove_all(install_dir);
+    }
+
+    // Determine repo and filename
+    std::string repo;
+    std::string filename;
+    bool is_tarball = false;
+
+    if (backend == "rocm") {
+        repo = "lemonade-sdk/llamacpp-rocm";
+        // Detect ROCm GPU architecture from KFD topology
+        std::string rocm_arch;
+#ifdef __linux__
+        // Read gfx_target_version from KFD topology nodes
+        for (int node = 0; node < 16; ++node) {
+            std::string props_path = "/sys/class/kfd/kfd/topology/nodes/" +
+                                     std::to_string(node) + "/properties";
+            std::ifstream props(props_path);
+            if (!props.is_open()) break;
+            std::string line;
+            while (std::getline(props, line)) {
+                if (line.find("gfx_target_version") == 0) {
+                    std::string val = line.substr(line.find_last_of(' ') + 1);
+                    // Skip CPUs (gfx_target_version 0)
+                    if (!val.empty() && val != "0") {
+                        // Convert e.g. "110501" to "gfx1151"
+                        // Format: MMNNRR where MM=major, NN=minor, RR=revision
+                        if (val.length() >= 4) {
+                            std::string major = val.substr(0, 2);
+                            int minor_int = std::stoi(val.substr(2, 2));
+                            int rev_int = val.length() >= 6 ? std::stoi(val.substr(4, 2)) : 0;
+                            rocm_arch = "gfx" + major + std::to_string(minor_int) + std::to_string(rev_int);
+                        }
+                        break;
+                    }
+                }
+            }
+            if (!rocm_arch.empty()) break;
+        }
+#endif
+        if (rocm_arch.empty()) {
+            std::cerr << "Error: Could not detect ROCm GPU architecture" << std::endl;
+            return 1;
+        }
+        std::cout << "Detected ROCm arch: " << rocm_arch << std::endl;
+#ifdef _WIN32
+        filename = "llama-" + version + "-windows-rocm-" + rocm_arch + "-x64.zip";
+#elif defined(__linux__)
+        filename = "llama-" + version + "-ubuntu-rocm-" + rocm_arch + "-x64.zip";
+#endif
+    } else if (backend == "metal") {
+        repo = "ggml-org/llama.cpp";
+#ifdef __APPLE__
+        filename = "llama-" + version + "-bin-macos-arm64.tar.gz";
+        is_tarball = true;
+#else
+        std::cerr << "Error: Metal backend only supported on macOS" << std::endl;
+        return 1;
+#endif
+    } else if (backend == "cpu") {
+        repo = "ggml-org/llama.cpp";
+#ifdef _WIN32
+        filename = "llama-" + version + "-bin-win-cpu-x64.zip";
+#elif defined(__linux__)
+        filename = "llama-" + version + "-bin-ubuntu-x64.tar.gz";
+        is_tarball = true;
+#else
+        std::cerr << "Error: CPU backend not supported on this platform" << std::endl;
+        return 1;
+#endif
+    } else {  // vulkan
+        repo = "ggml-org/llama.cpp";
+#ifdef _WIN32
+        filename = "llama-" + version + "-bin-win-vulkan-x64.zip";
+#elif defined(__linux__)
+        filename = "llama-" + version + "-bin-ubuntu-vulkan-x64.tar.gz";
+        is_tarball = true;
+#else
+        std::cerr << "Error: Vulkan backend not supported on this platform" << std::endl;
+        return 1;
+#endif
+    }
+
+    std::string url = "https://github.com/" + repo + "/releases/download/" + version + "/" + filename;
+
+    // Download to temp directory
+    fs::path tmp_dir = fs::temp_directory_path();
+    std::string archive_name = "llamacpp_" + backend + "_" + version + (is_tarball ? ".tar.gz" : ".zip");
+    std::string archive_path = (tmp_dir / archive_name).string();
+
+    std::cout << "Downloading llamacpp:" << backend << " " << version << "..." << std::endl;
+
+    auto progress_cb = lemon::utils::create_throttled_progress_callback();
+    auto result = lemon::utils::HttpClient::download_file(url, archive_path, progress_cb);
+    if (!result.success) {
+        std::cerr << "Error: Download failed: " << result.error_message << std::endl;
+        return 1;
+    }
+
+    // Extract
+    fs::create_directories(install_dir);
+    std::string extract_cmd;
+    if (is_tarball) {
+        extract_cmd = "tar -xzf \"" + archive_path + "\" -C \"" + install_dir + "\" --strip-components=1 --no-same-owner";
+    } else {
+        extract_cmd = "unzip -o -q \"" + archive_path + "\" -d \"" + install_dir + "\"";
+    }
+
+    int extract_result = system(extract_cmd.c_str());
+    fs::remove(archive_path);
+
+    if (extract_result != 0) {
+        std::cerr << "Error: Extraction failed" << std::endl;
+        fs::remove_all(install_dir);
+        return 1;
+    }
+
+    // Save version
+    std::ofstream vf(version_file);
+    vf << version;
+
+    std::cout << "Installed llamacpp:" << backend << " " << version << std::endl;
+    return 0;
+}
+
+static int handle_rpc_server_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+    (void)client; // Server API not needed for local install
 
     std::string backend = config.rpc_backend;
 
@@ -1026,11 +1179,10 @@ static int handle_rpc_server_command(lemonade::LemonadeClient& client, const Cli
 #endif
     }
 
-    // Ensure the llamacpp backend is installed
-    std::cout << "Ensuring llamacpp:" << backend << " backend is installed..." << std::endl;
-    int install_result = client.install_backend("llamacpp", backend);
+    // Install the llamacpp backend locally (not via server API)
+    std::cout << "Ensuring llamacpp:" << backend << " backend is installed locally..." << std::endl;
+    int install_result = install_llamacpp_locally(backend);
     if (install_result != 0) {
-        std::cerr << "Error: Failed to install llamacpp:" << backend << " backend" << std::endl;
         return install_result;
     }
 
@@ -1077,11 +1229,24 @@ static int handle_rpc_server_command(lemonade::LemonadeClient& client, const Cli
         args.push_back(std::to_string(config.rpc_mem));
     }
 
+    // Set LD_LIBRARY_PATH to the install directory so the rpc-server can find
+    // its shared libraries (e.g. libggml.so). Some builds (notably ROCm) have
+    // a hardcoded RUNPATH from the CI build environment instead of $ORIGIN.
+    std::vector<std::pair<std::string, std::string>> env_vars;
+#ifndef _WIN32
+    std::string lib_path = install_dir;
+    const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+    if (existing_ld_path && existing_ld_path[0] != '\0') {
+        lib_path = lib_path + ":" + std::string(existing_ld_path);
+    }
+    env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+#endif
+
     // Start rpc-server with inherited output
     lemon::utils::ProcessHandle handle;
     try {
         handle = lemon::utils::ProcessManager::start_process(
-            rpc_exe, args, "", true, false, {});
+            rpc_exe, args, "", true, false, env_vars);
     } catch (const std::exception& e) {
         std::cerr << "Error: Failed to start rpc-server: " << e.what() << std::endl;
         return 1;
