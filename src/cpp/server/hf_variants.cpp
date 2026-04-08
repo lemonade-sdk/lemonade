@@ -249,9 +249,55 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
         }
     }
 
+    // Detect repo kind: GGUF (existing path) vs ONNX RyzenAI vs unknown.
+    // ONNX RyzenAI repos contain `.onnx` files plus a `genai_config.json`
+    // (the OGA runtime config). They are pulled as a single unit — no
+    // sub-variant selection — and use the `ryzenai-llm` recipe.
+    bool has_gguf = false;
+    bool has_onnx = false;
+    bool has_genai_config = false;
+    uint64_t total_repo_size = 0;
+    for (const auto& f : repo_files) {
+        std::string lf = to_lower(f);
+        if (ends_with(lf, ".gguf")) has_gguf = true;
+        if (ends_with(lf, ".onnx")) has_onnx = true;
+        if (lf == "genai_config.json" ||
+            (lf.size() > 18 && ends_with(lf, "/genai_config.json"))) {
+            has_genai_config = true;
+        }
+    }
+    for (const auto& kv : file_sizes) total_repo_size += kv.second;
+
+    // Suggested name = component after the last '/'.
+    std::string suggested_name = checkpoint;
+    {
+        size_t slash = checkpoint.find_last_of('/');
+        if (slash != std::string::npos) suggested_name = checkpoint.substr(slash + 1);
+    }
+
+    // ONNX RyzenAI branch: synthesize a 1-element variant set.
+    if (!has_gguf && has_onnx && has_genai_config) {
+        nlohmann::json vj;
+        vj["name"] = "default";
+        vj["primary_file"] = "genai_config.json";
+        vj["files"] = repo_files;
+        vj["sharded"] = repo_files.size() > 1;
+        vj["size_bytes"] = total_repo_size;
+
+        nlohmann::json out;
+        out["checkpoint"] = checkpoint;
+        out["recipe"] = "ryzenai-llm";
+        out["repo_kind"] = "onnx-ryzenai";
+        out["suggested_name"] = suggested_name;
+        out["suggested_labels"] = nlohmann::json::array();
+        out["mmproj_files"] = nlohmann::json::array();
+        out["variants"] = nlohmann::json::array({vj});
+        return out;
+    }
+
     auto vset = enumerate_gguf_variants(repo_files, file_sizes);
     if (vset.variants.empty()) {
-        throw std::runtime_error("No .gguf files found in repository " + checkpoint);
+        throw std::runtime_error("No supported model files (.gguf or ONNX RyzenAI) found in repository " + checkpoint);
     }
 
     // Suggested labels.
@@ -263,16 +309,10 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
         if (id_lower.find("rerank") != std::string::npos) labels.push_back("reranking");
     }
 
-    // Suggested name = component after the last '/'.
-    std::string suggested_name = checkpoint;
-    {
-        size_t slash = checkpoint.find_last_of('/');
-        if (slash != std::string::npos) suggested_name = checkpoint.substr(slash + 1);
-    }
-
     nlohmann::json out;
     out["checkpoint"] = checkpoint;
     out["recipe"] = "llamacpp";
+    out["repo_kind"] = "gguf";
     out["suggested_name"] = suggested_name;
     out["suggested_labels"] = labels;
     out["mmproj_files"] = vset.mmproj_files;

@@ -162,6 +162,68 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
     }
 
     const auto& variants = variants_response["variants"];
+    std::string recipe = variants_response.value("recipe", std::string("llamacpp"));
+
+    // Non-llamacpp recipes (currently: ONNX RyzenAI) ship as a single
+    // installable unit — no per-variant menu, no `:variant` checkpoint
+    // suffix, no `-VARIANT` model name tail.
+    if (recipe != "llamacpp") {
+        if (!variant.empty()) {
+            std::cerr << "warning: variant '" << variant << "' ignored for "
+                      << recipe << " checkpoints" << std::endl;
+        }
+
+        // Backend preflight: ryzenai-llm is an optional, platform-gated
+        // backend. Bail early with a friendly message instead of starting
+        // a multi-GB download that will fail at load time.
+        try {
+            std::string sys_info_body = client.make_request("/api/v1/system-info", "GET");
+            json sys_info = json::parse(sys_info_body);
+            bool installed = false;
+            std::vector<std::string> available_backends;
+            if (sys_info.contains("recipes") && sys_info["recipes"].contains(recipe) &&
+                sys_info["recipes"][recipe].contains("backends")) {
+                for (auto& [name, b] : sys_info["recipes"][recipe]["backends"].items()) {
+                    available_backends.push_back(name);
+                    if (b.value("state", "") == "installed") { installed = true; break; }
+                }
+            }
+            if (!installed) {
+                std::cerr << "Error: this checkpoint requires the '" << recipe
+                          << "' backend, which is not installed." << std::endl;
+                if (available_backends.size() == 1) {
+                    std::cerr << "       Install it with: lemonade backends install "
+                              << recipe << ":" << available_backends[0] << std::endl;
+                } else if (!available_backends.empty()) {
+                    std::cerr << "       Install one of: ";
+                    for (size_t i = 0; i < available_backends.size(); ++i) {
+                        if (i) std::cerr << ", ";
+                        std::cerr << recipe << ":" << available_backends[i];
+                    }
+                    std::cerr << std::endl;
+                    std::cerr << "       e.g. lemonade backends install "
+                              << recipe << ":" << available_backends[0] << std::endl;
+                } else {
+                    std::cerr << "       No backends are available for '" << recipe
+                              << "' on this system." << std::endl;
+                }
+                return 1;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "warning: could not verify backend availability: "
+                      << e.what() << std::endl;
+        }
+
+        std::string suggested_name = variants_response.value("suggested_name", checkpoint);
+        json pull_body;
+        pull_body["model_name"] = "user." + suggested_name;
+        pull_body["checkpoint"] = checkpoint;
+        pull_body["recipe"] = recipe;
+
+        std::cout << "Pulling " << checkpoint
+                  << " as " << pull_body["model_name"].get<std::string>() << std::endl;
+        return client.pull_model(pull_body);
+    }
 
     // Resolve variant by case-insensitive name match.
     int selected_idx = -1;
@@ -201,7 +263,7 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
     json pull_body;
     pull_body["model_name"] = "user." + suggested_name + "-" + variant_name;
     pull_body["checkpoint"] = checkpoint + ":" + variant_name;
-    pull_body["recipe"] = variants_response.value("recipe", std::string("llamacpp"));
+    pull_body["recipe"] = recipe;
 
     if (variants_response.contains("suggested_labels") &&
         variants_response["suggested_labels"].is_array() &&
