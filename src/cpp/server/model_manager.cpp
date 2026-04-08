@@ -2307,18 +2307,34 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
                 }
             }
 
-            // Load manifest and fix download_path to point to the actual snapshot
+            // Load manifest and fix paths to point to the actual snapshot(s).
+            // Multi-repo manifests have per-file download_path entries; only
+            // update entries that belong to the main repo (whose snapshot hash
+            // changed). Non-main repo entries already point to their own
+            // repo-specific cache dirs and don't need fixing.
             fs::path manifest_path = best_snapshot / ".download_manifest.json";
             auto existing_manifest = JsonUtils::load_from_file(manifest_path.string());
+            std::string old_main_path = existing_manifest.value("download_path", "");
             existing_manifest["download_path"] = path_to_utf8(best_snapshot);
+
+            if (existing_manifest.contains("files") && existing_manifest["files"].is_array()) {
+                for (auto& file_entry : existing_manifest["files"]) {
+                    std::string file_dl_path = file_entry.value("download_path", "");
+                    // Update entries that pointed to the old main snapshot path
+                    if (file_dl_path.empty() || file_dl_path == old_main_path) {
+                        file_entry["download_path"] = path_to_utf8(best_snapshot);
+                    }
+                }
+            }
 
             // Re-save the corrected manifest before resuming
             JsonUtils::save_to_file(existing_manifest, manifest_path.string());
 
             download_from_manifest(existing_manifest, headers, progress_callback);
 
-            // Download complete — move files to the new commit hash snapshot
-            // so the cache reflects the latest commit going forward
+            // Download complete — move main repo files to the new commit hash
+            // snapshot so the cache reflects the latest commit going forward.
+            // Non-main repo snapshots are not renamed (their hashes are independent).
             fs::path new_snapshot = snapshots_dir / commit_hash;
             if (best_snapshot != new_snapshot) {
                 fs::rename(best_snapshot, new_snapshot);
