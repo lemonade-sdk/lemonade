@@ -652,10 +652,16 @@ Realtime Audio Transcription API via WebSocket (OpenAI SDK compatible). Stream a
 
 #### Connection
 
-The WebSocket server runs on a dynamically assigned port. Discover the port via the [`/api/v1/health`](#get-apiv1health) endpoint (`websocket_port` field), then connect with the model name:
+For local or direct connections, the WebSocket server runs on a dedicated port. Discover it via the [`/api/v1/health`](#get-apiv1health) endpoint (`websocket_port` field), then connect with the model name:
 
 ```
 ws://localhost:<websocket_port>/realtime?model=Whisper-Tiny
+```
+
+For reverse-proxy deployments using [`external_url`](./configuration.md#settings-reference), browsers should connect through the public URL instead:
+
+```
+wss://<external_url-host-and-path>/realtime?model=Whisper-Tiny
 ```
 
 Upon connection, the server sends a `session.created` message with a session ID.
@@ -782,10 +788,16 @@ Stream server logs over WebSocket. Clients connect, send a subscribe message, an
 
 #### Connection
 
-The WebSocket server shares the same port as the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket). Discover the port via the [`/api/v1/health`](#get-apiv1health) endpoint (`websocket_port` field), then connect:
+For local or direct connections, the WebSocket server shares the same port as the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket). Discover it via the [`/api/v1/health`](#get-apiv1health) endpoint (`websocket_port` field), then connect:
 
 ```
 ws://localhost:<websocket_port>/logs/stream
+```
+
+For reverse-proxy deployments using [`external_url`](./configuration.md#settings-reference), browsers should connect through the public URL instead:
+
+```
+wss://<external_url-host-and-path>/logs/stream
 ```
 
 After connecting, send a `logs.subscribe` message to start receiving logs.
@@ -1799,7 +1811,7 @@ curl http://localhost:13305/api/v1/health
   - `audio` - Maximum speech-to-text models
   - `image` - Maximum image models
   - `tts` - Maximum text-to-speech models
-- `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`.
+- `websocket_port` - *(optional)* Port of the standalone WebSocket server for the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned unless pinned via `lemonade config set websocket_port=...`. Reverse-proxy deployments should use a fixed value.
 
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 

@@ -68,7 +68,7 @@ class ServerConfig {
       if (typeof window !== 'undefined' && window.api?.isWebApp) {
         const origin = window.location?.origin;
         if (origin && origin !== 'null') {
-          const trimmedOrigin = origin.replace(/\/+$/, '');
+          const trimmedOrigin = trimTrailingSlashes(origin);
           console.log('Using web app origin as server base URL:', trimmedOrigin);
           this.explicitBaseUrl = trimmedOrigin;
           this.initialized = true;
@@ -163,9 +163,9 @@ class ServerConfig {
   }
 
   /**
-   * Whether the server base URL was explicitly configured via external_url
-   * or --base-url. When true, WebSocket clients should derive their URLs
-   * from the base URL rather than using a separate websocket_port.
+   * Whether the server base URL came from the web-app's server-injected
+   * external_url config. When true, browser WebSocket clients should derive
+   * their public URLs from that base URL instead of using websocket_port.
    */
   isExternalUrl(): boolean {
     return this.hasExternalUrl;
@@ -388,6 +388,25 @@ export const getWebSocketUrl = (endpointPath: string, wsPort: number, query?: UR
   return wsUrl.toString();
 };
 export const getWebSocketProtocol = () => new URL(serverConfig.getServerBaseUrl()).protocol === 'https:' ? 'wss' : 'ws';
+export const getWebSocketUrl = (endpointPath: string, wsPort: number, query?: URLSearchParams) => {
+  const normalizedPath = ensureLeadingSlash(endpointPath);
+  const queryString = query?.toString();
+
+  if (serverConfig.isExternalUrl()) {
+    const baseUrl = new URL(serverConfig.getServerBaseUrl());
+    baseUrl.protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+    const basePath = trimTrailingSlashes(baseUrl.pathname);
+    baseUrl.pathname = `${basePath}${normalizedPath}` || normalizedPath;
+    baseUrl.search = queryString ? `?${queryString}` : '';
+    baseUrl.hash = '';
+    return baseUrl.toString();
+  }
+
+  const wsUrl = new URL(`${getWebSocketProtocol()}://${serverConfig.getServerHost()}:${wsPort}`);
+  wsUrl.pathname = normalizedPath;
+  wsUrl.search = queryString ? `?${queryString}` : '';
+  return wsUrl.toString();
+};
 export const isRemoteServer = () => serverConfig.isRemoteServer();
 export const onServerPortChange = (listener: PortChangeListener) => serverConfig.onPortChange(listener);
 export const onServerUrlChange = (listener: UrlChangeListener) => serverConfig.onUrlChange(listener);

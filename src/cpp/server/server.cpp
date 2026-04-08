@@ -25,6 +25,29 @@
 #include <cmath>
 #include <lemon/utils/aixlog.hpp>
 
+namespace {
+
+std::string trim_trailing_slashes(std::string value) {
+    while (!value.empty() && value.back() == '/') {
+        value.pop_back();
+    }
+    return value;
+}
+
+void log_external_url_proxy_warning(const lemon::RuntimeConfig& config) {
+    if (config.external_url().empty() || config.websocket_port() != 0) {
+        return;
+    }
+
+    LOG(WARNING, "Server")
+        << "external_url is set, but websocket_port is \"auto\". "
+        << "Reverse-proxy deployments should pin websocket_port to a fixed value "
+        << "and proxy /realtime plus /logs/stream to that port."
+        << std::endl;
+}
+
+} // namespace
+
 #ifdef _WIN32
     #include <windows.h>
     #include <winsock2.h>
@@ -631,11 +654,8 @@ window.api = {
             std::string external_url = runtime_config->external_url();
             std::string config_script;
             if (!external_url.empty()) {
-                if (external_url.back() == '/') {
-                    external_url.pop_back();
-                }
                 config_script = "<script>window.__LEMONADE_EXTERNAL_URL__ = "
-                                + nlohmann::json(external_url).dump()
+                                + nlohmann::json(trim_trailing_slashes(external_url)).dump()
                                 + ";</script>\n";
             }
 
@@ -897,6 +917,7 @@ void Server::setup_http_logger(httplib::Server &web_server) {
 void Server::run() {
     std::string host = config_->host();
     LOG(INFO, "Server") << "Starting HTTP server on " << host << ":" << port_ << std::endl;
+    log_external_url_proxy_warning(*config_);
 
     std::string ipv4 = resolve_host_to_ip(AF_INET, host);
     std::string ipv6 = resolve_host_to_ip(AF_INET6, host);
@@ -3599,6 +3620,8 @@ void Server::handle_config_get(const httplib::Request& /*req*/, httplib::Respons
 }
 
 void Server::apply_config_side_effects(const std::vector<std::string>& changed_keys) {
+    bool external_url_or_ws_port_changed = false;
+
     for (const auto& key : changed_keys) {
         if (key == "port") {
             int new_port = config_->port();
@@ -3629,6 +3652,7 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
                 }
             }
         } else if (key == "websocket_port") {
+            external_url_or_ws_port_changed = true;
             if (websocket_server_) {
                 LOG(INFO, "Server") << "Restarting WebSocket server on requested port "
                                     << config_->websocket_port() << std::endl;
@@ -3641,6 +3665,13 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
                     websocket_server_->start();
                 }
             }
+        } else if (key == "external_url") {
+            external_url_or_ws_port_changed = true;
+            LOG(INFO, "Server") << "Updated external_url to "
+                                << (config_->external_url().empty()
+                                        ? "\"\""
+                                        : config_->external_url())
+                                << std::endl;
         } else if (key == "log_level") {
             std::string level = config_->log_level();
             LOG(INFO, "Server") << "Log level changed to: " << level << std::endl;
@@ -3670,6 +3701,10 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
             utils::set_models_dir(dir);
             model_manager_->invalidate_models_cache();
         }
+    }
+
+    if (external_url_or_ws_port_changed) {
+        log_external_url_proxy_warning(*config_);
     }
 }
 
