@@ -1059,6 +1059,203 @@ sys.exit(0)
         output = result.stdout + result.stderr
         self.assertIn("Agent binary not found", output)
 
+    def test_117_launch_opencode_with_fake_binary(self):
+        """Launch should execute fake opencode binary with -m Lemonade/MODEL."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "opencode_capture.json")
+            self._write_fake_agent(temp_dir, "opencode", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                ["launch", "opencode", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertTrue(
+                os.path.exists(capture_path),
+                "Fake opencode binary was not executed",
+            )
+
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            argv = payload["argv"]
+            self.assertIn("-m", argv)
+            model_idx = argv.index("-m") + 1
+            self.assertEqual(argv[model_idx], f"Lemonade/{ENDPOINT_TEST_MODEL}")
+
+    def test_118_launch_opencode_creates_config(self):
+        """Launch opencode should create opencode.json with Lemonade provider."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "opencode_capture_cfg.json")
+            self._write_fake_agent(temp_dir, "opencode", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                ["launch", "opencode", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+
+            config_path = os.path.join(temp_dir, ".config", "opencode", "opencode.json")
+            self.assertTrue(
+                os.path.exists(config_path),
+                f"opencode.json not created at {config_path}",
+            )
+
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+
+            self.assertIn("provider", cfg)
+            self.assertIn("Lemonade", cfg["provider"])
+            lemonade = cfg["provider"]["Lemonade"]
+            self.assertEqual(lemonade["npm"], "@ai-sdk/openai-compatible")
+            self.assertIn("baseURL", lemonade["options"])
+            self.assertEqual(lemonade["options"]["apiKey"], "lemonade")
+            self.assertIn(ENDPOINT_TEST_MODEL, lemonade["models"])
+            self.assertEqual(
+                lemonade["models"][ENDPOINT_TEST_MODEL]["contextWindow"],
+                40960,
+            )
+
+    def test_119_launch_opencode_refreshes_model_entries(self):
+        """Launch opencode should refresh Lemonade models and remove stale entries."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "opencode_capture_merge.json")
+            self._write_fake_agent(temp_dir, "opencode", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            config_dir = os.path.join(temp_dir, ".config", "opencode")
+            os.makedirs(config_dir)
+            config_path = os.path.join(config_dir, "opencode.json")
+            existing = {
+                "$schema": "https://opencode.ai/config.json",
+                "provider": {
+                    "anthropic": {
+                        "models": {"claude-3.5-sonnet": {}},
+                    },
+                    "Lemonade": {
+                        "npm": "@ai-sdk/openai-compatible",
+                        "name": "Lemonade Server (local)",
+                        "options": {"baseURL": "http://old:9999/v1"},
+                        "models": {
+                            "User-Custom-Model": {
+                                "name": "My Model",
+                                "contextWindow": 8192,
+                            }
+                        },
+                    },
+                },
+            }
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(existing, f)
+
+            result = run_cli_command(
+                ["launch", "opencode", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+
+            self.assertIn("anthropic", cfg["provider"])
+            self.assertIn("claude-3.5-sonnet", cfg["provider"]["anthropic"]["models"])
+            self.assertNotIn("User-Custom-Model", cfg["provider"]["Lemonade"]["models"])
+            self.assertIn(ENDPOINT_TEST_MODEL, cfg["provider"]["Lemonade"]["models"])
+            self.assertNotEqual(
+                cfg["provider"]["Lemonade"]["options"]["baseURL"],
+                "http://old:9999/v1",
+            )
+
+    def test_120_launch_opencode_with_api_key_sets_config(self):
+        """When --api-key is provided, opencode.json should contain the same apiKey."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "opencode_capture_key.json")
+            self._write_fake_agent(temp_dir, "opencode", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "opencode",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--api-key",
+                    "real-secret-key",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+
+            config_path = os.path.join(temp_dir, ".config", "opencode", "opencode.json")
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+
+            self.assertEqual(
+                cfg["provider"]["Lemonade"]["options"].get("apiKey"),
+                "real-secret-key",
+            )
+
+    def test_121_launch_opencode_backfills_schema_on_existing_config(self):
+        """Launch opencode should add $schema when syncing an existing config missing it."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "opencode_capture_schema.json")
+            self._write_fake_agent(temp_dir, "opencode", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            config_dir = os.path.join(temp_dir, ".config", "opencode")
+            os.makedirs(config_dir)
+            config_path = os.path.join(config_dir, "opencode.json")
+            existing = {
+                "provider": {
+                    "Lemonade": {
+                        "npm": "@ai-sdk/openai-compatible",
+                        "name": "Lemonade Server (local)",
+                        "options": {"baseURL": "http://old:9999/v1"},
+                        "models": {},
+                    }
+                }
+            }
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(existing, f)
+
+            result = run_cli_command(
+                ["launch", "opencode", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+
+            self.assertEqual(cfg.get("$schema"), "https://opencode.ai/config.json")
+
     # =============================================================================
     # Unload Tests
     # =============================================================================
