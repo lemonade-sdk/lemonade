@@ -1,10 +1,10 @@
 #include "lemon/backends/fastflowlm_server.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/system_info.h"
 #include "lemon/error_types.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
-#include "lemon/utils/version_utils.h"
 #include "lemon/utils/json_utils.h"
 #include <iostream>
 #include <filesystem>
@@ -12,26 +12,54 @@
 #include <thread>
 #include <chrono>
 #include <sstream>
+#include <fstream>
+#include <algorithm>
 #include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
 #include <windows.h>
-#include <comdef.h>
-#include <Wbemidl.h>
-#include <shellapi.h>
-#include "../utils/wmi_helper.h"
-#pragma comment(lib, "wbemuuid.lib")
 #else
-#include <sys/utsname.h>
+#include <sys/wait.h>
 #endif
-
-// URL to direct users to for driver updates
-static const std::string DRIVER_INSTALL_URL = "https://lemonade-server.ai/driver_install.html";
 
 namespace fs = std::filesystem;
 
 namespace lemon {
 namespace backends {
+
+// URL to direct users to for driver updates
+static const std::string DRIVER_INSTALL_URL = "https://lemonade-server.ai/driver_install.html";
+
+
+InstallParams FastFlowLMServer::get_install_params(const std::string& backend, const std::string& version) {
+    InstallParams params;
+
+    if (backend == "system") {
+        return params;
+    }
+
+    params.repo = "FastFlowLM/FastFlowLM";
+
+    // Release asset filenames use bare version numbers (no 'v' prefix)
+    std::string bare_version = version;
+    if (!bare_version.empty() && bare_version[0] == 'v') {
+        bare_version = bare_version.substr(1);
+    }
+
+#ifdef _WIN32
+    params.filename = "fastflowlm_" + bare_version + "_windows_amd64.zip";
+#else
+    // On Linux, FLM must be installed as a system package by the user.
+    // The FLM .deb bundles non-portable libraries (libxrt, ffmpeg) that
+    // require system-level installation. Auto-install is Windows-only.
+    throw std::runtime_error(
+        "FLM auto-install is only supported on Windows. "
+        "On Linux, install FLM manually: "
+        "https://github.com/FastFlowLM/FastFlowLM/releases/tag/" + version);
+#endif
+
+    return params;
+}
 
 FastFlowLMServer::FastFlowLMServer(const std::string& log_level, ModelManager* model_manager,
                                    BackendManager* backend_manager)
@@ -40,42 +68,6 @@ FastFlowLMServer::FastFlowLMServer(const std::string& log_level, ModelManager* m
 
 FastFlowLMServer::~FastFlowLMServer() {
     unload();
-}
-
-void FastFlowLMServer::install(const std::string& backend) {
-#ifndef _WIN32
-    auto status = SystemInfoCache::get_flm_status();
-    throw std::runtime_error(
-        "Visit the documentation for installation instructions. " +
-        std::string(status.action.empty() ? "" : status.action));
-#else
-    LOG(INFO, "FastFlowLM") << "[FastFlowLM] Checking FLM installation..." << std::endl;
-
-    try {
-        install_flm_if_needed();
-
-        // Verify flm is now available
-        std::string flm_path = get_flm_path();
-        if (flm_path.empty()) {
-            throw std::runtime_error("FLM installation failed - not found in PATH");
-        }
-
-        LOG(INFO, "FastFlowLM") << "FLM ready at: " << flm_path << std::endl;
-
-        // Signal system-info to re-evaluate FLM status
-        SystemInfoCache::invalidate_recipes();
-
-    } catch (const std::exception& e) {
-        // Fallback: show manual installation instructions
-        std::string required_version = get_flm_required_version();
-        LOG(ERROR, "FastFlowLM") << "FLM installation failed: " << e.what() << std::endl;
-        LOG(ERROR, "FastFlowLM") << "Please install FLM " << required_version << " manually:" << std::endl;
-        LOG(ERROR, "FastFlowLM") << "  https://github.com/FastFlowLM/FastFlowLM/releases/download/"
-                  << required_version << "/flm-setup.exe" << std::endl;
-        LOG(ERROR, "FastFlowLM") << "After installation, restart your terminal and try again." << std::endl;
-        throw;
-    }
-#endif
 }
 
 std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade) {
@@ -101,23 +93,35 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
     // Run flm pull command (with debug output if enabled)
     auto handle = utils::ProcessManager::start_process(flm_path, args, "", is_debug());
 
-    // Wait for download to complete
-    if (!utils::ProcessManager::is_running(handle)) {
-        int exit_code = utils::ProcessManager::get_exit_code(handle);
-        LOG(ERROR, "FastFlowLM") << "FLM pull failed with exit code: " << exit_code << std::endl;
-        throw std::runtime_error("FLM pull failed");
-    }
-
-    // Wait for process to complete
+    // Wait for process to complete (handles both fast exits and long downloads)
+    // NOTE: On Linux, is_running() reaps the process via waitpid(), making the
+    // exit code unavailable to get_exit_code(). Use WaitForSingleObject/waitpid
+    // directly instead of the is_running/get_exit_code combo.
     int timeout_seconds = 300; // 5 minutes
     LOG(INFO, "FastFlowLM") << "Waiting for model download to complete..." << std::endl;
+    bool completed = false;
+    int exit_code = -1;
+
+#ifdef _WIN32
+    DWORD wait_result = WaitForSingleObject(handle.handle, timeout_seconds * 1000);
+    if (wait_result == WAIT_OBJECT_0) {
+        DWORD win_exit_code;
+        GetExitCodeProcess(handle.handle, &win_exit_code);
+        exit_code = static_cast<int>(win_exit_code);
+        completed = true;
+    }
+#else
     for (int i = 0; i < timeout_seconds * 10; ++i) {
-        if (!utils::ProcessManager::is_running(handle)) {
-            int exit_code = utils::ProcessManager::get_exit_code(handle);
-            if (exit_code != 0) {
-                LOG(ERROR, "FastFlowLM") << "FLM pull failed with exit code: " << exit_code << std::endl;
-                throw std::runtime_error("FLM pull failed with exit code: " + std::to_string(exit_code));
-            }
+        int status;
+        pid_t result = waitpid(handle.pid, &status, WNOHANG);
+        if (result > 0) {
+            exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+            completed = true;
+            break;
+        } else if (result < 0) {
+            // Process doesn't exist or error
+            completed = true;
+            exit_code = -1;
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -126,6 +130,17 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
         if (i % 50 == 0 && i > 0) {
             LOG(INFO, "FastFlowLM") << "Still downloading... (" << (i/10) << "s elapsed)" << std::endl;
         }
+    }
+#endif
+
+    if (!completed) {
+        utils::ProcessManager::stop_process(handle);
+        throw std::runtime_error("FLM pull timed out after " + std::to_string(timeout_seconds) + " seconds");
+    }
+
+    if (exit_code != 0) {
+        LOG(ERROR, "FastFlowLM") << "FLM pull failed with exit code: " << exit_code << std::endl;
+        throw std::runtime_error("FLM pull failed with exit code: " + std::to_string(exit_code));
     }
 
     LOG(INFO, "FastFlowLM") << "Model pull completed successfully" << std::endl;
@@ -150,10 +165,17 @@ void FastFlowLMServer::load(const std::string& model_name,
     // Note: checkpoint_ is set by Router via set_model_metadata() before load() is called
     // We use checkpoint_ (base class field) for FLM API calls
 
-    // Check FLM is ready via system-info (single source of truth)
-    auto status = SystemInfoCache::get_flm_status();
-    if (!status.is_ready()) {
-        throw std::runtime_error(status.error_string());
+#ifdef _WIN32
+    // On Windows, auto-install FLM binary if needed (downloads zip and extracts)
+    backend_manager_->install_backend(SPEC.recipe, "npu");
+#endif
+
+    // Validate NPU hardware/drivers
+    std::string flm_path = get_flm_path();
+    std::string validate_error;
+    if (!utils::run_flm_validate(flm_path, validate_error)) {
+        throw std::runtime_error("FLM NPU validation failed: " + validate_error +
+            "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
 
     // Download model if needed
@@ -161,9 +183,6 @@ void FastFlowLMServer::load(const std::string& model_name,
 
     // Choose a port
     port_ = choose_port();
-
-    // Get flm executable path
-    std::string flm_path = get_flm_path();
 
     // Construct flm serve command based on model type
     // Bind to localhost only for security
@@ -424,264 +443,26 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
 }
 
 std::string FastFlowLMServer::get_flm_path() {
-    // Use shared utility function to find flm executable
-    // (find_flm_executable refreshes PATH from registry on Windows)
+#ifdef _WIN32
+    // On Windows, use the standard install directory (auto-installed zip)
+    try {
+        std::string path = BackendUtils::get_backend_binary_path(SPEC, "npu");
+        LOG(INFO, "FastFlowLM") << "Found flm at: " << path << std::endl;
+        return path;
+    } catch (const std::exception& e) {
+        LOG(ERROR, "FastFlowLM") << "flm not found in install dir: " << e.what() << std::endl;
+        return "";
+    }
+#else
+    // On Linux, FLM is installed as a system package (in PATH)
     std::string flm_path = utils::find_flm_executable();
-
     if (!flm_path.empty()) {
         LOG(INFO, "FastFlowLM") << "Found flm at: " << flm_path << std::endl;
     } else {
         LOG(ERROR, "FastFlowLM") << "flm not found in PATH" << std::endl;
     }
-
     return flm_path;
-}
-
-std::string FastFlowLMServer::get_flm_required_version() {
-    // Get required FLM version from backend_versions.json
-    std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-
-    try {
-        json config = utils::JsonUtils::load_from_file(config_path);
-
-        if (!config.contains("flm") || !config["flm"].is_object()) {
-            LOG(ERROR, "FastFlowLM") << "backend_versions.json is missing 'flm' section" << std::endl;
-            return "v0.9.23";  // Fallback default
-        }
-
-        const auto& flm_config = config["flm"];
-
-        if (!flm_config.contains("npu") || !flm_config["npu"].is_string()) {
-            LOG(ERROR, "FastFlowLM") << "backend_versions.json is missing 'flm.npu'" << std::endl;
-            return "v0.9.23";  // Fallback default
-        }
-
-        return flm_config["npu"].get<std::string>();
-
-    } catch (const std::exception& e) {
-        LOG(ERROR, "FastFlowLM") << "Error reading backend_versions.json: " << e.what() << std::endl;
-        return "v0.9.23";  // Fallback default
-    }
-}
-
-bool FastFlowLMServer::install_flm_if_needed() {
-#ifdef _WIN32
-    std::string required_version = get_flm_required_version();
-    std::string current_version = SystemInfo::get_flm_version();
-    const char* ci_mode = std::getenv("LEMONADE_CI_MODE");
-    bool is_ci_mode = ci_mode && (
-        std::string(ci_mode) == "1" ||
-        std::string(ci_mode) == "true" ||
-        std::string(ci_mode) == "TRUE" ||
-        std::string(ci_mode) == "yes" ||
-        std::string(ci_mode) == "True");
-
-    // Parse versions using utility (handles 'v' prefix automatically)
-    utils::Version required = utils::Version::parse(required_version);
-    utils::Version current = utils::Version::parse(current_version);
-
-    // Case 1: Already have required version or newer
-    if (!current.empty() && current >= required) {
-        LOG(INFO, "FastFlowLM") << "FLM " << current_version
-                  << " is installed (required: " << required_version << ")" << std::endl;
-        return false;  // No upgrade performed
-    }
-
-    // Case 2: Need to install or upgrade
-    bool is_upgrade = !current_version.empty() && current_version != "unknown";
-    if (is_upgrade) {
-        LOG(INFO, "FastFlowLM") << "Upgrading FLM " << current_version
-                  << " → " << required_version << "..." << std::endl;
-    } else {
-        LOG(INFO, "FastFlowLM") << "Installing FLM " << required_version
-                  << "..." << std::endl;
-    }
-
-    // Determine installer path
-    char temp_path[MAX_PATH];
-    GetTempPathA(MAX_PATH, temp_path);
-    std::string installer_path = std::string(temp_path) + "flm-setup.exe";
-
-    // Delete any existing installer file to avoid collisions
-    // We must succeed here to prevent running a stale installer
-    if (fs::exists(installer_path)) {
-        LOG(INFO, "FastFlowLM") << "Removing existing installer at: " << installer_path << std::endl;
-        try {
-            fs::remove(installer_path);
-        } catch (const std::exception& e) {
-            throw std::runtime_error(
-                "Could not remove existing installer at " + installer_path + ": " + e.what() +
-                ". Please delete it manually and try again.");
-        }
-
-        // Verify it's actually gone
-        if (fs::exists(installer_path)) {
-            throw std::runtime_error(
-                "Failed to remove existing installer at " + installer_path +
-                ". Please delete it manually and try again.");
-        }
-    }
-
-    if (!download_flm_installer(installer_path)) {
-        throw std::runtime_error("Failed to download FLM installer");
-    }
-
-    // Run installer in silent mode for upgrades and CI.
-    // Fresh installs outside CI keep GUI behavior for local users.
-    bool force_silent = is_upgrade || is_ci_mode;
-    if (is_ci_mode && !is_upgrade) {
-        LOG(INFO, "FastFlowLM") << "CI mode detected, forcing silent FLM installation..." << std::endl;
-    }
-    run_flm_installer(installer_path, force_silent);
-
-    // Verify installation by calling flm --version again
-    if (!verify_flm_installation(required_version)) {
-        throw std::runtime_error("FLM installation verification failed");
-    }
-
-    // Cleanup installer
-    try {
-        fs::remove(installer_path);
-    } catch (...) {
-        // Ignore cleanup errors
-    }
-
-    LOG(INFO, "FastFlowLM") << "Successfully installed FLM "
-              << required_version << std::endl;
 #endif
-    return true;  // FLM was installed or upgraded
-}
-
-bool FastFlowLMServer::download_flm_installer(const std::string& output_path) {
-    // Get required version and build download URL
-    std::string version = get_flm_required_version();
-    const std::string url =
-        "https://github.com/FastFlowLM/FastFlowLM/releases/download/" + version + "/flm-setup.exe";
-
-    LOG(INFO, "FastFlowLM") << "Downloading FLM " << version << " installer..." << std::endl;
-    LOG(INFO, "FastFlowLM") << "URL: " << url << std::endl;
-
-    // Use default throttled progress callback
-    utils::ProgressCallback http_progress_cb = utils::create_throttled_progress_callback();
-
-    auto result = utils::HttpClient::download_file(url, output_path, http_progress_cb);
-
-    if (result.success) {
-        LOG(INFO, "FastFlowLM") << "Downloaded installer to "
-                  << output_path << std::endl;
-    } else {
-        LOG(ERROR, "FastFlowLM") << "Failed to download installer: "
-                  << result.error_message << std::endl;
-    }
-
-    return result.success;
-}
-
-void FastFlowLMServer::run_flm_installer(const std::string& installer_path, bool silent) {
-    std::vector<std::string> args;
-    if (silent) {
-        args.push_back("/VERYSILENT");
-        args.push_back("/SUPPRESSMSGBOXES");
-        args.push_back("/NORESTART");
-        LOG(INFO, "FastFlowLM") << "Running FLM installer in silent mode..." << std::endl;
-    } else {
-        LOG(INFO, "FastFlowLM") << "Launching installer GUI. "
-                  << "Please complete the installation..." << std::endl;
-    }
-
-    // Launch installer and wait for completion
-    auto handle = utils::ProcessManager::start_process(installer_path, args, "", false);
-
-    LOG(INFO, "FastFlowLM") << "Waiting for installer to complete..." << std::endl;
-
-    // Wait for installer to complete
-    int timeout_seconds = 300; // 5 minutes
-    for (int i = 0; i < timeout_seconds * 2; ++i) {
-        if (!utils::ProcessManager::is_running(handle)) {
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-        // Print progress every 10 seconds
-        if (!silent && i % 20 == 0 && i > 0) {
-            LOG(INFO, "FastFlowLM") << "Still waiting... (" << (i/2) << "s elapsed)" << std::endl;
-        }
-    }
-
-    int exit_code = utils::ProcessManager::get_exit_code(handle);
-    if (exit_code != 0) {
-        throw std::runtime_error(
-            "FLM installer failed with exit code: " + std::to_string(exit_code));
-    }
-
-    LOG(INFO, "FastFlowLM") << "Installer completed successfully" << std::endl;
-}
-
-void FastFlowLMServer::refresh_environment_path() {
-#ifdef _WIN32
-    // Refresh PATH from Windows registry
-    HKEY hKey;
-    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-                      "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
-                      0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        char buffer[32767];
-        DWORD bufferSize = sizeof(buffer);
-        if (RegQueryValueExA(hKey, "PATH", nullptr, nullptr,
-                            reinterpret_cast<LPBYTE>(buffer), &bufferSize) == ERROR_SUCCESS) {
-            std::string new_path = buffer;
-            // Append to existing PATH instead of replacing
-            const char* current_path = getenv("PATH");
-            if (current_path) {
-                new_path = new_path + ";" + std::string(current_path);
-            }
-            _putenv(("PATH=" + new_path).c_str());
-        }
-        RegCloseKey(hKey);
-    }
-
-    // Add default FLM installation path if not already in PATH
-    const std::string flm_dir = "C:\\Program Files\\flm";
-    if (fs::exists(flm_dir)) {
-        const char* current_path = getenv("PATH");
-        std::string current_path_str = current_path ? current_path : "";
-        if (current_path_str.find(flm_dir) == std::string::npos) {
-            _putenv(("PATH=" + flm_dir + ";" + current_path_str).c_str());
-        }
-    }
-#endif
-}
-
-bool FastFlowLMServer::verify_flm_installation(const std::string& expected_version, int max_retries) {
-    LOG(INFO, "FastFlowLM") << "Verifying installation..." << std::endl;
-
-    std::this_thread::sleep_for(std::chrono::seconds(2)); // Initial wait
-
-    for (int attempt = 0; attempt < max_retries; ++attempt) {
-        refresh_environment_path();
-
-        std::string current = SystemInfo::get_flm_version();
-
-        utils::Version current_ver = utils::Version::parse(current);
-        utils::Version expected_ver = utils::Version::parse(expected_version);
-
-        if (!current_ver.empty() && !expected_ver.empty() && current_ver >= expected_ver) {
-            LOG(INFO, "FastFlowLM") << "Verification successful: FLM "
-                      << current << std::endl;
-            return true;
-        }
-
-        if (attempt < max_retries - 1) {
-            LOG(INFO, "FastFlowLM") << "FLM not yet available (got: '" << current
-                      << "'), retrying... (" << (attempt + 1) << "/" << max_retries << ")" << std::endl;
-            std::this_thread::sleep_for(std::chrono::seconds(3));
-        }
-    }
-
-    LOG(ERROR, "FastFlowLM") << "FLM installation completed but 'flm' "
-              << "is not available in PATH or version check failed" << std::endl;
-    LOG(INFO, "FastFlowLM") << "Expected version: " << expected_version << std::endl;
-    LOG(INFO, "FastFlowLM") << "Please restart your terminal or add FLM to your PATH manually." << std::endl;
-    return false;
 }
 
 } // namespace backends

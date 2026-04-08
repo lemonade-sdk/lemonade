@@ -5,6 +5,7 @@
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/kokoro_server.h"
 #include "lemon/backends/ryzenaiserver.h"
+#include "lemon/backends/fastflowlm_server.h"
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
 #include "lemon/utils/path_utils.h"
@@ -36,6 +37,7 @@ namespace lemon::backends {
         if (recipe == "sd-cpp") return &SDServer::SPEC;
         if (recipe == "kokoro") return &KokoroServer::SPEC;
         if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
+        if (recipe == "flm") return &FastFlowLMServer::SPEC;
         return nullptr;
     }
 
@@ -60,20 +62,9 @@ namespace lemon::backends {
     }
 #endif
 
-    static void ensure_directory(const std::string& dir) {
-#ifdef _WIN32
-        std::string cmd = "if not exist \"" + dir + "\" mkdir \"" + dir + "\" >nul 2>&1";
-        std::string unused;
-        lemon::utils::ProcessManager::run_command(cmd, unused);
-#else
-        std::string cmd = "mkdir -p \"" + dir + "\"";
-        system(cmd.c_str());
-#endif
-    }
-
     bool BackendUtils::extract_zip(const std::string& zip_path, const std::string& dest_dir, const std::string& backend_name) {
         std::string command;
-        ensure_directory(dest_dir);
+        fs::create_directories(dest_dir);
 #ifdef _WIN32
         if (is_native_tar_available()) {
             LOG(DEBUG, backend_name) << "Extracting ZIP with native tar to " << dest_dir << std::endl;
@@ -106,7 +97,7 @@ namespace lemon::backends {
 
     bool BackendUtils::extract_tarball(const std::string& tarball_path, const std::string& dest_dir, const std::string& backend_name) {
         std::string command;
-        ensure_directory(dest_dir);
+        fs::create_directories(dest_dir);
         LOG(DEBUG, backend_name) << "Extracting tarball to " << dest_dir << std::endl;
 #ifdef _WIN32
         if (!is_native_tar_available()) {
@@ -140,8 +131,10 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_install_directory(const std::string& dir_name, const std::string& backend) {
-        fs::path ret = (fs::path(utils::get_downloaded_bin_dir()) / dir_name);
-        return ((backend != "") ? (ret / backend) : ret).string();
+        // Use fs::path throughout to ensure consistent native separators
+        fs::path ret = fs::path(utils::get_downloaded_bin_dir()) / dir_name;
+        if (!backend.empty()) ret /= backend;
+        return ret.make_preferred().string();
     }
 
     std::string BackendUtils::find_external_backend_binary(const std::string& recipe, const std::string& backend) {

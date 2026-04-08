@@ -1,9 +1,11 @@
 #include "lemon_cli/lemonade_client.h"
 #include "lemon_cli/model_selection.h"
 #include "lemon_cli/recipe_import.h"
+#include <lemon_cli/agent_config_file.h>
 #include <lemon/recipe_options.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
+#include <lemon_cli/opencode_profile.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/network_beacon.h>
@@ -49,7 +51,8 @@ static const std::vector<std::string> VALID_LABELS = {
 
 static const std::vector<std::string> SUPPORTED_AGENTS = {
     "claude",
-    "codex"
+    "codex",
+    "opencode"
 };
 
 static bool prompt_agent_selection(std::string& agent_out) {
@@ -332,6 +335,106 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
     return client.list_recipes();
 }
 
+static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
+    lemonade::LemonadeClient& client,
+    int context_window) {
+    static const std::unordered_set<std::string> non_llm_labels = {
+        "embeddings",
+        "reranking",
+        "audio",
+        "transcription",
+        "image",
+        "tts",
+        "speech",
+        "esrgan",
+        "edit"
+    };
+
+    std::vector<lemon_cli::AgentModelEntry> models;
+
+    try {
+        std::string response = client.make_request(
+            "/api/v1/models?show_all=false", "GET", "", "", 3000, 3000);
+        const nlohmann::json parsed = nlohmann::json::parse(response);
+
+        if (!parsed.contains("data") || !parsed["data"].is_array()) {
+            return models;
+        }
+
+        for (const auto& model : parsed["data"]) {
+            if (!model.is_object() || !model.contains("id") || !model["id"].is_string()) {
+                continue;
+            }
+
+            bool is_llm = true;
+            if (model.contains("labels") && model["labels"].is_array()) {
+                for (const auto& label : model["labels"]) {
+                    if (label.is_string() && non_llm_labels.count(label.get<std::string>()) > 0) {
+                        is_llm = false;
+                        break;
+                    }
+                }
+            }
+
+            if (!is_llm) {
+                continue;
+            }
+
+            const std::string model_id = model["id"].get<std::string>();
+            models.push_back({model_id, model_id + " (local)", context_window});
+        }
+    } catch (const std::exception&) {
+        // Non-fatal: we still include the selected model below.
+    }
+
+    return models;
+}
+
+static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
+                                         const CliConfig& config) {
+    constexpr int default_context_window = 40960;
+    std::vector<lemon_cli::AgentModelEntry> models =
+        fetch_llm_models_for_sync(client, default_context_window);
+
+    bool selected_present = false;
+    for (const auto& model : models) {
+        if (model.id == config.model) {
+            selected_present = true;
+            break;
+        }
+    }
+
+    if (!selected_present) {
+        models.push_back({config.model, config.model + " (local)", default_context_window});
+    }
+
+    const lemon_cli::AgentConfigProfile* profile = nullptr;
+    if (config.agent == "opencode") {
+        profile = &lemon_cli::opencode_profile();
+    }
+
+    if (profile == nullptr) {
+        return;
+    }
+
+    const std::string config_api_key = config.api_key.empty() ? "lemonade" : config.api_key;
+
+    const std::string base_url =
+        lemon_tray::build_agent_server_base_url(config.host, config.port) + "/v1";
+
+    std::string error_message;
+    if (!lemon_cli::sync_agent_config_file(*profile,
+                                           "Lemonade",
+                                           base_url,
+                                           config_api_key,
+                                           models,
+                                           error_message)) {
+        std::cerr << "Warning: Failed to sync " << config.agent
+                  << " config: " << error_message << std::endl;
+        std::cerr << "Continuing with launch anyway..." << std::endl;
+    }
+}
+
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
     if (config.agent.empty() && !prompt_agent_selection(config.agent)) {
         return 1;
@@ -346,6 +449,10 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         // Interactive model resolution for launch already handled recipe selection/import choices.
     } else {
         std::cout << "Model was provided explicitly; skipping recipe import prompts." << std::endl;
+    }
+
+    if (lemon_tray::agent_needs_config_sync(config.agent)) {
+        sync_agent_config_for_launch(client, config);
     }
 
     lemon_tray::AgentConfig agent_config;
@@ -830,7 +937,7 @@ int main(int argc, char* argv[]) {
     // Global options (available to all subcommands)
     auto* host_opt = app.add_option("--host", config.host, "Server host")->default_val(config.host)->type_name("HOST")->envname("LEMONADE_HOST");
     auto* port_opt = app.add_option("--port", config.port, "Server port")->default_val(config.port)->type_name("PORT")->envname("LEMONADE_PORT");
-    auto* api_key_opt = app.add_option("--api-key", config.api_key, "API key for authentication")
+    app.add_option("--api-key", config.api_key, "API key for authentication")
         ->default_val(config.api_key)
         ->type_name("KEY")
         ->envname("LEMONADE_API_KEY");
@@ -964,11 +1071,10 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (api_key_opt->count() == 0) {
-        const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
-        if (admin_api_key && admin_api_key[0]) {
-            config.api_key = admin_api_key;
-        }
+    // If set, LEMONADE_ADMIN_API_KEY takes precedence over the regular API key
+    const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
+    if (admin_api_key && admin_api_key[0]) {
+        config.api_key = admin_api_key;
     }
 
     // Create client

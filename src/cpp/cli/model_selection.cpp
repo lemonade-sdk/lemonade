@@ -132,7 +132,7 @@ bool is_qwen35_family_model(const lemonade::ModelInfo& model) {
 
 std::vector<std::string> preferred_recipe_directories_for_agent(const std::string& agent_name) {
     const std::string agent = normalize_agent_key(agent_name);
-    if (agent == "claude" || agent == "codex") {
+    if (agent == "claude" || agent == "codex" || agent == "opencode") {
         return {"coding-agents"};
     }
     return {};
