@@ -431,6 +431,18 @@ sys.exit(0)
         )
         print(f"Pull with multiple checkpoints exit code: {result.returncode}")
 
+    def test_054_pull_registered_name(self):
+        """Test pull command with a registered model name (no flags)."""
+        result = self.assertCommandSucceeds(
+            ["pull", ENDPOINT_TEST_MODEL],
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        output = result.stdout.lower() + result.stderr.lower()
+        self.assertFalse(
+            "error" in output and "failed" in output,
+            f"Pull should not report errors: {result.stdout}",
+        )
+
     # =============================================================================
     # Import Tests
     # =============================================================================

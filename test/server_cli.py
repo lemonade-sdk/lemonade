@@ -20,24 +20,15 @@ Usage:
 """
 
 import argparse
-import json
-import os
-import re
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 
 import requests
 from utils.server_base import wait_for_server, set_server_config, _auth_headers
 from utils.test_models import (
-    ENDPOINT_TEST_MODEL,
     PORT,
-    TIMEOUT_DEFAULT,
-    TIMEOUT_MODEL_OPERATION,
-    USER_MODEL_MAIN_CHECKPOINT,
-    USER_MODEL_NAME,
     get_default_server_binary,
 )
 
@@ -175,34 +166,6 @@ class PersistentServerCLITests(CLITestBase):
             "List command should produce output",
         )
 
-    def test_004_pull(self):
-        """Test pull command to download a model."""
-        result = self.assertCommandSucceeds(
-            ["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION
-        )
-        # Pull should succeed
-        output = result.stdout.lower() + result.stderr.lower()
-        self.assertFalse(
-            "error" in output and "failed" in output,
-            f"Pull should not report errors: {result.stdout}",
-        )
-
-    def test_005_delete(self):
-        """Test delete command to remove a model."""
-        # First ensure model exists
-        run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
-
-        # Delete the model
-        result = self.assertCommandSucceeds(["delete", ENDPOINT_TEST_MODEL])
-        output = result.stdout.lower() + result.stderr.lower()
-        self.assertTrue(
-            "success" in output or "deleted" in output or "removed" in output,
-            f"Delete should indicate success: {result.stdout}",
-        )
-
-        # Re-pull for other tests
-        run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
-
     def test_006_backends(self):
         """Test backends command shows available recipes and their status."""
         result = self.assertCommandSucceeds(["backends"])
@@ -253,47 +216,6 @@ class PersistentServerCLITests(CLITestBase):
         )
 
         print("[OK] backends command output shows recipe/backend status")
-
-    def test_007_pull_json(self):
-        """Test import command to download a model via JSON file"""
-        json_file = os.path.join(tempfile.gettempdir(), "lemonade_pull_json.json")
-        with open(json_file, "w") as f:
-            f.write(
-                json.dumps(
-                    {
-                        "id": USER_MODEL_NAME,
-                        "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
-                        "recipe": "llamacpp",
-                    }
-                )
-            )
-
-        result = self.assertCommandSucceeds(
-            ["import", json_file], timeout=TIMEOUT_MODEL_OPERATION
-        )
-        # Pull should succeed
-        output = result.stdout.lower() + result.stderr.lower()
-        self.assertFalse(
-            "error" in output and "failed" in output,
-            f"Pull should not report errors: {result.stdout}",
-        )
-
-    def test_008_pull_malformed_json(self):
-        """Test import command with malformed JSON file reports an error."""
-        json_file = os.path.join(
-            tempfile.gettempdir(), "lemonade_pull_malformed_json.json"
-        )
-        with open(json_file, "w") as f:
-            f.write('{"checkpoint:')
-
-        result = run_cli_command(["import", json_file], timeout=TIMEOUT_MODEL_OPERATION)
-        # CLI may exit 0 or non-zero, but must report an error in output
-        output = result.stdout.lower() + result.stderr.lower()
-        self.assertIn(
-            "error",
-            output,
-            f"Import of malformed JSON should report an error: {output}",
-        )
 
     def _get_test_backend(self):
         """Get a lightweight test backend based on platform."""
