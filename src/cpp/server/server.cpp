@@ -2718,6 +2718,13 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
             res.set_content(error.dump(), "application/json");
             return;
         }
+        if (checkpoint.find('/') == std::string::npos) {
+            res.status = 400;
+            nlohmann::json error = {{"error",
+                "Malformed 'checkpoint': expected a Hugging Face repo id of the form 'owner/name'"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
 
         bool not_found = false;
         nlohmann::json body = lemon::fetch_pull_variants(checkpoint, not_found);

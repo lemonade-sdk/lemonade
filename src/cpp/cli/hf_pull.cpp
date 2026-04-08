@@ -235,15 +235,13 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
                 break;
             }
         }
-        if (selected_idx < 0) {
-            std::cerr << "Variant '" << variant << "' not found for " << checkpoint
-                      << ". Available variants:" << std::endl;
-        }
     }
 
     std::string variant_name;
     if (selected_idx >= 0) {
         variant_name = variants[selected_idx].value("name", "");
+    } else if (!variant.empty()) {
+        variant_name = variant;
     } else if (assume_yes) {
         variant_name = variants[0].value("name", "");
     } else {

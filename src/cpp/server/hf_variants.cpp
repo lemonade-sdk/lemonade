@@ -48,14 +48,9 @@ const std::regex& quant_regex() {
     return re;
 }
 
-// Normalize a matched quant token: uppercase, and rewrite a leading `UD_`
-// to `UD-` so `UD-Q4_K_XL` and `UD_Q4_K_XL` collapse to one variant name.
 std::string normalize_quant(std::string q) {
     std::transform(q.begin(), q.end(), q.begin(),
                    [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-    if (q.size() >= 3 && q[0] == 'U' && q[1] == 'D' && q[2] == '_') {
-        q[2] = '-';
-    }
     return q;
 }
 
