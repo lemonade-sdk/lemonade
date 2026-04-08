@@ -1479,7 +1479,6 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 LOG(INFO, "Server") << "POST /api/v1/chat/completions - Streaming" << std::endl;
 
                 // Set up streaming response with SSE headers
-                res.set_header("Content-Type", "text/event-stream");
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no"); // Disable nginx buffering
@@ -1664,7 +1663,6 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 LOG(INFO, "Server") << "POST /api/v1/completions - Streaming" << std::endl;
 
                 // Set up SSE headers
-                res.set_header("Content-Type", "text/event-stream");
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no");
@@ -2451,7 +2449,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         }
 
         std::string upscale_model_path;
-        std::string backend = "cpu";
+        std::string backend;
         try {
             auto info = model_manager_->get_model_info(upscale_model_name);
 
@@ -2463,14 +2461,26 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             }
 
             upscale_model_path = info.resolved_path("main");
-            // Use the server's --sdcpp CLI setting so we pick up the same
-            // backend binary that was installed at startup, not whatever
-            // the system auto-detects (which may be a stale installation).
+
+            // Honor explicit config first (e.g. sdcpp.backend = "rocm").
+            // "auto" in config.json is mapped to "" by recipe_options().
             auto recipe_opts = config_->recipe_options();
             if (recipe_opts.contains("sd-cpp_backend") &&
                 recipe_opts["sd-cpp_backend"].is_string()) {
-                std::string b = recipe_opts["sd-cpp_backend"];
-                if (!b.empty()) backend = b;
+                backend = recipe_opts["sd-cpp_backend"].get<std::string>();
+            }
+
+            // Auto-detect best backend when not explicitly configured,
+            // matching the same logic SDServer::load() uses via
+            // RecipeOptions::get_option(). Without this, upscaling
+            // silently falls back to CPU even when ROCm/Vulkan is available.
+            if (backend.empty()) {
+                auto supported = SystemInfo::get_supported_backends("sd-cpp");
+                if (!supported.backends.empty()) {
+                    backend = supported.backends[0];
+                } else {
+                    backend = "cpu";
+                }
             }
         } catch (const std::exception& e) {
             res.status = 404;
@@ -2596,7 +2606,6 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
 
                 // Set up streaming response with SSE headers
-                res.set_header("Content-Type", "text/event-stream");
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no");
@@ -3675,7 +3684,6 @@ void Server::stream_download_operation(
     httplib::Response& res,
     std::function<void(DownloadProgressCallback)> operation) {
 
-    res.set_header("Content-Type", "text/event-stream");
     res.set_header("Cache-Control", "no-cache");
     res.set_header("Connection", "keep-alive");
     res.set_header("X-Accel-Buffering", "no");

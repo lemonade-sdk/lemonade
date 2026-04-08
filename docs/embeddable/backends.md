@@ -49,7 +49,10 @@ Follow these instructions if you want backends to be bundled into your app's ins
 
 > Note: by default, `lemond backends install` will only install backends that are compatible with your current system. The `--force` option ignores these compatibility checks, which enables you to package on a VM and then deploy to a specific system.
 
-> Note: at the time of this writing, `flm` and `llamacpp:rocm` are not available for packaging-time bundling.
+#### Limitations
+At the time of this writing:
+-  `flm` is not available for packaging-time bundling *on Linux*.
+- `llamacpp:rocm` is not available for packaging-time bundling on any OS.
 
 ### Installing Backends at Install-Time or Runtime
 
