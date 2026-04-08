@@ -3,7 +3,7 @@ import { serverFetch } from './serverConfig';
 import { fetchSystemInfoData, Recipes } from './systemData';
 import { ModelsData } from './modelData';
 import { toFrontendOptionName, OPTION_DEFINITIONS } from '../recipes/recipeOptionsConfig';
-import { getExperienceComponents, isExperienceModel, isOmniModel } from './experienceModels';
+import { getExperienceComponents, isExperienceModel } from './experienceModels';
 
 function extractServerErrorMessage(errorText: string, fallback: string): string {
   if (!errorText) return fallback;
@@ -527,7 +527,7 @@ async function ensureModelReadyInternal(
   visited.add(modelName);
   try {
     const modelInfo = modelsData[modelName];
-    if (isExperienceModel(modelInfo) && !isOmniModel(modelInfo)) {
+    if (isExperienceModel(modelInfo)) {
       options?.onModelLoading?.();
       const components = getExperienceComponents(modelInfo);
       for (const component of components) {

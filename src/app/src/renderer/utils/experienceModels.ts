@@ -14,14 +14,15 @@ export const isOmniModel = (info?: ModelInfo): boolean => {
 };
 
 export const isExperienceModel = (info?: ModelInfo): boolean => {
-  if (isOmniModel(info)) return true;
   return !!info && info.recipe === 'experience' && getExperienceComponents(info).length > 0;
 };
 
+/** True for models that should activate experience-mode UI (composite experiences OR omni models). */
+export const isExperienceOrOmni = (info?: ModelInfo): boolean => {
+  return isExperienceModel(info) || isOmniModel(info);
+};
+
 export const isModelEffectivelyDownloaded = (modelName: string, info: ModelInfo | undefined, modelsData: ModelsData): boolean => {
-  if (isOmniModel(info)) {
-    return info?.downloaded === true;
-  }
   if (isExperienceModel(info)) {
     return isExperienceFullyDownloaded(modelName, modelsData);
   }
@@ -30,9 +31,6 @@ export const isModelEffectivelyDownloaded = (modelName: string, info: ModelInfo 
 
 export const isExperienceFullyDownloaded = (modelName: string, modelsData: ModelsData): boolean => {
   const info = modelsData[modelName];
-  if (isOmniModel(info)) {
-    return info?.downloaded === true;
-  }
   const components = getExperienceComponents(info);
   if (components.length === 0) return false;
   return components.every((component) => modelsData[component]?.downloaded === true);

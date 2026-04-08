@@ -18,7 +18,7 @@ import ConnectedBackendRow from './components/ConnectedBackendRow';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon } from './components/Icons';
-import { getExperienceComponents, isExperienceFullyDownloaded, isExperienceFullyLoaded, isExperienceModel, isOmniModel, isModelEffectivelyDownloaded } from './utils/experienceModels';
+import { getExperienceComponents, isExperienceFullyDownloaded, isExperienceFullyLoaded, isExperienceModel, isExperienceOrOmni, isOmniModel, isModelEffectivelyDownloaded } from './utils/experienceModels';
 
 interface ModelFamily {
   displayName: string;
@@ -859,7 +859,7 @@ const [searchQuery, setSearchQuery] = useState('');
         return;
       }
 
-      if (isExperienceModel(modelData) && !isOmniModel(modelData)) {
+      if (isExperienceModel(modelData)) {
         const components = getExperienceComponents(modelData);
         if (components.length === 0) {
           showError(`Experience model "${modelName}" has no component models.`);
@@ -932,7 +932,7 @@ const [searchQuery, setSearchQuery] = useState('');
   const handleUnloadModel = async (modelName: string) => {
     try {
       const modelData = modelsData[modelName];
-      if (modelData && isExperienceModel(modelData) && !isOmniModel(modelData)) {
+      if (modelData && isExperienceModel(modelData)) {
         const components = getExperienceComponents(modelData);
         for (const component of components) {
           if (!loadedModels.has(component)) continue;

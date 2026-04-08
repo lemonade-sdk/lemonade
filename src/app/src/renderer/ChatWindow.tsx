@@ -15,7 +15,7 @@ import ImageGenerationPanel from './components/panels/ImageGenerationPanel';
 import TTSPanel from './components/panels/TTSPanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
 import { RefreshIcon } from './components/Icons';
-import { isExperienceModel, isOmniModel, getExperienceComponents } from './utils/experienceModels';
+import { isExperienceOrOmni, isOmniModel, getExperienceComponents } from './utils/experienceModels';
 import AddModelPanel, { AddModelInitialValues, ModelInstallData } from './AddModelPanel';
 
 interface ChatWindowProps {
@@ -47,7 +47,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     if (!selectedModel) return 'llm';
     const info = modelsData[selectedModel];
     if (!info) return 'llm';
-    if (isExperienceModel(info)) return 'llm';
+    if (isExperienceOrOmni(info)) return 'llm';
     if (info.labels?.includes('embeddings') || (info as any)?.embedding) return 'embedding';
     if (info.labels?.includes('reranking') || (info as any)?.reranking) return 'reranking';
     if (info.labels?.includes('transcription')) return 'transcription';
@@ -78,7 +78,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
 
   const isExperienceSelected = useMemo(() => {
     if (!selectedModel) return false;
-    return isExperienceModel(modelsData[selectedModel]);
+    return isExperienceOrOmni(modelsData[selectedModel]);
   }, [selectedModel, modelsData]);
 
   const experienceMode = activeModelType === 'llm' && isExperienceSelected;

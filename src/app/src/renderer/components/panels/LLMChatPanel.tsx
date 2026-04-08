@@ -87,6 +87,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const modeTransitionTimerRef = useRef<number | null>(null);
 
   // --- Omni audio recording: accumulate PCM16 chunks → build WAV on stop ---
+  const MAX_RECORDING_SECONDS = 60;
+  const [omniRecordingSeconds, setOmniRecordingSeconds] = useState(0);
+  const omniRecordingTimerRef = useRef<number | null>(null);
+
   const handleOmniAudioChunk = useCallback((base64: string) => {
     const binaryStr = atob(base64);
     const bytes = new Uint8Array(binaryStr.length);
@@ -96,6 +100,16 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
   const { isRecording: isOmniRecording, startRecording: startOmniRecording, stopRecording: stopOmniRecording } =
     useAudioCapture(handleOmniAudioChunk);
+
+  const arrayBufferToBase64 = useCallback((buffer: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buffer);
+    const CHUNK_SIZE = 8192;
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+      binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + CHUNK_SIZE, bytes.length)));
+    }
+    return btoa(binary);
+  }, []);
 
   const buildWavDataUrl = useCallback((): string | null => {
     const chunks = omniAudioChunksRef.current;
@@ -139,20 +153,26 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     const pcmBytes = new Uint8Array(pcm.buffer);
     new Uint8Array(buffer).set(pcmBytes, 44);
 
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    return `data:audio/wav;base64,${btoa(binary)}`;
-  }, []);
+    return `data:audio/wav;base64,${arrayBufferToBase64(buffer)}`;
+  }, [arrayBufferToBase64]);
 
   const stopOmniAudioAndAttach = useCallback(() => {
     stopOmniRecording();
+    if (omniRecordingTimerRef.current !== null) {
+      window.clearInterval(omniRecordingTimerRef.current);
+      omniRecordingTimerRef.current = null;
+    }
+    setOmniRecordingSeconds(0);
     const dataUrl = buildWavDataUrl();
     omniAudioChunksRef.current = [];
     if (dataUrl) {
       setOmniAudioDataUrl(dataUrl);
     }
   }, [stopOmniRecording, buildWavDataUrl]);
+
+  // Auto-stop when max duration reached
+  const stopOmniAudioAndAttachRef = useRef(stopOmniAudioAndAttach);
+  stopOmniAudioAndAttachRef.current = stopOmniAudioAndAttach;
 
   const toggleOmniMic = useCallback(async () => {
     if (isOmniRecording) {
@@ -161,7 +181,17 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     }
     omniAudioChunksRef.current = [];
     setOmniAudioDataUrl(null);
+    setOmniRecordingSeconds(0);
     await startOmniRecording();
+    omniRecordingTimerRef.current = window.setInterval(() => {
+      setOmniRecordingSeconds(prev => {
+        const next = prev + 1;
+        if (next >= MAX_RECORDING_SECONDS) {
+          stopOmniAudioAndAttachRef.current();
+        }
+        return next;
+      });
+    }, 1000);
   }, [isOmniRecording, startOmniRecording, stopOmniAudioAndAttach]);
 
   const handleAudioFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -306,6 +336,9 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       abortControllerRef.current?.abort();
       stopMicDictation();
       stopOmniRecording();
+      if (omniRecordingTimerRef.current !== null) {
+        window.clearInterval(omniRecordingTimerRef.current);
+      }
       if (modeTransitionTimerRef.current !== null) {
         window.clearTimeout(modeTransitionTimerRef.current);
       }
@@ -798,7 +831,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
               if (url.startsWith('data:audio/')) {
                 return <audio key={index} src={url} controls preload="metadata" className="message-audio" />;
               }
-              return <img key={index} src={url} alt="Uploaded" className="message-image" />;
+              if (url.startsWith('data:image/') || url.startsWith('https://') || url.startsWith('http://')) {
+                return <img key={index} src={url} alt="Uploaded" className="message-image" />;
+              }
+              return null;
             }
             return null;
           })}
@@ -1026,7 +1062,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           )}
           {isOmniRecording && (
             <div className="audio-recording-indicator">
-              Recording audio…
+              Recording audio… {omniRecordingSeconds}s / {MAX_RECORDING_SECONDS}s
             </div>
           )}
           <textarea
