@@ -20,6 +20,7 @@ Usage:
 """
 
 import argparse
+import glob
 import json
 import os
 import platform
@@ -32,14 +33,90 @@ import unittest
 from utils.server_base import wait_for_server
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
+    MULTI_REPO_MODEL_A_CACHE_DIR,
+    MULTI_REPO_MODEL_A_MAIN,
+    MULTI_REPO_MODEL_A_NAME,
+    MULTI_REPO_MODEL_B_CACHE_DIR,
+    MULTI_REPO_MODEL_B_MAIN,
+    MULTI_REPO_MODEL_B_NAME,
+    MULTI_REPO_SHARED_CACHE_DIR,
+    MULTI_REPO_SHARED_CHECKPOINT,
     PORT,
+    SHARED_REPO_MODEL_A_CHECKPOINT,
+    SHARED_REPO_MODEL_A_NAME,
+    SHARED_REPO_MODEL_B_CHECKPOINT,
+    SHARED_REPO_MODEL_B_NAME,
     TIMEOUT_DEFAULT,
     TIMEOUT_MODEL_OPERATION,
     USER_MODEL_MAIN_CHECKPOINT,
     USER_MODEL_TE_CHECKPOINT,
     USER_MODEL_NAME,
     get_default_server_binary,
+    get_hf_cache_dir_candidates,
 )
+
+
+def _checkpoint_variant_path(checkpoint):
+    """Return the repo-relative variant path for a HF checkpoint string."""
+    parts = checkpoint.split(":", 1)
+    if len(parts) != 2:
+        return ""
+    return os.path.join(*parts[1].split("/"))
+
+
+def _find_cached_checkpoint(cache_root, repo_cache_dir, checkpoint):
+    """Return the on-disk snapshot path for a checkpoint, if present."""
+    variant_path = _checkpoint_variant_path(checkpoint)
+    if not variant_path:
+        return None
+
+    pattern = os.path.join(cache_root, repo_cache_dir, "snapshots", "*", variant_path)
+    matches = glob.glob(pattern)
+    if matches:
+        return matches[0]
+    return None
+
+
+def _resolve_hf_cache_root(repo_cache_dirs, checkpoint_specs=None):
+    """Pick the HF cache root that actually contains the downloaded repo artifacts."""
+    diagnostics = []
+    matches = []
+
+    for hf_cache in get_hf_cache_dir_candidates():
+        missing = [
+            repo_dir
+            for repo_dir in repo_cache_dirs
+            if not os.path.isdir(os.path.join(hf_cache, repo_dir))
+        ]
+        checkpoint_paths = []
+        if not missing and checkpoint_specs:
+            for repo_cache_dir, checkpoint in checkpoint_specs:
+                checkpoint_path = _find_cached_checkpoint(
+                    hf_cache, repo_cache_dir, checkpoint
+                )
+                if checkpoint_path is None:
+                    missing.append(f"{repo_cache_dir}:{checkpoint}")
+                else:
+                    checkpoint_paths.append(checkpoint_path)
+
+        if not missing:
+            probe_paths = [
+                os.path.join(hf_cache, repo_cache_dir)
+                for repo_cache_dir in repo_cache_dirs
+            ] + checkpoint_paths
+            newest_mtime = max(os.path.getmtime(path) for path in probe_paths)
+            matches.append((newest_mtime, hf_cache))
+            continue
+        diagnostics.append(f"{hf_cache} (missing: {', '.join(missing)})")
+
+    if matches:
+        matches.sort(reverse=True)
+        return matches[0][1]
+
+    raise AssertionError(
+        "Could not resolve HF cache root after pull. Checked: " + "; ".join(diagnostics)
+    )
+
 
 # Global configuration
 _config = {
@@ -1332,6 +1409,243 @@ sys.exit(0)
             timeout=TIMEOUT_DEFAULT,
         )
         print(f"Delete model exit code: {result.returncode}")
+
+    def test_091_delete_preserves_shared_repo(self):
+        """Test that deleting one model preserves files used by another model sharing the same repo."""
+        # Import two user models that share the same HF repo (different GGUF quants)
+        for name, checkpoint in [
+            (SHARED_REPO_MODEL_A_NAME, SHARED_REPO_MODEL_A_CHECKPOINT),
+            (SHARED_REPO_MODEL_B_NAME, SHARED_REPO_MODEL_B_CHECKPOINT),
+        ]:
+            json_file = os.path.join(tempfile.gettempdir(), f"lemonade_{name}.json")
+            with open(json_file, "w") as f:
+                f.write(
+                    json.dumps(
+                        {
+                            "id": name,
+                            "checkpoint": checkpoint,
+                            "recipe": "llamacpp",
+                        }
+                    )
+                )
+            self.assertCommandSucceeds(
+                ["import", json_file], timeout=TIMEOUT_MODEL_OPERATION
+            )
+
+        # Pull both models (downloads both quants into the same models-- directory)
+        for name in [SHARED_REPO_MODEL_A_NAME, SHARED_REPO_MODEL_B_NAME]:
+            self.assertCommandSucceeds(["pull", name], timeout=TIMEOUT_MODEL_OPERATION)
+
+        # Verify both show as downloaded
+        result = self.assertCommandSucceeds(["list", "--downloaded"])
+        output = result.stdout + result.stderr
+        self.assertIn(
+            "SharedRepo-TestA",
+            output,
+            "Model A should be listed as downloaded before delete",
+        )
+        self.assertIn(
+            "SharedRepo-TestB",
+            output,
+            "Model B should be listed as downloaded before delete",
+        )
+
+        # Delete model A — model B's files should be preserved
+        self.assertCommandSucceeds(
+            ["delete", SHARED_REPO_MODEL_A_NAME], timeout=TIMEOUT_MODEL_OPERATION
+        )
+
+        # Verify model B is still listed as downloaded
+        result = self.assertCommandSucceeds(["list", "--downloaded"])
+        output = result.stdout + result.stderr
+        self.assertIn(
+            "SharedRepo-TestB",
+            output,
+            "Model B should still be downloaded after deleting model A",
+        )
+        self.assertNotIn(
+            "SharedRepo-TestA",
+            output,
+            "Model A should no longer be listed after delete",
+        )
+
+        # Clean up: delete model B
+        self.assertCommandSucceeds(
+            ["delete", SHARED_REPO_MODEL_B_NAME], timeout=TIMEOUT_MODEL_OPERATION
+        )
+
+    @unittest.skipIf(
+        sys.platform == "darwin",
+        "macOS .pkg installs to /Library/Application Support/lemonade/hub, "
+        "which the HF cache resolver does not check",
+    )
+    def test_092_delete_preserves_cross_repo_dependency(self):
+        """Test multi-repo dependency cleanup in the persistent CLI suite.
+
+        Scenario:
+          Model A: main from repo1, text_encoder from repo2 (shared)
+          Model B: main from repo3, text_encoder from repo2 (shared)
+
+          - Download A -> downloads repo1 + repo2
+          - Download B -> downloads repo3, repo2 already present
+          - Delete A -> removes A's main checkpoint file only; repo dirs may remain
+            if earlier persistent tests imported another model from the same repo
+          - Delete B -> deletes repo3 + repo2
+
+        Verifies both CLI output and on-disk HF cache state at each step.
+        """
+        # Import both models with multi-checkpoint configs
+        for name, main_cp in [
+            (MULTI_REPO_MODEL_A_NAME, MULTI_REPO_MODEL_A_MAIN),
+            (MULTI_REPO_MODEL_B_NAME, MULTI_REPO_MODEL_B_MAIN),
+        ]:
+            json_file = os.path.join(tempfile.gettempdir(), f"lemonade_{name}.json")
+            with open(json_file, "w") as f:
+                f.write(
+                    json.dumps(
+                        {
+                            "id": name,
+                            "checkpoints": {
+                                "main": main_cp,
+                                "text_encoder": MULTI_REPO_SHARED_CHECKPOINT,
+                            },
+                            "recipe": "llamacpp",
+                        }
+                    )
+                )
+            self.assertCommandSucceeds(
+                ["import", json_file], timeout=TIMEOUT_MODEL_OPERATION
+            )
+
+        # Pull both models
+        for name in [MULTI_REPO_MODEL_A_NAME, MULTI_REPO_MODEL_B_NAME]:
+            self.assertCommandSucceeds(["pull", name], timeout=TIMEOUT_MODEL_OPERATION)
+
+        # Verify both show as downloaded
+        result = self.assertCommandSucceeds(["list", "--downloaded"])
+        output = result.stdout + result.stderr
+        self.assertIn(
+            "MultiRepo-TestA", output, "Model A should be listed as downloaded"
+        )
+        self.assertIn(
+            "MultiRepo-TestB", output, "Model B should be listed as downloaded"
+        )
+
+        hf_cache = _resolve_hf_cache_root(
+            [
+                MULTI_REPO_MODEL_A_CACHE_DIR,
+                MULTI_REPO_SHARED_CACHE_DIR,
+                MULTI_REPO_MODEL_B_CACHE_DIR,
+            ],
+            [
+                (MULTI_REPO_MODEL_A_CACHE_DIR, MULTI_REPO_MODEL_A_MAIN),
+                (MULTI_REPO_SHARED_CACHE_DIR, MULTI_REPO_SHARED_CHECKPOINT),
+                (MULTI_REPO_MODEL_B_CACHE_DIR, MULTI_REPO_MODEL_B_MAIN),
+            ],
+        )
+        repo1_path = os.path.join(hf_cache, MULTI_REPO_MODEL_A_CACHE_DIR)
+        repo2_path = os.path.join(hf_cache, MULTI_REPO_SHARED_CACHE_DIR)
+        repo3_path = os.path.join(hf_cache, MULTI_REPO_MODEL_B_CACHE_DIR)
+        model_a_main_path = _find_cached_checkpoint(
+            hf_cache, MULTI_REPO_MODEL_A_CACHE_DIR, MULTI_REPO_MODEL_A_MAIN
+        )
+        shared_checkpoint_path = _find_cached_checkpoint(
+            hf_cache, MULTI_REPO_SHARED_CACHE_DIR, MULTI_REPO_SHARED_CHECKPOINT
+        )
+        model_b_main_path = _find_cached_checkpoint(
+            hf_cache, MULTI_REPO_MODEL_B_CACHE_DIR, MULTI_REPO_MODEL_B_MAIN
+        )
+
+        # Verify all three repo dirs exist on disk after download
+        self.assertTrue(
+            os.path.isdir(repo1_path), f"repo1 dir should exist: {repo1_path}"
+        )
+        self.assertTrue(
+            os.path.isdir(repo2_path), f"shared repo dir should exist: {repo2_path}"
+        )
+        self.assertTrue(
+            os.path.isdir(repo3_path), f"repo3 dir should exist: {repo3_path}"
+        )
+        self.assertIsNotNone(
+            model_a_main_path,
+            f"Model A main checkpoint should exist in snapshots under {repo1_path}",
+        )
+        self.assertIsNotNone(
+            shared_checkpoint_path,
+            f"Shared checkpoint should exist in snapshots under {repo2_path}",
+        )
+        self.assertIsNotNone(
+            model_b_main_path,
+            f"Model B main checkpoint should exist in snapshots under {repo3_path}",
+        )
+        print("[OK] All three HF cache repo directories present after pull")
+
+        # Delete Model A -- Model B (and shared text_encoder repo2) should be preserved
+        self.assertCommandSucceeds(
+            ["delete", MULTI_REPO_MODEL_A_NAME], timeout=TIMEOUT_MODEL_OPERATION
+        )
+
+        # Verify Model B is still downloaded via CLI
+        result = self.assertCommandSucceeds(["list", "--downloaded"])
+        output = result.stdout + result.stderr
+        self.assertIn("MultiRepo-TestB", output, "Model B should still be downloaded")
+        self.assertNotIn("MultiRepo-TestA", output, "Model A should be gone")
+
+        # Verify on-disk: Model A file deleted, repo2 (shared) preserved, repo3 preserved.
+        # repo1 directory may remain because this suite is persistent and other imported
+        # models can reference the same repo.
+        self.assertFalse(
+            os.path.exists(model_a_main_path),
+            f"Model A main checkpoint should be deleted after removing Model A: {model_a_main_path}",
+        )
+        self.assertTrue(
+            os.path.isdir(repo2_path),
+            f"shared repo should be preserved (still needed by Model B): {repo2_path}",
+        )
+        self.assertTrue(
+            os.path.exists(shared_checkpoint_path),
+            "Shared checkpoint should still exist after removing Model A",
+        )
+        self.assertTrue(
+            os.path.isdir(repo3_path),
+            f"repo3 should still exist (Model B main): {repo3_path}",
+        )
+        self.assertTrue(
+            os.path.exists(model_b_main_path),
+            "Model B main checkpoint should still exist after removing Model A",
+        )
+        print("[OK] After deleting A: A main file gone, shared repo2 + repo3 preserved")
+
+        # Delete Model B -- should clean up repo3 and shared repo2
+        self.assertCommandSucceeds(
+            ["delete", MULTI_REPO_MODEL_B_NAME], timeout=TIMEOUT_MODEL_OPERATION
+        )
+
+        # Verify both gone from CLI
+        result = self.assertCommandSucceeds(["list", "--downloaded"])
+        output = result.stdout + result.stderr
+        self.assertNotIn("MultiRepo-TestA", output, "Model A should not be listed")
+        self.assertNotIn("MultiRepo-TestB", output, "Model B should not be listed")
+
+        # Verify on-disk: repo2 shared file and repo3 main file deleted, and both
+        # unique repo directories removed once the last dependent model is gone.
+        self.assertFalse(
+            os.path.exists(shared_checkpoint_path),
+            "Shared checkpoint should be deleted after removing the last dependent model",
+        )
+        self.assertFalse(
+            os.path.exists(model_b_main_path),
+            f"Model B main checkpoint should be deleted after removing Model B: {model_b_main_path}",
+        )
+        self.assertFalse(
+            os.path.isdir(repo2_path),
+            f"shared repo should be deleted after removing last dependent: {repo2_path}",
+        )
+        self.assertFalse(
+            os.path.isdir(repo3_path),
+            f"repo3 should be deleted after removing Model B: {repo3_path}",
+        )
+        print("[OK] After deleting B: all repo directories cleaned up")
 
 
 class CLIHelpDocsConsistencyTests(unittest.TestCase):

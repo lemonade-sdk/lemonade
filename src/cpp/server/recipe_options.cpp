@@ -19,15 +19,22 @@ static const json DEFAULTS = {
     {"whispercpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
     {"whispercpp_args", ""},
     // Image generation defaults (for sd-cpp recipe)
+    // These are recipe-level defaults only, not CLI arguments — per reviewer guidance,
+    // there are too many image gen params for CLI flags, and no universal defaults.
     {"steps", 20},
     {"cfg_scale", 7.0},
     {"width", 512},
     {"height", 512},
+    {"sampling_method", ""},
+    {"flow_shift", 0.0},
     // FLM-specific options
     {"flm_args", ""}       // Custom arguments to pass to flm serve
 };
 
 // Mapping from flat option names to CLI flags (used by to_cli_options)
+// Note: Image generation params (steps, cfg_scale, width, height, sampling_method,
+// flow_shift) are recipe-level defaults only — not exposed as CLI arguments.
+// Runtime options (diffusion_fa, offload_to_cpu) go through --sdcpp-args.
 static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"ctx_size", "--ctx-size"},
     {"llamacpp_backend", "--llamacpp"},
@@ -36,10 +43,6 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"sdcpp_args", "--sdcpp-args"},
     {"whispercpp_backend", "--whispercpp"},
     {"whispercpp_args", "--whispercpp-args"},
-    {"steps", "--steps"},
-    {"cfg_scale", "--cfg-scale"},
-    {"width", "--width"},
-    {"height", "--height"},
     {"flm_args", "--flm-args"}
 };
 
@@ -53,7 +56,7 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     } else if (recipe == "ryzenai-llm") {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
-        return {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height"};
+        return {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift"};
     } else {
         return {};
     }
@@ -124,6 +127,7 @@ RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
 
 static std::string format_option_for_logging(const json& opt) {
     if (opt.is_null() || opt == "") return "(none)";
+    if (opt.is_boolean()) return opt.get<bool>() ? "1" : "0";
     if (opt.is_number_float()) return std::to_string((double) opt);
     if (opt.is_number_integer()) return std::to_string((int) opt);
     return opt;
@@ -186,10 +190,8 @@ static const json CLI_OPTIONS = {
     {"--sdcpp-args", {{"option_name", "sdcpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_SDCPP_ARGS"}, {"help", "Custom arguments to pass to sd-server (must not conflict with managed args)"}}},
     {"--whispercpp", {{"option_name", "whispercpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_WHISPERCPP"}, {"help", "WhisperCpp backend to use"}}},
     {"--whispercpp-args", {{"option_name", "whispercpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_WHISPERCPP_ARGS"}, {"help", "Custom arguments to pass to whisper-server"}}},
-    {"--steps", {{"option_name", "steps"}, {"type_name", "N"}, {"envname", "LEMONADE_STEPS"}, {"help", "Number of inference steps for image generation"}}},
-    {"--cfg-scale", {{"option_name", "cfg_scale"}, {"type_name", "SCALE"}, {"envname", "LEMONADE_CFG_SCALE"}, {"help", "Classifier-free guidance scale"}}},
-    {"--width", {{"option_name", "width"}, {"type_name", "PX"}, {"envname", "LEMONADE_WIDTH"}, {"help", "Image width in pixels"}}},
-    {"--height", {{"option_name", "height"}, {"type_name", "PX"}, {"envname", "LEMONADE_HEIGHT"}, {"help", "Image height in pixels"}}},
+    // Note: Image gen params (--steps, --cfg-scale, --width, --height) removed — recipe-level only.
+    // Runtime options (--diffusion-fa, --offload-to-cpu) go through --sdcpp-args.
     {"--flm-args", {{"option_name", "flm_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_FLM_ARGS"}, {"help", "Custom arguments to pass to flm serve"}}}
 };
 

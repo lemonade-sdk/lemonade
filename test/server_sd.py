@@ -341,6 +341,45 @@ class StableDiffusionTests(ServerTestBase):
 
         print(f"[OK] SDXL-Base-1.0 image_defaults verified: {defaults}")
 
+    def test_008b_models_endpoint_qwen_image_defaults(self):
+        """Test that Qwen-Image-GGUF exposes sampling_method and flow_shift in image_defaults."""
+        print("[INFO] Testing /models endpoint for Qwen-Image-GGUF image_defaults")
+
+        response = requests.get(f"{self.base_url}/models?show_all=true", timeout=60)
+        self.assertEqual(response.status_code, 200)
+
+        result = response.json()
+        models = result.get("data", result) if isinstance(result, dict) else result
+
+        qwen_image = None
+        for model in models:
+            if model.get("id") == "Qwen-Image-GGUF":
+                qwen_image = model
+                break
+
+        self.assertIsNotNone(
+            qwen_image, "Qwen-Image-GGUF not found in /models response"
+        )
+        self.assertIn("image_defaults", qwen_image)
+        defaults = qwen_image["image_defaults"]
+
+        self.assertEqual(defaults.get("steps"), 20)
+        self.assertEqual(defaults.get("cfg_scale"), 2.5)
+        self.assertEqual(defaults.get("width"), 512)
+        self.assertEqual(defaults.get("height"), 512)
+        self.assertEqual(
+            defaults.get("sampling_method"),
+            "euler",
+            "Qwen-Image-GGUF should expose sampling_method in image_defaults",
+        )
+        self.assertEqual(
+            defaults.get("flow_shift"),
+            3.0,
+            "Qwen-Image-GGUF should expose flow_shift in image_defaults",
+        )
+
+        print(f"[OK] Qwen-Image-GGUF image_defaults verified: {defaults}")
+
     def test_009_image_edit_not_multipart_error(self):
         """Test that non-multipart requests to /images/edits return 400."""
         response = requests.post(
@@ -506,7 +545,6 @@ class StableDiffusionTests(ServerTestBase):
         self.assertTrue(decoded[:4] == b"\x89PNG", "Result should be a valid PNG")
         print(f"[OK] Image variations successful ({len(decoded)} bytes)")
 
-
     def test_017_upscale_missing_image(self):
         """Test that /images/upscale returns 400 when image field is missing."""
         payload = {"model": ESRGAN_MODEL}
@@ -522,7 +560,9 @@ class StableDiffusionTests(ServerTestBase):
             400,
             f"Expected 400 for missing image, got {response.status_code}",
         )
-        print(f"[OK] Correctly rejected upscale request without image: {response.status_code}")
+        print(
+            f"[OK] Correctly rejected upscale request without image: {response.status_code}"
+        )
 
     def test_018_upscale_missing_model(self):
         """Test that /images/upscale returns 400 when model field is missing."""
@@ -541,7 +581,9 @@ class StableDiffusionTests(ServerTestBase):
             400,
             f"Expected 400 for missing model, got {response.status_code}",
         )
-        print(f"[OK] Correctly rejected upscale request without model: {response.status_code}")
+        print(
+            f"[OK] Correctly rejected upscale request without model: {response.status_code}"
+        )
 
     def test_019_upscale_invalid_model(self):
         """Test that /images/upscale returns 404 for an unknown model name."""
@@ -560,7 +602,9 @@ class StableDiffusionTests(ServerTestBase):
             404,
             f"Expected 404 for invalid upscale model, got {response.status_code}",
         )
-        print(f"[OK] Correctly rejected upscale with invalid model: {response.status_code}")
+        print(
+            f"[OK] Correctly rejected upscale with invalid model: {response.status_code}"
+        )
 
     def test_020_upscale_basic(self):
         """Test basic upscale: generate an image then upscale it."""

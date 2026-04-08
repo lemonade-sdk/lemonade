@@ -92,6 +92,9 @@ public:
     int install_backend(const std::string& recipe, const std::string& backend, bool force = false);
     int uninstall_backend(const std::string& recipe, const std::string& backend);
 
+    // Cache management
+    int cleanup_cache(bool dry_run) const;
+
     // Utility (timeouts are in milliseconds)
     std::string make_request(const std::string& path, const std::string& method = "GET",
                              const std::string& body = "", const std::string& content_type = "",

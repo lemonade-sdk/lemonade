@@ -280,6 +280,22 @@ json SDServer::image_generations(const json& request) {
     if (request.contains("seed")) {
         extra_args["seed"] = request["seed"].get<int>();
     }
+    if (request.contains("sample_method")) {
+        extra_args["sample_method"] = request["sample_method"].get<std::string>();
+    } else {
+        std::string sm = recipe_options_.get_option("sampling_method");
+        if (!sm.empty()) {
+            extra_args["sample_method"] = sm;
+        }
+    }
+    {
+        float fs = recipe_options_.get_option("flow_shift");
+        if (request.contains("flow_shift")) {
+            extra_args["flow_shift"] = request["flow_shift"].get<float>();
+        } else if (fs > 0.0f) {
+            extra_args["flow_shift"] = fs;
+        }
+    }
 
     // Append extra args to prompt
     {
@@ -315,6 +331,22 @@ json SDServer::image_edits(const json& request) {
     }
     if (request.contains("seed")) {
         extra_args["seed"] = request["seed"].get<int>();
+    }
+    if (request.contains("sample_method")) {
+        extra_args["sample_method"] = request["sample_method"].get<std::string>();
+    } else {
+        std::string sm = recipe_options_.get_option("sampling_method");
+        if (!sm.empty()) {
+            extra_args["sample_method"] = sm;
+        }
+    }
+    {
+        float fs = recipe_options_.get_option("flow_shift");
+        if (request.contains("flow_shift")) {
+            extra_args["flow_shift"] = request["flow_shift"].get<float>();
+        } else if (fs > 0.0f) {
+            extra_args["flow_shift"] = fs;
+        }
     }
 
     // Append extra args to prompt (same pattern as image_generations)

@@ -104,6 +104,7 @@ struct CliConfig {
     bool force = false;
     std::string output_file;
     bool downloaded = false;
+    bool dry_run = false;
     std::string agent;
     std::string repo_dir;
     std::string recipe_file;
@@ -1007,6 +1008,7 @@ int main(int argc, char* argv[]) {
     CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)")->group("Model management");
     CLI::App* import_cmd = app.add_subcommand("import", "Import a model from JSON file")->group("Model management");
     CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON")->group("Model management");
+    CLI::App* cleanup_cmd = app.add_subcommand("cleanup-cache", "Clean up orphaned files in HuggingFace cache")->group("Model management");
 
     // List options
     list_cmd->add_flag("--downloaded", config.downloaded, "Save model options for future loads");
@@ -1096,6 +1098,9 @@ int main(int argc, char* argv[]) {
     // Scan options
     scan_cmd->add_option("--duration", config.scan_duration, "Scan duration in seconds")->default_val(config.scan_duration)->type_name("SECONDS");
 
+    // Cleanup cache options
+    cleanup_cmd->add_flag("--dry-run", config.dry_run, "Preview what would be cleaned up without deleting");
+
     // Parse arguments
     CLI11_PARSE(app, argc, argv);
     config.codex_use_user_config = (provider_opt != nullptr && provider_opt->count() > 0);
@@ -1181,6 +1186,8 @@ int main(int argc, char* argv[]) {
             return handle_config_set(client, config_set_cmd->remaining());
         }
         return handle_config_view(client);
+    } else if (cleanup_cmd->count() > 0) {
+        return client.cleanup_cache(config.dry_run);
     } else {
         std::cerr << "Error: No command specified" << std::endl;
         std::cerr << app.help() << std::endl;

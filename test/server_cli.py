@@ -20,6 +20,9 @@ Usage:
 """
 
 import argparse
+import json
+import os
+import re
 import subprocess
 import sys
 import time
@@ -28,7 +31,11 @@ import unittest
 import requests
 from utils.server_base import wait_for_server, set_server_config, _auth_headers
 from utils.test_models import (
+    ENDPOINT_TEST_MODEL,
     PORT,
+    TIMEOUT_MODEL_OPERATION,
+    USER_MODEL_MAIN_CHECKPOINT,
+    USER_MODEL_NAME,
     get_default_server_binary,
 )
 

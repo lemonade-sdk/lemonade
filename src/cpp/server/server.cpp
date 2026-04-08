@@ -438,6 +438,9 @@ void Server::setup_routes(httplib::Server &web_server) {
     web_server.Get("/internal/config", [this](const httplib::Request& req, httplib::Response& res) {
         handle_config_get(req, res);
     });
+    web_server.Post("/internal/cleanup-cache", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cleanup_cache(req, res);
+    });
 
     // Test endpoint to verify POST works
     web_server.Post("/api/v1/test", [](const httplib::Request& req, httplib::Response& res) {
@@ -1380,12 +1383,17 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 
     // Add image_defaults if present (for sd-cpp models)
     if (info.image_defaults.has_defaults) {
-        model_json["image_defaults"] = {
+        json img_def = {
             {"steps", info.image_defaults.steps},
             {"cfg_scale", info.image_defaults.cfg_scale},
             {"width", info.image_defaults.width},
             {"height", info.image_defaults.height}
         };
+        if (!info.image_defaults.sampling_method.empty())
+            img_def["sampling_method"] = info.image_defaults.sampling_method;
+        if (info.image_defaults.flow_shift > 0.0f)
+            img_def["flow_shift"] = info.image_defaults.flow_shift;
+        model_json["image_defaults"] = img_def;
     }
 
     return model_json;
@@ -2965,6 +2973,21 @@ void Server::handle_delete(const httplib::Request& req, httplib::Response& res) 
 
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+        bool dry_run = request_json.value("dry_run", true);
+
+        auto result = model_manager_->cleanup_orphaned_cache(dry_run);
+        res.set_content(result.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_cleanup_cache: " << e.what() << std::endl;
+        res.status = 500;
+        auto error_response = create_model_error("", e.what());
+        res.set_content(error_response.dump(), "application/json");
     }
 }
 

@@ -21,6 +21,7 @@ Usage:
 """
 
 import platform
+import uuid
 import requests
 from openai import NotFoundError
 
@@ -32,6 +33,7 @@ from utils.server_base import (
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
+    SHARED_REPO_MODEL_B_CHECKPOINT,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
     USER_MODEL_MAIN_CHECKPOINT,
@@ -896,6 +898,100 @@ class EndpointTests(ServerTestBase):
         )
 
         print(f"[OK] Pull (multicheckpoint): model={USER_MODEL_NAME}")
+
+    def test_021a_pull_sdcpp_import_preserves_merged_recipe_options(self):
+        """Test /pull keeps image_defaults + recipe_options visible immediately.
+
+        This exercises the import/warm-cache path for user models:
+        add_model_to_cache() builds merged recipe options from image_defaults and
+        JSON recipe_options, and download_model() must not overwrite that merged
+        state with only the import recipe_options payload.
+        """
+        if platform.system() == "Darwin":
+            self.skipTest("sd-cpp pull tests are skipped on macOS in this suite")
+
+        model_name = f"user.Pull-Merge-Regression-{uuid.uuid4().hex[:8]}"
+        image_defaults = {
+            "steps": 33,
+            "cfg_scale": 8.5,
+            "width": 640,
+            "height": 768,
+            "sampling_method": "euler",
+            "flow_shift": 1.25,
+        }
+        recipe_options = {
+            "sd-cpp_backend": "cpu",
+            "sdcpp_args": "--diffusion-fa 1 --offload-to-cpu 1",
+        }
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": model_name,
+                    "checkpoints": {
+                        # Use a different main quant than USER_MODEL_NAME so this test's
+                        # cleanup does not delete the same shared main file and poison
+                        # later reruns of test_021_pull_multi in server-per-test CI.
+                        "main": SHARED_REPO_MODEL_B_CHECKPOINT,
+                        "text_encoder": USER_MODEL_TE_CHECKPOINT,
+                        "vae": USER_MODEL_VAE_CHECKPOINT,
+                    },
+                    "recipe": "sd-cpp",
+                    "image_defaults": image_defaults,
+                    "recipe_options": recipe_options,
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
+
+            model_info_response = requests.get(
+                f"{self.base_url}/models/{model_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(model_info_response.status_code, 200)
+
+            model_data = model_info_response.json()
+            self.assertIn("recipe_options", model_data)
+
+            actual_options = model_data["recipe_options"]
+            for key, value in image_defaults.items():
+                self.assertIn(
+                    key,
+                    actual_options,
+                    f"Expected image_defaults key '{key}' in recipe_options after pull",
+                )
+                self.assertEqual(
+                    actual_options[key],
+                    value,
+                    f"Expected recipe_options['{key}']={value!r} after pull",
+                )
+
+            for key, value in recipe_options.items():
+                self.assertIn(
+                    key,
+                    actual_options,
+                    f"Expected recipe_options key '{key}' after pull",
+                )
+                self.assertEqual(
+                    actual_options[key],
+                    value,
+                    f"Expected recipe_options['{key}']={value!r} after pull",
+                )
+
+            print(
+                f"[OK] Pull preserved merged image_defaults + recipe_options for {model_name}"
+            )
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": model_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def _get_test_backend(self):
         """Get a lightweight test backend based on platform."""

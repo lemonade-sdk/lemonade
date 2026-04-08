@@ -37,6 +37,8 @@ struct ImageDefaults {
     float cfg_scale = 7.0f;
     int width = 512;
     int height = 512;
+    std::string sampling_method;
+    float flow_shift = 0.0f;
 
     bool has_defaults = false;  // True if explicit defaults were provided in JSON
 };
@@ -103,6 +105,9 @@ public:
 
     // Delete a model
     void delete_model(const std::string& model_name);
+
+    // Clean up orphaned files from multi-repo models downloaded in old layout
+    nlohmann::json cleanup_orphaned_cache(bool dry_run);
 
     // Get model info by name
     ModelInfo get_model_info(const std::string& model_name);

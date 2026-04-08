@@ -56,6 +56,66 @@ def get_default_lemond_binary():
     return _default_build_binary("lemond")
 
 
+def get_hf_cache_dir():
+    """Resolve the HF cache directory for on-disk assertions.
+
+    Mirrors path_utils.cpp resolve_hf_cache_dir() — the env-var / platform
+    default chain:
+      1. HF_HUB_CACHE env var (direct path)
+      2. HF_HOME env var + /hub
+      3. Platform default (~/.cache/huggingface/hub)
+
+    NOTE: This does NOT cover the server's models_dir override
+    (path_utils.cpp get_hf_cache_dir() / config.json "models_dir").
+    If the server under test has models_dir set to something other than
+    "auto", on-disk assertions using this path will inspect the wrong
+    location. There is no API to query the server's effective models_dir
+    and no env var mapping for it — it is only settable via config.json.
+    """
+    hf_hub_cache = os.environ.get("HF_HUB_CACHE", "")
+    if hf_hub_cache:
+        return hf_hub_cache
+    hf_home = os.environ.get("HF_HOME", "")
+    if hf_home:
+        return os.path.join(hf_home, "hub")
+    if platform.system() == "Windows":
+        userprofile = os.environ.get("USERPROFILE", "C:\\")
+        return os.path.join(userprofile, ".cache", "huggingface", "hub")
+    home = os.environ.get("HOME", "/tmp")
+    return os.path.join(home, ".cache", "huggingface", "hub")
+
+
+def get_default_hf_cache_dir():
+    """Return the platform-default HF cache directory, ignoring HF_* overrides."""
+    if platform.system() == "Windows":
+        userprofile = os.environ.get("USERPROFILE", "C:\\")
+        return os.path.join(userprofile, ".cache", "huggingface", "hub")
+    home = os.environ.get("HOME", "/tmp")
+    return os.path.join(home, ".cache", "huggingface", "hub")
+
+
+def get_hf_cache_dir_candidates():
+    """Return likely HF cache roots for on-disk assertions.
+
+    Order matters:
+      1. Env-derived HF cache root from get_hf_cache_dir()
+      2. Platform default HF cache root, ignoring HF_HUB_CACHE / HF_HOME
+
+    This still does not cover config.json "models_dir" overrides.
+    """
+    candidates = []
+    seen = set()
+
+    for path in [get_hf_cache_dir(), get_default_hf_cache_dir()]:
+        normalized = os.path.normcase(os.path.abspath(path))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        candidates.append(path)
+
+    return candidates
+
+
 # Default port for lemonade server
 PORT = 13305
 
@@ -152,6 +212,34 @@ USER_MODEL_TE_CHECKPOINT = (
 )
 # Using a file not at repo top-level
 USER_MODEL_VAE_CHECKPOINT = "Comfy-Org/z_image:split_files/vae/ae.safetensors"
+
+# Models for shared-repo dependency testing (same repo, different quants)
+SHARED_REPO_MODEL_A_NAME = "user.SharedRepo-TestA"
+SHARED_REPO_MODEL_A_CHECKPOINT = (
+    "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf"
+)
+SHARED_REPO_MODEL_B_NAME = "user.SharedRepo-TestB"
+SHARED_REPO_MODEL_B_CHECKPOINT = (
+    "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q4_K_M.gguf"
+)
+
+# Models for multi-repo dependency testing (different repos, shared text_encoder)
+# Scenario: Model A has main(repo1) + text_encoder(repo2-shared)
+#           Model B has main(repo3) + text_encoder(repo2-shared)
+# Deleting A must keep repo2 (still needed by B). Deleting B then cleans up repo2+repo3.
+MULTI_REPO_MODEL_A_NAME = "user.MultiRepo-TestA"
+MULTI_REPO_MODEL_A_MAIN = (
+    "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf"
+)
+MULTI_REPO_MODEL_B_NAME = "user.MultiRepo-TestB"
+MULTI_REPO_MODEL_B_MAIN = "Comfy-Org/z_image:split_files/vae/ae.safetensors"
+MULTI_REPO_SHARED_CHECKPOINT = (
+    "mradermacher/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct.Q2_K.gguf"
+)
+# Cache directory names for on-disk verification (repo_id with / replaced by --)
+MULTI_REPO_MODEL_A_CACHE_DIR = "models--unsloth--SmolLM2-135M-Instruct-GGUF"
+MULTI_REPO_MODEL_B_CACHE_DIR = "models--Comfy-Org--z_image"
+MULTI_REPO_SHARED_CACHE_DIR = "models--mradermacher--SmolLM2-135M-Instruct-GGUF"
 
 # Models that should be pre-downloaded for offline testing
 MODELS_FOR_OFFLINE_CACHE = [
