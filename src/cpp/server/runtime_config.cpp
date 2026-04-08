@@ -120,6 +120,11 @@ int RuntimeConfig::websocket_port() const {
     return val.get<int>();
 }
 
+std::string RuntimeConfig::external_url() const {
+    std::shared_lock lock(mutex_);
+    return config_["external_url"].get<std::string>();
+}
+
 std::string RuntimeConfig::log_level() const {
     std::shared_lock lock(mutex_);
     return config_["log_level"].get<std::string>();
@@ -279,6 +284,15 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
     } else if (key == "host") {
         if (!value.is_string()) {
             throw std::invalid_argument("'host' must be a string");
+        }
+    } else if (key == "external_url") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'external_url' must be a string");
+        }
+        std::string url = value.get<std::string>();
+        if (!url.empty() && url.substr(0, 7) != "http://" && url.substr(0, 8) != "https://") {
+            throw std::invalid_argument(
+                "'external_url' must be an http:// or https:// URL, or empty to disable");
         }
     } else if (key == "websocket_port") {
         if (value.is_string()) {
