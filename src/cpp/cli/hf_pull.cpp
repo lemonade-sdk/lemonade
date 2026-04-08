@@ -98,6 +98,28 @@ bool prompt_variant(const std::vector<std::string>& labels,
     return true;
 }
 
+bool prompt_model_name(const std::string& default_name, std::string& out) {
+    std::cout << "Choose a model name." << std::endl;
+    std::cout << "Press enter to use the default: user." << default_name << std::endl;
+    std::cout << "Or type a name starting with \"user.\" and press enter:" << std::endl;
+    std::cout << "> " << std::flush;
+
+    std::string input;
+    if (!std::getline(std::cin, input)) return false;
+    trim(input);
+
+    out = input.empty() ? default_name : input;
+    return true;
+}
+
+std::string normalize_user_model_name(std::string name) {
+    const std::string prefix = "user.";
+    if (name.rfind(prefix, 0) == 0) {
+        return name;
+    }
+    return prefix + name;
+}
+
 void split_checkpoint_variant(const std::string& arg,
                               std::string& checkpoint, std::string& variant) {
     // HF repo ids never contain ':', so split on the last ':'.
@@ -238,6 +260,7 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
     }
 
     std::string variant_name;
+    bool prompted_for_variant = false;
     if (selected_idx >= 0) {
         variant_name = variants[selected_idx].value("name", "");
     } else if (!variant.empty()) {
@@ -254,12 +277,18 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
             names.push_back(v.value("name", ""));
         }
         if (!prompt_variant(labels, names, variant_name)) return 1;
+        prompted_for_variant = true;
     }
 
     // Build /v1/pull body.
     std::string suggested_name = variants_response.value("suggested_name", checkpoint);
+    std::string default_model_name = suggested_name + "-" + variant_name;
+    std::string model_name = default_model_name;
+    if (prompted_for_variant) {
+        if (!prompt_model_name(default_model_name, model_name)) return 1;
+    }
     json pull_body;
-    pull_body["model_name"] = "user." + suggested_name + "-" + variant_name;
+    pull_body["model_name"] = normalize_user_model_name(model_name);
     pull_body["checkpoint"] = checkpoint + ":" + variant_name;
     pull_body["recipe"] = recipe;
 
