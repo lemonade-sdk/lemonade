@@ -27,6 +27,8 @@ private:
     std::string response_body_;
 };
 
+std::string extract_server_error_message(const HttpError& error);
+
 // Helper struct for streaming request state
 struct StreamingRequestState {
     std::string last_file;

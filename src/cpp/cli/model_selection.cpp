@@ -83,6 +83,10 @@ bool fetch_models_from_endpoint(lemonade::LemonadeClient& client,
         }
 
         return true;
+    } catch (const lemonade::HttpError& e) {
+        LOG(ERROR, "ModelSelector") << "Error: Failed to query /api/v1/models: "
+                                    << lemonade::extract_server_error_message(e) << std::endl;
+        return false;
     } catch (const std::exception& e) {
         LOG(ERROR, "ModelSelector") << "Error: Failed to query /api/v1/models: " << e.what() << std::endl;
         return false;

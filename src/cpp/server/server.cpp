@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/hf_variants.h"
 #include "lemon/config_file.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/sd_server.h"
@@ -373,6 +374,10 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Model management endpoints
     register_post("pull", [this](const httplib::Request& req, httplib::Response& res) {
         handle_pull(req, res);
+    });
+
+    register_get("pull/variants", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_pull_variants(req, res);
     });
 
     register_post("load", [this](const httplib::Request& req, httplib::Response& res) {
@@ -2710,6 +2715,40 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
 
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_pull_variants(const httplib::Request& req, httplib::Response& res) {
+    try {
+        std::string checkpoint = req.get_param_value("checkpoint");
+        if (checkpoint.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Missing required query parameter 'checkpoint'"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        if (checkpoint.find('/') == std::string::npos) {
+            res.status = 400;
+            nlohmann::json error = {{"error",
+                "Malformed 'checkpoint': expected a Hugging Face repo id of the form 'owner/name'"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        bool not_found = false;
+        nlohmann::json body = lemon::fetch_pull_variants(checkpoint, not_found);
+        if (not_found) {
+            res.status = 404;
+            nlohmann::json error = {{"error", "Checkpoint '" + checkpoint + "' not found on Hugging Face"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        res.set_content(body.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_pull_variants: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");

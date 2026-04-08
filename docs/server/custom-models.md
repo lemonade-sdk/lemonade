@@ -2,11 +2,21 @@
 
 This guide explains how to manually register custom models in Lemonade Server using the JSON configuration files. This is useful for adding any HuggingFace model that isn't in the built-in model list.
 
-> **Tip:** The easiest way to add a custom model is using the [`lemonade pull` CLI command](../lemonade-cli.md#options-for-pull) or the [`/api/v1/pull` endpoint](./server_spec.md#post-apiv1pull), which automate the registration and download process. For example:
+> **Tip:** For most Hugging Face GGUFs, the easiest way to add a custom model is just:
+> ```bash
+> lemonade pull org/repo
+> ```
+> Lemonade fetches the repo, lists the available quantizations (and any sharded folder variants), auto-detects `mmproj-*.gguf` files for vision models, infers labels (`vision`/`embeddings`/`reranking`) from the repo id, and presents an interactive variant menu. To skip the menu, append `:VARIANT`:
+> ```bash
+> lemonade pull org/repo:Q4_K_M
+> ```
+> The desktop app's "Search Hugging Face" panel calls the same [`/api/v1/pull/variants`](./server_spec.md#get-apiv1pullvariants) endpoint under the hood.
+>
+> If you need full control — multiple checkpoints (`main` + `mmproj` + `vae` + ...), a non-llamacpp recipe, or custom labels — use the advanced flags on [`lemonade pull`](../lemonade-cli.md#options-for-pull):
 > ```bash
 > lemonade pull user.MyModel --checkpoint main "org/repo:file.gguf" --recipe llamacpp
 > ```
-> This guide covers the underlying JSON files for users who need manual control.
+> This guide covers the underlying JSON files for users who need manual control beyond what the CLI exposes.
 
 ## Overview
 
@@ -184,13 +194,14 @@ lemonade run user.Qwen2.5-Coder-1.5B-Instruct
 }
 ```
 
-The model will automatically be available as `user.My-Embedding-Model`. To mark it as an embedding model, use the pull CLI instead:
+The model will automatically be available as `user.My-Embedding-Model`. To mark it as an embedding model, use the manual registration flags on `pull`:
 ```bash
 lemonade pull user.My-Embedding-Model \
     --checkpoint main "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S" \
     --recipe llamacpp \
     --label embeddings
 ```
+Or just `lemonade pull nomic-ai/nomic-embed-text-v1-GGUF` — the `embeddings` label is auto-applied because the repo id contains `embed`.
 
 ## Settings Priority
 
