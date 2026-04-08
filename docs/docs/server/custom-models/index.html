@@ -16,7 +16,7 @@
         <link rel="prev" href="../server_integration/">
       
       
-        <link rel="next" href="../../faq/">
+        <link rel="next" href="../../contribute/">
       
       
         
@@ -287,14 +287,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev-getting-started/" class="md-nav__link">
+      <a href="../../faq/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Developer Getting Started
+    FAQ Guide
   
 
     
@@ -314,14 +314,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../apps/" class="md-nav__link">
+      <a href="../../lemonade-cli/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Supported Applications
+    Lemonade CLI Guide
   
 
     
@@ -649,33 +649,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../lemonade-cli/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Lemonade CLI Guide
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../configuration/" class="md-nav__link">
         
   
@@ -719,6 +692,229 @@
   
 
       </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev-getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embeddable Lemonade
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Embeddable Lemonade
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../embeddable/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../embeddable/runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../embeddable/backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../embeddable/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../embeddable/building/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Building from Source
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1052,33 +1248,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../faq/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    FAQ Guide
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../contribute/" class="md-nav__link">
         
   
@@ -1342,10 +1511,17 @@
 <h1 id="custom-model-configuration">Custom Model Configuration</h1>
 <p>This guide explains how to manually register custom models in Lemonade Server using the JSON configuration files. This is useful for adding any HuggingFace model that isn't in the built-in model list.</p>
 <blockquote>
-<p><strong>Tip:</strong> The easiest way to add a custom model is using the <a href="../../lemonade-cli/#options-for-pull"><code>lemonade pull</code> CLI command</a> or the <a href="../server_spec/#post-apiv1pull"><code>/api/v1/pull</code> endpoint</a>, which automate the registration and download process. For example:
+<p><strong>Tip:</strong> For most Hugging Face GGUFs, the easiest way to add a custom model is just:
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>org/repo
+</code></pre></div>
+Lemonade fetches the repo, lists the available quantizations (and any sharded folder variants), auto-detects <code>mmproj-*.gguf</code> files for vision models, infers labels (<code>vision</code>/<code>embeddings</code>/<code>reranking</code>) from the repo id, and presents an interactive variant menu. To skip the menu, append <code>:VARIANT</code>:
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>org/repo:Q4_K_M
+</code></pre></div>
+The desktop app's "Search Hugging Face" panel calls the same <a href="../server_spec/#get-apiv1pullvariants"><code>/api/v1/pull/variants</code></a> endpoint under the hood.</p>
+<p>If you need full control — multiple checkpoints (<code>main</code> + <code>mmproj</code> + <code>vae</code> + ...), a non-llamacpp recipe, or custom labels — use the advanced flags on <a href="../../lemonade-cli/#options-for-pull"><code>lemonade pull</code></a>:
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyModel<span class="w"> </span>--checkpoint<span class="w"> </span>main<span class="w"> </span><span class="s2">&quot;org/repo:file.gguf&quot;</span><span class="w"> </span>--recipe<span class="w"> </span>llamacpp
 </code></pre></div>
-This guide covers the underlying JSON files for users who need manual control.</p>
+This guide covers the underlying JSON files for users who need manual control beyond what the CLI exposes.</p>
 </blockquote>
 <h2 id="overview">Overview</h2>
 <p>Custom model configuration involves two files, both located in the Lemonade cache directory:</p>
@@ -1561,12 +1737,13 @@ This guide covers the underlying JSON files for users who need manual control.</
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div></p>
-<p>The model will automatically be available as <code>user.My-Embedding-Model</code>. To mark it as an embedding model, use the pull CLI instead:
+<p>The model will automatically be available as <code>user.My-Embedding-Model</code>. To mark it as an embedding model, use the manual registration flags on <code>pull</code>:
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>user.My-Embedding-Model<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--checkpoint<span class="w"> </span>main<span class="w"> </span><span class="s2">&quot;nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--recipe<span class="w"> </span>llamacpp<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--label<span class="w"> </span>embeddings
-</code></pre></div></p>
+</code></pre></div>
+Or just <code>lemonade pull nomic-ai/nomic-embed-text-v1-GGUF</code> — the <code>embeddings</code> label is auto-applied because the repo id contains <code>embed</code>.</p>
 <h2 id="settings-priority">Settings Priority</h2>
 <p>When loading a model, settings are resolved in this order (highest to lowest priority):</p>
 <ol>
@@ -1633,13 +1810,13 @@ This guide covers the underlying JSON files for users who need manual control.</
         
         
           
-          <a href="../../faq/" class="md-footer__link md-footer__link--next" aria-label="Next: FAQ Guide">
+          <a href="../../contribute/" class="md-footer__link md-footer__link--next" aria-label="Next: Contribution Guide">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                FAQ Guide
+                Contribution Guide
               </div>
             </div>
             <div class="md-footer__button md-icon">

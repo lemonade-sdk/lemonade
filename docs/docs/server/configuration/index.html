@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://lemonade-server.ai/server/configuration/">
       
       
-        <link rel="prev" href="../../lemonade-cli/">
+        <link rel="prev" href="../apps/wut/">
       
       
         <link rel="next" href="../concepts/">
@@ -287,14 +287,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev-getting-started/" class="md-nav__link">
+      <a href="../../faq/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Developer Getting Started
+    FAQ Guide
   
 
     
@@ -314,14 +314,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../apps/" class="md-nav__link">
+      <a href="../../lemonade-cli/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Supported Applications
+    Lemonade CLI Guide
   
 
     
@@ -646,33 +646,6 @@
       
   
   
-  
-  
-    <li class="md-nav__item">
-      <a href="../../lemonade-cli/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Lemonade CLI Guide
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
     
   
   
@@ -960,6 +933,229 @@
   
   
     <li class="md-nav__item">
+      <a href="../../dev-getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embeddable Lemonade
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Embeddable Lemonade
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../embeddable/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../embeddable/runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../embeddable/backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../embeddable/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../embeddable/building/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Building from Source
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../server_spec/" class="md-nav__link">
         
   
@@ -1022,33 +1218,6 @@
     
   
     Custom Model Configuration
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../faq/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    FAQ Guide
   
 
     
@@ -1321,13 +1490,16 @@
 <h2 id="overview">Overview</h2>
 <p>Lemonade Server starts automatically with the OS after installation. Configuration is managed through a single <code>config.json</code> file stored in the lemonade cache directory.</p>
 <h2 id="configjson">config.json</h2>
-<p>All settings are in <code>config.json</code>, located in the lemonade cache directory:</p>
+<p>If you used an installer from the Lemonade release your <code>config.json</code> will be at these locations depending on your OS:</p>
 <ul>
 <li><strong>Linux (systemd):</strong> <code>/var/lib/lemonade/.cache/lemonade/config.json</code></li>
 <li><strong>Windows:</strong> <code>%USERPROFILE%\.cache\lemonade\config.json</code></li>
 <li><strong>macOS:</strong> <code>/Library/Application Support/lemonade/.cache/config.json</code></li>
 </ul>
-<p>If <code>config.json</code> doesn't exist, it's created automatically with default values on first run.</p>
+<p>If you are using a standalone <code>lemond</code> exectable, the default location is <code>~/.cache/lemonade/config.json</code>.</p>
+<blockquote>
+<p>Note: If <code>config.json</code> doesn't exist, it's created automatically with default values on first run.</p>
+</blockquote>
 <h3 id="example-configjson">Example config.json</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;config_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
@@ -1635,7 +1807,7 @@ sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class=
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../../lemonade-cli/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Lemonade CLI Guide">
+          <a href="../apps/wut/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Wut">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1645,7 +1817,7 @@ sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class=
                 Previous
               </span>
               <div class="md-ellipsis">
-                Lemonade CLI Guide
+                Wut
               </div>
             </div>
           </a>

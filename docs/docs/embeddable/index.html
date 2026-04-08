@@ -10,31 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/server/apps/ai-dev-gallery/">
+        <link rel="canonical" href="https://lemonade-server.ai/embeddable/">
       
       
-        <link rel="prev" href="../../../lemonade-cli/">
+        <link rel="prev" href="../dev-getting-started/">
       
       
-        <link rel="next" href="../ai-toolkit/">
+        <link rel="next" href="runtime/">
       
       
         
       
       
-      <link rel="icon" href="../../../assets/favicon.ico">
+      <link rel="icon" href="../assets/favicon.ico">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>AI Dev Gallery - Lemonade Server Documentation</title>
+        <title>Overview - Lemonade Server Documentation</title>
       
     
     
-      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -53,9 +53,9 @@
       
     
     
-      <link rel="stylesheet" href="../../../assets/extra.css">
+      <link rel="stylesheet" href="../assets/extra.css">
     
-    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#ai-dev-gallery-with-lemonade-server" class="md-skip">
+        <a href="#embeddable-lemonade-guide" class="md-skip">
           Skip to content
         </a>
       
@@ -98,7 +98,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-header__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
       
-  <img src="../../../assets/logo.png" alt="logo">
+  <img src="../assets/logo.png" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -115,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              AI Dev Gallery
+              Overview
             
           </span>
         </div>
@@ -233,7 +233,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-nav__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
       
-  <img src="../../../assets/logo.png" alt="logo">
+  <img src="../assets/logo.png" alt="logo">
 
     </a>
     Lemonade Server Documentation
@@ -260,7 +260,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../" class="md-nav__link">
+      <a href="../server/" class="md-nav__link">
         
   
   
@@ -287,7 +287,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../faq/" class="md-nav__link">
+      <a href="../faq/" class="md-nav__link">
         
   
   
@@ -314,7 +314,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../lemonade-cli/" class="md-nav__link">
+      <a href="../lemonade-cli/" class="md-nav__link">
         
   
   
@@ -338,20 +338,20 @@
       
   
   
-    
   
   
-  
     
     
     
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
         
           
           <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
@@ -372,7 +372,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -387,37 +387,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    AI Dev Gallery
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../server/apps/ai-dev-gallery/" class="md-nav__link">
         
   
   
@@ -433,198 +406,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Overview
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#expectations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Expectations
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#setup" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Setup
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Setup">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Prerequisites
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#install-ai-dev-gallery" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Install AI Dev Gallery
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#connect-to-lemonade" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Connect to Lemonade
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Usage
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Usage">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#quick-start" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quick Start
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#supported-scenarios" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Supported Scenarios
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#tips-for-best-experience" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tips for Best Experience
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#troubleshooting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Troubleshooting
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Troubleshooting">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#ai-dev-gallery-doesnt-detect-lemonade" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        AI Dev Gallery doesn't detect Lemonade
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#models-not-appearing-in-the-selector" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Models not appearing in the selector
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#additional-resources" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Additional Resources
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -637,7 +418,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../ai-toolkit/" class="md-nav__link">
+      <a href="../server/apps/ai-toolkit/" class="md-nav__link">
         
   
   
@@ -665,7 +446,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../anythingLLM/" class="md-nav__link">
+      <a href="../server/apps/anythingLLM/" class="md-nav__link">
         
   
   
@@ -693,7 +474,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../codeGPT/" class="md-nav__link">
+      <a href="../server/apps/codeGPT/" class="md-nav__link">
         
   
   
@@ -721,7 +502,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../continue/" class="md-nav__link">
+      <a href="../server/apps/continue/" class="md-nav__link">
         
   
   
@@ -749,7 +530,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mindcraft/" class="md-nav__link">
+      <a href="../server/apps/mindcraft/" class="md-nav__link">
         
   
   
@@ -777,7 +558,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../open-hands/" class="md-nav__link">
+      <a href="../server/apps/open-hands/" class="md-nav__link">
         
   
   
@@ -805,7 +586,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../open-webui/" class="md-nav__link">
+      <a href="../server/apps/open-webui/" class="md-nav__link">
         
   
   
@@ -833,7 +614,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../wut/" class="md-nav__link">
+      <a href="../server/apps/wut/" class="md-nav__link">
         
   
   
@@ -868,7 +649,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/" class="md-nav__link">
+      <a href="../server/configuration/" class="md-nav__link">
         
   
   
@@ -895,7 +676,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../concepts/" class="md-nav__link">
+      <a href="../server/concepts/" class="md-nav__link">
         
   
   
@@ -922,7 +703,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev-getting-started/" class="md-nav__link">
+      <a href="../dev-getting-started/" class="md-nav__link">
         
   
   
@@ -946,20 +727,20 @@
       
   
   
+    
   
   
+  
     
     
     
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
         
           
           <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
@@ -980,7 +761,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
             
@@ -995,10 +776,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../../embeddable/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1014,6 +822,98 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#who-is-this-for" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Who is this for?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#whats-in-the-release-artifact" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's in the release artifact?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#customization-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Customization Overview
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Customization Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it Works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deployment-ready-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deployment-Ready Layout
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#in-depth-customization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In-Depth Customization
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1026,7 +926,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/runtime/" class="md-nav__link">
+      <a href="runtime/" class="md-nav__link">
         
   
   
@@ -1054,7 +954,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/backends/" class="md-nav__link">
+      <a href="backends/" class="md-nav__link">
         
   
   
@@ -1082,7 +982,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/models/" class="md-nav__link">
+      <a href="models/" class="md-nav__link">
         
   
   
@@ -1110,7 +1010,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/building/" class="md-nav__link">
+      <a href="building/" class="md-nav__link">
         
   
   
@@ -1145,7 +1045,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server_spec/" class="md-nav__link">
+      <a href="../server/server_spec/" class="md-nav__link">
         
   
   
@@ -1172,7 +1072,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server_integration/" class="md-nav__link">
+      <a href="../server/server_integration/" class="md-nav__link">
         
   
   
@@ -1199,7 +1099,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../custom-models/" class="md-nav__link">
+      <a href="../server/custom-models/" class="md-nav__link">
         
   
   
@@ -1226,7 +1126,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../contribute/" class="md-nav__link">
+      <a href="../contribute/" class="md-nav__link">
         
   
   
@@ -1273,10 +1173,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#who-is-this-for" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        Who is this for?
       
     </span>
   </a>
@@ -1284,10 +1184,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#expectations" class="md-nav__link">
+  <a href="#whats-in-the-release-artifact" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Expectations
+        What's in the release artifact?
       
     </span>
   </a>
@@ -1295,22 +1195,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#setup" class="md-nav__link">
+  <a href="#customization-overview" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Setup
+        Customization Overview
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Setup">
+    <nav class="md-nav" aria-label="Customization Overview">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
+  <a href="#how-it-works" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Prerequisites
+        How it Works
       
     </span>
   </a>
@@ -1318,21 +1218,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#install-ai-dev-gallery" class="md-nav__link">
+  <a href="#deployment-ready-layout" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install AI Dev Gallery
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#connect-to-lemonade" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Connect to Lemonade
+        Deployment-Ready Layout
       
     </span>
   </a>
@@ -1345,99 +1234,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#usage" class="md-nav__link">
+  <a href="#in-depth-customization" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Usage
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Usage">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#quick-start" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quick Start
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#supported-scenarios" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Supported Scenarios
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#tips-for-best-experience" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tips for Best Experience
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#troubleshooting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Troubleshooting
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Troubleshooting">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#ai-dev-gallery-doesnt-detect-lemonade" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        AI Dev Gallery doesn't detect Lemonade
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#models-not-appearing-in-the-selector" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Models not appearing in the selector
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#additional-resources" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Additional Resources
+        In-Depth Customization
       
     </span>
   </a>
@@ -1464,79 +1264,128 @@
   
 
 
-<h1 id="ai-dev-gallery-with-lemonade-server">AI Dev Gallery with Lemonade Server</h1>
-<h2 id="overview">Overview</h2>
-<p><a href="https://aka.ms/ai-dev-gallery">AI Dev Gallery</a> is Microsoft's showcase application that demonstrates various AI capabilities through built-in samples and applications. It provides an easy way to explore and experiment with different AI models and scenarios, including text generation, chat applications, and more.</p>
-<p>AI Dev Gallery has native integration with Lemonade Server, which means it can automatically detect and connect to your local Lemonade instance without manual URL configuration.</p>
-<h2 id="expectations">Expectations</h2>
-<p>AI Dev Gallery works well with most models available in Lemonade. The built-in samples are designed to work with various model types and sizes, making it a great tool for testing and exploring different AI capabilities locally.</p>
-<p>The application provides a user-friendly interface for experimenting with AI models through pre-built scenarios, making it accessible for both beginners and advanced users.</p>
-<h2 id="setup">Setup</h2>
-<h3 id="prerequisites">Prerequisites</h3>
+<h1 id="embeddable-lemonade-guide">Embeddable Lemonade Guide</h1>
+<p>Embeddable Lemonade is a portable build of the <code>lemond</code> service that you can bundle into your app.</p>
+<p>Contents:</p>
+<ul>
+<li><a href="#who-is-this-for">Who is this for?</a></li>
+<li><a href="#whats-in-the-release-artifact">What's in the release artifact?</a></li>
+<li><a href="#customization-overview">Customization Overview</a><ul>
+<li><a href="#how-it-works">How it Works</a></li>
+<li><a href="#deployment-ready-layout">Deployment-Ready Layout</a></li>
+</ul>
+</li>
+<li><a href="#in-depth-customization">In-Depth Customization</a></li>
+</ul>
+<h2 id="who-is-this-for">Who is this for?</h2>
+<p>Use Embeddable Lemonade instead of a global Lemonade Service when you want a cohesive end-to-end experience for users of your app.
+- Users only see your installer, icons, etc.
+- Prevent users and other apps from directly interacting with <code>lemond</code>.
+- Keep your models private from the rest of the system.
+- Customize <code>lemond</code> to your exact specifications, including backend versions, available models, and much more.</p>
+<h2 id="whats-in-the-release-artifact">What's in the release artifact?</h2>
+<p>Embeddable Lemonade is an zip/tarball artifact shipped in Lemonade releases.</p>
+<ul>
+<li>Windows: <code>lemonade-embeddable-10.1.0-windows-x64.zip</code></li>
+<li>Ubuntu: <code>lemonade-embeddable-10.1.0-ubuntu-x64.tar.gz</code></li>
+</ul>
+<blockquote>
+<p>Note: see the <a href="building/">Building from Source</a> for instructions for building your own embeddable Lemonade from source, including for other Linux distros.</p>
+</blockquote>
+<p>Each archive has the following contents:</p>
+<ul>
+<li><code>lemond.exe</code> / <code>lemond</code> executable: your own private Lemonade instance.</li>
+<li><code>lemonade.exe</code> / <code>lemonade</code> CLI: useful for configuring and testing <code>lemond</code> before you ship. Feel free to exclude this from your shipped app.</li>
+<li><code>resources/</code><ul>
+<li><code>server_models.json</code>: customizable list of models that <code>lemond</code> will show on the <code>models</code> endpoint.</li>
+<li><code>backend_versions.json</code>: customizable list that determines which versions of llama.cpp, FastFlowLM, etc. will be used as backends for <code>lemond</code>.</li>
+<li><code>defaults.json</code>: default values for <code>lemond</code>'s <code>config.json</code> file. Safe to delete after <code>config.json</code> has been initialized.</li>
+</ul>
+</li>
+</ul>
+<h2 id="customization-overview">Customization Overview</h2>
+<p>While you can ship Embeddable Lemonade as-is, there many opportunities to customize it before packaging it into your app.</p>
+<h3 id="how-it-works">How it Works</h3>
+<p>Many of the customization options rely of <code>lemond</code>'s <code>config.json</code> file, a persistent store of settings. Learn more about the individual settings in the <a href="../server/configuration/">configuration guide</a>.</p>
+<p><code>config.json</code> is automatically generated based on the values in <code>resources/defaults.json</code> the first time <code>lemond</code> starts. The positional arg <code>lemond DIR</code> determines where <code>config.json</code> and other runtime files (e.g., backend binaries) will be located.</p>
+<p>In the examples in this guide, we start <code>lemond ./</code> to place these files in the same directory as <code>lemond</code> itself. Then:</p>
 <ol>
-<li>Install Lemonade Server by following the <a href="../../">Lemonade Server Instructions</a> and using the installer .exe.</li>
-<li><strong>Important</strong>: Make sure your Lemonade Server is running before opening AI Dev Gallery.</li>
+<li>We use the <code>lemonade</code> CLI's <code>config set</code> command to programmatically customize the contents of <code>config.json</code> (you can also manually edit <code>config.json</code> if you prefer).</li>
+<li>Use <code>lemonade backends install</code> to pre-download backends to be bundled in your app.</li>
+<li>Edit <code>server_models.json</code> and <code>backend_versions.json</code> to fully customize the experience for your users.</li>
+<li>You can delete the <code>lemonade</code> CLI and <code>defaults.json</code> files to minimize the footprint of your app.</li>
 </ol>
-<h3 id="install-ai-dev-gallery">Install AI Dev Gallery</h3>
-<ol>
-<li>Open the Microsoft Store on Windows.</li>
-<li>Search for "AI Dev Gallery" by Microsoft Corporation.</li>
-<li>Click "Install" to download and install the application.</li>
-</ol>
-<p>Alternatively, you can access AI Dev Gallery directly through <a href="https://aka.ms/ai-dev-gallery">aka.ms/ai-dev-gallery</a>.</p>
-<h3 id="connect-to-lemonade">Connect to Lemonade</h3>
-<p>AI Dev Gallery has native integration with Lemonade Server, so no manual configuration is required. The application will automatically detect your running Lemonade Server instance.</p>
-<p><strong>Important</strong>: Ensure your Lemonade Server is running before launching AI Dev Gallery.</p>
-<h2 id="usage">Usage</h2>
-<p>AI Dev Gallery provides various built-in applications and samples to explore AI capabilities:</p>
-<h3 id="quick-start">Quick Start</h3>
-<ol>
-<li>Launch AI Dev Gallery.</li>
-<li>Navigate to <strong>Samples</strong> → <strong>Text</strong> → <strong>Chat</strong> (or another text/code sample).</li>
-<li>Click on the model selector above the chat window.</li>
-<li>Select <strong>Lemonade</strong> from the available providers.</li>
-<li>Choose your preferred model from the list of available models.</li>
-</ol>
-<h3 id="supported-scenarios">Supported Scenarios</h3>
-<p>AI Dev Gallery supports various AI scenarios through its sample applications with Lemonade integration:</p>
-<p><strong>Text Processing</strong>:</p>
+<p>Finally, you can place the fully-configured Embeddable Lemonade folder into your app's installer.</p>
+<h3 id="deployment-ready-layout">Deployment-Ready Layout</h3>
+<p>Once you've finished customization, you'll have a portable Lemonade folder ready for deployment with a layout like this:</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Windows (cmd.exe)</label><label for="__tabbed_1_2">Linux (bash)</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>lemond.exe                      # App runs lemond as a subprocess
+lemonade.exe                    # Optional: CLI management for lemond
+LICENSE                         # Lemonade license file
+config.json                     # Persistent customized settings for lemond
+recipe_options.json             # Per-model customization (e.g., llama args)
+
+resources\
+    |- server_models.json       # Customized lemond models list
+    |- backend_versions.json    # Customized version numbers for llamacpp, etc.
+
+bin\                            # Pre-downloaded backends bundled into app
+    |- llamacpp\                # GPU LLMs, embedding, and reranking
+        |- rocm\
+            |- llama-server.exe
+        |- vulkan\
+            |- llama-server.exe
+    |- ryzenai-server\          # NPU LLMs
+    |- flm\                     # NPU LLMs, embedding, and ASR
+    |- sdpp\                    # GPU image generation
+    |- whispercpp\              # NPU and GPU ASR
+
+models\                         # Hugging Face standard layout for models
+    |- models--unsloth--Qwen3-0.6B-GGUF\
+extra_models\                   # Additional GGUF files
+    |- my_custom_model.gguf
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>lemond                          # App runs lemond as a subprocess
+lemonade                        # Optional: CLI management for lemond
+LICENSE                         # Lemonade license file
+config.json                     # Persistent customized settings for lemond
+recipe_options.json             # Per-model customization (e.g., llama args)
+
+resources/
+    |- server_models.json       # Customized lemond models list
+    |- backend_versions.json    # Customized version numbers for llamacpp, etc.
+
+bin/                            # Pre-downloaded backends bundled into app
+    |- llamacpp/                # GPU LLMs, embedding, and reranking
+        |- rocm/
+            |- llama-server
+        |- vulkan/
+            |- llama-server
+    |- ryzenai-server/          # NPU LLMs
+    |- flm/                     # NPU LLMs, embedding, and ASR
+    |- sdpp/                    # GPU image generation
+    |- whispercpp/              # NPU and GPU ASR
+
+models/                         # Hugging Face standard layout for models
+    |- models--unsloth--Qwen3-0.6B-GGUF/
+extra_models/                   # Additional GGUF files
+    |- my_custom_model.gguf
+</code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="in-depth-customization">In-Depth Customization</h2>
+<p>Reference detailed guides for each of the following subjects:</p>
 <ul>
-<li><strong>Conversational AI</strong>: Chat and Semantic Kernel Chat for interactive conversations</li>
-<li><strong>Content Generation</strong>: Generate text for various purposes and creative writing</li>
-<li><strong>Language Tasks</strong>: Translation, grammar checking, and paraphrasing</li>
-<li><strong>Text Analysis</strong>: Sentiment analysis and content moderation</li>
-<li><strong>Information Retrieval</strong>: Semantic search and retrieval augmented generation</li>
-<li><strong>Text Enhancement</strong>: Summarization and custom parameter configurations</li>
+<li><a href="runtime/">Runtime</a>: Using <code>lemond</code> as a subprocess runtime.</li>
+<li><a href="backends/">Backends</a>: Deploy backends at packaging time, install time, or runtime.</li>
+<li><a href="models/">Models</a>: Bundling, organization, sharing, per-model settings.</li>
+<li><a href="building/">Building from Source</a>: Customize <code>lemond</code> compile-time features.</li>
 </ul>
-<p><strong>Code Assistance</strong>:</p>
-<ul>
-<li><strong>Code Generation</strong>: Create code snippets and programs</li>
-<li><strong>Code Analysis</strong>: Explain existing code and understand functionality</li>
-</ul>
-<h3 id="tips-for-best-experience">Tips for Best Experience</h3>
-<ul>
-<li>Start your Lemonade Server before opening AI Dev Gallery</li>
-<li>Try different models to see how they perform across various scenarios</li>
-<li>Explore different sample categories to understand various AI capabilities</li>
-<li>Use the built-in samples as starting points for your own AI experiments</li>
-</ul>
-<h2 id="troubleshooting">Troubleshooting</h2>
-<h3 id="ai-dev-gallery-doesnt-detect-lemonade">AI Dev Gallery doesn't detect Lemonade</h3>
-<ul>
-<li>Ensure Lemonade Server is running and accessible at <code>http://localhost:13305</code></li>
-<li>Restart AI Dev Gallery after ensuring Lemonade Server is running</li>
-</ul>
-<h3 id="models-not-appearing-in-the-selector">Models not appearing in the selector</h3>
-<ul>
-<li>Open <code>http://localhost:13305</code> in a browser and make sure to download the models you want to use through the "Model Manager" tab.</li>
-</ul>
-<h2 id="additional-resources">Additional Resources</h2>
-<ul>
-<li><a href="https://aka.ms/ai-dev-gallery">AI Dev Gallery Website</a></li>
-<li><a href="https://lemonade-server.ai/models.html">Lemonade Server Models</a></li>
-</ul>
-<!--This file was originally licensed under Apache 2.0. It has been modified.
-Modifications Copyright (c) 2025 AMD-->
 
 
 
@@ -1572,7 +1421,7 @@ Modifications Copyright (c) 2025 AMD-->
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../../../lemonade-cli/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Lemonade CLI Guide">
+          <a href="../dev-getting-started/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Developer Getting Started">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1582,20 +1431,20 @@ Modifications Copyright (c) 2025 AMD-->
                 Previous
               </span>
               <div class="md-ellipsis">
-                Lemonade CLI Guide
+                Developer Getting Started
               </div>
             </div>
           </a>
         
         
           
-          <a href="../ai-toolkit/" class="md-footer__link md-footer__link--next" aria-label="Next: AI Toolkit">
+          <a href="runtime/" class="md-footer__link md-footer__link--next" aria-label="Next: Runtime">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                AI Toolkit
+                Runtime
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -1674,12 +1523,12 @@ Modifications Copyright (c) 2025 AMD-->
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.footer", "navigation.tracking", "navigation.expand", "navigation.top", "content.code.annotate", "content.code.copy"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.footer", "navigation.tracking", "navigation.expand", "navigation.top", "content.code.annotate", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
       
-        <script src="../../../assets/carousel.js"></script>
+        <script src="../assets/carousel.js"></script>
       
     
   </body>
