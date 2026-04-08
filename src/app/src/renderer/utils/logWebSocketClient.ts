@@ -41,10 +41,9 @@ export async function connectLogStream(
     query.set('api_key', apiKey);
   }
 
-  const protocol = getWebSocketProtocol();
   const wsUrl = query.size > 0
-    ? `${protocol}://${getServerHost()}:${wsPort}/logs/stream?${query.toString()}`
-    : `${protocol}://${getServerHost()}:${wsPort}/logs/stream`;
+    ? `${getWebSocketProtocol()}://${getServerHost()}:${wsPort}/logs/stream?${query.toString()}`
+    : `${getWebSocketProtocol()}://${getServerHost()}:${wsPort}/logs/stream`;
   const socket = new WebSocket(wsUrl);
 
   socket.addEventListener('open', () => {

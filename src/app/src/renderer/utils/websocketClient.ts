@@ -28,8 +28,7 @@ export class TranscriptionWebSocket {
     if (apiKey) {
       query.set('api_key', apiKey);
     }
-    const protocol = getWebSocketProtocol();
-    const wsUrl = `${protocol}://${getServerHost()}:${wsPort}/realtime?${query.toString()}`;
+    const wsUrl = `${getWebSocketProtocol()}://${getServerHost()}:${wsPort}/realtime?${query.toString()}`;
 
     console.log('[WebSocket] Connecting to:', wsUrl);
 
