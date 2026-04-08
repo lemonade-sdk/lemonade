@@ -2042,7 +2042,23 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         size_t bytes_on_disk = 0;
         std::string partial_path = output_path + ".partial";
         if (fs::exists(output_path) && !fs::exists(partial_path)) {
-            bytes_on_disk = file_size;  // File already complete
+            // Verify size matches manifest — a commit hash change may have
+            // updated a file upstream while the local copy is from the old
+            // commit. If sizes differ, remove the stale file so it gets
+            // re-downloaded.
+            if (file_size > 0) {
+                std::error_code ec;
+                size_t actual_size = fs::file_size(output_path, ec);
+                if (!ec && actual_size != file_size) {
+                    LOG(INFO, "ModelManager") << "Size mismatch for " << filename
+                        << " (expected " << file_size << ", got " << actual_size
+                        << "), re-downloading" << std::endl;
+                    fs::remove(output_path, ec);
+                }
+            }
+            if (fs::exists(output_path)) {
+                bytes_on_disk = file_size;  // File already complete
+            }
         } else if (fs::exists(partial_path)) {
             bytes_on_disk = fs::file_size(partial_path);  // Partial download
         }
@@ -2328,35 +2344,14 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
                 }
             }
 
-            // Load manifest and fix paths to point to the actual snapshot(s).
-            // Multi-repo manifests have per-file download_path entries; only
-            // update entries that belong to the main repo (whose snapshot hash
-            // changed). Non-main repo entries already point to their own
-            // repo-specific cache dirs and don't need fixing.
-            fs::path manifest_path = best_snapshot / ".download_manifest.json";
-            auto existing_manifest = JsonUtils::load_from_file(manifest_path.string());
-            std::string old_main_path = existing_manifest.value("download_path", "");
-            existing_manifest["download_path"] = path_to_utf8(best_snapshot);
-
-            if (existing_manifest.contains("files") && existing_manifest["files"].is_array()) {
-                for (auto& file_entry : existing_manifest["files"]) {
-                    std::string file_dl_path = file_entry.value("download_path", "");
-                    // Update entries that pointed to the old main snapshot path
-                    if (file_dl_path.empty() || file_dl_path == old_main_path) {
-                        file_entry["download_path"] = path_to_utf8(best_snapshot);
-                    }
-                }
-            }
-
-            // Re-save the corrected manifest before resuming
-            JsonUtils::save_to_file(existing_manifest, manifest_path.string());
-
-            download_from_manifest(existing_manifest, headers, progress_callback);
-
-            // Resume complete — relocate main-repo files into the current
-            // commit's snapshot directory. Move individual files rather than
-            // renaming the directory, since snapshots/<commit_hash> may
-            // already exist from a prior attempt with this hash.
+            // Relocate salvageable files (completed + partials) from the
+            // orphaned snapshot into the current commit's snapshot directory.
+            // We intentionally do NOT execute the stale manifest — its URLs
+            // or file list may no longer match the current upstream state.
+            // Instead we just move what's on disk and let the normal download
+            // path (below) build a fresh manifest from the current HF API
+            // response. download_from_manifest will skip files already on
+            // disk, resume .partial files, and download anything new.
             fs::path new_snapshot = snapshots_dir / commit_hash;
             if (best_snapshot != new_snapshot) {
                 std::error_code ec;
@@ -2378,15 +2373,16 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
                 LOG(INFO, "ModelManager") << "Relocated files from snapshot "
                     << old_hash << " to " << commit_hash << std::endl;
             } else {
-                // Same snapshot — just remove the manifest
+                // Same hash dir — just remove the stale manifest
                 std::error_code ec;
-                fs::remove(manifest_path, ec);
+                fs::path manifest_file = best_snapshot / ".download_manifest.json";
+                fs::remove(manifest_file, ec);
             }
 
             // Fall through to the normal download path below. It will build
             // a fresh manifest from the current HF API response and call
-            // download_from_manifest, which skips files already on disk.
-            // This ensures any files added or removed upstream are handled.
+            // download_from_manifest, which skips completed files, resumes
+            // .partial files, and downloads anything new or changed.
         }
     }
 
