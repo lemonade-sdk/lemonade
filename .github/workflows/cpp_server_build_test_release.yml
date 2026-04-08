@@ -823,9 +823,9 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
+          $lemonadeExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade.exe"
           Write-Host "Installing FLM backend for CI inference tests..." -ForegroundColor Cyan
-          & $serverExe recipes --install flm:npu
+          & $lemonadeExe backends install flm:npu
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run tests
@@ -915,7 +915,7 @@ jobs:
           curl -L -o /tmp/fastflowlm.deb "https://github.com/FastFlowLM/FastFlowLM/releases/download/${FLM_VERSION}/fastflowlm_${FLM_VERSION_NUM}_ubuntu24.04_amd64.deb"
           mkdir -p /tmp/flm-extract
           dpkg-deb -x /tmp/fastflowlm.deb /tmp/flm-extract
-          # Add extracted FLM binary to PATH
+          # Add extracted FLM binary to PATH (Linux uses system PATH for FLM discovery)
           FLM_BIN=$(find /tmp/flm-extract -name flm -type f | head -1)
           chmod +x "$FLM_BIN"
           echo "$(dirname "$FLM_BIN")" >> $GITHUB_PATH

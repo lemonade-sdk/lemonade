@@ -5,6 +5,8 @@
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/system_info.h>
+#include <lemon/backends/backend_utils.h>
+#include <lemon/backends/fastflowlm_server.h>
 #include <filesystem>
 #include <iostream>
 #include <fstream>
@@ -1450,19 +1452,29 @@ void ModelManager::register_user_model(const std::string& model_name,
     add_model_to_cache("user." + clean_name);
 }
 
+// Find the FLM executable: install dir on Windows, system PATH on Linux.
+// Returns empty string if not found.
+static std::string find_flm_binary() {
+    try {
+        return backends::BackendUtils::get_backend_binary_path(
+            backends::FastFlowLMServer::SPEC, "npu");
+    } catch (...) {
+#ifndef _WIN32
+        return utils::find_flm_executable();
+#else
+        return "";
+#endif
+    }
+}
+
 // Helper function to get FLM installed models by calling 'flm list --filter installed --quiet'
-// Uses the improved FLM CLI methodology with --filter and --quiet flags
 std::vector<std::string> ModelManager::get_flm_installed_models() {
     std::vector<std::string> installed_models;
 
-    // Find the flm executable using shared utility
-    std::string flm_path = utils::find_flm_executable();
-    if (flm_path.empty() || !utils::is_safe_executable_path(flm_path)) {
-        return installed_models; // FLM not installed or path unsafe
-    }
+    std::string flm_path = find_flm_binary();
+    if (flm_path.empty()) return installed_models;
 
     // Run 'flm list --filter installed --quiet --json' to get only installed models
-    // Use the full path to flm.exe to avoid PATH issues
     std::string output;
 #ifdef _WIN32
     std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>NUL";
@@ -1532,17 +1544,22 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
 std::vector<ModelInfo> ModelManager::get_flm_available_models() {
     std::vector<ModelInfo> flm_models;
 
-    // Find the flm executable using shared utility
-    std::string flm_path = utils::find_flm_executable();
-    if (flm_path.empty() || !utils::is_safe_executable_path(flm_path)) {
-        return flm_models; // FLM not installed or path unsafe
-    }
+    std::string flm_path = find_flm_binary();
+    if (flm_path.empty()) return flm_models;
+
+    LOG(INFO, "ModelManager") << "FLM binary found at: " << flm_path << std::endl;
 
     // Run 'flm list --json' to get all available models
     std::string output;
 #ifdef _WIN32
-    std::string command = "\"" + flm_path + "\" list --json 2>NUL";
+    std::string command = "\"" + flm_path + "\" list --json";
     int rc = lemon::utils::ProcessManager::run_command(command, output);
+    LOG(INFO, "ModelManager") << "flm list --json exit code: " << rc
+              << ", output length: " << output.size() << std::endl;
+    if (rc != 0 || output.empty()) {
+        LOG(WARNING, "ModelManager") << "flm list --json failed or returned empty. "
+                  << "Output: " << output.substr(0, 200) << std::endl;
+    }
 #else
     std::string command = "\"" + flm_path + "\" list --json 2>/dev/null";
     FILE* pipe = popen(command.c_str(), "r");
@@ -1602,8 +1619,10 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
                 }
             }
         }
+    } catch (const std::exception& e) {
+        LOG(WARNING, "ModelManager") << "FLM model discovery failed: " << e.what() << std::endl;
     } catch (...) {
-        // Silently fail if JSON parsing fails, we'll just have no dynamic FLM models
+        LOG(WARNING, "ModelManager") << "FLM model discovery failed with unknown error" << std::endl;
     }
 
     return flm_models;
@@ -2261,8 +2280,10 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
         throw std::runtime_error(status.error_string());
     }
 
-    // Find flm executable
-    std::string flm_path = utils::find_flm_executable();
+    std::string flm_path = find_flm_binary();
+    if (flm_path.empty()) {
+        throw std::runtime_error("FLM executable not found");
+    }
 
     // Prepare arguments
     std::vector<std::string> args = {"pull", checkpoint};
