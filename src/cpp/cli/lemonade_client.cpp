@@ -58,7 +58,7 @@ static void assert_http_ok(const httplib::Result& res) {
     }
 }
 
-static std::string extract_server_error_message(const HttpError& error) {
+std::string extract_server_error_message(const HttpError& error) {
     if (!error.response_body().empty()) {
         try {
             auto parsed = json::parse(error.response_body());
@@ -221,6 +221,10 @@ int LemonadeClient::status(int display_port) const {
     } catch (const json::exception& e) {
         std::cerr << "Error parsing health response JSON: " << e.what() << std::endl;
         return 1;
+    } catch (const HttpError& e) {
+        std::cerr << "Error fetching health status: " << extract_server_error_message(e)
+                  << std::endl;
+        return 1;
     } catch (const std::exception& e) {
         const std::string error = e.what();
         if (error.find("Connection failed:") == 0) {
@@ -279,6 +283,9 @@ std::vector<ModelInfo> LemonadeClient::get_models(bool show_all) const {
             }
         }
 
+    } catch (const HttpError& e) {
+        std::cerr << "Error listing models: " << extract_server_error_message(e) << std::endl;
+        return {};
     } catch (const json::exception& e) {
         std::cerr << "Error parsing models JSON: " << e.what() << std::endl;
     }
@@ -312,6 +319,9 @@ int LemonadeClient::list_models(bool show_all) const {
         std::cout << std::string(100, '-') << std::endl;
         return 0;
 
+    } catch (const HttpError& e) {
+        std::cerr << "Error listing models: " << extract_server_error_message(e) << std::endl;
+        return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error listing models: " << e.what() << std::endl;
         return 1;
@@ -477,6 +487,9 @@ int LemonadeClient::pull_model(const json& model_data) {
 
         std::cout << "Model pulled successfully: " << model_name << std::endl;
         return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error pulling model: " << extract_server_error_message(e) << std::endl;
+        return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error pulling model: " << e.what() << std::endl;
         return 1;
@@ -499,11 +512,62 @@ int LemonadeClient::delete_model(const std::string& model_name) const {
             return 1;
         }
 
+    } catch (const HttpError& e) {
+        std::cerr << "Error deleting model: " << extract_server_error_message(e) << std::endl;
+        return 1;
     } catch (const json::exception& e) {
         std::cerr << "Error parsing delete response JSON: " << e.what() << std::endl;
         return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error deleting model: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::cleanup_cache(bool dry_run) const {
+    std::cout << (dry_run ? "Previewing" : "Running") << " cache cleanup..." << std::endl;
+
+    try {
+        json request_body = {{"dry_run", dry_run}};
+        std::string response = make_request("/internal/cleanup-cache", "POST",
+            request_body.dump(), "application/json", 30, 300);
+
+        auto result = json::parse(response);
+
+        if (result.contains("error")) {
+            std::cerr << "Error: " << result["error"].value("message", "Unknown error") << std::endl;
+            return 1;
+        }
+
+        auto orphaned = result.value("orphaned_files", json::array());
+        size_t total_bytes = result.value("total_bytes", 0);
+
+        if (orphaned.empty()) {
+            std::cout << "No orphaned files found. Cache is clean." << std::endl;
+            return 0;
+        }
+
+        for (const auto& file : orphaned) {
+            std::string path = file.value("path", "");
+            size_t size = file.value("size", 0);
+            std::string model = file.value("model", "");
+            double size_mb = size / (1024.0 * 1024.0);
+            std::cout << "  " << path << " (" << std::fixed << std::setprecision(1) << size_mb << " MB)"
+                      << " [from " << model << "]" << std::endl;
+        }
+
+        double total_mb = total_bytes / (1024.0 * 1024.0);
+        if (dry_run) {
+            std::cout << "\nWould free " << std::fixed << std::setprecision(1) << total_mb << " MB from "
+                      << orphaned.size() << " file(s). Run without --dry-run to delete." << std::endl;
+        } else {
+            std::cout << "\nFreed " << std::fixed << std::setprecision(1) << total_mb << " MB from "
+                      << orphaned.size() << " file(s)." << std::endl;
+        }
+
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
 }
@@ -521,6 +585,9 @@ int LemonadeClient::load_model(const std::string& model_name, const nlohmann::js
         std::cout << "Model loaded successfully!" << std::endl;
         return 0;
 
+    } catch (const HttpError& e) {
+        std::cerr << "Error loading model: " << extract_server_error_message(e) << std::endl;
+        return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error loading model: " << e.what() << std::endl;
         return 1;
@@ -543,6 +610,9 @@ int LemonadeClient::unload_model(const std::string& model_name) const {
         std::cout << "Model unloaded successfully!" << std::endl;
         return 0;
 
+    } catch (const HttpError& e) {
+        std::cerr << "Error unloading model: " << extract_server_error_message(e) << std::endl;
+        return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error unloading model: " << e.what() << std::endl;
         return 1;
@@ -553,6 +623,9 @@ nlohmann::json LemonadeClient::get_model_info(const std::string& model_name) con
     try {
         std::string response = make_request("/api/v1/models/" + model_name);
         return json::parse(response);
+    } catch (const HttpError& e) {
+        std::cerr << "Error fetching model info: " << extract_server_error_message(e) << std::endl;
+        return json{};
     } catch (const json::exception& e) {
         std::cerr << "Error parsing model info JSON: " << e.what() << std::endl;
         return json{};
@@ -651,6 +724,9 @@ int LemonadeClient::list_recipes() const {
         std::cout << std::string(148, '-') << std::endl;
         return 0;
 
+    } catch (const HttpError& e) {
+        std::cerr << "Error listing recipes: " << extract_server_error_message(e) << std::endl;
+        return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error listing recipes: " << e.what() << std::endl;
         return 1;
@@ -721,6 +797,10 @@ int LemonadeClient::uninstall_backend(const std::string& recipe, const std::stri
             return 1;
         }
 
+    } catch (const HttpError& e) {
+        std::cerr << "Error uninstalling backend: " << extract_server_error_message(e)
+                  << std::endl;
+        return 1;
     } catch (const json::exception& e) {
         std::cerr << "Error parsing uninstall response JSON: " << e.what() << std::endl;
         return 1;

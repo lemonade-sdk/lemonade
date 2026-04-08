@@ -603,7 +603,7 @@ A GUI application for desktop users that exposes the server via a system tray ic
 The `lemonade` client communicates with `lemond` server via HTTP:
 - **Model operations:** `/api/v1/models`, `/api/v1/pull`, `/api/v1/delete`
 - **Model control:** `/api/v1/load`, `/api/v1/unload`
-- **Server management:** `/api/v1/health`, `/internal/shutdown`, `/internal/set`, `/internal/config`
+- **Server management:** `/api/v1/health`, `/internal/shutdown`, `/internal/set`, `/internal/config`, `/internal/cleanup-cache`
 - **Inference:** `/api/v1/chat/completions`, `/api/v1/completions`, `/api/v1/audio/transcriptions`
 
 The client automatically:
@@ -635,6 +635,7 @@ Internal endpoints are restricted to loopback (`127.0.0.1` / `::1`) — requests
 | `POST` | `/internal/shutdown` | Unloads all models and shuts down the server |
 | `POST` | `/internal/set` | Unified config setter (see below) |
 | `GET`  | `/internal/config` | Returns the full runtime config snapshot |
+| `POST` | `/internal/cleanup-cache` | Cleans up orphaned files in the Hugging Face cache |
 
 #### `POST /internal/set`
 
