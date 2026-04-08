@@ -57,6 +57,11 @@ def get_cli_binary():
     return server_binary.replace("lemonade-server", "lemonade")
 
 
+def get_legacy_cli_binary():
+    """Get the deprecated lemonade-server shim binary path."""
+    return _config["server_binary"] or get_default_server_binary()
+
+
 def parse_cli_args():
     """Parse command line arguments for CLI client tests."""
     parser = argparse.ArgumentParser(description="Test lemonade CLI client")
@@ -114,6 +119,34 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
         print(f"stdout: {result.stdout}")
     if result.stderr:
         print(f"stderr: {result.stderr}")
+
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode, cmd, result.stdout, result.stderr
+        )
+
+    return result
+
+
+def run_legacy_cli_command(args, timeout=60, check=False):
+    """Run the deprecated lemonade-server shim and return the result."""
+    legacy_binary = get_legacy_cli_binary()
+    cmd = [legacy_binary] + args
+    print(f"Running legacy shim: {' '.join(cmd)}")
+
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    if result.stdout:
+        print(f"legacy stdout: {result.stdout}")
+    if result.stderr:
+        print(f"legacy stderr: {result.stderr}")
 
     if check and result.returncode != 0:
         raise subprocess.CalledProcessError(
@@ -397,6 +430,18 @@ sys.exit(0)
             timeout=TIMEOUT_MODEL_OPERATION,
         )
         print(f"Pull with multiple checkpoints exit code: {result.returncode}")
+
+    def test_054_pull_registered_name(self):
+        """Test pull command with a registered model name (no flags)."""
+        result = self.assertCommandSucceeds(
+            ["pull", ENDPOINT_TEST_MODEL],
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        output = result.stdout.lower() + result.stderr.lower()
+        self.assertFalse(
+            "error" in output and "failed" in output,
+            f"Pull should not report errors: {result.stdout}",
+        )
 
     # =============================================================================
     # Import Tests
@@ -1290,7 +1335,7 @@ sys.exit(0)
 
 
 class CLIHelpDocsConsistencyTests(unittest.TestCase):
-    """Lightweight checks that compare launch help semantics with CLI docs text."""
+    """Lightweight checks that compare CLI help semantics with docs text."""
 
     def test_900_launch_docs_match_help_text(self):
         """The launch model-selection wording in docs should match actual CLI behavior/help."""
@@ -1336,6 +1381,25 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         )
         self.assertIn("--provider,-p [PROVIDER]", docs_text)
         self.assertIn("--agent-args ARGS", docs_text)
+
+    def test_901_legacy_pull_deprecation_message(self):
+        """The legacy shim should not forward pull args and should print migration guidance."""
+        result = run_legacy_cli_command(
+            ["pull", "Qwen3-0.6B-GGUF"], timeout=TIMEOUT_DEFAULT
+        )
+        self.assertNotEqual(result.returncode, 0)
+
+        output = result.stdout + result.stderr
+        self.assertIn("This command is deprecated.", output)
+        self.assertIn("use 'lemonade pull --help' instead", output.lower())
+        self.assertIn("Built-in model: lemonade pull Qwen3-0.6B-GGUF", output)
+        self.assertIn(
+            "Checkpoint:     lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M", output
+        )
+        self.assertIn(
+            "Manual pull:    lemonade pull user.MyModel --checkpoint main org/repo:Q4_K_M --recipe llamacpp",
+            output,
+        )
 
 
 def run_cli_client_tests():

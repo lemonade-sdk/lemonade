@@ -56,6 +56,7 @@ The additional endpoints are:
 - POST `/api/v1/install` - Install or update a backend
 - POST `/api/v1/uninstall` - Remove a backend
 - POST `/api/v1/pull` - Install a model
+- GET `/api/v1/pull/variants` - Enumerate GGUF variants for a Hugging Face checkpoint
 - POST `/api/v1/delete` - Delete a model
 - POST `/api/v1/load` - Load a model
 - POST `/api/v1/unload` - Unload a model
@@ -1435,6 +1436,67 @@ data: {"file_index":2,"total_files":2,"percent":100}
 | `progress` | Sent during download with current file and byte progress |
 | `complete` | Sent when all files are downloaded successfully |
 | `error` | Sent if download fails, with `error` field containing the message |
+
+### `GET /api/v1/pull/variants` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Inspect a Hugging Face GGUF repository and enumerate the variants (quantizations and sharded folder groups) available for installation. Used by the `lemonade pull <owner/repo>` CLI flow and by the desktop app's model search to auto-populate the install form. The endpoint reads only public Hugging Face metadata; if the `HF_TOKEN` environment variable is set on the server, it is forwarded as a bearer token to access gated repositories.
+
+#### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `checkpoint` | Yes | Hugging Face repo id, e.g. `unsloth/Qwen3-8B-GGUF`. Passed as a query string. |
+
+Example request:
+
+```bash
+curl 'http://localhost:13305/api/v1/pull/variants?checkpoint=unsloth/Qwen3-8B-GGUF'
+```
+
+#### Response
+
+```json
+{
+  "checkpoint": "unsloth/Qwen3-8B-GGUF",
+  "recipe": "llamacpp",
+  "suggested_name": "Qwen3-8B-GGUF",
+  "suggested_labels": ["vision"],
+  "mmproj_files": ["mmproj-model-f16.gguf"],
+  "variants": [
+    {
+      "name": "Q4_K_M",
+      "primary_file": "Qwen3-8B-Q4_K_M.gguf",
+      "files": ["Qwen3-8B-Q4_K_M.gguf"],
+      "sharded": false,
+      "size_bytes": 4920000000
+    },
+    {
+      "name": "Q8_0",
+      "primary_file": "Q8_0/Qwen3-8B-Q8_0-00001-of-00002.gguf",
+      "files": ["Q8_0/Qwen3-8B-Q8_0-00001-of-00002.gguf", "Q8_0/Qwen3-8B-Q8_0-00002-of-00002.gguf"],
+      "sharded": true,
+      "size_bytes": 8500000000
+    }
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `checkpoint` | Echoed input. |
+| `recipe` | Suggested recipe (always `llamacpp` today; future expansion may return other values). |
+| `suggested_name` | Repo id stripped of the `owner/` prefix; suitable for use as the `user.<name>` model name. |
+| `suggested_labels` | Inferred labels — `vision` if any `mmproj-*.gguf` files exist, plus `embeddings`/`reranking` if those substrings appear in the repo id. |
+| `mmproj_files` | Bare filenames of `mmproj-*.gguf` files in the repo; the first one should be passed as `mmproj` to `/api/v1/pull` for vision models. |
+| `variants[]` | Top quantizations for the repo, capped at 5. Each entry has `name` (e.g. `Q4_K_M`, `UD-Q4_K_XL`), `primary_file`, `files`, `sharded`, and `size_bytes` (from the HF `?blobs=true` listing). Ranked by frequency of use in `server_models.json` (`Q4_K_M`, `UD-Q4_K_XL`, `Q8_0`, `Q4_0` first, everything else sorted lexicographically). The CLI `lemonade pull` menu adds a free-text "Other" option for quants outside the top 5. |
+
+#### Error responses
+
+| Status | Cause |
+|--------|-------|
+| 400 | `checkpoint` query parameter missing or malformed (must contain `/`). |
+| 404 | Hugging Face returned 404 for the checkpoint. |
+| 500 | Other transport or parsing failures; the response body contains an `error` message. |
 
 ### `POST /api/v1/delete` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
