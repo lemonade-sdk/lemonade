@@ -1291,7 +1291,7 @@
             "height": 1024
         }
     },
-    "Lemonade Ultra": {
+    "Ultra Bundle": {
         "checkpoint": "",
         "recipe": "experience",
         "suggested": true,
@@ -1302,18 +1302,7 @@
             "kokoro-v1"
         ]
     },
-    "Lemonade Medium": {
-        "checkpoint": "",
-        "recipe": "experience",
-        "suggested": true,
-        "composite_models": [
-            "Qwen3.5-35B-A3B-GGUF",
-            "SDXL-Turbo",
-            "Whisper-Large-v3-Turbo",
-            "kokoro-v1"
-        ]
-    },
-    "Lemonade Lite": {
+    "Lite Bundle": {
         "checkpoint": "",
         "recipe": "experience",
         "suggested": true,

@@ -507,7 +507,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const getCategoryLabel = (category: string): string => {
     const labels: { [key: string]: string } = {
-      'experience': 'Experience',
+      'experience': 'Meta-Engine',
       'reasoning': 'Reasoning',
       'coding': 'Coding',
       'vision': 'Vision',
