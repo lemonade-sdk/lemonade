@@ -148,7 +148,7 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
             std::cerr << "Checkpoint '" << checkpoint << "' not found on Hugging Face." << std::endl;
             return 1;
         }
-        std::cerr << "Error fetching variants: " << e.what() << std::endl;
+        std::cerr << "Error fetching variants: " << lemonade::extract_server_error_message(e) << std::endl;
         return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error fetching variants: " << e.what() << std::endl;

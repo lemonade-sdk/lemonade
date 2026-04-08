@@ -871,7 +871,8 @@ static int handle_config_set(lemonade::LemonadeClient& client,
             }
         }
 
-        std::cerr << "Error setting config: " << e.what() << std::endl;
+        std::cerr << "Error setting config: " << lemonade::extract_server_error_message(e)
+                  << std::endl;
         return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error setting config: " << e.what() << std::endl;
