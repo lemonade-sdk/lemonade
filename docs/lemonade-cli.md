@@ -41,8 +41,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | Command             | Description                         |
 |---------------------|-------------------------------------|
 | `list`              | List all available models. |
-| `pull MODEL_OR_CHECKPOINT` | Download a registered model, or a Hugging Face GGUF checkpoint with interactive variant selection. See command options [below](#options-for-pull). |
-| `pull manual user.NAME --checkpoint ...` | Manually register and pull a custom model with explicit checkpoints/recipe/labels. See [below](#options-for-pull-manual). |
+| `pull MODEL_OR_CHECKPOINT` | Download a registered model, pull a Hugging Face checkpoint, or manually register a `user.*` model with `--checkpoint`/`--recipe`. See command options [below](#options-for-pull). |
 | `import JSON_FILE`  | Import a model from a JSON configuration file. See command options [below](#options-for-import). |
 | `delete MODEL_NAME` | Delete a model and its files from local storage. |
 | `load MODEL_NAME`   | Load a model for inference. See command options [below](#options-for-load). |
@@ -155,17 +154,22 @@ The `pull` command downloads and installs models. The single positional argument
 
 1. **A registered model name** from the [Lemonade Server registry](https://lemonade-server.ai/models.html), e.g. `Qwen3-0.6B-GGUF`.
 2. **A Hugging Face checkpoint** of the form `owner/repo`, with an optional `:variant` suffix, e.g. `unsloth/Qwen3-8B-GGUF` or `unsloth/Qwen3-8B-GGUF:Q4_K_M`. When the variant is omitted (or doesn't match), Lemonade fetches the repository, lists the available quantizations (including sharded folder variants), auto-detects any `mmproj-*.gguf` files for vision models, infers labels from the repo id (`embed`/`rerank`), and presents an interactive menu.
+3. **A custom `user.*` model name** when you want to manually register a model with explicit checkpoints, recipe, and optional labels.
 
 ```bash
-lemonade pull MODEL_OR_CHECKPOINT [--yes]
+lemonade pull MODEL_OR_CHECKPOINT [--checkpoint TYPE CHECKPOINT] [--recipe RECIPE] [--label LABEL]
 ```
 
 | Option | Description | Required |
 |--------|-------------|----------|
 | `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face checkpoint | Yes |
-| `--yes` | Skip the interactive variant menu and pick the first/best variant | No |
+| `--checkpoint TYPE CHECKPOINT` | Manual registration: add a checkpoint entry. Repeat for multi-component models such as `main` + `mmproj` or `main` + `vae`. | No |
+| `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `whispercpp`, `sd-cpp`, `kokoro`) | No |
+| `--label LABEL` | Manual registration: add a label to the new model. Repeatable. Valid: `coding`, `embeddings`, `hot`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |
 
-**Examples:**
+**Happy path**
+
+Most users only need one of these:
 
 ```bash
 # Pull a registered model from the Lemonade Server registry
@@ -184,39 +188,28 @@ lemonade pull ggml-org/gemma-3-4b-it-GGUF:Q4_K_M
 lemonade pull unsloth/Qwen3-30B-A3B-GGUF:Q4_K_M
 ```
 
-For models that require multiple explicit checkpoints (e.g. `main` + `mmproj`), or non-llamacpp recipes, use [`pull manual`](#options-for-pull-manual).
+**Manual registration from the same command**
 
-## Options for pull manual
-
-The `pull manual` subcommand registers and pulls a custom model with full control over its checkpoints, recipe, and labels. This is the advanced path; for typical Hugging Face GGUFs, prefer the regular [`pull`](#options-for-pull) command.
+When you need explicit multi-file checkpoints, a non-default recipe, or custom labels, use the same `pull` command with a `user.*` model name plus `--checkpoint` and `--recipe`:
 
 ```bash
-lemonade pull manual user.NAME --checkpoint TYPE CHECKPOINT [--recipe RECIPE] [--label LABEL]
+lemonade pull user.NAME --checkpoint TYPE CHECKPOINT [--recipe RECIPE] [--label LABEL]
 ```
-
-| Option | Description | Required |
-|--------|-------------|----------|
-| `user.NAME` | Custom model name; must use the `user.` namespace prefix | Yes |
-| `--checkpoint TYPE CHECKPOINT` | Hugging Face checkpoint as `org/model:variant`. `TYPE` is the component type (`main`, `mmproj`, `vae`, `text_encoder`). Repeat for multi-component models. | Yes |
-| `--recipe RECIPE` | Inference recipe: `llamacpp`, `flm`, `ryzenai-llm`, `whispercpp`, `sd-cpp` | Yes |
-| `--label LABEL` | Label to attach. Repeatable. Valid: `coding`, `embeddings`, `hot`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |
-
-**Examples:**
 
 ```bash
 # Register and pull a custom GGUF model with main checkpoint
-lemonade pull manual user.Phi-4-Mini-GGUF \
+lemonade pull user.Phi-4-Mini-GGUF \
   --checkpoint main unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M \
   --recipe llamacpp
 
 # Register and pull a vision model with main + mmproj
-lemonade pull manual user.Gemma-3-4b \
+lemonade pull user.Gemma-3-4b \
   --checkpoint main ggml-org/gemma-3-4b-it-GGUF:Q4_K_M \
   --checkpoint mmproj ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf \
   --recipe llamacpp
 
 # Register a model with multiple labels
-lemonade pull manual user.MyCodingModel \
+lemonade pull user.MyCodingModel \
   --checkpoint main org/model:Q4_0 \
   --recipe llamacpp \
   --label coding \

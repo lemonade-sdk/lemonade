@@ -211,7 +211,7 @@ static int handle_import_command(lemonade::LemonadeClient& client, const CliConf
                                            config.skip_prompt, config.yes, nullptr, true);
 }
 
-static int handle_pull_manual_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+static int handle_manual_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     nlohmann::json model_data;
 
     // Build model_data JSON from command line options
@@ -229,13 +229,32 @@ static int handle_pull_manual_command(lemonade::LemonadeClient& client, const Cl
     return client.pull_model(model_data);
 }
 
+static bool has_manual_pull_options(const CliConfig& config) {
+    return !config.checkpoints.empty() || !config.recipe.empty() || !config.labels.empty();
+}
+
 static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+    if (has_manual_pull_options(config)) {
+        if (config.checkpoints.empty()) {
+            std::cerr << "Error: manual pull requires at least one --checkpoint TYPE CHECKPOINT."
+                      << std::endl;
+            std::cerr << "       See 'lemonade pull --help'." << std::endl;
+            return 1;
+        }
+        if (config.recipe.empty()) {
+            std::cerr << "Error: manual pull requires --recipe." << std::endl;
+            std::cerr << "       See 'lemonade pull --help'." << std::endl;
+            return 1;
+        }
+        return handle_manual_pull_command(client, config);
+    }
+
     // If the argument looks like a Hugging Face checkpoint id (contains '/'),
     // run the interactive HF flow that discovers variants and auto-fills the
     // pull request. Otherwise treat it as a registered model name and pull by
     // model_name only.
     if (config.model.find('/') != std::string::npos) {
-        return lemon_cli::hf_pull_flow(client, config.model, config.yes || config.skip_prompt);
+        return lemon_cli::hf_pull_flow(client, config.model, false);
     }
 
     nlohmann::json model_data;
@@ -875,9 +894,6 @@ int main(int argc, char* argv[]) {
     CLI::App* list_cmd = app.add_subcommand("list", "List available models")->group("Model management");
     CLI::App* pull_cmd = app.add_subcommand("pull",
         "Pull/download a model by registered name or Hugging Face checkpoint")->group("Model management");
-    CLI::App* pull_manual_cmd = pull_cmd->add_subcommand("manual",
-        "Manually register and pull a model with explicit checkpoints/recipe/labels")
-        ->group("Subcommands");
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
     CLI::App* load_cmd = app.add_subcommand("load", "Load a model")->group("Model management");
     CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)")->group("Model management");
@@ -895,24 +911,26 @@ int main(int argc, char* argv[]) {
     // Pull options
     pull_cmd->add_option("model", config.model,
         "Registered model name, or Hugging Face checkpoint (owner/repo[:variant])")
+        ->required()
         ->type_name("MODEL_OR_CHECKPOINT");
-    pull_cmd->add_flag("--yes", config.yes,
-        "Skip the interactive variant menu and pick the first/best variant");
-
-    // Pull manual options (advanced: register a custom user.* model)
-    pull_manual_cmd->add_option("model", config.model,
-        "Model name to register (must use 'user.' prefix)")->required()->type_name("MODEL");
-    pull_manual_cmd->add_option("--checkpoint", config.checkpoints, "Model checkpoint path")
+    pull_cmd->add_option("--checkpoint", config.checkpoints,
+        "Add a TYPE CHECKPOINT pair for a custom user.* model. Repeat for multi-file models.")
+        ->group("Manual Configuration Options")
         ->type_name("TYPE CHECKPOINT")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
-    pull_manual_cmd->add_option("--recipe", config.recipe,
-        "Model recipe (e.g., llamacpp, flm, sd-cpp, whispercpp)")
+    pull_cmd->add_option("--recipe", config.recipe,
+        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp)")
+        ->group("Manual Configuration Options")
         ->type_name("RECIPE")
         ->default_val(config.recipe);
-    pull_manual_cmd->add_option("--label", config.labels, "Add label to model")
+    pull_cmd->add_option("--label", config.labels, "Add a label to the custom user.* model")
+        ->group("Manual Configuration Options")
         ->type_name("LABEL")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll)
         ->check(CLI::IsMember(VALID_LABELS));
+    pull_cmd->footer(
+        "Manual Configuration Guide:\n"
+        "  https://lemonade-server.ai/docs/server/custom-models/");
 
     // Import options
     import_cmd->add_option("json_file", config.model, "Path to JSON file")->type_name("JSON_FILE");
@@ -1021,9 +1039,6 @@ int main(int argc, char* argv[]) {
     } else if (list_cmd->count() > 0) {
         return client.list_models(!config.downloaded);
     } else if (pull_cmd->count() > 0) {
-        if (pull_manual_cmd->parsed()) {
-            return handle_pull_manual_command(client, config);
-        }
         if (config.model.empty()) {
             std::cerr << "Error: 'lemonade pull' requires a model name or Hugging Face checkpoint." << std::endl;
             std::cerr << "       See 'lemonade pull --help'." << std::endl;

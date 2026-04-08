@@ -12,9 +12,9 @@ This guide explains how to manually register custom models in Lemonade Server us
 > ```
 > The desktop app's "Search Hugging Face" panel calls the same [`/api/v1/pull/variants`](./server_spec.md#get-apiv1pullvariants) endpoint under the hood.
 >
-> If you need full control — multiple checkpoints (`main` + `mmproj` + `vae` + ...), a non-llamacpp recipe, or custom labels — use [`lemonade pull manual`](../lemonade-cli.md#options-for-pull-manual):
+> If you need full control — multiple checkpoints (`main` + `mmproj` + `vae` + ...), a non-llamacpp recipe, or custom labels — use the advanced flags on [`lemonade pull`](../lemonade-cli.md#options-for-pull):
 > ```bash
-> lemonade pull manual user.MyModel --checkpoint main "org/repo:file.gguf" --recipe llamacpp
+> lemonade pull user.MyModel --checkpoint main "org/repo:file.gguf" --recipe llamacpp
 > ```
 > This guide covers the underlying JSON files for users who need manual control beyond what the CLI exposes.
 
@@ -194,9 +194,9 @@ lemonade run user.Qwen2.5-Coder-1.5B-Instruct
 }
 ```
 
-The model will automatically be available as `user.My-Embedding-Model`. To mark it as an embedding model, use `pull manual`:
+The model will automatically be available as `user.My-Embedding-Model`. To mark it as an embedding model, use the manual registration flags on `pull`:
 ```bash
-lemonade pull manual user.My-Embedding-Model \
+lemonade pull user.My-Embedding-Model \
     --checkpoint main "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S" \
     --recipe llamacpp \
     --label embeddings
