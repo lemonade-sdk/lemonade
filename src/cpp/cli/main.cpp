@@ -1,6 +1,7 @@
 #include "lemon_cli/lemonade_client.h"
 #include "lemon_cli/model_selection.h"
 #include "lemon_cli/recipe_import.h"
+#include "lemon_cli/hf_pull.h"
 #include <lemon/recipe_options.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
@@ -210,7 +211,7 @@ static int handle_import_command(lemonade::LemonadeClient& client, const CliConf
                                            config.skip_prompt, config.yes, nullptr, true);
 }
 
-static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+static int handle_pull_manual_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     nlohmann::json model_data;
 
     // Build model_data JSON from command line options
@@ -225,6 +226,20 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
         model_data["labels"] = config.labels;
     }
 
+    return client.pull_model(model_data);
+}
+
+static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+    // If the argument looks like a Hugging Face checkpoint id (contains '/'),
+    // run the interactive HF flow that discovers variants and auto-fills the
+    // pull request. Otherwise treat it as a registered model name and pull by
+    // model_name only.
+    if (config.model.find('/') != std::string::npos) {
+        return lemon_cli::hf_pull_flow(client, config.model, config.yes || config.skip_prompt);
+    }
+
+    nlohmann::json model_data;
+    model_data["model_name"] = config.model;
     return client.pull_model(model_data);
 }
 
@@ -858,7 +873,11 @@ int main(int argc, char* argv[]) {
 
     // Model commands
     CLI::App* list_cmd = app.add_subcommand("list", "List available models")->group("Model management");
-    CLI::App* pull_cmd = app.add_subcommand("pull", "Pull/download a model")->group("Model management");
+    CLI::App* pull_cmd = app.add_subcommand("pull",
+        "Pull/download a model by registered name or Hugging Face checkpoint")->group("Model management");
+    CLI::App* pull_manual_cmd = pull_cmd->add_subcommand("manual",
+        "Manually register and pull a model with explicit checkpoints/recipe/labels")
+        ->group("Subcommands");
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
     CLI::App* load_cmd = app.add_subcommand("load", "Load a model")->group("Model management");
     CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)")->group("Model management");
@@ -874,14 +893,23 @@ int main(int argc, char* argv[]) {
     backends_uninstall_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
 
     // Pull options
-    pull_cmd->add_option("model", config.model, "Model name to pull")->required()->type_name("MODEL");
-    pull_cmd->add_option("--checkpoint", config.checkpoints, "Model checkpoint path")
+    pull_cmd->add_option("model", config.model,
+        "Registered model name, or Hugging Face checkpoint (owner/repo[:variant])")
+        ->type_name("MODEL_OR_CHECKPOINT");
+    pull_cmd->add_flag("--yes", config.yes,
+        "Skip the interactive variant menu and pick the first/best variant");
+
+    // Pull manual options (advanced: register a custom user.* model)
+    pull_manual_cmd->add_option("model", config.model,
+        "Model name to register (must use 'user.' prefix)")->required()->type_name("MODEL");
+    pull_manual_cmd->add_option("--checkpoint", config.checkpoints, "Model checkpoint path")
         ->type_name("TYPE CHECKPOINT")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
-    pull_cmd->add_option("--recipe", config.recipe, "Model recipe (e.g., llamacpp, flm, sd-cpp, whispercpp)")
+    pull_manual_cmd->add_option("--recipe", config.recipe,
+        "Model recipe (e.g., llamacpp, flm, sd-cpp, whispercpp)")
         ->type_name("RECIPE")
         ->default_val(config.recipe);
-    pull_cmd->add_option("--label", config.labels, "Add label to model")
+    pull_manual_cmd->add_option("--label", config.labels, "Add label to model")
         ->type_name("LABEL")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll)
         ->check(CLI::IsMember(VALID_LABELS));
@@ -993,6 +1021,14 @@ int main(int argc, char* argv[]) {
     } else if (list_cmd->count() > 0) {
         return client.list_models(!config.downloaded);
     } else if (pull_cmd->count() > 0) {
+        if (pull_manual_cmd->parsed()) {
+            return handle_pull_manual_command(client, config);
+        }
+        if (config.model.empty()) {
+            std::cerr << "Error: 'lemonade pull' requires a model name or Hugging Face checkpoint." << std::endl;
+            std::cerr << "       See 'lemonade pull --help'." << std::endl;
+            return 1;
+        }
         return handle_pull_command(client, config);
     } else if (import_cmd->count() > 0) {
         return handle_import_command(client, config);
