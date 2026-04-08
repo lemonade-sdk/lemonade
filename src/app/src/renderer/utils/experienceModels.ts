@@ -9,11 +9,19 @@ export const getExperienceComponents = (info?: ModelInfo): string[] => {
   return info.composite_models.filter((name): name is string => typeof name === 'string' && name.length > 0);
 };
 
+export const isOmniModel = (info?: ModelInfo): boolean => {
+  return !!info && (info.labels?.includes('omni') ?? false);
+};
+
 export const isExperienceModel = (info?: ModelInfo): boolean => {
+  if (isOmniModel(info)) return true;
   return !!info && info.recipe === 'experience' && getExperienceComponents(info).length > 0;
 };
 
 export const isModelEffectivelyDownloaded = (modelName: string, info: ModelInfo | undefined, modelsData: ModelsData): boolean => {
+  if (isOmniModel(info)) {
+    return info?.downloaded === true;
+  }
   if (isExperienceModel(info)) {
     return isExperienceFullyDownloaded(modelName, modelsData);
   }
@@ -22,6 +30,9 @@ export const isModelEffectivelyDownloaded = (modelName: string, info: ModelInfo 
 
 export const isExperienceFullyDownloaded = (modelName: string, modelsData: ModelsData): boolean => {
   const info = modelsData[modelName];
+  if (isOmniModel(info)) {
+    return info?.downloaded === true;
+  }
   const components = getExperienceComponents(info);
   if (components.length === 0) return false;
   return components.every((component) => modelsData[component]?.downloaded === true);
@@ -33,6 +44,9 @@ export const isExperienceFullyLoaded = (
   loadedModels: Set<string>,
 ): boolean => {
   const info = modelsData[modelName];
+  if (isOmniModel(info)) {
+    return loadedModels.has(modelName);
+  }
   const components = getExperienceComponents(info);
   if (components.length === 0) return false;
   return components.every((component) => loadedModels.has(component));

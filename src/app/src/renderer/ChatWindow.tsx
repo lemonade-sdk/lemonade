@@ -15,7 +15,7 @@ import ImageGenerationPanel from './components/panels/ImageGenerationPanel';
 import TTSPanel from './components/panels/TTSPanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
 import { RefreshIcon } from './components/Icons';
-import { isExperienceModel, getExperienceComponents } from './utils/experienceModels';
+import { isExperienceModel, isOmniModel, getExperienceComponents } from './utils/experienceModels';
 import AddModelPanel, { AddModelInitialValues, ModelInstallData } from './AddModelPanel';
 
 interface ChatWindowProps {
@@ -69,6 +69,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const isVision = useMemo(() => {
     if (!selectedModel) return false;
     return modelsData[selectedModel]?.labels?.includes('vision') || false;
+  }, [selectedModel, modelsData]);
+
+  const isOmni = useMemo(() => {
+    if (!selectedModel) return false;
+    return isOmniModel(modelsData[selectedModel]);
   }, [selectedModel, modelsData]);
 
   const isExperienceSelected = useMemo(() => {
@@ -223,7 +228,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
 
     try {
       const info = modelsData[selectedModel];
-      const components = isExperienceModel(info) ? getExperienceComponents(info) : [selectedModel];
+      const experienceComponents = getExperienceComponents(info);
+      const components = experienceComponents.length > 0 ? experienceComponents : [selectedModel];
 
       for (const component of components) {
         const response = await serverFetch('/unload', {
@@ -297,6 +303,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
           key={resetKey}
           {...sharedProps}
           isVision={isVision}
+          isOmni={isOmni}
           currentLoadedModel={currentLoadedModel}
           setCurrentLoadedModel={setCurrentLoadedModel}
           experienceMode={experienceMode}

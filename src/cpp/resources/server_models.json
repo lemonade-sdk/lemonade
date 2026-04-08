@@ -812,6 +812,28 @@
         ],
         "size": 6.19
     },
+    "Qwen2.5-Omni-7B-GGUF": {
+        "checkpoint": "ggml-org/Qwen2.5-Omni-7B-GGUF:Q4_K_M",
+        "mmproj": "mmproj-Qwen2.5-Omni-7B-f16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision",
+            "omni"
+        ],
+        "size": 4.68
+    },
+    "Qwen2.5-Omni-3B-GGUF": {
+        "checkpoint": "ggml-org/Qwen2.5-Omni-3B-GGUF:Q4_K_M",
+        "mmproj": "mmproj-Qwen2.5-Omni-3B-f16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision",
+            "omni"
+        ],
+        "size": 2.10
+    },
     "Qwen3-Next-80B-A3B-Instruct-GGUF": {
         "checkpoint": "unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF:Qwen3-Next-80B-A3B-Instruct-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",

@@ -3640,6 +3640,66 @@ input::-webkit-calendar-picker-indicator {
     transform: scale(1.1);
 }
 
+/* Audio Preview (Omni models) */
+.audio-preview-container {
+    padding-bottom: 8px;
+}
+
+.audio-preview-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 6px 8px;
+}
+
+.audio-preview-item audio {
+    height: 32px;
+    max-width: 240px;
+}
+
+.audio-preview-remove {
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.audio-preview-remove:hover {
+    background: rgba(255, 0, 0, 0.8);
+    transform: scale(1.1);
+}
+
+.audio-recording-indicator {
+    padding: 4px 0;
+    font-size: 12px;
+    color: #ef4444;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.message-audio {
+    max-width: 300px;
+    height: 36px;
+    margin-top: 4px;
+}
+
 /* Message Images */
 .message-image {
     max-width: 200px;

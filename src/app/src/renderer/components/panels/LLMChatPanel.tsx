@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import MarkdownMessage from '../../MarkdownMessage';
 import AudioButton from '../../AudioButton';
 import {
@@ -21,6 +21,7 @@ import EmptyState from '../EmptyState';
 import TypingIndicator from '../TypingIndicator';
 import { getExperiencePrimaryChatModel } from '../../utils/experienceModels';
 import RecordButton from '../RecordButton';
+import { useAudioCapture } from '../../hooks/useAudioCapture';
 
 interface LLMChatPanelProps {
   isBusy: boolean;
@@ -32,6 +33,7 @@ interface LLMChatPanelProps {
   showError: (msg: string) => void;
   appSettings: AppSettings | null;
   isVision: boolean;
+  isOmni?: boolean;
   experienceMode?: boolean;
   currentLoadedModel: string | null;
   setCurrentLoadedModel: React.Dispatch<React.SetStateAction<string | null>>;
@@ -42,7 +44,7 @@ interface LLMChatPanelProps {
 const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   isBusy, isPreFlight, isInferring, activeModality,
   runPreFlight, reset, showError, appSettings,
-  isVision, experienceMode = false, currentLoadedModel, setCurrentLoadedModel,
+  isVision, isOmni = false, experienceMode = false, currentLoadedModel, setCurrentLoadedModel,
   onNewChat, onUnloadExperience,
 }) => {
   const { selectedModel, modelsData } = useModels();
@@ -64,7 +66,9 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const [isUserAtBottom, setIsUserAtBottom] = useState(true);
   const [isExperienceLayoutActive, setIsExperienceLayoutActive] = useState(experienceMode);
   const [modeTransitionClass, setModeTransitionClass] = useState('');
+  const [omniAudioDataUrl, setOmniAudioDataUrl] = useState<string | null>(null);
   const userScrolledAwayRef = useRef(false);
+  const omniAudioChunksRef = useRef<Int16Array[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -72,6 +76,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const inputTextareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
   const speechRecognitionRef = useRef<any>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -80,6 +85,97 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const autoScrollRafRef = useRef<number | null>(null);
   const pendingAutoScrollRef = useRef(false);
   const modeTransitionTimerRef = useRef<number | null>(null);
+
+  // --- Omni audio recording: accumulate PCM16 chunks → build WAV on stop ---
+  const handleOmniAudioChunk = useCallback((base64: string) => {
+    const binaryStr = atob(base64);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+    omniAudioChunksRef.current.push(new Int16Array(bytes.buffer));
+  }, []);
+
+  const { isRecording: isOmniRecording, startRecording: startOmniRecording, stopRecording: stopOmniRecording } =
+    useAudioCapture(handleOmniAudioChunk);
+
+  const buildWavDataUrl = useCallback((): string | null => {
+    const chunks = omniAudioChunksRef.current;
+    if (chunks.length === 0) return null;
+
+    const totalSamples = chunks.reduce((sum, c) => sum + c.length, 0);
+    const pcm = new Int16Array(totalSamples);
+    let offset = 0;
+    for (const chunk of chunks) {
+      pcm.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    const sampleRate = 16000;
+    const numChannels = 1;
+    const bitsPerSample = 16;
+    const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+    const blockAlign = numChannels * (bitsPerSample / 8);
+    const dataSize = pcm.length * (bitsPerSample / 8);
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+
+    const writeString = (off: number, str: string) => {
+      for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i));
+    };
+
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitsPerSample, true);
+    writeString(36, 'data');
+    view.setUint32(40, dataSize, true);
+
+    const pcmBytes = new Uint8Array(pcm.buffer);
+    new Uint8Array(buffer).set(pcmBytes, 44);
+
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return `data:audio/wav;base64,${btoa(binary)}`;
+  }, []);
+
+  const stopOmniAudioAndAttach = useCallback(() => {
+    stopOmniRecording();
+    const dataUrl = buildWavDataUrl();
+    omniAudioChunksRef.current = [];
+    if (dataUrl) {
+      setOmniAudioDataUrl(dataUrl);
+    }
+  }, [stopOmniRecording, buildWavDataUrl]);
+
+  const toggleOmniMic = useCallback(async () => {
+    if (isOmniRecording) {
+      stopOmniAudioAndAttach();
+      return;
+    }
+    omniAudioChunksRef.current = [];
+    setOmniAudioDataUrl(null);
+    await startOmniRecording();
+  }, [isOmniRecording, startOmniRecording, stopOmniAudioAndAttach]);
+
+  const handleAudioFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result;
+      if (typeof result === 'string') setOmniAudioDataUrl(result);
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
+  }, []);
 
   useEffect(() => {
     const decodePrompt = (raw: string) => {
@@ -209,6 +305,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     return () => {
       abortControllerRef.current?.abort();
       stopMicDictation();
+      stopOmniRecording();
       if (modeTransitionTimerRef.current !== null) {
         window.clearTimeout(modeTransitionTimerRef.current);
       }
@@ -427,7 +524,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     const textToSend = typeof textOverride === 'string' ? textOverride : inputValue;
     // When called from voice auto-submit, `isBusy` may still be stale-true
     // because the state update hasn't flushed yet.
-    if (!textToSend.trim() && uploadedImages.length === 0) return;
+    if (!textToSend.trim() && uploadedImages.length === 0 && !omniAudioDataUrl) return;
 
     const ready = await runPreFlight('llm', {
       modelName: chatModelName,
@@ -444,12 +541,16 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     userScrolledAwayRef.current = false;
 
     let messageContent: MessageContent;
-    if (uploadedImages.length > 0) {
+    const hasMedia = uploadedImages.length > 0 || !!omniAudioDataUrl;
+    if (hasMedia) {
       const contentArray: Array<TextContent | ImageContent> = [];
       if (textToSend.trim()) contentArray.push({ type: 'text', text: textToSend });
       uploadedImages.forEach(imageUrl => {
         contentArray.push({ type: 'image_url', image_url: { url: imageUrl } });
       });
+      if (omniAudioDataUrl) {
+        contentArray.push({ type: 'image_url', image_url: { url: omniAudioDataUrl } });
+      }
       messageContent = contentArray;
     } else {
       messageContent = textToSend;
@@ -461,6 +562,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setUploadedImages([]);
+    setOmniAudioDataUrl(null);
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
 
     try {
@@ -691,7 +793,13 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
         <div className="message-content-array">
           {content.map((item, index) => {
             if (item.type === 'text') return <MarkdownMessage key={index} content={item.text} isComplete={isComplete} />;
-            if (item.type === 'image_url') return <img key={index} src={item.image_url.url} alt="Uploaded" className="message-image" />;
+            if (item.type === 'image_url') {
+              const url = item.image_url.url;
+              if (url.startsWith('data:audio/')) {
+                return <audio key={index} src={url} controls preload="metadata" className="message-audio" />;
+              }
+              return <img key={index} src={url} alt="Uploaded" className="message-image" />;
+            }
             return null;
           })}
         </div>
@@ -901,6 +1009,26 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             images={uploadedImages}
             onRemove={uploadedImageHandlers.remove}
           />
+          {omniAudioDataUrl && (
+            <div className="audio-preview-container">
+              <div className="audio-preview-item">
+                <audio src={omniAudioDataUrl} controls preload="metadata" />
+                <button
+                  className="audio-preview-remove"
+                  onClick={() => setOmniAudioDataUrl(null)}
+                  title="Remove audio"
+                  aria-label="Remove audio"
+                >
+                  &times;
+                </button>
+              </div>
+            </div>
+          )}
+          {isOmniRecording && (
+            <div className="audio-recording-indicator">
+              Recording audio…
+            </div>
+          )}
           <textarea
             ref={inputTextareaRef}
             className="chat-input"
@@ -908,7 +1036,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             onChange={handleInputChange}
             onKeyPress={handleKeyPress}
             onPaste={uploadedImageHandlers.paste}
-            placeholder="Type your message..."
+            placeholder={isOmni && experienceMode ? "Type your message, or use the mic to record audio..." : "Type your message..."}
             rows={1}
           />
           <InferenceControls
@@ -917,17 +1045,29 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             stoppable={activeModality === 'llm'}
             onSend={sendMessage}
             onStop={handleStopGeneration}
-            sendDisabled={!inputValue.trim() && uploadedImages.length === 0}
+            sendDisabled={!inputValue.trim() && uploadedImages.length === 0 && !omniAudioDataUrl}
             modelSelector={experienceMode ? null : <ModelSelector disabled={isBusy} />}
             rightControls={experienceMode && window.isSecureContext ?
-              <button
-                className={`chat-mic-button${isMicRecording ? ' recording' : ''}`}
-                onClick={toggleMicDictation}
-                title={isMicRecording ? 'Stop microphone input' : 'Start microphone input'}
-                aria-label={isMicRecording ? 'Stop microphone input' : 'Start microphone input'}
-              >
-                <MicrophoneIcon active={isMicRecording} />
-              </button>
+              isOmni ? (
+                <button
+                  className={`chat-mic-button${isOmniRecording ? ' recording' : ''}`}
+                  onClick={toggleOmniMic}
+                  disabled={isBusy && !isOmniRecording}
+                  title={isOmniRecording ? 'Stop recording audio' : 'Record audio for the model'}
+                  aria-label={isOmniRecording ? 'Stop recording audio' : 'Record audio for the model'}
+                >
+                  <MicrophoneIcon active={isOmniRecording} />
+                </button>
+              ) : (
+                <button
+                  className={`chat-mic-button${isMicRecording ? ' recording' : ''}`}
+                  onClick={toggleMicDictation}
+                  title={isMicRecording ? 'Stop microphone input' : 'Start microphone input'}
+                  aria-label={isMicRecording ? 'Stop microphone input' : 'Start microphone input'}
+                >
+                  <MicrophoneIcon active={isMicRecording} />
+                </button>
+              )
             : undefined}
             leftControls={
               <>
@@ -947,6 +1087,25 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                       title="Upload image"
                     >
                       <ImageUploadIcon />
+                    </button>
+                  </>
+                )}
+                {isOmni && experienceMode && (
+                  <>
+                    <input
+                      ref={audioFileInputRef}
+                      type="file"
+                      accept="audio/*"
+                      onChange={handleAudioFileUpload}
+                      style={{ display: 'none' }}
+                    />
+                    <button
+                      className="image-upload-button"
+                      onClick={() => audioFileInputRef.current?.click()}
+                      disabled={isBusy}
+                      title="Upload audio file"
+                    >
+                      <MicrophoneIcon active={false} />
                     </button>
                   </>
                 )}
