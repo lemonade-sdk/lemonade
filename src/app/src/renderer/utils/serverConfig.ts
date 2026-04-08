@@ -387,26 +387,6 @@ export const getWebSocketUrl = (endpointPath: string, wsPort: number, query?: UR
   wsUrl.search = queryString ? `?${queryString}` : '';
   return wsUrl.toString();
 };
-export const getWebSocketProtocol = () => new URL(serverConfig.getServerBaseUrl()).protocol === 'https:' ? 'wss' : 'ws';
-export const getWebSocketUrl = (endpointPath: string, wsPort: number, query?: URLSearchParams) => {
-  const normalizedPath = ensureLeadingSlash(endpointPath);
-  const queryString = query?.toString();
-
-  if (serverConfig.isExternalUrl()) {
-    const baseUrl = new URL(serverConfig.getServerBaseUrl());
-    baseUrl.protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-    const basePath = trimTrailingSlashes(baseUrl.pathname);
-    baseUrl.pathname = `${basePath}${normalizedPath}` || normalizedPath;
-    baseUrl.search = queryString ? `?${queryString}` : '';
-    baseUrl.hash = '';
-    return baseUrl.toString();
-  }
-
-  const wsUrl = new URL(`${getWebSocketProtocol()}://${serverConfig.getServerHost()}:${wsPort}`);
-  wsUrl.pathname = normalizedPath;
-  wsUrl.search = queryString ? `?${queryString}` : '';
-  return wsUrl.toString();
-};
 export const isRemoteServer = () => serverConfig.isRemoteServer();
 export const onServerPortChange = (listener: PortChangeListener) => serverConfig.onPortChange(listener);
 export const onServerUrlChange = (listener: UrlChangeListener) => serverConfig.onUrlChange(listener);
