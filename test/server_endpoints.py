@@ -20,7 +20,11 @@ Usage:
     python server_endpoints.py
 """
 
+import glob
+import json
+import os
 import platform
+import shutil
 import uuid
 import requests
 from openai import NotFoundError
@@ -40,6 +44,7 @@ from utils.test_models import (
     USER_MODEL_NAME,
     USER_MODEL_TE_CHECKPOINT,
     USER_MODEL_VAE_CHECKPOINT,
+    get_hf_cache_dir,
 )
 
 
@@ -1179,6 +1184,152 @@ class EndpointTests(ServerTestBase):
             found_url, "Expected at least one backend with release_url in system-info"
         )
         print("[OK] system-info contains release_url for backends")
+
+
+    def test_030_pull_resumes_orphaned_snapshot(self):
+        """Test that pull resumes from an orphaned snapshot after a commit hash change.
+
+        Simulates the scenario where a download was interrupted and then
+        the upstream repo received new commits, changing the commit hash.
+        The orphan-resume logic should find the old snapshot, finish
+        downloading from it, and relocate files into the current snapshot.
+        """
+        # Ensure the test model is downloaded so we have real files to work with
+        self._ensure_model_pulled()
+
+        hf_cache = get_hf_cache_dir()
+        repo_cache_dir = os.path.join(hf_cache, "models--unsloth--gemma-3-270m-it-GGUF")
+        snapshots_dir = os.path.join(repo_cache_dir, "snapshots")
+
+        if not os.path.isdir(snapshots_dir):
+            self.skipTest("HF cache snapshots directory not found")
+
+        # Find the current snapshot hash and its files
+        snapshot_hashes = [
+            d
+            for d in os.listdir(snapshots_dir)
+            if os.path.isdir(os.path.join(snapshots_dir, d))
+        ]
+        if not snapshot_hashes:
+            self.skipTest("No snapshot directories found")
+
+        current_hash = snapshot_hashes[0]
+        current_snapshot = os.path.join(snapshots_dir, current_hash)
+
+        # Collect real files in the snapshot (skip manifests and directories)
+        real_files = []
+        for root, _dirs, files in os.walk(current_snapshot):
+            for f in files:
+                if f.startswith("."):
+                    continue
+                rel = os.path.relpath(os.path.join(root, f), current_snapshot)
+                size = os.path.getsize(os.path.join(root, f))
+                real_files.append((rel, size))
+
+        if not real_files:
+            self.skipTest("No files found in snapshot")
+
+        # Create a fake "old" orphaned snapshot with a manifest and partial files
+        fake_old_hash = "a" * 40
+        old_snapshot = os.path.join(snapshots_dir, fake_old_hash)
+        os.makedirs(old_snapshot, exist_ok=True)
+
+        try:
+            # Build a manifest matching the real file set
+            manifest = {
+                "repo_id": "unsloth/gemma-3-270m-it-GGUF",
+                "commit_hash": fake_old_hash,
+                "download_path": old_snapshot,
+                "files_count": len(real_files),
+                "files": [],
+            }
+            for rel_path, size in real_files:
+                manifest["files"].append(
+                    {
+                        "name": rel_path,
+                        "url": f"https://huggingface.co/unsloth/gemma-3-270m-it-GGUF/resolve/main/{rel_path}",
+                        "size": size,
+                        "download_path": old_snapshot,
+                    }
+                )
+
+            # Copy first file as complete, rest as .partial stubs
+            first_file = real_files[0]
+            src = os.path.join(current_snapshot, first_file[0])
+            dst = os.path.join(old_snapshot, first_file[0])
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(src, dst)
+
+            for rel_path, _size in real_files[1:]:
+                partial_dst = os.path.join(old_snapshot, rel_path + ".partial")
+                os.makedirs(os.path.dirname(partial_dst), exist_ok=True)
+                # Write a small stub so the orphan scanner finds it
+                with open(partial_dst, "wb") as pf:
+                    pf.write(b"\x00" * 1024)
+
+            # Write the manifest
+            manifest_path = os.path.join(old_snapshot, ".download_manifest.json")
+            with open(manifest_path, "w") as mf:
+                json.dump(manifest, mf)
+
+            # Delete the real snapshot so the server needs to re-download
+            shutil.rmtree(current_snapshot)
+
+            # Also delete the model from the server's internal cache so it
+            # re-runs the download path
+            requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": ENDPOINT_TEST_MODEL},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+            # Pull again — should find the orphaned snapshot and resume
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={"model_name": ENDPOINT_TEST_MODEL, "stream": False},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                response.status_code,
+                200,
+                f"Pull after orphan resume failed: {response.text[:500]}",
+            )
+
+            data = response.json()
+            self.assertEqual(data.get("status"), "success")
+
+            # Verify model appears in downloaded list
+            models_response = requests.get(
+                f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+            )
+            models_data = models_response.json()
+            model_ids = [m["id"] for m in models_data["data"]]
+            self.assertIn(
+                ENDPOINT_TEST_MODEL,
+                model_ids,
+                "Model should be downloaded after orphan-resume pull",
+            )
+
+            # Verify the orphaned snapshot was cleaned up (relocated or removed)
+            self.assertFalse(
+                os.path.isdir(old_snapshot),
+                "Orphaned snapshot should have been relocated or removed",
+            )
+
+            # Verify files exist in some snapshot
+            found_snapshots = glob.glob(
+                os.path.join(snapshots_dir, "*", real_files[0][0])
+            )
+            self.assertTrue(
+                len(found_snapshots) > 0,
+                "Expected to find completed files in a snapshot directory",
+            )
+
+            print("[OK] Pull resumed from orphaned snapshot successfully")
+        finally:
+            # Clean up the fake snapshot if it still exists
+            if os.path.isdir(old_snapshot):
+                shutil.rmtree(old_snapshot, ignore_errors=True)
 
 
 if __name__ == "__main__":

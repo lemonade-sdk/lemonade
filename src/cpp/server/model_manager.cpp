@@ -2257,11 +2257,18 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     // giving us a different commit_hash. Rather than orphaning the old .partial
     // files and restarting from zero, resume from the existing snapshot.
     // If multiple orphaned snapshots exist, pick the one with the most progress
-    // (largest total partial bytes) and clean up the rest.
+    // (largest total downloaded bytes) and clean up the rest.
+    //
+    // After the orphan resume completes, we relocate the files into the
+    // current commit's snapshot directory and fall through to the normal
+    // download path. The normal path builds a fresh manifest from the
+    // current HF API response, so any files added or removed upstream
+    // are handled correctly (download_from_manifest skips files already
+    // on disk).
     fs::path snapshots_dir = model_cache_path / "snapshots";
     if (fs::exists(snapshots_dir)) {
         fs::path best_snapshot;
-        size_t best_partial_bytes = 0;
+        size_t best_downloaded_bytes = 0;
         std::vector<fs::path> orphaned_snapshots;
 
         for (const auto& entry : fs::directory_iterator(snapshots_dir)) {
@@ -2272,18 +2279,32 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             fs::path manifest_path = entry.path() / ".download_manifest.json";
             if (!fs::exists(manifest_path)) continue;
 
-            // Sum partial file sizes in this snapshot
-            size_t partial_bytes = 0;
-            for (const auto& f : fs::recursive_directory_iterator(entry.path())) {
-                if (f.is_regular_file() && f.path().extension() == ".partial") {
-                    partial_bytes += f.file_size();
+            // Count all downloaded bytes: completed files + partial files.
+            // A multi-file download interrupted after some files finished may
+            // have zero .partial files but significant completed work.
+            auto snap_manifest = JsonUtils::load_from_file(manifest_path.string());
+            size_t downloaded_bytes = 0;
+            std::string snap_dl_path = snap_manifest.value("download_path", "");
+            if (snap_manifest.contains("files") && snap_manifest["files"].is_array()) {
+                for (const auto& f : snap_manifest["files"]) {
+                    std::string fname = f.value("name", "");
+                    std::string fdl = f.value("download_path", snap_dl_path);
+                    if (fname.empty() || fdl.empty()) continue;
+                    fs::path fpath = path_from_utf8(fdl) / path_from_utf8(fname);
+                    fs::path partial = path_from_utf8(fdl) / path_from_utf8(fname + ".partial");
+                    std::error_code ec;
+                    if (fs::exists(fpath, ec) && !fs::exists(partial, ec)) {
+                        downloaded_bytes += f.value("size", (size_t)0);
+                    } else if (fs::exists(partial, ec)) {
+                        downloaded_bytes += fs::file_size(partial, ec);
+                    }
                 }
             }
 
-            if (partial_bytes > 0) {
+            if (downloaded_bytes > 0) {
                 orphaned_snapshots.push_back(entry.path());
-                if (partial_bytes > best_partial_bytes) {
-                    best_partial_bytes = partial_bytes;
+                if (downloaded_bytes > best_downloaded_bytes) {
+                    best_downloaded_bytes = downloaded_bytes;
                     best_snapshot = entry.path();
                 }
             }
@@ -2293,8 +2314,8 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             std::string old_hash = best_snapshot.filename().string();
             LOG(INFO, "ModelManager") << "Found in-progress download in snapshot "
                 << old_hash << " (" << std::fixed << std::setprecision(1)
-                << (best_partial_bytes / (1024.0 * 1024.0))
-                << " MB), resuming instead of starting new snapshot "
+                << (best_downloaded_bytes / (1024.0 * 1024.0))
+                << " MB downloaded), resuming instead of starting new snapshot "
                 << commit_hash << std::endl;
 
             // Clean up other orphaned snapshots (keep only the best one)
@@ -2332,39 +2353,40 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
             download_from_manifest(existing_manifest, headers, progress_callback);
 
-            // Download complete — move main repo files to the new commit hash
-            // snapshot so the cache reflects the latest commit going forward.
-            // Non-main repo snapshots are not renamed (their hashes are independent).
+            // Resume complete — relocate main-repo files into the current
+            // commit's snapshot directory. Move individual files rather than
+            // renaming the directory, since snapshots/<commit_hash> may
+            // already exist from a prior attempt with this hash.
             fs::path new_snapshot = snapshots_dir / commit_hash;
             if (best_snapshot != new_snapshot) {
-                fs::rename(best_snapshot, new_snapshot);
-                LOG(INFO, "ModelManager") << "Moved completed download from "
+                std::error_code ec;
+                fs::create_directories(new_snapshot, ec);
+                for (const auto& f : fs::recursive_directory_iterator(best_snapshot, ec)) {
+                    if (!f.is_regular_file()) continue;
+                    // Skip the manifest — the normal path will create a fresh one
+                    if (f.path().filename() == ".download_manifest.json") continue;
+                    fs::path rel = f.path().lexically_relative(best_snapshot);
+                    fs::path dest = new_snapshot / rel;
+                    fs::create_directories(dest.parent_path(), ec);
+                    fs::rename(f.path(), dest, ec);
+                    if (ec) {
+                        LOG(WARNING, "ModelManager") << "Failed to move " << rel.string()
+                            << ": " << ec.message() << std::endl;
+                    }
+                }
+                fs::remove_all(best_snapshot, ec);
+                LOG(INFO, "ModelManager") << "Relocated files from snapshot "
                     << old_hash << " to " << commit_hash << std::endl;
+            } else {
+                // Same snapshot — just remove the manifest
+                std::error_code ec;
+                fs::remove(manifest_path, ec);
             }
 
-            // Remove manifest and update refs
-            fs::path new_manifest = new_snapshot / ".download_manifest.json";
-            if (fs::exists(new_manifest)) {
-                fs::remove(new_manifest);
-                LOG(INFO, "ModelManager") << "Removed download manifest (download complete)" << std::endl;
-            }
-
-            // Update refs/main to point to new commit hash
-            fs::path refs_dir = model_cache_path / "refs";
-            fs::create_directories(refs_dir);
-            std::ofstream refs_file(refs_dir / "main");
-            if (refs_file.is_open()) {
-                refs_file << commit_hash;
-                refs_file.close();
-            }
-
-            // Send completion event
-            if (progress_callback) {
-                DownloadProgress progress;
-                progress.complete = true;
-                (void)progress_callback(progress);
-            }
-            return;
+            // Fall through to the normal download path below. It will build
+            // a fresh manifest from the current HF API response and call
+            // download_from_manifest, which skips files already on disk.
+            // This ensures any files added or removed upstream are handled.
         }
     }
 
