@@ -56,7 +56,9 @@ class ServerConfig {
         if (baseUrl) {
           console.log('Using explicit server base URL:', baseUrl);
           this.explicitBaseUrl = baseUrl;
-          this.hasExternalUrl = true;
+          // Only treat as external URL in web-app mode (server-injected external_url).
+          // Electron's --base-url still needs the separate websocket_port.
+          this.hasExternalUrl = !!(window.api?.isWebApp);
           this.initialized = true;
           return;
         }
