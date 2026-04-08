@@ -217,8 +217,38 @@ void Router::load_model(const std::string& model_name,
     // Resolve settings: load overrides take precedence over per-model overrides which take precedence over defaults
         RecipeOptions effective_options = options.inherit(model_info.recipe_options.inherit(default_opt));
 
-    LOG(DEBUG, "Router") << "Effective settings: " << effective_options.to_log_string() << std::endl;
+    // RPC resolution: check if model requires RPC for distributed inference
+    json rpc_json = effective_options.get_option("rpc");
+    std::string rpc_addr = rpc_json.is_string() ? rpc_json.get<std::string>() : "";
+    if (rpc_addr.empty() && model_info.rpc_required) {
+        // Model requires RPC but no address was provided by the user —
+        // check the server-wide config as fallback
+        rpc_addr = config_->has_rpc() ? config_->rpc() : "";
+        if (rpc_addr.empty()) {
+            throw std::runtime_error(
+                "Model '" + model_name + "' requires RPC for distributed inference. "
+                "Configure an RPC server with 'lemonade config set rpc=host:port' "
+                "or pass '--rpc host:port' when loading.");
+        }
+        // Inject the address into effective options
+        effective_options.set_option("rpc", rpc_addr);
+    }
 
+    // RPC requires the ROCm backend — the Vulkan backend classifies integrated
+    // GPUs as IGPU which causes llama.cpp to skip the local GPU when an RPC
+    // device is present, sending all layers to the remote node.
+    if (!rpc_addr.empty()) {
+        json backend_json = effective_options.get_option("llamacpp_backend");
+        std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
+        if (backend != "rocm") {
+            throw std::runtime_error(
+                "RPC requires the ROCm backend to use both local and remote GPUs. "
+                "Set the backend with 'lemonade config set llamacpp_backend=rocm' "
+                "or pass '--llamacpp-backend rocm' when loading.");
+        }
+    }
+
+    LOG(DEBUG, "Router") << "Effective settings: " << effective_options.to_log_string() << std::endl;
 
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);

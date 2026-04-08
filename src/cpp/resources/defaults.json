@@ -10,6 +10,7 @@
   "extra_models_dir": "",
   "models_dir": "auto",
   "ctx_size": 4096,
+  "rpc": "",
   "offline": false,
   "disable_model_filtering": false,
   "enable_dgpu_gtt": false,

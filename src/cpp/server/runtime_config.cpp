@@ -170,6 +170,18 @@ bool RuntimeConfig::enable_dgpu_gtt() const {
     return config_["enable_dgpu_gtt"].get<bool>();
 }
 
+std::string RuntimeConfig::rpc() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("rpc") && config_["rpc"].is_string()) {
+        return config_["rpc"].get<std::string>();
+    }
+    return "";
+}
+
+bool RuntimeConfig::has_rpc() const {
+    return !rpc().empty();
+}
+
 json RuntimeConfig::backend_config(const std::string& backend_name) const {
     std::shared_lock lock(mutex_);
     if (config_.contains(backend_name) && config_[backend_name].is_object()) {
@@ -327,6 +339,10 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
         if (value.get<int>() <= 0) {
             throw std::invalid_argument("'ctx_size' must be positive");
+        }
+    } else if (key == "rpc") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'rpc' must be a string");
         }
     } else if (key == "config_version") {
         if (!value.is_number_integer()) {

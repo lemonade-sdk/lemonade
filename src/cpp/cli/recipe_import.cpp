@@ -21,6 +21,7 @@ const std::vector<std::string> kKnownKeys = {
     "labels",
     "recipe",
     "recipe_options",
+    "rpc_required",
     "size"
 };
 
