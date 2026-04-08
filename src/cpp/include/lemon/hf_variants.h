@@ -33,7 +33,8 @@ struct GgufVariantSet {
 // for the GGUF branch.
 GgufVariantSet enumerate_gguf_variants(
     const std::vector<std::string>& repo_files,
-    const std::vector<std::pair<std::string, uint64_t>>& file_sizes = {});
+    const std::vector<std::pair<std::string, uint64_t>>& file_sizes = {},
+    size_t max_variants = 0);
 
 // Build the JSON response body for GET /api/v{0,1}/pull/variants.
 //

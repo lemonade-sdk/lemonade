@@ -1,5 +1,6 @@
 #include <lemon/model_manager.h>
 #include <lemon/runtime_config.h>
+#include <lemon/hf_variants.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/http_client.h>
 #include <lemon/utils/process_manager.h>
@@ -131,6 +132,14 @@ static GGUFFiles identify_gguf_models(
     GGUFFiles result;
     std::vector<std::string> sharded_files;
     std::string variant_name;
+    auto join_files = [](const std::vector<std::string>& files) {
+        std::string out;
+        for (size_t i = 0; i < files.size(); ++i) {
+            if (i > 0) out += ", ";
+            out += files[i];
+        }
+        return out;
+    };
 
     // (case 0) Wildcard, download everything
     if (!variant.empty() && variant == "*") {
@@ -187,63 +196,89 @@ static GGUFFiles identify_gguf_models(
         variant_name = all_variants[0];
     }
     else {
-        // (case 3) Find a single file ending with the variant name (case insensitive)
-        std::vector<std::string> end_with_variant;
-        std::string variant_suffix = variant + ".gguf";
-
-        for (const auto& f : repo_files) {
-            if (ends_with_ignore_case(f, variant_suffix) && !contains_ignore_case(f, "mmproj")) {
-                end_with_variant.push_back(f);
+        auto vset = lemon::enumerate_gguf_variants(repo_files);
+        std::vector<lemon::GgufVariant> exact_matches;
+        for (const auto& v : vset.variants) {
+            if (to_lower(v.name) == to_lower(variant)) {
+                exact_matches.push_back(v);
             }
         }
 
-        if (end_with_variant.size() == 1) {
-            variant_name = end_with_variant[0];
-        }
-        else if (end_with_variant.size() > 1) {
+        if (exact_matches.size() == 1) {
+            variant_name = exact_matches[0].primary_file;
+            sharded_files = exact_matches[0].files;
+        } else if (exact_matches.size() > 1) {
+            std::vector<std::string> matching_files;
+            for (const auto& match : exact_matches) {
+                matching_files.insert(matching_files.end(), match.files.begin(), match.files.end());
+            }
+            std::sort(matching_files.begin(), matching_files.end());
             throw std::runtime_error(
-                "Multiple .gguf files found for variant " + variant + ", but only one is allowed. " + hint
+                "Multiple GGUF variant groups matched '" + variant + "': " +
+                join_files(matching_files) + ". " + hint
             );
-        }
-        // (case 4) Check whether the variant corresponds to a folder with sharded files (case insensitive)
-        else {
-            std::string folder_prefix = variant + "/";
+        } else {
+            // Fallback for repos that require direct filename matching rather than
+            // the canonical variant set used by /pull/variants.
+            std::vector<std::string> end_with_variant;
+            std::string variant_suffix = variant + ".gguf";
+
             for (const auto& f : repo_files) {
-                if (ends_with_ignore_case(f, ".gguf") && starts_with_ignore_case(f, folder_prefix)) {
-                    sharded_files.push_back(f);
+                if (ends_with_ignore_case(f, variant_suffix) && !contains_ignore_case(f, "mmproj")) {
+                    end_with_variant.push_back(f);
                 }
             }
 
-            // If no exact folder match, try folders ending with -{variant}/ or _{variant}/
-            // This handles repos where the folder is prefixed with the model name,
-            // e.g. "Qwen3-Coder-Next-Q4_K_M/" instead of just "Q4_K_M/"
-            if (sharded_files.empty()) {
-                std::string suffix_dash = "-" + variant + "/";
-                std::string suffix_underscore = "_" + variant + "/";
+            if (end_with_variant.size() == 1) {
+                variant_name = end_with_variant[0];
+            }
+            else if (end_with_variant.size() > 1) {
+                std::sort(end_with_variant.begin(), end_with_variant.end());
+                throw std::runtime_error(
+                    "Multiple .gguf files matched variant '" + variant + "': " +
+                    join_files(end_with_variant) + ". " + hint
+                );
+            }
+            // (case 4) Check whether the variant corresponds to a folder with sharded files (case insensitive)
+            else {
+                std::string folder_prefix = variant + "/";
                 for (const auto& f : repo_files) {
-                    if (!ends_with_ignore_case(f, ".gguf")) continue;
-                    size_t slash_pos = f.find('/');
-                    if (slash_pos != std::string::npos) {
-                        std::string folder = f.substr(0, slash_pos + 1);
-                        if (ends_with_ignore_case(folder, suffix_dash) ||
-                            ends_with_ignore_case(folder, suffix_underscore)) {
-                            sharded_files.push_back(f);
+                    if (ends_with_ignore_case(f, ".gguf") && starts_with_ignore_case(f, folder_prefix)) {
+                        sharded_files.push_back(f);
+                    }
+                }
+
+                // If no exact folder match, try folders ending with -{variant}/ or _{variant}/
+                // This handles repos where the folder is prefixed with the model name,
+                // e.g. "Qwen3-Coder-Next-Q4_K_M/" instead of just "Q4_K_M/"
+                if (sharded_files.empty()) {
+                    std::string suffix_dash = "-" + variant + "/";
+                    std::string suffix_underscore = "_" + variant + "/";
+                    for (const auto& f : repo_files) {
+                        if (!ends_with_ignore_case(f, ".gguf")) continue;
+                        size_t slash_pos = f.find('/');
+                        if (slash_pos != std::string::npos) {
+                            std::string folder = f.substr(0, slash_pos + 1);
+                            if (ends_with_ignore_case(folder, suffix_dash) ||
+                                ends_with_ignore_case(folder, suffix_underscore)) {
+                                sharded_files.push_back(f);
+                            }
                         }
                     }
                 }
+
+                if (sharded_files.empty()) {
+                    throw std::runtime_error(
+                        "No .gguf files found for variant " + variant + ". " + hint
+                    );
+                }
+
+                // Sort to ensure consistent ordering
+                std::sort(sharded_files.begin(), sharded_files.end());
+
+                // Use first file as primary (this is how llamacpp handles it)
+                variant_name = sharded_files[0];
             }
-
-            if (sharded_files.empty()) {
-                throw std::runtime_error(
-                    "No .gguf files found for variant " + variant + ". " + hint
-                );
-            }
-
-            // Sort to ensure consistent ordering
-            std::sort(sharded_files.begin(), sharded_files.end());
-
-            // Use first file as primary (this is how llamacpp handles it)
-            variant_name = sharded_files[0];
         }
     }
 

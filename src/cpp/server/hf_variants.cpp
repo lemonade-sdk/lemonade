@@ -86,7 +86,8 @@ constexpr size_t kMaxVariants = 5;
 
 GgufVariantSet enumerate_gguf_variants(
     const std::vector<std::string>& repo_files,
-    const std::vector<std::pair<std::string, uint64_t>>& file_sizes) {
+    const std::vector<std::pair<std::string, uint64_t>>& file_sizes,
+    size_t max_variants) {
     GgufVariantSet result;
 
     std::unordered_map<std::string, uint64_t> size_by_file;
@@ -192,8 +193,8 @@ GgufVariantSet enumerate_gguf_variants(
     // Cap to the top-N variants. The CLI surfaces a free-text option so the
     // user can still install any quant they like, even if it didn't make the
     // shortlist.
-    if (result.variants.size() > kMaxVariants) {
-        result.variants.resize(kMaxVariants);
+    if (max_variants > 0 && result.variants.size() > max_variants) {
+        result.variants.resize(max_variants);
     }
 
     return result;
@@ -290,7 +291,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
         return out;
     }
 
-    auto vset = enumerate_gguf_variants(repo_files, file_sizes);
+    auto vset = enumerate_gguf_variants(repo_files, file_sizes, kMaxVariants);
     if (vset.variants.empty()) {
         throw std::runtime_error("No supported model files (.gguf or ONNX RyzenAI) found in repository " + checkpoint);
     }
