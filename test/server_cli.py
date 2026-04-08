@@ -172,8 +172,7 @@ def _resolve_hf_cache_root(repo_cache_dirs, checkpoint_specs=None):
         return matches[0][1]
 
     raise AssertionError(
-        "Could not resolve HF cache root after pull. Checked: "
-        + "; ".join(diagnostics)
+        "Could not resolve HF cache root after pull. Checked: " + "; ".join(diagnostics)
     )
 
 
@@ -559,6 +558,11 @@ class PersistentServerCLITests(CLITestBase):
             ["delete", SHARED_REPO_MODEL_B_NAME], timeout=TIMEOUT_MODEL_OPERATION
         )
 
+    @unittest.skipIf(
+        sys.platform == "darwin",
+        "macOS .pkg installs to /Library/Application Support/lemonade/hub, "
+        "which the HF cache resolver does not check",
+    )
     def test_014_delete_preserves_cross_repo_dependency(self):
         """Test multi-repo dependency cleanup in the persistent CLI suite.
 
