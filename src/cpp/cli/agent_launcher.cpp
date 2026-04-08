@@ -80,17 +80,6 @@ void add_windows_npm_fallbacks(std::vector<std::string>& fallback_paths,
 #endif
 }
 
-std::string normalize_server_host(const std::string& host) {
-    if (host.empty() || host == "0.0.0.0" || host == "::" || host == "[::]" || host == "*") {
-        return "localhost";
-    }
-    return host;
-}
-
-std::string build_server_base_url(const std::string& host, int port) {
-    return "http://" + normalize_server_host(host) + ":" + std::to_string(port);
-}
-
 void append_codex_config_arg(std::vector<std::string>& args, const std::string& config_value) {
     args.push_back("-c");
     args.push_back(config_value);
@@ -102,7 +91,6 @@ void append_codex_config_args(std::vector<std::string>& args,
         append_codex_config_arg(args, config_value);
     }
 }
-
 void configure_claude_agent(const std::string& base_url,
                             const std::string& model,
                             const std::string& api_key,
@@ -191,7 +179,50 @@ void configure_codex_agent(const std::string& base_url,
     config.install_instructions = "Install Codex CLI and ensure 'codex' is on PATH.";
 }
 
+void configure_opencode_agent(const std::string& model,
+                              const std::string& api_key,
+                              AgentConfig& config) {
+    const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
+
+    config.binary_name = "opencode";
+#ifdef _WIN32
+    config.binary_alternatives = {"opencode.cmd", "opencode.exe"};
+#else
+    config.binary_alternatives = {};
+#endif
+    config.fallback_paths = {
+        "~/.npm-global/bin/opencode",
+        "/usr/local/bin/opencode",
+        "~/.local/bin/opencode"
+    };
+    add_windows_npm_fallbacks(config.fallback_paths, "opencode");
+
+    config.env_vars = {
+        {"LEMONADE_API_KEY", resolved_api_key}
+    };
+    config.extra_args = {
+        "-m",
+        "Lemonade/" + model
+    };
+    config.install_instructions =
+        "Install OpenCode CLI:\n"
+        "  curl -fsSL https://opencode.ai/install | bash\n"
+        "or:\n"
+        "  npm i -g opencode-ai";
+}
+
 } // namespace
+
+std::string build_agent_server_base_url(const std::string& host, int port) {
+    if (host.empty() || host == "0.0.0.0" || host == "::" || host == "[::]" || host == "*") {
+        return "http://localhost:" + std::to_string(port);
+    }
+    return "http://" + host + ":" + std::to_string(port);
+}
+
+bool agent_needs_config_sync(const std::string& agent) {
+    return agent == "opencode";
+}
 
 bool build_agent_config(const std::string& agent,
                         const std::string& host,
@@ -201,7 +232,7 @@ bool build_agent_config(const std::string& agent,
                         const AgentLaunchOptions& launch_options,
                         AgentConfig& config,
                         std::string& error_message) {
-    const std::string base = build_server_base_url(host, port);
+    const std::string base = build_agent_server_base_url(host, port);
 
     if (agent == "claude") {
         configure_claude_agent(base, model, api_key, config);
@@ -213,7 +244,12 @@ bool build_agent_config(const std::string& agent,
         return true;
     }
 
-    error_message = "Unsupported agent: " + agent + ". Supported agents: claude, codex.";
+    if (agent == "opencode") {
+        configure_opencode_agent(model, api_key, config);
+        return true;
+    }
+
+    error_message = "Unsupported agent: " + agent + ". Supported agents: claude, codex, opencode.";
     return false;
 }
 

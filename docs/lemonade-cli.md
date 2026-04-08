@@ -476,7 +476,7 @@ lemonade launch AGENT [--model MODEL_NAME] [options]
 
 | Option/Argument | Description | Required |
 |-----------------|-------------|----------|
-| `AGENT` | Agent name to launch. Supported agents: `claude`, `codex` | Yes |
+| `AGENT` | Agent name to launch. Supported agents: `claude`, `codex`, `opencode` | Yes |
 | `--model MODEL_NAME` | Model name to launch with. If omitted, you will be prompted to select one. | No |
 | `--directory DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
 | `--recipe-file FILE` | Remote recipe JSON filename used only if you choose recipe import at prompt | No |
@@ -495,7 +495,9 @@ lemonade launch AGENT [--model MODEL_NAME] [options]
 - For `codex`, launch now injects a Lemonade model provider by default so host/port settings are honored.
 - `--provider` is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
 - `--agent-args` is parsed and appended to the launched agent command.
-- Supported agents: `claude`, `codex`
+- Supported agents: `claude`, `codex`, `opencode`
+- `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
+- When no `--api-key` is provided, the generated opencode provider uses a default `apiKey` value of `lemonade`.
 
 **Examples:**
 
