@@ -84,7 +84,7 @@ runs:
       shell: bash
       run: |
         BIN_PATH="${{ steps.install.outputs.bin-path }}"
-        LOG_FILE="/tmp/lemonade-server.log"
+        LOG_FILE="${RUNNER_TEMP:-/tmp}/lemonade-server.log"
 
         # Always stop any launchd-managed lemond and start it ourselves so it
         # inherits the caller's HF_HOME. The .pkg installs a launchd plist that
@@ -93,22 +93,49 @@ runs:
         # workflow's HF_HOME, and tests that assert on the on-disk HF cache
         # root (e.g. test_014_delete_preserves_cross_repo_dependency) fail
         # non-deterministically.
-        echo "Stopping any launchd-managed lemond so we can start it manually..."
-        sudo launchctl unload /Library/LaunchDaemons/com.lemonade.server.plist 2>/dev/null || true
-        pkill -f "$BIN_PATH/lemond" 2>/dev/null || true
-        sleep 1
+        echo "Stopping launchd-managed lemond so we can start it manually..."
+        # The .pkg's postinst-full-mac installs the daemon at this exact path
+        # (see src/cpp/postinst-full-mac). macos-latest is macOS 15, which
+        # supports `bootout`. Disable the service so launchd cannot respawn
+        # it during the wait loop, then bootout to stop the running instance.
+        sudo launchctl disable system/com.lemonade.server || true
+        sudo launchctl bootout system /Library/LaunchDaemons/com.lemonade.server.plist || true
+        sudo pkill -9 -f "lemond" 2>/dev/null || true
+        sleep 2
 
-        echo "Starting lemonade-server manually..."
-        "$BIN_PATH/lemonade-server" serve --no-tray > "$LOG_FILE" 2>&1 &
+        # Confirm nothing is still bound to 13305 before we start.
+        if lsof -nP -iTCP:13305 -sTCP:LISTEN 2>/dev/null; then
+          echo "WARNING: something still listening on 13305 after kill — killing again"
+          sudo pkill -9 -f "lemond" 2>/dev/null || true
+          sleep 2
+        fi
 
-        for i in $(seq 1 15); do
+        # Start lemond directly (pure HTTP server, no tray, no ambiguity about
+        # subcommand flags) so HF_HOME from the workflow env is inherited.
+        echo "Starting lemond manually with HF_HOME=$HF_HOME ..."
+        rm -f "$LOG_FILE"
+        nohup "$BIN_PATH/lemond" > "$LOG_FILE" 2>&1 &
+        LEMOND_PID=$!
+        echo "lemond PID: $LEMOND_PID"
+
+        for i in $(seq 1 30); do
           if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
             echo "Server is running and healthy (started manually)"
             exit 0
           fi
-          echo "Waiting for server... ($i/15)"
+          if ! kill -0 "$LEMOND_PID" 2>/dev/null; then
+            echo "ERROR: lemond process exited prematurely"
+            cat "$LOG_FILE" 2>/dev/null || true
+            exit 1
+          fi
+          echo "Waiting for server... ($i/30)"
           sleep 2
         done
         echo "ERROR: Server did not start within 60 seconds"
+        echo "--- lemond log ---"
         cat "$LOG_FILE" 2>/dev/null || true
+        echo "--- ps ---"
+        ps aux | grep -i lemon || true
+        echo "--- listeners on 13305 ---"
+        lsof -nP -iTCP:13305 2>/dev/null || true
         exit 1
