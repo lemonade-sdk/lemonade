@@ -3135,9 +3135,9 @@ void ModelManager::rebuild_public_model_aliases_locked() {
         }
 
         std::string bare_name = strip_user_model_prefix(name);
-        if (server_models_.contains(bare_name)) {
+        if (server_models_.contains(bare_name) || models_cache_.find(bare_name) != models_cache_.end()) {
             LOG(INFO, "ModelManager") << "Skipping public alias '" << bare_name
-                      << "' for '" << name << "' because it collides with a built-in model" << std::endl;
+                      << "' for '" << name << "' because it collides with an existing model" << std::endl;
             continue;
         }
 
