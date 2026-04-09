@@ -1278,16 +1278,13 @@ class EndpointTests(ServerTestBase):
             with open(manifest_path, "w") as mf:
                 json.dump(manifest, mf)
 
-            # Delete the real snapshot so the server needs to re-download
+            # Delete the real snapshot so the download path sees the
+            # orphaned snapshot as the only one with progress.
+            # Do NOT call /delete — that wipes the entire models--org--repo
+            # directory, destroying the seeded orphan. Instead, just remove
+            # the current snapshot and re-pull. The pull endpoint always runs
+            # download_from_huggingface (do_not_upgrade defaults to false).
             shutil.rmtree(current_snapshot)
-
-            # Also delete the model from the server's internal cache so it
-            # re-runs the download path
-            requests.post(
-                f"{self.base_url}/delete",
-                json={"model_name": ENDPOINT_TEST_MODEL},
-                timeout=TIMEOUT_DEFAULT,
-            )
 
             # Pull again — should find the orphaned snapshot and resume
             response = requests.post(
@@ -1463,13 +1460,10 @@ class EndpointTests(ServerTestBase):
             with open(manifest_path, "w") as mf:
                 json.dump(manifest, mf)
 
-            # Remove the real snapshot and delete from server
+            # Remove the real snapshot but do NOT call /delete — that would
+            # wipe the entire models--org--repo directory (including the
+            # seeded orphan). Re-pull always runs download_from_huggingface.
             shutil.rmtree(current_snapshot)
-            requests.post(
-                f"{self.base_url}/delete",
-                json={"model_name": model_name},
-                timeout=TIMEOUT_DEFAULT,
-            )
 
             # Re-pull — orphan resume should relocate main-repo files,
             # then fresh manifest handles re-download
@@ -1637,12 +1631,11 @@ class EndpointTests(ServerTestBase):
                 os.path.join(current_snapshot, real_files[0][0])
             )
 
-            # Delete model from server cache (but NOT the snapshot on disk)
-            requests.post(
-                f"{self.base_url}/delete",
-                json={"model_name": ENDPOINT_TEST_MODEL},
-                timeout=TIMEOUT_DEFAULT,
-            )
+            # Do NOT call /delete — that wipes the entire models--org--repo
+            # directory (including both snapshots). The pull endpoint always
+            # runs download_from_huggingface, which will detect the orphan
+            # and exercise the collision merge path since the current-hash
+            # snapshot already exists on disk.
 
             # Pull — triggers orphan detection + collision merge + fresh download
             response = requests.post(
