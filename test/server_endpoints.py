@@ -993,6 +993,67 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
+    def test_021b_appear_builtin_aliases_user_model(self):
+        """User models labeled appear-builtin should expose a bare public ID."""
+        canonical_name = f"user.AppearBuiltin-{uuid.uuid4().hex[:8]}"
+        public_name = canonical_name[5:]
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "labels": ["appear-builtin"],
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200)
+            model_ids = {model["id"] for model in models_response.json()["data"]}
+            self.assertIn(public_name, model_ids)
+            self.assertNotIn(canonical_name, model_ids)
+
+            model_info_response = requests.get(
+                f"{self.base_url}/models/{public_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(model_info_response.status_code, 200)
+            self.assertEqual(model_info_response.json()["id"], public_name)
+
+            load_response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": public_name},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(load_response.status_code, 200)
+            self.assertEqual(load_response.json()["model_name"], public_name)
+
+            unload_response = requests.post(
+                f"{self.base_url}/unload",
+                json={"model_name": public_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(unload_response.status_code, 200)
+
+            print(f"[OK] appear-builtin alias exposed and accepted for {public_name}")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": public_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
     def _get_test_backend(self):
         """Get a lightweight test backend based on platform."""
         import sys

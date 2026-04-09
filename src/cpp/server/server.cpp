@@ -483,7 +483,7 @@ void Server::setup_static_files(httplib::Server &web_server) {
         json filtered_models = json::object();
         for (const auto& [model_name, info] : models_map) {
             filtered_models[model_name] = {
-                {"model_name", info.model_name},
+                {"model_name", model_name},
                 {"checkpoint", info.checkpoint()},
                 {"recipe", info.recipe},
                 {"labels", info.labels},
