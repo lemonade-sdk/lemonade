@@ -94,7 +94,12 @@ void VLLMServer::load(const std::string& model_name,
     args.push_back("--dtype");
     args.push_back("float16");
     args.push_back("--max-model-len");
-    args.push_back("4096");
+    args.push_back("2048");
+    // Force AWQ GEMM kernel for AWQ models (awq_marlin is very slow on consumer GPUs)
+    if (model_id.find("AWQ") != std::string::npos || model_id.find("awq") != std::string::npos) {
+        args.push_back("--quantization");
+        args.push_back("awq");
+    }
 
     // Append custom vllm_args if provided
     if (!vllm_args.empty()) {
