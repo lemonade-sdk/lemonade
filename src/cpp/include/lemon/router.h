@@ -117,6 +117,7 @@ private:
     void evict_server(WrappedServer* server);
     void evict_all_servers();
     std::unique_ptr<WrappedServer> create_backend_server(const ModelInfo& model_info);
+    std::string resolve_model_name(const std::string& model_name) const;
 
     // Generic inference wrapper that handles locking and busy state
     template<typename Func>
