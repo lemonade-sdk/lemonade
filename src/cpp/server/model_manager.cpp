@@ -2051,7 +2051,9 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         for (const auto& file_desc : manifest["files"]) {
             std::string filename = file_desc["name"].get<std::string>();
             size_t file_size = file_desc["size"].get<size_t>();
-            std::string output_path = download_path + "/" + filename;
+            // Per-file download_path for multi-repo models; fall back to top-level
+            std::string file_download_path = file_desc.value("download_path", download_path);
+            std::string output_path = file_download_path + "/" + filename;
             std::string partial_path = output_path + ".partial";
             fs::path output_path_fs = path_from_utf8(output_path);
             fs::path partial_path_fs = path_from_utf8(partial_path);
