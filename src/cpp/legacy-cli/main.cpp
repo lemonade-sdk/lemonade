@@ -70,6 +70,17 @@ static void print_help() {
         << "all other CLI commands.\n";
 }
 
+static int print_pull_deprecation_message() {
+    std::cerr
+        << "This command is deprecated. Use 'lemonade pull --help' instead.\n"
+        << "\n"
+        << "Examples:\n"
+        << "  Built-in model: lemonade pull Qwen3-0.6B-GGUF\n"
+        << "  Checkpoint:     lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M\n"
+        << "  Manual pull:    lemonade pull user.MyModel --checkpoint main org/repo:Q4_K_M --recipe llamacpp\n";
+    return 1;
+}
+
 static void print_version() {
     std::cout << "lemonade-server version " << LEMON_VERSION_STRING << std::endl;
 }
@@ -471,6 +482,10 @@ int main(int argc, char *argv[]) {
     // stop → discover port via lemonade status --json, then POST /internal/shutdown
     if (cmd == "stop") {
         return do_stop(dir);
+    }
+
+    if (cmd == "pull") {
+        return print_pull_deprecation_message();
     }
 
     // Everything else → delegate to lemonade CLI
