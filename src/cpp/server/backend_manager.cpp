@@ -65,7 +65,9 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     }
 
     auto params = spec->install_params_fn(backend, version);
-    return {params.repo, params.filename, version};
+    // Allow backends to override the release tag (e.g. per-GPU-target releases)
+    std::string release_version = params.version_override.empty() ? version : params.version_override;
+    return {params.repo, params.filename, release_version};
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
