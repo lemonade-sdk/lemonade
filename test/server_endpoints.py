@@ -1533,5 +1533,169 @@ class EndpointTests(ServerTestBase):
                 )
 
 
+    def test_032_pull_orphan_collision_with_existing_snapshot(self):
+        """Test orphan relocation when the current-hash snapshot already exists.
+
+        Seeds both an orphaned snapshot (fake old hash) and a partial
+        current-hash snapshot, then pulls. The merge policy should:
+        - Keep a complete file in the current snapshot over an orphan copy
+        - Keep the larger .partial when both snapshots have one
+        - Move orphan files that don't exist in the current snapshot
+        """
+        self._ensure_model_pulled()
+
+        hf_cache = get_hf_cache_dir()
+        repo_cache_dir = os.path.join(hf_cache, "models--unsloth--gemma-3-270m-it-GGUF")
+        snapshots_dir = os.path.join(repo_cache_dir, "snapshots")
+
+        if not os.path.isdir(snapshots_dir):
+            self.skipTest("HF cache snapshots directory not found")
+
+        current_hash = self._get_snapshot_hash_from_refs(repo_cache_dir)
+        if not current_hash:
+            self.skipTest("refs/main not found")
+
+        current_snapshot = os.path.join(snapshots_dir, current_hash)
+        if not os.path.isdir(current_snapshot):
+            self.skipTest(f"Snapshot directory for {current_hash} not found")
+
+        # Collect real files
+        real_files = []
+        for root, _dirs, files in os.walk(current_snapshot):
+            for f in files:
+                if f.startswith("."):
+                    continue
+                rel = os.path.relpath(os.path.join(root, f), current_snapshot)
+                size = os.path.getsize(os.path.join(root, f))
+                real_files.append((rel, size))
+
+        if len(real_files) < 2:
+            self.skipTest("Need at least 2 files for collision test")
+
+        fake_old_hash = "c" * 40
+        old_snapshot = os.path.join(snapshots_dir, fake_old_hash)
+
+        # Save copies of the current snapshot files so we can restore
+        backup_dir = os.path.join(snapshots_dir, "_test_backup")
+
+        try:
+            # Back up the current snapshot
+            shutil.copytree(current_snapshot, backup_dir)
+
+            # --- Set up the collision scenario ---
+            # Current snapshot: keep file[0] as complete, remove file[1]
+            # Orphan snapshot:  has file[0] as smaller .partial, file[1] as complete
+
+            # Remove file[1] from current snapshot (orphan has it)
+            file1_current = os.path.join(current_snapshot, real_files[1][0])
+            if os.path.exists(file1_current):
+                os.remove(file1_current)
+            # Create a small .partial for file[1] in current snapshot
+            partial1_current = file1_current + ".partial"
+            os.makedirs(os.path.dirname(partial1_current), exist_ok=True)
+            with open(partial1_current, "wb") as pf:
+                pf.write(b"\x00" * 512)
+
+            # Create the orphan snapshot
+            os.makedirs(old_snapshot, exist_ok=True)
+
+            # Orphan file[0]: a .partial that is smaller than current's complete file
+            orphan_partial0 = os.path.join(old_snapshot, real_files[0][0] + ".partial")
+            os.makedirs(os.path.dirname(orphan_partial0), exist_ok=True)
+            with open(orphan_partial0, "wb") as pf:
+                pf.write(b"\x00" * 256)
+
+            # Orphan file[1]: larger .partial than current's small .partial
+            orphan_partial1 = os.path.join(old_snapshot, real_files[1][0] + ".partial")
+            os.makedirs(os.path.dirname(orphan_partial1), exist_ok=True)
+            with open(orphan_partial1, "wb") as pf:
+                pf.write(b"\x00" * 4096)
+
+            # Write orphan manifest
+            manifest = {
+                "repo_id": "unsloth/gemma-3-270m-it-GGUF",
+                "commit_hash": fake_old_hash,
+                "download_path": old_snapshot,
+                "files_count": len(real_files),
+                "files": [],
+            }
+            for rel_path, size in real_files:
+                manifest["files"].append(
+                    {
+                        "name": rel_path,
+                        "url": f"https://huggingface.co/unsloth/gemma-3-270m-it-GGUF/resolve/main/{rel_path}",
+                        "size": size,
+                        "download_path": old_snapshot,
+                    }
+                )
+            manifest_path = os.path.join(old_snapshot, ".download_manifest.json")
+            with open(manifest_path, "w") as mf:
+                json.dump(manifest, mf)
+
+            # Record current snapshot state before pull
+            file0_size_before = os.path.getsize(
+                os.path.join(current_snapshot, real_files[0][0])
+            )
+
+            # Delete model from server cache (but NOT the snapshot on disk)
+            requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": ENDPOINT_TEST_MODEL},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+            # Pull — triggers orphan detection + collision merge + fresh download
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={"model_name": ENDPOINT_TEST_MODEL, "stream": False},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                response.status_code,
+                200,
+                f"Pull with collision failed: {response.text[:500]}",
+            )
+
+            # Verify orphan cleaned up
+            self.assertFalse(
+                os.path.isdir(old_snapshot),
+                "Orphaned snapshot should have been removed after merge",
+            )
+
+            # Verify file[0] in current snapshot was NOT overwritten by the
+            # orphan's smaller partial (merge policy: keep complete over partial)
+            new_hash = self._get_snapshot_hash_from_refs(repo_cache_dir)
+            assert new_hash is not None
+            final_snapshot = os.path.join(snapshots_dir, new_hash)
+            file0_final = os.path.join(final_snapshot, real_files[0][0])
+            self.assertTrue(os.path.isfile(file0_final), "file[0] should exist")
+            self.assertEqual(
+                os.path.getsize(file0_final),
+                file0_size_before,
+                "Complete file should not have been replaced by orphan's smaller partial",
+            )
+
+            # Verify all files present after the fresh manifest download
+            for rel_path, _size in real_files:
+                self.assertTrue(
+                    os.path.isfile(os.path.join(final_snapshot, rel_path)),
+                    f"Expected {rel_path} in final snapshot after collision merge + download",
+                )
+
+            print("[OK] Orphan collision merge handled correctly")
+        finally:
+            # Restore from backup if needed
+            if os.path.isdir(backup_dir):
+                new_hash = self._get_snapshot_hash_from_refs(repo_cache_dir)
+                if new_hash:
+                    target = os.path.join(snapshots_dir, new_hash)
+                    if os.path.isdir(target):
+                        shutil.rmtree(target, ignore_errors=True)
+                    shutil.copytree(backup_dir, target)
+                shutil.rmtree(backup_dir, ignore_errors=True)
+            if os.path.isdir(old_snapshot):
+                shutil.rmtree(old_snapshot, ignore_errors=True)
+
+
 if __name__ == "__main__":
     run_server_tests(EndpointTests, "ENDPOINT TESTS")

@@ -2352,17 +2352,45 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             // path (below) build a fresh manifest from the current HF API
             // response. download_from_manifest will skip files already on
             // disk, resume .partial files, and download anything new.
+            //
+            // Merge policy when the target snapshot already exists:
+            //   - Complete file at dest, no .partial → keep dest (already good)
+            //   - .partial at dest → keep whichever is larger (more progress)
+            //   - No file at dest → move source over
             fs::path new_snapshot = snapshots_dir / commit_hash;
             if (best_snapshot != new_snapshot) {
                 std::error_code ec;
                 fs::create_directories(new_snapshot, ec);
                 for (const auto& f : fs::recursive_directory_iterator(best_snapshot, ec)) {
                     if (!f.is_regular_file()) continue;
-                    // Skip the manifest — the normal path will create a fresh one
                     if (f.path().filename() == ".download_manifest.json") continue;
                     fs::path rel = f.path().lexically_relative(best_snapshot);
                     fs::path dest = new_snapshot / rel;
                     fs::create_directories(dest.parent_path(), ec);
+
+                    bool src_is_partial = f.path().extension() == ".partial";
+                    std::string base_name = src_is_partial
+                        ? dest.string().substr(0, dest.string().size() - 8)  // strip ".partial"
+                        : dest.string();
+                    fs::path dest_complete = path_from_utf8(base_name);
+                    fs::path dest_partial = path_from_utf8(base_name + ".partial");
+
+                    // If dest already has a complete file (no .partial alongside),
+                    // it's at least as good as anything we could bring over
+                    if (fs::exists(dest_complete, ec) && !fs::exists(dest_partial, ec)) {
+                        continue;  // dest is already complete — skip
+                    }
+
+                    if (fs::exists(dest, ec)) {
+                        // Both src and dest exist at same path — keep the larger one
+                        size_t src_size = f.file_size(ec);
+                        size_t dest_size = fs::file_size(dest, ec);
+                        if (dest_size >= src_size) {
+                            continue;  // dest has equal or more progress
+                        }
+                        fs::remove(dest, ec);  // src has more progress — replace
+                    }
+
                     fs::rename(f.path(), dest, ec);
                     if (ec) {
                         LOG(WARNING, "ModelManager") << "Failed to move " << rel.string()
