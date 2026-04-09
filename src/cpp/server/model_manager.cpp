@@ -2822,7 +2822,21 @@ void ModelManager::delete_model(const std::string& model_name) {
 
     // Use resolved_path to find the model directory to delete
     if (info.resolved_path().empty()) {
-        throw std::runtime_error("Model has no resolved_path, cannot determine files to delete");
+        // Model exists in registry but has no downloaded files
+        // Just remove from user_models.json and cache
+        LOG(INFO, "ModelManager") << "Model not downloaded, removing from registry only" << std::endl;
+
+        if (is_user_model_name(canonical_model_name)) {
+            json updated_user_models = user_models_;
+            updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
+            save_user_models(updated_user_models);
+            user_models_ = updated_user_models;
+            LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
+        }
+
+        remove_model_from_cache(canonical_model_name);
+        LOG(INFO, "ModelManager") << "Successfully removed model from registry: " << canonical_model_name << std::endl;
+        return;
     }
 
     // Find the models--* directory from resolved_path
