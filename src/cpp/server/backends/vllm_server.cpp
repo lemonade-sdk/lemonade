@@ -89,6 +89,12 @@ void VLLMServer::load(const std::string& model_name,
     // Serve using the Lemonade model name so forwarded requests match
     args.push_back("--served-model-name");
     args.push_back(model_name);
+    // Default args for consumer GPU inference
+    args.push_back("--enforce-eager");
+    args.push_back("--dtype");
+    args.push_back("float16");
+    args.push_back("--max-model-len");
+    args.push_back("4096");
 
     // Append custom vllm_args if provided
     if (!vllm_args.empty()) {
