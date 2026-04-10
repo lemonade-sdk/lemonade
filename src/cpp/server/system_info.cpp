@@ -941,8 +941,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 backend["state"] = "installable";
                 backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
 
-                // Special action for ROCm backend on llamacpp/sd-cpp if CWSR fix is missing
-                if ((def.recipe == "llamacpp" || def.recipe == "sd-cpp") && def.backend == "rocm"
+                // Special action for ROCm backends if CWSR fix is missing
+                if ((def.recipe == "llamacpp" || def.recipe == "sd-cpp" || def.recipe == "vllm") && def.backend == "rocm"
                     && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
                     backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
                 } else {

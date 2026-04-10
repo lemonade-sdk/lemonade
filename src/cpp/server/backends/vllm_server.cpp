@@ -119,6 +119,8 @@ void VLLMServer::load(const std::string& model_name,
     // The vllm-server launcher script handles LD_LIBRARY_PATH for ROCm libs.
     // Set FLASH_ATTENTION_TRITON_AMD_ENABLE for ROCm flash attention.
     env_vars.push_back({"FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE"});
+    // Prevent system/user Python packages from leaking into the bundled vLLM environment
+    env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
     // Start process
     bool inherit_output = (log_level_ == "info") || is_debug();
