@@ -22,6 +22,7 @@ Usage:
 
 import platform
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 import requests
 from openai import NotFoundError
 
@@ -359,7 +360,7 @@ class EndpointTests(ServerTestBase):
 
     def test_010_load_model_with_options(self):
         """Test loading a model with custom options (ctx_size, llamacpp_backend, llamacpp_args)."""
-        # Load with custom options (load always loads even if already loaded)
+        # Load with custom options (reloads only if options differ from current)
         custom_ctx_size = 2048
         response = requests.post(
             f"{self.base_url}/load",
@@ -397,7 +398,6 @@ class EndpointTests(ServerTestBase):
 
     def test_011_load_model_save_options(self):
         """Test save_options=true saves settings to recipe_options.json."""
-        # Load with save_options=true (load always loads even if already loaded)
         custom_ctx_size = 4096
         response = requests.post(
             f"{self.base_url}/load",
@@ -471,6 +471,161 @@ class EndpointTests(ServerTestBase):
                     )
                     print(f"[OK] Load used saved ctx_size={custom_ctx_size}")
                 break
+
+    def test_012a_load_idempotent_same_options(self):
+        """Test that /load is idempotent: loading an already-loaded model with
+        the same options is a no-op (no eviction or reload)."""
+        # Ensure model is loaded
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Get the backend_url before the second load (proves same process)
+        health_before = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        ).json()
+        url_before = None
+        for m in health_before.get("all_models_loaded", []):
+            if m["model_name"] == ENDPOINT_TEST_MODEL:
+                url_before = m.get("backend_url")
+                break
+        self.assertIsNotNone(url_before, "Model should be loaded")
+
+        # Load again with the same (default) options
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # backend_url should be unchanged (same subprocess, no restart)
+        health_after = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        ).json()
+        url_after = None
+        for m in health_after.get("all_models_loaded", []):
+            if m["model_name"] == ENDPOINT_TEST_MODEL:
+                url_after = m.get("backend_url")
+                break
+        self.assertEqual(
+            url_before,
+            url_after,
+            "Idempotent /load should not restart the backend",
+        )
+        print("[OK] Idempotent /load with same options was a no-op")
+
+    def test_012b_load_reloads_on_option_change(self):
+        """Test that /load evicts and reloads when options differ."""
+        # Ensure model is loaded with default options (no ctx_size override)
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Verify no ctx_size in loaded options
+        health_before = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        ).json()
+        opts_before = {}
+        for m in health_before.get("all_models_loaded", []):
+            if m["model_name"] == ENDPOINT_TEST_MODEL:
+                opts_before = m.get("recipe_options", {})
+                break
+        self.assertNotEqual(
+            opts_before.get("ctx_size"), 2048,
+            "Precondition: model should not already have ctx_size=2048",
+        )
+
+        # Load again with different options
+        custom_ctx = 2048
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL, "ctx_size": custom_ctx},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Verify the new options are applied (proves a reload occurred)
+        health_after = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        ).json()
+        opts_after = {}
+        for m in health_after.get("all_models_loaded", []):
+            if m["model_name"] == ENDPOINT_TEST_MODEL:
+                opts_after = m.get("recipe_options", {})
+                break
+        self.assertEqual(
+            opts_after.get("ctx_size"),
+            custom_ctx,
+            "Option-change /load should reload with new options",
+        )
+
+        print(f"[OK] /load with different options triggered reload (ctx_size={custom_ctx})")
+
+    def test_012c_concurrent_autoload_and_explicit_load(self):
+        """Test that concurrent auto-load (via inference) and explicit /load
+        do not cause a double-load race. The second arrival should no-op."""
+        # Unload first to ensure a clean slate
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        def do_inference():
+            return requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": ENDPOINT_TEST_MODEL,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 5,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+
+        def do_load():
+            return requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": ENDPOINT_TEST_MODEL},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+
+        # Fire both concurrently
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_inference = executor.submit(do_inference)
+            future_load = executor.submit(do_load)
+
+            load_response = future_load.result()
+            inference_response = future_inference.result()
+
+        # Both should succeed
+        self.assertEqual(load_response.status_code, 200)
+        self.assertEqual(inference_response.status_code, 200)
+
+        # Model should be loaded exactly once
+        health = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        ).json()
+        loaded = [
+            m for m in health.get("all_models_loaded", [])
+            if m["model_name"] == ENDPOINT_TEST_MODEL
+        ]
+        self.assertEqual(
+            len(loaded), 1, "Model should appear exactly once in loaded list"
+        )
+
+        print("[OK] Concurrent auto-load + /load did not cause double-load")
 
     def test_013_unload_specific_model(self):
         """Test unloading a specific model by name."""
