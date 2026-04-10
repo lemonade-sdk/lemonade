@@ -71,7 +71,8 @@ const std::vector<std::string> NVIDIA_DISCRETE_GPU_KEYWORDS = {
     "a100", "a40", "a30", "a10", "a6000", "a5000", "a4000", "a2000"
 };
 
-// ROCm architecture mapping - maps specific gfx architectures to their family
+// ROCm architecture mapping - maps specific gfx architectures to their family (download target).
+// Empty string means "no ROCm binary for this ISA" — skip for get_rocm_arch / install filenames.
 const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
     // RDNA2 family (gfx103X)
     {"gfx1030", "gfx103X"},
@@ -79,6 +80,10 @@ const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
     {"gfx1032", "gfx103X"},
     {"gfx1034", "gfx103X"},
     // Note: gfx1033, gfx1035, gfx1036 are NOT included (not confirmed as supported)
+    // map to "" so get_rocm_arch skips them
+    {"gfx1033", ""},
+    {"gfx1035", ""},
+    {"gfx1036", ""},
 
     // RDNA3 family (gfx110X)
     {"gfx1100", "gfx110X"},
@@ -1125,8 +1130,9 @@ std::string SystemInfo::get_system_llamacpp_version() {
     return "unknown";
 }
 
-// Helper to identify ROCm architecture from GPU name
-// Returns the detected architecture even if not in ROCM_ARCH_MAPPING
+// Helper to identify ROCm architecture from GPU name.
+// Returns the mapped family (or exact gfx115x target); map value may be "" to skip ROCm for that ISA.
+// If not in ROCM_ARCH_MAPPING, returns the raw detected arch for other unsupported GPUs.
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
