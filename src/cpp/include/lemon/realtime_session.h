@@ -26,6 +26,7 @@ struct RealtimeSession {
     std::string model;
     StreamingAudioBuffer audio_buffer;
     SimpleVAD vad;
+    std::atomic<bool> turn_detection_enabled{true};
     std::atomic<bool> session_active{true};
 
     // Callback to send messages back to the WebSocket client

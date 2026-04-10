@@ -66,19 +66,26 @@ std::string RealtimeSessionManager::create_session(
     // Configure VAD if specified
     if (config.contains("turn_detection")) {
         const auto& td = config["turn_detection"];
-        SimpleVAD::Config vad_config;
+        if (td.is_null()) {
+            session->turn_detection_enabled = false;
+            session->vad.reset();
+            session->last_interim_transcription_ms = 0;
+        } else {
+            SimpleVAD::Config vad_config;
 
-        if (td.contains("threshold")) {
-            vad_config.energy_threshold = td["threshold"].get<float>();
-        }
-        if (td.contains("silence_duration_ms")) {
-            vad_config.min_silence_ms = td["silence_duration_ms"].get<int>();
-        }
-        if (td.contains("prefix_padding_ms")) {
-            vad_config.min_speech_ms = td["prefix_padding_ms"].get<int>();
-        }
+            if (td.contains("threshold")) {
+                vad_config.energy_threshold = td["threshold"].get<float>();
+            }
+            if (td.contains("silence_duration_ms")) {
+                vad_config.min_silence_ms = td["silence_duration_ms"].get<int>();
+            }
+            if (td.contains("prefix_padding_ms")) {
+                vad_config.min_speech_ms = td["prefix_padding_ms"].get<int>();
+            }
 
-        session->vad.set_config(vad_config);
+            session->vad.set_config(vad_config);
+            session->turn_detection_enabled = true;
+        }
     }
 
     {
@@ -115,19 +122,26 @@ void RealtimeSessionManager::update_session(const std::string& session_id, const
 
     if (config.contains("turn_detection")) {
         const auto& td = config["turn_detection"];
-        SimpleVAD::Config vad_config;
+        if (td.is_null()) {
+            session->turn_detection_enabled = false;
+            session->vad.reset();
+            session->last_interim_transcription_ms = 0;
+        } else {
+            SimpleVAD::Config vad_config;
 
-        if (td.contains("threshold")) {
-            vad_config.energy_threshold = td["threshold"].get<float>();
-        }
-        if (td.contains("silence_duration_ms")) {
-            vad_config.min_silence_ms = td["silence_duration_ms"].get<int>();
-        }
-        if (td.contains("prefix_padding_ms")) {
-            vad_config.min_speech_ms = td["prefix_padding_ms"].get<int>();
-        }
+            if (td.contains("threshold")) {
+                vad_config.energy_threshold = td["threshold"].get<float>();
+            }
+            if (td.contains("silence_duration_ms")) {
+                vad_config.min_silence_ms = td["silence_duration_ms"].get<int>();
+            }
+            if (td.contains("prefix_padding_ms")) {
+                vad_config.min_speech_ms = td["prefix_padding_ms"].get<int>();
+            }
 
-        session->vad.set_config(vad_config);
+            session->vad.set_config(vad_config);
+            session->turn_detection_enabled = true;
+        }
     }
 
     // Send session updated message (OpenAI-compatible)
@@ -159,8 +173,10 @@ void RealtimeSessionManager::append_audio(const std::string& session_id, const s
                   << "ms (" << session->audio_buffer.sample_count() << " samples)" << std::endl;
     }
 
-    // Process VAD with recent audio
-    process_vad(session);
+    // In manual-commit mode, buffer audio only and skip server-side VAD/interim work.
+    if (session->turn_detection_enabled.load()) {
+        process_vad(session);
+    }
 }
 
 void RealtimeSessionManager::process_vad(std::shared_ptr<RealtimeSession> session) {

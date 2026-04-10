@@ -423,8 +423,10 @@ class WhisperTests(ServerTestBase):
             event = await asyncio.wait_for(conn.recv(), timeout=10)
             self.assertEqual(event.type, "session.created")
 
-            # Configure model
-            await conn.session.update(session={"model": model})
+            # Configure model for manual commit mode.
+            await conn.session.update(
+                session={"model": model, "turn_detection": None}
+            )
             event = await asyncio.wait_for(conn.recv(), timeout=10)
             self.assertEqual(event.type, "session.updated")
 
@@ -447,6 +449,16 @@ class WhisperTests(ServerTestBase):
                 try:
                     event = await asyncio.wait_for(conn.recv(), timeout=30)
                     print(f"[INFO] Received message: {event.type}")
+
+                    self.assertNotIn(
+                        event.type,
+                        {
+                            "input_audio_buffer.speech_started",
+                            "input_audio_buffer.speech_stopped",
+                            "conversation.item.input_audio_transcription.delta",
+                        },
+                        "Manual commit mode should not emit VAD or interim events",
+                    )
 
                     if (
                         event.type
