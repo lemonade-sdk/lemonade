@@ -134,6 +134,14 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src/app/src-tauri
+
       - name: Cache FetchContent dependencies
         uses: actions/cache@v5
         with:
@@ -160,10 +168,10 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "Building C++ server, Electron app, web app, and MSI installers..." -ForegroundColor Cyan
+          Write-Host "Building C++ server, Tauri app, web app, and MSI installers..." -ForegroundColor Cyan
 
           # Single build command: wix_installers depends on all C++ targets,
-          # electron-app, and web-app via CMake dependency graph
+          # tauri-app, and web-app via CMake dependency graph
           cmake --build --preset windows --target wix_installers
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -173,7 +181,7 @@ jobs:
               "build\Release\lemond.exe",
               "build\Release\lemonade-server.exe",
               "build\Release\LemonadeServer.exe",
-              "build\app\win-unpacked\lemonade-app.exe",
+              "build\app\lemonade-app.exe",
               "build\resources\web-app\index.html",
               "lemonade-server-minimal.msi",
               "lemonade.msi"
@@ -345,7 +353,7 @@ jobs:
           retention-days: 7
 
   build-lemonade-macos-dmg:
-    name: Build Lemonade macOS .dmg (with Electron App)
+    name: Build Lemonade macOS .dmg (with Tauri App)
     runs-on: macos-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -388,7 +396,7 @@ jobs:
       - name: Build macOS .dmg
         uses: ./.github/actions/build-macos-dmg
         with:
-          include-electron: 'true'
+          include-tauri: 'true'
           skip-packaging: ${{ steps.check_signing.outputs.has_signing != 'true' }}
 
       - name: Upload .pkg package
@@ -567,6 +575,23 @@ jobs:
         id: get_version
         uses: ./.github/actions/get-version
 
+      - name: Install Tauri Linux system dependencies
+        shell: bash
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev \
+            librsvg2-dev \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            build-essential \
+            curl \
+            wget \
+            file
+
       - name: Run setup.sh to configure environment
         shell: bash
         run: |
@@ -579,6 +604,14 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: '20'
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src/app/src-tauri
 
       - name: Build AppImage
         shell: bash
@@ -1044,7 +1077,7 @@ jobs:
             echo "ERROR: Found web-app directory in archive"; FORBIDDEN=1
           fi
           if ls "$DIR"/lemonade-app* 2>/dev/null; then
-            echo "ERROR: Found electron app in archive"; FORBIDDEN=1
+            echo "ERROR: Found desktop app in archive"; FORBIDDEN=1
           fi
           if ls "$DIR"/lemonade-tray* 2>/dev/null; then
             echo "ERROR: Found tray app in archive"; FORBIDDEN=1

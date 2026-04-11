@@ -28,7 +28,7 @@ declare global {
   interface Window {
     api: {
       writeClipboard?: (text: string) => Promise<void>;
-      isWebApp?: boolean;  // Explicit flag to indicate web mode (vs Electron)
+      isWebApp?: boolean;  // Explicit flag to indicate web mode (vs Tauri desktop)
       platform: string;
       minimizeWindow: () => void;
       maximizeWindow: () => void;

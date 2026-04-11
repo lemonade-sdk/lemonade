@@ -570,10 +570,10 @@ void Server::setup_static_files(httplib::Server &web_server) {
             std::string html((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
             file.close();
 
-            // Inject mock API for web compatibility with Electron app code
+            // Inject mock window.api for web compatibility with the shared Tauri app renderer
             std::string mock_api = R"(
 <script>
-// Mock Electron API for web compatibility
+// Mock window.api for web compatibility (the Tauri shim is skipped in pure-web mode)
 window.api = {
     isWebApp: true,  // Explicit flag to indicate web mode
     platform: navigator.platform || 'web',

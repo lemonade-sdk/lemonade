@@ -1,0 +1,74 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "lemonade-app",
+  "version": "../package.json",
+  "identifier": "com.lemonade.app",
+  "build": {
+    "beforeDevCommand": "npm run build:renderer",
+    "beforeBuildCommand": "npm run build:renderer:prod",
+    "devUrl": "http://localhost:9000",
+    "frontendDist": "../dist/renderer"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Lemonade App",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 400,
+        "minHeight": 600,
+        "decorations": false,
+        "backgroundColor": "#000000",
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$RESOURCE/**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "Local LLM server with GPU and NPU acceleration",
+    "longDescription": "Lemonade helps users run local LLMs with the highest performance by configuring state-of-the-art inference engines for their NPUs and GPUs.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [],
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.15",
+      "hardenedRuntime": true,
+      "entitlements": "../../cpp/server/entitlements.plist"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": []
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["lemonade"]
+      }
+    }
+  }
+}

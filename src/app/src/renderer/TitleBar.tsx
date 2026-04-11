@@ -38,7 +38,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
 
   useEffect(() => {
     if (!window.api?.onMaximizeChange) {
-      console.warn('window.api.onMaximizeChange is unavailable. Running outside Electron?');
+      console.warn('window.api.onMaximizeChange is unavailable. Running outside Tauri?');
       return;
     }
 
@@ -91,7 +91,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
 
   const handleZoom = (direction: 'in' | 'out') => {
     if (!window.api?.zoomIn || !window.api?.zoomOut) {
-      console.warn('Zoom controls are unavailable outside Electron.');
+      console.warn('Zoom controls are unavailable outside Tauri.');
       setActiveMenu(null);
       return;
     }

@@ -22,10 +22,10 @@ class ServerConfig {
   private initPromise: Promise<void> | null = null;
 
   constructor() {
-    // Initialize from Electron API on startup
+    // Initialize from the host (Tauri invoke bridge or web-app mock) on startup
     this.initPromise = this.initialize();
 
-    // Listen for port updates from main process (only relevant for localhost mode)
+    // Listen for port updates from the host (only relevant for localhost mode)
     if (typeof window !== 'undefined' && window.api?.onServerPortUpdated && window.api?.onConnectionSettingsUpdated) {
       window.api.onServerPortUpdated((port: number) => {
         // Only update port if we're not using an explicit URL

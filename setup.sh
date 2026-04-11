@@ -381,6 +381,59 @@ if command_exists node && ! command_exists npm; then
     missing_packages+=("npm")
 fi
 
+# Check for Tauri Linux system dependencies (required to build the desktop app)
+if [ "$OS" = "linux" ]; then
+    print_info "Checking Tauri Linux development dependencies..."
+    if command_exists apt; then
+        tauri_deps=(
+            libwebkit2gtk-4.1-dev
+            libsoup-3.0-dev
+            libjavascriptcoregtk-4.1-dev
+            librsvg2-dev
+            libayatana-appindicator3-dev
+            libssl-dev
+            build-essential
+            curl
+            wget
+            file
+        )
+        for dep in "${tauri_deps[@]}"; do
+            if ! dpkg -l "$dep" 2>/dev/null | grep -q "^ii"; then
+                missing_packages+=("$dep")
+            fi
+        done
+    elif command_exists dnf; then
+        tauri_deps=(
+            webkit2gtk4.1-devel
+            libsoup3-devel
+            librsvg2-devel
+            libappindicator-gtk3-devel
+            openssl-devel
+            gcc-c++
+            curl
+            wget
+            file
+        )
+        for dep in "${tauri_deps[@]}"; do
+            if ! rpm -q "$dep" >/dev/null 2>&1; then
+                missing_packages+=("$dep")
+            fi
+        done
+    fi
+fi
+
+# Check for Rust toolchain (required to build the Tauri desktop app)
+print_info "Checking Rust toolchain installation..."
+if ! command_exists cargo || ! command_exists rustc; then
+    print_warning "Rust toolchain (cargo/rustc) not found"
+    print_info "Install Rust via rustup (non-interactive):"
+    print_info "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+    print_info "Then reload your shell or run: . \"\$HOME/.cargo/env\""
+    print_info "Rust is required to build the Tauri desktop app (cmake --target tauri-app)."
+else
+    print_success "Rust toolchain is already installed"
+fi
+
 # Check for KaTeX fonts (optional but recommended for packaging)
 print_info "Checking KaTeX fonts installation..."
 if [ "$OS" = "linux" ]; then
@@ -532,7 +585,7 @@ echo "=========================================="
 echo ""
 print_info "Next steps:"
 echo "  Build the project: cmake --build --preset default"
-echo "  Build the electron app: cmake --build --preset default --target electron-app"
+echo "  Build the Tauri desktop app: cmake --build --preset default --target tauri-app"
 echo "  Build AppImage (Linux): cmake --preset default -DBUILD_APPIMAGE=ON && cmake --build --preset default --target appimage"
 echo ""
 print_info "For more information, see the docs/dev-getting-started.md file"

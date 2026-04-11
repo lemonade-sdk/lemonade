@@ -1,8 +1,8 @@
 name: 'Build macOS .dmg Package'
 description: 'Build Lemonade .dmg for macOS (signed and notarized via CMake notarize target)'
 inputs:
-  include-electron:
-    description: 'Whether to include the Electron app (full build)'
+  include-tauri:
+    description: 'Whether to include the Tauri desktop app (full build)'
     required: false
     default: 'true'
   skip-packaging:
@@ -27,22 +27,30 @@ runs:
         echo "Build environment configured successfully!"
 
     - name: Setup Node.js
-      if: inputs.include-electron == 'true'
+      if: inputs.include-tauri == 'true'
       uses: actions/setup-node@v5
       with:
         node-version: '20'
 
-    - name: Set Electron signing identity
+    - name: Setup Rust toolchain
+      if: inputs.include-tauri == 'true'
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust build artifacts
+      if: inputs.include-tauri == 'true'
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src/app/src-tauri
+
+    - name: Set Tauri signing identity
       shell: bash
       run: |
-        # Tell electron-builder to use the Developer ID Application cert from keychain
+        # Tauri's macOS bundler signs with APPLE_SIGNING_IDENTITY from the keychain
         if [ -n "$DEVELOPER_ID_APPLICATION_IDENTITY" ]; then
-            echo "CSC_NAME=$DEVELOPER_ID_APPLICATION_IDENTITY" >> $GITHUB_ENV
-            # electron-builder skips signing on PR branches by default
-            echo "CSC_FOR_PULL_REQUEST=true" >> $GITHUB_ENV
-            echo "Electron builder will sign with: $DEVELOPER_ID_APPLICATION_IDENTITY"
+            echo "APPLE_SIGNING_IDENTITY=$DEVELOPER_ID_APPLICATION_IDENTITY" >> $GITHUB_ENV
+            echo "Tauri bundler will sign with: $DEVELOPER_ID_APPLICATION_IDENTITY"
         else
-            echo "WARNING: No signing identity found, electron-builder will not sign"
+            echo "WARNING: No signing identity found, Tauri bundler will not sign the .app"
         fi
 
     - name: Build C++ Server with CMake
@@ -52,21 +60,21 @@ runs:
 
         echo "Building lemond and lemonade-server for macOS..."
 
-        # Reconfigure if Electron app is included (setup.sh already did basic config)
+        # Reconfigure if Tauri app is included (setup.sh already did basic config)
         EXTRA_CMAKE_ARGS=""
         if [ "${{ inputs.skip-packaging }}" == "true" ]; then
             echo "No signing identity available — using ad-hoc signing"
             EXTRA_CMAKE_ARGS="-DSIGNING_IDENTITY=- -DINSTALLER_IDENTITY=-"
         fi
 
-        if [ "${{ inputs.include-electron }}" == "true" ]; then
-            echo "Reconfiguring CMake with Electron app enabled..."
-            cmake --preset default -DBUILD_ELECTRON_APP=ON $EXTRA_CMAKE_ARGS
+        if [ "${{ inputs.include-tauri }}" == "true" ]; then
+            echo "Reconfiguring CMake with Tauri app enabled..."
+            cmake --preset default -DBUILD_TAURI_APP=ON $EXTRA_CMAKE_ARGS
         elif [ -n "$EXTRA_CMAKE_ARGS" ]; then
             cmake --preset default $EXTRA_CMAKE_ARGS
         fi
 
-        # Build (BUILD_ELECTRON_APP will trigger electron build automatically)
+        # Build (BUILD_TAURI_APP will trigger Tauri build automatically)
         echo "Building binaries..."
         cmake --build --preset default
 
@@ -143,7 +151,7 @@ runs:
         set -e
 
         echo "Building macOS .pkg via CMake notarize target..."
-        echo "This will: build electron app, sign binaries, create package, notarize, and staple."
+        echo "This will: build Tauri app, sign binaries, create package, notarize, and staple."
 
         if ! cmake --build --preset default --target notarize; then
             echo ""

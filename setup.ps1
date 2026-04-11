@@ -129,6 +129,19 @@ if (-not (Command-Exists "npm")) {
 
 Write-Host ""
 
+# Check Rust toolchain (required for the Tauri desktop app)
+Write-Info "Checking Rust toolchain installation..."
+
+if (-not (Command-Exists "cargo") -or -not (Command-Exists "rustc")) {
+    Write-Warning "Rust toolchain (cargo/rustc) not found"
+    Write-Info "Install Rust via rustup-init from https://rustup.rs"
+    Write-Info "Rust is required to build the Tauri desktop app (cmake --target tauri-app)"
+} else {
+    Write-Success "Rust toolchain is installed"
+}
+
+Write-Host ""
+
 # Clean and create build directory
 Write-Info "Preparing build directory..."
 
@@ -171,6 +184,6 @@ Write-Host "==========================================" -ForegroundColor Green
 Write-Host ""
 Write-Info "Next steps:"
 Write-Host "  Build the project: cmake --build --preset windows"
-Write-Host "  Build the electron app: cmake --build --preset windows --target electron-app"
+Write-Host "  Build the Tauri desktop app: cmake --build --preset windows --target tauri-app"
 Write-Host ""
 Write-Info "For more information, see the README.md file"
