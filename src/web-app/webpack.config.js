@@ -42,9 +42,15 @@ module.exports = (env, argv) => {
     // process package not installed locally
   }
 
+  // The shared renderer source lives in ../app/src (sibling tree). The
+  // web-app build resolves it directly via these relative paths instead of
+  // checking in OS-level symlinks (which break Windows checkouts unless
+  // core.symlinks=true and developer mode are both enabled). The CMake
+  // staging step (BuildWebApp.cmake) preserves this layout by copying both
+  // src/app and src/web-app into the build directory side by side.
   const config = {
     mode: argv.mode || 'development',
-    entry: './src/renderer/index.tsx',
+    entry: '../app/src/renderer/index.tsx',
     target: 'web',  // Changed from 'electron-renderer' to 'web' for browser
     devtool: argv.mode === 'production' ? false : 'source-map',
     module: {
@@ -123,7 +129,7 @@ module.exports = (env, argv) => {
     },
     plugins: [
       new HtmlWebpackPlugin({
-        template: './src/renderer/index.html',
+        template: '../app/src/renderer/index.html',
         filename: 'index.html',
       }),
       ...(bufferPolyfill && processPolyfill ? [

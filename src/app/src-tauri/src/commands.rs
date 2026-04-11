@@ -3,7 +3,6 @@
 use crate::beacon;
 use crate::events;
 use crate::settings::{self, AppSettings};
-use crate::system_info::{self, SystemInfo, SystemStats};
 use crate::tray_launcher;
 use serde::Serialize;
 use serde_json::Value;
@@ -127,21 +126,10 @@ pub(crate) fn save_app_settings(app: AppHandle, payload: Value) -> Result<AppSet
 }
 
 // ---------- Server info ----------
-
-#[tauri::command]
-pub(crate) async fn get_version() -> String {
-    system_info::fetch_version().await
-}
-
-#[tauri::command]
-pub(crate) async fn get_system_stats() -> SystemStats {
-    system_info::fetch_system_stats().await
-}
-
-#[tauri::command]
-pub(crate) async fn get_system_info() -> SystemInfo {
-    system_info::fetch_system_info().await
-}
+// /health, /system-stats, and /system-info are fetched directly from the
+// renderer via `serverConfig.fetch(...)` — no Rust proxy needed. The host
+// only owns the connection-settings half (base URL, API key, port) so the
+// renderer knows where to send those requests.
 
 #[tauri::command]
 pub(crate) fn get_server_base_url() -> Option<String> {

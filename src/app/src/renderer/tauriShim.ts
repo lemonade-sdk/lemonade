@@ -94,7 +94,6 @@ async function installTauriApi(): Promise<void> {
     onSettingsUpdated: (callback: (settings: unknown) => void) =>
       on<unknown>(EVT_SETTINGS_UPDATED, callback),
 
-    getVersion: () => invoke<string>('get_version'),
     discoverServerPort: () => invoke<number | null>('discover_server_port'),
     getServerPort: () => invoke<number>('get_server_port'),
     getServerBaseUrl: () => invoke<string | null>('get_server_base_url'),
@@ -109,9 +108,10 @@ async function installTauriApi(): Promise<void> {
         (payload) => callback(payload.base_url, payload.api_key),
       ),
 
-    getSystemStats: () => invoke('get_system_stats'),
-    getSystemInfo: () => invoke('get_system_info'),
-
+    // Server version, system stats, and system info are NOT exposed via
+    // window.api anymore. The renderer fetches /health, /system-stats, and
+    // /system-info directly via serverConfig.fetch — see StatusBar.tsx and
+    // AboutModal.tsx. The old Rust proxy (system_info.rs) was redundant.
     getLocalMarketplaceUrl: () => invoke<string | null>('get_local_marketplace_url'),
     signalReady: fire('renderer_ready'),
     onNavigate: (callback: (data: NavData) => void) => on<NavData>(EVT_NAVIGATE, callback),

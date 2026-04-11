@@ -41,7 +41,6 @@ declare global {
       getSettings?: () => Promise<AppSettings>;
       saveSettings?: (settings: AppSettings) => Promise<AppSettings>;
       onSettingsUpdated?: (callback: (settings: AppSettings) => void) => void | (() => void);
-      getVersion?: () => Promise<string>;
       discoverServerPort?: () => Promise<number | null>;
       getServerPort?: () => Promise<number>;
       // Returns the configured server base URL or null if using localhost discovery
@@ -49,8 +48,6 @@ declare global {
       getServerAPIKey?: () => Promise<string | null>;
       onServerPortUpdated?: (callback: (port: number) => void) => void | (() => void);
       onConnectionSettingsUpdated?: (callback: (baseURL: string, apiKey: string) => void) => void | (() => void);
-      getSystemStats?: () => Promise<{ cpu_percent: number | null; memory_gb: number; gpu_percent: number | null; vram_gb: number | null; npu_percent: number | null }>;
-      getSystemInfo?: () => Promise<{ system: string; os: string; cpu: string; gpus: string[]; gtt_gb?: string; vram_gb?: string }>;
       getLocalMarketplaceUrl?: () => Promise<string | null>;
       signalReady?: () => void;
       onNavigate?: (callback: (data: { view?: string; model?: string }) => void) => void | (() => void);

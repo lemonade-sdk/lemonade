@@ -59,6 +59,7 @@ endif()
 # Web App source paths
 # ============================================================
 get_filename_component(WEB_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/web-app" ABSOLUTE)
+get_filename_component(APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/app" ABSOLUTE)
 set(WEB_APP_BUILD_DIR "${CMAKE_BINARY_DIR}/resources/web-app")
 
 # When ON, use system-provided Node.js modules (for example, webpack and distro-packaged JS deps)
@@ -917,12 +918,16 @@ endif()
 if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
     # Create a stamp file to track build state
     set(WEB_APP_STAMP "${CMAKE_CURRENT_BINARY_DIR}/web-app.stamp")
-    set(WEB_APP_BUILD_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/web-app-src")
+    set(WEB_APP_BUILD_STAGING_DIR "${CMAKE_CURRENT_BINARY_DIR}/web-app-staging")
 
-    # Get all source files in src/web-app (excluding node_modules and dist)
+    # Track sources from BOTH src/app (the shared renderer) and src/web-app
+    # (this build's package.json + webpack config) so the staged copies
+    # rebuild whenever either tree changes.
     file(GLOB_RECURSE WEB_APP_SOURCES
         CONFIGURE_DEPENDS
-        "${WEB_APP_SOURCE_DIR}/src/*"
+        "${APP_SOURCE_DIR}/src/*"
+        "${APP_SOURCE_DIR}/assets/*"
+        "${APP_SOURCE_DIR}/styles.css"
         "${WEB_APP_SOURCE_DIR}/*.json"
         "${WEB_APP_SOURCE_DIR}/*.js"
         "${WEB_APP_SOURCE_DIR}/*.ts"
@@ -934,8 +939,9 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
     add_custom_command(
         OUTPUT ${WEB_APP_STAMP}
         COMMAND ${CMAKE_COMMAND}
+            -DAPP_SOURCE_DIR=${APP_SOURCE_DIR}
             -DWEB_APP_SOURCE_DIR=${WEB_APP_SOURCE_DIR}
-            -DWEB_APP_BUILD_SOURCE_DIR=${WEB_APP_BUILD_SOURCE_DIR}
+            -DWEB_APP_BUILD_STAGING_DIR=${WEB_APP_BUILD_STAGING_DIR}
             -DWEB_APP_BUILD_DIR=${WEB_APP_BUILD_DIR}
             -DNPM_EXECUTABLE=${NPM_EXECUTABLE}
             -DWEBPACK_EXECUTABLE=${WEBPACK_EXECUTABLE}
@@ -1014,13 +1020,14 @@ endif()
 # Add manual web-app target for platforms where automatic build is disabled.
 # Reuse the shared build script so WiX/MSBuild gets output under ${WEB_APP_BUILD_DIR}.
 if(CAN_BUILD_WEB_APP AND NOT BUILD_WEB_APP)
-    set(WEB_APP_BUILD_SOURCE_DIR_MANUAL "${CMAKE_CURRENT_BINARY_DIR}/web-app-manual-src")
+    set(WEB_APP_BUILD_STAGING_DIR_MANUAL "${CMAKE_CURRENT_BINARY_DIR}/web-app-manual-staging")
     set(WEB_APP_MANUAL_STAMP "${CMAKE_CURRENT_BINARY_DIR}/web-app-manual.stamp")
 
     add_custom_target(web-app
         COMMAND ${CMAKE_COMMAND}
+            -DAPP_SOURCE_DIR=${APP_SOURCE_DIR}
             -DWEB_APP_SOURCE_DIR=${WEB_APP_SOURCE_DIR}
-            -DWEB_APP_BUILD_SOURCE_DIR=${WEB_APP_BUILD_SOURCE_DIR_MANUAL}
+            -DWEB_APP_BUILD_STAGING_DIR=${WEB_APP_BUILD_STAGING_DIR_MANUAL}
             -DWEB_APP_BUILD_DIR=${WEB_APP_BUILD_DIR}
             -DNPM_EXECUTABLE=${NPM_EXECUTABLE}
             -DWEBPACK_EXECUTABLE=${WEBPACK_EXECUTABLE}

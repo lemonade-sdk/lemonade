@@ -6,7 +6,6 @@ pub mod beacon;
 pub mod commands;
 pub mod events;
 pub mod settings;
-pub mod system_info;
 pub mod tray_launcher;
 pub mod webview_shim;
 
@@ -152,9 +151,6 @@ pub fn run() {
             commands::zoom_out,
             commands::get_app_settings,
             commands::save_app_settings,
-            commands::get_version,
-            commands::get_system_stats,
-            commands::get_system_info,
             commands::get_server_base_url,
             commands::get_server_api_key,
             commands::get_server_port,
