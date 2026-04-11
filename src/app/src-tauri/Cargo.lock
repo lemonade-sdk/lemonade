@@ -2245,9 +2245,14 @@ checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 name = "lemonade-app"
 version = "0.0.0"
 dependencies = [
+ "block2",
  "dirs 5.0.1",
  "env_logger",
+ "glib",
  "log",
+ "objc2",
+ "objc2-foundation",
+ "objc2-web-kit",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -2259,6 +2264,9 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tokio",
  "url",
+ "webkit2gtk",
+ "webview2-com",
+ "windows",
 ]
 
 [[package]]

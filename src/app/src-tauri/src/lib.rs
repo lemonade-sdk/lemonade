@@ -8,6 +8,7 @@ pub mod events;
 pub mod settings;
 pub mod system_info;
 pub mod tray_launcher;
+pub mod webview_shim;
 
 use tauri::{Emitter, Manager, WindowEvent};
 
@@ -120,6 +121,8 @@ pub fn run() {
             // with the window. Emitted on every resize, guarded by
             // change-detection to avoid flooding the renderer.
             if let Some(window) = app.get_webview_window("main") {
+                webview_shim::apply(&window);
+
                 let emitter = app_handle.clone();
                 let window_clone = window.clone();
                 let last_maximized = std::sync::atomic::AtomicBool::new(false);
