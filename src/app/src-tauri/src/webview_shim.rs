@@ -171,13 +171,13 @@ fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
 #[cfg(target_os = "macos")]
 fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
     // `WKUserScript::alloc()` is provided by objc2's `MainThreadOnly` trait.
-    // Modern rustc requires the trait to be in scope at the call site for
-    // method dispatch — older toolchains accepted the bare `::alloc()` call
-    // without the explicit import, but the trait-in-scope rule is now
-    // enforced consistently. Using the exact path rustc suggests in its
-    // E0599 hint so we don't depend on which paths objc2 chooses to
-    // re-export at the crate root.
-    use objc2::top_level_traits::MainThreadOnly;
+    // rustc 1.94+ enforces the trait-in-scope rule consistently for method
+    // dispatch through inherent-method-on-trait paths; older toolchains let
+    // this slide. The trait is re-exported at the crate root in
+    // objc2 0.6.x — do NOT use `objc2::top_level_traits::MainThreadOnly`
+    // because that module is `mod top_level_traits;` (private), even
+    // though one of rustc's E0599 hints will sometimes suggest it.
+    use objc2::MainThreadOnly;
     use objc2_foundation::NSString;
     use objc2_web_kit::{
         WKUserContentController, WKUserScript, WKUserScriptInjectionTime,

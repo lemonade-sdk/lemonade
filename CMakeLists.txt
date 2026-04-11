@@ -846,18 +846,28 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND CARGO_EXECUTABLE)
     endif()
 
     # `tauri build` shells out to `cargo` (e.g. `cargo metadata` at startup),
-    # so cargo MUST be on PATH for the npm subprocess. CI sets this via
-    # dtolnay/rust-toolchain@stable, but local developers can hit a confusing
-    # `cargo metadata: No such file or directory` failure when they invoke
-    # cmake from a shell that hasn't sourced rustup's env yet. CMake already
-    # found cargo at configure time via find_program(CARGO_EXECUTABLE cargo);
-    # we use that directory to prepend a known-good PATH for the custom
-    # command so the build is independent of the parent shell's environment.
+    # so cargo MUST be on PATH for the npm subprocess. CI sets this on every
+    # platform via dtolnay/rust-toolchain@stable. For local developers we
+    # also inject CARGO_EXECUTABLE's directory into PATH for the build
+    # subprocess, so a developer who has Rust installed but hasn't sourced
+    # rustup's env in their current shell still gets a working build.
+    #
+    # IMPORTANT: this PATH injection is gated on NOT WIN32. On Windows,
+    # MSBuild's custom-build cmd-file generator can't handle the nested
+    # `cmake -E env ... cmake -E chdir ... cmd /c npm.cmd run ...` shape —
+    # it produces a `The system cannot find the batch label specified -
+    # VCEnd` error (the same MSBuild quirk that commit 2b515ceb already had
+    # to dance around). Windows builds rely on cargo being on the parent
+    # shell's PATH, which CI satisfies and local Windows developers get
+    # automatically because rustup-init.exe updates the user PATH.
     get_filename_component(TAURI_CARGO_BIN_DIR "${CARGO_EXECUTABLE}" DIRECTORY)
     if(WIN32)
-        set(TAURI_BUILD_PATH "${TAURI_CARGO_BIN_DIR};$ENV{PATH}")
+        set(TAURI_BUILD_COMMAND
+            ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} run ${TAURI_BUILD_SCRIPT})
     else()
-        set(TAURI_BUILD_PATH "${TAURI_CARGO_BIN_DIR}:$ENV{PATH}")
+        set(TAURI_BUILD_COMMAND
+            ${CMAKE_COMMAND} -E env "PATH=${TAURI_CARGO_BIN_DIR}:$ENV{PATH}"
+            ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} run ${TAURI_BUILD_SCRIPT})
     endif()
 
     # Note: On Windows, NPM_COMMAND uses 'cmd /c' wrapper to handle npm.cmd batch file
@@ -875,8 +885,7 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND CARGO_EXECUTABLE)
         COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for Tauri app..."
         COMMAND ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} ci
         COMMAND ${CMAKE_COMMAND} -E echo "Compiling Rust host and bundling renderer..."
-        COMMAND ${CMAKE_COMMAND} -E env "PATH=${TAURI_BUILD_PATH}"
-            ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} run ${TAURI_BUILD_SCRIPT}
+        COMMAND ${TAURI_BUILD_COMMAND}
         COMMAND ${CMAKE_COMMAND} -E echo "Staging Tauri build output into ${TAURI_APP_UNPACKED_DIR}..."
         COMMAND ${TAURI_COPY_COMMAND}
         DEPENDS ${TAURI_APP_SOURCES}
