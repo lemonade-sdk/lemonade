@@ -993,7 +993,7 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
                 )
             ")
         endif()
-        install(FILES ${CMAKE_SOURCE_DIR}/src/web-app/assets/logo.svg
+        install(FILES ${CMAKE_SOURCE_DIR}/src/app/assets/logo.svg
             DESTINATION share/pixmaps
             RENAME lemonade-app.svg
         )
