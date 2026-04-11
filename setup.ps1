@@ -129,13 +129,73 @@ if (-not (Command-Exists "npm")) {
 
 Write-Host ""
 
-# Check Rust toolchain (required for the Tauri desktop app)
+# Check Rust toolchain (required for the Tauri desktop app).
+# We don't bundle rustup. If it's missing, offer to download rustup-init.exe
+# and run it non-interactively. CI gets the auto-install path; interactive
+# users get a y/N prompt with the download URL shown first.
 Write-Info "Checking Rust toolchain installation..."
 
+# rustup may have installed cargo into ~/.cargo/bin without it being on PATH
+# yet for this PowerShell session (the installer updates the user PATH but
+# existing shells don't pick that up until they restart).
+if (-not (Command-Exists "cargo") -or -not (Command-Exists "rustc")) {
+    $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+    if (Test-Path (Join-Path $cargoBin "cargo.exe")) {
+        $env:PATH = "$cargoBin;$env:PATH"
+    }
+}
+
+$rustWasJustInstalled = $false
 if (-not (Command-Exists "cargo") -or -not (Command-Exists "rustc")) {
     Write-Warning "Rust toolchain (cargo/rustc) not found"
-    Write-Info "Install Rust via rustup-init from https://rustup.rs"
-    Write-Info "Rust is required to build the Tauri desktop app (cmake --target tauri-app)"
+    Write-Info "Rust is required to build the Tauri desktop app (cmake --target tauri-app)."
+    Write-Info "The official installer is rustup, downloaded from https://rustup.rs"
+    Write-Host ""
+
+    $installRust = $false
+    if ($env:CI -or $env:GITHUB_ACTIONS) {
+        Write-Info "CI environment detected, installing Rust non-interactively..."
+        $installRust = $true
+    } else {
+        $reply = Read-Host "Install Rust via rustup now? (y/N)"
+        if ($reply -match '^[Yy]$') {
+            $installRust = $true
+        }
+    }
+
+    if ($installRust) {
+        $rustupInit = Join-Path $env:TEMP "rustup-init.exe"
+        Write-Info "Downloading rustup-init.exe..."
+        try {
+            Invoke-WebRequest -UseBasicParsing -Uri "https://win.rustup.rs/x86_64" -OutFile $rustupInit
+        } catch {
+            Write-Error-Custom "Failed to download rustup-init.exe: $_"
+            Write-Info "Install Rust manually from https://rustup.rs and re-run this script"
+            exit 1
+        }
+
+        Write-Info "Running rustup-init.exe..."
+        & $rustupInit -y --default-toolchain stable --no-modify-path | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error-Custom "rustup install failed (exit code $LASTEXITCODE)"
+            exit 1
+        }
+
+        # Add cargo to PATH for the rest of this script's session.
+        $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+        $env:PATH = "$cargoBin;$env:PATH"
+
+        if (Command-Exists "cargo") {
+            Write-Success "Rust toolchain installed"
+            $rustWasJustInstalled = $true
+        } else {
+            Write-Error-Custom "Rust install reported success but cargo is still not on PATH"
+            exit 1
+        }
+    } else {
+        Write-Info "Skipping Rust install. The Tauri desktop app target (tauri-app)"
+        Write-Info "will not be buildable until Rust is installed."
+    }
 } else {
     Write-Success "Rust toolchain is installed"
 }
@@ -182,8 +242,22 @@ Write-Host "==========================================" -ForegroundColor Green
 Write-Success "Setup completed successfully!"
 Write-Host "==========================================" -ForegroundColor Green
 Write-Host ""
+
+# If we just installed Rust in this run, remind the user that their EXISTING
+# PowerShell sessions don't have cargo on PATH yet — rustup updates the user
+# PATH but only new shells pick it up.
+if ($rustWasJustInstalled) {
+    Write-Warning "Rust was just installed."
+    Write-Info "To use cargo in your CURRENT PowerShell session, restart it,"
+    Write-Info "or prepend `$HOME\.cargo\bin to `$env:PATH manually."
+    Write-Info "New shells will pick it up automatically."
+    Write-Host ""
+}
+
 Write-Info "Next steps:"
 Write-Host "  Build the project: cmake --build --preset windows"
 Write-Host "  Build the Tauri desktop app: cmake --build --preset windows --target tauri-app"
+Write-Host "    (first build downloads ~80 Rust crates and may take several minutes)"
+Write-Host "  Hot-reload the desktop UI during development: cd src/app; npm run dev"
 Write-Host ""
 Write-Info "For more information, see the README.md file"

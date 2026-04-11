@@ -845,18 +845,38 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND CARGO_EXECUTABLE)
         set(TAURI_COPY_COMMAND ${CMAKE_COMMAND} -E copy "${TAURI_BUILD_OUTPUT_SOURCE}" "${TAURI_APP_OUTPUT}")
     endif()
 
+    # `tauri build` shells out to `cargo` (e.g. `cargo metadata` at startup),
+    # so cargo MUST be on PATH for the npm subprocess. CI sets this via
+    # dtolnay/rust-toolchain@stable, but local developers can hit a confusing
+    # `cargo metadata: No such file or directory` failure when they invoke
+    # cmake from a shell that hasn't sourced rustup's env yet. CMake already
+    # found cargo at configure time via find_program(CARGO_EXECUTABLE cargo);
+    # we use that directory to prepend a known-good PATH for the custom
+    # command so the build is independent of the parent shell's environment.
+    get_filename_component(TAURI_CARGO_BIN_DIR "${CARGO_EXECUTABLE}" DIRECTORY)
+    if(WIN32)
+        set(TAURI_BUILD_PATH "${TAURI_CARGO_BIN_DIR};$ENV{PATH}")
+    else()
+        set(TAURI_BUILD_PATH "${TAURI_CARGO_BIN_DIR}:$ENV{PATH}")
+    endif()
+
     # Note: On Windows, NPM_COMMAND uses 'cmd /c' wrapper to handle npm.cmd batch file
     # Note: Avoid shell-special characters in echo messages (no parentheses, etc.)
-    # Note: `cargo` must be on PATH. CI uses dtolnay/rust-toolchain@stable which
-    # puts rustup's bin dir on PATH. Local developers get it via
-    # `setup.sh`/`setup.ps1` instructions.
     add_custom_command(
         OUTPUT "${TAURI_APP_OUTPUT}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${TAURI_APP_UNPACKED_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E echo "============================================================"
+        COMMAND ${CMAKE_COMMAND} -E echo "Building Tauri desktop app (cargo + webpack)"
+        COMMAND ${CMAKE_COMMAND} -E echo "First build downloads ~80 Rust crates and compiles them with"
+        COMMAND ${CMAKE_COMMAND} -E echo "LTO; expect several minutes the first time. Incremental"
+        COMMAND ${CMAKE_COMMAND} -E echo "rebuilds are much faster. For UI iteration, prefer:"
+        COMMAND ${CMAKE_COMMAND} -E echo "    cd src/app && npm run dev"
+        COMMAND ${CMAKE_COMMAND} -E echo "============================================================"
         COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for Tauri app..."
         COMMAND ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} ci
-        COMMAND ${CMAKE_COMMAND} -E echo "Building Tauri app..."
-        COMMAND ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} run ${TAURI_BUILD_SCRIPT}
+        COMMAND ${CMAKE_COMMAND} -E echo "Compiling Rust host and bundling renderer..."
+        COMMAND ${CMAKE_COMMAND} -E env "PATH=${TAURI_BUILD_PATH}"
+            ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} run ${TAURI_BUILD_SCRIPT}
         COMMAND ${CMAKE_COMMAND} -E echo "Staging Tauri build output into ${TAURI_APP_UNPACKED_DIR}..."
         COMMAND ${TAURI_COPY_COMMAND}
         DEPENDS ${TAURI_APP_SOURCES}

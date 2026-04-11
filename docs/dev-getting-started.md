@@ -139,6 +139,15 @@ This will:
 3. `cargo tauri build` the Rust host against that renderer bundle
 4. Stage the output binary into `build/app/lemonade-app[.exe|.app]`
 
+> **First build is slow.** The cold path downloads ~80 Rust crates and compiles them with LTO; expect several minutes the first time. Incremental rebuilds (cargo cache hot, no Rust changes) are <30s.
+
+> **Hot reload during UI iteration.** Going through CMake rebuilds the cargo binary on every change. For frontend iteration, run the Tauri CLI's dev mode directly — it watches the renderer with webpack and only re-runs cargo when Rust source changes:
+> ```bash
+> cd src/app
+> npm run dev
+> ```
+> This is dramatically faster (<1s per renderer change) and is the right loop for any work that doesn't touch `src-tauri/`.
+
 The tray app searches for the Tauri app in these locations:
 - **Windows installed**: `../app/lemonade-app.exe` (relative to bin/ directory)
 - **Windows development**: `../../build/app/lemonade-app.exe` (from build/Release/)

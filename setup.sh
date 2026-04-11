@@ -381,7 +381,10 @@ if command_exists node && ! command_exists npm; then
     missing_packages+=("npm")
 fi
 
-# Check for Tauri Linux system dependencies (required to build the desktop app)
+# Check for Tauri Linux system dependencies (required to build the desktop app).
+# These get added to missing_packages and installed by the same batch as the
+# C++ deps below. Each branch uses the package names that match the apt/dnf
+# 4.1 / libsoup3 family — Tauri v2 needs webkit2gtk-4.1, not the older 4.0.
 if [ "$OS" = "linux" ]; then
     print_info "Checking Tauri Linux development dependencies..."
     if command_exists apt; then
@@ -419,17 +422,113 @@ if [ "$OS" = "linux" ]; then
                 missing_packages+=("$dep")
             fi
         done
+    elif command_exists pacman; then
+        # Arch Linux. base-devel / curl / openssl are already added by the
+        # earlier required-tools / pkg-config sections — only the webview-side
+        # packages are new here. javascriptcoregtk ships inside webkit2gtk-4.1
+        # on Arch so it doesn't need a separate entry.
+        tauri_deps=(
+            webkit2gtk-4.1
+            libsoup3
+            librsvg
+        )
+        for dep in "${tauri_deps[@]}"; do
+            if ! pacman -Qi "$dep" >/dev/null 2>&1; then
+                missing_packages+=("$dep")
+            fi
+        done
+    elif command_exists zypper; then
+        # openSUSE Tumbleweed names the 4.1 family with underscore-separated
+        # version suffixes. The Tauri docs still recommend webkit2gtk3-devel
+        # which is the older libsoup2 family — that's wrong for Tauri v2.
+        # Leap users on older releases may need to adjust if these names are
+        # not yet available in their repo.
+        tauri_deps=(
+            webkit2gtk-4_1-devel
+            libsoup-3_0-devel
+            libjavascriptcoregtk-4_1-devel
+            librsvg-devel
+            libopenssl-devel
+            gcc-c++
+            curl
+            wget
+            file
+        )
+        for dep in "${tauri_deps[@]}"; do
+            if ! rpm -q "$dep" >/dev/null 2>&1; then
+                missing_packages+=("$dep")
+            fi
+        done
     fi
 fi
 
-# Check for Rust toolchain (required to build the Tauri desktop app)
+# Check for Rust toolchain (required to build the Tauri desktop app).
+# We don't bundle rustup itself, so this section offers to run rustup-init
+# the same way upstream does — interactively, with a y/N prompt, and only
+# after the user has seen exactly what's about to happen. CI gets a
+# non-interactive install path so workflows aren't blocked on stdin.
 print_info "Checking Rust toolchain installation..."
 if ! command_exists cargo || ! command_exists rustc; then
+    # If rustup put cargo somewhere we haven't sourced yet (e.g. a previous
+    # invocation of this script ran the installer), try sourcing the env
+    # before giving up.
+    if [ -f "$HOME/.cargo/env" ]; then
+        # shellcheck source=/dev/null
+        . "$HOME/.cargo/env"
+    fi
+fi
+
+if ! command_exists cargo || ! command_exists rustc; then
     print_warning "Rust toolchain (cargo/rustc) not found"
-    print_info "Install Rust via rustup (non-interactive):"
-    print_info "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
-    print_info "Then reload your shell or run: . \"\$HOME/.cargo/env\""
     print_info "Rust is required to build the Tauri desktop app (cmake --target tauri-app)."
+    print_info "The official installer is rustup, which downloads and runs:"
+    print_info "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+    echo ""
+
+    install_rust=false
+    if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
+        print_info "CI environment detected, installing Rust non-interactively..."
+        install_rust=true
+    else
+        read -p "Install Rust via rustup now? (y/N): " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            install_rust=true
+        fi
+    fi
+
+    if [ "$install_rust" = true ]; then
+        if ! command_exists curl; then
+            print_error "curl is required to install Rust via rustup"
+            print_info "Install curl first, then re-run this script"
+            exit 1
+        fi
+        print_info "Downloading and running rustup-init..."
+        if curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path; then
+            # Source cargo's env into THIS shell so the cmake configure step
+            # below can see cargo. The user's parent shell still won't, which
+            # is why we print the follow-up note at the end.
+            if [ -f "$HOME/.cargo/env" ]; then
+                # shellcheck source=/dev/null
+                . "$HOME/.cargo/env"
+            fi
+            if command_exists cargo; then
+                print_success "Rust toolchain installed"
+                rust_was_just_installed=true
+            else
+                print_error "Rust install reported success but cargo is still not on PATH"
+                print_info "Open a new shell and re-run this script, or manually source ~/.cargo/env"
+                exit 1
+            fi
+        else
+            print_error "rustup install failed"
+            print_info "Install Rust manually from https://rustup.rs and re-run this script"
+            exit 1
+        fi
+    else
+        print_info "Skipping Rust install. The Tauri desktop app target (tauri-app)"
+        print_info "will not be buildable until Rust is installed."
+    fi
 else
     print_success "Rust toolchain is already installed"
 fi
@@ -583,9 +682,24 @@ echo "=========================================="
 print_success "Setup completed successfully!"
 echo "=========================================="
 echo ""
+
+# If we just installed Rust in this run, remind the user that their EXISTING
+# shells don't have cargo on PATH yet — the install only updated this script's
+# own process. New shells will pick it up automatically because rustup adds
+# itself to ~/.profile / ~/.bashrc / ~/.zshenv.
+if [ "${rust_was_just_installed:-false}" = true ]; then
+    print_warning "Rust was just installed."
+    print_info "To use cargo in your CURRENT shell, run:"
+    echo "  . \"\$HOME/.cargo/env\""
+    print_info "New shells will pick it up automatically."
+    echo ""
+fi
+
 print_info "Next steps:"
 echo "  Build the project: cmake --build --preset default"
 echo "  Build the Tauri desktop app: cmake --build --preset default --target tauri-app"
+echo "    (first build downloads ~80 Rust crates and may take several minutes)"
+echo "  Hot-reload the desktop UI during development: cd src/app && npm run dev"
 echo "  Build AppImage (Linux): cmake --preset default -DBUILD_APPIMAGE=ON && cmake --build --preset default --target appimage"
 echo ""
 print_info "For more information, see the docs/dev-getting-started.md file"
