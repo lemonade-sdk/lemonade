@@ -1,96 +1,85 @@
-// Port of Electron main.js UDP beacon discovery (lines 503-675).
-// Listens on UDP 13305 for "lemonade" service beacons broadcast by the running
-// server, extracts the localhost port from the payload URL, and emits a
-// `server-port-updated` event to the renderer when it changes.
+//! UDP beacon discovery for the running Lemonade server.
+//!
+//! The server broadcasts a JSON beacon on UDP 13305 describing its HTTP URL.
+//! This module provides a one-shot discovery call used by `discover_server_port`
+//! and a long-running listener that keeps the cached port in sync and emits a
+//! `server-port-updated` Tauri event when the port changes.
 
+use crate::events;
 use serde::Deserialize;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::OnceLock;
 use tauri::{AppHandle, Emitter};
 use tokio::net::UdpSocket;
 use tokio::time::{timeout, Duration};
 
-pub const DEFAULT_PORT: u16 = 13305;
-pub const BEACON_PORT: u16 = 13305;
+pub(crate) const BEACON_PORT: u16 = 13305;
 const DISCOVERY_TIMEOUT_MS: u64 = 5_000;
 
-pub const SERVER_PORT_UPDATED_EVENT: &str = "server-port-updated";
+static CACHED_SERVER_PORT: AtomicU16 = AtomicU16::new(BEACON_PORT);
 
-static CACHED_SERVER_PORT: AtomicU16 = AtomicU16::new(DEFAULT_PORT);
-
-pub fn get_cached_port() -> u16 {
+pub(crate) fn get_cached_port() -> u16 {
     CACHED_SERVER_PORT.load(Ordering::Relaxed)
 }
 
-pub fn set_cached_port(port: u16) {
+pub(crate) fn set_cached_port(port: u16) {
     CACHED_SERVER_PORT.store(port, Ordering::Relaxed);
 }
 
 #[derive(Debug, Deserialize)]
 struct BeaconPayload {
     service: String,
-    #[allow(dead_code)]
-    hostname: Option<String>,
     url: String,
 }
 
-fn is_local_address(addr: IpAddr) -> bool {
+fn is_loopback(addr: IpAddr) -> bool {
     match addr {
-        IpAddr::V4(ipv4) => ipv4 == Ipv4Addr::LOCALHOST || ipv4.is_loopback(),
-        IpAddr::V6(ipv6) => {
-            ipv6 == Ipv6Addr::LOCALHOST
-                || ipv6.is_loopback()
-                || ipv6.to_ipv4_mapped().map(|v| v.is_loopback()).unwrap_or(false)
+        IpAddr::V4(v4) => v4.is_loopback() || v4 == Ipv4Addr::LOCALHOST,
+        IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6 == Ipv6Addr::LOCALHOST
+                || v6.to_ipv4_mapped().map(|v| v.is_loopback()).unwrap_or(false)
         }
     }
 }
 
+/// Compute the local outbound IP once and cache it. Used to decide whether a
+/// beacon from a non-loopback source actually originated on this machine.
+fn local_outbound_ip() -> Option<IpAddr> {
+    static CELL: OnceLock<Option<IpAddr>> = OnceLock::new();
+    *CELL.get_or_init(|| {
+        let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+        socket.connect("8.8.8.8:80").ok()?;
+        socket.local_addr().ok().map(|a| a.ip())
+    })
+}
+
 fn is_local_machine(addr: IpAddr) -> bool {
-    if is_local_address(addr) {
-        return true;
-    }
-    // Best-effort: also accept any address from our local network interfaces.
-    // We reuse std here so we don't need an extra crate.
-    let Ok(local_socket) = std::net::UdpSocket::bind("0.0.0.0:0") else {
-        return false;
-    };
-    if local_socket.connect("8.8.8.8:80").is_err() {
-        return false;
-    }
-    match local_socket.local_addr() {
-        Ok(local) => local.ip() == addr,
-        Err(_) => false,
-    }
+    is_loopback(addr) || local_outbound_ip() == Some(addr)
 }
 
-fn parse_port_from_url(url: &str) -> Option<u16> {
-    // Example payload: http://1.2.3.4:12345/api/v1/
-    // Mirrors main.js regex `/:(\\d+)\\//`
-    let after_scheme = url.split("://").nth(1).unwrap_or(url);
-    let colon_pos = after_scheme.find(':')?;
-    let after_colon = &after_scheme[colon_pos + 1..];
-    let slash_pos = after_colon.find('/')?;
-    let port_str = &after_colon[..slash_pos];
-    port_str.parse::<u16>().ok().filter(|p| *p > 0)
+fn parse_port_from_url(raw: &str) -> Option<u16> {
+    url::Url::parse(raw).ok()?.port().filter(|&p| p > 0)
 }
 
-// One-shot discovery: bind to BEACON_PORT, wait up to DISCOVERY_TIMEOUT_MS for
-// the first valid beacon, return its port. On timeout or error, fall back to
-// the cached port (or DEFAULT_PORT).
-pub async fn discover_server_port_once() -> u16 {
+fn parse_beacon_message(bytes: &[u8]) -> Option<u16> {
+    let payload: BeaconPayload = serde_json::from_slice(bytes).ok()?;
+    if payload.service != "lemonade" {
+        return None;
+    }
+    parse_port_from_url(&payload.url)
+}
+
+/// One-shot discovery: wait up to `DISCOVERY_TIMEOUT_MS` for a beacon and
+/// return the extracted port, or fall back to the cached port.
+pub(crate) async fn discover_server_port_once() -> u16 {
     match try_discover_server_port().await {
         Some(port) => {
             set_cached_port(port);
             port
         }
-        None => {
-            let fallback = get_cached_port();
-            if fallback == 0 {
-                DEFAULT_PORT
-            } else {
-                fallback
-            }
-        }
+        None => get_cached_port(),
     }
 }
 
@@ -102,12 +91,10 @@ async fn try_discover_server_port() -> Option<u16> {
             return None;
         }
     };
-
     let _ = socket.set_broadcast(true);
 
     let deadline = Duration::from_millis(DISCOVERY_TIMEOUT_MS);
     let mut buf = vec![0u8; 2048];
-
     loop {
         match timeout(deadline, socket.recv_from(&mut buf)).await {
             Ok(Ok((len, addr))) => {
@@ -131,21 +118,13 @@ async fn try_discover_server_port() -> Option<u16> {
     }
 }
 
-fn parse_beacon_message(bytes: &[u8]) -> Option<u16> {
-    let text = std::str::from_utf8(bytes).ok()?;
-    let payload: BeaconPayload = serde_json::from_str(text).ok()?;
-    if payload.service != "lemonade" {
-        return None;
-    }
-    parse_port_from_url(&payload.url)
-}
-
-// Background listener: keeps listening for beacons and emits
-// `server-port-updated` events when the port changes. Mirrors main.js
-// `startBeaconListener` (lines 609-675).
-pub async fn run_beacon_listener(app: AppHandle) {
+/// Background listener: keeps listening for beacons and emits
+/// `server-port-updated` when the cached port actually changes. Rebinds the
+/// socket after any error and backs off for 10 seconds between retries.
+pub(crate) async fn run_beacon_listener(app: AppHandle) {
     loop {
-        // Skip if an explicit base URL is configured.
+        // Skip if an explicit base URL is configured — no point scraping beacons
+        // when the user has told us exactly where to connect.
         if crate::settings::get_base_url_from_config().is_some() {
             log::info!("Beacon listener skipped - explicit server URL configured");
             tokio::time::sleep(Duration::from_secs(10)).await;
@@ -175,7 +154,7 @@ pub async fn run_beacon_listener(app: AppHandle) {
                         if port != cached {
                             log::info!("Beacon: server port change {cached} -> {port}");
                             set_cached_port(port);
-                            let _ = app.emit(SERVER_PORT_UPDATED_EVENT, port);
+                            let _ = app.emit(events::SERVER_PORT_UPDATED, port);
                         }
                     }
                 }
@@ -185,7 +164,6 @@ pub async fn run_beacon_listener(app: AppHandle) {
                 }
             }
         }
-
         tokio::time::sleep(Duration::from_secs(10)).await;
     }
 }

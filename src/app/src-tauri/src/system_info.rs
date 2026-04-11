@@ -1,9 +1,10 @@
-// Port of Electron main.js system info/stats helpers (lines 744-840).
-// These call the running `lemond` server's HTTP endpoints and normalize the
-// response into the shape the renderer expects.
+//! HTTP helpers that proxy `/api/v1/health`, `/system-stats`, and `/system-info`
+//! from the running `lemond` server to the renderer, normalizing the payloads
+//! into the shape the React UI expects.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::OnceLock;
 
 use crate::beacon;
 use crate::settings;
@@ -13,18 +14,23 @@ fn base_url() -> String {
         .unwrap_or_else(|| format!("http://localhost:{}", beacon::get_cached_port()))
 }
 
-fn http_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(3000))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
+/// Shared reqwest client — keeps the connection pool alive across the many
+/// polling calls the status bar makes. `reqwest::Client` is cheap to clone
+/// internally so a single instance is the right pattern here.
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(3000))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
 }
 
 async fn fetch_with_api_key(endpoint: &str) -> Result<Value, String> {
     let url = format!("{}{}", base_url(), endpoint);
     let api_key = settings::get_api_key_from_config();
-    let client = http_client();
-    let mut req = client.get(&url);
+    let mut req = http_client().get(&url);
     if !api_key.is_empty() {
         req = req.header("Authorization", format!("Bearer {api_key}"));
     }
@@ -37,7 +43,7 @@ async fn fetch_with_api_key(endpoint: &str) -> Result<Value, String> {
 
 // ---- Version ----
 
-pub async fn fetch_version() -> String {
+pub(crate) async fn fetch_version() -> String {
     match fetch_with_api_key("/api/v1/health").await {
         Ok(v) => v
             .get("version")
@@ -63,7 +69,7 @@ pub struct SystemStats {
     pub npu_percent: Option<f64>,
 }
 
-pub async fn fetch_system_stats() -> SystemStats {
+pub(crate) async fn fetch_system_stats() -> SystemStats {
     match fetch_with_api_key("/api/v1/system-stats").await {
         Ok(data) => SystemStats {
             cpu_percent: data.get("cpu_percent").and_then(Value::as_f64),
@@ -109,7 +115,7 @@ impl Default for SystemInfo {
     }
 }
 
-pub async fn fetch_system_info() -> SystemInfo {
+pub(crate) async fn fetch_system_info() -> SystemInfo {
     let data = match fetch_with_api_key("/api/v1/system-info").await {
         Ok(d) => d,
         Err(err) => {

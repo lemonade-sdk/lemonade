@@ -1,8 +1,7 @@
-// #[tauri::command] functions that back the renderer's `window.api` surface.
-// Each command maps 1:1 to an IPC method the Electron main.js used to provide
-// via `ipcMain.handle` / `ipcMain.on`.
+//! Tauri invoke handlers backing the renderer's `window.api` surface.
 
 use crate::beacon;
+use crate::events;
 use crate::settings::{self, AppSettings};
 use crate::system_info::{self, SystemInfo, SystemStats};
 use crate::tray_launcher;
@@ -17,14 +16,14 @@ fn main_window(app: &AppHandle) -> Option<WebviewWindow> {
 }
 
 #[tauri::command]
-pub fn minimize_window(app: AppHandle) {
+pub(crate) fn minimize_window(app: AppHandle) {
     if let Some(w) = main_window(&app) {
         let _ = w.minimize();
     }
 }
 
 #[tauri::command]
-pub fn maximize_window(app: AppHandle) {
+pub(crate) fn maximize_window(app: AppHandle) {
     if let Some(w) = main_window(&app) {
         if let Ok(true) = w.is_maximized() {
             let _ = w.unmaximize();
@@ -35,7 +34,7 @@ pub fn maximize_window(app: AppHandle) {
 }
 
 #[tauri::command]
-pub fn close_window(app: AppHandle) {
+pub(crate) fn close_window(app: AppHandle) {
     if let Some(w) = main_window(&app) {
         let _ = w.close();
     }
@@ -45,7 +44,7 @@ const ABSOLUTE_MIN_WIDTH: f64 = 400.0;
 const DEFAULT_MIN_HEIGHT: f64 = 600.0;
 
 #[tauri::command]
-pub fn update_min_width(app: AppHandle, width: f64) {
+pub(crate) fn update_min_width(app: AppHandle, width: f64) {
     if !width.is_finite() {
         return;
     }
@@ -73,7 +72,7 @@ fn clamp_zoom(factor: f64) -> f64 {
 static CURRENT_ZOOM: std::sync::Mutex<f64> = std::sync::Mutex::new(1.0);
 
 #[tauri::command]
-pub fn zoom_in(app: AppHandle) {
+pub(crate) fn zoom_in(app: AppHandle) {
     let mut current = CURRENT_ZOOM.lock().unwrap();
     *current = clamp_zoom(*current + ZOOM_STEP);
     if let Some(w) = main_window(&app) {
@@ -82,7 +81,7 @@ pub fn zoom_in(app: AppHandle) {
 }
 
 #[tauri::command]
-pub fn zoom_out(app: AppHandle) {
+pub(crate) fn zoom_out(app: AppHandle) {
     let mut current = CURRENT_ZOOM.lock().unwrap();
     *current = clamp_zoom(*current - ZOOM_STEP);
     if let Some(w) = main_window(&app) {
@@ -92,26 +91,23 @@ pub fn zoom_out(app: AppHandle) {
 
 // ---------- Settings ----------
 
-pub const SETTINGS_UPDATED_EVENT: &str = "settings-updated";
-pub const CONNECTION_SETTINGS_UPDATED_EVENT: &str = "connection-settings-updated";
-
 #[derive(Debug, Clone, Serialize)]
-pub struct ConnectionSettings {
+pub(crate) struct ConnectionSettings {
     pub base_url: String,
     pub api_key: String,
 }
 
 #[tauri::command]
-pub fn get_app_settings() -> AppSettings {
+pub(crate) fn get_app_settings() -> AppSettings {
     settings::read_app_settings()
 }
 
 #[tauri::command]
-pub fn save_app_settings(app: AppHandle, payload: Value) -> Result<AppSettings, String> {
+pub(crate) fn save_app_settings(app: AppHandle, payload: Value) -> Result<AppSettings, String> {
     let sanitized = settings::write_app_settings(&payload)?;
-    let _ = app.emit(SETTINGS_UPDATED_EVENT, &sanitized);
+    let _ = app.emit(events::SETTINGS_UPDATED, &sanitized);
     let _ = app.emit(
-        CONNECTION_SETTINGS_UPDATED_EVENT,
+        events::CONNECTION_SETTINGS_UPDATED,
         ConnectionSettings {
             base_url: sanitized
                 .base_url
@@ -133,37 +129,37 @@ pub fn save_app_settings(app: AppHandle, payload: Value) -> Result<AppSettings, 
 // ---------- Server info ----------
 
 #[tauri::command]
-pub async fn get_version() -> String {
+pub(crate) async fn get_version() -> String {
     system_info::fetch_version().await
 }
 
 #[tauri::command]
-pub async fn get_system_stats() -> SystemStats {
+pub(crate) async fn get_system_stats() -> SystemStats {
     system_info::fetch_system_stats().await
 }
 
 #[tauri::command]
-pub async fn get_system_info() -> SystemInfo {
+pub(crate) async fn get_system_info() -> SystemInfo {
     system_info::fetch_system_info().await
 }
 
 #[tauri::command]
-pub fn get_server_base_url() -> Option<String> {
+pub(crate) fn get_server_base_url() -> Option<String> {
     settings::get_base_url_from_config()
 }
 
 #[tauri::command]
-pub fn get_server_api_key() -> String {
+pub(crate) fn get_server_api_key() -> String {
     settings::get_api_key_from_config()
 }
 
 #[tauri::command]
-pub fn get_server_port() -> u16 {
+pub(crate) fn get_server_port() -> u16 {
     beacon::get_cached_port()
 }
 
 #[tauri::command]
-pub async fn discover_server_port(app: AppHandle) -> Option<u16> {
+pub(crate) async fn discover_server_port(app: AppHandle) -> Option<u16> {
     if settings::get_base_url_from_config().is_some() {
         log::info!("Port discovery skipped - explicit server URL configured");
         tray_launcher::ensure_tray_running();
@@ -172,21 +168,21 @@ pub async fn discover_server_port(app: AppHandle) -> Option<u16> {
 
     let port = beacon::discover_server_port_once().await;
     beacon::set_cached_port(port);
-    let _ = app.emit(beacon::SERVER_PORT_UPDATED_EVENT, port);
+    let _ = app.emit(events::SERVER_PORT_UPDATED, port);
     Some(port)
 }
 
 // ---------- Misc ----------
 
 #[tauri::command]
-pub fn get_platform() -> String {
+pub(crate) fn get_platform() -> String {
     std::env::consts::OS.to_string()
 }
 
 // Returns a file:// URL for the bundled marketplace.html if it exists.
 // In dev mode, falls back to <project>/docs/marketplace.html via the resource dir.
 #[tauri::command]
-pub fn get_local_marketplace_url(app: AppHandle) -> Option<String> {
+pub(crate) fn get_local_marketplace_url(app: AppHandle) -> Option<String> {
     // Try bundled resource first
     if let Ok(resource) = app.path().resource_dir() {
         let candidate = resource.join("docs").join("marketplace.html");
@@ -202,22 +198,29 @@ pub fn get_local_marketplace_url(app: AppHandle) -> Option<String> {
 
 // ---------- Renderer ready + deep-link queue ----------
 
-// Pending deep link navigation delivered before the renderer mounted.
-// Drained on the `renderer_ready` command.
+// Pending deep-link navigation for when the renderer hasn't mounted yet.
+// `RENDERER_READY` flips to true on the first `renderer_ready` command and
+// stays true for the rest of the process lifetime. Use it to decide whether
+// to emit a nav immediately or park it in `PENDING_NAV` for later drain.
 static PENDING_NAV: std::sync::Mutex<Option<Value>> = std::sync::Mutex::new(None);
+static RENDERER_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-pub fn queue_pending_nav(data: Value) {
-    let mut slot = PENDING_NAV.lock().unwrap();
-    *slot = Some(data);
+pub(crate) fn is_renderer_ready() -> bool {
+    RENDERER_READY.load(std::sync::atomic::Ordering::Acquire)
 }
 
-pub fn take_pending_nav() -> Option<Value> {
+pub(crate) fn queue_pending_nav(data: Value) {
+    *PENDING_NAV.lock().unwrap() = Some(data);
+}
+
+fn take_pending_nav() -> Option<Value> {
     PENDING_NAV.lock().unwrap().take()
 }
 
 #[tauri::command]
-pub fn renderer_ready(app: AppHandle) {
+pub(crate) fn renderer_ready(app: AppHandle) {
+    RENDERER_READY.store(true, std::sync::atomic::Ordering::Release);
     if let Some(data) = take_pending_nav() {
-        let _ = app.emit("navigate", data);
+        let _ = app.emit(crate::events::NAVIGATE, data);
     }
 }

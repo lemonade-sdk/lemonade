@@ -1,41 +1,31 @@
-// Tauri app library entry — wires up plugins, commands, and background tasks.
-// Mirrors the high-level responsibilities of the Electron main.js:
-//   - Single-instance lock (second-instance focuses the existing window)
-//   - Deep link handling for lemonade://
-//   - UDP beacon listener for server port discovery
-//   - macOS tray launcher on app start
-//   - Maximize-change events forwarded to the renderer
+// Tauri host: window, single-instance lock, deep-link handler, UDP beacon
+// listener, macOS tray bootstrap, and the invoke command surface consumed by
+// `src/app/src/renderer/tauriShim.ts`.
 
 pub mod beacon;
 pub mod commands;
+pub mod events;
 pub mod settings;
 pub mod system_info;
 pub mod tray_launcher;
 
 use tauri::{Emitter, Manager, WindowEvent};
 
-fn parse_protocol_url(url: &str) -> Option<serde_json::Value> {
+fn parse_protocol_url(raw: &str) -> Option<serde_json::Value> {
     // lemonade://open?view=logs&model=foo
-    if !url.starts_with("lemonade://") {
-        return None;
-    }
-    // Use url::Url after replacing the scheme with http:// so the host/path
-    // parse sensibly (url crate treats unknown schemes with no `//` as opaque).
-    let stripped = url.trim_start_matches("lemonade://");
-    // Accept either "open?..." or just "?..."
-    let query_start = stripped.find('?').map(|i| i + 1).unwrap_or(stripped.len());
-    let query = &stripped[query_start..];
-
+    // The url crate treats unknown schemes as opaque, so swap to http:// for
+    // parsing and rely on query_pairs() instead of hand-splitting on '?'/'&'.
+    let normalized = raw.strip_prefix("lemonade://")?;
+    let parsed = url::Url::parse(&format!("http://lemonade/{normalized}")).ok()?;
     let mut out = serde_json::Map::new();
-    for pair in query.split('&').filter(|p| !p.is_empty()) {
-        let mut it = pair.splitn(2, '=');
-        let key = it.next().unwrap_or("");
-        let value = it.next().unwrap_or("");
+    for (key, value) in parsed.query_pairs() {
         if key == "view" || key == "model" {
-            out.insert(key.to_string(), serde_json::Value::String(value.to_string()));
+            out.insert(
+                key.into_owned(),
+                serde_json::Value::String(value.into_owned()),
+            );
         }
     }
-
     if out.is_empty() {
         None
     } else {
@@ -52,9 +42,10 @@ fn handle_protocol_urls(app: &tauri::AppHandle, urls: &[String]) {
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
-            // Queue for later if renderer isn't ready; otherwise emit immediately.
-            if app.emit("navigate", nav.clone()).is_err() {
-                commands::queue_pending_nav(nav);
+            // If the renderer hasn't mounted yet, stash the nav for
+            // `renderer_ready` to drain. Otherwise fire-and-forget.
+            if commands::is_renderer_ready() {
+                let _ = app.emit(events::NAVIGATE, nav);
             } else {
                 commands::queue_pending_nav(nav);
             }
@@ -125,15 +116,23 @@ pub fn run() {
                 let _ = app.deep_link().register("lemonade");
             }
 
-            // Forward maximize/unmaximize as "maximize-change" events so
-            // TitleBar.tsx stays in sync with the window state.
+            // Forward maximize state changes so TitleBar.tsx stays in sync
+            // with the window. Emitted on every resize, guarded by
+            // change-detection to avoid flooding the renderer.
             if let Some(window) = app.get_webview_window("main") {
                 let emitter = app_handle.clone();
                 let window_clone = window.clone();
+                let last_maximized = std::sync::atomic::AtomicBool::new(false);
                 window.on_window_event(move |event| {
                     if matches!(event, WindowEvent::Resized(_)) {
                         if let Ok(maximized) = window_clone.is_maximized() {
-                            let _ = emitter.emit("maximize-change", maximized);
+                            let prev = last_maximized.swap(
+                                maximized,
+                                std::sync::atomic::Ordering::Relaxed,
+                            );
+                            if prev != maximized {
+                                let _ = emitter.emit(events::MAXIMIZE_CHANGE, maximized);
+                            }
                         }
                     }
                 });

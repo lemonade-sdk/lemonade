@@ -1,6 +1,8 @@
-// Port of Electron main.js settings management (lines 27-349).
-// Reads/writes app_settings.json from the Lemonade cache directory (~/.cache/lemonade/),
-// sanitizing values and applying defaults for missing/invalid fields.
+//! App-settings persistence. Reads and writes `~/.cache/lemonade/app_settings.json`,
+//! sanitizing values and applying defaults for missing/invalid fields before
+//! handing the struct back to the renderer. The JSON shape matches what the
+//! existing React renderer expects (each user-tunable field is a
+//! `{ value, useDefault }` envelope).
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -9,7 +11,7 @@ use std::path::PathBuf;
 
 const SETTINGS_FILE_NAME: &str = "app_settings.json";
 
-// ---------- Default values (match main.js) ----------
+// ---------- Default values ----------
 
 fn default_temperature() -> f64 {
     0.7
@@ -22,18 +24,6 @@ fn default_top_p() -> f64 {
 }
 fn default_repeat_penalty() -> f64 {
     1.1
-}
-fn default_enable_thinking() -> bool {
-    true
-}
-fn default_collapse_thinking() -> bool {
-    false
-}
-fn default_base_url() -> String {
-    String::new()
-}
-fn default_api_key() -> String {
-    String::new()
 }
 
 fn default_layout() -> LayoutSettings {
@@ -75,7 +65,6 @@ fn default_tts() -> TtsSettings {
 
 // ---------- Types ----------
 
-// Generic { value, useDefault } setting — value type varies, so Value.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypedSetting {
     pub value: Value,
@@ -140,19 +129,19 @@ impl Default for AppSettings {
                 use_default: true,
             },
             enable_thinking: TypedSetting {
-                value: Value::Bool(default_enable_thinking()),
+                value: Value::Bool(true),
                 use_default: true,
             },
             collapse_thinking_by_default: TypedSetting {
-                value: Value::Bool(default_collapse_thinking()),
+                value: Value::Bool(false),
                 use_default: true,
             },
             base_url: TypedSetting {
-                value: Value::String(default_base_url()),
+                value: Value::String(String::new()),
                 use_default: true,
             },
             api_key: TypedSetting {
-                value: Value::String(default_api_key()),
+                value: Value::String(String::new()),
                 use_default: true,
             },
             layout: default_layout(),
@@ -163,16 +152,11 @@ impl Default for AppSettings {
 
 // ---------- Path helpers ----------
 
-fn cache_directory() -> Option<PathBuf> {
-    let home = dirs::home_dir()?;
-    Some(home.join(".cache").join("lemonade"))
-}
-
 fn settings_file_path() -> Option<PathBuf> {
-    Some(cache_directory()?.join(SETTINGS_FILE_NAME))
+    Some(dirs::home_dir()?.join(".cache").join("lemonade").join(SETTINGS_FILE_NAME))
 }
 
-// ---------- Clamp / sanitize helpers ----------
+// ---------- Sanitize helpers ----------
 
 fn json_num(value: f64) -> Value {
     serde_json::Number::from_f64(value)
@@ -180,198 +164,121 @@ fn json_num(value: f64) -> Value {
         .unwrap_or(Value::Null)
 }
 
-fn clamp_f64(value: f64, min: f64, max: f64) -> f64 {
-    if !value.is_finite() {
-        return min;
+/// Apply a typed setting from `incoming[key]` onto `slot`, filtering the new
+/// value through `extract`. If `useDefault` is true or the raw value fails
+/// extraction, the slot's existing default is preserved.
+fn apply_typed_setting<F>(incoming: &Value, key: &str, slot: &mut TypedSetting, extract: F)
+where
+    F: FnOnce(&Value) -> Option<Value>,
+{
+    let Some(raw) = incoming.get(key).and_then(Value::as_object) else {
+        return;
+    };
+    if let Some(use_default) = raw.get("useDefault").and_then(Value::as_bool) {
+        slot.use_default = use_default;
     }
-    value.max(min).min(max)
+    if slot.use_default {
+        return;
+    }
+    if let Some(new_value) = raw.get("value").and_then(extract) {
+        slot.value = new_value;
+    }
 }
 
-fn clamp_i64(value: i64, min: i64, max: i64) -> i64 {
-    value.max(min).min(max)
+fn extract_bool(v: &Value) -> Option<Value> {
+    v.as_bool().map(Value::Bool)
 }
 
-// Sanitize an incoming JSON blob into an AppSettings.
-// Mirrors main.js `sanitizeAppSettings` (lines 196-317). For each field:
-//   - if the field is present and well-formed, use its value clamped to limits
-//   - otherwise fall back to the default
-// Numeric `useDefault` means "ignore the provided value, keep the default".
-pub fn sanitize_app_settings(incoming: &Value) -> AppSettings {
-    let mut sanitized = AppSettings::default();
+fn extract_string(v: &Value) -> Option<Value> {
+    v.as_str().map(|s| Value::String(s.to_string()))
+}
 
-    // Numeric settings: temperature, topK, topP, repeatPenalty
-    let numeric_limits: &[(&str, f64, f64, bool)] = &[
-        ("temperature", 0.0, 2.0, false),
-        ("topK", 1.0, 100.0, true),
-        ("topP", 0.0, 1.0, false),
-        ("repeatPenalty", 1.0, 2.0, false),
-    ];
+fn extract_clamped_f64(min: f64, max: f64) -> impl Fn(&Value) -> Option<Value> {
+    move |v| v.as_f64().map(|n| json_num(n.clamp(min, max)))
+}
 
-    for (key, min, max, is_int) in numeric_limits.iter().copied() {
-        if let Some(raw) = incoming.get(key).and_then(Value::as_object) {
-            let use_default = raw.get("useDefault").and_then(Value::as_bool).unwrap_or(true);
-            let current_slot = match key {
-                "temperature" => &mut sanitized.temperature,
-                "topK" => &mut sanitized.top_k,
-                "topP" => &mut sanitized.top_p,
-                "repeatPenalty" => &mut sanitized.repeat_penalty,
-                _ => unreachable!(),
-            };
-            current_slot.use_default = use_default;
-            if !use_default {
-                if let Some(raw_val) = raw.get("value").and_then(Value::as_f64) {
-                    let clamped = clamp_f64(raw_val, min, max);
-                    current_slot.value = if is_int {
-                        Value::from(clamped as i64)
-                    } else {
-                        json_num(clamped)
-                    };
-                }
-            }
-        }
+fn extract_clamped_i64(min: i64, max: i64) -> impl Fn(&Value) -> Option<Value> {
+    move |v| {
+        v.as_f64()
+            .filter(|n| n.is_finite())
+            .map(|n| Value::from(((n.round()) as i64).clamp(min, max)))
     }
+}
 
-    // enableThinking
-    if let Some(raw) = incoming.get("enableThinking").and_then(Value::as_object) {
-        let use_default = raw
-            .get("useDefault")
-            .and_then(Value::as_bool)
-            .unwrap_or(sanitized.enable_thinking.use_default);
-        sanitized.enable_thinking.use_default = use_default;
-        if !use_default {
-            if let Some(v) = raw.get("value").and_then(Value::as_bool) {
-                sanitized.enable_thinking.value = Value::Bool(v);
-            }
-        }
-    }
+/// Sanitize an incoming JSON blob into an `AppSettings`. For each field, use
+/// the provided value (clamped to its valid range) when `useDefault` is false;
+/// otherwise keep the default. Mirrors the original Electron main.js behavior
+/// byte-for-byte so renderer state round-trips without drift.
+pub(crate) fn sanitize_app_settings(incoming: &Value) -> AppSettings {
+    let mut s = AppSettings::default();
 
-    // collapseThinkingByDefault
-    if let Some(raw) = incoming.get("collapseThinkingByDefault").and_then(Value::as_object) {
-        let use_default = raw
-            .get("useDefault")
-            .and_then(Value::as_bool)
-            .unwrap_or(sanitized.collapse_thinking_by_default.use_default);
-        sanitized.collapse_thinking_by_default.use_default = use_default;
-        if !use_default {
-            if let Some(v) = raw.get("value").and_then(Value::as_bool) {
-                sanitized.collapse_thinking_by_default.value = Value::Bool(v);
-            }
-        }
-    }
+    apply_typed_setting(incoming, "temperature", &mut s.temperature, extract_clamped_f64(0.0, 2.0));
+    apply_typed_setting(incoming, "topK", &mut s.top_k, extract_clamped_i64(1, 100));
+    apply_typed_setting(incoming, "topP", &mut s.top_p, extract_clamped_f64(0.0, 1.0));
+    apply_typed_setting(
+        incoming,
+        "repeatPenalty",
+        &mut s.repeat_penalty,
+        extract_clamped_f64(1.0, 2.0),
+    );
+    apply_typed_setting(incoming, "enableThinking", &mut s.enable_thinking, extract_bool);
+    apply_typed_setting(
+        incoming,
+        "collapseThinkingByDefault",
+        &mut s.collapse_thinking_by_default,
+        extract_bool,
+    );
+    apply_typed_setting(incoming, "baseURL", &mut s.base_url, extract_string);
+    apply_typed_setting(incoming, "apiKey", &mut s.api_key, extract_string);
 
-    // baseURL
-    if let Some(raw) = incoming.get("baseURL").and_then(Value::as_object) {
-        let use_default = raw
-            .get("useDefault")
-            .and_then(Value::as_bool)
-            .unwrap_or(sanitized.base_url.use_default);
-        sanitized.base_url.use_default = use_default;
-        if !use_default {
-            if let Some(v) = raw.get("value").and_then(Value::as_str) {
-                sanitized.base_url.value = Value::String(v.to_string());
-            }
-        }
-    }
-
-    // apiKey
-    if let Some(raw) = incoming.get("apiKey").and_then(Value::as_object) {
-        let use_default = raw
-            .get("useDefault")
-            .and_then(Value::as_bool)
-            .unwrap_or(sanitized.api_key.use_default);
-        sanitized.api_key.use_default = use_default;
-        if !use_default {
-            if let Some(v) = raw.get("value").and_then(Value::as_str) {
-                sanitized.api_key.value = Value::String(v.to_string());
-            }
-        }
-    }
-
-    // layout
     if let Some(raw_layout) = incoming.get("layout").and_then(Value::as_object) {
-        // Booleans
-        for (key, slot) in [
-            (
-                "isChatVisible",
-                &mut sanitized.layout.is_chat_visible as *mut bool,
-            ),
-            (
-                "isModelManagerVisible",
-                &mut sanitized.layout.is_model_manager_visible as *mut bool,
-            ),
-            (
-                "isMarketplaceVisible",
-                &mut sanitized.layout.is_marketplace_visible as *mut bool,
-            ),
-            (
-                "isLogsVisible",
-                &mut sanitized.layout.is_logs_visible as *mut bool,
-            ),
-        ] {
+        let set_bool = |key: &str, slot: &mut bool| {
             if let Some(v) = raw_layout.get(key).and_then(Value::as_bool) {
-                // SAFETY: each pointer refers to a distinct field of `sanitized.layout`
-                // and we only use it inside this block.
-                unsafe {
-                    *slot = v;
-                }
+                *slot = v;
             }
-        }
+        };
+        set_bool("isChatVisible", &mut s.layout.is_chat_visible);
+        set_bool("isModelManagerVisible", &mut s.layout.is_model_manager_visible);
+        set_bool("isMarketplaceVisible", &mut s.layout.is_marketplace_visible);
+        set_bool("isLogsVisible", &mut s.layout.is_logs_visible);
 
-        // Numeric layout sizes with limits
-        let layout_limits: &[(&str, i64, i64)] = &[
-            ("modelManagerWidth", 200, 500),
-            ("chatWidth", 250, 800),
-            ("logsHeight", 100, 400),
-        ];
-        for (key, min, max) in layout_limits.iter().copied() {
+        let clamp_size = |key: &str, min: i64, max: i64, slot: &mut i64| {
             if let Some(v) = raw_layout.get(key).and_then(Value::as_f64) {
                 if v.is_finite() {
-                    let rounded = v.round() as i64;
-                    let clamped = clamp_i64(rounded, min, max);
-                    match key {
-                        "modelManagerWidth" => sanitized.layout.model_manager_width = clamped,
-                        "chatWidth" => sanitized.layout.chat_width = clamped,
-                        "logsHeight" => sanitized.layout.logs_height = clamped,
-                        _ => {}
-                    }
+                    *slot = (v.round() as i64).clamp(min, max);
                 }
             }
-        }
+        };
+        clamp_size("modelManagerWidth", 200, 500, &mut s.layout.model_manager_width);
+        clamp_size("chatWidth", 250, 800, &mut s.layout.chat_width);
+        clamp_size("logsHeight", 100, 400, &mut s.layout.logs_height);
     }
 
-    // tts: sanitize each field similarly
     if let Some(raw_tts) = incoming.get("tts").and_then(Value::as_object) {
+        let raw_tts_value = Value::Object(raw_tts.clone());
         for (key, slot) in [
-            ("model", &mut sanitized.tts.model),
-            ("userVoice", &mut sanitized.tts.user_voice),
-            ("assistantVoice", &mut sanitized.tts.assistant_voice),
-            ("enableTTS", &mut sanitized.tts.enable_tts),
-            ("enableUserTTS", &mut sanitized.tts.enable_user_tts),
+            ("model", &mut s.tts.model),
+            ("userVoice", &mut s.tts.user_voice),
+            ("assistantVoice", &mut s.tts.assistant_voice),
+            ("enableTTS", &mut s.tts.enable_tts),
+            ("enableUserTTS", &mut s.tts.enable_user_tts),
         ] {
-            if let Some(raw) = raw_tts.get(key).and_then(Value::as_object) {
-                let use_default = raw
-                    .get("useDefault")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(slot.use_default);
-                slot.use_default = use_default;
-                if !use_default {
-                    if let Some(v) = raw.get("value") {
-                        // Only string or bool accepted (mirrors main.js)
-                        if v.is_string() || v.is_boolean() {
-                            slot.value = v.clone();
-                        }
-                    }
+            apply_typed_setting(&raw_tts_value, key, slot, |v| {
+                if v.is_string() || v.is_boolean() {
+                    Some(v.clone())
+                } else {
+                    None
                 }
-            }
+            });
         }
     }
 
-    sanitized
+    s
 }
 
 // ---------- Read / write ----------
 
-pub fn read_app_settings() -> AppSettings {
+pub(crate) fn read_app_settings() -> AppSettings {
     let Some(path) = settings_file_path() else {
         return AppSettings::default();
     };
@@ -384,16 +291,15 @@ pub fn read_app_settings() -> AppSettings {
                 AppSettings::default()
             }
         },
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => AppSettings::default(),
         Err(err) => {
-            if err.kind() != std::io::ErrorKind::NotFound {
-                log::error!("Failed to read app settings file: {err}");
-            }
+            log::error!("Failed to read app settings file: {err}");
             AppSettings::default()
         }
     }
 }
 
-pub fn write_app_settings(incoming: &Value) -> Result<AppSettings, String> {
+pub(crate) fn write_app_settings(incoming: &Value) -> Result<AppSettings, String> {
     let path = settings_file_path()
         .ok_or_else(|| "Unable to locate the Lemonade home directory".to_string())?;
 
@@ -410,17 +316,12 @@ pub fn write_app_settings(incoming: &Value) -> Result<AppSettings, String> {
     Ok(sanitized)
 }
 
-// Extract just the base URL string from settings (returns None if unset or invalid).
-// Mirrors main.js `getBaseURLFromConfig` + `normalizeServerUrl` (lines 52-78, 355-367).
-pub fn get_base_url_from_config() -> Option<String> {
-    let settings = read_app_settings();
-    let raw = settings.base_url.value.as_str()?;
-    normalize_server_url(raw)
+pub(crate) fn get_base_url_from_config() -> Option<String> {
+    normalize_server_url(read_app_settings().base_url.value.as_str()?)
 }
 
-pub fn get_api_key_from_config() -> String {
-    let settings = read_app_settings();
-    settings
+pub(crate) fn get_api_key_from_config() -> String {
+    read_app_settings()
         .api_key
         .value
         .as_str()
@@ -428,12 +329,11 @@ pub fn get_api_key_from_config() -> String {
         .unwrap_or_default()
 }
 
-pub fn normalize_server_url(url: &str) -> Option<String> {
+pub(crate) fn normalize_server_url(url: &str) -> Option<String> {
     let trimmed = url.trim();
     if trimmed.is_empty() {
         return None;
     }
-
     let with_scheme = if trimmed.to_ascii_lowercase().starts_with("http://")
         || trimmed.to_ascii_lowercase().starts_with("https://")
     {
@@ -441,9 +341,7 @@ pub fn normalize_server_url(url: &str) -> Option<String> {
     } else {
         format!("http://{trimmed}")
     };
-
     let trimmed_trailing = with_scheme.trim_end_matches('/').to_string();
-
     match url::Url::parse(&trimmed_trailing) {
         Ok(_) => Some(trimmed_trailing),
         Err(err) => {
