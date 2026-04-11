@@ -46,13 +46,28 @@ async function installTauriApi(): Promise<void> {
 
   // Subscribe to a Tauri event, matching the Electron callback shape (handler
   // receives just the payload, not the whole event envelope).
+  //
+  // The `cancelled` flag handles the unmount-before-listen-resolves race: if
+  // the caller invokes the returned cleanup before `listen()` has returned its
+  // unlisten handle, we set the flag and run the unlisten immediately when the
+  // promise eventually resolves. Without this, React effects that mount and
+  // unmount synchronously would leak the underlying subscription.
   function on<T>(channel: string, cb: (payload: T) => void): () => void {
     let unlisten: (() => void) | null = null;
+    let cancelled = false;
     listen<T>(channel, (event) => cb(event.payload)).then((fn) => {
-      unlisten = fn;
+      if (cancelled) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
     });
     return () => {
-      if (unlisten) unlisten();
+      cancelled = true;
+      if (unlisten) {
+        unlisten();
+        unlisten = null;
+      }
     };
   }
 

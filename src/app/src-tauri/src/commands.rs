@@ -8,6 +8,14 @@ use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
+// Note: `discover_server_port` deliberately does NOT spin up a second UDP
+// socket on port 13305. The background listener (started in `lib.rs::setup`)
+// already owns that socket for the process lifetime and keeps the cached port
+// in sync; a second `bind()` would fail with `EADDRINUSE` on Linux without
+// `SO_REUSEPORT`. The command therefore just reads the cached value, which the
+// listener has already populated (or left at the default `BEACON_PORT` if no
+// beacon has been seen yet).
+
 // ---------- Window controls ----------
 
 fn main_window(app: &AppHandle) -> Option<WebviewWindow> {
@@ -147,17 +155,18 @@ pub(crate) fn get_server_port() -> u16 {
 }
 
 #[tauri::command]
-pub(crate) async fn discover_server_port(app: AppHandle) -> Option<u16> {
+pub(crate) fn discover_server_port(_app: AppHandle) -> Option<u16> {
     if settings::get_base_url_from_config().is_some() {
         log::info!("Port discovery skipped - explicit server URL configured");
         tray_launcher::ensure_tray_running();
         return None;
     }
 
-    let port = beacon::discover_server_port_once().await;
-    beacon::set_cached_port(port);
-    let _ = app.emit(events::SERVER_PORT_UPDATED, port);
-    Some(port)
+    // Background listener owns the bound socket and is the single source of
+    // truth. No emit here — the listener already fires `server-port-updated`
+    // on actual changes, and unconditionally re-emitting would spam subscribers
+    // with no-op updates.
+    Some(beacon::get_cached_port())
 }
 
 // ---------- Misc ----------

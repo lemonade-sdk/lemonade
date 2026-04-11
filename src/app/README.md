@@ -57,30 +57,35 @@ src/app/
     ├── icons/                     # Generated app icons (32x32/128x128/ico/icns)
     └── src/
         ├── main.rs                # Entry point (binary)
-        ├── lib.rs                 # Tauri builder, plugin wiring
-        ├── commands.rs            # #[tauri::command] handlers
+        ├── lib.rs                 # Tauri builder, plugin wiring, deep-link routing
+        ├── commands.rs            # #[tauri::command] handlers (window, settings, port)
+        ├── events.rs              # Tauri event channel name constants
         ├── settings.rs            # app_settings.json read/write + sanitize
-        ├── beacon.rs              # UDP beacon discovery + background listener
-        ├── system_info.rs         # /api/v1/system-stats + system-info proxy
-        └── tray_launcher.rs       # macOS-only tray auto-start helper
+        ├── beacon.rs              # UDP beacon listener (single bound socket)
+        ├── tray_launcher.rs       # macOS-only tray auto-start helper
+        └── webview_shim.rs        # Per-platform webview hooks (mic permission, link interception)
 ```
+
+> `/health`, `/system-stats`, and `/system-info` are NOT proxied through Rust. The renderer fetches them directly via `serverConfig.fetch(...)`; see `StatusBar.tsx` and `AboutModal.tsx`.
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────┐
-│  Tauri Rust Host (src-tauri/)                │
-│  Window mgmt, IPC commands, background tasks │
-│  UDP beacon listener, settings file I/O      │
-├──────────────────────────────────────────────┤
-│  tauriShim.ts (installs window.api in webview)│
-│  Maps window.api.* → invoke() / listen()     │
-├──────────────────────────────────────────────┤
-│  React Renderer (TypeScript, shared with     │
-│  src/web-app/ via symlink)                   │
-├──────────────────────────────────────────────┤
-│  HTTP API → lemond (C++ server)              │
-└──────────────────────────────────────────────┘
+┌────────────────────────────────────────────────┐
+│  Tauri Rust Host (src-tauri/)                  │
+│  Window mgmt, IPC commands, background tasks   │
+│  UDP beacon listener, settings file I/O        │
+├────────────────────────────────────────────────┤
+│  tauriShim.ts (installs window.api in webview) │
+│  Maps window.api.* → invoke() / listen()       │
+├────────────────────────────────────────────────┤
+│  React Renderer (TypeScript)                   │
+│  Source lives in src/app/src/; the web-app     │
+│  build (src/web-app/) reuses it via webpack    │
+│  relative entry/template paths — no symlinks.  │
+├────────────────────────────────────────────────┤
+│  HTTP API → lemond (C++ server)                │
+└────────────────────────────────────────────────┘
 ```
 
 ## Prerequisites
