@@ -170,18 +170,29 @@ fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
 
 #[cfg(target_os = "macos")]
 fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
-    // `WKUserScript::alloc()` is provided by objc2's `MainThreadOnly` trait.
-    // rustc 1.94+ enforces the trait-in-scope rule consistently for method
-    // dispatch through inherent-method-on-trait paths; older toolchains let
-    // this slide. The trait is re-exported at the crate root in
-    // objc2 0.6.x — do NOT use `objc2::top_level_traits::MainThreadOnly`
-    // because that module is `mod top_level_traits;` (private), even
-    // though one of rustc's E0599 hints will sometimes suggest it.
-    use objc2::MainThreadOnly;
+    // `WKUserScript::alloc(mtm: MainThreadMarker)` is provided by objc2's
+    // `MainThreadOnly` trait. rustc 1.94+ enforces both:
+    //   1. The trait must be in scope at the call site (E0599 if missing).
+    //   2. The required `MainThreadMarker` argument must be supplied (E0061
+    //      if missing — `alloc()` is not zero-arg even though older objc2
+    //      examples appear to call it that way).
+    // Tauri's webview setup hook always runs on the main thread on macOS, so
+    // `MainThreadMarker::new()` will Some — `expect()` would only panic on
+    // a future Tauri change that violates that assumption, in which case a
+    // loud crash here is exactly what we want.
+    //
+    // Note: `MainThreadOnly` is re-exported at the objc2 crate root in
+    // 0.6.x. Don't use `objc2::top_level_traits::MainThreadOnly` — that
+    // module is `mod top_level_traits;` (private), even though one of
+    // rustc's E0599 hints will sometimes suggest it.
+    use objc2::{MainThreadMarker, MainThreadOnly};
     use objc2_foundation::NSString;
     use objc2_web_kit::{
         WKUserContentController, WKUserScript, WKUserScriptInjectionTime,
     };
+
+    let mtm = MainThreadMarker::new()
+        .expect("install_platform_shim must be called on the main thread");
 
     // SAFETY: PlatformWebview::controller() returns a non-null
     // WKUserContentController for the lifetime of the window. We only borrow
@@ -189,7 +200,7 @@ fn install_platform_shim(webview: tauri::webview::PlatformWebview) {
     // exact same way (see wry/src/wkwebview/mod.rs:780-787).
     unsafe {
         let manager: &WKUserContentController = &*webview.controller().cast();
-        let alloc = WKUserScript::alloc();
+        let alloc = WKUserScript::alloc(mtm);
         let source = NSString::from_str(CLICK_INTERCEPTOR_JS);
         let script = WKUserScript::initWithSource_injectionTime_forMainFrameOnly(
             alloc,

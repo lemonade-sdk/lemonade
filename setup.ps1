@@ -129,10 +129,11 @@ if (-not (Command-Exists "npm")) {
 
 Write-Host ""
 
-# Check Rust toolchain (required for the Tauri desktop app).
-# We don't bundle rustup. If it's missing, offer to download rustup-init.exe
-# and run it non-interactively. CI gets the auto-install path; interactive
-# users get a y/N prompt with the download URL shown first.
+# Check Rust toolchain (OPTIONAL — only needed for the Tauri desktop app).
+# Like setup.sh, this is split into a "detect" pass and an "install" pass
+# gated on a y/N prompt. CI mode skips the install by default; opt in via
+# LEMONADE_SETUP_TAURI=1. A failure to install Rust does NOT abort the
+# script — the C++ server build doesn't depend on it.
 Write-Info "Checking Rust toolchain installation..."
 
 # rustup may have installed cargo into ~/.cargo/bin without it being on PATH
@@ -145,17 +146,32 @@ if (-not (Command-Exists "cargo") -or -not (Command-Exists "rustc")) {
     }
 }
 
+$rustNeedsInstall = $false
 $rustWasJustInstalled = $false
 if (-not (Command-Exists "cargo") -or -not (Command-Exists "rustc")) {
-    Write-Warning "Rust toolchain (cargo/rustc) not found"
-    Write-Info "Rust is required to build the Tauri desktop app (cmake --target tauri-app)."
-    Write-Info "The official installer is rustup, downloaded from https://rustup.rs"
+    $rustNeedsInstall = $true
+    Write-Info "Rust toolchain not found (optional — only required for the Tauri desktop app)"
+} else {
+    Write-Success "Rust toolchain is installed"
+}
+
+if ($rustNeedsInstall) {
+    Write-Host ""
+    Write-Info "Optional Tauri desktop-app dependency:"
+    Write-Host "  - Rust toolchain (via rustup)"
+    Write-Info "This is ONLY needed if you want to build the Tauri desktop app"
+    Write-Info "(cmake --build --target tauri-app). The C++ server build does NOT need it."
     Write-Host ""
 
     $installRust = $false
     if ($env:CI -or $env:GITHUB_ACTIONS) {
-        Write-Info "CI environment detected, installing Rust non-interactively..."
-        $installRust = $true
+        if ($env:LEMONADE_SETUP_TAURI -eq "1") {
+            Write-Info "LEMONADE_SETUP_TAURI=1 detected, installing Rust in CI..."
+            $installRust = $true
+        } else {
+            Write-Info "CI environment detected, skipping optional Rust install."
+            Write-Info "Set LEMONADE_SETUP_TAURI=1 to enable in CI."
+        }
     } else {
         $reply = Read-Host "Install Rust via rustup now? (y/N)"
         if ($reply -match '^[Yy]$') {
@@ -166,38 +182,36 @@ if (-not (Command-Exists "cargo") -or -not (Command-Exists "rustc")) {
     if ($installRust) {
         $rustupInit = Join-Path $env:TEMP "rustup-init.exe"
         Write-Info "Downloading rustup-init.exe..."
+        $downloadOk = $true
         try {
             Invoke-WebRequest -UseBasicParsing -Uri "https://win.rustup.rs/x86_64" -OutFile $rustupInit
         } catch {
-            Write-Error-Custom "Failed to download rustup-init.exe: $_"
-            Write-Info "Install Rust manually from https://rustup.rs and re-run this script"
-            exit 1
+            Write-Warning "Failed to download rustup-init.exe: $_"
+            Write-Info "Install Rust manually from https://rustup.rs if you need the Tauri build."
+            $downloadOk = $false
         }
 
-        Write-Info "Running rustup-init.exe..."
-        & $rustupInit -y --default-toolchain stable --no-modify-path | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error-Custom "rustup install failed (exit code $LASTEXITCODE)"
-            exit 1
-        }
+        if ($downloadOk) {
+            Write-Info "Running rustup-init.exe..."
+            & $rustupInit -y --default-toolchain stable --no-modify-path | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "rustup install failed (exit code $LASTEXITCODE)"
+                Write-Info "Install Rust manually from https://rustup.rs if you need the Tauri build."
+            } else {
+                # Add cargo to PATH for the rest of this script's session.
+                $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+                $env:PATH = "$cargoBin;$env:PATH"
 
-        # Add cargo to PATH for the rest of this script's session.
-        $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
-        $env:PATH = "$cargoBin;$env:PATH"
-
-        if (Command-Exists "cargo") {
-            Write-Success "Rust toolchain installed"
-            $rustWasJustInstalled = $true
-        } else {
-            Write-Error-Custom "Rust install reported success but cargo is still not on PATH"
-            exit 1
+                if (Command-Exists "cargo") {
+                    Write-Success "Rust toolchain installed"
+                    $rustWasJustInstalled = $true
+                } else {
+                    Write-Warning "Rust install reported success but cargo is still not on PATH"
+                    Write-Info "Open a new shell if you need cargo for the Tauri build."
+                }
+            }
         }
-    } else {
-        Write-Info "Skipping Rust install. The Tauri desktop app target (tauri-app)"
-        Write-Info "will not be buildable until Rust is installed."
     }
-} else {
-    Write-Success "Rust toolchain is installed"
 }
 
 Write-Host ""
