@@ -824,17 +824,18 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND CARGO_EXECUTABLE)
     )
     list(FILTER TAURI_APP_SOURCES EXCLUDE REGEX "[/\\\\](node_modules|dist|target)[/\\\\]")
 
-    # Ensure cargo is on PATH when Tauri invokes it from `npx tauri build`.
-    get_filename_component(CARGO_BIN_DIR "${CARGO_EXECUTABLE}" DIRECTORY)
-
     # On macOS we need the .app bundle for productbuild; on Linux/Windows we
     # just need the bare executable and can skip Tauri's own bundlers.
+    # Each platform has a dedicated `npm run build:*` script in src/app/package.json
+    # so we can use the same `npm run <script>` invocation pattern as the
+    # previous electron-app target (which MSBuild custom-commands handle cleanly —
+    # `npm exec --` with cmd /c chaining breaks MSBuild's VCEnd label).
     if(APPLE)
-        set(TAURI_BUILD_FLAGS --bundles app)
+        set(TAURI_BUILD_SCRIPT "build:mac")
         set(TAURI_BUILD_OUTPUT_SOURCE "${TAURI_APP_CARGO_TARGET}/bundle/macos/lemonade-app.app")
         set(TAURI_COPY_COMMAND ${CMAKE_COMMAND} -E copy_directory "${TAURI_BUILD_OUTPUT_SOURCE}" "${TAURI_APP_UNPACKED_DIR}/lemonade-app.app")
     else()
-        set(TAURI_BUILD_FLAGS --no-bundle)
+        set(TAURI_BUILD_SCRIPT "build:nobundle")
         if(WIN32)
             set(TAURI_BUILD_OUTPUT_SOURCE "${TAURI_APP_CARGO_TARGET}/lemonade-app.exe")
         else()
@@ -845,14 +846,16 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND CARGO_EXECUTABLE)
 
     # Note: On Windows, NPM_COMMAND uses 'cmd /c' wrapper to handle npm.cmd batch file
     # Note: Avoid shell-special characters in echo messages (no parentheses, etc.)
+    # Note: `cargo` must be on PATH. CI uses dtolnay/rust-toolchain@stable which
+    # puts rustup's bin dir on PATH. Local developers get it via
+    # `setup.sh`/`setup.ps1` instructions.
     add_custom_command(
         OUTPUT "${TAURI_APP_OUTPUT}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${TAURI_APP_UNPACKED_DIR}"
         COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for Tauri app..."
         COMMAND ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} ci
         COMMAND ${CMAKE_COMMAND} -E echo "Building Tauri app..."
-        COMMAND ${CMAKE_COMMAND} -E env "PATH=${CARGO_BIN_DIR}:$ENV{PATH}"
-            ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} exec -- tauri build ${TAURI_BUILD_FLAGS}
+        COMMAND ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} run ${TAURI_BUILD_SCRIPT}
         COMMAND ${CMAKE_COMMAND} -E echo "Staging Tauri build output into ${TAURI_APP_UNPACKED_DIR}..."
         COMMAND ${TAURI_COPY_COMMAND}
         DEPENDS ${TAURI_APP_SOURCES}
@@ -1515,14 +1518,13 @@ if(UNIX AND NOT APPLE)
         set(APPIMAGE_EXPECTED_NAME "lemonade-app-${PROJECT_VERSION}-x86_64.AppImage")
         set(APPIMAGE_TAURI_OUTPUT_DIR "${TAURI_APP_CARGO_TARGET}/bundle/appimage")
 
-        # Set PROJECT_VERSION in the Tauri config before building so the AppImage
-        # artifact name matches the project version.
+        # Set PROJECT_VERSION in package.json before building. tauri.conf.json's
+        # `"version": "../package.json"` then inherits it, so the AppImage
+        # artifact name ends up as lemonade-app_<PROJECT_VERSION>_amd64.AppImage.
         set(TAURI_VERSION_CMD
-            ${CMAKE_COMMAND} -E env "PATH=${CARGO_BIN_DIR}:$ENV{PATH}"
             ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} version ${PROJECT_VERSION} --no-git-tag-version --allow-same-version)
         set(TAURI_APPIMAGE_BUILD_CMD
-            ${CMAKE_COMMAND} -E env "PATH=${CARGO_BIN_DIR}:$ENV{PATH}"
-            ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} exec -- tauri build --bundles appimage)
+            ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} run build:appimage)
 
         set(APPIMAGE_COMMANDS
             COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for Tauri AppImage build..."
