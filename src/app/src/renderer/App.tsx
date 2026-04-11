@@ -268,6 +268,11 @@ const AppContent: React.FC = () => {
   ]);
 
   const handleLeftDividerMouseDown = (e: React.MouseEvent) => {
+    // preventDefault stops the WebKit-based webview (Tauri) from starting a
+    // drag-text-selection on the divider, which would swallow our mousemove
+    // events and break the resize. Chromium ignored this implicitly; WebKit
+    // does not.
+    e.preventDefault();
     isDraggingRef.current = 'left';
     startXRef.current = e.clientX;
     startWidthRef.current = modelManagerWidth;
@@ -276,6 +281,7 @@ const AppContent: React.FC = () => {
   };
 
   const handleRightDividerMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
     isDraggingRef.current = 'right';
     startXRef.current = e.clientX;
     startWidthRef.current = chatWidth;

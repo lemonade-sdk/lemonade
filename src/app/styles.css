@@ -17,6 +17,46 @@ body {
     overflow: hidden;
 }
 
+/* WebKit-friendly app-chrome selection reset.
+ *
+ * Tauri uses the OS's native webview (webkit2gtk on Linux, WKWebView on macOS,
+ * WebView2 on Windows). WebKit's default drag-selection is more aggressive
+ * than Chromium's: clicking and dragging on a flex container will select
+ * entire blocks of UI chrome instead of just the text spans inside. That
+ * also breaks the resize-divider drag flow because the in-progress text
+ * selection swallows mousemove events. Disable user-select everywhere by
+ * default and explicitly opt-in on classes that legitimately host
+ * copy/paste-able text.
+ */
+html,
+body {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+input,
+textarea,
+[contenteditable="true"],
+.markdown-content,
+.markdown-content *,
+.chat-message,
+.chat-message *,
+.thinking-content,
+.thinking-content *,
+.log-line,
+.log-line *,
+.logs-window,
+.logs-window *,
+.about-modal-content,
+.about-modal-content *,
+.model-name,
+.model-size,
+code,
+pre {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
 /* Hide scrollbars globally */
 * {
     scrollbar-width: none; /* Firefox */
