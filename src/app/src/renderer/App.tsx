@@ -148,17 +148,25 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
-  // Handle lemonade:// protocol navigation from main process
+  // Handle lemonade:// protocol navigation from main process.
+  // Must await tauriReady because window.api is installed asynchronously
+  // and isn't available on the first render.
   useEffect(() => {
-    if (!window?.api?.onNavigate) return;
-    const unsubscribe = window.api.onNavigate((data: { view?: string; model?: string }) => {
-      if (data.view === 'logs') {
-        setIsLogsVisible(true);
-      }
-    });
-    // Tell main process that IPC listeners are active — safe to deliver pending nav
-    window?.api?.signalReady?.();
-    return unsubscribe;
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
+    (async () => {
+      const { tauriReady } = await import('./tauriShim');
+      await tauriReady;
+      if (cancelled || !window?.api?.onNavigate) return;
+      const unsub = window.api.onNavigate((data: { view?: string; model?: string }) => {
+        if (data.view === 'logs') {
+          setIsLogsVisible(true);
+        }
+      });
+      if (typeof unsub === 'function') unsubscribe = unsub;
+      window?.api?.signalReady?.();
+    })();
+    return () => { cancelled = true; unsubscribe?.(); };
   }, []);
 
   useEffect(() => {
