@@ -10,7 +10,7 @@ $ErrorActionPreference = "Stop"
 $Info = "Blue"
 $Success = "Green"
 $Warning = "Yellow"
-$Error = "Red"
+$ErrorColor = "Red"
 
 # Helper functions
 function Write-Info {
@@ -30,7 +30,7 @@ function Write-Warning {
 
 function Write-Error-Custom {
     param([string]$Message)
-    Write-Host "[ERROR] $Message" -ForegroundColor $Error
+    Write-Host "[ERROR] $Message" -ForegroundColor $ErrorColor
 }
 
 # Check if command exists
@@ -107,33 +107,11 @@ if (-not (Command-Exists "npm")) {
 
 Write-Host ""
 
-# Check and install Node.js and npm
-Write-Info "Checking Node.js and npm installation..."
-
-if (-not (Command-Exists "node")) {
-    Write-Error-Custom "Node.js not found"
-    Write-Info "Please install Node.js from https://nodejs.org/"
-    Write-Info "You can also use Chocolatey if installed: choco install nodejs"
-    exit 1
-} else {
-    Write-Success "Node.js is installed"
-}
-
-if (-not (Command-Exists "npm")) {
-    Write-Error-Custom "npm is not available"
-    Write-Info "Please reinstall Node.js or ensure npm is in your PATH"
-    exit 1
-} else {
-    Write-Success "npm is installed"
-}
-
-Write-Host ""
-
-# Check Rust toolchain (OPTIONAL — only needed for the Tauri desktop app).
+# Check Rust toolchain (OPTIONAL -- only needed for the Tauri desktop app).
 # Like setup.sh, this is split into a "detect" pass and an "install" pass
 # gated on a y/N prompt. CI mode skips the install by default; opt in via
 # LEMONADE_SETUP_TAURI=1. A failure to install Rust does NOT abort the
-# script — the C++ server build doesn't depend on it.
+# script -- the C++ server build doesn't depend on it.
 Write-Info "Checking Rust toolchain installation..."
 
 # rustup may have installed cargo into ~/.cargo/bin without it being on PATH
@@ -150,7 +128,7 @@ $rustNeedsInstall = $false
 $rustWasJustInstalled = $false
 if (-not (Command-Exists "cargo") -or -not (Command-Exists "rustc")) {
     $rustNeedsInstall = $true
-    Write-Info "Rust toolchain not found (optional — only required for the Tauri desktop app)"
+    Write-Info "Rust toolchain not found (optional -- only required for the Tauri desktop app)"
 } else {
     Write-Success "Rust toolchain is installed"
 }
@@ -258,7 +236,7 @@ Write-Host "==========================================" -ForegroundColor Green
 Write-Host ""
 
 # If we just installed Rust in this run, remind the user that their EXISTING
-# PowerShell sessions don't have cargo on PATH yet — rustup updates the user
+# PowerShell sessions don't have cargo on PATH yet -- rustup updates the user
 # PATH but only new shells pick it up.
 if ($rustWasJustInstalled) {
     Write-Warning "Rust was just installed."
