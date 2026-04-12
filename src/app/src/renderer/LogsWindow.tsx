@@ -103,7 +103,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
     }
 
     setLogs((prevLogs) => {
-      const lastSeq = lastSeqRef.current ?? -1;
+      const lastSeq = prevLogs.length > 0 ? prevLogs[prevLogs.length - 1].seq : -1;
       const newEntries = incomingEntries.filter((e) => e.seq > lastSeq);
       if (newEntries.length === 0) {
         return prevLogs;

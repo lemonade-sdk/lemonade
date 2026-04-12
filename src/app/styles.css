@@ -2384,17 +2384,13 @@ footer {
 
 .backend-name {
     display: inline-flex;
-    align-items: baseline;
+    align-items: center;
     gap: 6px;
     font-size: 0.74rem;
     line-height: 1.2;
     white-space: nowrap;
     min-width: max-content;
     flex-shrink: 0;
-}
-
-.backend-name .model-status-indicator {
-    transform: translateY(-0.5px);
 }
 
 .backend-inline-meta {

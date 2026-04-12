@@ -147,10 +147,13 @@ async function installTauriApi(): Promise<void> {
   (window as unknown as { api: typeof api }).api = api;
 }
 
-if (typeof window !== 'undefined' && isTauri() && !(window as unknown as { api?: unknown }).api) {
-  installTauriApi().catch((err) => {
-    console.error('Failed to install Tauri API shim', err);
-  });
-}
+// Exported so other modules (ServerConfig) can await window.api being ready
+// before reading from it. In pure-web mode the promise resolves immediately
+// (window.api is injected synchronously by the C++ server's HTML template).
+export let tauriReady: Promise<void> = Promise.resolve();
 
-export {};
+if (typeof window !== 'undefined' && isTauri() && !(window as unknown as { api?: unknown }).api) {
+  tauriReady = installTauriApi().catch((err) => {
+    console.error('Failed to install Tauri API shim', err);
+  }) as Promise<void>;
+}
