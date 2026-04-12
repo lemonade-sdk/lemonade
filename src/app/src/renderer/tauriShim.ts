@@ -97,6 +97,18 @@ async function installTauriApi(): Promise<void> {
       return on<boolean>(EVT_MAXIMIZE_CHANGE, callback);
     },
 
+    // Frameless-window edge resize. webkit2gtk does not draw resize handles on
+    // borderless windows, so the renderer paints its own invisible regions and
+    // calls this on mousedown. `getCurrentWindow().startResizeDragging` accepts
+    // the same direction strings the renderer uses (Left, TopRight, etc.).
+    startResizeDragging: (direction: string) => {
+      getCurrentWindow()
+        // The Tauri API uses a tagged enum at the type level but accepts the
+        // bare string at runtime; cast to keep the shim free of @tauri-apps types.
+        .startResizeDragging(direction as never)
+        .catch((e: unknown) => console.warn('startResizeDragging', e));
+    },
+
     writeClipboard: async (text: string) => {
       await writeText(String(text));
     },

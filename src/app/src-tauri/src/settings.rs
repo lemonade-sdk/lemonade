@@ -30,12 +30,20 @@ fn default_layout() -> LayoutSettings {
     LayoutSettings {
         is_chat_visible: true,
         is_model_manager_visible: true,
-        is_marketplace_visible: true,
+        left_panel_view: "models".to_string(),
         is_logs_visible: false,
         model_manager_width: 280,
         chat_width: 350,
         logs_height: 200,
     }
+}
+
+fn default_left_panel_view() -> String {
+    "models".to_string()
+}
+
+fn is_valid_left_panel_view(v: &str) -> bool {
+    matches!(v, "models" | "marketplace" | "backends" | "settings")
 }
 
 fn default_tts() -> TtsSettings {
@@ -77,7 +85,11 @@ pub struct TypedSetting {
 pub struct LayoutSettings {
     pub is_chat_visible: bool,
     pub is_model_manager_visible: bool,
-    pub is_marketplace_visible: bool,
+    // Renderer-side type is a string union: 'models' | 'marketplace' | 'backends' | 'settings'.
+    // Replaces the previous `is_marketplace_visible: bool` which silently dropped the user's
+    // selection on every save (renderer never sent that field).
+    #[serde(default = "default_left_panel_view")]
+    pub left_panel_view: String,
     pub is_logs_visible: bool,
     pub model_manager_width: i64,
     pub chat_width: i64,
@@ -85,12 +97,20 @@ pub struct LayoutSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct TtsSettings {
     pub model: TypedSetting,
+    #[serde(rename = "userVoice")]
     pub user_voice: TypedSetting,
+    #[serde(rename = "assistantVoice")]
     pub assistant_voice: TypedSetting,
+    // The renderer's TS type uses the all-caps acronym `enableTTS`. Default
+    // serde rename_all = "camelCase" would emit `enableTts`, which the
+    // renderer's mergeWithDefaultSettings cannot find — and crashes on with
+    // a TypeError because it walks Object.keys() and dereferences each one
+    // through the typed defaults map. Pin the JSON name explicitly.
+    #[serde(rename = "enableTTS")]
     pub enable_tts: TypedSetting,
+    #[serde(rename = "enableUserTTS")]
     pub enable_user_tts: TypedSetting,
 }
 
@@ -103,6 +123,11 @@ pub struct AppSettings {
     pub repeat_penalty: TypedSetting,
     pub enable_thinking: TypedSetting,
     pub collapse_thinking_by_default: TypedSetting,
+    // Renderer's TS type is `baseURL` (uppercase URL acronym). The default
+    // rename_all = "camelCase" would emit `baseUrl`, which the renderer's
+    // mergeWithDefaultSettings cannot find on the post-save round-trip.
+    // Pin the JSON name explicitly.
+    #[serde(rename = "baseURL")]
     pub base_url: TypedSetting,
     pub api_key: TypedSetting,
     pub layout: LayoutSettings,
@@ -239,8 +264,13 @@ pub(crate) fn sanitize_app_settings(incoming: &Value) -> AppSettings {
         };
         set_bool("isChatVisible", &mut s.layout.is_chat_visible);
         set_bool("isModelManagerVisible", &mut s.layout.is_model_manager_visible);
-        set_bool("isMarketplaceVisible", &mut s.layout.is_marketplace_visible);
         set_bool("isLogsVisible", &mut s.layout.is_logs_visible);
+
+        if let Some(view) = raw_layout.get("leftPanelView").and_then(Value::as_str) {
+            if is_valid_left_panel_view(view) {
+                s.layout.left_panel_view = view.to_string();
+            }
+        }
 
         let clamp_size = |key: &str, min: i64, max: i64, slot: &mut i64| {
             if let Some(v) = raw_layout.get(key).and_then(Value::as_f64) {
@@ -348,5 +378,83 @@ pub(crate) fn normalize_server_url(url: &str) -> Option<String> {
             log::warn!("Invalid server URL {url}: {err}");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The renderer's TS types use uppercase acronyms (`baseURL`, `enableTTS`,
+    /// `enableUserTTS`) and a string union for `leftPanelView`. The Rust struct
+    /// must serialize to those exact JSON keys, otherwise the renderer's
+    /// `mergeWithDefaultSettings` walks `Object.keys(rawTTS)` and crashes on
+    /// `defaults.tts['enableTts'].useDefault` — which the SettingsPanel catches
+    /// and reports as "failed to save settings".
+    #[test]
+    fn round_trip_preserves_renderer_keys() {
+        let incoming = json!({
+            "baseURL": { "value": "http://example:1234", "useDefault": false },
+            "apiKey": { "value": "secret", "useDefault": false },
+            "tts": {
+                "model": { "value": "kokoro-v1", "useDefault": true },
+                "userVoice": { "value": "fable", "useDefault": true },
+                "assistantVoice": { "value": "alloy", "useDefault": true },
+                "enableTTS": { "value": true, "useDefault": false },
+                "enableUserTTS": { "value": true, "useDefault": false },
+            },
+            "layout": {
+                "isChatVisible": true,
+                "isModelManagerVisible": true,
+                "leftPanelView": "marketplace",
+                "isLogsVisible": true,
+                "modelManagerWidth": 300,
+                "chatWidth": 400,
+                "logsHeight": 250,
+            }
+        });
+
+        let sanitized = sanitize_app_settings(&incoming);
+        let serialized = serde_json::to_value(&sanitized).expect("serialize");
+
+        // The output must use exactly the keys the renderer expects.
+        assert!(serialized.get("baseURL").is_some(), "baseURL key missing");
+        assert!(serialized.get("baseUrl").is_none(), "baseUrl (lowercase) leaked");
+
+        let tts = serialized.get("tts").and_then(|v| v.as_object()).expect("tts object");
+        assert!(tts.contains_key("enableTTS"), "enableTTS key missing");
+        assert!(tts.contains_key("enableUserTTS"), "enableUserTTS key missing");
+        assert!(!tts.contains_key("enableTts"), "enableTts (lowercase) leaked");
+        assert!(!tts.contains_key("enableUserTts"), "enableUserTts (lowercase) leaked");
+
+        let layout = serialized
+            .get("layout")
+            .and_then(|v| v.as_object())
+            .expect("layout object");
+        assert_eq!(
+            layout.get("leftPanelView").and_then(|v| v.as_str()),
+            Some("marketplace"),
+            "leftPanelView round-trip"
+        );
+        assert!(
+            !layout.contains_key("isMarketplaceVisible"),
+            "stale isMarketplaceVisible field leaked"
+        );
+
+        // The values themselves must round-trip cleanly.
+        let base_url = serialized
+            .pointer("/baseURL/value")
+            .and_then(|v| v.as_str());
+        assert_eq!(base_url, Some("http://example:1234"));
+    }
+
+    #[test]
+    fn left_panel_view_rejects_unknown_values() {
+        let incoming = json!({
+            "layout": { "leftPanelView": "definitely-not-a-real-view" }
+        });
+        let sanitized = sanitize_app_settings(&incoming);
+        assert_eq!(sanitized.layout.left_panel_view, "models", "fell back to default");
     }
 }

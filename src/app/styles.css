@@ -67,6 +67,90 @@ pre {
     display: none; /* Chrome, Safari, Opera */
 }
 
+/*
+ * Custom edge resize handles for the Tauri frameless window. webkit2gtk does
+ * not draw resize handles on borderless windows, so the renderer paints 8
+ * invisible regions on each edge and corner. The container is fixed-position
+ * with pointer-events: none so it never blocks normal clicks; only the child
+ * handles re-enable pointer-events. Z-index has to sit above the app layout
+ * but below modals — keep this in mind if you ever raise modal z-index.
+ */
+.window-resize-handles {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9000;
+}
+
+.resize-handle {
+    position: absolute;
+    pointer-events: auto;
+}
+
+.resize-handle-top {
+    top: 0;
+    left: 6px;
+    right: 6px;
+    height: 4px;
+    cursor: n-resize;
+}
+
+.resize-handle-bottom {
+    bottom: 0;
+    left: 6px;
+    right: 6px;
+    height: 4px;
+    cursor: s-resize;
+}
+
+.resize-handle-left {
+    top: 6px;
+    bottom: 6px;
+    left: 0;
+    width: 4px;
+    cursor: w-resize;
+}
+
+.resize-handle-right {
+    top: 6px;
+    bottom: 6px;
+    right: 0;
+    width: 4px;
+    cursor: e-resize;
+}
+
+.resize-handle-top-left {
+    top: 0;
+    left: 0;
+    width: 8px;
+    height: 8px;
+    cursor: nw-resize;
+}
+
+.resize-handle-top-right {
+    top: 0;
+    right: 0;
+    width: 8px;
+    height: 8px;
+    cursor: ne-resize;
+}
+
+.resize-handle-bottom-left {
+    bottom: 0;
+    left: 0;
+    width: 8px;
+    height: 8px;
+    cursor: sw-resize;
+}
+
+.resize-handle-bottom-right {
+    bottom: 0;
+    right: 0;
+    width: 8px;
+    height: 8px;
+    cursor: se-resize;
+}
+
 /* Title Bar Styles */
 .title-bar {
     display: flex;
@@ -1906,48 +1990,63 @@ footer {
     color: #f1f1f1;
 }
 
+/* Status indicators use a CSS circle instead of the Unicode ● character.
+ * WebKit (webkit2gtk, WKWebView) renders the ● glyph at a different size and
+ * baseline than Chromium, causing visual drift. A CSS circle with fixed
+ * width/height and border-radius: 50% renders identically on every engine.
+ * The text content is hidden via `font-size: 0` so the existing TSX markup
+ * doesn't need to change. */
 .model-status-indicator {
-    font-size: 0.72rem;
-    line-height: 1;
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    font-size: 0;
+    line-height: 0;
     flex-shrink: 0;
     justify-self: center;
+    vertical-align: middle;
 }
 
 .model-catalog-item .model-status-indicator {
     width: var(--catalog-status-indicator-width);
     text-align: center;
+    /* Override the fixed width for the catalog layout, but keep the circle
+       centered by using an inline-block + background approach */
+    width: 8px;
+    height: 8px;
 }
 
 /* Model is currently loaded (green) */
 .model-status-indicator.loaded {
-    color: #4CAF50;
-    filter: drop-shadow(0 0 2px rgba(74, 222, 128, 0.65));
+    background-color: #4CAF50;
+    box-shadow: 0 0 4px rgba(74, 222, 128, 0.65);
 }
 
 /* Model is available locally but not loaded (white) */
 .model-status-indicator.available {
-    color: #ffffff;
+    background-color: #ffffff;
 }
 
 /* Model is not downloaded (gray) */
 .model-status-indicator.not-downloaded {
-    color: #444;
+    background-color: #444;
 }
 
 .model-status-indicator.update-required {
-    color: #ffb74d;
-    filter: drop-shadow(0 0 2px rgba(255, 183, 77, 0.5));
+    background-color: #ffb74d;
+    box-shadow: 0 0 4px rgba(255, 183, 77, 0.5);
 }
 
 .model-status-indicator.unsupported {
-    color: #f44336;
+    background-color: #f44336;
 }
 
 /* Model is loading (pulsing animation) */
 .model-status-indicator.loading {
-    color: #4CAF50;
+    background-color: #4CAF50;
     animation: pulse 1.5s ease-in-out infinite;
-    filter: drop-shadow(0 0 2px rgba(74, 222, 128, 0.65));
+    box-shadow: 0 0 4px rgba(74, 222, 128, 0.65);
 }
 
 @keyframes pulse {
@@ -6414,6 +6513,8 @@ input::-webkit-calendar-picker-indicator {
 
 .image-setting input,
 .image-setting select {
+    -webkit-appearance: none;
+    appearance: none;
     background: #1a1a1a;
     border: 1px solid #333;
     border-radius: 4px;
@@ -6421,6 +6522,17 @@ input::-webkit-calendar-picker-indicator {
     padding: 6px 8px;
     font-size: 13px;
     width: 80px;
+}
+
+/* Custom dropdown arrow — needed because `appearance: none` strips the
+   native indicator on webkit2gtk (Tauri/Linux). */
+.image-setting select {
+    padding-right: 22px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 10px 6px;
+    cursor: pointer;
 }
 
 .image-setting input:focus,

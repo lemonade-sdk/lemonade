@@ -31,6 +31,8 @@ module.exports = {
     toggleMaximize: asyncNoop,
     close: asyncNoop,
     setZoom: asyncNoop,
+    startDragging: asyncNoop,
+    startResizeDragging: asyncNoop,
   }),
 
   // @tauri-apps/plugin-opener

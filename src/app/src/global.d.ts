@@ -1,5 +1,15 @@
 import type { AppSettings } from './renderer/utils/appSettings';
 
+export type ResizeDirection =
+  | 'Left'
+  | 'Right'
+  | 'Top'
+  | 'Bottom'
+  | 'TopLeft'
+  | 'TopRight'
+  | 'BottomLeft'
+  | 'BottomRight';
+
 declare module '*.svg' {
   const content: string;
   export default content;
@@ -38,6 +48,11 @@ declare global {
       updateMinWidth: (width: number) => void;
       zoomIn: () => void;
       zoomOut: () => void;
+      // Frameless windows on webkit2gtk get no edge resize handles from the OS,
+      // so the renderer paints invisible 6-px regions on each edge/corner and
+      // calls this from their mousedown handler. The Tauri shim forwards to
+      // `getCurrentWindow().startResizeDragging(direction)`. No-op in web mode.
+      startResizeDragging?: (direction: ResizeDirection) => void;
       getSettings?: () => Promise<AppSettings>;
       saveSettings?: (settings: AppSettings) => Promise<AppSettings>;
       onSettingsUpdated?: (callback: (settings: AppSettings) => void) => void | (() => void);

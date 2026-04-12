@@ -355,7 +355,36 @@ const AppContent: React.FC = () => {
         )}
       </div>
       <StatusBar />
+      <WindowResizeHandles />
     </ModelsProvider>
+  );
+};
+
+// Frameless windows on webkit2gtk (Tauri on Linux) get no resize handles from
+// the OS. We paint 8 invisible regions on each edge and corner of the window;
+// each one captures mousedown and asks Tauri to start a resize drag. Skipped
+// in web mode and when window controls are unavailable for any other reason.
+const WindowResizeHandles: React.FC = () => {
+  if (typeof window === 'undefined' || !window.api?.startResizeDragging || window.api?.isWebApp) {
+    return null;
+  }
+  const start = (direction: string) => (e: React.MouseEvent) => {
+    // Only the primary button initiates a resize.
+    if (e.button !== 0) return;
+    e.preventDefault();
+    window.api.startResizeDragging!(direction as never);
+  };
+  return (
+    <div className="window-resize-handles" aria-hidden="true">
+      <div className="resize-handle resize-handle-top" onMouseDown={start('Top')} />
+      <div className="resize-handle resize-handle-right" onMouseDown={start('Right')} />
+      <div className="resize-handle resize-handle-bottom" onMouseDown={start('Bottom')} />
+      <div className="resize-handle resize-handle-left" onMouseDown={start('Left')} />
+      <div className="resize-handle resize-handle-top-left" onMouseDown={start('TopLeft')} />
+      <div className="resize-handle resize-handle-top-right" onMouseDown={start('TopRight')} />
+      <div className="resize-handle resize-handle-bottom-left" onMouseDown={start('BottomLeft')} />
+      <div className="resize-handle resize-handle-bottom-right" onMouseDown={start('BottomRight')} />
+    </div>
   );
 };
 
