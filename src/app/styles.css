@@ -1562,8 +1562,14 @@ footer {
 }
 
 .loaded-model-indicator {
-    color: #4ade80;
-    font-size: 0.8rem;
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #4ade80;
+    font-size: 0;
+    line-height: 0;
+    vertical-align: middle;
     animation: pulse-glow 2s ease-in-out infinite;
 }
 
@@ -1998,8 +2004,8 @@ footer {
  * doesn't need to change. */
 .model-status-indicator {
     display: inline-block;
-    width: 8px;
-    height: 8px;
+    width: 5px;
+    height: 5px;
     border-radius: 50%;
     font-size: 0;
     line-height: 0;
@@ -2009,12 +2015,8 @@ footer {
 }
 
 .model-catalog-item .model-status-indicator {
-    width: var(--catalog-status-indicator-width);
-    text-align: center;
-    /* Override the fixed width for the catalog layout, but keep the circle
-       centered by using an inline-block + background approach */
-    width: 8px;
-    height: 8px;
+    width: 5px;
+    height: 5px;
 }
 
 /* Model is currently loaded (green) */

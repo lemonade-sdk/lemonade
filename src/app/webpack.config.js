@@ -50,6 +50,16 @@ module.exports = (env, argv) => ({
     filename: 'renderer.bundle.js',
     path: path.resolve(__dirname, 'dist/renderer'),
   },
+  devServer: {
+    port: 9123,
+    hot: true,
+    // Serve the same static assets (styles.css, favicon) that the production
+    // build copies into dist/renderer via HtmlWebpackPlugin.
+    static: {
+      directory: __dirname,
+      publicPath: '/',
+    },
+  },
   plugins: [
     new HtmlWebpackPlugin({
       template: './src/renderer/index.html',

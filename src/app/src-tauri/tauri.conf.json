@@ -4,9 +4,9 @@
   "version": "../package.json",
   "identifier": "com.lemonade.app",
   "build": {
-    "beforeDevCommand": "npm run build:renderer",
+    "beforeDevCommand": "npm run dev:renderer",
     "beforeBuildCommand": "npm run build:renderer:prod",
-    "devUrl": "http://localhost:9000",
+    "devUrl": "http://localhost:9123",
     "frontendDist": "../dist/renderer"
   },
   "app": {

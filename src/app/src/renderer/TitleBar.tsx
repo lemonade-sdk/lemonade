@@ -59,6 +59,15 @@ const TitleBar: React.FC<TitleBarProps> = ({
             setActiveMenu(null);
             break;
         }
+        // Zoom: Ctrl+= / Ctrl+- (or Cmd on Mac). event.key is '=' for
+        // the +/= key (Shift produces '+' but we accept both).
+        if (event.key === '=' || event.key === '+') {
+          event.preventDefault();
+          handleZoom('in');
+        } else if (event.key === '-') {
+          event.preventDefault();
+          handleZoom('out');
+        }
       }
       if ((event.ctrlKey || event.metaKey) && event.shiftKey) {
         switch (event.key.toLowerCase()) {
@@ -77,6 +86,11 @@ const TitleBar: React.FC<TitleBarProps> = ({
             onToggleLogs();
             setActiveMenu(null);
             break;
+        }
+        // Ctrl+Shift++ (the Windows shortcut label)
+        if (event.key === '+') {
+          event.preventDefault();
+          handleZoom('in');
         }
       }
     };

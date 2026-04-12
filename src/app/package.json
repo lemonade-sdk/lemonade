@@ -3,6 +3,7 @@
   "version": "10.2.0",
   "description": "Lemonade Desktop App (Tauri)",
   "scripts": {
+    "dev:renderer": "webpack serve --mode development",
     "build:renderer": "webpack --mode development",
     "build:renderer:prod": "webpack --mode production",
     "watch:renderer": "webpack --watch --mode development",
