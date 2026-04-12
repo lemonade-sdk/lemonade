@@ -11,6 +11,9 @@ pub mod webview_shim;
 
 use tauri::{Emitter, Manager, WindowEvent};
 
+#[cfg(target_os = "windows")]
+const ELECTRON_WINDOWS_ICON_BYTES: &[u8] = include_bytes!("../../assets/favicon.ico");
+
 fn parse_protocol_url(raw: &str) -> Option<serde_json::Value> {
     // lemonade://open?view=logs&model=foo
     // The url crate treats unknown schemes as opaque, so swap to http:// for
@@ -120,6 +123,13 @@ pub fn run() {
             // with the window. Emitted on every resize, guarded by
             // change-detection to avoid flooding the renderer.
             if let Some(window) = app.get_webview_window("main") {
+                #[cfg(target_os = "windows")]
+                {
+                    let icon =
+                        tauri::image::Image::from_bytes(ELECTRON_WINDOWS_ICON_BYTES)?;
+                    window.set_icon(icon)?;
+                }
+
                 webview_shim::apply(&window);
 
                 let emitter = app_handle.clone();
