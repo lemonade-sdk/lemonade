@@ -191,6 +191,7 @@ void FastFlowLMServer::load(const std::string& model_name,
         // ASR mode: flm serve --asr 1
         args = {
             "serve",
+            "gemma3:4b",
             "--asr", "1",
             "--port", std::to_string(port_),
             "--host", "127.0.0.1",
@@ -200,6 +201,7 @@ void FastFlowLMServer::load(const std::string& model_name,
         // Embedding mode: flm serve --embed 1
         args = {
             "serve",
+            "gemma3:4b",
             "--embed", "1",
             "--port", std::to_string(port_),
             "--host", "127.0.0.1",

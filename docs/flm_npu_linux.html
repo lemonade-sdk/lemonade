@@ -309,7 +309,7 @@
           <p>NPU workloads need memory locking. If you see <strong>Memlock limit is too low (8MB)</strong>, increase limits.</p>
           <p>
             <strong>Most users do not need manual changes when running Lemonade as a service:</strong>
-            Lemonade's systemd unit sets <code>LimitMEMLOCK=infinity</code>.
+            Lemonade's systemd unit sets <code>AmbientCapabilities=CAP_SYS_RESOURCE</code> which dynamically increases resource limits.
           </p>
           <p>If you run FLM outside the service, edit limits manually:</p>
           <div class="flm-code-block"><code>sudo nano /etc/security/limits.conf</code></div>
