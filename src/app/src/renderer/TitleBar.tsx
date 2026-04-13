@@ -5,6 +5,8 @@ import AboutModal from './AboutModal';
 type MenuType = 'file' | 'view' | 'help' | null;
 
 interface TitleBarProps {
+  theme: string;
+  setTheme: (theme: 'dark' | 'light') => void;
   isChatVisible: boolean;
   onToggleChat: () => void;
   isModelManagerVisible: boolean;
@@ -16,6 +18,8 @@ interface TitleBarProps {
 }
 
 const TitleBar: React.FC<TitleBarProps> = ({
+  theme,
+  setTheme,
   isChatVisible,
   onToggleChat,
   isModelManagerVisible,
@@ -182,6 +186,18 @@ const TitleBar: React.FC<TitleBarProps> = ({
                   <div className="menu-option" onClick={() => { onToggleLogs(); setActiveMenu(null); }}>
                     <span>{isLogsVisible ? '✓ ' : ''}Logs</span>
                     <span className="menu-shortcut">Ctrl+Shift+L</span>
+                  </div>
+                  <div className="menu-option has-submenu">
+                    <span>Theme</span>
+                    <span className="submenu-arrow">›</span>
+                    <div className="menu-submenu">
+                      <div className="menu-option new-model-submenu-option" title="Dark theme" onClick={() => { setTheme('dark'); setActiveMenu(null); }}>
+                        <span>{theme == 'dark' ? '✓ ' : ''}Dark</span>
+                      </div>
+                      <div className="menu-option new-model-submenu-option" title="Light theme" onClick={() => { setTheme('light'); setActiveMenu(null); }}>
+                        <span>{theme == 'light' ? '✓ ' : ''}Light (Experimental)</span>
+                      </div>
+                    </div>
                   </div>
                   <div className="menu-separator"></div>
                   <div className="menu-option" onClick={() => handleZoom('in')}>

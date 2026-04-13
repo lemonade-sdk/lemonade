@@ -23,6 +23,7 @@ const LAYOUT_CONSTANTS = {
 
 // Inner component that can use SystemProvider context
 const AppContent: React.FC = () => {
+  const [theme, setTheme] = useState(DEFAULT_LAYOUT_SETTINGS.theme);
   const [isChatVisible, setIsChatVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isChatVisible);
   const [isModelManagerVisible, setIsModelManagerVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isModelManagerVisible);
   const [leftPanelView, setLeftPanelView] = useState<LeftPanelView>('models');
@@ -46,6 +47,7 @@ const AppContent: React.FC = () => {
         if (window?.api?.getSettings) {
           const settings = await window.api.getSettings();
           if (settings.layout) {
+            setTheme(settings.layout.theme ?? DEFAULT_LAYOUT_SETTINGS.theme);
             setIsChatVisible(settings.layout.isChatVisible ?? DEFAULT_LAYOUT_SETTINGS.isChatVisible);
             setIsModelManagerVisible(settings.layout.isModelManagerVisible ?? DEFAULT_LAYOUT_SETTINGS.isModelManagerVisible);
             const savedView = settings.layout.leftPanelView;
@@ -82,6 +84,7 @@ const AppContent: React.FC = () => {
         await window.api.saveSettings({
           ...currentSettings,
           layout: {
+            theme,
             isChatVisible,
             isModelManagerVisible,
             leftPanelView,
@@ -95,7 +98,7 @@ const AppContent: React.FC = () => {
     } catch (error) {
       console.error('Failed to save layout settings:', error);
     }
-  }, [layoutLoaded, isChatVisible, isModelManagerVisible, leftPanelView, isLogsVisible, modelManagerWidth, chatWidth, logsHeight]);
+  }, [layoutLoaded, theme, isChatVisible, isModelManagerVisible, leftPanelView, isLogsVisible, modelManagerWidth, chatWidth, logsHeight]);
 
   // Debounced save effect
   useEffect(() => {
@@ -275,6 +278,10 @@ const AppContent: React.FC = () => {
     logsHeight,
   ]);
 
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
   const handleLeftDividerMouseDown = (e: React.MouseEvent) => {
     // preventDefault stops the WebKit-based webview (Tauri) from starting a
     // drag-text-selection on the divider, which would swallow our mousemove
@@ -302,8 +309,10 @@ const AppContent: React.FC = () => {
   }, []);
 
   return (
-    <ModelsProvider>
+    <>
       <TitleBar
+        theme={theme}
+        setTheme={setTheme}
         isChatVisible={isChatVisible}
         onToggleChat={() => setIsChatVisible(!isChatVisible)}
         isModelManagerVisible={isModelManagerVisible}
@@ -326,7 +335,7 @@ const AppContent: React.FC = () => {
           onViewChange={setLeftPanelView}
         />
         {isModelManagerVisible && (isLogsVisible || isChatVisible) && (
-          <ResizableDivider onMouseDown={handleLeftDividerMouseDown}/>
+          <ResizableDivider onMouseDown={handleLeftDividerMouseDown} />
         )}
         {isLogsVisible && (
           <div className="main-content-container">
@@ -339,7 +348,7 @@ const AppContent: React.FC = () => {
         {isChatVisible && (
           <>
             {isLogsVisible && (
-              <ResizableDivider onMouseDown={handleRightDividerMouseDown}/>
+              <ResizableDivider onMouseDown={handleRightDividerMouseDown} />
             )}
             {externalContentUrl ? (
               <div className="chat-window" style={isLogsVisible ? { width: `${chatWidth}px` } : undefined}>
@@ -364,7 +373,7 @@ const AppContent: React.FC = () => {
       </div>
       <StatusBar />
       <WindowResizeHandles />
-    </ModelsProvider>
+    </>
   );
 };
 
@@ -396,11 +405,13 @@ const WindowResizeHandles: React.FC = () => {
   );
 };
 
-// Wrapper component that provides SystemProvider
+// Providers Wrapper
 const App: React.FC = () => {
   return (
     <SystemProvider>
-      <AppContent />
+      <ModelsProvider>
+        <AppContent />
+      </ModelsProvider>
     </SystemProvider>
   );
 };
