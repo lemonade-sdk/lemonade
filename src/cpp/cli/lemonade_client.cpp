@@ -9,6 +9,10 @@ namespace lemonade {
 
 using json = nlohmann::json;
 
+static const int DEFAULT_CONNECTION_TIMEOUT_MS = 30000;
+static const int DEFAULT_READ_TIMEOUT_MS = 30000;
+static const int LONG_TIMEOUT_MS = 86400000;
+
 HttpError::HttpError(int status, std::string body, const std::string& message)
     : std::runtime_error(message), status_code_(status), response_body_(std::move(body)) {}
 
@@ -34,7 +38,7 @@ std::string LemonadeClient::normalize_host(const std::string& host) const {
 
 // Helper to create and configure httplib::Client (timeouts in milliseconds)
 static httplib::Client make_client(const std::string& host, int port, const std::string& api_key,
-                                    int connection_timeout_ms = 30000, int read_timeout_ms = 30000) {
+                                    int connection_timeout_ms = DEFAULT_CONNECTION_TIMEOUT_MS, int read_timeout_ms = DEFAULT_READ_TIMEOUT_MS) {
     httplib::Client cli(host, port);
     cli.set_connection_timeout(connection_timeout_ms / 1000, (connection_timeout_ms % 1000) * 1000);
     cli.set_read_timeout(read_timeout_ms / 1000, (read_timeout_ms % 1000) * 1000);
@@ -475,7 +479,7 @@ int LemonadeClient::pull_model(const json& model_data) {
             } else {
                 parse_sse_progress(event_data, state);
             }
-        }, 86400000, 30000);
+        }, LONG_TIMEOUT_MS, DEFAULT_READ_TIMEOUT_MS);
 
         if (!state.success) {
             if (!state.error_message.empty()) {
@@ -580,7 +584,8 @@ int LemonadeClient::load_model(const std::string& model_name, const nlohmann::js
         request_body["model_name"] = model_name;
         request_body["save_options"] = save_options;
 
-        make_request("/api/v1/load", "POST", request_body.dump(), "application/json");
+        // since load can trigger a pull but doesn't send the related streaming events, we want long read timeouts.
+        make_request("/api/v1/load", "POST", request_body.dump(), "application/json", LONG_TIMEOUT_MS, LONG_TIMEOUT_MS);
 
         std::cout << "Model loaded successfully!" << std::endl;
         return 0;
@@ -762,7 +767,7 @@ int LemonadeClient::install_backend(const std::string& recipe, const std::string
             } else {
                 parse_sse_progress(event_data, state);
             }
-        }, 86400000, 30000);
+        }, LONG_TIMEOUT_MS, DEFAULT_READ_TIMEOUT_MS);
         if (!state.success) {
             if (!state.error_message.empty()) {
                 throw std::runtime_error(state.error_message);
