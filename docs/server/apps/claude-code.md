@@ -8,15 +8,15 @@ This guide focuses on the most common launch flows.
 
 1. Install Claude Code:
 
-```bash
-curl -fsSL https://claude.ai/install.sh | bash
-```
+    ```bash
+    curl -fsSL https://claude.ai/install.sh | bash
+    ```
 
-or:
+    or:
 
-```bash
-npm install -g @anthropic-ai/claude-code
-```
+    ```bash
+    npm install -g @anthropic-ai/claude-code
+    ```
 
 2. Make sure Lemonade Server is running (`lemond`).
 
@@ -39,6 +39,7 @@ lemonade launch claude
 ```
 
 You will get an interactive menu where you can:
+
 - Select a recipe to import and launch.
 - Browse downloaded models.
 - Browse recommended llama.cpp models (download may be required), then launch.
