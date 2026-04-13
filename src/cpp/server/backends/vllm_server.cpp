@@ -3,9 +3,11 @@
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
+#include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
 #include <filesystem>
+#include <fstream>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -13,6 +15,63 @@ using namespace lemon::utils;
 
 namespace lemon {
 namespace backends {
+
+// Parse quantization_config.quant_method from a config.json body.
+static std::string parse_quant_method(const std::string& config_json) {
+    try {
+        json j = json::parse(config_json);
+        if (j.contains("quantization_config")) {
+            const auto& qc = j["quantization_config"];
+            if (qc.contains("quant_method") && qc["quant_method"].is_string()) {
+                return qc["quant_method"].get<std::string>();
+            }
+        }
+    } catch (const std::exception&) {
+        // fall through
+    }
+    return "";
+}
+
+// Returns quantization_config.quant_method for the model, or empty string.
+// First checks the HuggingFace hub cache; if config.json isn't there yet,
+// fetches it over HTTP from huggingface.co directly. This ensures detection
+// works on first load before vLLM has downloaded anything.
+static std::string detect_quant_method(const std::string& model_id) {
+    // 1. Check HF cache first (fast path)
+    std::string hf_dir = "models--";
+    for (char c : model_id) {
+        if (c == '/') hf_dir += "--";
+        else hf_dir += c;
+    }
+
+    const char* home = std::getenv("HOME");
+    if (home) {
+        fs::path snapshots = fs::path(home) / ".cache" / "huggingface" / "hub" / hf_dir / "snapshots";
+        if (fs::exists(snapshots)) {
+            for (const auto& entry : fs::directory_iterator(snapshots)) {
+                if (!entry.is_directory()) continue;
+                fs::path cfg = entry.path() / "config.json";
+                if (!fs::exists(cfg)) continue;
+                std::ifstream f(cfg);
+                std::stringstream buf;
+                buf << f.rdbuf();
+                std::string result = parse_quant_method(buf.str());
+                if (!result.empty()) return result;
+            }
+        }
+    }
+
+    // 2. Fetch directly from HF
+    std::string url = "https://huggingface.co/" + model_id + "/resolve/main/config.json";
+    auto resp = HttpClient::get(url);
+    if (resp.status_code == 200) {
+        return parse_quant_method(resp.body);
+    }
+
+    LOG(DEBUG, "vLLM") << "Could not fetch config.json for " << model_id
+                       << " (http " << resp.status_code << "); skipping quant detection" << std::endl;
+    return "";
+}
 
 InstallParams VLLMServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
@@ -95,10 +154,19 @@ void VLLMServer::load(const std::string& model_name,
     args.push_back("float16");
     args.push_back("--max-model-len");
     args.push_back("2048");
-    // Force AWQ GEMM kernel for AWQ models (awq_marlin is very slow on consumer GPUs)
-    if (model_id.find("AWQ") != std::string::npos || model_id.find("awq") != std::string::npos) {
+    // Detect the actual quantization method from config.json rather than guessing
+    // from the model name. Repos named "...-AWQ" sometimes use compressed-tensors,
+    // GPTQ, etc. and forcing --quantization awq would fail the load.
+    // For AWQ specifically we force the 'awq' kernel because vLLM's default
+    // awq_marlin is very slow on consumer GPUs (2 tok/s -> 12 tok/s).
+    std::string quant_method = detect_quant_method(model_id);
+    if (quant_method == "awq") {
+        LOG(DEBUG, "vLLM") << "Detected AWQ; forcing --quantization awq" << std::endl;
         args.push_back("--quantization");
         args.push_back("awq");
+    } else if (!quant_method.empty()) {
+        LOG(DEBUG, "vLLM") << "Detected quantization '" << quant_method
+                           << "'; letting vLLM auto-select kernel" << std::endl;
     }
 
     // Append custom vllm_args if provided
