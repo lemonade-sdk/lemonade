@@ -664,7 +664,7 @@ Upon connection, the server sends a `session.created` message with a session ID.
 
 | Message Type | Description |
 |--------------|-------------|
-| `session.update` | Configure the session (set model, VAD settings) |
+| `session.update` | Configure the session (set model, VAD settings, or disable turn detection) |
 | `input_audio_buffer.append` | Send audio data (base64-encoded PCM16) |
 | `input_audio_buffer.commit` | Force transcription of buffered audio |
 | `input_audio_buffer.clear` | Clear audio buffer without transcribing |
@@ -743,6 +743,18 @@ VAD settings can be configured via `session.update`:
 | `silence_duration_ms` | 800 | Silence duration to trigger speech end |
 | `prefix_padding_ms` | 250 | Minimum speech duration before triggering |
 
+Set `turn_detection` to `null` to disable server-side VAD and use explicit commits instead:
+
+```json
+{
+  "type": "session.update",
+  "session": {
+    "model": "Whisper-Tiny",
+    "turn_detection": null
+  }
+}
+```
+
 #### Code Examples
 
 See the [`examples/`](../../examples/) directory for a complete, runnable example:
@@ -759,7 +771,7 @@ python examples/realtime_transcription.py --model Whisper-Tiny
 - **Audio Format**: Server expects 16kHz mono PCM16. Higher sample rates must be downsampled client-side.
 - **Chunk Size**: Send audio in ~85-256ms chunks for optimal latency/efficiency.
 - **VAD Behavior**: Server automatically detects speech boundaries and triggers transcription on speech end.
-- **Manual Commit**: Use `input_audio_buffer.commit` to force transcription (e.g., when user clicks "stop").
+- **Manual Commit**: Set `turn_detection` to `null`, then use `input_audio_buffer.commit` to force transcription. In this mode the server buffers audio but does not emit VAD or interim transcription events.
 - **Clear Buffer**: Use `input_audio_buffer.clear` to discard audio without transcribing.
 - **Chunking**: We are still tuning the chunking to balance latency vs. accuracy.
 
