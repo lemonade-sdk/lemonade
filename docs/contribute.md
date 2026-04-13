@@ -2,8 +2,6 @@
 
 The Lemonade SDK project welcomes contributions from everyone!
 
-See [code organization](https://github.com/lemonade-sdk/lemonade/blob/main/docs/code.md) for an overview of the repository.
-
 ## Collaborate with Your App
 
 Lemonade Server integrates quickly with most OpenAI-compatible LLM apps.
@@ -105,7 +103,7 @@ To run linting checks locally before submitting a PR:
 pip install pylint
 
 # Run pylint from the root of the repo
-pylint src/lemonade --rcfile .pylintrc --disable E0401
+pylint test contrib --disable E0401
 ```
 This will show linting warnings and errors in your terminal.
 
