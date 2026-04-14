@@ -80,16 +80,40 @@ $reportFile = Join-Path $OutputDir "missing-dlls-report.txt"
 Write-Host "Converting PML -> CSV: $csvFile" -ForegroundColor Yellow
 & $ProcMonExe /AcceptEula /OpenLog "$BackingFile" /SaveAs "$csvFile"
 
-# ProcMon /SaveAs is asynchronous; poll until the CSV appears (up to 120 s)
-$timeout = 120
+# ProcMon /SaveAs is asynchronous; poll until the CSV exists AND is readable (up to 180 s)
+$timeout = 180
 $elapsed = 0
-while (-not (Test-Path $csvFile) -and $elapsed -lt $timeout) {
+
+function Test-FileReadable([string]$Path) {
+    try {
+        $fs = [System.IO.File]::Open(
+            $Path,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::ReadWrite
+        )
+        $fs.Close()
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+while ($elapsed -lt $timeout) {
+    if ((Test-Path $csvFile) -and (Test-FileReadable $csvFile)) {
+        break
+    }
     Start-Sleep -Seconds 2
     $elapsed += 2
 }
 
 if (-not (Test-Path $csvFile)) {
     Write-Warning "CSV file was not produced within ${timeout}s. Skipping filtering."
+    exit 0
+}
+
+if (-not (Test-FileReadable $csvFile)) {
+    Write-Warning "CSV file exists but is still locked/unreadable after ${timeout}s. Skipping filtering."
     exit 0
 }
 
