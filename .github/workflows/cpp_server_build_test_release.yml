@@ -575,23 +575,6 @@ jobs:
         id: get_version
         uses: ./.github/actions/get-version
 
-      - name: Install Tauri Linux system dependencies
-        shell: bash
-        run: |
-          set -e
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev \
-            librsvg2-dev \
-            libayatana-appindicator3-dev \
-            libssl-dev \
-            build-essential \
-            curl \
-            wget \
-            file
-
       - name: Run setup.sh to configure environment
         shell: bash
         run: |

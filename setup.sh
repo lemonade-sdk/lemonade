@@ -381,27 +381,10 @@ if command_exists node && ! command_exists npm; then
     missing_packages+=("npm")
 fi
 
-# ----------------------------------------------------------------------------
-# Detect (but do NOT install yet) optional Tauri desktop-app dependencies.
-#
-# These are split out from `missing_packages` (the C++ server's mandatory
-# install batch) for two reasons:
-#   1. The Tauri desktop app target is OPTIONAL — the C++ server flow
-#      (`cmake --build --preset default`) doesn't need any of this. CI
-#      workflows that only build the C++ server (e.g. linux_distro_builds)
-#      should not be slowed down or broken by Tauri's deps.
-#   2. The mandatory batch must succeed atomically. If a single Tauri
-#      package name is wrong on a given distro, mixing it into the same
-#      install call would abort the whole setup. Keeping them separate
-#      means a Tauri-install failure is contained — the C++ build still
-#      proceeds normally.
-#
-# The actual install happens further down, gated on a y/N prompt for
-# local developers and on the LEMONADE_SETUP_TAURI=1 env var for CI.
-# ----------------------------------------------------------------------------
+# Detect Tauri desktop-app dependencies that need installation.
 tauri_linux_deps=()
 if [ "$OS" = "linux" ]; then
-    print_info "Checking optional Tauri Linux development dependencies..."
+    print_info "Checking Tauri Linux development dependencies..."
     if command_exists apt; then
         tauri_dep_candidates=(
             libwebkit2gtk-4.1-dev
@@ -409,6 +392,8 @@ if [ "$OS" = "linux" ]; then
             libjavascriptcoregtk-4.1-dev
             librsvg2-dev
             libayatana-appindicator3-dev
+            wget
+            file
         )
         for dep in "${tauri_dep_candidates[@]}"; do
             if ! dpkg -l "$dep" 2>/dev/null | grep -q "^ii"; then
@@ -421,6 +406,8 @@ if [ "$OS" = "linux" ]; then
             libsoup3-devel
             librsvg2-devel
             libappindicator-gtk3-devel
+            wget
+            file
         )
         for dep in "${tauri_dep_candidates[@]}"; do
             if ! rpm -q "$dep" >/dev/null 2>&1; then
@@ -435,6 +422,8 @@ if [ "$OS" = "linux" ]; then
             webkit2gtk-4.1
             libsoup3
             librsvg
+            wget
+            file
         )
         for dep in "${tauri_dep_candidates[@]}"; do
             if ! pacman -Qi "$dep" >/dev/null 2>&1; then
@@ -442,23 +431,18 @@ if [ "$OS" = "linux" ]; then
             fi
         done
     elif command_exists zypper; then
-        # openSUSE Tumbleweed: the Tauri-docs-recommended package
-        # (`webkit2gtk3-devel`) is the older 3.x/libsoup2 family which
-        # Tauri v2 cannot use, and the modern 4.1 names that the apt/dnf
-        # branches use have not been confirmed in Tumbleweed's repos.
-        # Rather than guess and break the whole zypper install, leave
-        # this branch empty and print a hint at the bottom of the script.
-        :
+        # openSUSE package names vary, so only auto-detect the broadly stable
+        # CLI utilities here. Rust still prefers zypper before rustup.
+        for dep in wget file; do
+            if ! rpm -q "$dep" >/dev/null 2>&1; then
+                tauri_linux_deps+=("$dep")
+            fi
+        done
     fi
 fi
 
-# Detect (but do NOT install yet) the Rust toolchain. Same rationale as
-# the Tauri Linux deps above: optional, deferred to the prompt section.
 rust_needs_install=false
 if ! command_exists cargo || ! command_exists rustc; then
-    # If rustup put cargo somewhere we haven't sourced yet (e.g. a previous
-    # invocation of this script ran the installer), try sourcing the env
-    # before giving up.
     if [ -f "$HOME/.cargo/env" ]; then
         # shellcheck source=/dev/null
         . "$HOME/.cargo/env"
@@ -466,7 +450,7 @@ if ! command_exists cargo || ! command_exists rustc; then
 fi
 if ! command_exists cargo || ! command_exists rustc; then
     rust_needs_install=true
-    print_info "Rust toolchain not found (optional — only required for the Tauri desktop app)"
+    print_info "Rust toolchain not found"
 else
     print_success "Rust toolchain is already installed"
 fi
@@ -595,99 +579,106 @@ fi
 
 echo ""
 
-# ----------------------------------------------------------------------------
-# Optional: Tauri desktop-app dependencies (Linux deps + Rust toolchain).
-#
-# Skipped in CI by default — opt in via LEMONADE_SETUP_TAURI=1. Local
-# developers get a y/N prompt. A failure here is non-fatal: the C++ server
-# build doesn't depend on any of this, so we just print warnings and let
-# the script continue to the cmake configure step.
-# ----------------------------------------------------------------------------
+# Install Tauri desktop-app dependencies automatically. Prefer distro-native
+# packages for Rust and only fall back to rustup if the package-manager path
+# is unavailable or fails.
 if [ ${#tauri_linux_deps[@]} -gt 0 ] || [ "$rust_needs_install" = true ]; then
-    print_info "Optional Tauri desktop-app dependencies are missing:"
+    print_info "Installing Tauri desktop-app dependencies..."
     if [ ${#tauri_linux_deps[@]} -gt 0 ]; then
         for d in "${tauri_linux_deps[@]}"; do
             echo "  - $d"
         done
     fi
     if [ "$rust_needs_install" = true ]; then
-        echo "  - Rust toolchain (via rustup)"
+        echo "  - Rust toolchain"
     fi
-    print_info "These are ONLY needed if you want to build the Tauri desktop app"
-    print_info "(cmake --build --target tauri-app). The C++ server build does NOT need them."
     echo ""
 
-    install_tauri=false
-    if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
-        if [ "${LEMONADE_SETUP_TAURI:-0}" = "1" ]; then
-            print_info "LEMONADE_SETUP_TAURI=1 detected, installing Tauri deps in CI..."
-            install_tauri=true
-        else
-            print_info "CI environment detected, skipping optional Tauri dependencies."
-            print_info "Set LEMONADE_SETUP_TAURI=1 to enable in CI."
+    if [ ${#tauri_linux_deps[@]} -gt 0 ]; then
+        print_info "Installing Tauri Linux dependencies..."
+        if command_exists apt; then
+            maybe_sudo apt update
+            maybe_sudo apt install -y "${tauri_linux_deps[@]}"
+        elif command_exists dnf; then
+            maybe_sudo dnf install -y "${tauri_linux_deps[@]}"
+        elif command_exists pacman; then
+            maybe_sudo pacman -S --needed --noconfirm "${tauri_linux_deps[@]}"
+        elif command_exists zypper; then
+            maybe_sudo zypper install -y "${tauri_linux_deps[@]}"
         fi
-    else
-        read -p "Install optional Tauri desktop-app dependencies now? (y/N): " -n 1 -r
-        echo ""
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            install_tauri=true
-        fi
+        print_success "Tauri Linux dependencies installed"
     fi
 
-    if [ "$install_tauri" = true ]; then
-        # Install Tauri Linux deps via the appropriate package manager.
-        # Failures are warnings, not fatal — the C++ build still proceeds.
-        if [ ${#tauri_linux_deps[@]} -gt 0 ]; then
-            print_info "Installing Tauri Linux dependencies..."
-            tauri_install_ok=true
-            if command_exists apt; then
-                maybe_sudo apt install -y "${tauri_linux_deps[@]}" || tauri_install_ok=false
-            elif command_exists dnf; then
-                maybe_sudo dnf install -y "${tauri_linux_deps[@]}" || tauri_install_ok=false
-            elif command_exists pacman; then
-                maybe_sudo pacman -S --needed --noconfirm "${tauri_linux_deps[@]}" || tauri_install_ok=false
-            fi
-            if [ "$tauri_install_ok" = true ]; then
-                print_success "Tauri Linux dependencies installed"
-            else
-                print_warning "Failed to install some Tauri Linux dependencies"
-                print_info "The Tauri desktop app target may not build until these are installed manually."
-            fi
-        fi
+    if [ "$rust_needs_install" = true ]; then
+        print_info "Trying distro-native Rust installation first..."
+        rust_install_ok=false
 
-        # Install Rust via rustup. Curl is guaranteed to be available by
-        # this point (the mandatory C++ deps batch above already installed
-        # it on distros where it wasn't pre-installed).
-        if [ "$rust_needs_install" = true ]; then
-            if ! command_exists curl; then
-                print_warning "curl is not available; skipping Rust install"
-                print_info "Install curl and re-run setup.sh if you need the Tauri build."
-            else
-                print_info "Downloading and running rustup-init..."
-                if curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path; then
-                    if [ -f "$HOME/.cargo/env" ]; then
-                        # shellcheck source=/dev/null
-                        . "$HOME/.cargo/env"
-                    fi
-                    if command_exists cargo; then
-                        print_success "Rust toolchain installed"
-                        rust_was_just_installed=true
-                    else
-                        print_warning "Rust install reported success but cargo is still not on PATH"
-                        print_info "Open a new shell and re-run this script if you need the Tauri build."
-                    fi
-                else
-                    print_warning "rustup install failed"
-                    print_info "Install Rust manually from https://rustup.rs if you need the Tauri build."
+        if [ "$OS" = "linux" ]; then
+            if command_exists apt; then
+                maybe_sudo apt update
+                if maybe_sudo apt install -y rustc cargo; then
+                    rust_install_ok=true
+                fi
+            elif command_exists pacman; then
+                if maybe_sudo pacman -S --needed --noconfirm rust; then
+                    rust_install_ok=true
+                fi
+            elif command_exists dnf; then
+                if maybe_sudo dnf install -y rust cargo; then
+                    rust_install_ok=true
+                fi
+            elif command_exists zypper; then
+                if maybe_sudo zypper install -y rust cargo; then
+                    rust_install_ok=true
                 fi
             fi
+        elif [ "$OS" = "macos" ] && command_exists brew; then
+            if brew install rust; then
+                rust_install_ok=true
+            fi
+        fi
+
+        hash -r
+        if ! command_exists cargo || ! command_exists rustc; then
+            if [ -f "$HOME/.cargo/env" ]; then
+                # shellcheck source=/dev/null
+                . "$HOME/.cargo/env"
+            fi
+        fi
+
+        if command_exists cargo && command_exists rustc; then
+            rust_install_ok=true
+        fi
+
+        if [ "$rust_install_ok" != true ]; then
+            print_warning "Distro-native Rust installation was unavailable or failed"
+            if ! command_exists curl; then
+                print_error "curl is required for the rustup fallback but is not available"
+                exit 1
+            fi
+
+            print_info "Falling back to rustup installer..."
+            if curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path; then
+                if [ -f "$HOME/.cargo/env" ]; then
+                    # shellcheck source=/dev/null
+                    . "$HOME/.cargo/env"
+                fi
+                hash -r
+            else
+                print_error "rustup fallback failed"
+                exit 1
+            fi
+        fi
+
+        if command_exists cargo && command_exists rustc; then
+            print_success "Rust toolchain installed"
+        else
+            print_error "Rust installation completed, but cargo/rustc are still unavailable"
+            exit 1
         fi
     fi
 
-    # If we're on a distro where the Tauri install branch is intentionally
-    # empty (currently: openSUSE), let the user know they'll need to install
-    # the deps by hand if they want the desktop app build.
-    if [ "$OS" = "linux" ] && command_exists zypper && [ ${#tauri_linux_deps[@]} -eq 0 ] && [ "${install_tauri:-false}" = "true" ]; then
+    if [ "$OS" = "linux" ] && command_exists zypper && [ ${#tauri_linux_deps[@]} -eq 0 ]; then
         print_info "Note: openSUSE Tumbleweed Tauri package names are not yet"
         print_info "auto-installable by this script. To build the Tauri desktop app,"
         print_info "install the prerequisites manually per https://v2.tauri.app/start/prerequisites/"
@@ -721,18 +712,6 @@ echo "=========================================="
 print_success "Setup completed successfully!"
 echo "=========================================="
 echo ""
-
-# If we just installed Rust in this run, remind the user that their EXISTING
-# shells don't have cargo on PATH yet — the install only updated this script's
-# own process. New shells will pick it up automatically because rustup adds
-# itself to ~/.profile / ~/.bashrc / ~/.zshenv.
-if [ "${rust_was_just_installed:-false}" = true ]; then
-    print_warning "Rust was just installed."
-    print_info "To use cargo in your CURRENT shell, run:"
-    echo "  . \"\$HOME/.cargo/env\""
-    print_info "New shells will pick it up automatically."
-    echo ""
-fi
 
 print_info "Next steps:"
 echo "  Build the project: cmake --build --preset default"

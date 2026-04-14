@@ -107,11 +107,6 @@ if (-not (Command-Exists "npm")) {
 
 Write-Host ""
 
-# Check Rust toolchain (OPTIONAL -- only needed for the Tauri desktop app).
-# Like setup.sh, this is split into a "detect" pass and an "install" pass
-# gated on a y/N prompt. CI mode skips the install by default; opt in via
-# LEMONADE_SETUP_TAURI=1. A failure to install Rust does NOT abort the
-# script -- the C++ server build doesn't depend on it.
 Write-Info "Checking Rust toolchain installation..."
 
 # rustup may have installed cargo into ~/.cargo/bin without it being on PATH
@@ -125,71 +120,75 @@ if (-not (Command-Exists "cargo") -or -not (Command-Exists "rustc")) {
 }
 
 $rustNeedsInstall = $false
-$rustWasJustInstalled = $false
 if (-not (Command-Exists "cargo") -or -not (Command-Exists "rustc")) {
     $rustNeedsInstall = $true
-    Write-Info "Rust toolchain not found (optional -- only required for the Tauri desktop app)"
+    Write-Info "Rust toolchain not found"
 } else {
     Write-Success "Rust toolchain is installed"
 }
 
 if ($rustNeedsInstall) {
-    Write-Host ""
-    Write-Info "Optional Tauri desktop-app dependency:"
-    Write-Host "  - Rust toolchain (via rustup)"
-    Write-Info "This is ONLY needed if you want to build the Tauri desktop app"
-    Write-Info "(cmake --build --target tauri-app). The C++ server build does NOT need it."
-    Write-Host ""
+    Write-Info "Installing Rust toolchain automatically..."
+    $rustInstalled = $false
 
-    $installRust = $false
-    if ($env:CI -or $env:GITHUB_ACTIONS) {
-        if ($env:LEMONADE_SETUP_TAURI -eq "1") {
-            Write-Info "LEMONADE_SETUP_TAURI=1 detected, installing Rust in CI..."
-            $installRust = $true
+    if (Command-Exists "winget") {
+        Write-Info "Trying Windows package manager install first..."
+        & winget install --exact --id Rustlang.Rustup --accept-package-agreements --accept-source-agreements --disable-interactivity --scope user
+        if ($LASTEXITCODE -eq 0) {
+            $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+            $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+            $env:PATH = "$userPath;$machinePath;$env:PATH"
+
+            if (Command-Exists "rustup") {
+                & rustup default stable | Out-Null
+                $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+                if (Test-Path (Join-Path $cargoBin "cargo.exe")) {
+                    $env:PATH = "$cargoBin;$env:PATH"
+                }
+                if ((Command-Exists "cargo") -and (Command-Exists "rustc")) {
+                    $rustInstalled = $true
+                }
+            }
         } else {
-            Write-Info "CI environment detected, skipping optional Rust install."
-            Write-Info "Set LEMONADE_SETUP_TAURI=1 to enable in CI."
+            Write-Warning "winget Rust install failed (exit code $LASTEXITCODE)"
         }
     } else {
-        $reply = Read-Host "Install Rust via rustup now? (y/N)"
-        if ($reply -match '^[Yy]$') {
-            $installRust = $true
-        }
+        Write-Warning "winget not available, skipping package-manager Rust install"
     }
 
-    if ($installRust) {
+    if (-not $rustInstalled) {
+        Write-Warning "Falling back to rustup-init.exe download..."
         $rustupInit = Join-Path $env:TEMP "rustup-init.exe"
-        Write-Info "Downloading rustup-init.exe..."
         $downloadOk = $true
         try {
             Invoke-WebRequest -UseBasicParsing -Uri "https://win.rustup.rs/x86_64" -OutFile $rustupInit
         } catch {
-            Write-Warning "Failed to download rustup-init.exe: $_"
-            Write-Info "Install Rust manually from https://rustup.rs if you need the Tauri build."
-            $downloadOk = $false
+            Write-Error-Custom "Failed to download rustup-init.exe: $_"
+            exit 1
         }
 
         if ($downloadOk) {
-            Write-Info "Running rustup-init.exe..."
             & $rustupInit -y --default-toolchain stable --no-modify-path | Out-Null
             if ($LASTEXITCODE -ne 0) {
-                Write-Warning "rustup install failed (exit code $LASTEXITCODE)"
-                Write-Info "Install Rust manually from https://rustup.rs if you need the Tauri build."
+                Write-Error-Custom "rustup install failed (exit code $LASTEXITCODE)"
+                exit 1
             } else {
-                # Add cargo to PATH for the rest of this script's session.
                 $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
                 $env:PATH = "$cargoBin;$env:PATH"
 
-                if (Command-Exists "cargo") {
-                    Write-Success "Rust toolchain installed"
-                    $rustWasJustInstalled = $true
-                } else {
-                    Write-Warning "Rust install reported success but cargo is still not on PATH"
-                    Write-Info "Open a new shell if you need cargo for the Tauri build."
+                if ((Command-Exists "cargo") -and (Command-Exists "rustc")) {
+                    $rustInstalled = $true
                 }
             }
         }
     }
+
+    if (-not $rustInstalled) {
+        Write-Error-Custom "Rust installation completed, but cargo/rustc are still unavailable"
+        exit 1
+    }
+
+    Write-Success "Rust toolchain installed"
 }
 
 Write-Host ""
@@ -234,17 +233,6 @@ Write-Host "==========================================" -ForegroundColor Green
 Write-Success "Setup completed successfully!"
 Write-Host "==========================================" -ForegroundColor Green
 Write-Host ""
-
-# If we just installed Rust in this run, remind the user that their EXISTING
-# PowerShell sessions don't have cargo on PATH yet -- rustup updates the user
-# PATH but only new shells pick it up.
-if ($rustWasJustInstalled) {
-    Write-Warning "Rust was just installed."
-    Write-Info "To use cargo in your CURRENT PowerShell session, restart it,"
-    Write-Info "or prepend `$HOME\.cargo\bin to `$env:PATH manually."
-    Write-Info "New shells will pick it up automatically."
-    Write-Host ""
-}
 
 Write-Info "Next steps:"
 Write-Host "  Build the project: cmake --build --preset windows"
