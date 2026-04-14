@@ -556,6 +556,31 @@ std::string SDServer::upscale_via_cli(
         "-o", output_path.string()
     };
 
+    // Diagnostic: log all launch parameters before starting sd-cli
+    LOG(INFO, "SDServer") << "sd-cli upscale launch:"
+        << " cli=" << cli_exe_path
+        << " model=" << upscale_model_path
+        << " input=" << input_path.string()
+        << " output=" << output_path.string()
+        << " input_bytes=" << raw.size()
+        << std::endl;
+
+    // Log reconstructed command line for easy copy/paste reproduction
+    {
+        std::string cmdline = "\"" + cli_exe_path + "\"";
+        for (const auto& arg : cli_args) {
+            cmdline += " \"" + arg + "\"";
+        }
+        LOG(INFO, "SDServer") << "sd-cli cmdline: " << cmdline << std::endl;
+    }
+
+    // Log env vars passed to subprocess (PATH/LD_LIBRARY_PATH for backend)
+    if (!env_vars.empty()) {
+        for (const auto& kv : env_vars) {
+            LOG(INFO, "SDServer") << "sd-cli env: " << kv.first << "=" << kv.second << std::endl;
+        }
+    }
+
     // inherit_output = true so subprocess stderr/stdout is visible in server
     // logs for debugging failed upscale operations
     auto proc = ProcessManager::start_process(
@@ -573,9 +598,17 @@ std::string SDServer::upscale_via_cli(
         LOG(INFO, "SDServer") << "ESRGAN upscale complete ("
             << raw.size() << " -> " << upscaled_data.size() << " bytes)" << std::endl;
     } else {
-        LOG(WARNING, "SDServer") << "ESRGAN upscale failed (exit code: "
-            << exit_code << ", model: " << upscale_model_path
-            << ", cli: " << cli_exe_path << ")" << std::endl;
+        std::error_code ec;
+        bool out_exists = fs::exists(output_path, ec);
+        uintmax_t out_size = out_exists ? fs::file_size(output_path, ec) : 0;
+        LOG(WARNING, "SDServer") << "ESRGAN upscale failed"
+            << " exit_code=" << exit_code
+            << " (0x" << std::hex << static_cast<uint32_t>(exit_code) << std::dec << ")"
+            << " out_exists=" << (out_exists ? "true" : "false")
+            << " out_size=" << out_size
+            << " model=" << upscale_model_path
+            << " cli=" << cli_exe_path
+            << std::endl;
     }
 
     return result;

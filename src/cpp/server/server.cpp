@@ -2582,6 +2582,11 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             b64_image, upscale_model_path, cli_exe.string(), env_vars);
 
         if (upscaled.empty()) {
+            LOG(WARNING, "Server") << "ESRGAN upscale returned empty result"
+                << " backend=" << resolved_backend
+                << " cli=" << cli_exe.string()
+                << " model=" << upscale_model_path
+                << std::endl;
             res.status = 500;
             nlohmann::json error = {{"error", {
                 {"message", "ESRGAN upscale failed"},

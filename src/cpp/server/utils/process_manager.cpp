@@ -608,6 +608,12 @@ int ProcessManager::get_exit_code(ProcessHandle handle) {
         return -1;  // Still running
     }
 
+    if (exit_code != 0) {
+        LOG(WARNING, "ProcessManager") << "Process exited with non-zero code: "
+            << static_cast<int>(exit_code)
+            << " (0x" << std::hex << exit_code << std::dec << ")"
+            << std::endl;
+    }
     return static_cast<int>(exit_code);
 #else
     if (handle.pid <= 0) {
@@ -644,6 +650,12 @@ int ProcessManager::wait_for_exit(ProcessHandle handle, int timeout_seconds) {
 
     DWORD exit_code;
     GetExitCodeProcess(handle.handle, &exit_code);
+    if (exit_code != 0) {
+        LOG(WARNING, "ProcessManager") << "Process exited with non-zero code: "
+            << static_cast<int>(exit_code)
+            << " (0x" << std::hex << exit_code << std::dec << ")"
+            << std::endl;
+    }
     return exit_code;
 #else
     if (handle.pid <= 0) {
