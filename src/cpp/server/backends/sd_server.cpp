@@ -1,3 +1,17 @@
+// On Windows, set up header guards BEFORE any other includes
+#ifdef _WIN32
+#ifndef _WINSOCKAPI_
+#define _WINSOCKAPI_
+#endif
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <winsock2.h>
+#include <windows.h>
+#ifdef ERROR
+#undef ERROR
+#endif
+#endif
+
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
@@ -26,6 +40,100 @@ namespace backends {
 static const char* ROCM_STABLE_RUNTIME_DIR = "rocm-stable-runtime";
 
 namespace {
+
+#ifdef _WIN32
+// Walk the PE import table of `exe_path` and log any DLL that cannot be
+// resolved. Called on STATUS_DLL_NOT_FOUND (0xC0000135) to surface the
+// exact missing dependency without requiring ProcMon on the runner.
+static void log_missing_dll_imports_win32(const std::string& exe_path) {
+    LOG(INFO, "SDServer") << "DLL check: scanning imports of " << exe_path << std::endl;
+
+    // Map the image with sections at virtual addresses; no DLL resolution,
+    // no code executed.
+    HMODULE hmod = LoadLibraryExA(
+        exe_path.c_str(), nullptr,
+        LOAD_LIBRARY_AS_IMAGE_RESOURCE | LOAD_LIBRARY_AS_DATAFILE);
+    if (!hmod) {
+        LOG(WARNING, "SDServer") << "DLL check: LoadLibraryExA failed for "
+            << exe_path << " err=" << GetLastError() << std::endl;
+        return;
+    }
+
+    // LOAD_LIBRARY_AS_IMAGE_RESOURCE sets bit 1 of the handle; clear it to
+    // get the true module base suitable for pointer arithmetic.
+    auto base = reinterpret_cast<const BYTE*>(
+        reinterpret_cast<uintptr_t>(hmod) & ~static_cast<uintptr_t>(3));
+
+    auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) {
+        LOG(WARNING, "SDServer") << "DLL check: invalid DOS signature in "
+            << exe_path << std::endl;
+        FreeLibrary(hmod);
+        return;
+    }
+
+    auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) {
+        LOG(WARNING, "SDServer") << "DLL check: invalid NT signature in "
+            << exe_path << std::endl;
+        FreeLibrary(hmod);
+        return;
+    }
+
+    DWORD import_rva = nt->OptionalHeader.DataDirectory[
+        IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+    if (import_rva == 0) {
+        LOG(INFO, "SDServer") << "DLL check: no import directory in "
+            << exe_path << std::endl;
+        FreeLibrary(hmod);
+        return;
+    }
+
+    // Directory of the exe so we can check co-located (bundled) DLLs first.
+    std::string exe_dir;
+    auto sep = exe_path.find_last_of("\\/");
+    if (sep != std::string::npos) exe_dir = exe_path.substr(0, sep);
+
+    auto* imp = reinterpret_cast<const IMAGE_IMPORT_DESCRIPTOR*>(
+        base + import_rva);
+    for (; imp->Name != 0; ++imp) {
+        const char* dll_name = reinterpret_cast<const char*>(base + imp->Name);
+
+        // Basic sanity: ensure dll_name is a non-empty printable string
+        // (guards against corrupted PE headers in diagnostic code)
+        if (!dll_name || dll_name[0] == '\0') continue;
+        constexpr size_t MAX_DLL_NAME = 260;
+        bool valid = true;
+        for (size_t i = 0; i < MAX_DLL_NAME; ++i) {
+            if (dll_name[i] == '\0') break;
+            if (i == MAX_DLL_NAME - 1) { valid = false; break; }
+        }
+        if (!valid) continue;
+
+        // 1) Check beside sd-cli.exe (bundled ROCm DLLs live here)
+        std::string local_path = (exe_dir.empty() ? std::string(".") : exe_dir) + "\\" + dll_name;
+        if (GetFileAttributesA(local_path.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            continue; // found locally — ok
+        }
+
+        // 2) Let Windows resolve via PATH / known-DLLs / system32
+        HMODULE htest = LoadLibraryExA(
+            dll_name, nullptr, LOAD_LIBRARY_AS_DATAFILE);
+        if (htest) {
+            FreeLibrary(htest);
+            continue; // resolvable — ok
+        }
+
+        DWORD err = GetLastError();
+        LOG(WARNING, "SDServer") << "DLL check MISSING: " << dll_name
+            << " (not in " << (exe_dir.empty() ? "." : exe_dir)
+            << ", err=" << err << ")" << std::endl;
+    }
+
+    FreeLibrary(hmod);
+}
+#endif // _WIN32
+
 bool is_rocm_backend(const std::string& backend) {
     return backend == "rocm" || backend == "rocm-stable" || backend == "rocm-preview";
 }
@@ -609,6 +717,15 @@ std::string SDServer::upscale_via_cli(
             << " model=" << upscale_model_path
             << " cli=" << cli_exe_path
             << std::endl;
+#ifdef _WIN32
+        // STATUS_DLL_NOT_FOUND — scan the import table to name the culprit DLL
+        if (static_cast<uint32_t>(exit_code) == 0xC0000135u) {
+            LOG(WARNING, "SDServer")
+                << "0xC0000135 = STATUS_DLL_NOT_FOUND;"
+                << " scanning sd-cli imports for missing DLLs..." << std::endl;
+            log_missing_dll_imports_win32(cli_exe_path);
+        }
+#endif
     }
 
     return result;
