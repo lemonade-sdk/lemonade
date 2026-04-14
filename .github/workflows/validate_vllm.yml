@@ -79,6 +79,8 @@ jobs:
         run: |
           set -e
           ./setup.sh
+          # Skip the web app; CI only exercises the backend.
+          cmake -DBUILD_WEB_APP=OFF --preset default
           cmake --build --preset default
           test -f build/lemond || { echo "lemond not found!"; exit 1; }
           echo "Build successful!"
