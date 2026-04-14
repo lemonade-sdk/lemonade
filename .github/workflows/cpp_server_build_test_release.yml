@@ -828,6 +828,15 @@ jobs:
           & $lemonadeExe backends install flm:npu
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      # ProcMon is started only for the ROCm Stable Diffusion matrix entry on the
+      # stx-halo runner where sd-cli.exe crashes (exit -1073741515 / missing DLL).
+      # The capture records every DLL load attempt so that the stop-and-report step
+      # can surface which libraries were NAME NOT FOUND.
+      - name: Start ProcMon capture (ROCm SD diagnostic)
+        if: ${{ matrix.name == 'stable-diffusion (stx-halo)' }}
+        shell: PowerShell
+        run: scripts\ci\windows\procmon-start.ps1
+
       - name: Run tests
         shell: PowerShell
         env:
@@ -850,6 +859,29 @@ jobs:
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             }
           }
+
+      # Stop ProcMon, convert the PML to CSV, and produce a filtered missing-DLL
+      # report even when the tests fail so the artifact is always available.
+      - name: Stop ProcMon and generate DLL report (ROCm SD diagnostic)
+        if: ${{ always() && matrix.name == 'stable-diffusion (stx-halo)' }}
+        shell: PowerShell
+        run: scripts\ci\windows\procmon-stop-and-report.ps1
+
+      # Upload the PML + CSV + filtered report for offline inspection.
+      # Artifact interpretation:
+      #   procmon-capture.csv      - full event log; filter by "NAME NOT FOUND"
+      #   missing-dlls-report.txt  - pre-filtered list of missing libraries with
+      #                              the process name and path that attempted the load
+      - name: Upload ProcMon diagnostic artifacts (ROCm SD diagnostic)
+        if: ${{ always() && matrix.name == 'stable-diffusion (stx-halo)' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: procmon-missing-dlls-${{ matrix.name }}
+          path: |
+            ${{ env.PROCMON_REPORT_DIR }}
+            ${{ env.PROCMON_BACKING_FILE }}
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Capture and upload server logs
         if: always()
