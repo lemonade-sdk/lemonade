@@ -134,6 +134,12 @@ static bool has_speculative_decoding_enabled(const std::vector<std::string>& tok
     return has_model_draft || (!spec_type.empty() && spec_type != "none");
 }
 
+static void validate_model_draft_value_or_throw(const std::string& draft_value) {
+    if (draft_value.empty() || is_flag_token(draft_value)) {
+        throw std::runtime_error("Invalid --model-draft argument: missing value");
+    }
+}
+
 static std::string quote_arg_if_needed(const std::string& token) {
     if (token.find(' ') == std::string::npos && token.find('"') == std::string::npos) {
         return token;
@@ -177,13 +183,15 @@ static std::string resolve_draft_checkpoint_in_args(const std::string& custom_ar
         bool inline_value = false;
 
         if (tokens[i] == "--model-draft") {
-            if (i + 1 >= tokens.size() || is_flag_token(tokens[i + 1])) {
+            if (i + 1 >= tokens.size()) {
                 throw std::runtime_error("Invalid --model-draft argument: missing value");
             }
             draft_value = tokens[i + 1];
+            validate_model_draft_value_or_throw(draft_value);
             has_draft_flag = true;
         } else if (tokens[i].rfind("--model-draft=", 0) == 0) {
             draft_value = tokens[i].substr(std::string("--model-draft=").size());
+            validate_model_draft_value_or_throw(draft_value);
             has_draft_flag = true;
             inline_value = true;
         }
