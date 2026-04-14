@@ -1,6 +1,6 @@
 {
   "name": "lemonade-app",
-  "version": "10.2.0",
+  "version": "1.0.0",
   "description": "Lemonade Desktop App (Tauri)",
   "scripts": {
     "dev:renderer": "webpack serve --mode development",
