@@ -466,6 +466,25 @@ std::string ModelManager::get_hf_cache_dir() const {
     return lemon::utils::get_hf_cache_dir();
 }
 
+std::string ModelManager::resolve_checkpoint_path(const std::string& recipe,
+                                                  const std::string& checkpoint,
+                                                  const std::string& type) const {
+    if (checkpoint.empty()) {
+        return "";
+    }
+
+    ModelInfo temp_info;
+    temp_info.recipe = recipe;
+    temp_info.checkpoints["main"] = checkpoint;
+    temp_info.checkpoints[type] = checkpoint;
+
+    try {
+        return resolve_model_path(temp_info, type, checkpoint);
+    } catch (...) {
+        return "";
+    }
+}
+
 void ModelManager::invalidate_models_cache() {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
     cache_valid_ = false;

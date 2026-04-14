@@ -1971,6 +1971,71 @@ footer {
     gap: 4px;
 }
 
+.spec-decoding-panel {
+    margin-top: 10px;
+    border: 1px solid var(--border-secondary);
+    border-radius: 8px;
+    padding: 10px;
+    background: var(--bg-alpha-02);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.spec-decoding-header {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    letter-spacing: 0.35px;
+    text-transform: uppercase;
+}
+
+.spec-row {
+    display: grid;
+    gap: 10px;
+}
+
+.spec-row.two-col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.spec-row.three-col {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.spec-warning-box {
+    margin-top: 6px;
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid var(--bg-alpha-1);
+    background: var(--bg-alpha-03);
+    color: var(--text-secondary);
+    font-size: 0.65rem;
+    line-height: 1.4;
+}
+
+.spec-advanced-toggle {
+    border: 1px solid var(--border-secondary);
+    background: var(--bg-secondary);
+    color: var(--text-tertiary);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 0.68rem;
+    cursor: pointer;
+    text-align: left;
+}
+
+.spec-advanced-toggle:hover {
+    background: var(--bg-primary);
+}
+
+@media (max-width: 700px) {
+    .spec-row.two-col,
+    .spec-row.three-col {
+        grid-template-columns: 1fr;
+    }
+}
+
 .category-chevron {
     font-size: 0.56rem;
     margin-right: 6px;

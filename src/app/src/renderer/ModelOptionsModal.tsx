@@ -16,6 +16,7 @@ import {
   clampOptionValue,
   createDefaultOptions,
   apiToRecipeOptions,
+  recipeOptionsToApi,
 } from './recipes/recipeOptions';
 
 // Display names for backend options
@@ -29,6 +30,290 @@ const BACKEND_DISPLAY_NAMES: Record<string, string> = {
 
 const getBackendDisplayName = (backend: string): string => {
   return BACKEND_DISPLAY_NAMES[backend] ?? backend;
+};
+
+type SpecType = 'none' | 'draft' | 'ngram-simple' | 'ngram-map-k' | 'ngram-mod';
+
+interface SpecState {
+  type: SpecType;
+  draftModelCheckpoint: string;
+  draftMax: number;
+  draftMin: number;
+  specNgramSizeN: number;
+  specNgramSizeM: number;
+  specNgramMinHits: number;
+  draftPMin: string;
+  ctxSizeDraft: string;
+  deviceDraft: string;
+}
+
+interface DraftModelChoice {
+  id: string;
+  checkpoint: string;
+}
+
+type SpecPresetId = 'custom' | 'safe-default' | 'ngram-simple-code' | 'ngram-map-k-keys' | 'ngram-mod-reasoning';
+
+const SPEC_DEFAULTS: SpecState = {
+  type: 'none',
+  draftModelCheckpoint: '',
+  draftMax: 16,
+  draftMin: 0,
+  specNgramSizeN: 12,
+  specNgramSizeM: 48,
+  specNgramMinHits: 1,
+  draftPMin: '',
+  ctxSizeDraft: '',
+  deviceDraft: '',
+};
+
+const SPEC_VALUE_FLAGS = new Set([
+  '--spec-type',
+  '--draft-max',
+  '--draft-min',
+  '--model-draft',
+  '--spec-ngram-size-n',
+  '--spec-ngram-size-m',
+  '--spec-ngram-min-hits',
+  '--draft-p-min',
+  '--ctx-size-draft',
+  '--device-draft',
+]);
+
+const SPEC_TYPES: Array<{ value: SpecType; label: string }> = [
+  { value: 'none', label: 'None' },
+  { value: 'draft', label: 'Draft Model' },
+  { value: 'ngram-simple', label: 'Self-Spec: N-gram Simple' },
+  { value: 'ngram-map-k', label: 'Self-Spec: N-gram Map-K' },
+  { value: 'ngram-mod', label: 'Self-Spec: N-gram Mod' },
+];
+
+const SPEC_PRESETS: Array<{ id: SpecPresetId; label: string; state: Partial<SpecState> }> = [
+  {
+    id: 'safe-default',
+    label: 'Safe / Default',
+    state: {
+      type: 'ngram-simple',
+      draftMax: 16,
+      draftMin: 0,
+      specNgramSizeN: 12,
+      specNgramSizeM: 48,
+      specNgramMinHits: 1,
+    },
+  },
+  {
+    id: 'ngram-simple-code',
+    label: 'N-gram Simple: Code Rewrite / Repetition',
+    state: {
+      type: 'ngram-simple',
+      draftMax: 64,
+      draftMin: 0,
+    },
+  },
+  {
+    id: 'ngram-map-k-keys',
+    label: 'N-gram Map-K: Repeated Key Patterns',
+    state: {
+      type: 'ngram-map-k',
+      draftMax: 64,
+      draftMin: 0,
+      specNgramMinHits: 1,
+    },
+  },
+  {
+    id: 'ngram-mod-reasoning',
+    label: 'N-gram Mod: Reasoning / Summarization',
+    state: {
+      type: 'ngram-mod',
+      specNgramSizeN: 24,
+      draftMin: 48,
+      draftMax: 64,
+    },
+  },
+];
+
+const normalizeSpecType = (value: string): SpecType => {
+  if (value === 'draft' || value === 'ngram-simple' || value === 'ngram-map-k' || value === 'ngram-mod') {
+    return value;
+  }
+  return 'none';
+};
+
+const tokenizeArgs = (input: string): string[] => {
+  if (!input.trim()) return [];
+
+  const tokens: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const c = input[i];
+
+    if (!quote && (c === '"' || c === "'")) {
+      quote = c;
+      continue;
+    }
+
+    if (quote && c === quote) {
+      quote = null;
+      continue;
+    }
+
+    if (!quote && /\s/.test(c)) {
+      if (current.length > 0) {
+        tokens.push(current);
+        current = '';
+      }
+      continue;
+    }
+
+    current += c;
+  }
+
+  if (current.length > 0) tokens.push(current);
+  return tokens;
+};
+
+const quoteArgIfNeeded = (token: string): string => {
+  if (!/[\s"']/.test(token)) return token;
+  return `"${token.replace(/(["\\])/g, '\\$1')}"`;
+};
+
+const serializeTokens = (tokens: string[]): string => tokens.map(quoteArgIfNeeded).join(' ').trim();
+
+const toIntOrDefault = (raw: string, fallback: number): number => {
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const parseSpecFromArgs = (llamacppArgs: string): { state: SpecState; nonSpecTokens: string[] } => {
+  const tokens = tokenizeArgs(llamacppArgs);
+  const state: SpecState = { ...SPEC_DEFAULTS };
+  const nonSpecTokens: string[] = [];
+
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    const eqPos = token.indexOf('=');
+    const flag = eqPos >= 0 ? token.slice(0, eqPos) : token;
+
+    if (!SPEC_VALUE_FLAGS.has(flag)) {
+      nonSpecTokens.push(token);
+      continue;
+    }
+
+    let value = '';
+    if (eqPos >= 0) {
+      value = token.slice(eqPos + 1);
+    } else if (i + 1 < tokens.length) {
+      value = tokens[i + 1];
+      i += 1;
+    }
+
+    switch (flag) {
+      case '--spec-type':
+        state.type = normalizeSpecType(value);
+        break;
+      case '--draft-max':
+        state.draftMax = toIntOrDefault(value, state.draftMax);
+        break;
+      case '--draft-min':
+        state.draftMin = toIntOrDefault(value, state.draftMin);
+        break;
+      case '--model-draft':
+        state.draftModelCheckpoint = value;
+        break;
+      case '--spec-ngram-size-n':
+        state.specNgramSizeN = toIntOrDefault(value, state.specNgramSizeN);
+        break;
+      case '--spec-ngram-size-m':
+        state.specNgramSizeM = toIntOrDefault(value, state.specNgramSizeM);
+        break;
+      case '--spec-ngram-min-hits':
+        state.specNgramMinHits = toIntOrDefault(value, state.specNgramMinHits);
+        break;
+      case '--draft-p-min':
+        state.draftPMin = value;
+        break;
+      case '--ctx-size-draft':
+        state.ctxSizeDraft = value;
+        break;
+      case '--device-draft':
+        state.deviceDraft = value;
+        break;
+      default:
+        break;
+    }
+  }
+
+  return { state, nonSpecTokens };
+};
+
+const serializeSpecToArgs = (state: SpecState, nonSpecTokens: string[]): string => {
+  const tokens = [...nonSpecTokens];
+
+  if (state.type !== 'none') {
+    tokens.push('--spec-type', state.type);
+    tokens.push('--draft-max', String(Math.max(0, Math.trunc(state.draftMax))));
+    tokens.push('--draft-min', String(Math.max(0, Math.trunc(state.draftMin))));
+
+    if (state.type === 'draft' && state.draftModelCheckpoint.trim()) {
+      tokens.push('--model-draft', state.draftModelCheckpoint.trim());
+    }
+
+    if (state.type === 'ngram-simple' || state.type === 'ngram-mod') {
+      tokens.push('--spec-ngram-size-n', String(Math.max(1, Math.trunc(state.specNgramSizeN))));
+    }
+
+    if (state.type === 'ngram-mod') {
+      tokens.push('--spec-ngram-size-m', String(Math.max(1, Math.trunc(state.specNgramSizeM))));
+    }
+
+    if (state.type === 'ngram-map-k') {
+      tokens.push('--spec-ngram-min-hits', String(Math.max(1, Math.trunc(state.specNgramMinHits))));
+    }
+
+    if (state.draftPMin.trim()) {
+      tokens.push('--draft-p-min', state.draftPMin.trim());
+    }
+    if (state.ctxSizeDraft.trim()) {
+      tokens.push('--ctx-size-draft', state.ctxSizeDraft.trim());
+    }
+    if (state.deviceDraft.trim()) {
+      tokens.push('--device-draft', state.deviceDraft.trim());
+    }
+  }
+
+  return serializeTokens(tokens);
+};
+
+const getCommittedOptions = (
+  sourceOptions: RecipeOptions,
+  drafts: Record<string, string>,
+): RecipeOptions => {
+  let committed = sourceOptions;
+
+  for (const [key, draftValue] of Object.entries(drafts)) {
+    const trimmed = draftValue.trim();
+    if (trimmed === '') continue;
+
+    const parsed = parseFloat(trimmed);
+    if (Number.isNaN(parsed)) continue;
+
+    committed = {
+      ...committed,
+      [key]: {
+        value: clampOptionValue(key, parsed),
+        useDefault: false,
+      },
+    } as RecipeOptions;
+  }
+
+  return committed;
+};
+
+const matchesPreset = (state: SpecState, presetState: Partial<SpecState>): boolean => {
+  const entries = Object.entries(presetState) as Array<[keyof SpecState, SpecState[keyof SpecState]]>;
+  return entries.every(([key, value]) => state[key] === value);
 };
 
 interface SettingsModalProps {
@@ -45,6 +330,11 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   const [modelUrl, setModelUrl] = useState<string>("");
   const [options, setOptions] = useState<RecipeOptions>();
   const [numericDrafts, setNumericDrafts] = useState<Record<string, string>>({});
+  const [specState, setSpecState] = useState<SpecState>(SPEC_DEFAULTS);
+  const [specNonTokens, setSpecNonTokens] = useState<string[]>([]);
+  const [selectedSpecPreset, setSelectedSpecPreset] = useState<SpecPresetId>('custom');
+  const [showSpecAdvanced, setShowSpecAdvanced] = useState(false);
+  const [draftModelChoices, setDraftModelChoices] = useState<DraftModelChoice[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -55,6 +345,11 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     if (!isOpen) return;
     let isMounted = true;
     setNumericDrafts({});
+    setSpecState(SPEC_DEFAULTS);
+    setSpecNonTokens([]);
+    setSelectedSpecPreset('custom');
+    setShowSpecAdvanced(false);
+    setDraftModelChoices([]);
     void ensureSystemInfoLoaded();
 
     const fetchOptions = async () => {
@@ -68,6 +363,14 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
         const response = await serverFetch(`/models/${model}`);
         const data = await response.json();
 
+        const modelsResponse = await serverFetch('/models?show_all=true');
+        const modelsPayload = await modelsResponse.json();
+        const modelsList = Array.isArray(modelsPayload) ? modelsPayload : modelsPayload.data || [];
+
+        const draftChoices: DraftModelChoice[] = modelsList
+          .filter((item: any) => item?.recipe === 'llamacpp' && item?.downloaded === true && typeof item?.checkpoint === 'string')
+          .map((item: any) => ({ id: String(item.id), checkpoint: String(item.checkpoint) }));
+
         setModelName(model);
         setModelInfo({ ...data });
 
@@ -79,6 +382,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
         if (isMounted) {
           setOptions(apiToRecipeOptions(recipe, recipeOptions));
+          setDraftModelChoices(draftChoices);
         }
       } catch (error) {
         console.error('Failed to load options:', error);
@@ -93,6 +397,23 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     fetchOptions();
     return () => { isMounted = false; };
   }, [isOpen, model, ensureSystemInfoLoaded]);
+
+  useEffect(() => {
+    if (!options || options.recipe !== 'llamacpp') {
+      setSpecState(SPEC_DEFAULTS);
+      setSpecNonTokens([]);
+      setSelectedSpecPreset('custom');
+      return;
+    }
+
+    const currentArgs = (options as any).llamacppArgs?.value ?? '';
+    const parsed = parseSpecFromArgs(currentArgs);
+    setSpecState(parsed.state);
+    setSpecNonTokens(parsed.nonSpecTokens);
+
+    const preset = SPEC_PRESETS.find((candidate) => matchesPreset(parsed.state, candidate.state));
+    setSelectedSpecPreset(preset ? preset.id : 'custom');
+  }, [options]);
 
   // Handle click outside and escape key
   useEffect(() => {
@@ -211,30 +532,35 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   };
 
   const handleModelExport = () => {
-    let modelName = (modelInfo?.id as string).startsWith("user.") ? modelInfo?.id : `user.${modelInfo?.id}`;
+    if (!modelInfo || !options) return;
 
-    let modelToExport = {
-      "model_name": modelName,
-      "downloaded": modelInfo?.downloaded,
-      "labels": modelInfo?.labels,
-      "recipe": modelInfo?.recipe,
-      "recipe_options": modelInfo?.recipe_options,
-      "size": modelInfo?.size,
-      "checkpoints": modelInfo?.checkpoints,
-      "image_defaults": modelInfo?.image_defaults
+    const committedOptions = getCommittedOptions(options, numericDrafts);
+    const recipeOptions = recipeOptionsToApi(committedOptions);
+    const modelId = String(modelInfo.id ?? modelName);
+    const exportName = modelId.startsWith('user.') ? modelId : `user.${modelId}`;
+
+    const modelToExport: Record<string, unknown> = {
+      model_name: exportName,
+      downloaded: modelInfo.downloaded,
+      labels: modelInfo.labels,
+      recipe: modelInfo.recipe,
+      recipe_options: recipeOptions,
+      size: modelInfo.size,
+      checkpoints: modelInfo.checkpoints,
+      image_defaults: modelInfo.image_defaults,
     };
 
-    if(!modelInfo?.checkpoints) {
-      Object.assign(modelToExport, {checkpoint: modelInfo?.checkpoint});
+    if (!modelInfo.checkpoints) {
+      Object.assign(modelToExport, { checkpoint: modelInfo.checkpoint });
     }
 
     const model = JSON.stringify(modelToExport);
     const blob = new Blob([model], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     exportModelBtn!.current!.href = url;
-    exportModelBtn!.current!.download = modelToExport?.model_name ? `${modelToExport?.model_name}.json` as string: 'model.json';
+    exportModelBtn!.current!.download = typeof modelToExport.model_name === 'string' ? `${modelToExport.model_name}.json` : 'model.json';
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
+  };
 
   const handleCancel = () => {
     onCancel();
@@ -243,25 +569,39 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   const handleSubmit = () => {
     if (!options || !modelName) return;
 
-    let submitOptions: RecipeOptions = options;
+    onSubmit(modelName, getCommittedOptions(options, numericDrafts));
+  };
 
-    for (const [key, draftValue] of Object.entries(numericDrafts)) {
-      const trimmed = draftValue.trim();
-      if (trimmed === '') continue;
+  const applySpecState = (nextState: SpecState, preset: SpecPresetId = 'custom') => {
+    setSpecState(nextState);
+    setSelectedSpecPreset(preset);
 
-      const parsed = parseFloat(trimmed);
-      if (Number.isNaN(parsed)) continue;
-
-      submitOptions = {
-        ...submitOptions,
-        [key]: {
-          value: clampOptionValue(key, parsed),
-          useDefault: false,
-        }
-      } as RecipeOptions;
+    if (options?.recipe !== 'llamacpp') {
+      return;
     }
 
-    onSubmit(modelName, submitOptions);
+    const mergedArgs = serializeSpecToArgs(nextState, specNonTokens);
+    handleStringChange('llamacppArgs', mergedArgs);
+  };
+
+  const updateSpecField = <K extends keyof SpecState>(key: K, value: SpecState[K]) => {
+    applySpecState({ ...specState, [key]: value }, 'custom');
+  };
+
+  const handleSpecPresetChange = (presetId: SpecPresetId) => {
+    if (presetId === 'custom') {
+      setSelectedSpecPreset('custom');
+      return;
+    }
+
+    const preset = SPEC_PRESETS.find((item) => item.id === presetId);
+    if (!preset) return;
+
+    const nextState: SpecState = {
+      ...specState,
+      ...preset.state,
+    };
+    applySpecState(nextState, presetId);
   };
 
   if (!isOpen || !options) return null;
@@ -324,6 +664,8 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     const value = getOptionValue<string>(key);
     if (value === undefined) return null;
 
+    const isLlamacppArgs = key === 'llamacppArgs' && recipe === 'llamacpp';
+
     return (
       <div className="form-section" key={key}>
         <label className="form-label" title={def.description}>{def.label.toLowerCase()}</label>
@@ -334,6 +676,181 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
           value={value}
           onChange={(e) => handleStringChange(key, e.target.value)}
         />
+
+        {isLlamacppArgs && (
+          <div className="spec-decoding-panel">
+            <div className="spec-decoding-header">Speculative Decoding</div>
+
+            <div className="spec-row two-col">
+              <div className="form-section">
+                <label className="form-label">Type</label>
+                <select
+                  className="form-input form-select"
+                  value={specState.type}
+                  onChange={(e) => updateSpecField('type', normalizeSpecType(e.target.value))}
+                >
+                  {SPEC_TYPES.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-section">
+                <label className="form-label">Preset</label>
+                <select
+                  className="form-input form-select"
+                  value={selectedSpecPreset}
+                  onChange={(e) => handleSpecPresetChange(e.target.value as SpecPresetId)}
+                  disabled={specState.type === 'draft'}
+                >
+                  <option value="custom">Custom</option>
+                  {SPEC_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>{preset.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {specState.type !== 'none' && (
+              <>
+                <div className="spec-row two-col">
+                  <div className="form-section">
+                    <label className="form-label">Draft Max</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      value={specState.draftMax}
+                      min={0}
+                      onChange={(e) => updateSpecField('draftMax', toIntOrDefault(e.target.value, specState.draftMax))}
+                    />
+                  </div>
+
+                  <div className="form-section">
+                    <label className="form-label">Draft Min</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      value={specState.draftMin}
+                      min={0}
+                      onChange={(e) => updateSpecField('draftMin', toIntOrDefault(e.target.value, specState.draftMin))}
+                    />
+                  </div>
+                </div>
+
+                {specState.type === 'draft' && (
+                  <div className="spec-row">
+                    <div className="form-section">
+                      <label className="form-label">Draft Model</label>
+                      <select
+                        className="form-input form-select"
+                        value={specState.draftModelCheckpoint}
+                        onChange={(e) => updateSpecField('draftModelCheckpoint', e.target.value)}
+                      >
+                        <option value="">Select a downloaded llama model</option>
+                        {draftModelChoices.map((choice) => (
+                          <option key={choice.id} value={choice.checkpoint}>
+                            {choice.id} ({choice.checkpoint})
+                          </option>
+                        ))}
+                      </select>
+                      <div className="spec-warning-box">
+                        Use a draft model with the same architecture and fewer parameters for better performance.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {(specState.type === 'ngram-simple' || specState.type === 'ngram-map-k' || specState.type === 'ngram-mod') && (
+                  <div className="spec-row two-col">
+                    {(specState.type === 'ngram-simple' || specState.type === 'ngram-mod') && (
+                      <div className="form-section">
+                        <label className="form-label">N-gram Size N</label>
+                        <input
+                          type="number"
+                          className="form-input"
+                          min={1}
+                          value={specState.specNgramSizeN}
+                          onChange={(e) => updateSpecField('specNgramSizeN', toIntOrDefault(e.target.value, specState.specNgramSizeN))}
+                        />
+                      </div>
+                    )}
+
+                    {specState.type === 'ngram-mod' && (
+                      <div className="form-section">
+                        <label className="form-label">N-gram Size M</label>
+                        <input
+                          type="number"
+                          className="form-input"
+                          min={1}
+                          value={specState.specNgramSizeM}
+                          onChange={(e) => updateSpecField('specNgramSizeM', toIntOrDefault(e.target.value, specState.specNgramSizeM))}
+                        />
+                      </div>
+                    )}
+
+                    {specState.type === 'ngram-map-k' && (
+                      <div className="form-section">
+                        <label className="form-label">N-gram Min Hits</label>
+                        <input
+                          type="number"
+                          className="form-input"
+                          min={1}
+                          value={specState.specNgramMinHits}
+                          onChange={(e) => updateSpecField('specNgramMinHits', toIntOrDefault(e.target.value, specState.specNgramMinHits))}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="spec-advanced-toggle"
+                  onClick={() => setShowSpecAdvanced((prev) => !prev)}
+                >
+                  {showSpecAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}
+                </button>
+
+                {showSpecAdvanced && (
+                  <div className="spec-row three-col">
+                    <div className="form-section">
+                      <label className="form-label">Draft P Min</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="0.75"
+                        value={specState.draftPMin}
+                        onChange={(e) => updateSpecField('draftPMin', e.target.value)}
+                      />
+                    </div>
+
+                    <div className="form-section">
+                      <label className="form-label">Ctx Size Draft</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="0"
+                        value={specState.ctxSizeDraft}
+                        onChange={(e) => updateSpecField('ctxSizeDraft', e.target.value)}
+                      />
+                    </div>
+
+                    <div className="form-section">
+                      <label className="form-label">Device Draft</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="cpu,gpu"
+                        value={specState.deviceDraft}
+                        onChange={(e) => updateSpecField('deviceDraft', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   };

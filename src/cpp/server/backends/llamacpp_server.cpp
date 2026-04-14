@@ -3,6 +3,7 @@
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/utils/custom_args.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
@@ -11,6 +12,7 @@
 #include <lemon/utils/aixlog.hpp>
 #include <cstdlib>
 #include <set>
+#include <sstream>
 
 #ifdef _WIN32
     #include <windows.h>
@@ -89,6 +91,105 @@ static void push_overridable_arg(std::vector<std::string>& args,
     }
 }
 
+static bool is_likely_local_path(const std::string& value) {
+    if (value.empty()) {
+        return false;
+    }
+
+    if (value.rfind("/", 0) == 0 || value.rfind("./", 0) == 0 || value.rfind("../", 0) == 0) {
+        return true;
+    }
+
+    // Windows drive-letter paths and UNC paths.
+    if ((value.size() > 1 && value[1] == ':') || value.rfind("\\\\", 0) == 0) {
+        return true;
+    }
+
+    return value.find('\\') != std::string::npos;
+}
+
+static std::string quote_arg_if_needed(const std::string& token) {
+    if (token.find(' ') == std::string::npos && token.find('"') == std::string::npos) {
+        return token;
+    }
+
+    std::string escaped;
+    escaped.reserve(token.size() + 4);
+    for (char c : token) {
+        if (c == '\\' || c == '"') {
+            escaped.push_back('\\');
+        }
+        escaped.push_back(c);
+    }
+
+    return "\"" + escaped + "\"";
+}
+
+static std::string join_custom_args(const std::vector<std::string>& tokens) {
+    std::ostringstream oss;
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        if (i > 0) {
+            oss << ' ';
+        }
+        oss << quote_arg_if_needed(tokens[i]);
+    }
+    return oss.str();
+}
+
+static std::string resolve_draft_checkpoint_in_args(const std::string& custom_args,
+                                                    ModelManager* model_manager) {
+    if (custom_args.empty() || model_manager == nullptr) {
+        return custom_args;
+    }
+
+    std::vector<std::string> tokens = parse_custom_args(custom_args);
+    bool changed = false;
+
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        std::string draft_value;
+        bool has_draft_flag = false;
+        bool inline_value = false;
+
+        if (tokens[i] == "--model-draft") {
+            if (i + 1 >= tokens.size()) {
+                throw std::runtime_error("Invalid --model-draft argument: missing value");
+            }
+            draft_value = tokens[i + 1];
+            has_draft_flag = true;
+        } else if (tokens[i].rfind("--model-draft=", 0) == 0) {
+            draft_value = tokens[i].substr(std::string("--model-draft=").size());
+            has_draft_flag = true;
+            inline_value = true;
+        }
+
+        if (!has_draft_flag || draft_value.empty()) {
+            continue;
+        }
+
+        fs::path draft_path = path_from_utf8(draft_value);
+        if (is_likely_local_path(draft_value) && fs::exists(draft_path)) {
+            continue;
+        }
+
+        std::string resolved_draft = model_manager->resolve_checkpoint_path("llamacpp", draft_value, "main");
+        if (resolved_draft.empty() || !fs::exists(path_from_utf8(resolved_draft))) {
+            throw std::runtime_error(
+                "Unable to resolve --model-draft checkpoint '" + draft_value +
+                "' to a local GGUF file. Pull the draft model first or provide an absolute local path."
+            );
+        }
+
+        if (inline_value) {
+            tokens[i] = "--model-draft=" + resolved_draft;
+        } else {
+            tokens[i + 1] = resolved_draft;
+        }
+        changed = true;
+    }
+
+    return changed ? join_custom_args(tokens) : custom_args;
+}
+
 InstallParams LlamaCppServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
 
@@ -161,6 +262,9 @@ void LlamaCppServer::load(const std::string& model_name,
     int ctx_size = options.get_option("ctx_size");
     std::string llamacpp_backend = options.get_option("llamacpp_backend");
     std::string llamacpp_args = options.get_option("llamacpp_args");
+
+    // Convert draft checkpoint references into concrete local GGUF paths.
+    llamacpp_args = resolve_draft_checkpoint_in_args(llamacpp_args, model_manager_);
 
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend);
 
