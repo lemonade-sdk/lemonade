@@ -15,6 +15,17 @@ struct AgentConfig {
     std::string install_instructions;
 };
 
+struct AgentLaunchOptions {
+    bool codex_use_user_config = false;
+    std::string codex_model_provider = "lemonade";
+};
+
+// Returns true if the agent requires file-based config sync before launch.
+bool agent_needs_config_sync(const std::string& agent);
+
+// Build normalized HTTP origin for agent endpoints (e.g. http://localhost:13305).
+std::string build_agent_server_base_url(const std::string& host, int port);
+
 // Build launcher configuration for a supported agent.
 // Returns true on success, false if agent is unknown.
 bool build_agent_config(const std::string& agent,
@@ -22,6 +33,7 @@ bool build_agent_config(const std::string& agent,
                         int port,
                         const std::string& model,
                         const std::string& api_key,
+                        const AgentLaunchOptions& launch_options,
                         AgentConfig& config,
                         std::string& error_message);
 

@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/hf_variants.h"
 #include "lemon/config_file.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/sd_server.h"
@@ -146,6 +147,14 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
     const char* api_key_env = std::getenv("LEMONADE_API_KEY");
     api_key_ = api_key_env ? std::string(api_key_env) : "";
 
+    // Read admin API key - if not set, defaults to regular API key value
+    const char* admin_api_key_env = std::getenv("LEMONADE_ADMIN_API_KEY");
+    if (admin_api_key_env) {
+        admin_api_key_ = std::string(admin_api_key_env);
+    } else {
+        admin_api_key_ = api_key_;
+    }
+
     setup_http_servers();
 
     // Initialize WebSocket server for realtime API and log streaming
@@ -209,11 +218,31 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
         }
     }
 
-    if ((api_key_ != "") && (req.method != "OPTIONS") && (is_api_route || is_internal_route)) {
-        if (api_key_ != httplib::get_bearer_token_auth(req)) {
-            res.status = 401;
-            res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
-            return httplib::Server::HandlerResponse::Handled;
+    // Authentication hierarchy:
+    // - Admin key: access to both internal and regular API endpoints
+    // - Regular API key: access only to regular API endpoints (not internal)
+    // - If admin key is not set, it defaults to regular API key value
+    // - If only admin key is set, regular endpoints are accessible without auth, internal requires admin key
+    // - If no keys are set, all endpoints are accessible without auth
+
+    std::string auth_token = httplib::get_bearer_token_auth(req);
+
+    if (is_internal_route) {
+        // Internal routes require admin key authentication
+        if (!admin_api_key_.empty() && req.method != "OPTIONS") {
+            if (auth_token != admin_api_key_) {
+                res.status = 401;
+                res.set_content("{\"error\": \"Invalid or missing admin API key\"}", "application/json");
+                return httplib::Server::HandlerResponse::Handled;
+            }
+        }
+    } else if (is_api_route && req.method != "OPTIONS") {
+        if (!api_key_.empty()) {
+            if ((auth_token != api_key_) && (auth_token != admin_api_key_)) {
+                res.status = 401;
+                res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
+                return httplib::Server::HandlerResponse::Handled;
+            }
         }
     }
 
@@ -347,6 +376,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_pull(req, res);
     });
 
+    register_get("pull/variants", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_pull_variants(req, res);
+    });
+
     register_post("load", [this](const httplib::Request& req, httplib::Response& res) {
         handle_load(req, res);
     });
@@ -405,6 +438,9 @@ void Server::setup_routes(httplib::Server &web_server) {
     web_server.Get("/internal/config", [this](const httplib::Request& req, httplib::Response& res) {
         handle_config_get(req, res);
     });
+    web_server.Post("/internal/cleanup-cache", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cleanup_cache(req, res);
+    });
 
     // Test endpoint to verify POST works
     web_server.Post("/api/v1/test", [](const httplib::Request& req, httplib::Response& res) {
@@ -447,7 +483,7 @@ void Server::setup_static_files(httplib::Server &web_server) {
         json filtered_models = json::object();
         for (const auto& [model_name, info] : models_map) {
             filtered_models[model_name] = {
-                {"model_name", info.model_name},
+                {"model_name", model_name},
                 {"checkpoint", info.checkpoint()},
                 {"recipe", info.recipe},
                 {"labels", info.labels},
@@ -1347,12 +1383,17 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 
     // Add image_defaults if present (for sd-cpp models)
     if (info.image_defaults.has_defaults) {
-        model_json["image_defaults"] = {
+        json img_def = {
             {"steps", info.image_defaults.steps},
             {"cfg_scale", info.image_defaults.cfg_scale},
             {"width", info.image_defaults.width},
             {"height", info.image_defaults.height}
         };
+        if (!info.image_defaults.sampling_method.empty())
+            img_def["sampling_method"] = info.image_defaults.sampling_method;
+        if (info.image_defaults.flow_shift > 0.0f)
+            img_def["flow_shift"] = info.image_defaults.flow_shift;
+        model_json["image_defaults"] = img_def;
     }
 
     return model_json;
@@ -1443,7 +1484,6 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 LOG(INFO, "Server") << "POST /api/v1/chat/completions - Streaming" << std::endl;
 
                 // Set up streaming response with SSE headers
-                res.set_header("Content-Type", "text/event-stream");
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no"); // Disable nginx buffering
@@ -1628,7 +1668,6 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 LOG(INFO, "Server") << "POST /api/v1/completions - Streaming" << std::endl;
 
                 // Set up SSE headers
-                res.set_header("Content-Type", "text/event-stream");
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no");
@@ -2415,7 +2454,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         }
 
         std::string upscale_model_path;
-        std::string backend = "cpu";
+        std::string backend;
         try {
             auto info = model_manager_->get_model_info(upscale_model_name);
 
@@ -2427,14 +2466,26 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             }
 
             upscale_model_path = info.resolved_path("main");
-            // Use the server's --sdcpp CLI setting so we pick up the same
-            // backend binary that was installed at startup, not whatever
-            // the system auto-detects (which may be a stale installation).
+
+            // Honor explicit config first (e.g. sdcpp.backend = "rocm").
+            // "auto" in config.json is mapped to "" by recipe_options().
             auto recipe_opts = config_->recipe_options();
             if (recipe_opts.contains("sd-cpp_backend") &&
                 recipe_opts["sd-cpp_backend"].is_string()) {
-                std::string b = recipe_opts["sd-cpp_backend"];
-                if (!b.empty()) backend = b;
+                backend = recipe_opts["sd-cpp_backend"].get<std::string>();
+            }
+
+            // Auto-detect best backend when not explicitly configured,
+            // matching the same logic SDServer::load() uses via
+            // RecipeOptions::get_option(). Without this, upscaling
+            // silently falls back to CPU even when ROCm/Vulkan is available.
+            if (backend.empty()) {
+                auto supported = SystemInfo::get_supported_backends("sd-cpp");
+                if (!supported.backends.empty()) {
+                    backend = supported.backends[0];
+                } else {
+                    backend = "cpu";
+                }
             }
         } catch (const std::exception& e) {
             res.status = 404;
@@ -2560,7 +2611,6 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
 
                 // Set up streaming response with SSE headers
-                res.set_header("Content-Type", "text/event-stream");
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no");
@@ -2673,6 +2723,40 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
 
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_pull_variants(const httplib::Request& req, httplib::Response& res) {
+    try {
+        std::string checkpoint = req.get_param_value("checkpoint");
+        if (checkpoint.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Missing required query parameter 'checkpoint'"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        if (checkpoint.find('/') == std::string::npos) {
+            res.status = 400;
+            nlohmann::json error = {{"error",
+                "Malformed 'checkpoint': expected a Hugging Face repo id of the form 'owner/name'"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        bool not_found = false;
+        nlohmann::json body = lemon::fetch_pull_variants(checkpoint, not_found);
+        if (not_found) {
+            res.status = 404;
+            nlohmann::json error = {{"error", "Checkpoint '" + checkpoint + "' not found on Hugging Face"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        res.set_content(body.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_pull_variants: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -2889,6 +2973,21 @@ void Server::handle_delete(const httplib::Request& req, httplib::Response& res) 
 
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+        bool dry_run = request_json.value("dry_run", true);
+
+        auto result = model_manager_->cleanup_orphaned_cache(dry_run);
+        res.set_content(result.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_cleanup_cache: " << e.what() << std::endl;
+        res.status = 500;
+        auto error_response = create_model_error("", e.what());
+        res.set_content(error_response.dump(), "application/json");
     }
 }
 
@@ -3607,6 +3706,11 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
             std::string dir = config_->extra_models_dir();
             LOG(INFO, "Server") << "Extra models dir changed to: " << dir << std::endl;
             model_manager_->set_extra_models_dir(dir);
+        } else if (key == "models_dir") {
+            std::string dir = config_->models_dir();
+            LOG(INFO, "Server") << "Models dir changed to: " << dir << std::endl;
+            utils::set_models_dir(dir);
+            model_manager_->invalidate_models_cache();
         }
     }
 }
@@ -3619,7 +3723,6 @@ void Server::stream_download_operation(
     httplib::Response& res,
     std::function<void(DownloadProgressCallback)> operation) {
 
-    res.set_header("Content-Type", "text/event-stream");
     res.set_header("Cache-Control", "no-cache");
     res.set_header("Connection", "keep-alive");
     res.set_header("X-Accel-Buffering", "no");
@@ -3695,6 +3798,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         std::string recipe = request_json.value("recipe", "");
         std::string backend = request_json.value("backend", "");
         bool stream = request_json.value("stream", false);
+        bool force = request_json.value("force", false);
 
         if (recipe.empty() || backend.empty()) {
             res.status = 400;
@@ -3715,7 +3819,22 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
             system_info["recipes"].contains(recipe) &&
             system_info["recipes"][recipe].contains("backends") &&
             system_info["recipes"][recipe]["backends"].contains(backend)) {
-            std::string action = system_info["recipes"][recipe]["backends"][backend].value("action", "");
+            const auto& backend_info = system_info["recipes"][recipe]["backends"][backend];
+            std::string state = backend_info.value("state", "unsupported");
+            std::string message = backend_info.value("message", "Backend is not supported on this system.");
+            std::string action = backend_info.value("action", "");
+
+            if (state == "unsupported" && !force) {
+                res.status = 400;
+                nlohmann::json error = {
+                    {"error", "Cannot install " + recipe + ":" + backend + " on this system: " + message},
+                    {"recipe", recipe},
+                    {"backend", backend}
+                };
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+
             if (action.find(".html") != std::string::npos) {
                 auto url_pos = action.find("https://");
                 if (url_pos != std::string::npos) {
@@ -3731,13 +3850,13 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         }
 
         if (stream) {
-            stream_download_operation(res, [this, recipe, backend](DownloadProgressCallback progress_cb) {
-                backend_manager_->install_backend(recipe, backend, progress_cb);
+            stream_download_operation(res, [this, recipe, backend, force](DownloadProgressCallback progress_cb) {
+                backend_manager_->install_backend(recipe, backend, force, progress_cb);
                 SystemInfoCache::invalidate_recipes();
                 model_manager_->invalidate_models_cache();
             });
         } else {
-            backend_manager_->install_backend(recipe, backend);
+            backend_manager_->install_backend(recipe, backend, force);
             SystemInfoCache::invalidate_recipes();
             model_manager_->invalidate_models_cache();
             nlohmann::json response = {

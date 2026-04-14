@@ -56,6 +56,7 @@ The additional endpoints are:
 - POST `/api/v1/install` - Install or update a backend
 - POST `/api/v1/uninstall` - Remove a backend
 - POST `/api/v1/pull` - Install a model
+- GET `/api/v1/pull/variants` - Enumerate GGUF variants for a Hugging Face checkpoint
 - POST `/api/v1/delete` - Delete a model
 - POST `/api/v1/load` - Load a model
 - POST `/api/v1/unload` - Unload a model
@@ -663,7 +664,7 @@ Upon connection, the server sends a `session.created` message with a session ID.
 
 | Message Type | Description |
 |--------------|-------------|
-| `session.update` | Configure the session (set model, VAD settings) |
+| `session.update` | Configure the session (set model, VAD settings, or disable turn detection) |
 | `input_audio_buffer.append` | Send audio data (base64-encoded PCM16) |
 | `input_audio_buffer.commit` | Force transcription of buffered audio |
 | `input_audio_buffer.clear` | Clear audio buffer without transcribing |
@@ -742,6 +743,18 @@ VAD settings can be configured via `session.update`:
 | `silence_duration_ms` | 800 | Silence duration to trigger speech end |
 | `prefix_padding_ms` | 250 | Minimum speech duration before triggering |
 
+Set `turn_detection` to `null` to disable server-side VAD and use explicit commits instead:
+
+```json
+{
+  "type": "session.update",
+  "session": {
+    "model": "Whisper-Tiny",
+    "turn_detection": null
+  }
+}
+```
+
 #### Code Examples
 
 See the [`examples/`](../../examples/) directory for a complete, runnable example:
@@ -758,7 +771,7 @@ python examples/realtime_transcription.py --model Whisper-Tiny
 - **Audio Format**: Server expects 16kHz mono PCM16. Higher sample rates must be downsampled client-side.
 - **Chunk Size**: Send audio in ~85-256ms chunks for optimal latency/efficiency.
 - **VAD Behavior**: Server automatically detects speech boundaries and triggers transcription on speech end.
-- **Manual Commit**: Use `input_audio_buffer.commit` to force transcription (e.g., when user clicks "stop").
+- **Manual Commit**: Set `turn_detection` to `null`, then use `input_audio_buffer.commit` to force transcription. In this mode the server buffers audio but does not emit VAD or interim transcription events.
 - **Clear Buffer**: Use `input_audio_buffer.clear` to discard audio without transcribing.
 - **Chunking**: We are still tuning the chunking to balance latency vs. accuracy.
 
@@ -1436,6 +1449,67 @@ data: {"file_index":2,"total_files":2,"percent":100}
 | `complete` | Sent when all files are downloaded successfully |
 | `error` | Sent if download fails, with `error` field containing the message |
 
+### `GET /api/v1/pull/variants` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Inspect a Hugging Face GGUF repository and enumerate the variants (quantizations and sharded folder groups) available for installation. Used by the `lemonade pull <owner/repo>` CLI flow and by the desktop app's model search to auto-populate the install form. The endpoint reads only public Hugging Face metadata; if the `HF_TOKEN` environment variable is set on the server, it is forwarded as a bearer token to access gated repositories.
+
+#### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `checkpoint` | Yes | Hugging Face repo id, e.g. `unsloth/Qwen3-8B-GGUF`. Passed as a query string. |
+
+Example request:
+
+```bash
+curl 'http://localhost:13305/api/v1/pull/variants?checkpoint=unsloth/Qwen3-8B-GGUF'
+```
+
+#### Response
+
+```json
+{
+  "checkpoint": "unsloth/Qwen3-8B-GGUF",
+  "recipe": "llamacpp",
+  "suggested_name": "Qwen3-8B-GGUF",
+  "suggested_labels": ["vision"],
+  "mmproj_files": ["mmproj-model-f16.gguf"],
+  "variants": [
+    {
+      "name": "Q4_K_M",
+      "primary_file": "Qwen3-8B-Q4_K_M.gguf",
+      "files": ["Qwen3-8B-Q4_K_M.gguf"],
+      "sharded": false,
+      "size_bytes": 4920000000
+    },
+    {
+      "name": "Q8_0",
+      "primary_file": "Q8_0/Qwen3-8B-Q8_0-00001-of-00002.gguf",
+      "files": ["Q8_0/Qwen3-8B-Q8_0-00001-of-00002.gguf", "Q8_0/Qwen3-8B-Q8_0-00002-of-00002.gguf"],
+      "sharded": true,
+      "size_bytes": 8500000000
+    }
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `checkpoint` | Echoed input. |
+| `recipe` | Suggested recipe (always `llamacpp` today; future expansion may return other values). |
+| `suggested_name` | Repo id stripped of the `owner/` prefix; suitable for use as the `user.<name>` model name. |
+| `suggested_labels` | Inferred labels — `vision` if any `mmproj-*.gguf` files exist, plus `embeddings`/`reranking` if those substrings appear in the repo id. |
+| `mmproj_files` | Bare filenames of `mmproj-*.gguf` files in the repo; the first one should be passed as `mmproj` to `/api/v1/pull` for vision models. |
+| `variants[]` | Top quantizations for the repo, capped at 5. Each entry has `name` (e.g. `Q4_K_M`, `UD-Q4_K_XL`), `primary_file`, `files`, `sharded`, and `size_bytes` (from the HF `?blobs=true` listing). Ranked by frequency of use in `server_models.json` (`Q4_K_M`, `UD-Q4_K_XL`, `Q8_0`, `Q4_0` first, everything else sorted lexicographically). The CLI `lemonade pull` menu adds a free-text "Other" option for quants outside the top 5. |
+
+#### Error responses
+
+| Status | Cause |
+|--------|-------|
+| 400 | `checkpoint` query parameter missing or malformed (must contain `/`). |
+| 404 | Hugging Face returned 404 for the checkpoint. |
+| 500 | Other transport or parsing failures; the response body contains an `error` message. |
+
 ### `POST /api/v1/delete` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Delete a model by removing it from local storage. If the model is currently loaded, it will be unloaded first.
@@ -1821,7 +1895,7 @@ curl "http://localhost:13305/api/v1/system-info"
           "devices": ["amd_igpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade recipes --install llamacpp:rocm"
+          "action": "lemonade backends install llamacpp:rocm"
         },
         "metal": {
           "devices": [],
@@ -1833,7 +1907,7 @@ curl "http://localhost:13305/api/v1/system-info"
           "devices": ["cpu"],
           "state": "update_required",
           "message": "Backend update is required before use.",
-          "action": "lemonade recipes --install llamacpp:cpu"
+          "action": "lemonade backends install llamacpp:cpu"
         }
       }
     },
@@ -1844,7 +1918,7 @@ curl "http://localhost:13305/api/v1/system-info"
           "devices": ["cpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade recipes --install whispercpp:default"
+          "action": "lemonade backends install whispercpp:default"
         }
       }
     },
@@ -1855,7 +1929,7 @@ curl "http://localhost:13305/api/v1/system-info"
           "devices": ["cpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade recipes --install sd-cpp:default"
+          "action": "lemonade backends install sd-cpp:default"
         }
       }
     },
@@ -1926,6 +2000,7 @@ Install or update a backend for a specific recipe/backend pair. If the backend i
 | `recipe` | Yes | Recipe name (for example, `llamacpp`, `flm`, `whispercpp`, `sd-cpp`, `ryzenai-llm`) |
 | `backend` | Yes | Backend name within the recipe (for example, `vulkan`, `rocm`, `cpu`, `default`) |
 | `stream` | No | If `true`, returns Server-Sent Events with progress. Defaults to `false`. |
+| `force` | No | If `true`, bypasses hardware filtering for `unsupported` backends and attempts installation anyway. Defaults to `false`. |
 
 #### Example request
 

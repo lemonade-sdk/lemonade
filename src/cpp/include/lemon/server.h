@@ -65,9 +65,11 @@ private:
     void handle_reranking(const httplib::Request& req, httplib::Response& res);
     void handle_responses(const httplib::Request& req, httplib::Response& res);
     void handle_pull(const httplib::Request& req, httplib::Response& res);
+    void handle_pull_variants(const httplib::Request& req, httplib::Response& res);
     void handle_load(const httplib::Request& req, httplib::Response& res);
     void handle_unload(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
+    void handle_cleanup_cache(const httplib::Request& req, httplib::Response& res);
     void handle_params(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
@@ -144,6 +146,7 @@ private:
     std::atomic<bool> rebind_requested_{false};
 
     std::string api_key_;
+    std::string admin_api_key_;
     NetworkBeacon udp_beacon_;
 
     // CPU usage tracking

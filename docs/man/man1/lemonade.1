@@ -26,8 +26,8 @@ Server host
 (Env:LEMONADE_PORT)
 Server port
 .TP
-\fB\-\-api\-key\fR KEY (Env:LEMONADE_API_KEY)
-API key for authentication
+\fB\-\-api\-key\fR KEY (Env:LEMONADE_API_KEY, Env:LEMONADE_ADMIN_API_KEY)
+API key for authentication. If both LEMONADE_ADMIN_API_KEY and LEMONADE_API_KEY are set, LEMONADE_ADMIN_API_KEY takes precedence.
 .SS "Subcommands:"
 .TP
 status
@@ -54,7 +54,7 @@ Unload a model (or all models)
 run
 Load a model and open the webapp in browser
 .TP
-recipes
+backends
 List available recipes and backends
 .TP
 export

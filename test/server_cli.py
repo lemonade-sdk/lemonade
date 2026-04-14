@@ -10,7 +10,7 @@ Tests the lemonade CLI commands directly (not HTTP API):
 - serve
 - stop
 - run
-- recipes
+- backends
 
 Expects a running server (started by the installer or manually).
 
@@ -25,7 +25,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 
@@ -34,7 +33,6 @@ from utils.server_base import wait_for_server, set_server_config, _auth_headers
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     PORT,
-    TIMEOUT_DEFAULT,
     TIMEOUT_MODEL_OPERATION,
     USER_MODEL_MAIN_CHECKPOINT,
     USER_MODEL_NAME,
@@ -175,43 +173,15 @@ class PersistentServerCLITests(CLITestBase):
             "List command should produce output",
         )
 
-    def test_004_pull(self):
-        """Test pull command to download a model."""
-        result = self.assertCommandSucceeds(
-            ["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION
-        )
-        # Pull should succeed
-        output = result.stdout.lower() + result.stderr.lower()
-        self.assertFalse(
-            "error" in output and "failed" in output,
-            f"Pull should not report errors: {result.stdout}",
-        )
-
-    def test_005_delete(self):
-        """Test delete command to remove a model."""
-        # First ensure model exists
-        run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
-
-        # Delete the model
-        result = self.assertCommandSucceeds(["delete", ENDPOINT_TEST_MODEL])
-        output = result.stdout.lower() + result.stderr.lower()
-        self.assertTrue(
-            "success" in output or "deleted" in output or "removed" in output,
-            f"Delete should indicate success: {result.stdout}",
-        )
-
-        # Re-pull for other tests
-        run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
-
-    def test_006_recipes(self):
-        """Test recipes command shows available recipes and their status."""
-        result = self.assertCommandSucceeds(["recipes"])
+    def test_006_backends(self):
+        """Test backends command shows available recipes and their status."""
+        result = self.assertCommandSucceeds(["backends"])
         output = result.stdout
 
-        # Recipes command should show a table with recipe information
+        # Backends command should show a table with recipe information
         self.assertTrue(
             len(output) > 0,
-            "Recipes command should produce output",
+            "Backends command should produce output",
         )
 
         # Should contain known recipe names
@@ -252,48 +222,7 @@ class PersistentServerCLITests(CLITestBase):
             f"Output should contain backend names: {output}",
         )
 
-        print(f"[OK] Recipes command output shows recipe/backend status")
-
-    def test_007_pull_json(self):
-        """Test import command to download a model via JSON file"""
-        json_file = os.path.join(tempfile.gettempdir(), "lemonade_pull_json.json")
-        with open(json_file, "w") as f:
-            f.write(
-                json.dumps(
-                    {
-                        "id": USER_MODEL_NAME,
-                        "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
-                        "recipe": "llamacpp",
-                    }
-                )
-            )
-
-        result = self.assertCommandSucceeds(
-            ["import", json_file], timeout=TIMEOUT_MODEL_OPERATION
-        )
-        # Pull should succeed
-        output = result.stdout.lower() + result.stderr.lower()
-        self.assertFalse(
-            "error" in output and "failed" in output,
-            f"Pull should not report errors: {result.stdout}",
-        )
-
-    def test_008_pull_malformed_json(self):
-        """Test import command with malformed JSON file reports an error."""
-        json_file = os.path.join(
-            tempfile.gettempdir(), "lemonade_pull_malformed_json.json"
-        )
-        with open(json_file, "w") as f:
-            f.write('{"checkpoint:')
-
-        result = run_cli_command(["import", json_file], timeout=TIMEOUT_MODEL_OPERATION)
-        # CLI may exit 0 or non-zero, but must report an error in output
-        output = result.stdout.lower() + result.stderr.lower()
-        self.assertIn(
-            "error",
-            output,
-            f"Import of malformed JSON should report an error: {output}",
-        )
+        print("[OK] backends command output shows recipe/backend status")
 
     def _get_test_backend(self):
         """Get a lightweight test backend based on platform."""
@@ -304,17 +233,17 @@ class PersistentServerCLITests(CLITestBase):
         else:
             return "llamacpp", "cpu"
 
-    def test_009_recipes_install(self):
-        """Test recipes --install installs a backend."""
+    def test_009_backends_install(self):
+        """Test backends install installs a backend."""
         recipe, backend = self._get_test_backend()
         target = f"{recipe}:{backend}"
 
         # Uninstall first (cleanup)
-        run_cli_command(["recipes", "--uninstall", target], timeout=120)
+        run_cli_command(["backends", "uninstall", target], timeout=120)
 
         # Install
         result = self.assertCommandSucceeds(
-            ["recipes", "--install", target], timeout=300
+            ["backends", "install", target], timeout=300
         )
         output = result.stdout.lower()
         self.assertTrue(
@@ -322,41 +251,41 @@ class PersistentServerCLITests(CLITestBase):
             f"Expected install confirmation in output: {result.stdout}",
         )
 
-        # Verify via recipes list
-        result = self.assertCommandSucceeds(["recipes"])
+        # Verify via backends list
+        result = self.assertCommandSucceeds(["backends"])
         self.assertIn(
             "installed",
             result.stdout.lower(),
             f"Expected 'installed' status after install: {result.stdout}",
         )
-        print(f"[OK] recipes --install {target} succeeded")
+        print(f"[OK] backends install {target} succeeded")
 
-    def test_010_recipes_uninstall(self):
-        """Test recipes --uninstall removes a backend."""
+    def test_010_backends_uninstall(self):
+        """Test backends uninstall removes a backend."""
         recipe, backend = self._get_test_backend()
         target = f"{recipe}:{backend}"
 
         # Ensure installed first
-        run_cli_command(["recipes", "--install", target], timeout=300)
+        run_cli_command(["backends", "install", target], timeout=300)
 
         # Uninstall
         result = self.assertCommandSucceeds(
-            ["recipes", "--uninstall", target], timeout=120
+            ["backends", "uninstall", target], timeout=120
         )
         output = result.stdout.lower()
         self.assertTrue(
             "uninstall" in output or "success" in output,
             f"Expected uninstall confirmation in output: {result.stdout}",
         )
-        print(f"[OK] recipes --uninstall {target} succeeded")
+        print(f"[OK] backends uninstall {target} succeeded")
 
-    def test_011_recipes_reinstall(self):
+    def test_011_backends_reinstall(self):
         """Re-install after test to leave system in clean state."""
         recipe, backend = self._get_test_backend()
         target = f"{recipe}:{backend}"
 
         result = self.assertCommandSucceeds(
-            ["recipes", "--install", target], timeout=300
+            ["backends", "install", target], timeout=300
         )
         print(f"[OK] Re-installed {target} for clean state")
 

@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <comdef.h>
 #include <Wbemidl.h>
+#include <setupapi.h>
 
 namespace lemon {
 namespace wmi {
@@ -55,6 +56,13 @@ std::string acp_to_utf8(const std::string& acp_str);
 std::string get_property_string(IWbemClassObject* pObj, const std::wstring& prop_name);
 int get_property_int(IWbemClassObject* pObj, const std::wstring& prop_name);
 uint64_t get_property_uint64(IWbemClassObject* pObj, const std::wstring& prop_name);
+
+// SetupAPI-based driver version lookup.
+// Enumerates all present devices via SetupAPI and returns the driver version
+// string for the first device whose friendly name contains device_name_substr
+// (case-insensitive). Returns empty string if not found.
+// Much faster than Win32_PnPSignedDriver WMI queries (~5-50 ms vs ~10 s).
+std::string get_driver_version_setupapi(const std::string& device_name_substr);
 
 } // namespace wmi
 } // namespace lemon
