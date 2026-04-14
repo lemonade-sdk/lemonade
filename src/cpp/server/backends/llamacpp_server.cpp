@@ -113,6 +113,7 @@ static bool is_flag_token(const std::string& value) {
 
 static bool has_speculative_decoding_enabled(const std::vector<std::string>& tokens) {
     bool has_model_draft = false;
+    bool has_spec_params = false;
     std::string spec_type = "none";
 
     for (size_t i = 0; i < tokens.size(); ++i) {
@@ -120,6 +121,17 @@ static bool has_speculative_decoding_enabled(const std::vector<std::string>& tok
 
         if (token == "--model-draft" || token.rfind("--model-draft=", 0) == 0) {
             has_model_draft = true;
+        }
+
+        if (token == "--draft-max" || token.rfind("--draft-max=", 0) == 0 ||
+            token == "--draft-min" || token.rfind("--draft-min=", 0) == 0 ||
+            token == "--draft-p-min" || token.rfind("--draft-p-min=", 0) == 0 ||
+            token == "--ctx-size-draft" || token.rfind("--ctx-size-draft=", 0) == 0 ||
+            token == "--device-draft" || token.rfind("--device-draft=", 0) == 0 ||
+            token == "--spec-ngram-size-n" || token.rfind("--spec-ngram-size-n=", 0) == 0 ||
+            token == "--spec-ngram-size-m" || token.rfind("--spec-ngram-size-m=", 0) == 0 ||
+            token == "--spec-ngram-min-hits" || token.rfind("--spec-ngram-min-hits=", 0) == 0) {
+            has_spec_params = true;
         }
 
         if (token == "--spec-type") {
@@ -131,7 +143,7 @@ static bool has_speculative_decoding_enabled(const std::vector<std::string>& tok
         }
     }
 
-    return has_model_draft || (!spec_type.empty() && spec_type != "none");
+    return has_model_draft || has_spec_params || (!spec_type.empty() && spec_type != "none");
 }
 
 static void validate_model_draft_value_or_throw(const std::string& draft_value) {
@@ -388,6 +400,7 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // Speculative decoding does not support multimodal mmproj in llama.cpp.
     if (speculative_enabled) {
+        LOG(INFO, "LlamaCpp") << "Speculative decoding detected; forcing --no-mmproj" << std::endl;
         push_arg(args, reserved_flags, "--no-mmproj");
     } else {
         // Add mmproj file if present (for vision models)
