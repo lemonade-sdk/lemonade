@@ -616,9 +616,6 @@ window.api = {
         return settings.apiKey?.value || '';
     },
     restartApp: () => window.location.reload()
-    // Server version, /system-stats, and /system-info are not exposed via
-    // window.api in either Tauri or web mode. The shared renderer fetches
-    // those endpoints directly via serverConfig.fetch (utils/serverConfig.ts).
 };
 </script>
 )";
