@@ -851,6 +851,21 @@ jobs:
             }
           }
 
+      - name: Diagnose sd-cli missing DLLs (ProcMon)
+        if: always() && matrix.script == 'server_sd.py' && contains(matrix.backends, 'rocm')
+        shell: PowerShell
+        run: .\ci\procmon-dll-diagnose.ps1
+
+      - name: Upload ProcMon diagnostics artifacts
+        if: always() && matrix.script == 'server_sd.py' && contains(matrix.backends, 'rocm')
+        uses: actions/upload-artifact@v4
+        with:
+          name: sd-cli-procmon-${{ matrix.name }}
+          path: |
+            ${{ runner.temp }}\sd-cli.pml
+            ${{ runner.temp }}\sd-cli.csv
+          if-no-files-found: warn
+
       - name: Capture and upload server logs
         if: always()
         uses: ./.github/actions/capture-server-logs
