@@ -91,21 +91,47 @@ static void push_overridable_arg(std::vector<std::string>& args,
     }
 }
 
-static bool is_likely_local_path(const std::string& value) {
-    if (value.empty()) {
+static bool ends_with_ignore_case(const std::string& value, const std::string& suffix) {
+    if (value.size() < suffix.size()) {
         return false;
     }
 
-    if (value.rfind("/", 0) == 0 || value.rfind("./", 0) == 0 || value.rfind("../", 0) == 0) {
-        return true;
+    for (size_t i = 0; i < suffix.size(); ++i) {
+        char a = static_cast<char>(std::tolower(static_cast<unsigned char>(value[value.size() - suffix.size() + i])));
+        char b = static_cast<char>(std::tolower(static_cast<unsigned char>(suffix[i])));
+        if (a != b) {
+            return false;
+        }
     }
 
-    // Windows drive-letter paths and UNC paths.
-    if ((value.size() > 1 && value[1] == ':') || value.rfind("\\\\", 0) == 0) {
-        return true;
+    return true;
+}
+
+static bool is_flag_token(const std::string& value) {
+    return value.size() > 1 && value[0] == '-';
+}
+
+static bool has_speculative_decoding_enabled(const std::vector<std::string>& tokens) {
+    bool has_model_draft = false;
+    std::string spec_type = "none";
+
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        const std::string& token = tokens[i];
+
+        if (token == "--model-draft" || token.rfind("--model-draft=", 0) == 0) {
+            has_model_draft = true;
+        }
+
+        if (token == "--spec-type") {
+            if (i + 1 < tokens.size() && !is_flag_token(tokens[i + 1])) {
+                spec_type = tokens[i + 1];
+            }
+        } else if (token.rfind("--spec-type=", 0) == 0) {
+            spec_type = token.substr(std::string("--spec-type=").size());
+        }
     }
 
-    return value.find('\\') != std::string::npos;
+    return has_model_draft || (!spec_type.empty() && spec_type != "none");
 }
 
 static std::string quote_arg_if_needed(const std::string& token) {
@@ -151,7 +177,7 @@ static std::string resolve_draft_checkpoint_in_args(const std::string& custom_ar
         bool inline_value = false;
 
         if (tokens[i] == "--model-draft") {
-            if (i + 1 >= tokens.size()) {
+            if (i + 1 >= tokens.size() || is_flag_token(tokens[i + 1])) {
                 throw std::runtime_error("Invalid --model-draft argument: missing value");
             }
             draft_value = tokens[i + 1];
@@ -166,16 +192,49 @@ static std::string resolve_draft_checkpoint_in_args(const std::string& custom_ar
             continue;
         }
 
-        fs::path draft_path = path_from_utf8(draft_value);
-        if (is_likely_local_path(draft_value) && fs::exists(draft_path)) {
+        // The local draft model path must be a GGUF file path. Any non-GGUF value
+        // is interpreted as a model identifier (checkpoint/model name) and resolved.
+        if (ends_with_ignore_case(draft_value, ".gguf")) {
+            fs::path draft_path = path_from_utf8(draft_value);
+            if (!fs::exists(draft_path)) {
+                throw std::runtime_error(
+                    "Invalid --model-draft value '" + draft_value +
+                    "': .gguf local file does not exist."
+                );
+            }
             continue;
         }
 
-        std::string resolved_draft = model_manager->resolve_checkpoint_path("llamacpp", draft_value, "main");
+        std::string resolved_draft;
+
+        // First, treat non-GGUF input as a checkpoint string.
+        resolved_draft = model_manager->resolve_checkpoint_path("llamacpp", draft_value, "main");
+
+        // If checkpoint resolution fails, treat it as a model name.
+        if (resolved_draft.empty() || !fs::exists(path_from_utf8(resolved_draft))) {
+            if (model_manager->model_exists(draft_value)) {
+                auto draft_info = model_manager->get_model_info(draft_value);
+                if (draft_info.recipe != "llamacpp") {
+                    throw std::runtime_error(
+                        "Invalid --model-draft model '" + draft_value +
+                        "': only llamacpp models are valid draft models."
+                    );
+                }
+                resolved_draft = draft_info.resolved_path();
+            }
+        }
+
         if (resolved_draft.empty() || !fs::exists(path_from_utf8(resolved_draft))) {
             throw std::runtime_error(
-                "Unable to resolve --model-draft checkpoint '" + draft_value +
-                "' to a local GGUF file. Pull the draft model first or provide an absolute local path."
+                "Unable to resolve --model-draft value '" + draft_value +
+                "' to a local GGUF file. Provide a local .gguf path, a downloaded checkpoint, or a downloaded llamacpp model name."
+            );
+        }
+
+        if (!ends_with_ignore_case(resolved_draft, ".gguf")) {
+            throw std::runtime_error(
+                "Resolved --model-draft value '" + draft_value +
+                "' to a non-GGUF path: '" + resolved_draft + "'."
             );
         }
 
@@ -265,6 +324,8 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // Convert draft checkpoint references into concrete local GGUF paths.
     llamacpp_args = resolve_draft_checkpoint_in_args(llamacpp_args, model_manager_);
+    std::vector<std::string> custom_tokens = parse_custom_args(llamacpp_args);
+    bool speculative_enabled = has_speculative_decoding_enabled(custom_tokens);
 
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend);
 
@@ -317,12 +378,17 @@ void LlamaCppServer::load(const std::string& model_name,
     LOG(DEBUG, "LlamaCpp") << "Using backend: " << llamacpp_backend << "\n"
             << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
 
-    // Add mmproj file if present (for vision models)
-    if (!mmproj_path.empty()) {
-        push_arg(args, reserved_flags, "--mmproj", mmproj_path);
-        if (!use_gpu) {
-            LOG(DEBUG, "LlamaCpp") << "Skipping mmproj argument since GPU mode is not enabled" << std::endl;
-            push_arg(args, reserved_flags, "--no-mmproj-offload");
+    // Speculative decoding does not support multimodal mmproj in llama.cpp.
+    if (speculative_enabled) {
+        push_arg(args, reserved_flags, "--no-mmproj");
+    } else {
+        // Add mmproj file if present (for vision models)
+        if (!mmproj_path.empty()) {
+            push_arg(args, reserved_flags, "--mmproj", mmproj_path);
+            if (!use_gpu) {
+                LOG(DEBUG, "LlamaCpp") << "Skipping mmproj argument since GPU mode is not enabled" << std::endl;
+                push_arg(args, reserved_flags, "--no-mmproj-offload");
+            }
         }
     }
     push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
@@ -376,8 +442,7 @@ void LlamaCppServer::load(const std::string& model_name,
         }
 
         LOG(DEBUG, "LlamaCpp") << "Adding custom arguments: " << llamacpp_args << std::endl;
-        std::vector<std::string> custom_args_vec = parse_custom_args(llamacpp_args);
-        args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
+        args.insert(args.end(), custom_tokens.begin(), custom_tokens.end());
     }
 
     LOG(INFO, "LlamaCpp") << "Starting llama-server..." << std::endl;
