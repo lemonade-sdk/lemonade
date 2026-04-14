@@ -16,7 +16,7 @@
         Kernel Update Required
       </div>
       <div class="subtitle">
-        Your kernel has a critical bug affecting Strix Halo (gfx1151) systems
+        Your kernel is missing the Context-Wave-Save-Restore (CWSR) fix for Strix Halo (gfx1151)
       </div>
     </div>
 
@@ -25,16 +25,19 @@
       <div class="install-section">
         <h2>What's the problem?</h2>
         <p>
-          Your system has a Strix Halo GPU (gfx1151), but your Linux kernel is missing a critical fix
-          that exports CWSR (Context Wave Save/Restore) properties. Without this fix, ROCm may have
-          incorrect VGPR counts, causing crashes for various workloads.
+          Your system has a Strix Halo GPU (gfx1151), but the running Linux kernel is missing a fix
+          that correctly exports CWSR (Context Wave Save/Restore) properties and handles
+          context switching for this architecture. Without the fix, any GPU compute operation
+          triggers a <code>GCVM_L2_PROTECTION_FAULT</code> in the amdgpu driver, so ROCm backends
+          like llama.cpp-ROCm, vLLM-ROCm, and stable-diffusion.cpp-ROCm hang or crash.
         </p>
         <p>
           <strong>Technical details:</strong>
         </p>
         <ul>
-          <li><a href="https://rocm.docs.amd.com/en/latest/how-to/system-optimization/strixhalo.html" target="_blank">Strix Halo optimization guide</a></li>
-          <li>The fix is included in kernel 6.18.4+ but may be backported to older kernels</li>
+          <li><a href="https://rocm.docs.amd.com/en/latest/how-to/system-optimization/strixhalo.html" target="_blank">Strix Halo optimization guide (AMD)</a></li>
+          <li>The fix is upstream in kernel <strong>6.18.4+</strong>.</li>
+          <li>Some vendor/OEM kernels backport it to 6.17.x, but coverage is inconsistent &mdash; verify with the check in step 4 below.</li>
         </ul>
       </div>
 
@@ -44,81 +47,155 @@
         <!-- Ubuntu Option -->
         <div class="option-box option-primary">
           <div class="option-header">
-            <span class="option-label">For Ubuntu Users</span>
+            <span class="option-label">For Ubuntu 24.04 (tested)</span>
             <span class="option-tag recommended">Recommended</span>
           </div>
-          <h3>Install the OEM Kernel</h3>
-          <p>Ubuntu provides an OEM kernel with the fix included. Open a terminal and run:</p>
+          <h3>Install a mainline 6.18.4+ kernel</h3>
+          <p>
+            Ubuntu's <code>linux-oem-24.04</code> ships a 6.17.x kernel that does <em>not</em>
+            include the fix in all builds. The most reliable path is to install a mainline kernel
+            from <a href="https://kernel.ubuntu.com/mainline/" target="_blank">kernel.ubuntu.com/mainline</a>.
+          </p>
 
-          <div class="code-block">
-            <code>sudo apt update && sudo apt install linux-oem-24.04</code>
+          <div class="code-block"><code>cd /tmp
+VERSION=6.18.22
+BUILD=202604111411
+BASE=https://kernel.ubuntu.com/mainline/v${VERSION}/amd64
+curl -LO "${BASE}/linux-headers-${VERSION}-061822_${VERSION}-061822.${BUILD}_all.deb"
+curl -LO "${BASE}/linux-headers-${VERSION}-061822-generic_${VERSION}-061822.${BUILD}_amd64.deb"
+curl -LO "${BASE}/linux-image-unsigned-${VERSION}-061822-generic_${VERSION}-061822.${BUILD}_amd64.deb"
+curl -LO "${BASE}/linux-modules-${VERSION}-061822-generic_${VERSION}-061822.${BUILD}_amd64.deb"
+# Workaround for a run-parts incompatibility in 24.04 when installing mainline kernels:
+sudo mkdir -p /usr/share/kernel/preinst.d /usr/share/kernel/postinst.d \
+              /usr/share/kernel/prerm.d /usr/share/kernel/postrm.d
+sudo dpkg -i linux-*.deb
+sudo update-initramfs -c -k ${VERSION}-061822-generic
+sudo update-grub
+sudo reboot</code></div>
+
+          <p class="option-note">
+            If you also have <code>amdgpu-dkms</code> installed from an older ROCm release, it may
+            override the kernel's built-in driver with a broken version. See the next box.
+          </p>
+        </div>
+
+        <!-- amdgpu-dkms note -->
+        <div class="option-box option-secondary">
+          <div class="option-header">
+            <span class="option-label">If you have amdgpu-dkms installed</span>
           </div>
+          <h3>Make sure it's from ROCm 31.20 or newer</h3>
+          <p>
+            The DKMS module from the default Radeon repository (<code>amdgpu/30.30</code>) is
+            <code>amdgpu 6.16.13</code>, which <em>also</em> page-faults on gfx1151. Point apt at the
+            31.20 repository so the DKMS build tracks a working driver:
+          </p>
 
-          <p class="option-note">After installation, reboot your system for the new kernel to take effect.</p>
+          <div class="code-block"><code>sudo sed -i 's|amdgpu/30\.30/|amdgpu/31.20/|g' /etc/apt/sources.list.d/amdgpu*.list
+sudo apt update
+sudo apt install -y amdgpu-dkms amdgpu-dkms-firmware
+sudo reboot</code></div>
+
+          <p class="option-note">
+            If you don't need ROCm's userland libraries (the vLLM backend ships its own), you can
+            skip DKMS entirely and rely on the kernel's built-in amdgpu &mdash; that's the simplest
+            configuration.
+          </p>
         </div>
 
         <!-- Other Linux Distros -->
         <div class="option-box option-secondary">
           <div class="option-header">
-            <span class="option-label">For Other Linux Distributions</span>
+            <span class="option-label">For other Linux distributions</span>
           </div>
-          <h3>Upgrade to a Kernel with the CWSR Fix</h3>
+          <h3>Upgrade to a kernel with the CWSR fix</h3>
           <p>
-            Upgrade your kernel to version <strong>6.18.4 or later</strong>, or a kernel with the
-            CWSR fix backported. The fix exports cwsr_size and ctl_stack_size properties to userspace.
+            Install kernel <strong>6.18.4 or later</strong>, or a vendor kernel with the fix
+            backported. Examples:
           </p>
+          <ul>
+            <li><strong>Fedora/RHEL:</strong> <code>sudo dnf update kernel</code></li>
+            <li><strong>Arch Linux:</strong> <code>sudo pacman -Syu linux</code></li>
+            <li><strong>openSUSE:</strong> <code>sudo zypper update kernel-default</code></li>
+          </ul>
+          <p>
+            After updating, reboot and run the verification in step 4 below to confirm the fix is
+            active.
+          </p>
+        </div>
+      </div>
 
-          <div class="step-container">
-            <div class="step">
-              <div class="step-number">1</div>
-              <div class="step-content">
-                <h3>Check Current Kernel Version</h3>
-                <p>Open a terminal and run:</p>
-                <div class="code-block">
-                  <code>uname -r</code>
-                </div>
-              </div>
+      <div class="install-section">
+        <h2>Verify the fix is active</h2>
+        <p>After rebooting, both checks below should succeed.</p>
+
+        <div class="step-container">
+          <div class="step">
+            <div class="step-number">1</div>
+            <div class="step-content">
+              <h3>Kernel version</h3>
+              <div class="code-block"><code>uname -r</code></div>
+              <p>Should report 6.18.4 or newer (or a vendor kernel with the fix backported).</p>
             </div>
+          </div>
 
-            <div class="step">
-              <div class="step-number">2</div>
-              <div class="step-content">
-                <h3>Update Your Kernel</h3>
-                <p>
-                  Use your distribution's kernel update process. For example:
-                </p>
-                <ul>
-                  <li><strong>Fedora/RHEL:</strong> <code>sudo dnf update kernel</code></li>
-                  <li><strong>Arch Linux:</strong> <code>sudo pacman -Syu linux</code></li>
-                  <li><strong>openSUSE:</strong> <code>sudo zypper update kernel-default</code></li>
-                </ul>
-              </div>
+          <div class="step">
+            <div class="step-number">2</div>
+            <div class="step-content">
+              <h3>CWSR properties exported</h3>
+              <div class="code-block"><code>grep -E "cwsr_size|ctl_stack_size" /sys/class/kfd/kfd/topology/nodes/*/properties</code></div>
+              <p>You should see both <code>cwsr_size</code> and <code>ctl_stack_size</code> listed, with non-zero values.</p>
             </div>
+          </div>
 
-            <div class="step">
-              <div class="step-number">3</div>
-              <div class="step-content">
-                <h3>Reboot</h3>
-                <p>Reboot your system to load the new kernel:</p>
-                <div class="code-block">
-                  <code>sudo reboot</code>
-                </div>
-              </div>
-            </div>
-
-            <div class="step">
-              <div class="step-number">4</div>
-              <div class="step-content">
-                <h3>Verify</h3>
-                <p>After rebooting, verify the CWSR properties are exported:</p>
-                <div class="code-block">
-                  <code>grep -E "cwsr_size|ctl_stack_size" /sys/class/kfd/kfd/topology/nodes/*/properties</code>
-                </div>
-                <p>You should see both <code>cwsr_size</code> and <code>ctl_stack_size</code> listed.</p>
-              </div>
+          <div class="step">
+            <div class="step-number">3</div>
+            <div class="step-content">
+              <h3>GPU compute end-to-end</h3>
+              <p>
+                Sysfs properties alone aren't sufficient &mdash; we've seen them appear while the
+                GPU still page-faults on any kernel dispatch. Run a minimal HIP test:
+              </p>
+              <div class="code-block"><code>cat &lt;&lt;'EOF' &gt; /tmp/hip_check.cpp
+#include &lt;hip/hip_runtime.h&gt;
+#include &lt;stdio.h&gt;
+__global__ void k(int *d) { *d = 42; }
+int main() {
+    int *d, h = 0;
+    hipMalloc(&amp;d, sizeof(int));
+    k&lt;&lt;&lt;1,1&gt;&gt;&gt;(d);
+    hipDeviceSynchronize();
+    hipMemcpy(&amp;h, d, sizeof(int), hipMemcpyDeviceToHost);
+    hipFree(d);
+    printf("GPU dispatch OK, value=%d\n", h);
+    return h == 42 ? 0 : 1;
+}
+EOF
+hipcc /tmp/hip_check.cpp -o /tmp/hip_check
+timeout 30 /tmp/hip_check</code></div>
+              <p>
+                You should see <code>GPU dispatch OK, value=42</code>. If the test hangs or prints
+                nothing, the kernel/driver combo is still broken &mdash; check
+                <code>dmesg | grep amdgpu | tail</code> for page-fault entries.
+              </p>
             </div>
           </div>
         </div>
+      </div>
+
+      <div class="install-section">
+        <h2>Escape hatch</h2>
+        <p>
+          Lemonade refuses to install the ROCm backends when it believes the kernel lacks the CWSR
+          fix. If you're on a vendor kernel that has a known-good backport below 6.18.4 and the
+          verification steps above all pass, you can bypass the version check with:
+        </p>
+        <div class="code-block"><code>export LEMONADE_SKIP_KERNEL_CHECK=1</code></div>
+        <p class="option-note">
+          Only use this if GPU dispatch actually works on your system. If you see
+          <code>GCVM_L2_PROTECTION_FAULT</code> entries in <code>dmesg</code>, the fix is not active
+          and skipping the check will just defer the failure to inference time.
+        </p>
       </div>
 
       <div class="install-section">
@@ -129,6 +206,7 @@
         <ul>
           <li>Check the <a href="https://github.com/lemonade-sdk/lemonade/issues">GitHub Issues</a> page</li>
           <li>Contact us on <a href="https://discord.gg/lemonade-server">Discord</a></li>
+          <li>Include the output of <code>uname -r</code>, <code>modinfo amdgpu | grep -E 'filename|version'</code>, and the sysfs check above when filing an issue.</li>
         </ul>
       </div>
     </div>
@@ -188,12 +266,14 @@
       margin: 1rem 0;
       font-family: 'Courier New', monospace;
       overflow-x: auto;
+      white-space: pre;
     }
 
     .code-block code {
       color: #ecf0f1;
       background: none;
       padding: 0;
+      white-space: pre;
     }
 
     .option-box {
