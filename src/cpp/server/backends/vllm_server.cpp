@@ -150,8 +150,10 @@ void VLLMServer::load(const std::string& model_name,
     args.push_back("--enforce-eager");
     args.push_back("--dtype");
     args.push_back("float16");
+    // Users can override with vllm_args (e.g. "--max-model-len 32768"). Larger values
+    // raise KV-cache memory and Triton JIT compile time, so 16K is a balanced default.
     args.push_back("--max-model-len");
-    args.push_back("2048");
+    args.push_back("16384");
     // Detect the actual quantization method from config.json rather than guessing
     // from the model name. Repos named "...-AWQ" sometimes use compressed-tensors,
     // GPTQ, etc. and forcing --quantization awq would fail the load.
