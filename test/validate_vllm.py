@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Validate a vLLM backend release against test models.
+Validate a vLLM backend release against all "hot" vLLM models.
 
 Usage:
     python test/validate_vllm.py --backend rocm
@@ -8,9 +8,11 @@ Usage:
 This script expects `lemond` to already be running on the target port.
 
 This script:
-1. Installs the vLLM backend via `POST /api/v1/install`
-2. Loads a small test model (OPT-125M-vllm by default)
-3. Sends a chat/completions request and verifies a non-empty response
+1. Queries `/api/v1/models?show_all=true` and selects models with recipe
+   `vllm` and label `hot`
+2. Installs the requested vLLM backend via `POST /api/v1/install`
+3. For each hot model, loads it with the requested backend, sends a
+   `chat/completions` request, queries `/api/v1/stats`, and unloads it
 4. Outputs a JSON results file for CI consumption
 """
 
@@ -28,11 +30,10 @@ from utils.server_base import unload_all_models, wait_for_server
 from utils.test_models import PORT, TIMEOUT_DEFAULT
 
 TIMEOUT_HEALTH = 60
-TIMEOUT_INFERENCE = 1800  # 30 minutes; first run downloads model + compiles kernels
+TIMEOUT_INFERENCE = 1800  # 30 minutes; first run downloads + compiles Triton kernels
 CHAT_PROMPT = [
     {"role": "user", "content": "What is 2+2? Reply in one sentence."},
 ]
-DEFAULT_MODEL = "OPT-125M-vllm"
 
 
 def collect_server_logs(output_dir):
@@ -46,24 +47,71 @@ def collect_server_logs(output_dir):
             dest = os.path.join(output_dir, os.path.basename(log_file))
             try:
                 shutil.copy2(log_file, dest)
-                copied.append(dest)
-            except OSError:
-                pass
+                size = os.path.getsize(dest)
+                copied.append(f"{os.path.basename(log_file)} ({size} bytes)")
+            except Exception as exc:
+                print(f"  Warning: Failed to copy {log_file}: {exc}", flush=True)
+    if copied:
+        print(f"Collected server logs: {', '.join(copied)}", flush=True)
+    else:
+        print("No server log files found to collect.", flush=True)
     return copied
 
 
-def request_json(method, url, timeout=TIMEOUT_DEFAULT, **kwargs):
-    """Send a request and return (response, body_dict)."""
-    resp = requests.request(method, url, timeout=timeout, **kwargs)
-    try:
-        body = resp.json()
-    except Exception:
-        body = {"raw": resp.text}
-    return resp, body
+def request_json(method, url, timeout, **kwargs):
+    """Perform an HTTP request and parse the JSON response when present."""
+    response = requests.request(method, url, timeout=timeout, **kwargs)
+    body = {}
+    if response.content:
+        try:
+            body = response.json()
+        except ValueError:
+            body = {"raw_text": response.text}
+    return response, body
+
+
+def require_running_server(base_url, port):
+    """Wait for a running server and confirm the health endpoint responds."""
+    wait_for_server(port=port, timeout=TIMEOUT_HEALTH)
+    response, body = request_json(
+        "GET",
+        f"{base_url}/health",
+        timeout=TIMEOUT_DEFAULT,
+    )
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Server health check failed: HTTP {response.status_code} - {body}"
+        )
+    print(
+        f"Server is reachable on port {port} (status={body.get('status', 'unknown')})",
+        flush=True,
+    )
+
+
+def get_hot_vllm_models(base_url):
+    """Return the catalog entries for hot vllm models from the API."""
+    response, body = request_json(
+        "GET",
+        f"{base_url}/models?show_all=true",
+        timeout=TIMEOUT_DEFAULT,
+    )
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Failed to query model catalog: HTTP {response.status_code} - {body}"
+        )
+
+    hot_models = []
+    for model in body.get("data", []):
+        labels = model.get("labels", [])
+        if model.get("recipe") == "vllm" and "hot" in labels:
+            hot_models.append(model)
+
+    hot_models.sort(key=lambda model: model["id"])
+    return hot_models
 
 
 def install_backend(base_url, backend):
-    """Install the vLLM backend through the API."""
+    """Install or update the requested vLLM backend through the API."""
     print(f"Installing vllm backend via /install: {backend}", flush=True)
     response, body = request_json(
         "POST",
@@ -75,11 +123,34 @@ def install_backend(base_url, backend):
         raise RuntimeError(
             f"Backend install failed: HTTP {response.status_code} - {body}"
         )
+    # If the action URL came back instead of success, the kernel/driver preflight failed.
+    if body.get("action", "").endswith(".html"):
+        raise RuntimeError(
+            f"Backend install blocked by preflight: {body.get('action')}"
+        )
     print(f"Install response: {body}", flush=True)
 
 
+def unload_model(base_url, model_name=None):
+    """Unload a specific model or all models."""
+    payload = {}
+    if model_name:
+        payload["model_name"] = model_name
+    response, body = request_json(
+        "POST",
+        f"{base_url}/unload",
+        timeout=TIMEOUT_DEFAULT,
+        json=payload,
+    )
+    if response.status_code not in (200, 404):
+        print(
+            f"  Warning: unload returned HTTP {response.status_code}: {body}",
+            flush=True,
+        )
+
+
 def test_model(base_url, model_name, backend, max_tokens=50):
-    """Load a model, send chat request, return (success, text, stats)."""
+    """Send a chat/completions request and return (success, response_text, stats)."""
     print(f"  Loading model: {model_name} (backend={backend})", flush=True)
     try:
         load_resp, load_body = request_json(
@@ -94,6 +165,26 @@ def test_model(base_url, model_name, backend, max_tokens=50):
                 f"Load failed: HTTP {load_resp.status_code} - {load_body}",
                 {},
             )
+
+        health_resp, health_body = request_json(
+            "GET",
+            f"{base_url}/health",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        if health_resp.status_code == 200:
+            loaded = {
+                model["model_name"]: model
+                for model in health_body.get("all_models_loaded", [])
+            }
+            loaded_model = loaded.get(model_name, {})
+            recipe_options = loaded_model.get("recipe_options", {})
+            actual_backend = recipe_options.get("vllm_backend")
+            if actual_backend and actual_backend != backend:
+                return (
+                    False,
+                    f"Model loaded with backend '{actual_backend}' instead of '{backend}'",
+                    {},
+                )
 
         print("  Sending chat/completions request...", flush=True)
         chat_resp, chat_body = request_json(
@@ -125,82 +216,141 @@ def test_model(base_url, model_name, backend, max_tokens=50):
         if stats_resp.status_code == 200:
             stats = stats_body
             print(f"  Stats: {json.dumps(stats)}", flush=True)
-
-        return True, combined, stats
-    except Exception as exc:
-        return False, str(exc), {}
-    finally:
-        # Unload
-        try:
-            request_json(
-                "POST",
-                f"{base_url}/unload",
-                timeout=TIMEOUT_DEFAULT,
-                json={"model_name": model_name},
+        else:
+            print(
+                f"  Warning: stats returned HTTP {stats_resp.status_code}: {stats_body}",
+                flush=True,
             )
-        except Exception:
-            pass
+
+        response_text = content if content else f"[reasoning] {reasoning}"
+        return True, response_text, stats
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        return False, f"Bad response format: {exc}", {}
+    except requests.RequestException as exc:
+        return False, f"Request failed: {exc}", {}
+    finally:
+        try:
+            unload_model(base_url, model_name)
+        except requests.RequestException as exc:
+            print(f"  Warning: failed to unload {model_name}: {exc}", flush=True)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Validate vLLM backend")
-    parser.add_argument(
-        "--backend", required=True, choices=["rocm"],
-        help="vLLM backend to validate"
+    parser = argparse.ArgumentParser(
+        description="Validate a vLLM backend against hot Lemonade models"
     )
     parser.add_argument(
-        "--model", default=DEFAULT_MODEL,
-        help="Model to test (default: %(default)s)"
+        "--backend",
+        required=True,
+        choices=["rocm"],
+        help="Backend to test (currently only rocm is supported)",
     )
     parser.add_argument(
-        "--port", type=int, default=PORT,
-        help="Lemonade server port"
+        "--port",
+        type=int,
+        default=PORT,
+        help=f"Server port (default: {PORT})",
     )
     parser.add_argument(
-        "--output-dir", default="validate_vllm_output",
-        help="Directory for results"
+        "--output",
+        default=None,
+        help="Path to write JSON results file",
+    )
+    parser.add_argument(
+        "--skip-install",
+        action="store_true",
+        help="Skip backend installation step",
+    )
+    parser.add_argument(
+        "--logs-dir",
+        default=None,
+        help="Directory to collect server log files into (for CI artifact upload)",
+    )
+    parser.add_argument(
+        "--lite",
+        action="store_true",
+        help="Lite mode: only test the smallest hot model",
     )
     args = parser.parse_args()
 
     base_url = f"http://localhost:{args.port}/api/v1"
+    output_path = args.output or f"vllm_validation_{args.backend}.json"
 
-    # Wait for server
-    print(f"Waiting for lemond on port {args.port}...", flush=True)
-    wait_for_server(timeout=TIMEOUT_HEALTH, port=args.port)
-    print("Server is ready.", flush=True)
+    require_running_server(base_url, args.port)
 
-    # Install backend
-    install_backend(base_url, args.backend)
+    print("Unloading all models for clean state...", flush=True)
+    try:
+        unload_all_models(port=args.port)
+    except requests.RequestException as exc:
+        print(f"Warning: failed to unload pre-existing models: {exc}", flush=True)
 
-    # Test model
-    print(f"\nTesting model: {args.model}", flush=True)
-    success, text, stats = test_model(base_url, args.model, args.backend)
+    hot_models = get_hot_vllm_models(base_url)
+    print(f"Found {len(hot_models)} hot vllm models:", flush=True)
+    for model in hot_models:
+        print(f"  - {model['id']} ({model.get('size', '?')} GB)", flush=True)
 
-    result = {
-        "model": args.model,
-        "backend": args.backend,
-        "success": success,
-        "response": text[:500] if success else text,
-        "stats": stats,
-    }
+    if not hot_models:
+        print("ERROR: No hot vllm models found!", file=sys.stderr, flush=True)
+        sys.exit(1)
 
-    print(f"\n{'PASS' if success else 'FAIL'}: {args.model}", flush=True)
-    if success:
-        print(f"  Response: {text[:200]}", flush=True)
-    else:
-        print(f"  Error: {text}", flush=True)
+    if args.lite and len(hot_models) > 1:
+        smallest = min(hot_models, key=lambda m: m.get("size", float("inf")))
+        print(
+            f"Lite mode: testing only smallest model: "
+            f"{smallest['id']} ({smallest.get('size', '?')} GB)",
+            flush=True,
+        )
+        hot_models = [smallest]
 
-    # Save results
-    os.makedirs(args.output_dir, exist_ok=True)
-    results_file = os.path.join(args.output_dir, "results.json")
-    with open(results_file, "w") as f:
-        json.dump(result, f, indent=2)
-    print(f"\nResults saved to: {results_file}", flush=True)
+    if not args.skip_install:
+        install_backend(base_url, args.backend)
 
-    # Collect logs
-    collect_server_logs(args.output_dir)
+    results = []
+    all_passed = True
+    try:
+        for model in hot_models:
+            model_name = model["id"]
+            print(f"\nTesting: {model_name}", flush=True)
+            success, response_text, stats = test_model(
+                base_url, model_name, args.backend
+            )
+            result = {
+                "model": model_name,
+                "pass": success,
+                "response": response_text,
+                "input_tokens": stats.get("input_tokens", "N/A"),
+                "output_tokens": stats.get("output_tokens", "N/A"),
+                "time_to_first_token": stats.get("time_to_first_token", "N/A"),
+                "tokens_per_second": stats.get("tokens_per_second", "N/A"),
+            }
+            results.append(result)
+            status = "PASS" if success else "FAIL"
+            print(f"  Result: {status}", flush=True)
+            if not success:
+                all_passed = False
+                print(f"  Error: {response_text}", flush=True)
+    finally:
+        try:
+            unload_all_models(port=args.port)
+        except requests.RequestException as exc:
+            print(f"Warning: failed to unload models during cleanup: {exc}", flush=True)
+        if args.logs_dir:
+            collect_server_logs(args.logs_dir)
 
-    sys.exit(0 if success else 1)
+    with open(output_path, "w", encoding="utf-8") as output_file:
+        json.dump(results, output_file, indent=2)
+    print(f"\nResults written to {output_path}", flush=True)
+
+    print(f"\n{'=' * 60}", flush=True)
+    passed = sum(1 for result in results if result["pass"])
+    print(f"Results: {passed}/{len(results)} models passed", flush=True)
+    for result in results:
+        status = "PASS" if result["pass"] else "FAIL"
+        print(f"  [{status}] {result['model']}", flush=True)
+    print(f"{'=' * 60}", flush=True)
+
+    if not all_passed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -1412,7 +1412,8 @@
         "suggested": true,
         "labels": [
             "reasoning",
-            "vllm"
+            "vllm",
+            "hot"
         ],
         "size": 1.2
     },
@@ -1452,7 +1453,8 @@
         "suggested": true,
         "labels": [
             "reasoning",
-            "vllm"
+            "vllm",
+            "hot"
         ],
         "size": 2.5
     },
@@ -1472,7 +1474,8 @@
         "suggested": true,
         "labels": [
             "chat",
-            "vllm"
+            "vllm",
+            "hot"
         ],
         "size": 0.8
     },
@@ -1532,7 +1535,8 @@
         "suggested": true,
         "labels": [
             "reasoning",
-            "vllm"
+            "vllm",
+            "hot"
         ],
         "size": 8.2
     },
