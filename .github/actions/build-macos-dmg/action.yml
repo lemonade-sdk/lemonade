@@ -26,22 +26,6 @@ runs:
 
         echo "Build environment configured successfully!"
 
-    - name: Setup Node.js
-      if: inputs.include-tauri == 'true'
-      uses: actions/setup-node@v5
-      with:
-        node-version: '20'
-
-    - name: Setup Rust toolchain
-      if: inputs.include-tauri == 'true'
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Cache Rust build artifacts
-      if: inputs.include-tauri == 'true'
-      uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: src/app/src-tauri
-
     - name: Set Tauri signing identity
       shell: bash
       run: |

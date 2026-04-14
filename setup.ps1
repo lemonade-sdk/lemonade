@@ -193,8 +193,16 @@ if ($rustNeedsInstall) {
 
 Write-Host ""
 
-# Clean and create build directory
+# Clean and create build directory, but preserve FetchContent cache when present.
 Write-Info "Preparing build directory..."
+
+$preservedDeps = $null
+$existingDeps = Join-Path "build" "_deps"
+if (Test-Path $existingDeps) {
+    $preservedDeps = Join-Path $env:TEMP ("lemonade-preserved-deps-" + [guid]::NewGuid().ToString())
+    Write-Info "Preserving build/_deps cache at $preservedDeps"
+    Move-Item -Path $existingDeps -Destination $preservedDeps
+}
 
 if (Test-Path "build") {
     Write-Warning "Removing existing build directory..."
@@ -202,6 +210,12 @@ if (Test-Path "build") {
 }
 
 New-Item -ItemType Directory -Path "build" -Force | Out-Null
+
+if ($preservedDeps -and (Test-Path $preservedDeps)) {
+    Move-Item -Path $preservedDeps -Destination $existingDeps
+    Write-Success "Restored preserved build/_deps cache"
+}
+
 Write-Success "Build directory created"
 
 Write-Host ""
