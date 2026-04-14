@@ -309,15 +309,12 @@ static bool device_matches_constraint(const std::string& device_family,
     return allowed_families.count(device_family) > 0;
 }
 
-// Generic installation check
+// Generic installation check.
+// Note: we intentionally do NOT block install here based on kernel/CWSR heuristics.
+// The signal is unreliable (vendor backports and older kernels can still work), and
+// a false negative strands users. If the kernel is genuinely broken, vLLM/llama.cpp
+// will surface a clear failure at load time (see vllm_server.cpp wait_for_ready).
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
-    // Special handling for ROCm backends on gfx1151 (Strix Halo) if kernel CWSR fix is missing
-    if ((recipe == "llamacpp" || recipe == "sd-cpp" || recipe == "vllm") && backend == "rocm") {
-        if (needs_gfx1151_cwsr_fix()) {
-            error_message = "Linux kernel missing support";
-            return false;
-        }
-    }
     auto* spec = try_get_spec_for_recipe(recipe);
     if (spec) {
         try {
@@ -932,14 +929,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
             } else {
                 backend["state"] = "installable";
                 backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
-
-                // Special action for ROCm backends if CWSR fix is missing
-                if ((def.recipe == "llamacpp" || def.recipe == "sd-cpp" || def.recipe == "vllm") && def.backend == "rocm"
-                    && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
-                    backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
-                } else {
-                    backend["action"] = get_install_command(def.recipe, def.backend);
-                }
+                backend["action"] = get_install_command(def.recipe, def.backend);
             }
         } else {
             std::string installed_version = get_recipe_version(def.recipe, def.backend);
@@ -1318,50 +1308,16 @@ static std::string identify_npu_arch_linux() {
     return "";
 }
 
-// Parse a kernel release string like "6.18.22-061822-generic" into (major, minor, patch).
-// Returns false if the string can't be parsed. Pre-release/vendor suffixes after the
-// third number are ignored.
-static bool parse_kernel_version(const std::string& release, int& major, int& minor, int& patch) {
-    std::smatch m;
-    static const std::regex re(R"(^(\d+)\.(\d+)\.(\d+))");
-    if (!std::regex_search(release, m, re)) return false;
-    try {
-        major = std::stoi(m[1].str());
-        minor = std::stoi(m[2].str());
-        patch = std::stoi(m[3].str());
-        return true;
-    } catch (...) {
-        return false;
-    }
-}
-
-// Returns true if the running kernel is known to lack the gfx1151 CWSR fix based on
-// version alone. The upstream fix is in 6.18.4+; earlier versions cannot be trusted
-// even if sysfs happens to expose CWSR properties (some OEM/DKMS combos expose the
-// sysfs fields but still page-fault at GPU dispatch time).
-// Set LEMONADE_SKIP_KERNEL_CHECK=1 to bypass, e.g. on a vendor kernel with a known-good backport.
-static bool kernel_version_lacks_cwsr_fix() {
-    if (std::getenv("LEMONADE_SKIP_KERNEL_CHECK")) return false;
-    std::ifstream f("/proc/sys/kernel/osrelease");
-    if (!f.is_open()) return false;
-    std::string release;
-    std::getline(f, release);
-    int major = 0, minor = 0, patch = 0;
-    if (!parse_kernel_version(release, major, minor, patch)) return false;
-    if (major > 6) return false;
-    if (major < 6) return true;
-    // major == 6
-    if (minor > 18) return false;
-    if (minor < 18) return true;
-    // major == 6, minor == 18
-    return patch < 4;
-}
-
-// Check if kernel has CWSR fix for Strix Halo.
-// The upstream fix (kernel 6.18.4+) exports cwsr_size/ctl_stack_size in sysfs AND
-// handles context save/restore correctly. We require both signals because older
-// amdgpu-dkms builds have been observed to expose the sysfs fields on pre-6.18
-// kernels while still page-faulting on any GPU dispatch.
+// Heuristic: does the running kernel expose the gfx1151 CWSR (Context Wave Save/Restore)
+// properties in sysfs? The upstream fix (kernel 6.18.4+, plus various vendor backports)
+// adds cwsr_size/ctl_stack_size to /sys/class/kfd/kfd/topology/nodes/*/properties.
+// When those fields are missing on a gfx1151 node, ROCm compute is very likely to
+// page-fault at dispatch time.
+//
+// This is used only to enrich error messages when a ROCm backend fails to start.
+// We deliberately do NOT block install on this check: the signal is imperfect
+// (kernels with a backport may still mismatch our expectations) and a false
+// negative strands users whose setup actually works.
 bool needs_gfx1151_cwsr_fix() {
     std::string kfd_path = "/sys/class/kfd/kfd/topology/nodes";
 
@@ -1399,9 +1355,7 @@ bool needs_gfx1151_cwsr_fix() {
         }
 
         if (is_gfx1151) {
-            // Need both: sysfs fields AND a kernel version that actually handles CWSR.
-            bool sysfs_ok = has_cwsr_size && has_ctl_stack_size;
-            return !sysfs_ok || kernel_version_lacks_cwsr_fix();
+            return !has_cwsr_size || !has_ctl_stack_size;
         }
     }
 

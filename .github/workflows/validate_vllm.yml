@@ -129,12 +129,6 @@ jobs:
           requirements-file: 'test/requirements.txt'
 
       - name: Run validation with lemond
-        env:
-          # The self-hosted runner may be on a kernel that pre-dates the gfx1151
-          # CWSR upstream fix but has a vendor backport. The preflight check can't
-          # tell the difference, so we bypass it here — if the runner's kernel is
-          # genuinely broken, vLLM itself will fail loudly when we try to load.
-          LEMONADE_SKIP_KERNEL_CHECK: "1"
         run: |
           set -e
           CACHE_DIR="$(pwd)/ci-cache-vllm"
