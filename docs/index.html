@@ -25,10 +25,10 @@
           <p class="hp-subtitle">The omni-modal alternative to cloud AI. Automatically optimized for your GPU and NPU.</p>
           <div class="hp-cta-row">
             <a class="download-btn" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi">
-              Download
+              <span class="material-symbols-outlined">desktop_windows</span> Get started
             </a>
             <a class="dev-btn" href="#" onclick="showInstaller(); return false;">
-              Embed in your app
+              <span class="material-symbols-outlined">terminal</span> Embed in your app
             </a>
           </div>
         </div>
@@ -80,10 +80,55 @@
       </div>
     </section>
 
-    <!-- ==================== ENGINE LOGOS ==================== -->
-    <section class="hp-engines-strip hp-reveal">
-      <span class="hp-engines-label">Built on</span>
-      <div class="hp-engines-row">
+    <!-- ==================== WHY LEMONADE ==================== -->
+    <section class="hp-section hp-reveal">
+      <h2 class="hp-section-heading">Built by the community. Optimized by AMD.</h2>
+      <p class="hp-section-desc">Lemonade is a local AI runtime with every capability you need to build great experiences.</p>
+
+      <div class="hp-value-grid">
+        <div class="hp-value-card">
+          <div class="hp-value-card-body">
+            <div class="hp-value-icon">
+              <span class="material-symbols-outlined">bolt</span>
+            </div>
+            <h3>Agile</h3>
+            <p>Automatically deploys the latest models and engines. Extra optimized for Ryzen AI, Radeon, and Strix Halo PCs.</p>
+          </div>
+          <a class="hp-value-link" href="models.html">Explore Models <span aria-hidden="true">&rarr;</span></a>
+        </div>
+        <div class="hp-value-card">
+          <div class="hp-value-card-body">
+            <div class="hp-value-icon">
+              <span class="material-symbols-outlined">terminal</span>
+            </div>
+            <h3>Portable</h3>
+            <p>Integrate once, deploy on any computer running Windows, Linux, or macOS.</p>
+          </div>
+          <a class="hp-value-link" href="https://lemonade-server.ai/docs/embeddable/" target="_blank" rel="noopener">Embed in Your App <span aria-hidden="true">&rarr;</span></a>
+        </div>
+        <div class="hp-value-card">
+          <div class="hp-value-card-body">
+            <div class="hp-value-icon">
+              <span class="material-symbols-outlined">auto_awesome</span>
+            </div>
+            <h3>Omni Modal</h3>
+            <p>Standard endpoints for chat, vision, image gen, editing, speech gen, and ASR.</p>
+          </div>
+          <a class="hp-value-link" href="https://lemonade-server.ai/docs/server/server_spec/" target="_blank" rel="noopener">Read Endpoints Spec <span aria-hidden="true">&rarr;</span></a>
+        </div>
+        <div class="hp-value-card">
+          <div class="hp-value-card-body">
+            <div class="hp-value-icon">
+              <span class="material-symbols-outlined">shield_with_heart</span>
+            </div>
+            <h3>Free &amp; Private</h3>
+            <p>No strings attached. No telemetry. Customize and redistribute to your heart's content.</p>
+          </div>
+          <a class="hp-value-link" href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener">Visit the GitHub <span aria-hidden="true">&rarr;</span></a>
+        </div>
+      </div>
+
+      <div class="hp-engines-card">
         <a href="https://github.com/ggml-org/llama.cpp" title="llama.cpp" target="_blank" rel="noopener" class="hp-engine-logo">
           <img src="https://user-images.githubusercontent.com/1991296/230134379-7181e485-c521-4d23-a0d6-f7b3b61ba524.png" alt="llama.cpp" />
         </a>
@@ -114,72 +159,6 @@
         <a href="https://github.com/lucasjinreal/Kokoros" title="Kokoros" target="_blank" rel="noopener" class="hp-engine-logo">
           <img src="https://camo.githubusercontent.com/8b7b5be44f4ee1542bbcf55b2ab7e5e51f5e020f6b497bfab3e596a3b4715b75/68747470733a2f2f696d67323032332e636e626c6f67732e636f6d2f626c6f672f333537323332332f3230323530312f333537323332332d32303235303131323138343130303337382d3930373938383637302e6a7067" alt="Kokoros" />
         </a>
-      </div>
-    </section>
-
-    <!-- ==================== WHY LEMONADE ==================== -->
-    <section class="hp-section hp-reveal">
-      <h2 class="hp-section-heading">Built by the community. Optimized by AMD.</h2>
-      <p class="hp-section-desc">Lemonade is a local AI runtime with every capability you need to build natural interactions and advanced intelligence. Code once and deploy everywhere with standard endpoints and system-aware backend deployment.</p>
-
-      <div class="hp-value-grid">
-        <div class="hp-value-card">
-          <div class="hp-value-card-body">
-            <div class="hp-value-icon">
-              <span class="material-symbols-outlined">bolt</span>
-            </div>
-            <h3>Agility</h3>
-            <p>Automatically deploys the best inference engines and models for your hardware.</p>
-          </div>
-          <a class="hp-value-link" href="models.html">Explore Models <span aria-hidden="true">&rarr;</span></a>
-        </div>
-        <div class="hp-value-card">
-          <div class="hp-value-card-body">
-            <div class="hp-value-icon">
-              <span class="material-symbols-outlined">terminal</span>
-            </div>
-            <h3>Portability</h3>
-            <p>Integrate once, deploy everywhere.</p>
-            <ul class="hp-value-list">
-              <li>OpenAI API</li>
-              <li>Anthropic API</li>
-              <li>Ollama API</li>
-            </ul>
-          </div>
-          <a class="hp-value-link" href="https://lemonade-server.ai/docs/embeddable/" target="_blank" rel="noopener">Embed in Your App <span aria-hidden="true">&rarr;</span></a>
-        </div>
-        <div class="hp-value-card">
-          <div class="hp-value-card-body">
-            <div class="hp-value-icon">
-              <span class="material-symbols-outlined">auto_awesome</span>
-            </div>
-            <h3>Omni-Modal Endpoints</h3>
-            <ul class="hp-value-list">
-              <li>Chat</li>
-              <li>Vision</li>
-              <li>Image generation</li>
-              <li>Image editing</li>
-              <li>Speech recognition</li>
-              <li>Speech generation</li>
-            </ul>
-          </div>
-          <a class="hp-value-link" href="https://lemonade-server.ai/docs/server/server_spec/" target="_blank" rel="noopener">View Server Spec <span aria-hidden="true">&rarr;</span></a>
-        </div>
-        <div class="hp-value-card">
-          <div class="hp-value-card-body">
-            <div class="hp-value-icon">
-              <span class="material-symbols-outlined">shield_with_heart</span>
-            </div>
-            <h3>Free &amp; Private</h3>
-            <p>No strings attached.</p>
-            <ul class="hp-value-list">
-              <li>Apache 2.0 license</li>
-              <li>Developed in the open</li>
-              <li>No telemetry, ever</li>
-            </ul>
-          </div>
-          <a class="hp-value-link" href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener">View on GitHub <span aria-hidden="true">&rarr;</span></a>
-        </div>
       </div>
     </section>
 

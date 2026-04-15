@@ -3966,7 +3966,7 @@ body.install-options {
   width: 100%;
   max-width: 1120px;
   margin: 0 auto;
-  padding: var(--page-space-xl) 1.5rem var(--page-space-xl);
+  padding: var(--page-space-xl) 1.5rem 0;
   min-height: auto;
   position: relative;
 }
@@ -4330,7 +4330,7 @@ body.install-options {
   width: 100%;
   max-width: 1120px;
   margin: 0 auto;
-  padding: var(--page-space-xxl) 1.8rem;
+  padding: var(--page-space-xxl) 1.8rem 0;
   text-align: center;
   position: relative;
 }
@@ -4378,34 +4378,19 @@ body.install-options {
   line-height: 1.65;
 }
 
-/* --- Engine logo strip --- */
-.hp-engines-strip {
-  width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 0 1.8rem 0;
+/* --- Engine logos glass card --- */
+.hp-engines-card {
   display: flex;
   align-items: center;
-  gap: var(--page-space-md);
-}
-
-.hp-engines-label {
-  font-family: var(--font-body);
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: var(--text-light);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.hp-engines-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
   justify-content: space-between;
-  flex: 1;
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: var(--radius-card);
+  padding: 1.5rem 2rem;
+  margin-top: 1.5rem;
+  box-shadow: 0 12px 48px rgba(45, 47, 47, 0.05);
 }
 
 .hp-engine-logo {
@@ -4414,11 +4399,11 @@ body.install-options {
   justify-content: center;
   text-decoration: none;
   transition: opacity 0.2s ease;
-  opacity: 0.45;
+  opacity: 0.75;
 }
 
 .hp-engine-logo:hover {
-  opacity: 0.85;
+  opacity: 1;
 }
 
 .hp-engine-logo img {
@@ -4496,8 +4481,6 @@ body.install-options {
   font-weight: 700;
   color: var(--accent-gold);
   text-decoration: none;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
   margin-top: 1.5rem;
   opacity: 0;
   transition: opacity 0.2s ease;
@@ -5037,7 +5020,7 @@ body.install-options {
     grid-template-columns: 1fr;
     justify-items: center;
     gap: var(--hero-section-gap);
-    padding: var(--page-space-xl) 1rem var(--page-space-lg);
+    padding: var(--page-space-xl) 1rem 0;
     text-align: center;
   }
 
@@ -5065,14 +5048,10 @@ body.install-options {
     margin: 0 auto;
   }
 
-  .hp-engines-strip {
+  .hp-engines-card {
     flex-wrap: wrap;
-  }
-
-  .hp-engines-row {
-    flex-wrap: wrap;
+    justify-content: center;
     gap: 1rem 1.5rem;
-    justify-content: flex-start;
   }
 
   .hp-tech-grid,
