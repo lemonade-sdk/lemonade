@@ -671,6 +671,12 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
+    // Buffer incomplete lines across chunks. webkit2gtk (Tauri on Linux)
+    // delivers fetch ReadableStream chunks with different boundaries than
+    // Chromium, so an SSE `data: {...}` payload may be split across two
+    // reads. Without this buffer the second half lacks the `data: ` prefix
+    // and gets silently discarded — manifesting as "only the first token"
+    // or "No content received from stream".
     let lineBuffer = '';
 
     try {
@@ -678,12 +684,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        lineBuffer += chunk;
-        const parts = lineBuffer.split('\n');
-        // Last element may be incomplete — keep it in the buffer
-        lineBuffer = parts.pop() || '';
-        const lines = parts;
+        lineBuffer += decoder.decode(value, { stream: true });
+        const lines = lineBuffer.split('\n');
+        // Keep the last (potentially incomplete) line in the buffer.
+        lineBuffer = lines.pop() || '';
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {

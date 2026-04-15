@@ -27,6 +27,8 @@ private:
     std::string response_body_;
 };
 
+std::string extract_server_error_message(const HttpError& error);
+
 // Helper struct for streaming request state
 struct StreamingRequestState {
     std::string last_file;
@@ -89,6 +91,9 @@ public:
     int list_recipes() const;
     int install_backend(const std::string& recipe, const std::string& backend, bool force = false);
     int uninstall_backend(const std::string& recipe, const std::string& backend);
+
+    // Cache management
+    int cleanup_cache(bool dry_run) const;
 
     // Utility (timeouts are in milliseconds)
     std::string make_request(const std::string& path, const std::string& method = "GET",

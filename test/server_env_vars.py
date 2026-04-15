@@ -425,6 +425,73 @@ class TestDefaults(unittest.TestCase):
         self.assertEqual(self.snapshot["extra_models_dir"], "")
 
 
+# ---------------------------------------------------------------------------
+# Test: wrong .gguf variant must not mark model as downloaded
+# ---------------------------------------------------------------------------
+
+
+class TestWrongGgufVariantNotDownloaded(unittest.TestCase):
+    """Regression test: wrong .gguf sibling must not mark model as downloaded.
+
+    Creates a fake HF cache containing a .gguf file that does NOT match the
+    exact filename expected by the Tiny-Test-Model-GGUF registry entry
+    (gemma-3-270m-it-UD-IQ2_M.gguf).  The server must report downloaded=false
+    for that model and omit it from the default /models list.
+
+    See: https://github.com/lemonade-sdk/lemonade/pull/1502
+    """
+
+    proc = None
+
+    @classmethod
+    def setUpClass(cls):
+        # Build a fake HF cache with the wrong .gguf sibling.
+        # Tiny-Test-Model-GGUF expects:
+        #   repo  = unsloth/gemma-3-270m-it-GGUF
+        #   file  = gemma-3-270m-it-UD-IQ2_M.gguf
+        cls.fake_hf_cache = tempfile.mkdtemp(prefix="lemon_test_hf_")
+        snapshot_dir = os.path.join(
+            cls.fake_hf_cache,
+            "models--unsloth--gemma-3-270m-it-GGUF",
+            "snapshots",
+            "abc123",
+        )
+        os.makedirs(snapshot_dir)
+        # Plant a .gguf file with the WRONG name
+        with open(os.path.join(snapshot_dir, "WRONG-variant.gguf"), "wb") as f:
+            f.write(b"\x00" * 64)
+
+        cls.proc, cls.cache_dir = start_server({"HF_HUB_CACHE": cls.fake_hf_cache})
+        wait_for_server(port=PORT)
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.proc:
+            stop_server(cls.proc)
+
+    def test_show_all_reports_not_downloaded(self):
+        """Model with wrong .gguf variant should report downloaded=false."""
+        resp = requests.get(f"{BASE}/v1/models?show_all=true", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(resp.status_code, 200)
+        models = {m["id"]: m for m in resp.json()["data"]}
+        self.assertIn("Tiny-Test-Model-GGUF", models)
+        self.assertFalse(
+            models["Tiny-Test-Model-GGUF"]["downloaded"],
+            "Model with wrong .gguf sibling must report downloaded=false",
+        )
+
+    def test_default_models_list_excludes_model(self):
+        """Model with wrong .gguf variant should not appear in default /models."""
+        resp = requests.get(f"{BASE}/v1/models", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(resp.status_code, 200)
+        model_ids = [m["id"] for m in resp.json()["data"]]
+        self.assertNotIn(
+            "Tiny-Test-Model-GGUF",
+            model_ids,
+            "Model with wrong .gguf should not appear in downloaded list",
+        )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument(

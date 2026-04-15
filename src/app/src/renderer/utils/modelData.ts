@@ -5,6 +5,8 @@ export interface ImageDefaults {
   cfg_scale?: number;
   width?: number;
   height?: number;
+  sampling_method?: string;
+  flow_shift?: number;
 }
 
 export interface ModelInfo {
@@ -189,6 +191,8 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
           cfg_scale: model.image_defaults.cfg_scale,
           width: model.image_defaults.width,
           height: model.image_defaults.height,
+          sampling_method: model.image_defaults.sampling_method,
+          flow_shift: model.image_defaults.flow_shift,
         };
       }
 

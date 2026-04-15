@@ -5,6 +5,8 @@ import AboutModal from './AboutModal';
 type MenuType = 'file' | 'view' | 'help' | null;
 
 interface TitleBarProps {
+  theme: string;
+  setTheme: (theme: 'dark' | 'light') => void;
   isChatVisible: boolean;
   onToggleChat: () => void;
   isModelManagerVisible: boolean;
@@ -16,6 +18,8 @@ interface TitleBarProps {
 }
 
 const TitleBar: React.FC<TitleBarProps> = ({
+  theme,
+  setTheme,
   isChatVisible,
   onToggleChat,
   isModelManagerVisible,
@@ -38,7 +42,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
 
   useEffect(() => {
     if (!window.api?.onMaximizeChange) {
-      console.warn('window.api.onMaximizeChange is unavailable. Running outside Electron?');
+      console.warn('window.api.onMaximizeChange is unavailable. Running outside Tauri?');
       return;
     }
 
@@ -59,6 +63,15 @@ const TitleBar: React.FC<TitleBarProps> = ({
             setActiveMenu(null);
             break;
         }
+        // Zoom: Ctrl+= / Ctrl+- (or Cmd on Mac). event.key is '=' for
+        // the +/= key (Shift produces '+' but we accept both).
+        if (event.key === '=' || event.key === '+') {
+          event.preventDefault();
+          handleZoom('in');
+        } else if (event.key === '-') {
+          event.preventDefault();
+          handleZoom('out');
+        }
       }
       if ((event.ctrlKey || event.metaKey) && event.shiftKey) {
         switch (event.key.toLowerCase()) {
@@ -78,6 +91,11 @@ const TitleBar: React.FC<TitleBarProps> = ({
             setActiveMenu(null);
             break;
         }
+        // Ctrl+Shift++ (the Windows shortcut label)
+        if (event.key === '+') {
+          event.preventDefault();
+          handleZoom('in');
+        }
       }
     };
 
@@ -91,7 +109,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
 
   const handleZoom = (direction: 'in' | 'out') => {
     if (!window.api?.zoomIn || !window.api?.zoomOut) {
-      console.warn('Zoom controls are unavailable outside Electron.');
+      console.warn('Zoom controls are unavailable outside Tauri.');
       setActiveMenu(null);
       return;
     }
@@ -105,12 +123,24 @@ const TitleBar: React.FC<TitleBarProps> = ({
     setActiveMenu(null);
   };
 
+  // `data-tauri-drag-region` is the cross-engine equivalent of Chromium's
+  // `-webkit-app-region: drag`. WebKit (used by webkit2gtk on Linux and
+  // WKWebView on macOS) does NOT honor `-webkit-app-region`, so the CSS-only
+  // approach the Electron build relied on does not work under Tauri. We mark
+  // the wrapper as the drag region and explicitly opt every interactive child
+  // out — Tauri's mousedown handler honors `data-tauri-drag-region="false"`
+  // on any descendant the click lands on.
   return (
     <>
-      <div className="title-bar">
-        <div className="title-bar-left">
-          <img src={logo} alt="Lemonade" className="title-bar-logo" />
-          <div className="menu-items">
+      <div className="title-bar" data-tauri-drag-region>
+        <div className="title-bar-left" data-tauri-drag-region>
+          <img
+            src={logo}
+            alt="Lemonade"
+            className="title-bar-logo"
+            data-tauri-drag-region="false"
+          />
+          <div className="menu-items" data-tauri-drag-region="false">
             <div className="menu-item-wrapper">
               <span
                 className={`menu-item ${activeMenu === 'file' ? 'active' : ''}`}
@@ -157,6 +187,18 @@ const TitleBar: React.FC<TitleBarProps> = ({
                     <span>{isLogsVisible ? '✓ ' : ''}Logs</span>
                     <span className="menu-shortcut">Ctrl+Shift+L</span>
                   </div>
+                  <div className="menu-option has-submenu">
+                    <span>Theme</span>
+                    <span className="submenu-arrow">›</span>
+                    <div className="menu-submenu">
+                      <div className="menu-option new-model-submenu-option" title="Dark theme" onClick={() => { setTheme('dark'); setActiveMenu(null); }}>
+                        <span>{theme == 'dark' ? '✓ ' : ''}Dark</span>
+                      </div>
+                      <div className="menu-option new-model-submenu-option" title="Light theme" onClick={() => { setTheme('light'); setActiveMenu(null); }}>
+                        <span>{theme == 'light' ? '✓ ' : ''}Light (Experimental)</span>
+                      </div>
+                    </div>
+                  </div>
                   <div className="menu-separator"></div>
                   <div className="menu-option" onClick={() => handleZoom('in')}>
                     <span>Zoom In</span>
@@ -193,10 +235,10 @@ const TitleBar: React.FC<TitleBarProps> = ({
             </div>
           </div>
         </div>
-        <div className="title-bar-center">
-          <span className="app-title">Lemonade</span>
+        <div className="title-bar-center" data-tauri-drag-region>
+          <span className="app-title" data-tauri-drag-region>Lemonade</span>
         </div>
-        <div className="title-bar-right">
+        <div className="title-bar-right" data-tauri-drag-region="false">
           <button
             className={`title-bar-button downloads ${isDownloadManagerVisible ? 'active' : ''}`}
             onClick={onToggleDownloadManager}

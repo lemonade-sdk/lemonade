@@ -37,6 +37,8 @@ struct ImageDefaults {
     float cfg_scale = 7.0f;
     int width = 512;
     int height = 512;
+    std::string sampling_method;
+    float flow_shift = 0.0f;
 
     bool has_defaults = false;  // True if explicit defaults were provided in JSON
 };
@@ -104,8 +106,17 @@ public:
     // Delete a model
     void delete_model(const std::string& model_name);
 
+    // Clean up orphaned files from multi-repo models downloaded in old layout
+    nlohmann::json cleanup_orphaned_cache(bool dry_run);
+
     // Get model info by name
     ModelInfo get_model_info(const std::string& model_name);
+
+    // Resolve a public model reference to its canonical internal name.
+    std::string resolve_model_name(const std::string& model_name);
+
+    // Get the public name exposed by Lemonade APIs for a canonical model name.
+    std::string get_public_model_name(const std::string& model_name);
 
     // Check if model exists (in filtered list based on system capabilities)
     bool model_exists(const std::string& model_name);
@@ -181,8 +192,12 @@ private:
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;
     mutable std::map<std::string, ModelInfo> models_cache_;
+    mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
+    mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name
     mutable std::map<std::string, std::string> filtered_out_models_;  // model_name -> filter reason
     mutable bool cache_valid_ = false;
+
+    void rebuild_public_model_aliases_locked();
 };
 
 } // namespace lemon
