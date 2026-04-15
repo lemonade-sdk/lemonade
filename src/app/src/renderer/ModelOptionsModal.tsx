@@ -155,6 +155,22 @@ const tokenizeArgs = (input: string): string[] => {
   for (let i = 0; i < input.length; i += 1) {
     const c = input[i];
 
+    if (c === '\\' && i + 1 < input.length) {
+      const next = input[i + 1];
+
+      if (quote) {
+        if (next === quote || next === '\\') {
+          current += next;
+          i += 1;
+          continue;
+        }
+      } else if (/\s|["'\\]/.test(next)) {
+        current += next;
+        i += 1;
+        continue;
+      }
+    }
+
     if (!quote && (c === '"' || c === "'")) {
       quote = c;
       continue;
